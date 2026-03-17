@@ -1,0 +1,154 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AdminUser {
+  id           String         @id @default(cuid())
+  username     String         @unique
+  passwordHash String
+  passwordSalt String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  sessions     AdminSession[]
+}
+
+model AdminSession {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  adminUser  AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  adminUserId String
+
+  @@index([adminUserId])
+}
+
+model ProxyKey {
+  id          String     @id @default(cuid())
+  name        String
+  keyHash     String     @unique
+  prefix      String
+  lastFour    String
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  lastUsedAt  DateTime?
+  usageLogs   UsageLog[]
+}
+
+model Provider {
+  id             String      @id @default(cuid())
+  name           String      @unique
+  baseUrl        String
+  apiKeyEncrypted String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  proxyModels    ProxyModel[]
+}
+
+model ProxyModel {
+  id                          String     @id @default(cuid())
+  displayName                 String     @unique
+  description                 String?
+  providerId                  String?
+  provider                    Provider?  @relation(fields: [providerId], references: [id], onDelete: SetNull)
+  providerBaseUrl             String
+  providerApiKeyEncrypted     String
+  upstreamModelName           String
+  interceptImagesWithOcr      Boolean    @default(false)
+  customParams                Json?
+  inputCostPerMillion         Decimal    @default(0) @db.Decimal(18, 6)
+  cachedInputCostPerMillion   Decimal    @default(0) @db.Decimal(18, 6)
+  outputCostPerMillion        Decimal    @default(0) @db.Decimal(18, 6)
+  isActive                    Boolean    @default(true)
+  
+  // Fallback configuration
+  fallbackModelId             String?
+  fallbackModel               ProxyModel? @relation("FallbackRelation", fields: [fallbackModelId], references: [id], onDelete: SetNull)
+  modelsUsingAsFallback       ProxyModel[] @relation("FallbackRelation")
+  maxRetries                  Int        @default(0)
+  fallbackDelaySeconds        Int        @default(3)
+  stickyFallbackSeconds       Int        @default(0)
+  firstTokenTimeoutEnabled    Boolean    @default(false)
+  firstTokenTimeoutSeconds    Int        @default(10)
+  slowStickyEnabled           Boolean    @default(false)
+  slowStickyMinTokensPerSecond Float     @default(5)
+  slowStickyMinCompletionSeconds Int     @default(30)
+  
+  createdAt                   DateTime   @default(now())
+  updatedAt                   DateTime   @updatedAt
+  usageLogs                   UsageLog[]
+}
+
+model SimModel {
+  id              String     @id @default(cuid())
+  displayName     String     @unique
+  description     String?
+  isActive        Boolean    @default(true)
+  exposeInModels  Boolean    @default(false)
+  segments        Json       // Array of SimSegment: { type: 'delay' | 'text', delayMs?: number, content?: string, ratePerSecond: number }
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  usageLogs       UsageLog[]
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model OcrCacheEntry {
+  id           String   @id @default(cuid())
+  cacheKey     String   @unique
+  extractedText String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model UsageLog {
+  id                 String      @id @default(cuid())
+  requestId          String      @unique
+  requestType        String      @default("proxy")
+  success            Boolean
+  statusCode         Int
+  inputTokens        Int         @default(0)
+  cachedInputTokens  Int         @default(0)
+  outputTokens       Int         @default(0)
+  totalCost          Decimal     @default(0) @db.Decimal(18, 8)
+  durationMs         Int?
+  requestPayload     Json?
+  responsePayload    Json?
+  errorMessage       String?
+  upstreamRequestId  String?
+  
+  // Fallback tracking
+  isFallback         Boolean     @default(false)
+  isStickyFallback   Boolean     @default(false)
+  originalModelId    String?
+  fallbackChain      String[]    @default([])
+  retryCount         Int         @default(0)
+  
+  createdAt          DateTime    @default(now())
+  completedAt        DateTime?
+  proxyKey           ProxyKey?   @relation(fields: [proxyKeyId], references: [id], onDelete: SetNull)
+  proxyKeyId         String?
+  proxyModel         ProxyModel? @relation(fields: [proxyModelId], references: [id], onDelete: SetNull)
+  proxyModelId       String?
+  simModel           SimModel?   @relation(fields: [simModelId], references: [id], onDelete: SetNull)
+  simModelId         String?
+
+  @@index([createdAt])
+  @@index([proxyKeyId])
+  @@index([proxyModelId])
+  @@index([simModelId])
+  @@index([isFallback])
+}

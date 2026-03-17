@@ -1,0 +1,2 @@
+This is a text attachment from the playground.
+It should be included in the upstream echo.

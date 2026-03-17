@@ -1,0 +1,1242 @@
+<div class="page">
+  <!-- Toast notifications -->
+  <div class="toast-container">
+    <div class="toast success" *ngIf="notice" [class.hiding]="noticeHiding" (click)="clearNotice()">
+      <span class="dot success"></span>
+      <span>{{ notice }}</span>
+    </div>
+    <div class="toast error" *ngIf="error" [class.hiding]="errorHiding" (click)="clearError()">
+      <span class="dot danger"></span>
+      <span>{{ error }}</span>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="page-header">
+    <div class="flex items-center gap-md">
+      <button class="mobile-menu-btn" (click)="toggleMobileMenu()" aria-label="Toggle menu">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <h1 style="font-size: 15px; font-weight: 600;">LLM Proxy</h1>
+      <span class="text-muted">/</span>
+      <span class="text-muted">{{ activeTab | titlecase }}</span>
+    </div>
+    <div class="flex items-center gap-sm">
+      <button class="ghost sm" (click)="refreshAll()" [disabled]="loading">
+        <span>Refresh</span>
+      </button>
+      <div class="toolbar-divider"></div>
+      <span class="text-muted" style="font-size: 12px;">{{ adminUsername }}</span>
+      <button class="ghost sm" (click)="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <!-- Body -->
+  <div class="page-body">
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" [class.open]="mobileMenuOpen" (click)="closeMobileMenu()"></div>
+    
+    <!-- Sidebar -->
+    <aside class="sidebar" [class.open]="mobileMenuOpen">
+      <nav class="sidebar-nav">
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'overview'"
+          (click)="navigateToTab('overview')"
+        >
+          <span>Overview</span>
+          <span class="shortcut">⌘1</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'keys'"
+          (click)="navigateToTab('keys')"
+        >
+          <span>Keys</span>
+          <span class="badge info">{{ proxyKeys.length }}</span>
+          <span class="shortcut">⌘2</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'providers'"
+          (click)="navigateToTab('providers')"
+        >
+          <span>Providers</span>
+          <span class="badge info">{{ providers.length }}</span>
+          <span class="shortcut">⌘3</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'models'"
+          (click)="navigateToTab('models')"
+        >
+          <span>Models</span>
+          <span class="badge info">{{ proxyModels.length }}</span>
+          <span class="shortcut">⌘4</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'ocr'"
+          (click)="navigateToTab('ocr')"
+        >
+          <span>OCR</span>
+          <span class="shortcut">⌘5</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'usage'"
+          (click)="navigateToTab('usage')"
+        >
+          <span>Usage</span>
+          <span class="shortcut">⌘6</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'playground'"
+          (click)="navigateToTab('playground')"
+        >
+          <span>Playground</span>
+          <span class="shortcut">⌘7</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'settings'"
+          (click)="navigateToTab('settings')"
+        >
+          <span>Settings</span>
+          <span class="shortcut">⌘8</span>
+        </button>
+        <button 
+          class="nav-item" 
+          [class.active]="activeTab === 'simulations'"
+          (click)="navigateToTab('simulations')"
+        >
+          <span>Simulations</span>
+          <span class="badge info">{{ simModels.length }}</span>
+          <span class="shortcut">⌘9</span>
+        </button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="flex items-center gap-xs">
+          <span class="dot" 
+            [class.success]="!loading && !lastRefreshFailed" 
+            [class.warning]="loading && !lastRefreshFailed"
+            [class.danger]="lastRefreshFailed">
+          </span>
+          <span>{{ loading ? 'Syncing...' : (lastRefreshFailed ? 'Disconnected' : 'Connected') }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Content -->
+    <main class="content">
+      <!-- OVERVIEW TAB -->
+      <ng-container *ngIf="activeTab === 'overview'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Dashboard</h2>
+            <p class="text-muted">Real-time proxy metrics</p>
+          </div>
+        </div>
+
+        <div class="stat-grid" style="margin-bottom: var(--space-xl);">
+          <div class="stat">
+            <div class="stat-value">{{ usage?.totals?.requests ?? 0 }}</div>
+            <div class="stat-label">Requests</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ formatCurrency(usage?.totals?.totalCost ?? 0) }}</div>
+            <div class="stat-label">Total Spend</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ proxyKeys.length }}</div>
+            <div class="stat-label">Active Keys</div>
+          </div>
+          <div class="stat">
+            <div class="stat-value">{{ proxyModels.length }}</div>
+            <div class="stat-label">Models</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 style="font-size: 13px;">Usage by Key</h3>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Key</th>
+                  <th style="text-align: right;">Requests</th>
+                  <th style="text-align: right;">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let item of usage?.byKey">
+                  <td>{{ item.name }}</td>
+                  <td style="text-align: right; font-family: var(--font-mono);">{{ item.requests }}</td>
+                  <td style="text-align: right; font-family: var(--font-mono);">{{ formatCurrency(item.totalCost) }}</td>
+                </tr>
+                <tr *ngIf="!usage?.byKey?.length">
+                  <td colspan="3" class="text-muted" style="text-align: center; padding: var(--space-xl);">No usage data</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- KEYS TAB -->
+      <ng-container *ngIf="activeTab === 'keys'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">API Keys</h2>
+            <p class="text-muted">Manage client authentication keys</p>
+          </div>
+          <button class="primary" (click)="showKeyModal = true">Create Key</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body" style="padding: 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Key</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th style="width: 140px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let key of proxyKeys">
+                  <td>
+                    <strong>{{ key.name }}</strong>
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-sm">
+                      <code 
+                        class="mono" 
+                        style="font-size: 11px; background: var(--bg); padding: 2px 6px; border-radius: 3px; max-width: 280px; overflow: hidden; text-overflow: ellipsis;"
+                        [title]="getKeyTooltip(key)"
+                      >
+                        {{ getKeyDisplay(key) }}
+                      </code>
+                      <ng-container *ngIf="hasFullKey(key)">
+                        <button 
+                          class="ghost xs" 
+                          (click)="toggleKeyVisibility(key)"
+                          [title]="isKeyVisible(key) ? 'Hide' : 'Show'"
+                        >
+                          {{ isKeyVisible(key) ? 'Hide' : 'Show' }}
+                        </button>
+                        <button 
+                          class="ghost xs" 
+                          (click)="copyKey(key)"
+                          title="Copy"
+                        >
+                          Copy
+                        </button>
+                      </ng-container>
+                    </div>
+                  </td>
+                  <td class="text-muted">{{ key.createdAt | date:'short' }}</td>
+                  <td>
+                    <span class="badge" [class.success]="key.isActive" [class.neutral]="!key.isActive">
+                      {{ key.isActive ? 'Active' : 'Disabled' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="actions">
+                      <button class="ghost xs" (click)="toggleKey(key)">
+                        {{ key.isActive ? 'Disable' : 'Enable' }}
+                      </button>
+                      <button class="ghost xs" (click)="rotateKey(key)">Rotate</button>
+                      <button class="ghost xs danger" (click)="deleteKey(key)">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr *ngIf="!proxyKeys.length">
+                  <td colspan="5" class="text-muted" style="text-align: center; padding: var(--space-xl);">
+                    No keys. Create one to get started.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- PROVIDERS TAB -->
+      <ng-container *ngIf="activeTab === 'providers'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Providers</h2>
+            <p class="text-muted">Manage reusable upstream endpoints and API keys</p>
+          </div>
+          <button class="primary" (click)="openProviderModal()">Add Provider</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body" style="padding: 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Base URL</th>
+                  <th>Linked Models</th>
+                  <th>API Key</th>
+                  <th style="width: 80px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let provider of providers">
+                  <td>
+                    <strong>{{ provider.name }}</strong>
+                  </td>
+                  <td class="text-muted">
+                    <code>{{ provider.baseUrl }}</code>
+                  </td>
+                  <td>{{ provider.modelCount }}</td>
+                  <td>
+                    <span class="badge" [class.success]="provider.hasApiKey" [class.neutral]="!provider.hasApiKey">
+                      {{ provider.hasApiKey ? 'Configured' : 'Missing' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="actions">
+                      <button class="ghost xs" (click)="editProvider(provider)">Edit</button>
+                      <button class="ghost xs danger" (click)="deleteProvider(provider)">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr *ngIf="!providers.length">
+                  <td colspan="5" class="text-muted" style="text-align: center; padding: var(--space-xl);">
+                    No providers yet. Add one to reuse it across models.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- MODELS TAB -->
+      <ng-container *ngIf="activeTab === 'models'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Models</h2>
+            <p class="text-muted">Configure upstream model mappings</p>
+          </div>
+          <button class="primary" (click)="openModelModal()">Add Model</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body" style="padding: 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Proxy Name</th>
+                  <th>Upstream</th>
+                  <th>Provider</th>
+                  <th>Features</th>
+                  <th>Status</th>
+                  <th style="width: 80px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let model of proxyModels">
+                  <td>
+                    <strong>{{ model.displayName }}</strong>
+                    <div class="text-muted" style="font-size: 11px;">{{ model.description || '—' }}</div>
+                  </td>
+                  <td>
+                    <code>{{ model.upstreamModelName }}</code>
+                  </td>
+                  <td>
+                    <div>{{ model.providerName || 'Custom Provider' }}</div>
+                    <div class="text-muted" style="font-size: 11px;">{{ model.providerBaseUrl }}</div>
+                  </td>
+                  <td>
+                    <span class="badge info" *ngIf="model.interceptImagesWithOcr" style="margin-right: 4px;">OCR</span>
+                    <span class="badge neutral" *ngIf="model.usesCustomProvider" style="margin-right: 4px;">Custom Provider</span>
+                    <span class="badge warning" *ngIf="hasCustomParams(model)" style="margin-right: 4px;">Custom</span>
+                    <span class="badge success" *ngIf="model.maxRetries > 0" title="Fallback enabled: {{ model.maxRetries }} retries, {{ model.fallbackDelaySeconds }}s delay{{ model.fallbackModelId ? ', fallback: ' + (model.fallbackModelName || 'unknown') : ' (same model)' }}">FB</span>
+                  </td>
+                  <td>
+                    <span class="badge" [class.success]="model.isActive" [class.neutral]="!model.isActive">
+                      {{ model.isActive ? 'Active' : 'Hidden' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="actions">
+                      <button class="ghost xs" (click)="editModel(model)">Edit</button>
+                      <button class="ghost xs danger" (click)="deleteModel(model)">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr *ngIf="!proxyModels.length">
+                  <td colspan="6" class="text-muted" style="text-align: center; padding: var(--space-xl);">
+                    No models. Add one to start proxying requests.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- OCR TAB -->
+      <ng-container *ngIf="activeTab === 'ocr'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">OCR Pipeline</h2>
+            <p class="text-muted">Configure vision model for image processing</p>
+          </div>
+          <button class="primary" (click)="saveOcr()" [class.warning]="ocrDraftDirty">
+            {{ ocrDraftDirty ? 'Save Changes*' : 'Save Changes' }}
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-body">
+            <div class="form-row-2">
+              <label class="inline">
+                <div class="toggle">
+                  <input type="checkbox" [(ngModel)]="ocrDraft.enabled" (ngModelChange)="ocrDraftDirty = true">
+                  <span class="toggle-switch"></span>
+                  <span>Enable OCR Pipeline</span>
+                </div>
+              </label>
+              <label class="inline">
+                <div class="toggle">
+                  <input type="checkbox" [(ngModel)]="ocrDraft.cacheEnabled" (ngModelChange)="ocrDraftDirty = true">
+                  <span class="toggle-switch"></span>
+                  <span>Cache Results</span>
+                </div>
+              </label>
+            </div>
+
+            <div class="divider"></div>
+
+            <label>
+              <span>Provider</span>
+              <select [(ngModel)]="ocrDraft.providerId" (ngModelChange)="onOcrProviderChange(); ocrDraftDirty = true">
+                <option value="">Custom provider for OCR</option>
+                <option *ngFor="let provider of providers" [value]="provider.id">{{ provider.name }}</option>
+              </select>
+            </label>
+
+            <div class="card" *ngIf="selectedOcrProvider" style="padding: var(--space-md); margin-bottom: var(--space-md);">
+              <div class="flex items-center justify-between gap-md">
+                <div>
+                  <div style="font-size: 12px; font-weight: 600;">{{ selectedOcrProvider.name }}</div>
+                  <div class="text-muted" style="font-size: 11px;">{{ selectedOcrProvider.baseUrl }}</div>
+                </div>
+              </div>
+            </div>
+
+            <label *ngIf="isCustomOcrProvider">
+              <span>Custom Provider Base URL</span>
+              <input [(ngModel)]="ocrDraft.providerBaseUrl" (ngModelChange)="ocrDraftDirty = true" placeholder="https://api.openai.com/v1">
+            </label>
+
+            <label *ngIf="isCustomOcrProvider">
+              <span>API Key</span>
+              <input type="password" [(ngModel)]="ocrApiKey" (ngModelChange)="ocrDraftDirty = true" [placeholder]="ocrDraft.apiKeyConfigured ? 'Configured (leave blank to keep)' : 'Enter API key'">
+            </label>
+
+            <label>
+              <span>Vision Model</span>
+              <input [(ngModel)]="ocrDraft.model" (ngModelChange)="ocrDraftDirty = true" placeholder="gpt-4.1-mini">
+            </label>
+
+            <label>
+              <span>System Prompt</span>
+              <textarea [(ngModel)]="ocrDraft.systemPrompt" (ngModelChange)="ocrDraftDirty = true" rows="4" placeholder="Describe how the VLM should process images..."></textarea>
+            </label>
+
+            <div class="form-row-3">
+              <label>
+                <span>Cache TTL (seconds)</span>
+                <input type="number" [(ngModel)]="ocrDraft.cacheTtlSeconds" (ngModelChange)="ocrDraftDirty = true" min="60">
+              </label>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- USAGE TAB -->
+      <ng-container *ngIf="activeTab === 'usage'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Usage & Logs</h2>
+            <p class="text-muted">Request history and cost breakdowns</p>
+          </div>
+          <div class="flex items-center gap-sm">
+            <select [(ngModel)]="usageDays" (change)="refreshUsage()" style="width: auto;">
+              <option [value]="7">Last 7 days</option>
+              <option [value]="30">Last 30 days</option>
+              <option [value]="90">Last 90 days</option>
+            </select>
+            <div class="toolbar-divider"></div>
+            <label class="inline">
+              <input type="checkbox" [(ngModel)]="loggingDraft.logPayloads" (ngModelChange)="loggingDraftDirty = true">
+              <span style="font-size: 12px;">{{ loggingDraftDirty ? 'Log payloads*' : 'Log payloads' }}</span>
+            </label>
+            <button class="sm" (click)="saveLogging()" [class.warning]="loggingDraftDirty">Save{{ loggingDraftDirty ? '*' : '' }}</button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom: var(--space-lg);">
+          <div class="card-header">
+            <h3 style="font-size: 13px;">Daily Usage</h3>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th style="text-align: right;">Requests</th>
+                  <th style="text-align: right;">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let day of usage?.daily">
+                  <td>{{ day.day }}</td>
+                  <td style="text-align: right; font-family: var(--font-mono);">{{ day.requests }}</td>
+                  <td style="text-align: right; font-family: var(--font-mono);">{{ formatCurrency(day.totalCost) }}</td>
+                </tr>
+                <tr *ngIf="!usage?.daily?.length">
+                  <td colspan="3" class="text-muted" style="text-align: center; padding: var(--space-xl);">No data</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 style="font-size: 13px;">Recent Requests</h3>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <table class="usage-table">
+              <thead>
+                <tr>
+                  <th style="width: 30px;"></th>
+                  <th>Time</th>
+                  <th>Type</th>
+                  <th>Model</th>
+                  <th style="text-align: right;">Tokens (in+cached/out)</th>
+                  <th style="text-align: right;">Cost</th>
+                  <th style="text-align: right;">Duration</th>
+                  <th style="text-align: right;">Tokens/sec</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <ng-container *ngFor="let item of usage?.recent; trackBy: trackByRequestId">
+                  <tr (click)="toggleRequestExpansion(item.id)" class="usage-row" [class.expanded]="isRequestExpanded(item.id)">
+                    <td>
+                      <span class="expand-icon" [class.expanded]="isRequestExpanded(item.id)">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                          <path d="M4 2L8 6L4 10" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </span>
+                    </td>
+                    <td>{{ item.createdAt | date:'short' }}</td>
+                    <td>
+                      <div class="flex items-center gap-xs">
+                        <code style="font-size: 11px;">{{ item.requestType }}</code>
+                        <span *ngIf="item.isFallback" class="badge warning" title="This request used fallback models">FB</span>
+                        <span *ngIf="item.isStickyFallback" class="badge danger" title="This request was routed via sticky fallback (circuit breaker)">Sticky</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="flex items-center gap-xs">
+                        <span>{{ item.modelName || '—' }}</span>
+                        <span *ngIf="item.retryCount > 0" class="text-muted" style="font-size: 11px;">({{ item.retryCount }} retry{{ item.retryCount === 1 ? '' : 'ies' }})</span>
+                      </div>
+                    </td>
+                    <td style="text-align: right; font-family: var(--font-mono);">
+                      {{ item.inputTokens ? (item.inputTokens - (item.cachedInputTokens || 0)) + '+' + (item.cachedInputTokens || 0) + '/' + item.outputTokens : '—' }}
+                    </td>
+                    <td style="text-align: right; font-family: var(--font-mono);">{{ formatCurrency(item.totalCost) }}</td>
+                    <td style="text-align: right; font-family: var(--font-mono);">
+                      {{ item.durationMs ? (item.durationMs / 1000).toFixed(2) + 's' : '—' }}
+                    </td>
+                    <td style="text-align: right; font-family: var(--font-mono);">
+                      {{ (item.durationMs && item.outputTokens) ? (item.outputTokens / item.durationMs * 1000).toFixed(1) : '—' }}
+                    </td>
+                    <td>
+                      <span class="badge" [class.success]="item.statusCode === 200" [class.danger]="item.statusCode >= 400">
+                        {{ item.statusCode }}
+                      </span>
+                    </td>
+                  </tr>
+                  <tr [@expandCollapse]="isRequestExpanded(item.id) ? 'expanded' : 'collapsed'" class="details-row" *ngIf="isRequestExpanded(item.id)">
+                    <td colspan="9" style="padding: 0; background: var(--bg-secondary);">
+                      <div class="details-content">
+                        <div class="detail-item">
+                          <span class="detail-label">Key:</span>
+                          <span class="detail-value">{{ item.keyName || '—' }}</span>
+                        </div>
+                        <div *ngIf="item.isFallback || item.isStickyFallback" class="detail-item warning">
+                          <span class="detail-label">Fallback Chain:</span>
+                          <span class="detail-value">{{ item.fallbackChain.join(' → ') || 'Unknown' }}</span>
+                          <span *ngIf="item.originalModelName" style="font-size: 11px; color: var(--text-muted);">
+                            (original: {{ item.originalModelName }})
+                          </span>
+                          <span *ngIf="item.isStickyFallback" style="font-size: 11px; color: var(--danger);">
+                            [sticky fallback triggered]
+                          </span>
+                        </div>
+                        <div *ngIf="item.errorMessage" class="detail-item error">
+                          <span class="detail-label">Error:</span>
+                          <span class="detail-value">{{ item.errorMessage }}</span>
+                        </div>
+                        <div *ngIf="item.requestPayload" class="detail-item payload">
+                          <span class="detail-label">Request:</span>
+                          <pre class="payload-code"><code>{{ item.requestPayload | json }}</code></pre>
+                        </div>
+                        <div *ngIf="item.responsePayload" class="detail-item payload">
+                          <span class="detail-label">Response:</span>
+                          <pre class="payload-code"><code>{{ item.responsePayload | json }}</code></pre>
+                        </div>
+                        <div *ngIf="!item.requestPayload && !item.responsePayload" class="detail-item no-payloads">
+                          <span class="text-muted">Payloads not logged. Enable "Log payloads" setting above to capture request/response data.</span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </ng-container>
+                <tr *ngIf="!usage?.recent?.length">
+                  <td colspan="9" class="text-muted" style="text-align: center; padding: var(--space-xl);">No recent requests</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- PLAYGROUND TAB -->
+      <ng-container *ngIf="activeTab === 'playground'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Playground</h2>
+            <p class="text-muted">Test your configured models</p>
+          </div>
+        </div>
+
+        <div class="split-view" style="height: calc(100vh - 180px);">
+          <!-- Left: Input -->
+          <div class="card" style="display: flex; flex-direction: column;">
+            <div class="card-body" style="flex: 1; display: flex; flex-direction: column; gap: var(--space-md);">
+              <label style="flex: 0;">
+                <span>Model</span>
+                <select [(ngModel)]="playgroundModelId">
+                  <option value="">Select model...</option>
+                  <option *ngFor="let model of proxyModels" [value]="model.id">{{ model.displayName }}</option>
+                </select>
+              </label>
+
+              <label style="flex: 0;">
+                <span>System Prompt (optional)</span>
+                <textarea [(ngModel)]="playgroundSystemPrompt" rows="2" placeholder="You are a helpful assistant..."></textarea>
+              </label>
+
+              <label style="flex: 1; display: flex; flex-direction: column;">
+                <span>Message</span>
+                <textarea [(ngModel)]="playgroundPrompt" style="flex: 1;" placeholder="Enter your message..."></textarea>
+              </label>
+
+              <div>
+                <input type="file" multiple (change)="handleFileInput($event)" style="display: none;" #fileInput>
+                <button class="ghost sm" (click)="fileInput.click()">
+                  Attach files...
+                </button>
+                <div class="attachments" style="margin-top: var(--space-sm);" *ngIf="attachments.length">
+                  <span class="attachment" *ngFor="let a of attachments">
+                    {{ a.name }}
+                    <button class="ghost xs" (click)="removeAttachment(a)" style="padding: 0;">×</button>
+                  </span>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-md">
+                <label class="inline" style="flex: 0;">
+                  <input type="checkbox" [(ngModel)]="playgroundStream">
+                  <span style="font-size: 12px;">Stream</span>
+                </label>
+                <button class="primary" style="flex: 1;" (click)="sendPlaygroundPrompt()" [disabled]="playgroundBusy || !playgroundModelId">
+                  {{ playgroundBusy ? 'Sending...' : 'Send' }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Transcript -->
+          <div class="card" style="display: flex; flex-direction: column;">
+            <div class="card-header">
+              <h3 style="font-size: 13px;">Transcript</h3>
+              <button class="ghost xs" (click)="transcript = []">Clear</button>
+            </div>
+            <div class="card-body scroll" style="flex: 1; padding: var(--space-md);">
+              <div class="transcript" *ngIf="transcript.length; else emptyTranscript">
+                <div class="message" *ngFor="let msg of transcript" [class.user]="msg.role === 'user'" [class.assistant]="msg.role === 'assistant'">
+                  <div class="message-header">{{ msg.role }}</div>
+                  <div class="message-body">{{ msg.text }}</div>
+                </div>
+              </div>
+              <ng-template #emptyTranscript>
+                <div class="empty">
+                  <span class="text-muted">Send a message to start</span>
+                </div>
+              </ng-template>
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- SETTINGS TAB -->
+      <ng-container *ngIf="activeTab === 'settings'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Settings</h2>
+            <p class="text-muted">Configure dashboard behavior</p>
+          </div>
+          <button class="primary" (click)="saveRefresh()" [class.warning]="refreshDraftDirty">
+            {{ refreshDraftDirty ? 'Save Changes*' : 'Save Changes' }}
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 style="font-size: 13px;">Auto-refresh</h3>
+          </div>
+          <div class="card-body">
+            <label class="inline">
+              <div class="toggle">
+                <input type="checkbox" [(ngModel)]="refreshDraft.enabled" (ngModelChange)="refreshDraftDirty = true">
+                <span class="toggle-switch"></span>
+                <span>Enable auto-refresh</span>
+              </div>
+            </label>
+
+            <div class="divider"></div>
+
+            <label>
+              <span>Refresh interval (seconds)</span>
+              <input type="number" [(ngModel)]="refreshDraft.intervalSeconds" (ngModelChange)="refreshDraftDirty = true" min="5" max="300" [disabled]="!refreshDraft.enabled">
+            </label>
+
+            <div class="text-muted" style="font-size: 12px; margin-top: var(--space-md);">
+              Auto-refresh updates the dashboard data automatically. Minimum: 5 seconds, Maximum: 300 seconds (5 minutes).
+            </div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- SIMULATIONS TAB -->
+      <ng-container *ngIf="activeTab === 'simulations'">
+        <div class="content-header">
+          <div>
+            <h2 style="font-size: 18px; margin-bottom: var(--space-xs);">Simulations</h2>
+            <p class="text-muted">Configure simulated models with delays and streaming</p>
+          </div>
+          <button class="primary" (click)="openSimModelModal()">Add SimModel</button>
+        </div>
+
+        <div class="card">
+          <div class="card-body" style="padding: 0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Segments</th>
+                  <th>Status</th>
+                  <th>Exposed</th>
+                  <th style="width: 80px;"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let model of simModels">
+                  <td>
+                    <strong>{{ model.displayName }}</strong>
+                  </td>
+                  <td class="text-muted">{{ model.description || '—' }}</td>
+                  <td>
+                    <span class="badge info">{{ model.segments.length }} segments</span>
+                  </td>
+                  <td>
+                    <span class="badge" [class.success]="model.isActive" [class.neutral]="!model.isActive">
+                      {{ model.isActive ? 'Active' : 'Disabled' }}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="badge" [class.success]="model.exposeInModels" [class.neutral]="!model.exposeInModels">
+                      {{ model.exposeInModels ? 'Yes' : 'No' }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="actions">
+                      <button class="ghost xs" (click)="editSimModel(model)">Edit</button>
+                      <button class="ghost xs danger" (click)="deleteSimModel(model)">Delete</button>
+                    </div>
+                  </td>
+                </tr>
+                <tr *ngIf="!simModels.length">
+                  <td colspan="6" class="text-muted" style="text-align: center; padding: var(--space-xl);">
+                    No simulation models. Add one to get started.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </ng-container>
+    </main>
+  </div>
+
+  <!-- Create Key Modal -->
+  <div class="modal-overlay" *ngIf="showKeyModal" (click)="closeModalFromOverlay($event, 'key')">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3 style="font-size: 14px;">Create API Key</h3>
+        <button class="ghost" (click)="showKeyModal = false">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <label>
+            <span>Key Name</span>
+            <input [(ngModel)]="newKeyName" placeholder="production-api" autofocus>
+          </label>
+          <label class="inline">
+            <input type="checkbox" [(ngModel)]="newKeyActive">
+            <span>Enable immediately</span>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost" (click)="showKeyModal = false">Cancel</button>
+        <button class="primary" (click)="createKey()" [disabled]="!newKeyName">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Provider Modal -->
+  <div class="modal-overlay" *ngIf="showProviderModal" (click)="closeModalFromOverlay($event, 'provider')">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3 style="font-size: 14px;">{{ editingProviderId ? 'Edit Provider' : 'Add Provider' }}</h3>
+        <button class="ghost" (click)="showProviderModal = false">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <label>
+            <span>Provider Name</span>
+            <input [(ngModel)]="providerDraft.name" placeholder="OpenAI Production" autofocus>
+          </label>
+
+          <label>
+            <span>Provider Base URL</span>
+            <input [(ngModel)]="providerDraft.baseUrl" placeholder="https://api.openai.com/v1">
+          </label>
+
+          <label>
+            <span>Provider API Key</span>
+            <div class="input-group">
+              <input
+                [type]="visibleProviderKeys.has(editingProviderId) ? 'text' : 'password'"
+                [(ngModel)]="providerDraft.apiKey"
+                [placeholder]="editingProviderId ? 'Leave blank to keep current' : 'Required for fetching models'"
+              >
+              <ng-container *ngIf="providerDraft.apiKey || providerKeyStorage.has(editingProviderId)">
+                <button
+                  class="ghost xs"
+                  type="button"
+                  (click)="toggleProviderKeyVisibilityForProvider()"
+                >
+                  {{ visibleProviderKeys.has(editingProviderId) ? 'Hide' : 'Show' }}
+                </button>
+                <button
+                  class="ghost xs"
+                  type="button"
+                  (click)="copyProviderKeyForProvider()"
+                >
+                  Copy
+                </button>
+              </ng-container>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost" (click)="showProviderModal = false">Cancel</button>
+        <button class="primary" (click)="saveProvider()" [disabled]="!providerDraft.name || !providerDraft.baseUrl">
+          {{ editingProviderId ? 'Save' : 'Create' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Modal -->
+  <div class="modal-overlay" *ngIf="showModelModal" (click)="closeModalFromOverlay($event, 'model')">
+    <div class="modal" (click)="$event.stopPropagation()" style="max-width: 680px;">
+      <div class="modal-header">
+        <h3 style="font-size: 14px;">{{ editingModelId ? 'Edit Model' : 'Add Model' }}</h3>
+        <button class="ghost" (click)="showModelModal = false">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <div class="form-row-2">
+            <label>
+              <span>Proxy Model Name</span>
+              <input [(ngModel)]="modelDraft.displayName" placeholder="gpt-4-proxy">
+            </label>
+            <label>
+              <span>Description</span>
+              <input [(ngModel)]="modelDraft.description" placeholder="Optional">
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <label>
+            <span>Provider</span>
+            <select [(ngModel)]="modelDraft.providerId" (ngModelChange)="onModelProviderChange()">
+              <option value="">Custom provider for this model</option>
+              <option *ngFor="let provider of providers" [value]="provider.id">{{ provider.name }}</option>
+            </select>
+          </label>
+
+          <div class="card" *ngIf="selectedProvider" style="padding: var(--space-md); margin-bottom: var(--space-md);">
+            <div class="flex items-center justify-between gap-md">
+              <div>
+                <div style="font-size: 12px; font-weight: 600;">{{ selectedProvider.name }}</div>
+                <div class="text-muted" style="font-size: 11px;">{{ selectedProvider.baseUrl }}</div>
+              </div>
+              <button class="ghost xs" type="button" (click)="loadProviderModels()">Fetch models</button>
+            </div>
+          </div>
+
+          <label *ngIf="isCustomProviderSelection">
+            <span>Custom Provider Base URL</span>
+            <div class="input-group">
+              <input [(ngModel)]="modelDraft.providerBaseUrl" placeholder="https://api.openai.com/v1">
+              <button class="ghost" type="button" (click)="loadProviderModels()">Fetch models</button>
+            </div>
+          </label>
+
+          <label *ngIf="isCustomProviderSelection">
+            <span>Custom Provider API Key</span>
+            <div class="input-group">
+              <input
+                [type]="isProviderKeyVisible() ? 'text' : 'password'" 
+                [(ngModel)]="modelDraft.providerApiKey" 
+                [placeholder]="editingModelId ? 'Leave blank to keep current' : 'Required'"
+              >
+              <ng-container *ngIf="modelDraft.providerApiKey || providerKeyStorage.has(currentProviderKeyId)">
+                <button 
+                  class="ghost xs" 
+                  type="button"
+                  (click)="toggleProviderKeyVisibility()"
+                >
+                  {{ isProviderKeyVisible() ? 'Hide' : 'Show' }}
+                </button>
+                <button 
+                  class="ghost xs" 
+                  type="button"
+                  (click)="copyProviderKey()"
+                >
+                  Copy
+                </button>
+              </ng-container>
+            </div>
+          </label>
+
+          <label class="upstream-dropdown-shell" style="position: relative; z-index: 10;">
+            <span>Upstream Model</span>
+            <div style="position: relative;">
+              <input 
+                [(ngModel)]="modelDraft.upstreamModelName" 
+                (focus)="upstreamFilter = ''; showUpstreamDropdown = providerModelNames.length > 0"
+                (input)="upstreamFilter = $any($event).target.value; showUpstreamDropdown = true"
+                placeholder="Select or type model name"
+                autocomplete="off"
+              >
+              <button 
+                class="ghost xs" 
+                (click)="showUpstreamDropdown = !showUpstreamDropdown; upstreamFilter = ''"
+                style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%);"
+                type="button"
+              >
+                {{ showUpstreamDropdown ? '▲' : '▼' }}
+              </button>
+              
+              <!-- Custom Dropdown -->
+              <div 
+                *ngIf="showUpstreamDropdown && providerModelNames.length > 0"
+                class="card"
+                style="position: absolute; top: 100%; left: 0; right: 0; margin-top: 4px; max-height: 280px; overflow: auto; z-index: 100;"
+              >
+                <div style="padding: var(--space-xs);">
+                  <button
+                    *ngFor="let name of filteredUpstreamModels"
+                    (click)="selectUpstreamModel(name)"
+                    class="ghost"
+                    style="width: 100%; text-align: left; padding: var(--space-xs) var(--space-sm); font-size: 12px; font-family: var(--font-mono); border: none; margin-bottom: 2px;"
+                    [style.background]="name === modelDraft.upstreamModelName ? 'var(--accent-dim)' : 'transparent'"
+                    [style.color]="name === modelDraft.upstreamModelName ? 'var(--accent)' : 'var(--text)'"
+                    type="button"
+                  >
+                    {{ name }}
+                  </button>
+                  <div 
+                    *ngIf="filteredUpstreamModels.length === 0" 
+                    class="text-muted" 
+                    style="text-align: center; padding: var(--space-md); font-size: 12px;"
+                  >
+                    No models match
+                  </div>
+                </div>
+              </div>
+            </div>
+          </label>
+
+          <div class="divider"></div>
+
+          <div class="form-row-3">
+            <label>
+              <span>Input $/M tokens</span>
+              <input type="number" [(ngModel)]="modelDraft.inputCostPerMillion" step="0.01" min="0">
+            </label>
+            <label>
+              <span>Cached $/M tokens</span>
+              <input type="number" [(ngModel)]="modelDraft.cachedInputCostPerMillion" step="0.01" min="0">
+            </label>
+            <label>
+              <span>Output $/M tokens</span>
+              <input type="number" [(ngModel)]="modelDraft.outputCostPerMillion" step="0.01" min="0">
+            </label>
+          </div>
+
+          <label>
+            <span>Custom Parameters (JSON)</span>
+            <textarea [(ngModel)]="modelDraft.customParams" rows="3" placeholder="{&quot;temperature&quot;: 0.7}"></textarea>
+          </label>
+
+          <div class="divider"></div>
+
+          <!-- Retry/Fallback Configuration -->
+          <div style="background: var(--bg-secondary); padding: var(--space-md); border-radius: 6px; margin-bottom: var(--space-md);">
+            <div class="form-row-2" style="margin-bottom: var(--space-md);">
+              <label class="inline">
+                <div class="toggle">
+                  <input type="checkbox" [(ngModel)]="modelDraft.fallbackEnabled">
+                  <span class="toggle-switch"></span>
+                  <span>Enable Retry on Failure</span>
+                </div>
+              </label>
+            </div>
+            
+            <div *ngIf="modelDraft.fallbackEnabled">
+              <label style="margin-bottom: var(--space-md);">
+                <span>Fallback Model</span>
+                <select [(ngModel)]="modelDraft.fallbackModelId">
+                  <option value="">Same model ({{ modelDraft.displayName || 'current model' }}) - retry on current</option>
+                  <option *ngFor="let model of availableFallbackModels" [value]="model.id">
+                    {{ model.displayName }}
+                  </option>
+                </select>
+              </label>
+              
+              <div class="form-row-3">
+                <label>
+                  <span>Max Retries</span>
+                  <input type="number" [(ngModel)]="modelDraft.maxRetries" min="1" max="10" title="Maximum number of retry attempts">
+                </label>
+                <label>
+                  <span>Retry Delay (sec)</span>
+                  <input type="number" [(ngModel)]="modelDraft.fallbackDelaySeconds" min="0" max="300" title="Seconds to wait before retrying">
+                </label>
+                <label>
+                  <span>Sticky Block (sec)</span>
+                  <input type="number" [(ngModel)]="modelDraft.stickyFallbackSeconds" (ngModelChange)="onStickyFallbackSettingsChange()" min="0" max="3600" title="After falling back, block this model for X seconds. Subsequent requests will skip to fallback immediately.">
+                </label>
+              </div>
+
+              <div class="form-row-2" style="margin-top: var(--space-md);">
+                <label class="inline">
+                  <div class="toggle">
+                    <input type="checkbox" [(ngModel)]="modelDraft.firstTokenTimeoutEnabled">
+                    <span class="toggle-switch"></span>
+                    <span>Fallback if no first streamed token arrives in time</span>
+                  </div>
+                </label>
+                <label>
+                  <span>First Token Timeout (sec)</span>
+                  <input type="number" [(ngModel)]="modelDraft.firstTokenTimeoutSeconds" [disabled]="!modelDraft.firstTokenTimeoutEnabled" min="1" max="300" title="Streaming only. If no content token arrives within this window, cancel the request and fall back.">
+                </label>
+              </div>
+
+              <div class="form-row-2" style="margin-top: var(--space-md);">
+                <label class="inline">
+                  <div class="toggle">
+                    <input type="checkbox" [(ngModel)]="modelDraft.slowStickyEnabled" [disabled]="modelDraft.stickyFallbackSeconds <= 0">
+                    <span class="toggle-switch"></span>
+                    <span>Sticky-block slow completions</span>
+                  </div>
+                </label>
+                <div class="form-row-2">
+                  <label>
+                    <span>Min Avg Output Tok/Sec</span>
+                    <input type="number" [(ngModel)]="modelDraft.slowStickyMinTokensPerSecond" [disabled]="!modelDraft.slowStickyEnabled || modelDraft.stickyFallbackSeconds <= 0" min="0.1" max="1000" step="0.1" title="If average output tokens/sec is below this and the completion is long enough, block the model via sticky fallback.">
+                  </label>
+                  <label>
+                    <span>Min Completion Time (sec)</span>
+                    <input type="number" [(ngModel)]="modelDraft.slowStickyMinCompletionSeconds" [disabled]="!modelDraft.slowStickyEnabled || modelDraft.stickyFallbackSeconds <= 0" min="1" max="3600" title="Only sticky-block a slow model when the total completion time also exceeds this threshold.">
+                  </label>
+                </div>
+              </div>
+              
+              <div class="text-muted" style="font-size: 11px; margin-top: var(--space-sm);">
+                If "Same model" is selected, retries will use the current model. If another model is selected, failures will recursively fall back through the chain. Sticky Block temporarily routes requests to fallback without attempting the primary model. First-token timeout only applies to streamed requests. Slow sticky blocking runs after a successful completion and requires Sticky Block to be enabled.
+              </div>
+            </div>
+          </div>
+
+          <div class="form-row-2">
+            <label class="inline">
+              <input type="checkbox" [(ngModel)]="modelDraft.interceptImagesWithOcr">
+              <span>Enable OCR for images</span>
+            </label>
+            <label class="inline">
+              <input type="checkbox" [(ngModel)]="modelDraft.isActive">
+              <span>Expose in /v1/models</span>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost" (click)="showModelModal = false">Cancel</button>
+        <button class="primary" (click)="saveModel()" [disabled]="!modelDraft.displayName || (!modelDraft.providerId && !modelDraft.providerBaseUrl) || !modelDraft.upstreamModelName">
+          {{ editingModelId ? 'Save' : 'Create' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SimModel Modal -->
+  <div class="modal-overlay" *ngIf="showSimModelModal" (click)="closeModalFromOverlay($event, 'simModel')">
+    <div class="modal" (click)="$event.stopPropagation()" style="max-width: 720px; max-height: 90vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <h3 style="font-size: 14px;">{{ editingSimModelId ? 'Edit SimModel' : 'Add SimModel' }}</h3>
+        <button class="ghost" (click)="showSimModelModal = false">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y: auto;">
+        <div class="form-section">
+          <div class="form-row-2">
+            <label>
+              <span>Display Name</span>
+              <input [(ngModel)]="simModelDraft.displayName" placeholder="simulated-response">
+            </label>
+            <label>
+              <span>Description</span>
+              <input [(ngModel)]="simModelDraft.description" placeholder="Optional">
+            </label>
+          </div>
+
+          <div class="form-row-2">
+            <label class="inline">
+              <input type="checkbox" [(ngModel)]="simModelDraft.isActive">
+              <span>Active</span>
+            </label>
+            <label class="inline">
+              <input type="checkbox" [(ngModel)]="simModelDraft.exposeInModels">
+              <span>Expose in /v1/models</span>
+            </label>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="flex items-center justify-between" style="margin-bottom: var(--space-md);">
+            <h4 style="font-size: 13px; margin: 0;">Segments</h4>
+            <div class="flex items-center gap-sm">
+              <button class="ghost xs" (click)="addDelaySegment()">+ Delay</button>
+              <button class="ghost xs" (click)="addTextSegment()">+ Text</button>
+            </div>
+          </div>
+
+          <div *ngIf="simModelDraft.segments.length === 0" class="text-muted" style="text-align: center; padding: var(--space-lg);">
+            No segments. Add a delay or text segment to get started.
+          </div>
+
+          <div *ngFor="let segment of simModelDraft.segments; let i = index" style="background: var(--bg-secondary); border-radius: 6px; padding: var(--space-md); margin-bottom: var(--space-md);">
+            <div class="flex items-center justify-between" style="margin-bottom: var(--space-sm);">
+              <span class="badge" [class.info]="segment.type === 'delay'" [class.success]="segment.type === 'text'">
+                {{ segment.type === 'delay' ? 'Delay' : 'Text' }}
+              </span>
+              <div class="flex items-center gap-xs">
+                <button class="ghost xs" (click)="moveSegment(i, 'up')" [disabled]="i === 0">↑</button>
+                <button class="ghost xs" (click)="moveSegment(i, 'down')" [disabled]="i === simModelDraft.segments.length - 1">↓</button>
+                <button class="ghost xs danger" (click)="removeSegment(i)">×</button>
+              </div>
+            </div>
+
+            <!-- Delay Segment -->
+            <div *ngIf="segment.type === 'delay'">
+              <label>
+                <span>Delay (milliseconds)</span>
+                <input type="number" [(ngModel)]="segment.delayMs" min="0" max="600000" placeholder="1000">
+              </label>
+            </div>
+
+            <!-- Text Segment -->
+            <div *ngIf="segment.type === 'text'">
+              <label style="margin-bottom: var(--space-sm);">
+                <span>Content</span>
+                <textarea [(ngModel)]="segment.content" rows="2" placeholder="Enter text to stream..."></textarea>
+              </label>
+              <div class="form-row-2">
+                <label>
+                  <span>Rate per second</span>
+                  <input type="number" [(ngModel)]="segment.ratePerSecond" min="1" max="10000">
+                </label>
+                <label>
+                  <span>Unit</span>
+                  <select [(ngModel)]="segment.unit">
+                    <option value="char">Characters</option>
+                    <option value="token">Tokens</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-row-2" style="margin-top: var(--space-sm);">
+                <label>
+                  <span>Max updates/sec</span>
+                  <input type="number" [(ngModel)]="segment.maxUpdatesPerSecond" min="1" max="120">
+                </label>
+                <div class="text-muted" style="font-size: 11px; display: flex; align-items: end;">
+                  Batches multiple chars/tokens into each streamed chunk. Default: 10/sec.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="text-muted" style="font-size: 11px; margin-top: var(--space-md);">
+            Segments are processed in order. Delays pause the stream for the specified time. Text segments stream content at the configured rate, while max updates/sec controls how often chunks are actually emitted.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost" (click)="showSimModelModal = false">Cancel</button>
+        <button class="primary" (click)="saveSimModel()" [disabled]="!simModelDraft.displayName || simModelDraft.segments.length === 0">
+          {{ editingSimModelId ? 'Save' : 'Create' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

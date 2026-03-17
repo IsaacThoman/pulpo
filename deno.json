@@ -1,0 +1,15 @@
+{
+  "imports": {
+    "hono": "jsr:@hono/hono@^4.11.3"
+  },
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "start": "deno run --allow-net --allow-read --allow-env --allow-ffi --env-file=.env main.ts",
+    "dev": "deno run --allow-net --allow-read --allow-env --allow-ffi --env-file=.env --watch main.ts",
+    "startnoenv": "deno run --allow-net --allow-read --allow-env --allow-ffi main.ts"
+  },
+  "compilerOptions": {
+    "jsx": "precompile",
+    "jsxImportSource": "hono/jsx"
+  }
+}
