@@ -12,7 +12,7 @@ import { ApiService } from '../services/api.service';
     <div class="login-page">
       <div class="login-box">
         <div class="login-header">
-          <h1>LLM Proxy</h1>
+          <h1>pulpo</h1>
           <p class="text-muted">Admin sign in</p>
         </div>
         

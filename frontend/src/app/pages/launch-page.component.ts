@@ -8,7 +8,7 @@ import { ApiService } from '../services/api.service';
   template: `
     <div class="login-page">
       <div class="login-box" style="text-align: center;">
-        <h1 style="margin-bottom: var(--space-md);">LLM Proxy</h1>
+        <h1 style="margin-bottom: var(--space-md);">pulpo</h1>
         <div class="flex items-center justify-center gap-sm" style="color: var(--text-muted);">
           <span class="dot" [class.success]="!checking" [class.warning]="checking"></span>
           <span>{{ message }}</span>

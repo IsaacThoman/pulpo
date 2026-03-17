@@ -1,7 +1,7 @@
 {
-  "name": "ocr-middleware",
+  "name": "pulpo",
   "version": "1.0.0",
-  "description": "LLM proxy with OCR interception, admin UI, and Postgres persistence.",
+  "description": "pulpo is an LLM proxy with OCR interception, an admin UI, and Postgres persistence.",
   "scripts": {
     "frontend:build": "npm --prefix frontend run build",
     "frontend:start": "npm --prefix frontend run start -- --host 0.0.0.0 --port 4200",
@@ -12,16 +12,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/IsaacThoman/ocr-middleware.git"
+    "url": "git+https://github.com/IsaacThoman/pulpo.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/IsaacThoman/ocr-middleware/issues"
+    "url": "https://github.com/IsaacThoman/pulpo/issues"
   },
-  "homepage": "https://github.com/IsaacThoman/ocr-middleware#readme",
+  "homepage": "https://github.com/IsaacThoman/pulpo#readme",
   "dependencies": {
     "@prisma/client": "6.19.2",
     "js-tiktoken": "^1.0.21",
