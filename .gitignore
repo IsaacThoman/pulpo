@@ -1,8 +1,7 @@
-
-e2e/.DS_Store
-
-prisma/.DS_Store
-
-prisma/migrations/.DS_Store
-
 .DS_Store
+
+/node_modules/
+/npm-debug.log*
+/yarn-error.log*
+/yarn-debug.log*
+/pnpm-debug.log*
