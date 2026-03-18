@@ -631,6 +631,7 @@ function validateResponsesRequest(body: Record<string, unknown>): string | null 
 
 function toResponsesContentPart(
   part: unknown,
+  role: "system" | "user" | "assistant",
 ): Record<string, unknown> | null {
   if (!part || typeof part !== "object") {
     return null;
@@ -644,7 +645,7 @@ function toResponsesContentPart(
 
   if (typedPart.type === "text" && typeof typedPart.text === "string") {
     return {
-      type: "input_text",
+      type: role === "assistant" ? "output_text" : "input_text",
       text: typedPart.text,
     };
   }
@@ -663,8 +664,17 @@ function toResponsesContentPart(
   return null;
 }
 
-function toResponsesMessageContent(content: unknown): unknown {
+function toResponsesMessageContent(
+  content: unknown,
+  role: "system" | "user" | "assistant",
+): unknown {
   if (typeof content === "string") {
+    if (role === "assistant") {
+      return [{
+        type: "output_text",
+        text: content,
+      }];
+    }
     return [{
       type: "input_text",
       text: content,
@@ -676,7 +686,7 @@ function toResponsesMessageContent(content: unknown): unknown {
   }
 
   return content
-    .map((part) => toResponsesContentPart(part))
+    .map((part) => toResponsesContentPart(part, role))
     .filter((part): part is Record<string, unknown> => Boolean(part));
 }
 
@@ -685,7 +695,7 @@ function toResponsesInput(
 ): Array<Record<string, unknown>> {
   return messages.map((message) => ({
     role: message.role,
-    content: toResponsesMessageContent(message.content),
+    content: toResponsesMessageContent(message.content, message.role),
   }));
 }
 

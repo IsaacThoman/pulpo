@@ -622,6 +622,74 @@ Deno.test("translates non-stream Responses output into message.reasoning_content
   }
 });
 
+Deno.test("encodes assistant history as output_text for Responses input", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-r",
+    displayName: "Responses Model",
+    upstreamModelName: "gpt-5",
+    providerApiKeyEncrypted,
+    providerProtocol: "responses",
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as Record<string, unknown>;
+    const input = body.input as Array<Record<string, unknown>>;
+
+    assertEquals(input[0]?.role, "user");
+    assertEquals(
+      (input[0]?.content as Array<Record<string, unknown>>)?.[0]?.type,
+      "input_text",
+    );
+    assertEquals(input[1]?.role, "assistant");
+    assertEquals(
+      (input[1]?.content as Array<Record<string, unknown>>)?.[0]?.type,
+      "output_text",
+    );
+
+    return jsonResponse({
+      id: "resp_123",
+      object: "response",
+      created_at: 123,
+      output: [{
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "Done." }],
+      }],
+      usage: {
+        input_tokens: 3,
+        output_tokens: 1,
+      },
+    });
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Responses Model",
+        stream: false,
+        messages: [
+          { role: "user", content: "hello" },
+          { role: "assistant", content: "prior answer" },
+        ],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+
+    assertEquals(response.status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 Deno.test("streams Responses reasoning summaries as think tags in Chat Completions format", async () => {
   const providerApiKeyEncrypted = await encryptSecret("test-key");
   const model = createModel({
