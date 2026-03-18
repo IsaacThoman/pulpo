@@ -1193,50 +1193,68 @@ async function pipePrimaryStreamUntilFirstChunk(input: {
   }
 
   const reader = body.getReader();
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) => {
-    timeoutHandle = setTimeout(
-      () => resolve({ kind: "timeout" }),
-      Math.max(0, input.timeoutMs),
-    );
-  });
-  const firstReadResult = await Promise.race([
-    reader.read().then((result) => ({ kind: "read" as const, result })),
-    timeoutPromise,
-  ]).catch((error) => ({
-    kind: "failed" as const,
-    error: error instanceof Error
-      ? error
-      : new Error("Failed to proxy upstream stream"),
-  }));
-  if (timeoutHandle) {
-    clearTimeout(timeoutHandle);
-  }
+  const decoder = new TextDecoder();
+  const inspectionState = createStreamInspectionState();
+  const bufferedChunks: Uint8Array[] = [];
+  const deadline = Date.now() + Math.max(0, input.timeoutMs);
 
   try {
-    if (firstReadResult.kind === "timeout") {
-      await reader.cancel(input.timeoutMessage).catch(() => undefined);
-      await input.result.cancelStream?.(input.timeoutMessage);
-      void input.result.completion.catch(() => undefined);
-      return { kind: "timeout" };
-    }
-
-    if (firstReadResult.kind === "failed") {
-      return { kind: "failed", error: firstReadResult.error };
-    }
-
-    if (firstReadResult.result.done) {
-      const completion = await input.result.completion;
-      if (completion.assistantText.length > 0 || completion.usagePayload) {
-        return { kind: "completed", completion };
+    while (!inspectionState.sawFirstToken) {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        await reader.cancel(input.timeoutMessage).catch(() => undefined);
+        await input.result.cancelStream?.(input.timeoutMessage);
+        void input.result.completion.catch(() => undefined);
+        return { kind: "timeout" };
       }
-      return {
-        kind: "failed",
-        error: new Error("Upstream stream completed before any streamed bytes"),
-      };
+
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+      const readResult = await Promise.race([
+        reader.read().then((result) => ({ kind: "read" as const, result })),
+        new Promise<{ kind: "timeout" }>((resolve) => {
+          timeoutHandle = setTimeout(
+            () => resolve({ kind: "timeout" }),
+            remainingMs,
+          );
+        }),
+      ]).catch((error) => ({
+        kind: "failed" as const,
+        error: error instanceof Error
+          ? error
+          : new Error("Failed to proxy upstream stream"),
+      }));
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+
+      if (readResult.kind === "timeout") {
+        await reader.cancel(input.timeoutMessage).catch(() => undefined);
+        await input.result.cancelStream?.(input.timeoutMessage);
+        void input.result.completion.catch(() => undefined);
+        return { kind: "timeout" };
+      }
+
+      if (readResult.kind === "failed") {
+        return { kind: "failed", error: readResult.error };
+      }
+
+      if (readResult.result.done) {
+        return {
+          kind: "failed",
+          error: new Error("Upstream stream completed before the first token"),
+        };
+      }
+
+      bufferedChunks.push(readResult.result.value);
+      inspectionState.buffer += decoder.decode(readResult.result.value, {
+        stream: true,
+      });
+      inspectSseBuffer(inspectionState);
     }
 
-    input.controller.enqueue(firstReadResult.result.value);
+    for (const chunk of bufferedChunks) {
+      input.controller.enqueue(chunk);
+    }
 
     while (true) {
       const { done, value } = await reader.read();

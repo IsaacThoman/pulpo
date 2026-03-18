@@ -433,7 +433,7 @@ Deno.test("falls back to the next model stream when the first token timeout elap
   }
 });
 
-Deno.test("does not fall back once any streamed chunk has already been forwarded", async () => {
+Deno.test("falls back when only a role chunk arrives before the first content token", async () => {
   const providerApiKeyEncrypted = await encryptSecret("test-key");
   const fallbackModel = createModel({
     id: "model-b",
@@ -473,17 +473,8 @@ Deno.test("does not fall back once any streamed chunk has already been forwarded
           data: 'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
         },
         {
-          delayMs: 100,
-          data: 'data: {"choices":[{"delta":{"content":"primary-win"}}]}\n\n',
-        },
-        {
-          delayMs: 0,
-          data:
-            'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}\n\n',
-        },
-        {
-          delayMs: 0,
-          data: "data: [DONE]\n\n",
+          delayMs: 200,
+          data: 'data: {"choices":[{"delta":{"content":"late-primary"}}]}\n\n',
         },
       ]);
     }
@@ -509,15 +500,15 @@ Deno.test("does not fall back once any streamed chunk has already been forwarded
     });
 
     const streamText = await response.text();
-    assertEquals(callOrder, ["upstream-a"]);
-    assertStringIncludes(streamText, '"primary-win"');
-    assert(!streamText.includes("fallback-should-not-run"));
+    assertEquals(callOrder, ["upstream-a", "upstream-b"]);
+    assertStringIncludes(streamText, '"fallback-should-not-run"');
+    assert(!streamText.includes("late-primary"));
 
     await sleep(0);
     assertEquals(usageLogs.length, 1);
-    assertEquals(usageLogs[0].retryCount, 0);
-    assertEquals(usageLogs[0].fallbackChain, ["Model A"]);
-    assertEquals(usageLogs[0].isFallback, false);
+    assertEquals(usageLogs[0].retryCount, 1);
+    assertEquals(usageLogs[0].fallbackChain, ["Model A", "Model B"]);
+    assertEquals(usageLogs[0].isFallback, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
