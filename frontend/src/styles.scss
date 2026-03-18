@@ -937,7 +937,7 @@ td input, td select {
 
 .usage-table th:nth-child(3),
 .usage-table td:nth-child(3) {
-  width: 60px;
+  width: 150px;
 }
 
 .usage-table th:nth-child(4),
@@ -1011,7 +1011,14 @@ tr.usage-row.expanded:hover td {
 }
 
 /* Usage table cell content constraints */
-.usage-table td:nth-child(3) > div,
+.usage-table td:nth-child(3) > div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .usage-table td:nth-child(4) > div {
   display: flex;
   align-items: center;
