@@ -1195,7 +1195,6 @@ async function pipePrimaryStreamUntilFirstChunk(input: {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const inspectionState = createStreamInspectionState();
-  const bufferedChunks: Uint8Array[] = [];
   const deadline = Date.now() + Math.max(0, input.timeoutMs);
 
   try {
@@ -1245,15 +1244,11 @@ async function pipePrimaryStreamUntilFirstChunk(input: {
         };
       }
 
-      bufferedChunks.push(readResult.result.value);
+      input.controller.enqueue(readResult.result.value);
       inspectionState.buffer += decoder.decode(readResult.result.value, {
         stream: true,
       });
       inspectSseBuffer(inspectionState);
-    }
-
-    for (const chunk of bufferedChunks) {
-      input.controller.enqueue(chunk);
     }
 
     while (true) {

@@ -489,6 +489,7 @@ Deno.test("falls back when only a role chunk arrives before the first content to
   };
 
   try {
+    const startedAt = Date.now();
     const response = await forwardChatCompletion(prisma, {
       body: {
         stream: true,
@@ -499,7 +500,35 @@ Deno.test("falls back when only a role chunk arrives before the first content to
       requestType: "proxy",
     });
 
-    const streamText = await response.text();
+    const body = response.body;
+    assert(body);
+    const reader = body.getReader();
+    const firstChunk = await reader.read();
+    const firstChunkElapsedMs = Date.now() - startedAt;
+    const decoder = new TextDecoder();
+    const restChunks: Uint8Array[] = [];
+
+    assert(
+      firstChunkElapsedMs < 150,
+      `expected first streamed chunk immediately, took ${firstChunkElapsedMs}ms`,
+    );
+    assert(!firstChunk.done);
+    assert(firstChunk.value);
+    assertStringIncludes(
+      decoder.decode(firstChunk.value),
+      '"role":"assistant"',
+    );
+
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        break;
+      }
+      restChunks.push(chunk.value);
+    }
+
+    const streamText = decoder.decode(firstChunk.value) +
+      restChunks.map((chunk) => decoder.decode(chunk)).join("");
     assertEquals(callOrder, ["upstream-a", "upstream-b"]);
     assertStringIncludes(streamText, '"fallback-should-not-run"');
     assert(!streamText.includes("late-primary"));
