@@ -60,7 +60,6 @@ type ExecutionSuccess =
     upstreamRequestId: string | null;
     fallbackChain: string[];
     attemptStartTime: number;
-    firstChunkPromise?: Promise<void>;
     cancelStream?: (reason: string) => Promise<void>;
   };
 
@@ -103,7 +102,6 @@ type PreparedStreamingResponse =
     ok: true;
     response: Response;
     completion: Promise<StreamInspectionResult>;
-    firstChunkPromise: Promise<void>;
     cancelStream: (reason: string) => Promise<void>;
   }
   | {
@@ -791,25 +789,6 @@ async function prepareStreamingResponse(input: {
     failStream = reject;
   });
 
-  let resolveFirstChunk: () => void = () => undefined;
-  let rejectFirstChunk: (error: Error) => void = () => undefined;
-  let firstChunkSettled = false;
-  let sawFirstChunk = false;
-  const firstChunkPromise = new Promise<void>((resolve, reject) => {
-    resolveFirstChunk = () => {
-      if (!firstChunkSettled) {
-        firstChunkSettled = true;
-        resolve();
-      }
-    };
-    rejectFirstChunk = (error) => {
-      if (!firstChunkSettled) {
-        firstChunkSettled = true;
-        reject(error);
-      }
-    };
-  });
-
   const proxyStream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
@@ -817,22 +796,11 @@ async function prepareStreamingResponse(input: {
           const { done, value } = await reader.read();
           if (done) {
             const result = finalizeStreamInspection(state, decoder);
-            if (sawFirstChunk) {
-              resolveFirstChunk();
-            } else {
-              rejectFirstChunk(
-                new Error(
-                  "Upstream stream completed before any streamed bytes",
-                ),
-              );
-            }
             completeStream(result);
             controller.close();
             return;
           }
 
-          sawFirstChunk = true;
-          resolveFirstChunk();
           controller.enqueue(value);
           state.buffer += decoder.decode(value, { stream: true });
           inspectSseBuffer(state);
@@ -841,7 +809,6 @@ async function prepareStreamingResponse(input: {
         const streamError = error instanceof Error
           ? error
           : new Error("Failed to proxy upstream stream");
-        rejectFirstChunk(streamError);
         failStream(streamError);
         controller.error(streamError);
       } finally {
@@ -871,7 +838,7 @@ async function prepareStreamingResponse(input: {
     }
   };
 
-  return { ok: true, response, completion, firstChunkPromise, cancelStream };
+  return { ok: true, response, completion, cancelStream };
 }
 
 function createAttemptPath(
@@ -1011,7 +978,6 @@ async function attemptModelExecution(
     upstreamRequestId,
     fallbackChain: pathToFallbackChain(path),
     attemptStartTime,
-    firstChunkPromise: preparedResponse.firstChunkPromise,
     cancelStream: preparedResponse.cancelStream,
   };
 }
@@ -1227,68 +1193,63 @@ async function pipePrimaryStreamUntilFirstChunk(input: {
   }
 
   const reader = body.getReader();
-  let sawFirstChunk = false;
-  let firstChunkError: Error | null = null;
-  let timedOut = false;
-
-  const firstChunkWatcher = input.result.firstChunkPromise
-    ?.then(() => {
-      sawFirstChunk = true;
-    })
-    .catch((error) => {
-      firstChunkError = error instanceof Error
-        ? error
-        : new Error("Failed to detect first streamed chunk");
-    });
-
-  const timeoutHandle = setTimeout(() => {
-    if (sawFirstChunk || firstChunkError) {
-      return;
-    }
-    timedOut = true;
-    void input.result.cancelStream?.(input.timeoutMessage);
-  }, Math.max(0, input.timeoutMs));
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<{ kind: "timeout" }>((resolve) => {
+    timeoutHandle = setTimeout(
+      () => resolve({ kind: "timeout" }),
+      Math.max(0, input.timeoutMs),
+    );
+  });
+  const firstReadResult = await Promise.race([
+    reader.read().then((result) => ({ kind: "read" as const, result })),
+    timeoutPromise,
+  ]).catch((error) => ({
+    kind: "failed" as const,
+    error: error instanceof Error
+      ? error
+      : new Error("Failed to proxy upstream stream"),
+  }));
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+  }
 
   try {
+    if (firstReadResult.kind === "timeout") {
+      await reader.cancel(input.timeoutMessage).catch(() => undefined);
+      await input.result.cancelStream?.(input.timeoutMessage);
+      void input.result.completion.catch(() => undefined);
+      return { kind: "timeout" };
+    }
+
+    if (firstReadResult.kind === "failed") {
+      return { kind: "failed", error: firstReadResult.error };
+    }
+
+    if (firstReadResult.result.done) {
+      const completion = await input.result.completion;
+      if (completion.assistantText.length > 0 || completion.usagePayload) {
+        return { kind: "completed", completion };
+      }
+      return {
+        kind: "failed",
+        error: new Error("Upstream stream completed before any streamed bytes"),
+      };
+    }
+
+    input.controller.enqueue(firstReadResult.result.value);
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
         break;
       }
-
-      if (timedOut) {
-        break;
-      }
-
       input.controller.enqueue(value);
     }
-  } catch (error) {
-    if (!timedOut) {
-      firstChunkError = error instanceof Error
-        ? error
-        : new Error("Failed to proxy upstream stream");
-    }
   } finally {
-    clearTimeout(timeoutHandle);
     reader.releaseLock();
   }
 
-  await firstChunkWatcher;
-
-  if (sawFirstChunk) {
-    return { kind: "completed", completion: await input.result.completion };
-  }
-
-  if (timedOut) {
-    void input.result.completion.catch(() => undefined);
-    return { kind: "timeout" };
-  }
-
-  return {
-    kind: "failed",
-    error: firstChunkError ??
-      new Error("Upstream stream completed before any streamed bytes"),
-  };
+  return { kind: "completed", completion: await input.result.completion };
 }
 
 function createFirstTokenFailure(
@@ -1436,7 +1397,6 @@ function wrapStreamingExecutionWithFallback(
     ...initialResult,
     response,
     completion,
-    firstChunkPromise: undefined,
     cancelStream: activeCancel,
   };
 }
@@ -1549,7 +1509,6 @@ async function executeRetryTarget(
     initialResult.kind === "stream" &&
     input.model.firstTokenTimeoutEnabled &&
     input.model.maxRetries > 0 &&
-    initialResult.firstChunkPromise &&
     initialResult.cancelStream
   ) {
     return wrapStreamingExecutionWithFallback(
