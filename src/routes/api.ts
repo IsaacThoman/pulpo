@@ -59,6 +59,9 @@ const modelSchema = z.object({
   providerBaseUrl: z.string().optional().default(''),
   providerApiKey: z.string().optional().default(''),
   upstreamModelName: z.string().trim().min(1),
+  providerProtocol: z.enum(['chat_completions', 'responses']).default('responses'),
+  reasoningSummaryMode: z.enum(['off', 'auto', 'concise', 'detailed']).default('off'),
+  reasoningOutputMode: z.enum(['off', 'think_tags', 'reasoning_content']).default('off'),
   interceptImagesWithOcr: z.boolean().default(false),
   customParams: z.unknown().default({}),
   inputCostPerMillion: z.coerce.number().min(0).default(0),
@@ -76,6 +79,22 @@ const modelSchema = z.object({
   slowStickyMinTokensPerSecond: z.coerce.number().positive().max(1000).default(5),
   slowStickyMinCompletionSeconds: z.coerce.number().min(1).max(3600).default(30),
 }).superRefine((data, ctx) => {
+  if (data.providerProtocol === 'chat_completions' && data.reasoningOutputMode !== 'off') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Reasoning output modes require the Responses protocol',
+      path: ['reasoningOutputMode'],
+    });
+  }
+
+  if (data.reasoningOutputMode !== 'off' && data.reasoningSummaryMode === 'off') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Reasoning summaries must be enabled to expose reasoning output',
+      path: ['reasoningSummaryMode'],
+    });
+  }
+
   if (data.providerId?.trim()) {
     if (data.maxRetries === 0 && (data.firstTokenTimeoutEnabled || data.slowStickyEnabled)) {
       ctx.addIssue({

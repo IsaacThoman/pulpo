@@ -361,6 +361,9 @@
                   </td>
                   <td>
                     <span class="badge info" *ngIf="model.interceptImagesWithOcr" style="margin-right: 4px;">OCR</span>
+                    <span class="badge info" *ngIf="model.providerProtocol === 'responses'" style="margin-right: 4px;">Responses</span>
+                    <span class="badge warning" *ngIf="model.reasoningOutputMode === 'think_tags'" style="margin-right: 4px;">&lt;think&gt;</span>
+                    <span class="badge warning" *ngIf="model.reasoningOutputMode === 'reasoning_content'" style="margin-right: 4px;">reasoning_content</span>
                     <span class="badge neutral" *ngIf="model.usesCustomProvider" style="margin-right: 4px;">Custom Provider</span>
                     <span class="badge warning" *ngIf="hasCustomParams(model)" style="margin-right: 4px;">Custom</span>
                     <span class="badge success" *ngIf="model.maxRetries > 0" title="Fallback enabled: {{ model.maxRetries }} retries, {{ model.fallbackDelaySeconds }}s delay{{ model.fallbackModelId ? ', fallback: ' + (model.fallbackModelName || 'unknown') : ' (same model)' }}">FB</span>
@@ -647,6 +650,10 @@
                 <textarea [(ngModel)]="playgroundSystemPrompt" rows="2" placeholder="You are a helpful assistant..."></textarea>
               </label>
 
+              <div *ngIf="selectedPlaygroundModel?.reasoningOutputMode === 'reasoning_content'" class="text-muted" style="font-size: 12px;">
+                Reasoning output will appear in a separate thinking block for this model.
+              </div>
+
               <label style="flex: 1; display: flex; flex-direction: column;">
                 <span>Message</span>
                 <textarea [(ngModel)]="playgroundPrompt" style="flex: 1;" placeholder="Enter your message..."></textarea>
@@ -687,6 +694,10 @@
               <div class="transcript" *ngIf="transcript.length; else emptyTranscript">
                 <div class="message" *ngFor="let msg of transcript" [class.user]="msg.role === 'user'" [class.assistant]="msg.role === 'assistant'">
                   <div class="message-header">{{ msg.role }}</div>
+                  <div class="card" *ngIf="msg.reasoningText" style="margin-bottom: var(--space-sm); padding: var(--space-sm); background: var(--bg-secondary); border-color: var(--border);">
+                    <div class="text-muted" style="font-size: 11px; margin-bottom: 4px;">thinking</div>
+                    <div class="message-body">{{ msg.reasoningText }}</div>
+                  </div>
                   <div class="message-body">{{ msg.text }}</div>
                 </div>
               </div>
@@ -1006,6 +1017,33 @@
               </div>
             </div>
           </label>
+
+          <div class="form-row-3">
+            <label>
+              <span>Upstream Protocol</span>
+              <select [(ngModel)]="modelDraft.providerProtocol" (ngModelChange)="onModelProtocolChange()">
+                <option value="responses">Responses API</option>
+                <option value="chat_completions">Chat Completions API</option>
+              </select>
+            </label>
+            <label>
+              <span>Reasoning Summary</span>
+              <select [(ngModel)]="modelDraft.reasoningSummaryMode" [disabled]="modelDraft.providerProtocol === 'chat_completions'">
+                <option value="off">Off</option>
+                <option value="auto">Auto</option>
+                <option value="concise">Concise</option>
+                <option value="detailed">Detailed</option>
+              </select>
+            </label>
+            <label>
+              <span>Reasoning Output</span>
+              <select [(ngModel)]="modelDraft.reasoningOutputMode" [disabled]="modelDraft.providerProtocol === 'chat_completions' || modelDraft.reasoningSummaryMode === 'off'">
+                <option value="off">Off</option>
+                <option value="think_tags">&lt;think&gt; tags</option>
+                <option value="reasoning_content">message.reasoning_content</option>
+              </select>
+            </label>
+          </div>
 
           <div class="divider"></div>
 
