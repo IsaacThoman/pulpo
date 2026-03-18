@@ -376,10 +376,6 @@ Deno.test("falls back to the next model stream when the first token timeout elap
     if (body.model === "upstream-a") {
       return sseResponse([
         {
-          delayMs: 10,
-          data: 'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
-        },
-        {
           delayMs: 200,
           data: 'data: {"choices":[{"delta":{"content":"late-primary"}}]}\n\n',
         },
@@ -432,6 +428,96 @@ Deno.test("falls back to the next model stream when the first token timeout elap
     assertEquals(usageLogs[0].retryCount, 1);
     assertEquals(usageLogs[0].fallbackChain, ["Model A", "Model B"]);
     assertEquals(usageLogs[0].isFallback, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("does not fall back once any streamed chunk has already been forwarded", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const fallbackModel = createModel({
+    id: "model-b",
+    displayName: "Model B",
+    upstreamModelName: "upstream-b",
+    providerApiKeyEncrypted,
+  });
+  const primaryModel = createModel({
+    id: "model-a",
+    displayName: "Model A",
+    upstreamModelName: "upstream-a",
+    providerApiKeyEncrypted,
+    fallbackModelId: fallbackModel.id,
+    maxRetries: 1,
+    fallbackDelaySeconds: 0,
+    firstTokenTimeoutEnabled: true,
+    firstTokenTimeoutSeconds: 0.05,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([primaryModel, fallbackModel], usageLogs);
+  const callOrder: string[] = [];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as {
+      model: string;
+    };
+    callOrder.push(body.model);
+
+    if (body.model === "upstream-a") {
+      return sseResponse([
+        {
+          delayMs: 10,
+          data: 'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
+        },
+        {
+          delayMs: 100,
+          data: 'data: {"choices":[{"delta":{"content":"primary-win"}}]}\n\n',
+        },
+        {
+          delayMs: 0,
+          data:
+            'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}\n\n',
+        },
+        {
+          delayMs: 0,
+          data: "data: [DONE]\n\n",
+        },
+      ]);
+    }
+
+    return sseResponse([
+      {
+        delayMs: 0,
+        data:
+          'data: {"choices":[{"delta":{"content":"fallback-should-not-run"}}]}\n\n',
+      },
+    ]);
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model: primaryModel,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+
+    const streamText = await response.text();
+    assertEquals(callOrder, ["upstream-a"]);
+    assertStringIncludes(streamText, '"primary-win"');
+    assert(!streamText.includes("fallback-should-not-run"));
+
+    await sleep(0);
+    assertEquals(usageLogs.length, 1);
+    assertEquals(usageLogs[0].retryCount, 0);
+    assertEquals(usageLogs[0].fallbackChain, ["Model A"]);
+    assertEquals(usageLogs[0].isFallback, false);
   } finally {
     globalThis.fetch = originalFetch;
   }
