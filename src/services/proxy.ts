@@ -910,6 +910,7 @@ async function recordUsageLog(
     originalModelId?: string | null;
     fallbackChain?: string[];
     retryCount?: number;
+    isRetryAttempt?: boolean;
   },
 ) {
   const usage =
@@ -937,6 +938,7 @@ async function recordUsageLog(
       originalModelId: input.originalModelId ?? null,
       fallbackChain: input.fallbackChain ?? [],
       retryCount: input.retryCount ?? 0,
+      isRetryAttempt: input.isRetryAttempt ?? false,
       completedAt: new Date(),
       proxyKeyId: input.proxyKeyId,
       proxyModelId: model.id,
@@ -1613,6 +1615,31 @@ async function retryAfterFailure(
         },
       );
 
+      // Log the intermediate retry failure to usage dashboard
+      await recordUsageLog(prisma, input.model, {
+        requestId: fallbackContext.requestId,
+        requestType: input.requestType,
+        proxyKeyId: input.proxyKeyId,
+        success: false,
+        statusCode: lastFailure.statusCode,
+        requestPayload: null,
+        responsePayload: {
+          error: lastFailure.errorMessage,
+          retryAttempt,
+          maxRetries: input.model.maxRetries,
+        } as PrismaTypes.InputJsonValue,
+        errorMessage: lastFailure.errorMessage,
+        upstreamRequestId: lastFailure.upstreamRequestId,
+        durationMs: undefined,
+        isFallback: fallbackContext.totalRetryCount > 0 ||
+          fallbackContext.isStickyFallback || false,
+        isStickyFallback: fallbackContext.isStickyFallback || false,
+        originalModelId: fallbackContext.originalModelId,
+        fallbackChain: lastFailure.fallbackChain,
+        retryCount: fallbackContext.totalRetryCount,
+        isRetryAttempt: true,
+      });
+
       fallbackContext.totalRetryCount += 1;
       await sleep(delayMs);
 
@@ -1710,6 +1737,31 @@ async function retryAfterFailure(
       maxRetries: input.model.maxRetries,
       totalRetryCount: fallbackContext.totalRetryCount,
       fallbackChain: pathToFallbackChain(fallbackPath),
+    });
+
+    // Log the intermediate fallback retry failure to usage dashboard
+    await recordUsageLog(prisma, input.model, {
+      requestId: fallbackContext.requestId,
+      requestType: input.requestType,
+      proxyKeyId: input.proxyKeyId,
+      success: false,
+      statusCode: lastFailure.statusCode,
+      requestPayload: null,
+      responsePayload: {
+        error: lastFailure.errorMessage,
+        retryAttempt,
+        maxRetries: input.model.maxRetries,
+        fallbackTarget: fallbackModel.displayName,
+      } as PrismaTypes.InputJsonValue,
+      errorMessage: `Retry ${retryAttempt}/${input.model.maxRetries} failed, falling back to ${fallbackModel.displayName}: ${lastFailure.errorMessage}`,
+      upstreamRequestId: lastFailure.upstreamRequestId,
+      durationMs: undefined,
+      isFallback: true,
+      isStickyFallback: fallbackContext.isStickyFallback || false,
+      originalModelId: fallbackContext.originalModelId,
+      fallbackChain: lastFailure.fallbackChain,
+      retryCount: fallbackContext.totalRetryCount,
+      isRetryAttempt: true,
     });
 
     fallbackContext.totalRetryCount += 1;

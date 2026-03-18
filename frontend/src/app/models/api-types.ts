@@ -144,5 +144,6 @@ export type UsageSummary = {
     originalModelName: string | null;
     fallbackChain: string[];
     retryCount: number;
+    isRetryAttempt: boolean;
   }>;
 };

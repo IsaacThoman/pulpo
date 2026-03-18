@@ -558,6 +558,7 @@ async function summarizeUsage(days: number) {
         : null,
       fallbackChain: log.fallbackChain || [],
       retryCount: log.retryCount || 0,
+      isRetryAttempt: log.isRetryAttempt || false,
     })),
   };
 }

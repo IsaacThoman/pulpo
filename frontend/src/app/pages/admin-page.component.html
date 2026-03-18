@@ -555,6 +555,7 @@
                         <code style="font-size: 11px;">{{ item.requestType }}</code>
                         <span *ngIf="item.isFallback" class="badge warning" title="This request used fallback models">FB</span>
                         <span *ngIf="item.isStickyFallback" class="badge danger" title="This request was routed via sticky fallback (circuit breaker)">Sticky</span>
+                        <span *ngIf="item.isRetryAttempt" class="badge info" title="This was an intermediate retry attempt that failed before eventual success">Retry</span>
                       </div>
                     </td>
                     <td>

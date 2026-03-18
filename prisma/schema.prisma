@@ -140,6 +140,7 @@ model UsageLog {
   originalModelId    String?
   fallbackChain      String[]    @default([])
   retryCount         Int         @default(0)
+  isRetryAttempt     Boolean     @default(false)
   
   createdAt          DateTime    @default(now())
   completedAt        DateTime?
