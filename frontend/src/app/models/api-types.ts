@@ -37,6 +37,9 @@ export type ProxyModel = {
   usesCustomProvider: boolean;
   providerBaseUrl: string;
   upstreamModelName: string;
+  providerProtocol: 'chat_completions' | 'responses';
+  reasoningSummaryMode: 'off' | 'auto' | 'concise' | 'detailed';
+  reasoningOutputMode: 'off' | 'think_tags' | 'reasoning_content';
   interceptImagesWithOcr: boolean;
   customParams: Record<string, unknown>;
   inputCostPerMillion: number;

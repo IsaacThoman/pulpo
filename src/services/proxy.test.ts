@@ -29,6 +29,9 @@ function createModel(
     providerBaseUrl: "https://provider.test/v1",
     providerApiKeyEncrypted: overrides.providerApiKeyEncrypted || "",
     upstreamModelName,
+    providerProtocol: "chat_completions",
+    reasoningSummaryMode: "off",
+    reasoningOutputMode: "off",
     interceptImagesWithOcr: false,
     customParams: {},
     inputCostPerMillion: 0,
@@ -538,6 +541,288 @@ Deno.test("falls back when only a role chunk arrives before the first content to
     assertEquals(usageLogs[0].retryCount, 1);
     assertEquals(usageLogs[0].fallbackChain, ["Model A", "Model B"]);
     assertEquals(usageLogs[0].isFallback, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("translates non-stream Responses output into message.reasoning_content", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-r",
+    displayName: "Responses Model",
+    upstreamModelName: "gpt-5",
+    providerApiKeyEncrypted,
+    providerProtocol: "responses",
+    reasoningSummaryMode: "detailed",
+    reasoningOutputMode: "reasoning_content",
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as Record<string, unknown>;
+
+    assertEquals(body.model, "gpt-5");
+    assertEquals(body.stream, false);
+    assertEquals(body.store, false);
+    assertEquals((body.reasoning as Record<string, unknown>).summary, "detailed");
+
+    return jsonResponse({
+      id: "resp_123",
+      object: "response",
+      created_at: 123,
+      output: [
+        {
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Short reasoning." }],
+        },
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Final answer." }],
+        },
+      ],
+      usage: {
+        input_tokens: 10,
+        input_tokens_details: { cached_tokens: 2 },
+        output_tokens: 4,
+        output_tokens_details: { reasoning_tokens: 1 },
+      },
+    });
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Responses Model",
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const payload = await response.json();
+
+    assertEquals(payload.model, "Responses Model");
+    assertEquals(payload.choices?.[0]?.message?.content, "Final answer.");
+    assertEquals(
+      payload.choices?.[0]?.message?.reasoning_content,
+      "Short reasoning.",
+    );
+    assertEquals(payload.usage?.prompt_tokens, 10);
+    assertEquals(payload.usage?.completion_tokens, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("streams Responses reasoning summaries as think tags in Chat Completions format", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-r",
+    displayName: "Responses Model",
+    upstreamModelName: "gpt-5",
+    providerApiKeyEncrypted,
+    providerProtocol: "responses",
+    reasoningSummaryMode: "concise",
+    reasoningOutputMode: "think_tags",
+    maxRetries: 1,
+    firstTokenTimeoutEnabled: true,
+    firstTokenTimeoutSeconds: 1,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    sseResponse([
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.created","response":{"id":"resp_123","created_at":123}}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.reasoning_summary_text.delta","delta":"Plan."}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.output_text.delta","delta":"Answer."}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.completed","response":{"id":"resp_123","created_at":123,"usage":{"input_tokens":3,"output_tokens":2}}}\n\n',
+      },
+      {
+        delayMs: 0,
+        data: "data: [DONE]\n\n",
+      },
+    ]);
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Responses Model",
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const streamText = await response.text();
+
+    assertEquals(response.headers.get("content-type"), "text/event-stream");
+    assertStringIncludes(streamText, '"role":"assistant"');
+    assertStringIncludes(streamText, '"content":"<think>"');
+    assertStringIncludes(streamText, '"content":"Plan."');
+    assertStringIncludes(streamText, '"content":"</think>"');
+    assertStringIncludes(streamText, '"content":"Answer."');
+    assertStringIncludes(streamText, '"prompt_tokens":3');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("streams Responses reasoning summaries via delta.reasoning_content", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-r",
+    displayName: "Responses Model",
+    upstreamModelName: "gpt-5",
+    providerApiKeyEncrypted,
+    providerProtocol: "responses",
+    reasoningSummaryMode: "auto",
+    reasoningOutputMode: "reasoning_content",
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    sseResponse([
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.reasoning_summary_text.delta","delta":"Think."}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.output_text.delta","delta":"Answer."}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.completed","response":{"id":"resp_123","created_at":123,"usage":{"input_tokens":1,"output_tokens":1}}}\n\n',
+      },
+    ]);
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Responses Model",
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const streamText = await response.text();
+
+    assertStringIncludes(streamText, '"reasoning_content":"Think."');
+    assertStringIncludes(streamText, '"content":"Answer."');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("falls back for Responses-backed models when reasoning is hidden and no visible token arrives", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const fallbackModel = createModel({
+    id: "model-b",
+    displayName: "Fallback Model",
+    upstreamModelName: "upstream-b",
+    providerApiKeyEncrypted,
+  });
+  const primaryModel = createModel({
+    id: "model-a",
+    displayName: "Responses Hidden Reasoning",
+    upstreamModelName: "gpt-5",
+    providerApiKeyEncrypted,
+    providerProtocol: "responses",
+    reasoningSummaryMode: "auto",
+    reasoningOutputMode: "off",
+    fallbackModelId: fallbackModel.id,
+    maxRetries: 1,
+    fallbackDelaySeconds: 0,
+    firstTokenTimeoutEnabled: true,
+    firstTokenTimeoutSeconds: 0.05,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([primaryModel, fallbackModel], usageLogs);
+  const callOrder: string[] = [];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as Record<string, unknown>;
+    callOrder.push(String(body.model));
+
+    if (body.model === "gpt-5") {
+      return sseResponse([
+        {
+          delayMs: 10,
+          data:
+            'data: {"type":"response.reasoning_summary_text.delta","delta":"hidden"}\n\n',
+        },
+        {
+          delayMs: 200,
+          data:
+            'data: {"type":"response.output_text.delta","delta":"late"}\n\n',
+        },
+      ]);
+    }
+
+    return sseResponse([
+      {
+        delayMs: 0,
+        data: 'data: {"choices":[{"delta":{"content":"fallback-win"}}]}\n\n',
+      },
+    ]);
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Responses Hidden Reasoning",
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model: primaryModel,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const streamText = await response.text();
+
+    assertEquals(callOrder, ["gpt-5", "upstream-b"]);
+    assertStringIncludes(streamText, '"fallback-win"');
+    assert(!streamText.includes("hidden"));
+    assert(!streamText.includes("late"));
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -46,6 +46,7 @@ type ExecutionSuccess =
     model: ProxyModel;
     statusCode: number;
     responsePayload: Record<string, unknown>;
+    logResponsePayload?: Record<string, unknown>;
     upstreamRequestId: string | null;
     fallbackChain: string[];
     attemptStartTime: number;
@@ -80,12 +81,15 @@ type StreamInspectionState = {
   buffer: string;
   usagePayload: Record<string, unknown> | null;
   assistantText: string;
+  reasoningSummaryText: string;
   sawFirstToken: boolean;
 };
 
 type StreamInspectionResult = {
   usagePayload: Record<string, unknown> | null;
   assistantText: string;
+  reasoningSummaryText: string;
+  rawResponsePayload: Record<string, unknown> | null;
   sawFirstToken: boolean;
 };
 
@@ -173,6 +177,9 @@ export function toAdminProxyModelJson(
     usesCustomProvider: !model.providerId,
     providerBaseUrl: model.providerBaseUrl,
     upstreamModelName: model.upstreamModelName,
+    providerProtocol: model.providerProtocol,
+    reasoningSummaryMode: model.reasoningSummaryMode,
+    reasoningOutputMode: model.reasoningOutputMode,
     interceptImagesWithOcr: model.interceptImagesWithOcr,
     customParams: model.customParams || {},
     inputCostPerMillion: Number(model.inputCostPerMillion),
@@ -339,6 +346,9 @@ export async function persistModelInput(
     providerBaseUrl: string;
     providerApiKey?: string;
     upstreamModelName: string;
+    providerProtocol?: string;
+    reasoningSummaryMode?: string;
+    reasoningOutputMode?: string;
     interceptImagesWithOcr: boolean;
     customParams: PrismaTypes.InputJsonValue;
     inputCostPerMillion: number;
@@ -394,6 +404,18 @@ export async function persistModelInput(
   ) {
     throw new Error("Retry/fallback must be enabled to use fallback triggers");
   }
+  if (
+    (input.providerProtocol ?? "responses") === "chat_completions" &&
+    (input.reasoningOutputMode ?? "off") !== "off"
+  ) {
+    throw new Error("Reasoning output modes require the Responses protocol");
+  }
+  if (
+    (input.reasoningOutputMode ?? "off") !== "off" &&
+    (input.reasoningSummaryMode ?? "off") === "off"
+  ) {
+    throw new Error("Reasoning summaries must be enabled to expose reasoning output");
+  }
   if (input.slowStickyEnabled && (input.stickyFallbackSeconds ?? 0) <= 0) {
     throw new Error(
       "Sticky block seconds must be greater than 0 to enable slow sticky fallback",
@@ -416,6 +438,9 @@ export async function persistModelInput(
     providerBaseUrl,
     providerApiKeyEncrypted,
     upstreamModelName: input.upstreamModelName.trim(),
+    providerProtocol: input.providerProtocol ?? "responses",
+    reasoningSummaryMode: input.reasoningSummaryMode ?? "off",
+    reasoningOutputMode: input.reasoningOutputMode ?? "off",
     interceptImagesWithOcr: input.interceptImagesWithOcr,
     customParams: input.customParams,
     inputCostPerMillion: input.inputCostPerMillion,
@@ -491,6 +516,7 @@ function createStreamInspectionState(): StreamInspectionState {
     buffer: "",
     usagePayload: null,
     assistantText: "",
+    reasoningSummaryText: "",
     sawFirstToken: false,
   };
 }
@@ -534,6 +560,14 @@ function inspectSseBuffer(state: StreamInspectionState): void {
             }
             state.assistantText += content;
           }
+          const reasoningContent = (delta as Record<string, unknown>)
+            .reasoning_content;
+          if (typeof reasoningContent === "string") {
+            if (reasoningContent.length > 0) {
+              state.sawFirstToken = true;
+            }
+            state.reasoningSummaryText += reasoningContent;
+          }
         }
       } catch {
         // Ignore malformed SSE payloads from upstream providers.
@@ -551,8 +585,256 @@ function finalizeStreamInspection(
   return {
     usagePayload: state.usagePayload,
     assistantText: state.assistantText,
+    reasoningSummaryText: state.reasoningSummaryText,
+    rawResponsePayload: null,
     sawFirstToken: state.sawFirstToken,
   };
+}
+
+function isResponsesProtocol(model: ProxyModel): boolean {
+  return model.providerProtocol === "responses";
+}
+
+function getPublicModelName(
+  inputBody: Record<string, unknown>,
+  model: ProxyModel,
+): string {
+  return typeof inputBody.model === "string" && inputBody.model.trim()
+    ? inputBody.model
+    : model.displayName;
+}
+
+function validateResponsesRequest(body: Record<string, unknown>): string | null {
+  const unsupportedFields = [
+    "functions",
+    "function_call",
+    "tools",
+    "tool_choice",
+    "parallel_tool_calls",
+    "response_format",
+    "audio",
+    "modalities",
+  ];
+
+  for (const field of unsupportedFields) {
+    if (body[field] !== undefined) {
+      return `Responses-backed models do not support the "${field}" field on /v1/chat/completions`;
+    }
+  }
+
+  if (typeof body.n === "number" && body.n !== 1) {
+    return 'Responses-backed models only support "n = 1"';
+  }
+
+  return null;
+}
+
+function toResponsesContentPart(
+  part: unknown,
+): Record<string, unknown> | null {
+  if (!part || typeof part !== "object") {
+    return null;
+  }
+
+  const typedPart = part as {
+    type?: unknown;
+    text?: unknown;
+    image_url?: { url?: unknown };
+  };
+
+  if (typedPart.type === "text" && typeof typedPart.text === "string") {
+    return {
+      type: "input_text",
+      text: typedPart.text,
+    };
+  }
+
+  if (
+    typedPart.type === "image_url" &&
+    typedPart.image_url &&
+    typeof typedPart.image_url.url === "string"
+  ) {
+    return {
+      type: "input_image",
+      image_url: typedPart.image_url.url,
+    };
+  }
+
+  return null;
+}
+
+function toResponsesMessageContent(content: unknown): unknown {
+  if (typeof content === "string") {
+    return [{
+      type: "input_text",
+      text: content,
+    }];
+  }
+
+  if (!Array.isArray(content)) {
+    return content;
+  }
+
+  return content
+    .map((part) => toResponsesContentPart(part))
+    .filter((part): part is Record<string, unknown> => Boolean(part));
+}
+
+function toResponsesInput(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: unknown }>,
+): Array<Record<string, unknown>> {
+  return messages.map((message) => ({
+    role: message.role,
+    content: toResponsesMessageContent(message.content),
+  }));
+}
+
+function extractResponsesSummaryText(responsePayload: Record<string, unknown>): string {
+  const output = Array.isArray(responsePayload.output) ? responsePayload.output : [];
+  const parts: string[] = [];
+
+  for (const item of output) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    const summary = Array.isArray((item as Record<string, unknown>).summary)
+      ? (item as Record<string, unknown>).summary as Array<unknown>
+      : [];
+
+    for (const part of summary) {
+      if (!part || typeof part !== "object") {
+        continue;
+      }
+      const text = (part as Record<string, unknown>).text;
+      if (typeof text === "string" && text.length > 0) {
+        parts.push(text);
+      }
+    }
+  }
+
+  return parts.join("");
+}
+
+function extractResponsesOutputText(responsePayload: Record<string, unknown>): string {
+  const output = Array.isArray(responsePayload.output) ? responsePayload.output : [];
+  const parts: string[] = [];
+
+  for (const item of output) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+
+    if ((item as Record<string, unknown>).type !== "message") {
+      continue;
+    }
+
+    const content = Array.isArray((item as Record<string, unknown>).content)
+      ? (item as Record<string, unknown>).content as Array<unknown>
+      : [];
+
+    for (const part of content) {
+      if (!part || typeof part !== "object") {
+        continue;
+      }
+
+      const record = part as Record<string, unknown>;
+      const text = record.text;
+      const refusal = record.refusal;
+      if (
+        (record.type === "output_text" || record.type === "refusal") &&
+        typeof text === "string" &&
+        text.length > 0
+      ) {
+        parts.push(text);
+      } else if (record.type === "refusal" && typeof refusal === "string" && refusal.length > 0) {
+        parts.push(refusal);
+      }
+    }
+  }
+
+  return parts.join("");
+}
+
+function mapResponsesUsage(
+  responsePayload: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const usage = responsePayload.usage;
+  if (!usage || typeof usage !== "object") {
+    return undefined;
+  }
+
+  const usageRecord = usage as Record<string, unknown>;
+  return {
+    prompt_tokens: usageRecord.input_tokens ?? 0,
+    completion_tokens: usageRecord.output_tokens ?? 0,
+    total_tokens: Number(usageRecord.input_tokens ?? 0) +
+      Number(usageRecord.output_tokens ?? 0),
+    prompt_tokens_details: usageRecord.input_tokens_details,
+    completion_tokens_details: usageRecord.output_tokens_details,
+  };
+}
+
+function buildTranslatedChatCompletionPayload(input: {
+  publicModelName: string;
+  responsePayload: Record<string, unknown>;
+  reasoningOutputMode: string;
+}): Record<string, unknown> {
+  const created = Number(
+    input.responsePayload.created_at ?? Math.floor(Date.now() / 1000),
+  );
+  const content = extractResponsesOutputText(input.responsePayload);
+  const reasoningSummaryText = extractResponsesSummaryText(input.responsePayload);
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: input.reasoningOutputMode === "think_tags" && reasoningSummaryText
+      ? `<think>${reasoningSummaryText}</think>${content}`
+      : content,
+  };
+
+  if (
+    input.reasoningOutputMode === "reasoning_content" &&
+    reasoningSummaryText
+  ) {
+    message.reasoning_content = reasoningSummaryText;
+  }
+
+  return {
+    id: input.responsePayload.id ?? `chatcmpl-${crypto.randomUUID()}`,
+    object: "chat.completion",
+    created: Number.isFinite(created) ? Math.floor(created) : Math.floor(Date.now() / 1000),
+    model: input.publicModelName,
+    choices: [{
+      index: 0,
+      message,
+      finish_reason: "stop",
+    }],
+    ...(mapResponsesUsage(input.responsePayload)
+      ? { usage: mapResponsesUsage(input.responsePayload) }
+      : {}),
+  };
+}
+
+function buildChatCompletionChunk(input: {
+  id: string;
+  created: number;
+  model: string;
+  delta?: Record<string, unknown>;
+  finishReason?: string | null;
+  usage?: Record<string, unknown>;
+}): string {
+  return `data: ${JSON.stringify({
+    id: input.id,
+    object: "chat.completion.chunk",
+    created: input.created,
+    model: input.model,
+    choices: [{
+      index: 0,
+      delta: input.delta ?? {},
+      finish_reason: input.finishReason ?? null,
+    }],
+    ...(input.usage ? { usage: input.usage } : {}),
+  })}\n\n`;
 }
 
 function maybeBlockSlowModel(
@@ -656,7 +938,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Helper function to attempt a single request
 async function attemptChatCompletion(
   prisma: PrismaClient,
   input: {
@@ -679,41 +960,84 @@ async function attemptChatCompletion(
       input.model.providerApiKeyEncrypted,
     );
     const shouldStream = Boolean(input.body.stream);
+    const baseRequestBody = input.model.customParams &&
+        typeof input.model.customParams === "object"
+      ? { ...(input.model.customParams as Record<string, unknown>) }
+      : {};
+    const requestMessages = Array.isArray(input.body.messages)
+      ? input.body.messages as Array<
+        { role: "system" | "user" | "assistant"; content: unknown }
+      >
+      : [];
+    const processedMessages = input.model.interceptImagesWithOcr
+      ? await applyOcrToMessages(prisma, requestMessages)
+      : requestMessages;
 
-    const requestBody: Record<string, unknown> = {
-      ...(input.model.customParams &&
-          typeof input.model.customParams === "object"
-        ? (input.model.customParams as Record<string, unknown>)
-        : {}),
-      ...input.body,
-      model: input.model.upstreamModelName,
-    };
+    let upstreamPath = "/chat/completions";
+    let requestBody: Record<string, unknown>;
 
-    // Apply OCR if needed
-    if (
-      Array.isArray(requestBody.messages) && input.model.interceptImagesWithOcr
-    ) {
-      requestBody.messages = await applyOcrToMessages(
-        prisma,
-        requestBody.messages as Array<
-          { role: "system" | "user" | "assistant"; content: unknown }
-        >,
-      );
-    }
+    if (isResponsesProtocol(input.model)) {
+      const validationError = validateResponsesRequest(input.body);
+      if (validationError) {
+        return {
+          response: new Response(
+            JSON.stringify({
+              error: "Unsupported request for Responses-backed model",
+              details: validationError,
+            }),
+            { status: 400, headers: { "content-type": "application/json" } },
+          ),
+          success: false,
+          errorMessage: validationError,
+          abortController,
+        };
+      }
 
-    if (shouldStream) {
-      const existingStreamOptions = requestBody.stream_options &&
-          typeof requestBody.stream_options === "object"
-        ? (requestBody.stream_options as Record<string, unknown>)
-        : {};
-      requestBody.stream_options = {
-        ...existingStreamOptions,
-        include_usage: true,
+      const { model: _ignoredModel, messages: _ignoredMessages, stream: _ignoredStream, ...passthroughBody } = input.body;
+      const reasoningSummaryMode = input.model.reasoningSummaryMode;
+
+      upstreamPath = "/responses";
+      requestBody = {
+        ...baseRequestBody,
+        ...passthroughBody,
+        model: input.model.upstreamModelName,
+        stream: shouldStream,
+        store: false,
+        input: toResponsesInput(processedMessages),
       };
+
+      if (reasoningSummaryMode !== "off") {
+        const existingReasoning = requestBody.reasoning &&
+            typeof requestBody.reasoning === "object"
+          ? requestBody.reasoning as Record<string, unknown>
+          : {};
+        requestBody.reasoning = {
+          ...existingReasoning,
+          summary: reasoningSummaryMode,
+        };
+      }
+    } else {
+      requestBody = {
+        ...baseRequestBody,
+        ...input.body,
+        model: input.model.upstreamModelName,
+        messages: processedMessages,
+      };
+
+      if (shouldStream) {
+        const existingStreamOptions = requestBody.stream_options &&
+            typeof requestBody.stream_options === "object"
+          ? (requestBody.stream_options as Record<string, unknown>)
+          : {};
+        requestBody.stream_options = {
+          ...existingStreamOptions,
+          include_usage: true,
+        };
+      }
     }
 
     const upstreamResponse = await fetch(
-      `${input.model.providerBaseUrl}/chat/completions`,
+      `${input.model.providerBaseUrl}${upstreamPath}`,
       {
         method: "POST",
         headers: {
@@ -841,6 +1165,249 @@ async function prepareStreamingResponse(input: {
   return { ok: true, response, completion, cancelStream };
 }
 
+async function prepareResponsesStreamingResponse(input: {
+  upstreamResponse: Response;
+  abortController: AbortController;
+  publicModelName: string;
+  reasoningOutputMode: string;
+}): Promise<PreparedStreamingResponse> {
+  const body = input.upstreamResponse.body;
+  if (!body) {
+    return {
+      ok: false,
+      statusCode: 502,
+      errorMessage: "Empty upstream stream body",
+    };
+  }
+
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = body.getReader();
+  let responseId = `chatcmpl-${crypto.randomUUID()}`;
+  let created = Math.floor(Date.now() / 1000);
+  let roleEmitted = false;
+  let thinkOpened = false;
+  let sawFirstToken = false;
+  let assistantText = "";
+  let reasoningSummaryText = "";
+  let usagePayload: Record<string, unknown> | null = null;
+  let rawResponsePayload: Record<string, unknown> | null = null;
+
+  let completeStream: (result: StreamInspectionResult) => void = () => undefined;
+  let failStream: (error: unknown) => void = () => undefined;
+  const completion = new Promise<StreamInspectionResult>((resolve, reject) => {
+    completeStream = resolve;
+    failStream = reject;
+  });
+
+  const emitVisibleChunk = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    delta: Record<string, unknown>,
+  ) => {
+    if (!roleEmitted) {
+      controller.enqueue(encoder.encode(buildChatCompletionChunk({
+        id: responseId,
+        created,
+        model: input.publicModelName,
+        delta: { role: "assistant" },
+      })));
+      roleEmitted = true;
+    }
+
+    if (typeof delta.content === "string" && delta.content.length > 0) {
+      sawFirstToken = true;
+      assistantText += delta.content;
+    }
+
+    if (
+      typeof delta.reasoning_content === "string" &&
+      delta.reasoning_content.length > 0
+    ) {
+      sawFirstToken = true;
+      reasoningSummaryText += delta.reasoning_content;
+    }
+
+    controller.enqueue(encoder.encode(buildChatCompletionChunk({
+      id: responseId,
+      created,
+      model: input.publicModelName,
+      delta,
+    })));
+  };
+
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let buffer = "";
+
+        const closeThinkIfNeeded = () => {
+          if (input.reasoningOutputMode === "think_tags" && thinkOpened) {
+            emitVisibleChunk(controller, { content: "</think>" });
+            thinkOpened = false;
+          }
+        };
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            let boundary = buffer.indexOf("\n\n");
+            while (boundary !== -1) {
+              const event = buffer.slice(0, boundary);
+              buffer = buffer.slice(boundary + 2);
+              boundary = buffer.indexOf("\n\n");
+
+              const dataLines = event
+                .split("\n")
+                .filter((line) => line.startsWith("data:"))
+                .map((line) => line.slice(5).trim())
+                .filter(Boolean);
+
+              for (const line of dataLines) {
+                if (line === "[DONE]") {
+                  continue;
+                }
+
+                let json: Record<string, unknown>;
+                try {
+                  json = JSON.parse(line) as Record<string, unknown>;
+                } catch {
+                  continue;
+                }
+
+                const eventType = json.type;
+                if (typeof json.response === "object" && json.response) {
+                  const responseRecord = json.response as Record<string, unknown>;
+                  rawResponsePayload = responseRecord;
+                  if (typeof responseRecord.id === "string") {
+                    responseId = responseRecord.id;
+                  }
+                  const createdAt = Number(responseRecord.created_at);
+                  if (Number.isFinite(createdAt)) {
+                    created = Math.floor(createdAt);
+                  }
+                  const mappedUsage = mapResponsesUsage(responseRecord);
+                  if (mappedUsage) {
+                    usagePayload = { usage: mappedUsage };
+                  }
+                }
+
+                if (
+                  eventType === "response.reasoning_summary_text.delta" &&
+                  typeof json.delta === "string" &&
+                  input.reasoningOutputMode !== "off"
+                ) {
+                  const delta = json.delta;
+                  if (input.reasoningOutputMode === "think_tags") {
+                    if (!thinkOpened) {
+                      emitVisibleChunk(controller, { content: "<think>" });
+                      thinkOpened = true;
+                    }
+                    emitVisibleChunk(controller, { content: delta });
+                    reasoningSummaryText += delta;
+                  } else if (input.reasoningOutputMode === "reasoning_content") {
+                    emitVisibleChunk(controller, { reasoning_content: delta });
+                  }
+                  continue;
+                }
+
+                if (
+                  (eventType === "response.output_text.delta" ||
+                    eventType === "response.refusal.delta") &&
+                  typeof json.delta === "string"
+                ) {
+                  closeThinkIfNeeded();
+                  emitVisibleChunk(controller, { content: json.delta });
+                  continue;
+                }
+
+                if (eventType === "response.completed") {
+                  closeThinkIfNeeded();
+                }
+              }
+            }
+          }
+
+          const flush = decoder.decode();
+          if (flush) {
+            buffer += flush;
+          }
+          if (buffer.trim()) {
+            const pseudoDone = buffer.trim();
+            if (pseudoDone !== "data: [DONE]") {
+              logInfo("proxy.responses_stream_leftover_buffer", {
+                leftoverLength: pseudoDone.length,
+              });
+            }
+          }
+
+          if (input.reasoningOutputMode === "think_tags" && thinkOpened) {
+            emitVisibleChunk(controller, { content: "</think>" });
+            thinkOpened = false;
+          }
+
+          controller.enqueue(encoder.encode(buildChatCompletionChunk({
+            id: responseId,
+            created,
+            model: input.publicModelName,
+            delta: {},
+            finishReason: "stop",
+            usage: usagePayload?.usage as Record<string, unknown> | undefined,
+          })));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          completeStream({
+            usagePayload,
+            assistantText,
+            reasoningSummaryText,
+            rawResponsePayload,
+            sawFirstToken,
+          });
+        } catch (error) {
+          failStream(error);
+          controller.error(
+            error instanceof Error
+              ? error
+              : new Error("Failed to translate upstream Responses stream"),
+          );
+        } finally {
+          reader.releaseLock();
+        }
+      },
+      async cancel(reason) {
+        try {
+          await reader.cancel(reason);
+        } catch {
+          // Ignore cancellation errors from already-closed streams.
+        }
+      },
+    }),
+    {
+      status: input.upstreamResponse.status,
+      headers: new Headers({
+        "content-type": "text/event-stream",
+        "cache-control": input.upstreamResponse.headers.get("cache-control") ?? "no-cache",
+        connection: input.upstreamResponse.headers.get("connection") ?? "keep-alive",
+      }),
+    },
+  );
+
+  const cancelStream = async (reason: string) => {
+    input.abortController.abort(reason);
+    try {
+      await reader.cancel(reason);
+    } catch {
+      // Ignore cancellation errors after aborting the upstream request.
+    }
+  };
+
+  return { ok: true, response, completion, cancelStream };
+}
+
 function createAttemptPath(
   model: ProxyModel,
   path?: AttemptPathNode[],
@@ -933,26 +1500,44 @@ async function attemptModelExecution(
   }
 
   if (!input.body.stream) {
-    const responsePayload = (await result.response.json()) as Record<
-      string,
-      unknown
-    >;
+    const upstreamPayload = (await result.response.json()) as Record<string, unknown>;
+    const responsePayload = isResponsesProtocol(input.model)
+      ? buildTranslatedChatCompletionPayload({
+        publicModelName: getPublicModelName(input.body, input.model),
+        responsePayload: upstreamPayload,
+        reasoningOutputMode: input.model.reasoningOutputMode,
+      })
+      : upstreamPayload;
     return {
       ok: true,
       kind: "json",
       model: input.model,
       statusCode: result.response.status,
       responsePayload,
+      logResponsePayload: isResponsesProtocol(input.model)
+        ? {
+          translatedResponse: responsePayload,
+          upstreamResponse: upstreamPayload,
+          reasoningSummaryText: extractResponsesSummaryText(upstreamPayload),
+        }
+        : undefined,
       upstreamRequestId,
       fallbackChain: pathToFallbackChain(path),
       attemptStartTime,
     };
   }
 
-  const preparedResponse = await prepareStreamingResponse({
-    upstreamResponse: result.response,
-    abortController: result.abortController,
-  });
+  const preparedResponse = isResponsesProtocol(input.model)
+    ? await prepareResponsesStreamingResponse({
+      upstreamResponse: result.response,
+      abortController: result.abortController,
+      publicModelName: getPublicModelName(input.body, input.model),
+      reasoningOutputMode: input.model.reasoningOutputMode,
+    })
+    : await prepareStreamingResponse({
+      upstreamResponse: result.response,
+      abortController: result.abortController,
+    });
   if (!preparedResponse.ok) {
     return createExecutionFailure(input.model, {
       statusCode: preparedResponse.statusCode,
@@ -1643,8 +2228,9 @@ export async function forwardChatCompletion(
       requestPayload: logging.logPayloads
         ? (input.body as PrismaTypes.InputJsonValue)
         : null,
-      responsePayload: executionResult
-        .responsePayload as PrismaTypes.InputJsonValue,
+      responsePayload: (
+        executionResult.logResponsePayload ?? executionResult.responsePayload
+      ) as PrismaTypes.InputJsonValue,
       upstreamRequestId: executionResult.upstreamRequestId,
       durationMs: Date.now() - requestStartTime,
       isFallback: fallbackContext.totalRetryCount > 0 ||
@@ -1674,6 +2260,8 @@ export async function forwardChatCompletion(
     .then(async ({
       usagePayload,
       assistantText,
+      reasoningSummaryText,
+      rawResponsePayload,
       model,
       upstreamRequestId,
       fallbackChain,
@@ -1703,6 +2291,8 @@ export async function forwardChatCompletion(
           ? ({
             usage: usagePayload?.usage || null,
             assistantText,
+            reasoningSummaryText,
+            upstreamResponse: rawResponsePayload,
           } as PrismaTypes.InputJsonValue)
           : ((usagePayload || {}) as PrismaTypes.InputJsonValue),
         upstreamRequestId,

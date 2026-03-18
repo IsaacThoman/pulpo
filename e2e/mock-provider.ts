@@ -37,6 +37,36 @@ function extractPromptText(content: unknown): string {
     .join('\n');
 }
 
+function extractResponsesPrompt(input: unknown): string {
+  if (!Array.isArray(input)) {
+    return '';
+  }
+
+  const lastItem = input[input.length - 1];
+  if (!lastItem || typeof lastItem !== 'object') {
+    return '';
+  }
+
+  const content = (lastItem as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return '';
+      }
+      const typedItem = item as {
+        type?: string;
+        text?: string;
+      };
+      return typedItem.type === 'input_text' ? typedItem.text || '' : '';
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 app.post('/v1/chat/completions', async (c) => {
   const body = await c.req.json();
 
@@ -143,6 +173,99 @@ app.post('/v1/chat/completions', async (c) => {
       },
       completion_tokens: 23,
       total_tokens: 87,
+    },
+  });
+});
+
+app.post('/v1/responses', async (c) => {
+  const body = await c.req.json();
+  const promptText = extractResponsesPrompt(body.input);
+  const responseText = `Echoed from upstream: ${promptText}`.trim();
+
+  if (body.stream) {
+    const stream = new ReadableStream({
+      start(controller) {
+        const events = [
+          {
+            type: 'response.created',
+            response: {
+              id: 'resp-stream',
+              object: 'response',
+              created_at: Math.floor(Date.now() / 1000),
+            },
+          },
+          {
+            type: 'response.output_text.delta',
+            delta: 'Echoed from upstream: ',
+          },
+          {
+            type: 'response.output_text.delta',
+            delta: promptText,
+          },
+          {
+            type: 'response.completed',
+            response: {
+              id: 'resp-stream',
+              object: 'response',
+              created_at: Math.floor(Date.now() / 1000),
+              output: [
+                {
+                  type: 'message',
+                  role: 'assistant',
+                  content: [{ type: 'output_text', text: responseText }],
+                },
+              ],
+              usage: {
+                input_tokens: 120,
+                input_tokens_details: {
+                  cached_tokens: 20,
+                },
+                output_tokens: 45,
+                output_tokens_details: {
+                  reasoning_tokens: 0,
+                },
+              },
+            },
+          },
+        ];
+
+        for (const event of events) {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+        }
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'content-type': 'text/event-stream',
+        'cache-control': 'no-cache',
+        connection: 'keep-alive',
+      },
+    });
+  }
+
+  return c.json({
+    id: 'resp-mock',
+    object: 'response',
+    created_at: Math.floor(Date.now() / 1000),
+    output: [
+      {
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'output_text', text: responseText }],
+      },
+    ],
+    usage: {
+      input_tokens: 64,
+      input_tokens_details: {
+        cached_tokens: 8,
+      },
+      output_tokens: 23,
+      output_tokens_details: {
+        reasoning_tokens: 0,
+      },
     },
   });
 });

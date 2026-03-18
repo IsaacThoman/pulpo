@@ -39,6 +39,7 @@ type Attachment = {
 type TranscriptMessage = {
   role: 'system' | 'user' | 'assistant';
   text: string;
+  reasoningText?: string;
 };
 
 type ModelDraft = {
@@ -48,6 +49,9 @@ type ModelDraft = {
   providerBaseUrl: string;
   providerApiKey: string;
   upstreamModelName: string;
+  providerProtocol: 'chat_completions' | 'responses';
+  reasoningSummaryMode: 'off' | 'auto' | 'concise' | 'detailed';
+  reasoningOutputMode: 'off' | 'think_tags' | 'reasoning_content';
   interceptImagesWithOcr: boolean;
   customParams: string;
   inputCostPerMillion: number;
@@ -81,6 +85,9 @@ function createEmptyModelDraft(): ModelDraft {
     providerBaseUrl: 'https://api.openai.com/v1',
     providerApiKey: '',
     upstreamModelName: '',
+    providerProtocol: 'responses',
+    reasoningSummaryMode: 'off',
+    reasoningOutputMode: 'off',
     interceptImagesWithOcr: false,
     customParams: '{}',
     inputCostPerMillion: 0,
@@ -661,6 +668,9 @@ export class AdminPageComponent implements OnDestroy {
       providerBaseUrl: model.providerBaseUrl,
       providerApiKey: this.providerKeyStorage.get(this.getModelProviderKeyId(model.id)) || '',
       upstreamModelName: model.upstreamModelName,
+      providerProtocol: model.providerProtocol,
+      reasoningSummaryMode: model.reasoningSummaryMode,
+      reasoningOutputMode: model.reasoningOutputMode,
       interceptImagesWithOcr: model.interceptImagesWithOcr,
       customParams: JSON.stringify(model.customParams || {}, null, 2),
       inputCostPerMillion: model.inputCostPerMillion,
@@ -781,6 +791,10 @@ export class AdminPageComponent implements OnDestroy {
     return this.providers.find((provider) => provider.id === this.modelDraft.providerId) || null;
   }
 
+  get selectedPlaygroundModel(): ProxyModel | null {
+    return this.proxyModels.find((model) => model.id === this.playgroundModelId) || null;
+  }
+
   get availableFallbackModels(): ProxyModel[] {
     if (!this.editingModelId) {
       return this.proxyModels;
@@ -807,6 +821,13 @@ export class AdminPageComponent implements OnDestroy {
     }
 
     this.modelDraft.providerBaseUrl = this.modelDraft.providerBaseUrl || 'https://api.openai.com/v1';
+  }
+
+  onModelProtocolChange(): void {
+    if (this.modelDraft.providerProtocol === 'chat_completions') {
+      this.modelDraft.reasoningSummaryMode = 'off';
+      this.modelDraft.reasoningOutputMode = 'off';
+    }
   }
 
   get selectedOcrProvider(): Provider | null {
@@ -1065,8 +1086,12 @@ export class AdminPageComponent implements OnDestroy {
           body: JSON.stringify({ model: this.playgroundModelId, messages, stream: false }),
         });
         const json = await response.json();
-        const text = json?.choices?.[0]?.message?.content || JSON.stringify(json, null, 2);
-        this.transcript.push({ role: 'assistant', text });
+        const message = json?.choices?.[0]?.message;
+        const text = this.extractMessageText(message);
+        const reasoningText = typeof message?.reasoning_content === 'string'
+          ? message.reasoning_content
+          : undefined;
+        this.transcript.push({ role: 'assistant', text, reasoningText });
       }
       this.playgroundPrompt = '';
       this.attachments = [];
@@ -1114,8 +1139,12 @@ export class AdminPageComponent implements OnDestroy {
           try {
             const json = JSON.parse(line);
             const delta = json?.choices?.[0]?.delta?.content;
+            const reasoningDelta = json?.choices?.[0]?.delta?.reasoning_content;
             if (typeof delta === 'string') {
               assistantMsg.text += delta;
+            }
+            if (typeof reasoningDelta === 'string') {
+              assistantMsg.reasoningText = (assistantMsg.reasoningText || '') + reasoningDelta;
             }
           } catch {
             // ignore malformed chunks
@@ -1231,6 +1260,29 @@ export class AdminPageComponent implements OnDestroy {
       reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
       reader.readAsDataURL(file);
     });
+  }
+
+  private extractMessageText(message: unknown): string {
+    if (!message || typeof message !== 'object') {
+      return JSON.stringify(message, null, 2);
+    }
+
+    const content = (message as { content?: unknown }).content;
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .map((part) => {
+          if (!part || typeof part !== 'object') return '';
+          const text = (part as { text?: unknown }).text;
+          return typeof text === 'string' ? text : '';
+        })
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    return JSON.stringify(message, null, 2);
   }
 
   private normalizeError(error: unknown): string {
