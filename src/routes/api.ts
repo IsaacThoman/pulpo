@@ -414,18 +414,19 @@ async function summarizeUsage(days: number) {
     take: 250,
   });
   type UsageSummaryLog = (typeof logs)[number];
+  const requestLogs = logs.filter((log: UsageSummaryLog) => !log.isRetryAttempt);
 
   const totals = {
-    requests: logs.length,
-    successfulRequests: logs.filter((log: UsageSummaryLog) => log.success).length,
-    inputTokens: logs.reduce((sum: number, log: UsageSummaryLog) => sum + log.inputTokens, 0),
-    cachedInputTokens: logs.reduce((sum: number, log: UsageSummaryLog) => sum + log.cachedInputTokens, 0),
-    outputTokens: logs.reduce((sum: number, log: UsageSummaryLog) => sum + log.outputTokens, 0),
-    totalCost: Number(logs.reduce((sum: number, log: UsageSummaryLog) => sum + Number(log.totalCost), 0).toFixed(8)),
+    requests: requestLogs.length,
+    successfulRequests: requestLogs.filter((log: UsageSummaryLog) => log.success).length,
+    inputTokens: requestLogs.reduce((sum: number, log: UsageSummaryLog) => sum + log.inputTokens, 0),
+    cachedInputTokens: requestLogs.reduce((sum: number, log: UsageSummaryLog) => sum + log.cachedInputTokens, 0),
+    outputTokens: requestLogs.reduce((sum: number, log: UsageSummaryLog) => sum + log.outputTokens, 0),
+    totalCost: Number(requestLogs.reduce((sum: number, log: UsageSummaryLog) => sum + Number(log.totalCost), 0).toFixed(8)),
   };
 
   const byKey = Object.values(
-    logs.reduce<Record<string, {
+    requestLogs.reduce<Record<string, {
       keyId: string;
       name: string;
       requests: number;
@@ -461,10 +462,18 @@ async function summarizeUsage(days: number) {
       accumulator[log.proxyKeyId].outputTokens += log.outputTokens;
       return accumulator;
     }, {}),
-  ).sort((left, right) => right.totalCost - left.totalCost);
+  ) as Array<{
+    keyId: string;
+    name: string;
+    requests: number;
+    totalCost: number;
+    inputTokens: number;
+    outputTokens: number;
+  }>;
+  byKey.sort((left, right) => right.totalCost - left.totalCost);
 
   const byModel = Object.values(
-    logs.reduce<Record<string, {
+    requestLogs.reduce<Record<string, {
       modelId: string;
       name: string;
       requests: number;
@@ -503,10 +512,18 @@ async function summarizeUsage(days: number) {
       accumulator[effectiveModelId].outputTokens += log.outputTokens;
       return accumulator;
     }, {}),
-  ).sort((left, right) => right.totalCost - left.totalCost);
+  ) as Array<{
+    modelId: string;
+    name: string;
+    requests: number;
+    totalCost: number;
+    inputTokens: number;
+    outputTokens: number;
+  }>;
+  byModel.sort((left, right) => right.totalCost - left.totalCost);
 
   const daily = Object.values(
-    logs.reduce<Record<string, {
+    requestLogs.reduce<Record<string, {
       day: string;
       requests: number;
       totalCost: number;
@@ -527,7 +544,12 @@ async function summarizeUsage(days: number) {
       );
       return accumulator;
     }, {}),
-  ).sort((left, right) => left.day.localeCompare(right.day));
+  ) as Array<{
+    day: string;
+    requests: number;
+    totalCost: number;
+  }>;
+  daily.sort((left, right) => left.day.localeCompare(right.day));
 
   return {
     totals,
@@ -554,7 +576,7 @@ async function summarizeUsage(days: number) {
       isFallback: log.isFallback,
       isStickyFallback: log.isStickyFallback,
       originalModelName: log.originalModelId 
-        ? logs.find(l => l.proxyModelId === log.originalModelId)?.proxyModel?.displayName || null
+        ? logs.find((l: UsageSummaryLog) => l.proxyModelId === log.originalModelId)?.proxyModel?.displayName || null
         : null,
       fallbackChain: log.fallbackChain || [],
       retryCount: log.retryCount || 0,

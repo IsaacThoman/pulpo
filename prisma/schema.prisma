@@ -120,7 +120,7 @@ model OcrCacheEntry {
 
 model UsageLog {
   id                 String      @id @default(cuid())
-  requestId          String      @unique
+  requestId          String
   requestType        String      @default("proxy")
   success            Boolean
   statusCode         Int
@@ -152,6 +152,7 @@ model UsageLog {
   simModelId         String?
 
   @@index([createdAt])
+  @@index([requestId, createdAt])
   @@index([proxyKeyId])
   @@index([proxyModelId])
   @@index([simModelId])

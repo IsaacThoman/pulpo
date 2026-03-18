@@ -8,9 +8,13 @@ import { encryptSecret } from "../lib/security.ts";
 import { forwardChatCompletion } from "./proxy.ts";
 
 type UsageLogRecord = {
+  requestId?: string;
+  success?: boolean;
+  statusCode?: number;
   retryCount: number;
   fallbackChain: string[];
   isFallback: boolean;
+  isRetryAttempt?: boolean;
 };
 
 function createModel(
@@ -180,10 +184,12 @@ Deno.test("retries the same model until one attempt succeeds", async () => {
     assertEquals(response.status, 200);
     assertEquals(callOrder, ["upstream-a", "upstream-a", "upstream-a"]);
     assertEquals(payload.choices?.[0]?.message?.content, "ok");
-    assertEquals(usageLogs.length, 1);
-    assertEquals(usageLogs[0].retryCount, 2);
-    assertEquals(usageLogs[0].fallbackChain, ["Model A"]);
-    assertEquals(usageLogs[0].isFallback, true);
+    assertEquals(usageLogs.length, 3);
+    assertEquals(usageLogs.map((log) => log.isRetryAttempt), [true, true, false]);
+    assertEquals(usageLogs.map((log) => log.statusCode), [500, 500, 200]);
+    assertEquals(usageLogs[2].retryCount, 2);
+    assertEquals(usageLogs[2].fallbackChain, ["Model A"]);
+    assertEquals(usageLogs[2].isFallback, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -268,10 +274,15 @@ Deno.test("retries the selected fallback model and lets that model resolve its o
       "upstream-c",
     ]);
     assertEquals(payload.choices?.[0]?.message?.content, "recovered");
-    assertEquals(usageLogs.length, 1);
-    assertEquals(usageLogs[0].retryCount, 4);
-    assertEquals(usageLogs[0].fallbackChain, ["Model A", "Model B", "Model C"]);
-    assertEquals(usageLogs[0].isFallback, true);
+    assertEquals(usageLogs.length, 5);
+    assertEquals(
+      usageLogs.map((log) => log.isRetryAttempt),
+      [true, true, true, true, false],
+    );
+    assertEquals(usageLogs.map((log) => log.statusCode), [500, 500, 500, 500, 200]);
+    assertEquals(usageLogs[4].retryCount, 4);
+    assertEquals(usageLogs[4].fallbackChain, ["Model A", "Model B", "Model C"]);
+    assertEquals(usageLogs[4].isFallback, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -427,10 +438,12 @@ Deno.test("falls back to the next model stream when the first token timeout elap
     assert(!streamText.includes("late-primary"));
 
     await sleep(0);
-    assertEquals(usageLogs.length, 1);
-    assertEquals(usageLogs[0].retryCount, 1);
-    assertEquals(usageLogs[0].fallbackChain, ["Model A", "Model B"]);
-    assertEquals(usageLogs[0].isFallback, true);
+    assertEquals(usageLogs.length, 2);
+    assertEquals(usageLogs.map((log) => log.isRetryAttempt), [true, false]);
+    assertEquals(usageLogs.map((log) => log.statusCode), [504, 200]);
+    assertEquals(usageLogs[1].retryCount, 1);
+    assertEquals(usageLogs[1].fallbackChain, ["Model A", "Model B"]);
+    assertEquals(usageLogs[1].isFallback, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -537,10 +550,12 @@ Deno.test("falls back when only a role chunk arrives before the first content to
     assert(!streamText.includes("late-primary"));
 
     await sleep(0);
-    assertEquals(usageLogs.length, 1);
-    assertEquals(usageLogs[0].retryCount, 1);
-    assertEquals(usageLogs[0].fallbackChain, ["Model A", "Model B"]);
-    assertEquals(usageLogs[0].isFallback, true);
+    assertEquals(usageLogs.length, 2);
+    assertEquals(usageLogs.map((log) => log.isRetryAttempt), [true, false]);
+    assertEquals(usageLogs.map((log) => log.statusCode), [504, 200]);
+    assertEquals(usageLogs[1].retryCount, 1);
+    assertEquals(usageLogs[1].fallbackChain, ["Model A", "Model B"]);
+    assertEquals(usageLogs[1].isFallback, true);
   } finally {
     globalThis.fetch = originalFetch;
   }
