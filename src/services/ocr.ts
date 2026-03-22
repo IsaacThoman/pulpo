@@ -5,7 +5,7 @@ import { logError, logInfo } from '../lib/logging.ts';
 import { getOcrRuntimeSettings } from './settings.ts';
 
 type ChatMessage = {
-  role: 'system' | 'user' | 'assistant';
+  role: 'developer' | 'system' | 'user' | 'assistant';
   content: unknown;
 };
 

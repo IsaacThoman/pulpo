@@ -212,12 +212,14 @@ const simModelSchema = z.object({
   segments: z.array(simSegmentSchema).min(1),
 });
 
+const proxyMessageRoleSchema = z.enum(['developer', 'system', 'user', 'assistant']);
+
 const proxyChatSchema = z
   .object({
     model: z.string().trim().min(1),
     messages: z.array(
       z.object({
-        role: z.enum(['system', 'user', 'assistant']),
+        role: proxyMessageRoleSchema,
         content: z.unknown(),
       }),
     ),

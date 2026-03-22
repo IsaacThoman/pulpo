@@ -637,7 +637,7 @@ Deno.test("translates non-stream Responses output into message.reasoning_content
   }
 });
 
-Deno.test("encodes assistant history as output_text for Responses input", async () => {
+Deno.test("preserves developer messages and encodes assistant history for Responses input", async () => {
   const providerApiKeyEncrypted = await encryptSecret("test-key");
   const model = createModel({
     id: "model-r",
@@ -657,14 +657,19 @@ Deno.test("encodes assistant history as output_text for Responses input", async 
     ) as Record<string, unknown>;
     const input = body.input as Array<Record<string, unknown>>;
 
-    assertEquals(input[0]?.role, "user");
+    assertEquals(input[0]?.role, "developer");
     assertEquals(
       (input[0]?.content as Array<Record<string, unknown>>)?.[0]?.type,
       "input_text",
     );
-    assertEquals(input[1]?.role, "assistant");
+    assertEquals(input[1]?.role, "user");
     assertEquals(
       (input[1]?.content as Array<Record<string, unknown>>)?.[0]?.type,
+      "input_text",
+    );
+    assertEquals(input[2]?.role, "assistant");
+    assertEquals(
+      (input[2]?.content as Array<Record<string, unknown>>)?.[0]?.type,
       "output_text",
     );
 
@@ -690,6 +695,7 @@ Deno.test("encodes assistant history as output_text for Responses input", async 
         model: "Responses Model",
         stream: false,
         messages: [
+          { role: "developer", content: "be terse" },
           { role: "user", content: "hello" },
           { role: "assistant", content: "prior answer" },
         ],

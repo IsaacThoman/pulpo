@@ -39,6 +39,8 @@ type AttemptPathNode = {
   name: string;
 };
 
+type ProxyMessageRole = "developer" | "system" | "user" | "assistant";
+
 type ExecutionSuccess =
   | {
     ok: true;
@@ -631,7 +633,7 @@ function validateResponsesRequest(body: Record<string, unknown>): string | null 
 
 function toResponsesContentPart(
   part: unknown,
-  role: "system" | "user" | "assistant",
+  role: ProxyMessageRole,
 ): Record<string, unknown> | null {
   if (!part || typeof part !== "object") {
     return null;
@@ -666,7 +668,7 @@ function toResponsesContentPart(
 
 function toResponsesMessageContent(
   content: unknown,
-  role: "system" | "user" | "assistant",
+  role: ProxyMessageRole,
 ): unknown {
   if (typeof content === "string") {
     if (role === "assistant") {
@@ -691,7 +693,7 @@ function toResponsesMessageContent(
 }
 
 function toResponsesInput(
-  messages: Array<{ role: "system" | "user" | "assistant"; content: unknown }>,
+  messages: Array<{ role: ProxyMessageRole; content: unknown }>,
 ): Array<Record<string, unknown>> {
   return messages.map((message) => ({
     role: message.role,
@@ -978,7 +980,7 @@ async function attemptChatCompletion(
       : {};
     const requestMessages = Array.isArray(input.body.messages)
       ? input.body.messages as Array<
-        { role: "system" | "user" | "assistant"; content: unknown }
+        { role: ProxyMessageRole; content: unknown }
       >
       : [];
     const processedMessages = input.model.interceptImagesWithOcr
