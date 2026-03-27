@@ -69,6 +69,7 @@ model ProxyModel {
   inputCostPerMillion         Decimal    @default(0) @db.Decimal(18, 6)
   cachedInputCostPerMillion   Decimal    @default(0) @db.Decimal(18, 6)
   outputCostPerMillion        Decimal    @default(0) @db.Decimal(18, 6)
+  includeCostInUsage          Boolean    @default(false)
   isActive                    Boolean    @default(true)
   
   // Fallback configuration

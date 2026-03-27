@@ -1,0 +1,2 @@
+ALTER TABLE "ProxyModel"
+ADD COLUMN "includeCostInUsage" BOOLEAN NOT NULL DEFAULT false;

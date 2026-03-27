@@ -1068,6 +1068,11 @@
             <textarea [(ngModel)]="modelDraft.customParams" rows="3" placeholder="{&quot;temperature&quot;: 0.7}"></textarea>
           </label>
 
+          <label class="inline">
+            <input type="checkbox" [(ngModel)]="modelDraft.includeCostInUsage">
+            <span>Include USD cost in response usage</span>
+          </label>
+
           <div class="divider"></div>
 
           <!-- Retry/Fallback Configuration -->

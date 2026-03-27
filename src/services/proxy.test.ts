@@ -18,9 +18,22 @@ type UsageLogRecord = {
   isRetryAttempt?: boolean;
 };
 
+type ModelOverrides =
+  & Omit<
+    Partial<ProxyModel>,
+    | "inputCostPerMillion"
+    | "cachedInputCostPerMillion"
+    | "outputCostPerMillion"
+  >
+  & {
+    inputCostPerMillion?: number;
+    cachedInputCostPerMillion?: number;
+    outputCostPerMillion?: number;
+  };
+
 function createModel(
   overrides:
-    & Partial<ProxyModel>
+    & ModelOverrides
     & Pick<ProxyModel, "id" | "displayName" | "upstreamModelName">,
 ): ProxyModel {
   const now = new Date("2026-03-17T00:00:00.000Z");
@@ -42,6 +55,7 @@ function createModel(
     inputCostPerMillion: 0,
     cachedInputCostPerMillion: 0,
     outputCostPerMillion: 0,
+    includeCostInUsage: false,
     isActive: true,
     fallbackModelId: null,
     maxRetries: 0,
@@ -718,6 +732,10 @@ Deno.test("translates non-stream Responses output into message.reasoning_content
     providerProtocol: "responses",
     reasoningSummaryMode: "detailed",
     reasoningOutputMode: "reasoning_content",
+    inputCostPerMillion: 2,
+    cachedInputCostPerMillion: 1,
+    outputCostPerMillion: 8,
+    includeCostInUsage: true,
   });
 
   const usageLogs: UsageLogRecord[] = [];
@@ -782,6 +800,7 @@ Deno.test("translates non-stream Responses output into message.reasoning_content
     );
     assertEquals(payload.usage?.prompt_tokens, 10);
     assertEquals(payload.usage?.completion_tokens, 4);
+    assertEquals(payload.usage?.cost, 0.00005);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -874,6 +893,9 @@ Deno.test("streams Responses reasoning summaries as think tags in Chat Completio
     maxRetries: 1,
     firstTokenTimeoutEnabled: true,
     firstTokenTimeoutSeconds: 1,
+    inputCostPerMillion: 2,
+    outputCostPerMillion: 8,
+    includeCostInUsage: true,
   });
 
   const usageLogs: UsageLogRecord[] = [];
@@ -928,6 +950,121 @@ Deno.test("streams Responses reasoning summaries as think tags in Chat Completio
     assertStringIncludes(streamText, '"content":"</think>"');
     assertStringIncludes(streamText, '"content":"Answer."');
     assertStringIncludes(streamText, '"prompt_tokens":3');
+    assertStringIncludes(streamText, '"cost":0.000022');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("streams usage cost for chat-completions models when usage is included", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-stream",
+    displayName: "Stream Model",
+    upstreamModelName: "gpt-4.1-mini",
+    providerApiKeyEncrypted,
+    inputCostPerMillion: 1,
+    outputCostPerMillion: 2,
+    includeCostInUsage: true,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as Record<string, unknown>;
+
+    assertEquals(body.stream, true);
+    assertEquals(
+      (body.stream_options as Record<string, unknown>)?.include_usage,
+      true,
+    );
+
+    return sseResponse([
+      {
+        delayMs: 0,
+        data:
+          'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hello"}}]}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}\n\n',
+      },
+      {
+        delayMs: 0,
+        data: "data: [DONE]\n\n",
+      },
+    ]);
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Stream Model",
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const streamText = await response.text();
+
+    assertStringIncludes(
+      streamText,
+      '"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8,"cost":0.000013}',
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("does not include usage cost unless the model setting is enabled", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-no-cost",
+    displayName: "No Cost Model",
+    upstreamModelName: "gpt-4.1-mini",
+    providerApiKeyEncrypted,
+    inputCostPerMillion: 1,
+    outputCostPerMillion: 2,
+    includeCostInUsage: false,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    jsonResponse({
+      id: "chatcmpl-no-cost",
+      choices: [{ message: { role: "assistant", content: "ok" } }],
+      usage: { prompt_tokens: 3, completion_tokens: 5, total_tokens: 8 },
+    });
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "No Cost Model",
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const payload = await response.json();
+
+    assertEquals(payload.usage?.cost, undefined);
   } finally {
     globalThis.fetch = originalFetch;
   }

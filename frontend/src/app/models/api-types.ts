@@ -9,9 +9,15 @@ export type SimModel = {
   updatedAt: string;
 };
 
-export type SimSegment = 
-  | { type: 'delay'; delayMs: number }
-  | { type: 'text'; content: string; ratePerSecond: number; unit: 'char' | 'token'; maxUpdatesPerSecond: number };
+export type SimSegment =
+  | { type: "delay"; delayMs: number }
+  | {
+    type: "text";
+    content: string;
+    ratePerSecond: number;
+    unit: "char" | "token";
+    maxUpdatesPerSecond: number;
+  };
 
 export type AdminUser = {
   id: string;
@@ -37,14 +43,15 @@ export type ProxyModel = {
   usesCustomProvider: boolean;
   providerBaseUrl: string;
   upstreamModelName: string;
-  providerProtocol: 'chat_completions' | 'responses';
-  reasoningSummaryMode: 'off' | 'auto' | 'concise' | 'detailed';
-  reasoningOutputMode: 'off' | 'think_tags' | 'reasoning_content';
+  providerProtocol: "chat_completions" | "responses";
+  reasoningSummaryMode: "off" | "auto" | "concise" | "detailed";
+  reasoningOutputMode: "off" | "think_tags" | "reasoning_content";
   interceptImagesWithOcr: boolean;
   customParams: Record<string, unknown>;
   inputCostPerMillion: number;
   cachedInputCostPerMillion: number;
   outputCostPerMillion: number;
+  includeCostInUsage: boolean;
   isActive: boolean;
   hasProviderApiKey: boolean;
   // Fallback configuration

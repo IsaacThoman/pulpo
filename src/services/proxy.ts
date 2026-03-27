@@ -191,6 +191,7 @@ export function toAdminProxyModelJson(
     inputCostPerMillion: Number(model.inputCostPerMillion),
     cachedInputCostPerMillion: Number(model.cachedInputCostPerMillion),
     outputCostPerMillion: Number(model.outputCostPerMillion),
+    includeCostInUsage: model.includeCostInUsage,
     isActive: model.isActive,
     hasProviderApiKey: Boolean(model.providerApiKeyEncrypted),
     // Fallback configuration
@@ -360,6 +361,7 @@ export async function persistModelInput(
     inputCostPerMillion: number;
     cachedInputCostPerMillion: number;
     outputCostPerMillion: number;
+    includeCostInUsage: boolean;
     isActive: boolean;
     // Fallback configuration
     fallbackModelId?: string | null;
@@ -454,6 +456,7 @@ export async function persistModelInput(
     inputCostPerMillion: input.inputCostPerMillion,
     cachedInputCostPerMillion: input.cachedInputCostPerMillion,
     outputCostPerMillion: input.outputCostPerMillion,
+    includeCostInUsage: input.includeCostInUsage,
     isActive: input.isActive,
     fallbackModelId,
     maxRetries: input.maxRetries ?? 0,
@@ -517,6 +520,60 @@ function computeCost(model: ProxyModel, usage: UsageShape): number {
     1_000_000;
 
   return Number((inputCost + cachedCost + outputCost).toFixed(8));
+}
+
+function attachUsageCost(
+  model: ProxyModel,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!model.includeCostInUsage) {
+    return payload;
+  }
+
+  const usage = payload.usage;
+  if (!usage || typeof usage !== "object") {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    usage: {
+      ...(usage as Record<string, unknown>),
+      cost: computeCost(model, extractUsage(payload)),
+    },
+  };
+}
+
+function attachUsageCostToSseEvent(
+  model: ProxyModel,
+  event: string,
+): string {
+  const lines = event.split("\n");
+  let changed = false;
+  const transformedLines = lines.map((line) => {
+    if (!line.startsWith("data:")) {
+      return line;
+    }
+
+    const rawData = line.slice(5).trim();
+    if (!rawData || rawData === "[DONE]") {
+      return line;
+    }
+
+    try {
+      const payload = JSON.parse(rawData) as Record<string, unknown>;
+      const payloadWithCost = attachUsageCost(model, payload);
+      if (payloadWithCost === payload) {
+        return line;
+      }
+      changed = true;
+      return `data: ${JSON.stringify(payloadWithCost)}`;
+    } catch {
+      return line;
+    }
+  });
+
+  return changed ? transformedLines.join("\n") : event;
 }
 
 function createStreamInspectionState(): StreamInspectionState {
@@ -586,9 +643,7 @@ function inspectSseBuffer(state: StreamInspectionState): void {
 
 function finalizeStreamInspection(
   state: StreamInspectionState,
-  decoder: TextDecoder,
 ): StreamInspectionResult {
-  state.buffer += decoder.decode();
   inspectSseBuffer(state);
   return {
     usagePayload: state.usagePayload,
@@ -1135,6 +1190,7 @@ async function attemptChatCompletion(
 async function prepareStreamingResponse(input: {
   upstreamResponse: Response;
   abortController: AbortController;
+  model: ProxyModel;
 }): Promise<PreparedStreamingResponse> {
   const body = input.upstreamResponse.body;
   if (!body) {
@@ -1145,9 +1201,11 @@ async function prepareStreamingResponse(input: {
     };
   }
 
+  const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   const reader = body.getReader();
   const state = createStreamInspectionState();
+  let pendingText = "";
 
   let completeStream: (result: StreamInspectionResult) => void = () =>
     undefined;
@@ -1159,19 +1217,47 @@ async function prepareStreamingResponse(input: {
 
   const proxyStream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      const emitEvent = (event: string) => {
+        const transformedEvent = attachUsageCostToSseEvent(input.model, event);
+        controller.enqueue(encoder.encode(`${transformedEvent}\n\n`));
+        state.buffer += `${transformedEvent}\n\n`;
+        inspectSseBuffer(state);
+      };
+
+      const flushPendingEvents = () => {
+        let boundary = pendingText.indexOf("\n\n");
+        while (boundary !== -1) {
+          const event = pendingText.slice(0, boundary);
+          pendingText = pendingText.slice(boundary + 2);
+          emitEvent(event);
+          boundary = pendingText.indexOf("\n\n");
+        }
+      };
+
       try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
-            const result = finalizeStreamInspection(state, decoder);
+            pendingText += decoder.decode();
+            flushPendingEvents();
+            if (pendingText.length > 0) {
+              const transformedEvent = attachUsageCostToSseEvent(
+                input.model,
+                pendingText,
+              );
+              controller.enqueue(encoder.encode(transformedEvent));
+              state.buffer += `${transformedEvent}\n\n`;
+              inspectSseBuffer(state);
+              pendingText = "";
+            }
+            const result = finalizeStreamInspection(state);
             completeStream(result);
             controller.close();
             return;
           }
 
-          controller.enqueue(value);
-          state.buffer += decoder.decode(value, { stream: true });
-          inspectSseBuffer(state);
+          pendingText += decoder.decode(value, { stream: true });
+          flushPendingEvents();
         }
       } catch (error) {
         const streamError = error instanceof Error
@@ -1212,6 +1298,7 @@ async function prepareStreamingResponse(input: {
 async function prepareResponsesStreamingResponse(input: {
   upstreamResponse: Response;
   abortController: AbortController;
+  model: ProxyModel;
   publicModelName: string;
   reasoningOutputMode: string;
 }): Promise<PreparedStreamingResponse> {
@@ -1406,7 +1493,12 @@ async function prepareResponsesStreamingResponse(input: {
             model: input.publicModelName,
             delta: {},
             finishReason: "stop",
-            usage: usagePayload?.usage as Record<string, unknown> | undefined,
+            usage: usagePayload
+              ? (attachUsageCost(input.model, usagePayload).usage as Record<
+                string,
+                unknown
+              >)
+              : undefined,
           })));
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
@@ -1641,13 +1733,16 @@ async function attemptModelExecution(
     }
 
     const upstreamPayload = parsedPayload as Record<string, unknown>;
-    const responsePayload = isResponsesProtocol(input.model)
-      ? buildTranslatedChatCompletionPayload({
-        publicModelName: getPublicModelName(input.body, input.model),
-        responsePayload: upstreamPayload,
-        reasoningOutputMode: input.model.reasoningOutputMode,
-      })
-      : upstreamPayload;
+    const responsePayload = attachUsageCost(
+      input.model,
+      isResponsesProtocol(input.model)
+        ? buildTranslatedChatCompletionPayload({
+          publicModelName: getPublicModelName(input.body, input.model),
+          responsePayload: upstreamPayload,
+          reasoningOutputMode: input.model.reasoningOutputMode,
+        })
+        : upstreamPayload,
+    );
     return {
       ok: true,
       kind: "json",
@@ -1671,12 +1766,14 @@ async function attemptModelExecution(
     ? await prepareResponsesStreamingResponse({
       upstreamResponse: result.response,
       abortController: result.abortController,
+      model: input.model,
       publicModelName: getPublicModelName(input.body, input.model),
       reasoningOutputMode: input.model.reasoningOutputMode,
     })
     : await prepareStreamingResponse({
       upstreamResponse: result.response,
       abortController: result.abortController,
+      model: input.model,
     });
   if (!preparedResponse.ok) {
     return createExecutionFailure(input.model, {
