@@ -23,7 +23,10 @@ export class ApiService {
     return firstValueFrom(this.http.get<{ needsSetup: boolean }>('/api/setup/status'));
   }
 
-  createInitialAdmin(payload: { username: string; password: string }): Promise<{ admin: AdminUser }> {
+  createInitialAdmin(payload: {
+    username: string;
+    password: string;
+  }): Promise<{ admin: AdminUser }> {
     return firstValueFrom(this.http.post<{ admin: AdminUser }>('/api/setup', payload));
   }
 
@@ -43,19 +46,30 @@ export class ApiService {
     return firstValueFrom(this.http.get<{ items: ProxyKey[] }>('/api/admin/proxy-keys'));
   }
 
-  createProxyKey(payload: { name: string; isActive: boolean }): Promise<{ item: ProxyKey; plainTextKey: string }> {
+  createProxyKey(payload: {
+    name: string;
+    isActive: boolean;
+  }): Promise<{ item: ProxyKey; plainTextKey: string }> {
     return firstValueFrom(
       this.http.post<{ item: ProxyKey; plainTextKey: string }>('/api/admin/proxy-keys', payload),
     );
   }
 
-  updateProxyKey(id: string, payload: Partial<{ name: string; isActive: boolean }>): Promise<{ item: ProxyKey }> {
-    return firstValueFrom(this.http.patch<{ item: ProxyKey }>(`/api/admin/proxy-keys/${id}`, payload));
+  updateProxyKey(
+    id: string,
+    payload: Partial<{ name: string; isActive: boolean }>,
+  ): Promise<{ item: ProxyKey }> {
+    return firstValueFrom(
+      this.http.patch<{ item: ProxyKey }>(`/api/admin/proxy-keys/${id}`, payload),
+    );
   }
 
   rotateProxyKey(id: string): Promise<{ item: ProxyKey; plainTextKey: string }> {
     return firstValueFrom(
-      this.http.post<{ item: ProxyKey; plainTextKey: string }>(`/api/admin/proxy-keys/${id}/rotate`, {}),
+      this.http.post<{ item: ProxyKey; plainTextKey: string }>(
+        `/api/admin/proxy-keys/${id}/rotate`,
+        {},
+      ),
     );
   }
 
@@ -72,7 +86,9 @@ export class ApiService {
   }
 
   updateProvider(id: string, payload: Record<string, unknown>): Promise<{ item: Provider }> {
-    return firstValueFrom(this.http.patch<{ item: Provider }>(`/api/admin/providers/${id}`, payload));
+    return firstValueFrom(
+      this.http.patch<{ item: Provider }>(`/api/admin/providers/${id}`, payload),
+    );
   }
 
   deleteProvider(id: string): Promise<{ ok: boolean }> {
@@ -80,11 +96,15 @@ export class ApiService {
   }
 
   getProviderApiKey(id: string): Promise<{ key: string | null }> {
-    return firstValueFrom(this.http.get<{ key: string | null }>(`/api/admin/providers/${id}/api-key`));
+    return firstValueFrom(
+      this.http.get<{ key: string | null }>(`/api/admin/providers/${id}/api-key`),
+    );
   }
 
   fetchStoredProviderModels(id: string): Promise<{ items: string[] }> {
-    return firstValueFrom(this.http.post<{ items: string[] }>(`/api/admin/providers/${id}/models`, {}));
+    return firstValueFrom(
+      this.http.post<{ items: string[] }>(`/api/admin/providers/${id}/models`, {}),
+    );
   }
 
   listModels(): Promise<{ items: ProxyModel[] }> {
@@ -96,7 +116,9 @@ export class ApiService {
   }
 
   updateModel(id: string, payload: Record<string, unknown>): Promise<{ item: ProxyModel }> {
-    return firstValueFrom(this.http.patch<{ item: ProxyModel }>(`/api/admin/models/${id}`, payload));
+    return firstValueFrom(
+      this.http.patch<{ item: ProxyModel }>(`/api/admin/models/${id}`, payload),
+    );
   }
 
   deleteModel(id: string): Promise<{ ok: boolean }> {
@@ -104,7 +126,9 @@ export class ApiService {
   }
 
   getModelProviderKey(id: string): Promise<{ key: string | null }> {
-    return firstValueFrom(this.http.get<{ key: string | null }>(`/api/admin/models/${id}/provider-key`));
+    return firstValueFrom(
+      this.http.get<{ key: string | null }>(`/api/admin/models/${id}/provider-key`),
+    );
   }
 
   fetchProviderModels(payload: {
@@ -140,8 +164,12 @@ export class ApiService {
     return firstValueFrom(this.http.put<RefreshSettings>('/api/admin/settings/refresh', payload));
   }
 
-  getUsageSummary(days = 30): Promise<UsageSummary> {
-    return firstValueFrom(this.http.get<UsageSummary>(`/api/admin/usage/summary?days=${days}`));
+  getUsageSummary(days = 30, page = 1, pageSize = 50): Promise<UsageSummary> {
+    return firstValueFrom(
+      this.http.get<UsageSummary>(
+        `/api/admin/usage/summary?days=${days}&page=${page}&pageSize=${pageSize}`,
+      ),
+    );
   }
 
   // SimModels
@@ -154,7 +182,9 @@ export class ApiService {
   }
 
   updateSimModel(id: string, payload: Record<string, unknown>): Promise<{ item: SimModel }> {
-    return firstValueFrom(this.http.patch<{ item: SimModel }>(`/api/admin/sim-models/${id}`, payload));
+    return firstValueFrom(
+      this.http.patch<{ item: SimModel }>(`/api/admin/sim-models/${id}`, payload),
+    );
   }
 
   deleteSimModel(id: string): Promise<{ ok: boolean }> {

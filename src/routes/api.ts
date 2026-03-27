@@ -438,26 +438,79 @@ async function getAdminFromRequest(request: Request) {
   return session.adminUser;
 }
 
-async function summarizeUsage(days: number) {
+async function summarizeUsage(
+  days: number,
+  recentPage: number,
+  recentPageSize: number,
+) {
   const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const logs = await db.usageLog.findMany({
-    where: {
-      createdAt: {
-        gte: start,
-      },
+  const usageWindow = {
+    createdAt: {
+      gte: start,
     },
-    include: {
-      proxyKey: true,
-      proxyModel: true,
-      simModel: true,
-    },
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: 250,
+  };
+  const totalRecentItems = await db.usageLog.count({
+    where: usageWindow,
   });
-  type UsageSummaryLog = (typeof logs)[number];
-  const requestLogs = logs.filter((log: UsageSummaryLog) =>
+  const totalRecentPages = Math.max(
+    1,
+    Math.ceil(totalRecentItems / recentPageSize),
+  );
+  const currentRecentPage = Math.min(
+    Math.max(recentPage, 1),
+    totalRecentPages,
+  );
+
+  const [summaryLogs, recentLogs] = await Promise.all([
+    db.usageLog.findMany({
+      where: usageWindow,
+      select: {
+        success: true,
+        inputTokens: true,
+        cachedInputTokens: true,
+        outputTokens: true,
+        totalCost: true,
+        createdAt: true,
+        proxyKeyId: true,
+        proxyModelId: true,
+        simModelId: true,
+        isRetryAttempt: true,
+        proxyKey: {
+          select: {
+            name: true,
+          },
+        },
+        proxyModel: {
+          select: {
+            displayName: true,
+          },
+        },
+        simModel: {
+          select: {
+            displayName: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+    db.usageLog.findMany({
+      where: usageWindow,
+      include: {
+        proxyKey: true,
+        proxyModel: true,
+        simModel: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      skip: (currentRecentPage - 1) * recentPageSize,
+      take: recentPageSize,
+    }),
+  ]);
+  type UsageSummaryLog = (typeof summaryLogs)[number];
+  const requestLogs = summaryLogs.filter((log: UsageSummaryLog) =>
     !log.isRetryAttempt
   );
 
@@ -630,12 +683,36 @@ async function summarizeUsage(days: number) {
   }>;
   daily.sort((left, right) => left.day.localeCompare(right.day));
 
+  const originalModelIds = Array.from(
+    new Set(
+      recentLogs.flatMap((log) =>
+        log.originalModelId ? [log.originalModelId] : []
+      ),
+    ),
+  );
+  const originalModels = originalModelIds.length > 0
+    ? await db.proxyModel.findMany({
+      where: {
+        id: {
+          in: originalModelIds,
+        },
+      },
+      select: {
+        id: true,
+        displayName: true,
+      },
+    })
+    : [];
+  const originalModelNameById = new Map(
+    originalModels.map((model) => [model.id, model.displayName]),
+  );
+
   return {
     totals,
     byKey,
     byModel,
     daily,
-    recent: logs.slice(0, 50).map((log: UsageSummaryLog) => ({
+    recent: recentLogs.map((log) => ({
       id: log.id,
       requestType: log.requestType,
       success: log.success,
@@ -656,14 +733,18 @@ async function summarizeUsage(days: number) {
       isFallback: log.isFallback,
       isStickyFallback: log.isStickyFallback,
       originalModelName: log.originalModelId
-        ? logs.find((l: UsageSummaryLog) =>
-          l.proxyModelId === log.originalModelId
-        )?.proxyModel?.displayName || null
+        ? originalModelNameById.get(log.originalModelId) || null
         : null,
       fallbackChain: log.fallbackChain || [],
       retryCount: log.retryCount || 0,
       isRetryAttempt: log.isRetryAttempt || false,
     })),
+    recentPagination: {
+      page: currentRecentPage,
+      pageSize: recentPageSize,
+      totalItems: totalRecentItems,
+      totalPages: totalRecentPages,
+    },
   };
 }
 
@@ -1290,7 +1371,20 @@ api.put("/api/admin/settings/refresh", async (c) => {
 
 api.get("/api/admin/usage/summary", async (c) => {
   const days = Number.parseInt(c.req.query("days") || "30", 10);
-  return c.json(await summarizeUsage(Number.isFinite(days) ? days : 30));
+  const page = Number.parseInt(c.req.query("page") || "1", 10);
+  const pageSize = Number.parseInt(c.req.query("pageSize") || "50", 10);
+  const normalizedDays = Number.isFinite(days) ? days : 30;
+  const normalizedPage = Number.isFinite(page) && page > 0 ? page : 1;
+  const normalizedPageSize = Number.isFinite(pageSize)
+    ? Math.min(Math.max(pageSize, 10), 200)
+    : 50;
+  return c.json(
+    await summarizeUsage(
+      normalizedDays,
+      normalizedPage,
+      normalizedPageSize,
+    ),
+  );
 });
 
 api.post("/api/admin/playground/chat", async (c) => {
