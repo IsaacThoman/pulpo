@@ -5,7 +5,7 @@ import {
 } from "jsr:@std/assert@^1.0.14";
 import type { PrismaClient, ProxyModel } from "npm:@prisma/client";
 import { encryptSecret } from "../lib/security.ts";
-import { forwardChatCompletion } from "./proxy.ts";
+import { clearStickyBlocksForTesting, forwardChatCompletion } from "./proxy.ts";
 
 type UsageLogRecord = {
   requestId?: string;
@@ -14,6 +14,7 @@ type UsageLogRecord = {
   retryCount: number;
   fallbackChain: string[];
   isFallback: boolean;
+  isStickyFallback?: boolean;
   isRetryAttempt?: boolean;
 };
 
@@ -185,11 +186,68 @@ Deno.test("retries the same model until one attempt succeeds", async () => {
     assertEquals(callOrder, ["upstream-a", "upstream-a", "upstream-a"]);
     assertEquals(payload.choices?.[0]?.message?.content, "ok");
     assertEquals(usageLogs.length, 3);
-    assertEquals(usageLogs.map((log) => log.isRetryAttempt), [true, true, false]);
+    assertEquals(usageLogs.map((log) => log.isRetryAttempt), [
+      true,
+      true,
+      false,
+    ]);
     assertEquals(usageLogs.map((log) => log.statusCode), [500, 500, 200]);
     assertEquals(usageLogs[2].retryCount, 2);
     assertEquals(usageLogs[2].fallbackChain, ["Model A"]);
     assertEquals(usageLogs[2].isFallback, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("retries the same model when the upstream returns an empty JSON payload", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-a",
+    displayName: "Model A",
+    upstreamModelName: "upstream-a",
+    providerApiKeyEncrypted,
+    maxRetries: 1,
+    fallbackDelaySeconds: 0,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+  let attempts = 0;
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return jsonResponse({});
+    }
+
+    return jsonResponse({
+      id: "success-a",
+      choices: [{ message: { role: "assistant", content: "ok" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const payload = await response.json();
+
+    assertEquals(response.status, 200);
+    assertEquals(attempts, 2);
+    assertEquals(payload.choices?.[0]?.message?.content, "ok");
+    assertEquals(usageLogs.length, 2);
+    assertEquals(usageLogs.map((log) => log.isRetryAttempt), [true, false]);
+    assertEquals(usageLogs.map((log) => log.statusCode), [502, 200]);
+    assertEquals(usageLogs[1].retryCount, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -279,11 +337,100 @@ Deno.test("retries the selected fallback model and lets that model resolve its o
       usageLogs.map((log) => log.isRetryAttempt),
       [true, true, true, true, false],
     );
-    assertEquals(usageLogs.map((log) => log.statusCode), [500, 500, 500, 500, 200]);
+    assertEquals(usageLogs.map((log) => log.statusCode), [
+      500,
+      500,
+      500,
+      500,
+      200,
+    ]);
     assertEquals(usageLogs[4].retryCount, 4);
     assertEquals(usageLogs[4].fallbackChain, ["Model A", "Model B", "Model C"]);
     assertEquals(usageLogs[4].isFallback, true);
   } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("treats an empty response body as a failure that triggers sticky fallback", async () => {
+  clearStickyBlocksForTesting();
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const fallbackModel = createModel({
+    id: "model-b",
+    displayName: "Model B",
+    upstreamModelName: "upstream-b",
+    providerApiKeyEncrypted,
+  });
+  const primaryModel = createModel({
+    id: "model-a",
+    displayName: "Model A",
+    upstreamModelName: "upstream-a",
+    providerApiKeyEncrypted,
+    fallbackModelId: fallbackModel.id,
+    maxRetries: 1,
+    fallbackDelaySeconds: 0,
+    stickyFallbackSeconds: 60,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([primaryModel, fallbackModel], usageLogs);
+  const callOrder: string[] = [];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as { model: string };
+    callOrder.push(body.model);
+
+    if (body.model === "upstream-a") {
+      return new Response("", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return jsonResponse({
+      id: "success-b",
+      choices: [{ message: { role: "assistant", content: "fallback-win" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+  };
+
+  try {
+    const firstResponse = await forwardChatCompletion(prisma, {
+      body: {
+        stream: false,
+        messages: [{ role: "user", content: "first" }],
+      },
+      model: primaryModel,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const secondResponse = await forwardChatCompletion(prisma, {
+      body: {
+        stream: false,
+        messages: [{ role: "user", content: "second" }],
+      },
+      model: primaryModel,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+
+    assertEquals(firstResponse.status, 200);
+    assertEquals(secondResponse.status, 200);
+    assertEquals(callOrder, ["upstream-a", "upstream-b", "upstream-b"]);
+    assertEquals(usageLogs.length, 3);
+    assertEquals(usageLogs.map((log) => log.statusCode), [502, 200, 200]);
+    assertEquals(usageLogs.map((log) => log.isStickyFallback), [
+      false,
+      false,
+      true,
+    ]);
+    assertEquals(usageLogs[2].fallbackChain, ["Model A", "Model B"]);
+    assertEquals(usageLogs[2].isFallback, true);
+  } finally {
+    clearStickyBlocksForTesting();
     globalThis.fetch = originalFetch;
   }
 });
@@ -585,7 +732,10 @@ Deno.test("translates non-stream Responses output into message.reasoning_content
     assertEquals(body.model, "gpt-5");
     assertEquals(body.stream, false);
     assertEquals(body.store, false);
-    assertEquals((body.reasoning as Record<string, unknown>).summary, "detailed");
+    assertEquals(
+      (body.reasoning as Record<string, unknown>).summary,
+      "detailed",
+    );
 
     return jsonResponse({
       id: "resp_123",

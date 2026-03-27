@@ -119,6 +119,10 @@ type PreparedStreamingResponse =
 // Sticky fallback (circuit breaker) tracking: modelId -> { blockedUntil: timestamp }
 const stickyBlocks = new Map<string, number>();
 
+export function clearStickyBlocksForTesting(): void {
+  stickyBlocks.clear();
+}
+
 // Helper to check if a model is currently blocked
 function isModelBlocked(modelId: string): boolean {
   const blockExpiry = stickyBlocks.get(modelId);
@@ -416,7 +420,9 @@ export async function persistModelInput(
     (input.reasoningOutputMode ?? "off") !== "off" &&
     (input.reasoningSummaryMode ?? "off") === "off"
   ) {
-    throw new Error("Reasoning summaries must be enabled to expose reasoning output");
+    throw new Error(
+      "Reasoning summaries must be enabled to expose reasoning output",
+    );
   }
   if (input.slowStickyEnabled && (input.stickyFallbackSeconds ?? 0) <= 0) {
     throw new Error(
@@ -606,7 +612,9 @@ function getPublicModelName(
     : model.displayName;
 }
 
-function validateResponsesRequest(body: Record<string, unknown>): string | null {
+function validateResponsesRequest(
+  body: Record<string, unknown>,
+): string | null {
   const unsupportedFields = [
     "functions",
     "function_call",
@@ -701,8 +709,12 @@ function toResponsesInput(
   }));
 }
 
-function extractResponsesSummaryText(responsePayload: Record<string, unknown>): string {
-  const output = Array.isArray(responsePayload.output) ? responsePayload.output : [];
+function extractResponsesSummaryText(
+  responsePayload: Record<string, unknown>,
+): string {
+  const output = Array.isArray(responsePayload.output)
+    ? responsePayload.output
+    : [];
   const parts: string[] = [];
 
   for (const item of output) {
@@ -728,8 +740,12 @@ function extractResponsesSummaryText(responsePayload: Record<string, unknown>): 
   return parts.join("");
 }
 
-function extractResponsesOutputText(responsePayload: Record<string, unknown>): string {
-  const output = Array.isArray(responsePayload.output) ? responsePayload.output : [];
+function extractResponsesOutputText(
+  responsePayload: Record<string, unknown>,
+): string {
+  const output = Array.isArray(responsePayload.output)
+    ? responsePayload.output
+    : [];
   const parts: string[] = [];
 
   for (const item of output) {
@@ -759,7 +775,10 @@ function extractResponsesOutputText(responsePayload: Record<string, unknown>): s
         text.length > 0
       ) {
         parts.push(text);
-      } else if (record.type === "refusal" && typeof refusal === "string" && refusal.length > 0) {
+      } else if (
+        record.type === "refusal" && typeof refusal === "string" &&
+        refusal.length > 0
+      ) {
         parts.push(refusal);
       }
     }
@@ -796,7 +815,9 @@ function buildTranslatedChatCompletionPayload(input: {
     input.responsePayload.created_at ?? Math.floor(Date.now() / 1000),
   );
   const content = extractResponsesOutputText(input.responsePayload);
-  const reasoningSummaryText = extractResponsesSummaryText(input.responsePayload);
+  const reasoningSummaryText = extractResponsesSummaryText(
+    input.responsePayload,
+  );
   const message: Record<string, unknown> = {
     role: "assistant",
     content: input.reasoningOutputMode === "think_tags" && reasoningSummaryText
@@ -814,7 +835,9 @@ function buildTranslatedChatCompletionPayload(input: {
   return {
     id: input.responsePayload.id ?? `chatcmpl-${crypto.randomUUID()}`,
     object: "chat.completion",
-    created: Number.isFinite(created) ? Math.floor(created) : Math.floor(Date.now() / 1000),
+    created: Number.isFinite(created)
+      ? Math.floor(created)
+      : Math.floor(Date.now() / 1000),
     model: input.publicModelName,
     choices: [{
       index: 0,
@@ -835,18 +858,20 @@ function buildChatCompletionChunk(input: {
   finishReason?: string | null;
   usage?: Record<string, unknown>;
 }): string {
-  return `data: ${JSON.stringify({
-    id: input.id,
-    object: "chat.completion.chunk",
-    created: input.created,
-    model: input.model,
-    choices: [{
-      index: 0,
-      delta: input.delta ?? {},
-      finish_reason: input.finishReason ?? null,
-    }],
-    ...(input.usage ? { usage: input.usage } : {}),
-  })}\n\n`;
+  return `data: ${
+    JSON.stringify({
+      id: input.id,
+      object: "chat.completion.chunk",
+      created: input.created,
+      model: input.model,
+      choices: [{
+        index: 0,
+        delta: input.delta ?? {},
+        finish_reason: input.finishReason ?? null,
+      }],
+      ...(input.usage ? { usage: input.usage } : {}),
+    })
+  }\n\n`;
 }
 
 function maybeBlockSlowModel(
@@ -1007,7 +1032,12 @@ async function attemptChatCompletion(
         };
       }
 
-      const { model: _ignoredModel, messages: _ignoredMessages, stream: _ignoredStream, ...passthroughBody } = input.body;
+      const {
+        model: _ignoredModel,
+        messages: _ignoredMessages,
+        stream: _ignoredStream,
+        ...passthroughBody
+      } = input.body;
       const reasoningSummaryMode = input.model.reasoningSummaryMode;
 
       upstreamPath = "/responses";
@@ -1207,7 +1237,8 @@ async function prepareResponsesStreamingResponse(input: {
   let usagePayload: Record<string, unknown> | null = null;
   let rawResponsePayload: Record<string, unknown> | null = null;
 
-  let completeStream: (result: StreamInspectionResult) => void = () => undefined;
+  let completeStream: (result: StreamInspectionResult) => void = () =>
+    undefined;
   let failStream: (error: unknown) => void = () => undefined;
   const completion = new Promise<StreamInspectionResult>((resolve, reject) => {
     completeStream = resolve;
@@ -1295,7 +1326,10 @@ async function prepareResponsesStreamingResponse(input: {
 
                 const eventType = json.type;
                 if (typeof json.response === "object" && json.response) {
-                  const responseRecord = json.response as Record<string, unknown>;
+                  const responseRecord = json.response as Record<
+                    string,
+                    unknown
+                  >;
                   rawResponsePayload = responseRecord;
                   if (typeof responseRecord.id === "string") {
                     responseId = responseRecord.id;
@@ -1323,7 +1357,9 @@ async function prepareResponsesStreamingResponse(input: {
                     }
                     emitVisibleChunk(controller, { content: delta });
                     reasoningSummaryText += delta;
-                  } else if (input.reasoningOutputMode === "reasoning_content") {
+                  } else if (
+                    input.reasoningOutputMode === "reasoning_content"
+                  ) {
                     emitVisibleChunk(controller, { reasoning_content: delta });
                   }
                   continue;
@@ -1404,8 +1440,10 @@ async function prepareResponsesStreamingResponse(input: {
       status: input.upstreamResponse.status,
       headers: new Headers({
         "content-type": "text/event-stream",
-        "cache-control": input.upstreamResponse.headers.get("cache-control") ?? "no-cache",
-        connection: input.upstreamResponse.headers.get("connection") ?? "keep-alive",
+        "cache-control": input.upstreamResponse.headers.get("cache-control") ??
+          "no-cache",
+        connection: input.upstreamResponse.headers.get("connection") ??
+          "keep-alive",
       }),
     },
   );
@@ -1481,6 +1519,40 @@ function createExecutionFailure(
   };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getInvalidUpstreamJsonPayloadError(
+  payload: unknown,
+  model: ProxyModel,
+): string | null {
+  if (payload === null) {
+    return "Upstream provider returned a null JSON payload";
+  }
+
+  if (!isRecord(payload)) {
+    return "Upstream provider returned a non-object JSON payload";
+  }
+
+  if (Object.keys(payload).length === 0) {
+    return "Upstream provider returned an empty JSON payload";
+  }
+
+  if (isResponsesProtocol(model)) {
+    if (Array.isArray(payload.output) && payload.output.length === 0) {
+      return "Upstream provider returned an empty Responses output payload";
+    }
+    return null;
+  }
+
+  if (Array.isArray(payload.choices) && payload.choices.length === 0) {
+    return "Upstream provider returned an empty chat completion payload";
+  }
+
+  return null;
+}
+
 function wrapExhaustedFailure(
   failure: ExecutionFailure,
 ): ExecutionFailure {
@@ -1514,7 +1586,61 @@ async function attemptModelExecution(
   }
 
   if (!input.body.stream) {
-    const upstreamPayload = (await result.response.json()) as Record<string, unknown>;
+    const upstreamText = await result.response.text();
+    if (upstreamText.trim().length === 0) {
+      const message = "Upstream provider returned an empty response body";
+      return createExecutionFailure(
+        input.model,
+        {
+          statusCode: 502,
+          errorMessage: message,
+          upstreamRequestId,
+        },
+        path,
+        "Invalid upstream response",
+        message,
+      );
+    }
+
+    let parsedPayload: unknown;
+    try {
+      parsedPayload = JSON.parse(upstreamText);
+    } catch (error) {
+      const message = error instanceof Error
+        ? `Upstream provider returned invalid JSON: ${error.message}`
+        : "Upstream provider returned invalid JSON";
+      return createExecutionFailure(
+        input.model,
+        {
+          statusCode: 502,
+          errorMessage: message,
+          upstreamRequestId,
+        },
+        path,
+        "Invalid upstream response",
+        message,
+      );
+    }
+
+    const payloadValidationError = getInvalidUpstreamJsonPayloadError(
+      parsedPayload,
+      input.model,
+    );
+    if (payloadValidationError) {
+      return createExecutionFailure(
+        input.model,
+        {
+          statusCode: 502,
+          errorMessage: payloadValidationError,
+          upstreamRequestId,
+        },
+        path,
+        "Invalid upstream response",
+        payloadValidationError,
+      );
+    }
+
+    const upstreamPayload = parsedPayload as Record<string, unknown>;
     const responsePayload = isResponsesProtocol(input.model)
       ? buildTranslatedChatCompletionPayload({
         publicModelName: getPublicModelName(input.body, input.model),
@@ -1755,7 +1881,8 @@ async function retryAfterFailure(
         maxRetries: input.model.maxRetries,
         fallbackTarget: fallbackModel.displayName,
       } as PrismaTypes.InputJsonValue,
-      errorMessage: `Retry ${retryAttempt}/${input.model.maxRetries} failed, falling back to ${fallbackModel.displayName}: ${lastFailure.errorMessage}`,
+      errorMessage:
+        `Retry ${retryAttempt}/${input.model.maxRetries} failed, falling back to ${fallbackModel.displayName}: ${lastFailure.errorMessage}`,
       upstreamRequestId: lastFailure.upstreamRequestId,
       durationMs: undefined,
       isFallback: true,
