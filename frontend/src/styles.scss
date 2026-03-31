@@ -286,6 +286,16 @@ tr:last-child td {
   border-bottom: none;
 }
 
+/* Table scroll container for responsive tables */
+.table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.table-scroll table {
+  min-width: 800px;
+}
+
 /* Status badges */
 .badge {
   display: inline-flex;
