@@ -248,6 +248,10 @@ export class AdminPageComponent implements OnDestroy {
     intervalSeconds: 30,
   };
   refreshDraftDirty = false;
+  showMigrationModal = false;
+  migrationIncludeUsageHistory = false;
+  migrationBusy = false;
+  migrationSelectedFileName = '';
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   lastRefreshFailed = false;
 
@@ -334,6 +338,7 @@ export class AdminPageComponent implements OnDestroy {
       this.showProviderModal = false;
       this.showModelModal = false;
       this.showSimModelModal = false;
+      this.showMigrationModal = false;
       this.mobileMenuOpen = false;
     }
   }
@@ -359,7 +364,10 @@ export class AdminPageComponent implements OnDestroy {
     }
   }
 
-  closeModalFromOverlay(event: MouseEvent, modal: 'key' | 'provider' | 'model' | 'simModel'): void {
+  closeModalFromOverlay(
+    event: MouseEvent,
+    modal: 'key' | 'provider' | 'model' | 'simModel' | 'migration',
+  ): void {
     if (event.target !== event.currentTarget || this.pointerDownTarget !== event.currentTarget) {
       return;
     }
@@ -376,6 +384,9 @@ export class AdminPageComponent implements OnDestroy {
         break;
       case 'simModel':
         this.showSimModelModal = false;
+        break;
+      case 'migration':
+        this.showMigrationModal = false;
         break;
     }
   }
@@ -1094,6 +1105,92 @@ export class AdminPageComponent implements OnDestroy {
     }
   }
 
+  openMigrationModal(): void {
+    this.migrationSelectedFileName = '';
+    this.showMigrationModal = true;
+  }
+
+  async exportMigration(): Promise<void> {
+    this.migrationBusy = true;
+    try {
+      const { blob, filename } = await this.api.exportMigration(this.migrationIncludeUsageHistory);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      this.showNotice(
+        this.migrationIncludeUsageHistory
+          ? 'Migration backup exported with usage history'
+          : 'Migration backup exported',
+      );
+    } catch (err) {
+      this.showError(this.normalizeError(err));
+    } finally {
+      this.migrationBusy = false;
+    }
+  }
+
+  async handleMigrationFileInput(event: Event): Promise<void> {
+    const target = event.target as HTMLInputElement;
+    const file = target.files?.[0] || null;
+    target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    this.migrationSelectedFileName = file.name;
+
+    const confirmMessage = this.migrationIncludeUsageHistory
+      ? 'Importing will overwrite keys, providers, models, simulations, settings, and existing usage history. Continue?'
+      : 'Importing will overwrite keys, providers, models, simulations, and settings. Existing usage history will be kept. Continue?';
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    this.migrationBusy = true;
+    try {
+      const backup = JSON.parse(await file.text()) as unknown;
+      const result = await this.api.importMigration({
+        includeUsageHistory: this.migrationIncludeUsageHistory,
+        backup,
+      });
+      this.keyStorage.clear();
+      this.visibleKeys.clear();
+      this.providerKeyStorage.clear();
+      this.visibleProviderKeys.clear();
+      this.loggingDraftDirty = false;
+      this.ocrDraftDirty = false;
+      this.refreshDraftDirty = false;
+      this.showMigrationModal = false;
+      this.migrationSelectedFileName = '';
+      await this.refreshAll();
+      this.showNotice(this.formatMigrationImportNotice(result));
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        this.showError('Selected file is not valid JSON');
+      } else {
+        this.showError(this.normalizeError(err));
+      }
+    } finally {
+      this.migrationBusy = false;
+    }
+  }
+
+  private formatMigrationImportNotice(result: {
+    counts: { usageLogs: number };
+    usageHistoryReplaced: boolean;
+  }): string {
+    if (!result.usageHistoryReplaced) {
+      return 'Migration imported';
+    }
+    return `Migration imported with ${result.counts.usageLogs} usage log${
+      result.counts.usageLogs === 1 ? '' : 's'
+    }`;
+  }
+
   private startAutoRefresh(): void {
     this.stopAutoRefresh();
     if (this.refreshDraft.enabled && this.refreshDraft.intervalSeconds > 0) {
@@ -1412,6 +1509,12 @@ export class AdminPageComponent implements OnDestroy {
     if (!error) return 'Unknown error';
     if (typeof error === 'string') return error;
     if (error instanceof Error) return error.message;
+    if (typeof error === 'object') {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') return message;
+      const nestedError = (error as { error?: unknown }).error;
+      if (typeof nestedError === 'string') return nestedError;
+    }
     return 'Request failed';
   }
 }

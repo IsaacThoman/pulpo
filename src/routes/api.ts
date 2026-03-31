@@ -27,6 +27,11 @@ import {
   toAdminSimModelJson,
 } from "../services/proxy.ts";
 import {
+  createMigrationSnapshot,
+  importMigrationSnapshot,
+  migrationSnapshotSchema,
+} from "../services/migration.ts";
+import {
   getAdminOcrSettings,
   getLoggingSettings,
   getRefreshSettings,
@@ -207,6 +212,11 @@ const ocrSchema = z.object({
 const refreshSchema = z.object({
   enabled: z.boolean(),
   intervalSeconds: z.coerce.number().int().min(5).max(300),
+});
+
+const migrationImportSchema = z.object({
+  includeUsageHistory: z.boolean().default(false),
+  backup: migrationSnapshotSchema,
 });
 
 const providerModelsSchema = z.object({
@@ -1367,6 +1377,44 @@ api.put("/api/admin/settings/refresh", async (c) => {
     return c.json({ error: parsed.error.flatten() }, 400);
   }
   return c.json(await saveRefreshSettings(db, parsed.data));
+});
+
+api.get("/api/admin/migration/export", async (c) => {
+  const includeUsageHistory = c.req.query("includeUsageHistory") === "true";
+  const snapshot = await createMigrationSnapshot(db, includeUsageHistory);
+  const exportedAt = snapshot.exportedAt.replaceAll(':', '-');
+  c.header("content-type", "application/json; charset=utf-8");
+  c.header(
+    "content-disposition",
+    `attachment; filename="pulpo-migration-${exportedAt}.json"`,
+  );
+  return c.body(`${JSON.stringify(snapshot, null, 2)}\n`);
+});
+
+api.post("/api/admin/migration/import", async (c) => {
+  const parsed = migrationImportSchema.safeParse(await c.req.json());
+  if (!parsed.success) {
+    return c.json({ error: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    return c.json(
+      await importMigrationSnapshot(
+        db,
+        parsed.data.backup,
+        parsed.data.includeUsageHistory,
+      ),
+    );
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error
+          ? error.message
+          : "Unable to import migration backup",
+      },
+      400,
+    );
+  }
 });
 
 api.get("/api/admin/usage/summary", async (c) => {

@@ -1031,9 +1031,12 @@
             <h2 style="font-size: 18px; margin-bottom: var(--space-xs)">Settings</h2>
             <p class="text-muted">Configure dashboard behavior</p>
           </div>
-          <button class="primary" (click)="saveRefresh()" [class.warning]="refreshDraftDirty">
-            {{ refreshDraftDirty ? 'Save Changes*' : 'Save Changes' }}
-          </button>
+          <div class="flex items-center gap-sm">
+            <button class="ghost" (click)="openMigrationModal()">Migrate</button>
+            <button class="primary" (click)="saveRefresh()" [class.warning]="refreshDraftDirty">
+              {{ refreshDraftDirty ? 'Save Changes*' : 'Save Changes' }}
+            </button>
+          </div>
         </div>
 
         <div class="card">
@@ -1646,6 +1649,112 @@
           "
         >
           {{ editingModelId ? 'Save' : 'Create' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Migration Modal -->
+  <div
+    class="modal-overlay"
+    *ngIf="showMigrationModal"
+    (click)="closeModalFromOverlay($event, 'migration')"
+  >
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <div>
+          <h3 style="font-size: 14px; margin-bottom: 4px">Data Migration</h3>
+          <div class="text-muted" style="font-size: 12px">
+            Export or import proxy data as a JSON backup.
+          </div>
+        </div>
+        <button class="ghost" (click)="showMigrationModal = false" [disabled]="migrationBusy">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <label class="inline">
+            <div class="toggle">
+              <input type="checkbox" [(ngModel)]="migrationIncludeUsageHistory" [disabled]="migrationBusy" />
+              <span class="toggle-switch"></span>
+              <span>Include usage history</span>
+            </div>
+          </label>
+
+          <div class="text-muted" style="font-size: 12px">
+            Export includes usage logs when enabled. Import will replace existing usage logs only when
+            enabled.
+          </div>
+
+          <div class="divider"></div>
+
+          <button
+            class="card"
+            type="button"
+            (click)="exportMigration()"
+            [disabled]="migrationBusy"
+            style="
+              width: 100%;
+              text-align: left;
+              padding: var(--space-lg);
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: var(--space-lg);
+            "
+          >
+            <div>
+              <div style="font-size: 15px; font-weight: 600; color: var(--text)">Export Data</div>
+              <div class="text-muted" style="font-size: 12px; margin-top: 4px">
+                Download a JSON snapshot of the current server configuration.
+              </div>
+            </div>
+            <div class="badge info">JSON</div>
+          </button>
+
+          <input
+            #migrationFileInput
+            type="file"
+            accept="application/json,.json"
+            style="display: none"
+            (change)="handleMigrationFileInput($event)"
+          />
+
+          <button
+            class="card"
+            type="button"
+            (click)="migrationFileInput.click()"
+            [disabled]="migrationBusy"
+            style="
+              width: 100%;
+              text-align: left;
+              padding: var(--space-lg);
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: var(--space-lg);
+            "
+          >
+            <div>
+              <div style="font-size: 15px; font-weight: 600; color: var(--text)">Import Data</div>
+              <div class="text-muted" style="font-size: 12px; margin-top: 4px">
+                Restore from a JSON backup. This overwrites current configuration data.
+              </div>
+            </div>
+            <div class="badge warning">Overwrite</div>
+          </button>
+
+          <div class="text-muted" *ngIf="migrationSelectedFileName" style="font-size: 12px">
+            Selected file: {{ migrationSelectedFileName }}
+          </div>
+
+          <div class="badge danger" *ngIf="migrationIncludeUsageHistory" style="align-self: flex-start">
+            Importing usage history replaces existing usage logs.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost" (click)="showMigrationModal = false" [disabled]="migrationBusy">
+          Close
         </button>
       </div>
     </div>

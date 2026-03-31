@@ -99,6 +99,19 @@ export type RefreshSettings = {
   intervalSeconds: number;
 };
 
+export type MigrationImportResult = {
+  importedAt: string;
+  usageHistoryReplaced: boolean;
+  counts: {
+    proxyKeys: number;
+    providers: number;
+    proxyModels: number;
+    simModels: number;
+    usageLogs: number;
+    settings: number;
+  };
+};
+
 export type UsageSummary = {
   totals: {
     requests: number;

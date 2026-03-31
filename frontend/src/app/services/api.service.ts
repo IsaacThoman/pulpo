@@ -4,6 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import type {
   AdminUser,
   LoggingSettings,
+  MigrationImportResult,
   OcrSettings,
   Provider,
   ProxyKey,
@@ -18,6 +19,24 @@ import type {
 })
 export class ApiService {
   private readonly http = inject(HttpClient);
+
+  private async readErrorResponse(response: Response): Promise<string> {
+    const text = await response.text();
+    if (!text) {
+      return `Request failed (${response.status})`;
+    }
+
+    try {
+      const parsed = JSON.parse(text) as { error?: unknown };
+      if (typeof parsed.error === 'string' && parsed.error) {
+        return parsed.error;
+      }
+    } catch {
+      // Fall back to raw text.
+    }
+
+    return text;
+  }
 
   getSetupStatus(): Promise<{ needsSetup: boolean }> {
     return firstValueFrom(this.http.get<{ needsSetup: boolean }>('/api/setup/status'));
@@ -162,6 +181,43 @@ export class ApiService {
 
   saveRefreshSettings(payload: RefreshSettings): Promise<RefreshSettings> {
     return firstValueFrom(this.http.put<RefreshSettings>('/api/admin/settings/refresh', payload));
+  }
+
+  async exportMigration(includeUsageHistory: boolean): Promise<{ blob: Blob; filename: string }> {
+    const response = await fetch(
+      `/api/admin/migration/export?includeUsageHistory=${String(includeUsageHistory)}`,
+      {
+        credentials: 'include',
+      },
+    );
+    if (!response.ok) {
+      throw new Error(await this.readErrorResponse(response));
+    }
+
+    const contentDisposition = response.headers.get('content-disposition') || '';
+    const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+
+    return {
+      blob: await response.blob(),
+      filename: filenameMatch?.[1] || 'pulpo-migration.json',
+    };
+  }
+
+  async importMigration(payload: {
+    includeUsageHistory: boolean;
+    backup: unknown;
+  }): Promise<MigrationImportResult> {
+    const response = await fetch('/api/admin/migration/import', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      throw new Error(await this.readErrorResponse(response));
+    }
+
+    return (await response.json()) as MigrationImportResult;
   }
 
   getUsageSummary(days = 30, page = 1, pageSize = 50): Promise<UsageSummary> {
