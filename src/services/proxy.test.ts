@@ -449,6 +449,90 @@ Deno.test("treats an empty response body as a failure that triggers sticky fallb
   }
 });
 
+Deno.test("treats zero output tokens in a JSON response as a failure that triggers sticky fallback", async () => {
+  clearStickyBlocksForTesting();
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const fallbackModel = createModel({
+    id: "model-b",
+    displayName: "Model B",
+    upstreamModelName: "upstream-b",
+    providerApiKeyEncrypted,
+  });
+  const primaryModel = createModel({
+    id: "model-a",
+    displayName: "Model A",
+    upstreamModelName: "upstream-a",
+    providerApiKeyEncrypted,
+    fallbackModelId: fallbackModel.id,
+    maxRetries: 1,
+    fallbackDelaySeconds: 0,
+    stickyFallbackSeconds: 60,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([primaryModel, fallbackModel], usageLogs);
+  const callOrder: string[] = [];
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(
+      String((init as { body?: BodyInit | null } | undefined)?.body),
+    ) as { model: string };
+    callOrder.push(body.model);
+
+    if (body.model === "upstream-a") {
+      return jsonResponse({
+        id: "zero-output-a",
+        choices: [{ message: { role: "assistant", content: "bad" } }],
+        usage: { prompt_tokens: 1, completion_tokens: 0, total_tokens: 1 },
+      });
+    }
+
+    return jsonResponse({
+      id: "success-b",
+      choices: [{ message: { role: "assistant", content: "fallback-win" } }],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    });
+  };
+
+  try {
+    const firstResponse = await forwardChatCompletion(prisma, {
+      body: {
+        stream: false,
+        messages: [{ role: "user", content: "first" }],
+      },
+      model: primaryModel,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+    const secondResponse = await forwardChatCompletion(prisma, {
+      body: {
+        stream: false,
+        messages: [{ role: "user", content: "second" }],
+      },
+      model: primaryModel,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+
+    assertEquals(firstResponse.status, 200);
+    assertEquals(secondResponse.status, 200);
+    assertEquals(callOrder, ["upstream-a", "upstream-b", "upstream-b"]);
+    assertEquals(usageLogs.length, 3);
+    assertEquals(usageLogs.map((log) => log.statusCode), [502, 200, 200]);
+    assertEquals(usageLogs.map((log) => log.isStickyFallback), [
+      false,
+      false,
+      true,
+    ]);
+    assertEquals(usageLogs[2].fallbackChain, ["Model A", "Model B"]);
+    assertEquals(usageLogs[2].isFallback, true);
+  } finally {
+    clearStickyBlocksForTesting();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 Deno.test("returns a streamed response immediately while first-token timeout monitoring continues", async () => {
   const providerApiKeyEncrypted = await encryptSecret("test-key");
   const model = createModel({
@@ -510,6 +594,64 @@ Deno.test("returns a streamed response immediately while first-token timeout mon
     assertEquals(usageLogs.length, 1);
     assertEquals(usageLogs[0].retryCount, 0);
     assertEquals(usageLogs[0].fallbackChain, ["Model A"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("marks streamed responses with zero output tokens as failed", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-a",
+    displayName: "Model A",
+    upstreamModelName: "upstream-a",
+    providerApiKeyEncrypted,
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    return sseResponse([
+      {
+        delayMs: 0,
+        data: 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}\n\n',
+      },
+      {
+        delayMs: 0,
+        data: "data: [DONE]\n\n",
+      },
+    ]);
+  };
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+
+    assertEquals(response.status, 200);
+    const streamText = await response.text();
+    assertStringIncludes(streamText, '"hello"');
+
+    await sleep(0);
+    assertEquals(usageLogs.length, 1);
+    assertEquals(usageLogs[0].success, false);
+    assertEquals(
+      usageLogs[0].statusCode,
+      200,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }

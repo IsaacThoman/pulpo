@@ -506,6 +506,19 @@ function extractUsage(
   };
 }
 
+function getZeroOutputTokensError(
+  payload: Record<string, unknown> | null | undefined,
+): string | null {
+  const usage = payload?.usage;
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) {
+    return null;
+  }
+
+  return extractUsage(payload).outputTokens <= 0
+    ? "Upstream provider reported zero output tokens"
+    : null;
+}
+
 function computeCost(model: ProxyModel, usage: UsageShape): number {
   const freshInputTokens = Math.max(
     0,
@@ -1635,14 +1648,14 @@ function getInvalidUpstreamJsonPayloadError(
     if (Array.isArray(payload.output) && payload.output.length === 0) {
       return "Upstream provider returned an empty Responses output payload";
     }
-    return null;
+    return getZeroOutputTokensError(payload);
   }
 
   if (Array.isArray(payload.choices) && payload.choices.length === 0) {
     return "Upstream provider returned an empty chat completion payload";
   }
 
-  return null;
+  return getZeroOutputTokensError(payload);
 }
 
 function wrapExhaustedFailure(
@@ -1743,6 +1756,21 @@ async function attemptModelExecution(
         })
         : upstreamPayload,
     );
+    const zeroOutputTokensError = getZeroOutputTokensError(responsePayload);
+    if (zeroOutputTokensError) {
+      return createExecutionFailure(
+        input.model,
+        {
+          statusCode: 502,
+          errorMessage: zeroOutputTokensError,
+          upstreamRequestId,
+        },
+        path,
+        "Invalid upstream response",
+        zeroOutputTokensError,
+      );
+    }
+
     return {
       ok: true,
       kind: "json",
@@ -2557,6 +2585,7 @@ export async function forwardChatCompletion(
       statusCode,
     }) => {
       const attemptDurationMs = Date.now() - attemptStartTime;
+      const zeroOutputTokensError = getZeroOutputTokensError(usagePayload);
       logInfo("proxy.stream_complete", {
         requestId,
         requestType: input.requestType,
@@ -2570,7 +2599,7 @@ export async function forwardChatCompletion(
         requestId,
         requestType: input.requestType,
         proxyKeyId: input.proxyKeyId,
-        success: true,
+        success: !zeroOutputTokensError,
         statusCode,
         requestPayload: logging.logPayloads
           ? (input.body as PrismaTypes.InputJsonValue)
@@ -2583,6 +2612,7 @@ export async function forwardChatCompletion(
             upstreamResponse: rawResponsePayload,
           } as PrismaTypes.InputJsonValue)
           : ((usagePayload || {}) as PrismaTypes.InputJsonValue),
+        errorMessage: zeroOutputTokensError || undefined,
         upstreamRequestId,
         durationMs: Date.now() - requestStartTime,
         isFallback: fallbackContext!.totalRetryCount > 0 ||
