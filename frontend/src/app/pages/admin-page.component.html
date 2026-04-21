@@ -716,7 +716,7 @@
                           >R</span
                         >
                         <span
-                          *ngIf="item.requestPayload || item.responsePayload"
+                          *ngIf="item.hasDetailedPayloads"
                           class="badge neutral"
                           title="Detailed request or response logs are available for this request"
                           >L</span
@@ -1065,7 +1065,6 @@
               <select
                 [(ngModel)]="loggingDraft.payloadRetention"
                 (ngModelChange)="loggingDraftDirty = true"
-                [disabled]="!loggingDraft.logPayloads"
               >
                 <option *ngFor="let option of payloadRetentionOptions" [ngValue]="option.value">
                   {{ option.label }}
@@ -1074,8 +1073,8 @@
             </label>
 
             <div class="text-muted" style="font-size: 12px; margin-top: var(--space-md)">
-              Retention controls how long detailed payload contents should be kept once cleanup is
-              enabled.
+              Retention controls how long previously captured detailed payload contents are kept
+              before cleanup scrubs them, even when new detailed logging is turned off.
             </div>
           </div>
         </div>

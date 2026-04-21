@@ -31,6 +31,7 @@ import {
   importMigrationSnapshot,
   migrationSnapshotSchema,
 } from "../services/migration.ts";
+import { hasDetailedPayloads } from "../services/payload-log-detail.ts";
 import {
   getAdminOcrSettings,
   getLoggingSettings,
@@ -737,6 +738,10 @@ async function summarizeUsage(
       keyName: log.proxyKey?.name || null,
       modelName: log.proxyModel?.displayName || log.simModel?.displayName ||
         null,
+      hasDetailedPayloads: hasDetailedPayloads({
+        requestPayload: log.requestPayload,
+        responsePayload: log.responsePayload,
+      }),
       requestPayload: log.requestPayload,
       responsePayload: log.responsePayload,
       durationMs: log.durationMs,

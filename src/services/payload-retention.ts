@@ -1,6 +1,7 @@
 import prismaPackage from 'npm:@prisma/client';
 import type { PrismaClient } from 'npm:@prisma/client';
 import { logError, logInfo } from '../lib/logging.ts';
+import { buildSummaryResponsePayload, hasDetailedPayloads } from './payload-log-detail.ts';
 import { getLoggingSettings, type LoggingSettings } from './settings.ts';
 
 const { Prisma } = prismaPackage;
@@ -40,7 +41,7 @@ export async function clearExpiredDetailedPayloads(
     return 0;
   }
 
-  const result = await prisma.usageLog.updateMany({
+  const logs = await prisma.usageLog.findMany({
     where: {
       createdAt: { lt: cutoff },
       OR: [
@@ -48,13 +49,34 @@ export async function clearExpiredDetailedPayloads(
         { responsePayload: { not: Prisma.AnyNull } },
       ],
     },
-    data: {
-      requestPayload: Prisma.JsonNull,
-      responsePayload: Prisma.JsonNull,
+    select: {
+      id: true,
+      requestPayload: true,
+      responsePayload: true,
     },
   });
 
-  return result.count;
+  let clearedCount = 0;
+
+  for (const log of logs) {
+    if (!hasDetailedPayloads(log)) {
+      continue;
+    }
+
+    const summarizedResponsePayload = buildSummaryResponsePayload(log.responsePayload);
+    await prisma.usageLog.update({
+      where: {
+        id: log.id,
+      },
+      data: {
+        requestPayload: Prisma.JsonNull,
+        responsePayload: (summarizedResponsePayload ?? Prisma.JsonNull) as never,
+      },
+    });
+    clearedCount += 1;
+  }
+
+  return clearedCount;
 }
 
 export function startPayloadRetentionCleanup(prisma: PrismaClient): void {

@@ -156,6 +156,7 @@ export type UsageSummary = {
     createdAt: string;
     keyName: string | null;
     modelName: string | null;
+    hasDetailedPayloads: boolean;
     requestPayload: Record<string, unknown> | null;
     responsePayload: Record<string, unknown> | null;
     durationMs: number | null;

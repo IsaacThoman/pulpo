@@ -9,8 +9,10 @@ import {
 const { Prisma } = prismaPackage;
 
 function createPrismaStub(payloadRetention: '1_hour' | '24_hours' | '7_days' | '30_days' | '90_days' | 'indefinite') {
-  let updateManyCalls = 0;
-  let lastUpdateArgs: unknown = null;
+  let findManyCalls = 0;
+  let updateCalls = 0;
+  let lastFindManyArgs: unknown = null;
+  const updateArgs: unknown[] = [];
 
   const prisma = {
     appSetting: {
@@ -22,18 +24,44 @@ function createPrismaStub(payloadRetention: '1_hour' | '24_hours' | '7_days' | '
       }),
     },
     usageLog: {
-      updateMany: async (args: unknown) => {
-        updateManyCalls += 1;
-        lastUpdateArgs = args;
-        return { count: 3 };
+      findMany: async (args: unknown) => {
+        findManyCalls += 1;
+        lastFindManyArgs = args;
+        return [
+          {
+            id: 'log-1',
+            requestPayload: { messages: [{ role: 'user', content: 'secret' }] },
+            responsePayload: {
+              id: 'chatcmpl-1',
+              object: 'chat.completion',
+              model: 'test-model',
+              choices: [{ message: { role: 'assistant', content: 'secret answer' } }],
+              usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+            },
+          },
+          {
+            id: 'log-2',
+            requestPayload: null,
+            responsePayload: {
+              usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+            },
+          },
+        ];
+      },
+      update: async (args: unknown) => {
+        updateCalls += 1;
+        updateArgs.push(args);
+        return args;
       },
     },
   } as unknown as PrismaClient;
 
   return {
     prisma,
-    getUpdateManyCalls: () => updateManyCalls,
-    getLastUpdateArgs: () => lastUpdateArgs,
+    getFindManyCalls: () => findManyCalls,
+    getUpdateCalls: () => updateCalls,
+    getLastFindManyArgs: () => lastFindManyArgs,
+    getUpdateArgs: () => updateArgs,
   };
 }
 
@@ -56,15 +84,16 @@ Deno.test('getPayloadRetentionCutoff subtracts the selected retention window', (
   );
 });
 
-Deno.test('clearExpiredDetailedPayloads clears payloads older than the configured cutoff', async () => {
+Deno.test('clearExpiredDetailedPayloads removes detailed payload fields older than the configured cutoff', async () => {
   const now = new Date('2026-04-21T12:00:00.000Z');
-  const { prisma, getUpdateManyCalls, getLastUpdateArgs } = createPrismaStub('1_hour');
+  const { prisma, getFindManyCalls, getUpdateCalls, getLastFindManyArgs, getUpdateArgs } = createPrismaStub('1_hour');
 
   const clearedCount = await clearExpiredDetailedPayloads(prisma, now);
 
-  assertEquals(clearedCount, 3);
-  assertEquals(getUpdateManyCalls(), 1);
-  assertEquals(getLastUpdateArgs(), {
+  assertEquals(clearedCount, 1);
+  assertEquals(getFindManyCalls(), 1);
+  assertEquals(getUpdateCalls(), 1);
+  assertEquals(getLastFindManyArgs(), {
     where: {
       createdAt: { lt: new Date('2026-04-21T11:00:00.000Z') },
       OR: [
@@ -72,18 +101,35 @@ Deno.test('clearExpiredDetailedPayloads clears payloads older than the configure
         { responsePayload: { not: Prisma.AnyNull } },
       ],
     },
-    data: {
-      requestPayload: Prisma.JsonNull,
-      responsePayload: Prisma.JsonNull,
+    select: {
+      id: true,
+      requestPayload: true,
+      responsePayload: true,
     },
   });
+  assertEquals(getUpdateArgs(), [{
+    where: {
+      id: 'log-1',
+    },
+    data: {
+      requestPayload: Prisma.JsonNull,
+      responsePayload: {
+        id: 'chatcmpl-1',
+        object: 'chat.completion',
+        model: 'test-model',
+        usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        choices: [],
+      },
+    },
+  }]);
 });
 
 Deno.test('clearExpiredDetailedPayloads skips database updates for indefinite retention', async () => {
-  const { prisma, getUpdateManyCalls } = createPrismaStub('indefinite');
+  const { prisma, getFindManyCalls, getUpdateCalls } = createPrismaStub('indefinite');
 
   const clearedCount = await clearExpiredDetailedPayloads(prisma);
 
   assertEquals(clearedCount, 0);
-  assertEquals(getUpdateManyCalls(), 0);
+  assertEquals(getFindManyCalls(), 0);
+  assertEquals(getUpdateCalls(), 0);
 });

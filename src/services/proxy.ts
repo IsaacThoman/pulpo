@@ -9,6 +9,7 @@ import type {
 import { logError, logInfo, summarizeMessages } from "../lib/logging.ts";
 import { decryptSecret, encryptSecret } from "../lib/security.ts";
 import { applyOcrToMessages } from "./ocr.ts";
+import { buildSummaryResponsePayload } from "./payload-log-detail.ts";
 import { getLoggingSettings } from "./settings.ts";
 
 const { Prisma } = prismaPackage;
@@ -2566,9 +2567,11 @@ export async function forwardChatCompletion(
       requestPayload: logging.logPayloads
         ? (input.body as PrismaTypes.InputJsonValue)
         : null,
-      responsePayload: (
-        executionResult.logResponsePayload ?? executionResult.responsePayload
-      ) as PrismaTypes.InputJsonValue,
+      responsePayload: logging.logPayloads
+        ? ((executionResult.logResponsePayload ??
+          executionResult.responsePayload) as PrismaTypes.InputJsonValue)
+        : ((buildSummaryResponsePayload(executionResult.responsePayload) ??
+          null) as PrismaTypes.InputJsonValue | null),
       upstreamRequestId: executionResult.upstreamRequestId,
       durationMs: Date.now() - requestStartTime,
       isFallback: fallbackContext.totalRetryCount > 0 ||
@@ -2636,7 +2639,8 @@ export async function forwardChatCompletion(
             reasoningSummaryText,
             upstreamResponse: rawResponsePayload,
           } as PrismaTypes.InputJsonValue)
-          : ((usagePayload || {}) as PrismaTypes.InputJsonValue),
+          : ((buildSummaryResponsePayload(rawResponsePayload ?? usagePayload) ??
+            null) as PrismaTypes.InputJsonValue | null),
         errorMessage: zeroOutputTokensError ?? responsesFailureError ?? undefined,
         upstreamRequestId,
         durationMs: Date.now() - requestStartTime,

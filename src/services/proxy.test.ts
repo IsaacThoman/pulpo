@@ -12,6 +12,8 @@ type UsageLogRecord = {
   success?: boolean;
   statusCode?: number;
   errorMessage?: string;
+  requestPayload?: unknown;
+  responsePayload?: unknown;
   retryCount: number;
   fallbackChain: string[];
   isFallback: boolean;
@@ -210,6 +212,11 @@ Deno.test("retries the same model until one attempt succeeds", async () => {
     assertEquals(usageLogs[2].retryCount, 2);
     assertEquals(usageLogs[2].fallbackChain, ["Model A"]);
     assertEquals(usageLogs[2].isFallback, true);
+    assertEquals(usageLogs[2].responsePayload, {
+      id: 'success-a',
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      choices: [],
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
