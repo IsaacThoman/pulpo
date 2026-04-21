@@ -1717,16 +1717,6 @@
             </div>
           </label>
 
-          <div class="text-muted" style="font-size: 12px">
-            Includes keys, providers, models, simulations, OCR settings, logging settings,
-            refresh settings, and optionally usage logs.
-          </div>
-
-          <div class="text-muted" style="font-size: 12px; margin-top: 4px">
-            Export includes usage logs when enabled. Import will replace existing usage logs only when
-            enabled.
-          </div>
-
           <div class="divider"></div>
 
           <button
@@ -1750,7 +1740,6 @@
                 Download the current app configuration as formatted JSON.
               </div>
             </div>
-            <div class="badge info">JSON</div>
           </button>
 
           <input
@@ -1783,7 +1772,6 @@
                 models, simulations, and settings.
               </div>
             </div>
-            <div class="badge warning">Replace data</div>
           </button>
 
           <div class="text-muted" *ngIf="migrationSelectedFileName" style="font-size: 12px">
