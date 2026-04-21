@@ -1025,8 +1025,8 @@
           </div>
           <div class="flex items-center gap-sm">
             <button class="ghost" (click)="openMigrationModal()">App Config JSON</button>
-            <button class="primary" (click)="saveRefresh()" [class.warning]="refreshDraftDirty">
-              {{ refreshDraftDirty ? 'Save Changes*' : 'Save Changes' }}
+            <button class="primary" (click)="saveSettings()" [class.warning]="settingsDirty">
+              {{ settingsDirty ? 'Save Changes*' : 'Save Changes' }}
             </button>
           </div>
         </div>
@@ -1039,9 +1039,6 @@
                 Store request and response payload details in usage logs.
               </p>
             </div>
-            <button class="sm" (click)="saveLogging()" [class.warning]="loggingDraftDirty">
-              Save{{ loggingDraftDirty ? '*' : '' }}
-            </button>
           </div>
           <div class="card-body">
             <label class="inline">

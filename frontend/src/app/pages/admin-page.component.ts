@@ -1088,6 +1088,27 @@ export class AdminPageComponent implements OnDestroy {
   }
 
   // Settings
+  get settingsDirty(): boolean {
+    return this.loggingDraftDirty || this.refreshDraftDirty;
+  }
+
+  async saveSettings(): Promise<void> {
+    try {
+      if (this.loggingDraftDirty) {
+        await this.api.saveLoggingSettings(this.loggingDraft);
+        this.loggingDraftDirty = false;
+      }
+      if (this.refreshDraftDirty) {
+        await this.api.saveRefreshSettings(this.refreshDraft);
+        this.refreshDraftDirty = false;
+        this.restartAutoRefresh();
+      }
+      this.showNotice('Settings saved');
+    } catch (err) {
+      this.showError(this.normalizeError(err));
+    }
+  }
+
   async saveLogging(): Promise<void> {
     try {
       await this.api.saveLoggingSettings(this.loggingDraft);
