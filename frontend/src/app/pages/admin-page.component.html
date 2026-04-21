@@ -715,6 +715,12 @@
                           title="This was an intermediate retry attempt that failed before eventual success"
                           >R</span
                         >
+                        <span
+                          *ngIf="item.requestPayload || item.responsePayload"
+                          class="badge neutral"
+                          title="Detailed request or response logs are available for this request"
+                          >L</span
+                        >
                       </div>
                     </td>
                     <td>
