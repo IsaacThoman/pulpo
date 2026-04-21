@@ -1138,8 +1138,8 @@ export class AdminPageComponent implements OnDestroy {
       URL.revokeObjectURL(url);
       this.showNotice(
         this.migrationIncludeUsageHistory
-          ? 'Migration backup exported with usage history'
-          : 'Migration backup exported',
+          ? 'App config exported with usage logs'
+          : 'App config exported',
       );
     } catch (err) {
       this.showError(this.normalizeError(err));
@@ -1160,8 +1160,8 @@ export class AdminPageComponent implements OnDestroy {
     this.migrationSelectedFileName = file.name;
 
     const confirmMessage = this.migrationIncludeUsageHistory
-      ? 'Importing will overwrite keys, providers, models, simulations, settings, and existing usage history. Continue?'
-      : 'Importing will overwrite keys, providers, models, simulations, and settings. Existing usage history will be kept. Continue?';
+      ? 'Importing this app config will overwrite keys, providers, models, simulations, settings, and existing usage logs. Continue?'
+      : 'Importing this app config will overwrite keys, providers, models, simulations, and settings. Existing usage logs will be kept. Continue?';
     if (!confirm(confirmMessage)) {
       return;
     }
@@ -1200,9 +1200,9 @@ export class AdminPageComponent implements OnDestroy {
     usageHistoryReplaced: boolean;
   }): string {
     if (!result.usageHistoryReplaced) {
-      return 'Migration imported';
+      return 'App config imported';
     }
-    return `Migration imported with ${result.counts.usageLogs} usage log${
+    return `App config imported with ${result.counts.usageLogs} usage log${
       result.counts.usageLogs === 1 ? '' : 's'
     }`;
   }

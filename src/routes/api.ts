@@ -1387,7 +1387,7 @@ api.get("/api/admin/migration/export", async (c) => {
   c.header("content-type", "application/json; charset=utf-8");
   c.header(
     "content-disposition",
-    `attachment; filename="pulpo-migration-${exportedAt}.json"`,
+    `attachment; filename="pulpo-app-config-${exportedAt}.json"`,
   );
   return c.body(`${JSON.stringify(snapshot, null, 2)}\n`);
 });
@@ -1411,7 +1411,7 @@ api.post("/api/admin/migration/import", async (c) => {
       {
         error: error instanceof Error
           ? error.message
-          : "Unable to import migration backup",
+          : "Unable to import app config JSON",
       },
       400,
     );

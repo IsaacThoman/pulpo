@@ -199,7 +199,7 @@ export class ApiService {
 
     return {
       blob: await response.blob(),
-      filename: filenameMatch?.[1] || 'pulpo-migration.json',
+      filename: filenameMatch?.[1] || 'pulpo-app-config.json',
     };
   }
 

@@ -1021,10 +1021,10 @@
         <div class="content-header">
           <div>
             <h2 style="font-size: 18px; margin-bottom: var(--space-xs)">Settings</h2>
-            <p class="text-muted">Configure dashboard behavior</p>
+            <p class="text-muted">Configure dashboard behavior and app config backups</p>
           </div>
           <div class="flex items-center gap-sm">
-            <button class="ghost" (click)="openMigrationModal()">Migrate</button>
+            <button class="ghost" (click)="openMigrationModal()">App Config JSON</button>
             <button class="primary" (click)="saveRefresh()" [class.warning]="refreshDraftDirty">
               {{ refreshDraftDirty ? 'Save Changes*' : 'Save Changes' }}
             </button>
@@ -1704,9 +1704,9 @@
     <div class="modal" (click)="$event.stopPropagation()">
       <div class="modal-header">
         <div>
-          <h3 style="font-size: 14px; margin-bottom: 4px">Data Migration</h3>
+          <h3 style="font-size: 14px; margin-bottom: 4px">App Config JSON</h3>
           <div class="text-muted" style="font-size: 12px">
-            Export or import proxy data as a JSON backup.
+            Export or import a JSON snapshot of nearly the full app configuration.
           </div>
         </div>
         <button class="ghost" (click)="showMigrationModal = false" [disabled]="migrationBusy">×</button>
@@ -1717,11 +1717,16 @@
             <div class="toggle">
               <input type="checkbox" [(ngModel)]="migrationIncludeUsageHistory" [disabled]="migrationBusy" />
               <span class="toggle-switch"></span>
-              <span>Include usage history</span>
+              <span>Include usage logs in import/export</span>
             </div>
           </label>
 
           <div class="text-muted" style="font-size: 12px">
+            Includes keys, providers, models, simulations, OCR settings, logging settings,
+            refresh settings, and optionally usage logs.
+          </div>
+
+          <div class="text-muted" style="font-size: 12px; margin-top: 4px">
             Export includes usage logs when enabled. Import will replace existing usage logs only when
             enabled.
           </div>
@@ -1744,9 +1749,9 @@
             "
           >
             <div>
-              <div style="font-size: 15px; font-weight: 600; color: var(--text)">Export Data</div>
+              <div style="font-size: 15px; font-weight: 600; color: var(--text)">Export App Config</div>
               <div class="text-muted" style="font-size: 12px; margin-top: 4px">
-                Download a JSON snapshot of the current server configuration.
+                Download the current app configuration as formatted JSON.
               </div>
             </div>
             <div class="badge info">JSON</div>
@@ -1776,12 +1781,13 @@
             "
           >
             <div>
-              <div style="font-size: 15px; font-weight: 600; color: var(--text)">Import Data</div>
+              <div style="font-size: 15px; font-weight: 600; color: var(--text)">Import App Config</div>
               <div class="text-muted" style="font-size: 12px; margin-top: 4px">
-                Restore from a JSON backup. This overwrites current configuration data.
+                Restore app configuration from JSON. This overwrites current keys, providers,
+                models, simulations, and settings.
               </div>
             </div>
-            <div class="badge warning">Overwrite</div>
+            <div class="badge warning">Replace data</div>
           </button>
 
           <div class="text-muted" *ngIf="migrationSelectedFileName" style="font-size: 12px">
@@ -1789,7 +1795,7 @@
           </div>
 
           <div class="badge danger" *ngIf="migrationIncludeUsageHistory" style="align-self: flex-start">
-            Importing usage history replaces existing usage logs.
+            Importing usage logs replaces existing usage logs.
           </div>
         </div>
       </div>
