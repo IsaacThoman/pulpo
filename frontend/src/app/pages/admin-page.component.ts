@@ -93,6 +93,11 @@ type ProviderDraft = {
   apiKey: string;
 };
 
+type PayloadRetentionOption = {
+  value: LoggingSettings['payloadRetention'];
+  label: string;
+};
+
 function createEmptyModelDraft(): ModelDraft {
   return {
     displayName: '',
@@ -222,7 +227,18 @@ export class AdminPageComponent implements OnDestroy {
   showSimModelModal = false;
 
   // Settings
-  loggingDraft: LoggingSettings = { logPayloads: false };
+  readonly payloadRetentionOptions: PayloadRetentionOption[] = [
+    { value: '1_hour', label: '1 hour' },
+    { value: '24_hours', label: '24 hours' },
+    { value: '7_days', label: '7 days' },
+    { value: '30_days', label: '30 days' },
+    { value: '90_days', label: '90 days' },
+    { value: 'indefinite', label: 'Indefinite' },
+  ];
+  loggingDraft: LoggingSettings = {
+    logPayloads: false,
+    payloadRetention: '7_days',
+  };
   loggingDraftDirty = false;
   usageDays = 30;
   usageRecentPage = 1;

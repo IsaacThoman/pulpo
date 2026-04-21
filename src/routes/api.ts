@@ -186,6 +186,7 @@ const providerSchema = z.object({
 
 const loggingSchema = z.object({
   logPayloads: z.boolean(),
+  payloadRetention: z.enum(["1_hour", "24_hours", "7_days", "30_days", "90_days", "indefinite"]),
 });
 
 const ocrSchema = z.object({

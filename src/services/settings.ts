@@ -3,6 +3,7 @@ import { decryptSecret, encryptSecret } from '../lib/security.ts';
 
 export type LoggingSettings = {
   logPayloads: boolean;
+  payloadRetention: "1_hour" | "24_hours" | "7_days" | "30_days" | "90_days" | "indefinite";
 };
 
 type StoredOcrSettings = {
@@ -43,6 +44,7 @@ const REFRESH_KEY = 'refresh';
 
 const defaultLoggingSettings: LoggingSettings = {
   logPayloads: false,
+  payloadRetention: "7_days",
 };
 
 const defaultOcrSettings: StoredOcrSettings = {

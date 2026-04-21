@@ -114,6 +114,7 @@ const migrationUsageLogSchema = z.object({
 const migrationSettingsSchema = z.object({
   logging: z.object({
     logPayloads: z.boolean(),
+    payloadRetention: z.enum(['1_hour', '24_hours', '7_days', '30_days', '90_days', 'indefinite']),
   }),
   ocr: z.object({
     enabled: z.boolean(),

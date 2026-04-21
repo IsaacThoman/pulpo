@@ -622,20 +622,6 @@
               <option [value]="30">Last 30 days</option>
               <option [value]="90">Last 90 days</option>
             </select>
-            <div class="toolbar-divider"></div>
-            <label class="inline">
-              <input
-                type="checkbox"
-                [(ngModel)]="loggingDraft.logPayloads"
-                (ngModelChange)="loggingDraftDirty = true"
-              />
-              <span style="font-size: 12px">{{
-                loggingDraftDirty ? 'Log payloads*' : 'Log payloads'
-              }}</span>
-            </label>
-            <button class="sm" (click)="saveLogging()" [class.warning]="loggingDraftDirty">
-              Save{{ loggingDraftDirty ? '*' : '' }}
-            </button>
           </div>
         </div>
 
@@ -1040,6 +1026,55 @@
         </div>
 
         <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 style="font-size: 13px">Detailed Payload Logging</h3>
+              <p class="text-muted" style="margin-top: 4px; font-size: 11px">
+                Store request and response payload details in usage logs.
+              </p>
+            </div>
+            <button class="sm" (click)="saveLogging()" [class.warning]="loggingDraftDirty">
+              Save{{ loggingDraftDirty ? '*' : '' }}
+            </button>
+          </div>
+          <div class="card-body">
+            <label class="inline">
+              <div class="toggle">
+                <input
+                  type="checkbox"
+                  [(ngModel)]="loggingDraft.logPayloads"
+                  (ngModelChange)="loggingDraftDirty = true"
+                />
+                <span class="toggle-switch"></span>
+                <span>{{
+                  loggingDraftDirty ? 'Log detailed payloads*' : 'Log detailed payloads'
+                }}</span>
+              </div>
+            </label>
+
+            <div class="divider"></div>
+
+            <label>
+              <span>Detailed payload log retention length</span>
+              <select
+                [(ngModel)]="loggingDraft.payloadRetention"
+                (ngModelChange)="loggingDraftDirty = true"
+                [disabled]="!loggingDraft.logPayloads"
+              >
+                <option *ngFor="let option of payloadRetentionOptions" [ngValue]="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+
+            <div class="text-muted" style="font-size: 12px; margin-top: var(--space-md)">
+              Retention controls how long detailed payload contents should be kept once cleanup is
+              enabled.
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: var(--space-lg)">
           <div class="card-header">
             <h3 style="font-size: 13px">Auto-refresh</h3>
           </div>
