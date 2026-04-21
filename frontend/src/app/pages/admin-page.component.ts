@@ -415,6 +415,7 @@ export class AdminPageComponent implements OnDestroy {
       clearTimeout(this.noticeTimer);
     }
     if (message) {
+      console.info('[toast:success]', message);
       this.noticeTimer = setTimeout(() => {
         this.hideNotice();
       }, 2000);
@@ -436,6 +437,7 @@ export class AdminPageComponent implements OnDestroy {
       clearTimeout(this.errorTimer);
     }
     if (message) {
+      console.error('[toast:error]', message);
       this.errorTimer = setTimeout(() => {
         this.hideError();
       }, 2000);
@@ -568,7 +570,7 @@ export class AdminPageComponent implements OnDestroy {
     try {
       await this.api.updateProxyKey(key.id, { isActive: !key.isActive });
       await this.refreshAll();
-      this.notice = `Key ${key.isActive ? 'disabled' : 'enabled'}`;
+      this.showNotice(`Key ${key.isActive ? 'disabled' : 'enabled'}`);
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
@@ -581,7 +583,7 @@ export class AdminPageComponent implements OnDestroy {
       this.keyStorage.set(key.id, response.plainTextKey);
       this.visibleKeys.add(key.id);
       await this.refreshAll();
-      this.notice = `Key rotated and revealed: ${key.name}`;
+      this.showNotice(`Key rotated and revealed: ${key.name}`);
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
@@ -594,7 +596,7 @@ export class AdminPageComponent implements OnDestroy {
       this.keyStorage.delete(key.id);
       this.visibleKeys.delete(key.id);
       await this.refreshAll();
-      this.notice = `Key deleted: ${key.name}`;
+      this.showNotice(`Key deleted: ${key.name}`);
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
@@ -747,7 +749,7 @@ export class AdminPageComponent implements OnDestroy {
       this.providerKeyStorage.delete(provider.id);
       this.visibleProviderKeys.delete(provider.id);
       await this.refreshAll();
-      this.notice = `Provider deleted: ${provider.name}`;
+      this.showNotice(`Provider deleted: ${provider.name}`);
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
@@ -985,7 +987,7 @@ export class AdminPageComponent implements OnDestroy {
             apiKey: this.modelDraft.providerApiKey,
           });
       this.providerModelNames = response.items;
-      this.notice = `Found ${response.items.length} models`;
+      this.showNotice(`Found ${response.items.length} models`);
       if (this.providerModelNames.length > 0) {
         this.showUpstreamDropdown = true;
       }
@@ -1063,7 +1065,7 @@ export class AdminPageComponent implements OnDestroy {
       this.providerKeyStorage.delete(storageId);
       this.visibleProviderKeys.delete(storageId);
       await this.refreshAll();
-      this.notice = `Model deleted: ${model.displayName}`;
+      this.showNotice(`Model deleted: ${model.displayName}`);
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
@@ -1468,7 +1470,7 @@ export class AdminPageComponent implements OnDestroy {
     try {
       await this.api.deleteSimModel(model.id);
       await this.refreshAll();
-      this.notice = `Simulation model deleted: ${model.displayName}`;
+      this.showNotice(`Simulation model deleted: ${model.displayName}`);
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
