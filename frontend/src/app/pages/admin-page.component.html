@@ -641,43 +641,6 @@
 
         <div class="card" style="margin-bottom: var(--space-lg)">
           <div class="card-header">
-            <h3 style="font-size: 13px">Daily Usage</h3>
-          </div>
-          <div class="card-body" style="padding: 0">
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th style="text-align: right">Requests</th>
-                  <th style="text-align: right">Spend</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let day of usage?.daily">
-                  <td>{{ day.day }}</td>
-                  <td style="text-align: right; font-family: var(--font-mono)">
-                    {{ day.requests }}
-                  </td>
-                  <td style="text-align: right; font-family: var(--font-mono)">
-                    {{ formatCurrency(day.totalCost) }}
-                  </td>
-                </tr>
-                <tr *ngIf="!usage?.daily?.length">
-                  <td
-                    colspan="3"
-                    class="text-muted"
-                    style="text-align: center; padding: var(--space-xl)"
-                  >
-                    No data
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-header">
             <div>
               <h3 style="font-size: 13px">Recent Requests</h3>
               <p class="text-muted" style="margin-top: 4px; font-size: 11px">
@@ -881,6 +844,43 @@
                     style="text-align: center; padding: var(--space-xl)"
                   >
                     No recent requests
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3 style="font-size: 13px">Daily Usage</h3>
+          </div>
+          <div class="card-body" style="padding: 0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th style="text-align: right">Requests</th>
+                  <th style="text-align: right">Spend</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let day of usage?.daily">
+                  <td>{{ day.day }}</td>
+                  <td style="text-align: right; font-family: var(--font-mono)">
+                    {{ day.requests }}
+                  </td>
+                  <td style="text-align: right; font-family: var(--font-mono)">
+                    {{ formatCurrency(day.totalCost) }}
+                  </td>
+                </tr>
+                <tr *ngIf="!usage?.daily?.length">
+                  <td
+                    colspan="3"
+                    class="text-muted"
+                    style="text-align: center; padding: var(--space-xl)"
+                  >
+                    No data
                   </td>
                 </tr>
               </tbody>
