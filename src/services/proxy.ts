@@ -1628,6 +1628,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function getResponsesFailureError(
+  payload: Record<string, unknown>,
+): string | null {
+  if (payload.status !== "failed") {
+    return null;
+  }
+
+  if (isRecord(payload.error) && typeof payload.error.message === "string") {
+    const message = payload.error.message.trim();
+    if (message.length > 0) {
+      return message;
+    }
+  }
+
+  return "Upstream provider reported a failed Responses status";
+}
+
 function getInvalidUpstreamJsonPayloadError(
   payload: unknown,
   model: ProxyModel,
@@ -1645,6 +1662,11 @@ function getInvalidUpstreamJsonPayloadError(
   }
 
   if (isResponsesProtocol(model)) {
+    const responsesFailureError = getResponsesFailureError(payload);
+    if (responsesFailureError) {
+      return responsesFailureError;
+    }
+
     if (Array.isArray(payload.output) && payload.output.length === 0) {
       return "Upstream provider returned an empty Responses output payload";
     }
@@ -2586,6 +2608,9 @@ export async function forwardChatCompletion(
     }) => {
       const attemptDurationMs = Date.now() - attemptStartTime;
       const zeroOutputTokensError = getZeroOutputTokensError(usagePayload);
+      const responsesFailureError = rawResponsePayload
+        ? getResponsesFailureError(rawResponsePayload)
+        : null;
       logInfo("proxy.stream_complete", {
         requestId,
         requestType: input.requestType,
@@ -2599,7 +2624,7 @@ export async function forwardChatCompletion(
         requestId,
         requestType: input.requestType,
         proxyKeyId: input.proxyKeyId,
-        success: !zeroOutputTokensError,
+        success: !zeroOutputTokensError && !responsesFailureError,
         statusCode,
         requestPayload: logging.logPayloads
           ? (input.body as PrismaTypes.InputJsonValue)
@@ -2612,7 +2637,7 @@ export async function forwardChatCompletion(
             upstreamResponse: rawResponsePayload,
           } as PrismaTypes.InputJsonValue)
           : ((usagePayload || {}) as PrismaTypes.InputJsonValue),
-        errorMessage: zeroOutputTokensError || undefined,
+        errorMessage: zeroOutputTokensError ?? responsesFailureError ?? undefined,
         upstreamRequestId,
         durationMs: Date.now() - requestStartTime,
         isFallback: fallbackContext!.totalRetryCount > 0 ||

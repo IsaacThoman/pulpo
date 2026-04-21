@@ -11,6 +11,7 @@ type UsageLogRecord = {
   requestId?: string;
   success?: boolean;
   statusCode?: number;
+  errorMessage?: string;
   retryCount: number;
   fallbackChain: string[];
   isFallback: boolean;
@@ -1262,6 +1263,60 @@ Deno.test("streams Responses reasoning summaries via delta.reasoning_content", a
 
     assertStringIncludes(streamText, '"reasoning_content":"Think."');
     assertStringIncludes(streamText, '"content":"Answer."');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("marks streamed Responses failures as unsuccessful", async () => {
+  const providerApiKeyEncrypted = await encryptSecret("test-key");
+  const model = createModel({
+    id: "model-r",
+    displayName: "Responses Model",
+    upstreamModelName: "gpt-5",
+    providerApiKeyEncrypted,
+    providerProtocol: "responses",
+  });
+
+  const usageLogs: UsageLogRecord[] = [];
+  const prisma = createPrismaStub([model], usageLogs);
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () =>
+    sseResponse([
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.created","response":{"id":"resp_123","created_at":123}}\n\n',
+      },
+      {
+        delayMs: 0,
+        data:
+          'data: {"type":"response.failed","response":{"id":"resp_123","created_at":123,"status":"failed","error":{"code":"rate_limit_exceeded","message":"We\'re currently processing too many requests \u2014 please try again later."}}}\n\n',
+      },
+    ]);
+
+  try {
+    const response = await forwardChatCompletion(prisma, {
+      body: {
+        model: "Responses Model",
+        stream: true,
+        messages: [{ role: "user", content: "hello" }],
+      },
+      model,
+      proxyKeyId: null,
+      requestType: "proxy",
+    });
+
+    await response.text();
+    await sleep(0);
+
+    assertEquals(usageLogs.length, 1);
+    assertEquals(usageLogs[0].success, false);
+    assertEquals(
+      usageLogs[0].errorMessage,
+      "We're currently processing too many requests \u2014 please try again later.",
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
