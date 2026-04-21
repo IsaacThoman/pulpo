@@ -202,6 +202,14 @@ export class AdminPageComponent implements OnDestroy {
   newKeyActive = true;
   showKeyModal = false;
 
+  // Key editing
+  editingKeyId = '';
+  keyEditDraft = {
+    name: '',
+    isActive: true,
+  };
+  showKeyEditModal = false;
+
   // Key visibility state - stores full keys and visibility toggle
   keyStorage: Map<string, string> = new Map(); // keyId -> fullKey
   visibleKeys: Set<string> = new Set(); // keyIds that are currently visible
@@ -351,6 +359,7 @@ export class AdminPageComponent implements OnDestroy {
     }
     if (event.key === 'Escape') {
       this.showKeyModal = false;
+      this.showKeyEditModal = false;
       this.showProviderModal = false;
       this.showModelModal = false;
       this.showSimModelModal = false;
@@ -382,7 +391,7 @@ export class AdminPageComponent implements OnDestroy {
 
   closeModalFromOverlay(
     event: MouseEvent,
-    modal: 'key' | 'provider' | 'model' | 'simModel' | 'migration',
+    modal: 'key' | 'keyEdit' | 'provider' | 'model' | 'simModel' | 'migration',
   ): void {
     if (event.target !== event.currentTarget || this.pointerDownTarget !== event.currentTarget) {
       return;
@@ -391,6 +400,9 @@ export class AdminPageComponent implements OnDestroy {
     switch (modal) {
       case 'key':
         this.showKeyModal = false;
+        break;
+      case 'keyEdit':
+        this.showKeyEditModal = false;
         break;
       case 'provider':
         this.showProviderModal = false;
@@ -600,6 +612,59 @@ export class AdminPageComponent implements OnDestroy {
     } catch (err) {
       this.showError(this.normalizeError(err));
     }
+  }
+
+  // Key editing
+  openKeyEditModal(key: ProxyKey): void {
+    this.editingKeyId = key.id;
+    this.keyEditDraft = {
+      name: key.name,
+      isActive: key.isActive,
+    };
+    this.showKeyEditModal = true;
+  }
+
+  closeKeyEditModal(): void {
+    this.showKeyEditModal = false;
+    this.editingKeyId = '';
+    this.keyEditDraft = { name: '', isActive: true };
+  }
+
+  async saveKeyEdit(): Promise<void> {
+    if (!this.editingKeyId) return;
+    try {
+      const key = this.proxyKeys.find((k) => k.id === this.editingKeyId);
+      if (!key) return;
+
+      // Only update if name changed
+      if (this.keyEditDraft.name !== key.name) {
+        await this.api.updateProxyKey(this.editingKeyId, { name: this.keyEditDraft.name });
+      }
+
+      // Handle status change
+      if (this.keyEditDraft.isActive !== key.isActive) {
+        await this.api.updateProxyKey(this.editingKeyId, { isActive: this.keyEditDraft.isActive });
+      }
+
+      this.showKeyEditModal = false;
+      this.editingKeyId = '';
+      this.keyEditDraft = { name: '', isActive: true };
+      await this.refreshAll();
+      this.showNotice('Key updated');
+    } catch (err) {
+      this.showError(this.normalizeError(err));
+    }
+  }
+
+  async rotateKeyFromEdit(): Promise<void> {
+    if (!this.editingKeyId) return;
+    const key = this.proxyKeys.find((k) => k.id === this.editingKeyId);
+    if (!key) return;
+    await this.rotateKey(key);
+  }
+
+  getEditingKey(): ProxyKey | undefined {
+    return this.proxyKeys.find((k) => k.id === this.editingKeyId);
   }
 
   // Key visibility helpers

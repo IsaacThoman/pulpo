@@ -275,10 +275,7 @@
                   </td>
                   <td>
                     <div class="actions">
-                      <button class="ghost xs" (click)="toggleKey(key)">
-                        {{ key.isActive ? 'Disable' : 'Enable' }}
-                      </button>
-                      <button class="ghost xs" (click)="rotateKey(key)">Rotate</button>
+                      <button class="ghost xs" (click)="openKeyEditModal(key)">Edit</button>
                       <button class="ghost xs danger" (click)="deleteKey(key)">Delete</button>
                     </div>
                   </td>
@@ -1213,6 +1210,92 @@
       <div class="modal-footer">
         <button class="ghost" (click)="showKeyModal = false">Cancel</button>
         <button class="primary" (click)="createKey()" [disabled]="!newKeyName">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Key Modal -->
+  <div
+    class="modal-overlay"
+    *ngIf="showKeyEditModal"
+    (click)="closeModalFromOverlay($event, 'keyEdit')"
+  >
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h3 style="font-size: 14px">Edit API Key</h3>
+        <button class="ghost" (click)="closeKeyEditModal()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-section">
+          <label>
+            <span>Key Name</span>
+            <input [(ngModel)]="keyEditDraft.name" placeholder="production-api" autofocus />
+          </label>
+
+          <div class="divider"></div>
+
+          <label *ngIf="getEditingKey() as editingKey">
+            <span>Key Value</span>
+            <div class="input-group">
+              <code
+                class="mono"
+                style="
+                  font-size: 11px;
+                  background: var(--bg);
+                  padding: 6px 10px;
+                  border-radius: 3px;
+                  flex: 1;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                  white-space: nowrap;
+                "
+              >
+                {{ getKeyDisplay(editingKey) }}
+              </code>
+              <ng-container *ngIf="hasFullKey(editingKey)">
+                <button
+                  class="ghost xs"
+                  (click)="toggleKeyVisibility(editingKey)"
+                >
+                  {{ isKeyVisible(editingKey) ? 'Hide' : 'Show' }}
+                </button>
+                <button
+                  class="ghost xs"
+                  (click)="copyKey(editingKey)"
+                >
+                  Copy
+                </button>
+              </ng-container>
+            </div>
+          </label>
+
+          <div class="divider"></div>
+
+          <label class="inline">
+            <div class="toggle">
+              <input type="checkbox" [(ngModel)]="keyEditDraft.isActive" />
+              <span class="toggle-switch"></span>
+              <span>{{ keyEditDraft.isActive ? 'Active' : 'Disabled' }}</span>
+            </div>
+          </label>
+
+          <div class="divider"></div>
+
+          <button
+            class="ghost"
+            (click)="rotateKeyFromEdit()"
+            style="width: 100%; text-align: left; justify-content: flex-start"
+          >
+            <span>Rotate Key</span>
+            <span class="text-muted" style="margin-left: auto; font-size: 11px">
+              Generate a new key value
+            </span>
+          </button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="ghost" (click)="closeKeyEditModal()">Cancel</button>
+        <button class="primary" (click)="saveKeyEdit()">Save</button>
       </div>
     </div>
   </div>
