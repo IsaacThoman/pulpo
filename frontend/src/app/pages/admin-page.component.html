@@ -1227,10 +1227,19 @@
       </div>
       <div class="modal-body">
         <div class="form-section">
-          <label>
-            <span>Key Name</span>
-            <input [(ngModel)]="keyEditDraft.name" placeholder="production-api" autofocus />
-          </label>
+          <div class="form-row-2" style="align-items: end; grid-template-columns: 1fr auto">
+            <label style="margin-bottom: 0">
+              <span>Key Name</span>
+              <input [(ngModel)]="keyEditDraft.name" placeholder="production-api" autofocus />
+            </label>
+            <label class="inline" style="margin-bottom: 0; justify-content: flex-end; padding-bottom: 8px">
+              <div class="toggle">
+                <input type="checkbox" [(ngModel)]="keyEditDraft.isActive" />
+                <span class="toggle-switch"></span>
+                <span>{{ keyEditDraft.isActive ? 'Active' : 'Disabled' }}</span>
+              </div>
+            </label>
+          </div>
 
           <div class="divider"></div>
 
@@ -1266,22 +1275,9 @@
                   Copy
                 </button>
               </ng-container>
+              <button class="ghost xs" (click)="rotateKeyFromEdit()">Rotate Key</button>
             </div>
           </label>
-
-          <div class="divider"></div>
-
-          <label class="inline">
-            <div class="toggle">
-              <input type="checkbox" [(ngModel)]="keyEditDraft.isActive" />
-              <span class="toggle-switch"></span>
-              <span>{{ keyEditDraft.isActive ? 'Active' : 'Disabled' }}</span>
-            </div>
-          </label>
-
-          <div class="divider"></div>
-
-          <button class="ghost" (click)="rotateKeyFromEdit()">Rotate Key</button>
         </div>
       </div>
       <div class="modal-footer">
