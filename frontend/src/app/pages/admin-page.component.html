@@ -854,7 +854,7 @@
                 </tr>
               </thead>
               <tbody>
-                <tr *ngFor="let day of usage?.daily?.slice().reverse()">
+                <tr *ngFor="let day of (usage?.daily || []).slice().reverse()">
                   <td>{{ day.day }}</td>
                   <td style="text-align: right; font-family: var(--font-mono)">
                     {{ day.requests }}
