@@ -1,8 +1,12 @@
-import prismaPackage from 'npm:@prisma/client';
-import type { Prisma as PrismaTypes, PrismaClient } from 'npm:@prisma/client';
-import { z } from 'npm:zod';
-import { decryptSecret, encryptSecret } from '../lib/security.ts';
-import { getLoggingSettings, getRefreshSettings, getStoredOcrSettings } from './settings.ts';
+import prismaPackage from "@prisma/client";
+import type { Prisma as PrismaTypes, PrismaClient } from "@prisma/client";
+import { z } from "zod";
+import { decryptSecret, encryptSecret } from "../lib/security.ts";
+import {
+  getLoggingSettings,
+  getRefreshSettings,
+  getStoredOcrSettings,
+} from "./settings.ts";
 
 const { Prisma } = prismaPackage;
 
@@ -35,9 +39,9 @@ const migrationProxyModelSchema = z.object({
   providerBaseUrl: z.string().url(),
   providerApiKey: z.string(),
   upstreamModelName: z.string().min(1),
-  providerProtocol: z.enum(['chat_completions', 'responses']),
-  reasoningSummaryMode: z.enum(['off', 'auto', 'concise', 'detailed']),
-  reasoningOutputMode: z.enum(['off', 'think_tags', 'reasoning_content']),
+  providerProtocol: z.enum(["chat_completions", "responses"]),
+  reasoningSummaryMode: z.enum(["off", "auto", "concise", "detailed"]),
+  reasoningOutputMode: z.enum(["off", "think_tags", "reasoning_content"]),
   interceptImagesWithOcr: z.boolean(),
   customParams: z.unknown(),
   inputCostPerMillion: z.number(),
@@ -60,14 +64,14 @@ const migrationProxyModelSchema = z.object({
 
 const migrationSimSegmentSchema = z.union([
   z.object({
-    type: z.literal('delay'),
+    type: z.literal("delay"),
     delayMs: z.number().int().min(0),
   }),
   z.object({
-    type: z.literal('text'),
+    type: z.literal("text"),
     content: z.string().min(1),
     ratePerSecond: z.number().positive(),
-    unit: z.enum(['char', 'token']),
+    unit: z.enum(["char", "token"]),
     maxUpdatesPerSecond: z.number().int().min(1),
   }),
 ]);
@@ -114,7 +118,14 @@ const migrationUsageLogSchema = z.object({
 const migrationSettingsSchema = z.object({
   logging: z.object({
     logPayloads: z.boolean(),
-    payloadRetention: z.enum(['1_hour', '24_hours', '7_days', '30_days', '90_days', 'indefinite']),
+    payloadRetention: z.enum([
+      "1_hour",
+      "24_hours",
+      "7_days",
+      "30_days",
+      "90_days",
+      "indefinite",
+    ]),
   }),
   ocr: z.object({
     enabled: z.boolean(),
@@ -173,24 +184,36 @@ export async function createMigrationSnapshot(
   includeUsageHistory: boolean,
 ): Promise<MigrationSnapshot> {
   const simClient = prisma as unknown as SimModelClient;
-  const [proxyKeys, providers, proxyModels, simModels, logging, refresh, storedOcr, usageLogs] =
-    await Promise.all([
-      prisma.proxyKey.findMany({ orderBy: { createdAt: 'asc' } }),
-      prisma.provider.findMany({ orderBy: { createdAt: 'asc' } }),
-      prisma.proxyModel.findMany({ orderBy: { createdAt: 'asc' } }),
-      simClient.simModel.findMany({ orderBy: { createdAt: 'asc' } }),
-      getLoggingSettings(prisma),
-      getRefreshSettings(prisma),
-      getStoredOcrSettings(prisma),
-      includeUsageHistory ? prisma.usageLog.findMany({ orderBy: { createdAt: 'asc' } }) : [],
-    ]);
+  const [
+    proxyKeys,
+    providers,
+    proxyModels,
+    simModels,
+    logging,
+    refresh,
+    storedOcr,
+    usageLogs,
+  ] = await Promise.all([
+    prisma.proxyKey.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.provider.findMany({ orderBy: { createdAt: "asc" } }),
+    prisma.proxyModel.findMany({ orderBy: { createdAt: "asc" } }),
+    simClient.simModel.findMany({ orderBy: { createdAt: "asc" } }),
+    getLoggingSettings(prisma),
+    getRefreshSettings(prisma),
+    getStoredOcrSettings(prisma),
+    includeUsageHistory
+      ? prisma.usageLog.findMany({ orderBy: { createdAt: "asc" } })
+      : [],
+  ]);
 
   const providersWithSecrets = await Promise.all(
     providers.map(async (provider) => ({
       id: provider.id,
       name: provider.name,
       baseUrl: provider.baseUrl,
-      apiKey: provider.apiKeyEncrypted ? await decryptSecret(provider.apiKeyEncrypted) : '',
+      apiKey: provider.apiKeyEncrypted
+        ? await decryptSecret(provider.apiKeyEncrypted)
+        : "",
       createdAt: provider.createdAt.toISOString(),
       updatedAt: provider.updatedAt.toISOString(),
     })),
@@ -200,18 +223,27 @@ export async function createMigrationSnapshot(
     proxyModels.map(async (model) => ({
       id: model.id,
       displayName: model.displayName,
-      description: model.description || '',
+      description: model.description || "",
       providerId: model.providerId,
       providerBaseUrl: model.providerBaseUrl,
       providerApiKey: model.providerId
-        ? ''
+        ? ""
         : model.providerApiKeyEncrypted
         ? await decryptSecret(model.providerApiKeyEncrypted)
-        : '',
+        : "",
       upstreamModelName: model.upstreamModelName,
-      providerProtocol: model.providerProtocol as 'chat_completions' | 'responses',
-      reasoningSummaryMode: model.reasoningSummaryMode as 'off' | 'auto' | 'concise' | 'detailed',
-      reasoningOutputMode: model.reasoningOutputMode as 'off' | 'think_tags' | 'reasoning_content',
+      providerProtocol: model.providerProtocol as
+        | "chat_completions"
+        | "responses",
+      reasoningSummaryMode: model.reasoningSummaryMode as
+        | "off"
+        | "auto"
+        | "concise"
+        | "detailed",
+      reasoningOutputMode: model.reasoningOutputMode as
+        | "off"
+        | "think_tags"
+        | "reasoning_content",
       interceptImagesWithOcr: model.interceptImagesWithOcr,
       customParams: model.customParams || {},
       inputCostPerMillion: Number(model.inputCostPerMillion),
@@ -234,10 +266,10 @@ export async function createMigrationSnapshot(
   );
 
   const ocrApiKey = storedOcr.providerId
-    ? ''
+    ? ""
     : storedOcr.apiKeyEncrypted
     ? await decryptSecret(storedOcr.apiKeyEncrypted)
-    : '';
+    : "";
 
   return {
     version: 1,
@@ -269,10 +301,13 @@ export async function createMigrationSnapshot(
       }>).map((model) => ({
         id: model.id,
         displayName: model.displayName,
-        description: model.description || '',
+        description: model.description || "",
         isActive: model.isActive,
         exposeInModels: model.exposeInModels,
-        segments: model.segments as MigrationSnapshot['data']['simModels'][number]['segments'],
+        segments: model
+          .segments as MigrationSnapshot["data"]["simModels"][number][
+            "segments"
+          ],
         createdAt: model.createdAt.toISOString(),
         updatedAt: model.updatedAt.toISOString(),
       })),
@@ -292,34 +327,38 @@ export async function createMigrationSnapshot(
       },
       ...(includeUsageHistory
         ? {
-            usageLogs: usageLogs.map((log) => ({
-              id: log.id,
-              requestId: log.requestId,
-              requestType: log.requestType,
-              success: log.success,
-              statusCode: log.statusCode,
-              inputTokens: log.inputTokens,
-              cachedInputTokens: log.cachedInputTokens,
-              outputTokens: log.outputTokens,
-              totalCost: Number(log.totalCost),
-              durationMs: log.durationMs,
-              requestPayload: log.requestPayload as Record<string, unknown> | null,
-              responsePayload: log.responsePayload as Record<string, unknown> | null,
-              errorMessage: log.errorMessage,
-              upstreamRequestId: log.upstreamRequestId,
-              isFallback: log.isFallback,
-              isStickyFallback: log.isStickyFallback,
-              originalModelId: log.originalModelId,
-              fallbackChain: log.fallbackChain,
-              retryCount: log.retryCount,
-              isRetryAttempt: log.isRetryAttempt,
-              createdAt: log.createdAt.toISOString(),
-              completedAt: log.completedAt?.toISOString() ?? null,
-              proxyKeyId: log.proxyKeyId,
-              proxyModelId: log.proxyModelId,
-              simModelId: log.simModelId,
-            })),
-          }
+          usageLogs: usageLogs.map((log) => ({
+            id: log.id,
+            requestId: log.requestId,
+            requestType: log.requestType,
+            success: log.success,
+            statusCode: log.statusCode,
+            inputTokens: log.inputTokens,
+            cachedInputTokens: log.cachedInputTokens,
+            outputTokens: log.outputTokens,
+            totalCost: Number(log.totalCost),
+            durationMs: log.durationMs,
+            requestPayload: log.requestPayload as
+              | Record<string, unknown>
+              | null,
+            responsePayload: log.responsePayload as
+              | Record<string, unknown>
+              | null,
+            errorMessage: log.errorMessage,
+            upstreamRequestId: log.upstreamRequestId,
+            isFallback: log.isFallback,
+            isStickyFallback: log.isStickyFallback,
+            originalModelId: log.originalModelId,
+            fallbackChain: log.fallbackChain,
+            retryCount: log.retryCount,
+            isRetryAttempt: log.isRetryAttempt,
+            createdAt: log.createdAt.toISOString(),
+            completedAt: log.completedAt?.toISOString() ?? null,
+            proxyKeyId: log.proxyKeyId,
+            proxyModelId: log.proxyModelId,
+            simModelId: log.simModelId,
+          })),
+        }
         : {}),
     },
   };
@@ -342,51 +381,64 @@ export async function importMigrationSnapshot(
   };
 }> {
   if (includeUsageHistory && !snapshot.includeUsageHistory) {
-    throw new Error('This backup file does not include usage history');
+    throw new Error("This backup file does not include usage history");
   }
 
-  const providerIds = new Set(snapshot.data.providers.map((provider) => provider.id));
+  const providerIds = new Set(
+    snapshot.data.providers.map((provider) => provider.id),
+  );
   const modelIds = new Set(snapshot.data.proxyModels.map((model) => model.id));
 
   for (const model of snapshot.data.proxyModels) {
     if (model.providerId && !providerIds.has(model.providerId)) {
-      throw new Error(`Model "${model.displayName}" references a missing provider`);
+      throw new Error(
+        `Model "${model.displayName}" references a missing provider`,
+      );
     }
     if (model.fallbackModelId && !modelIds.has(model.fallbackModelId)) {
-      throw new Error(`Model "${model.displayName}" references a missing fallback model`);
+      throw new Error(
+        `Model "${model.displayName}" references a missing fallback model`,
+      );
     }
   }
 
-  if (snapshot.data.settings.ocr.providerId && !providerIds.has(snapshot.data.settings.ocr.providerId)) {
-    throw new Error('OCR settings reference a missing provider');
+  if (
+    snapshot.data.settings.ocr.providerId &&
+    !providerIds.has(snapshot.data.settings.ocr.providerId)
+  ) {
+    throw new Error("OCR settings reference a missing provider");
   }
 
   const encryptedProviders = await Promise.all(
     snapshot.data.providers.map(async (provider) => ({
       ...provider,
-      apiKeyEncrypted: provider.apiKey ? await encryptSecret(provider.apiKey) : '',
+      apiKeyEncrypted: provider.apiKey
+        ? await encryptSecret(provider.apiKey)
+        : "",
     })),
   );
   const encryptedProviderKeys = new Map(
-    encryptedProviders.map((provider) => [provider.id, provider.apiKeyEncrypted]),
+    encryptedProviders.map((
+      provider,
+    ) => [provider.id, provider.apiKeyEncrypted]),
   );
 
   const encryptedModels = await Promise.all(
     snapshot.data.proxyModels.map(async (model) => ({
       ...model,
       providerApiKeyEncrypted: model.providerId
-        ? encryptedProviderKeys.get(model.providerId) || ''
+        ? encryptedProviderKeys.get(model.providerId) || ""
         : model.providerApiKey
         ? await encryptSecret(model.providerApiKey)
-        : '',
+        : "",
     })),
   );
 
   const ocrApiKeyEncrypted = snapshot.data.settings.ocr.providerId
-    ? ''
+    ? ""
     : snapshot.data.settings.ocr.apiKey
     ? await encryptSecret(snapshot.data.settings.ocr.apiKey)
-    : '';
+    : "";
 
   const proxyKeyData = snapshot.data.proxyKeys.map((key) => ({
     id: key.id,
@@ -552,18 +604,18 @@ export async function importMigrationSnapshot(
     }
 
     await tx.appSetting.upsert({
-      where: { key: 'logging' },
+      where: { key: "logging" },
       update: {
         value: snapshot.data.settings.logging as PrismaTypes.InputJsonValue,
       },
       create: {
-        key: 'logging',
+        key: "logging",
         value: snapshot.data.settings.logging as PrismaTypes.InputJsonValue,
       },
     });
 
     await tx.appSetting.upsert({
-      where: { key: 'ocr' },
+      where: { key: "ocr" },
       update: {
         value: {
           enabled: snapshot.data.settings.ocr.enabled,
@@ -577,7 +629,7 @@ export async function importMigrationSnapshot(
         } as PrismaTypes.InputJsonValue,
       },
       create: {
-        key: 'ocr',
+        key: "ocr",
         value: {
           enabled: snapshot.data.settings.ocr.enabled,
           providerId: snapshot.data.settings.ocr.providerId,
@@ -592,17 +644,20 @@ export async function importMigrationSnapshot(
     });
 
     await tx.appSetting.upsert({
-      where: { key: 'refresh' },
+      where: { key: "refresh" },
       update: {
         value: snapshot.data.settings.refresh as PrismaTypes.InputJsonValue,
       },
       create: {
-        key: 'refresh',
+        key: "refresh",
         value: snapshot.data.settings.refresh as PrismaTypes.InputJsonValue,
       },
     });
 
-    if (includeUsageHistory && snapshot.data.usageLogs && snapshot.data.usageLogs.length > 0) {
+    if (
+      includeUsageHistory && snapshot.data.usageLogs &&
+      snapshot.data.usageLogs.length > 0
+    ) {
       await tx.usageLog.createMany({
         data: snapshot.data.usageLogs.map((log) => ({
           id: log.id,
@@ -615,8 +670,10 @@ export async function importMigrationSnapshot(
           outputTokens: log.outputTokens,
           totalCost: log.totalCost,
           durationMs: log.durationMs,
-          requestPayload: (log.requestPayload ?? Prisma.JsonNull) as PrismaTypes.InputJsonValue,
-          responsePayload: (log.responsePayload ?? Prisma.JsonNull) as PrismaTypes.InputJsonValue,
+          requestPayload: (log.requestPayload ??
+            Prisma.JsonNull) as PrismaTypes.InputJsonValue,
+          responsePayload: (log.responsePayload ??
+            Prisma.JsonNull) as PrismaTypes.InputJsonValue,
           errorMessage: log.errorMessage,
           upstreamRequestId: log.upstreamRequestId,
           isFallback: log.isFallback,

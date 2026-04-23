@@ -69,7 +69,7 @@ jobs:
         working-directory: frontend
 
       - name: Run frontend tests
-        run: npm test -- --watch=false --browsers=ChromeHeadless
+        run: npm test -- --watch=false
         working-directory: frontend
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}

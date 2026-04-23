@@ -14,7 +14,8 @@
     "npm:openai@*": "6.29.0_zod@4.3.4",
     "npm:openai@^6.29.0": "6.29.0_zod@4.3.4",
     "npm:prisma@6.19.2": "6.19.2",
-    "npm:zod@*": "4.3.4"
+    "npm:zod@*": "4.3.4",
+    "npm:zod@^4.3.4": "4.3.4"
   },
   "jsr": {
     "@hono/hono@4.11.3": {
@@ -339,7 +340,14 @@
   },
   "workspace": {
     "dependencies": [
-      "jsr:@hono/hono@^4.11.3"
+      "jsr:@hono/hono@^4.11.3",
+      "jsr:@std/assert@^1.0.14",
+      "jsr:@std/encoding@^1.0.10",
+      "jsr:@std/path@^1.1.2",
+      "npm:@prisma/client@6.19.2",
+      "npm:js-tiktoken@^1.0.21",
+      "npm:openai@^6.29.0",
+      "npm:zod@^4.3.4"
     ],
     "packageJson": {
       "dependencies": [

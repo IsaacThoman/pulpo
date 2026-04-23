@@ -1,9 +1,6 @@
-import {
-  assert,
-  assertEquals,
-  assertStringIncludes,
-} from "jsr:@std/assert@^1.0.14";
-import type { PrismaClient, ProxyModel } from "npm:@prisma/client";
+// deno-lint-ignore-file require-await
+import { assert, assertEquals, assertStringIncludes } from "@std/assert";
+import type { PrismaClient, ProxyModel } from "@prisma/client";
 import { encryptSecret } from "../lib/security.ts";
 import { clearStickyBlocksForTesting, forwardChatCompletion } from "./proxy.ts";
 
@@ -83,14 +80,14 @@ function createPrismaStub(
 
   return {
     appSetting: {
-      findUnique: async () => null,
+      findUnique: () => null,
     },
     proxyModel: {
-      findUnique: async ({ where }: { where: { id: string } }) =>
+      findUnique: ({ where }: { where: { id: string } }) =>
         modelMap.get(where.id) || null,
     },
     usageLog: {
-      create: async ({ data }: { data: UsageLogRecord }) => {
+      create: ({ data }: { data: UsageLogRecord }) => {
         usageLogs.push(data);
         return data;
       },
@@ -213,7 +210,7 @@ Deno.test("retries the same model until one attempt succeeds", async () => {
     assertEquals(usageLogs[2].fallbackChain, ["Model A"]);
     assertEquals(usageLogs[2].isFallback, true);
     assertEquals(usageLogs[2].responsePayload, {
-      id: 'success-a',
+      id: "success-a",
       usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
       choices: [],
     });

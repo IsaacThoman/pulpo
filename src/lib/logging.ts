@@ -14,13 +14,12 @@ function normalizeError(error: unknown): Record<string, unknown> {
       status: errorWithExtras.status,
       requestId: errorWithExtras.request_id,
       headers: errorWithExtras.headers,
-      cause:
-        errorWithExtras.cause instanceof Error
-          ? {
-              name: errorWithExtras.cause.name,
-              message: errorWithExtras.cause.message,
-            }
-          : errorWithExtras.cause,
+      cause: errorWithExtras.cause instanceof Error
+        ? {
+          name: errorWithExtras.cause.name,
+          message: errorWithExtras.cause.message,
+        }
+        : errorWithExtras.cause,
     };
   }
 
@@ -29,7 +28,11 @@ function normalizeError(error: unknown): Record<string, unknown> {
   };
 }
 
-function write(level: 'info' | 'error', event: string, payload: Record<string, unknown>) {
+function write(
+  level: "info" | "error",
+  event: string,
+  payload: Record<string, unknown>,
+) {
   const line = JSON.stringify({
     ts: new Date().toISOString(),
     level,
@@ -37,7 +40,7 @@ function write(level: 'info' | 'error', event: string, payload: Record<string, u
     ...payload,
   });
 
-  if (level === 'error') {
+  if (level === "error") {
     console.error(line);
     return;
   }
@@ -46,7 +49,7 @@ function write(level: 'info' | 'error', event: string, payload: Record<string, u
 }
 
 export function logInfo(event: string, payload: Record<string, unknown> = {}) {
-  write('info', event, payload);
+  write("info", event, payload);
 }
 
 export function logError(
@@ -54,7 +57,7 @@ export function logError(
   error: unknown,
   payload: Record<string, unknown> = {},
 ) {
-  write('error', event, {
+  write("error", event, {
     ...payload,
     error: normalizeError(error),
   });
@@ -72,27 +75,27 @@ export function summarizeMessages(messages: unknown): Record<string, unknown> {
   return {
     messageCount: messages.length,
     roles: messages.map((message) =>
-      typeof message === 'object' && message !== null && 'role' in message
+      typeof message === "object" && message !== null && "role" in message
         ? (message as { role?: unknown }).role
-        : 'unknown'
+        : "unknown"
     ),
     contentKinds: messages.map((message) => {
-      if (!message || typeof message !== 'object' || !('content' in message)) {
-        return 'unknown';
+      if (!message || typeof message !== "object" || !("content" in message)) {
+        return "unknown";
       }
 
       const content = (message as { content?: unknown }).content;
-      if (typeof content === 'string') {
-        return 'text';
+      if (typeof content === "string") {
+        return "text";
       }
       if (Array.isArray(content)) {
         return content
           .map((item) =>
-            typeof item === 'object' && item !== null && 'type' in item
+            typeof item === "object" && item !== null && "type" in item
               ? (item as { type?: unknown }).type
-              : 'unknown'
+              : "unknown"
           )
-          .join(',');
+          .join(",");
       }
       return typeof content;
     }),

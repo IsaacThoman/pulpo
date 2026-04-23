@@ -1,9 +1,15 @@
-import type { PrismaClient } from 'npm:@prisma/client';
-import { decryptSecret, encryptSecret } from '../lib/security.ts';
+import type { PrismaClient } from "@prisma/client";
+import { decryptSecret, encryptSecret } from "../lib/security.ts";
 
 export type LoggingSettings = {
   logPayloads: boolean;
-  payloadRetention: "1_hour" | "24_hours" | "7_days" | "30_days" | "90_days" | "indefinite";
+  payloadRetention:
+    | "1_hour"
+    | "24_hours"
+    | "7_days"
+    | "30_days"
+    | "90_days"
+    | "indefinite";
 };
 
 type StoredOcrSettings = {
@@ -38,9 +44,9 @@ export type OcrRuntimeSettings = {
   apiKey: string;
 };
 
-const LOGGING_KEY = 'logging';
-const OCR_KEY = 'ocr';
-const REFRESH_KEY = 'refresh';
+const LOGGING_KEY = "logging";
+const OCR_KEY = "ocr";
+const REFRESH_KEY = "refresh";
 
 const defaultLoggingSettings: LoggingSettings = {
   logPayloads: false,
@@ -49,12 +55,12 @@ const defaultLoggingSettings: LoggingSettings = {
 
 const defaultOcrSettings: StoredOcrSettings = {
   enabled: false,
-  providerId: '',
-  providerBaseUrl: 'https://api.openai.com/v1',
-  apiKeyEncrypted: '',
-  model: 'gpt-4.1-mini',
+  providerId: "",
+  providerBaseUrl: "https://api.openai.com/v1",
+  apiKeyEncrypted: "",
+  model: "gpt-4.1-mini",
   systemPrompt:
-    'convert the image to markdown/latex if applicable, otherwise describe the non-text content part of the image in detail. if there is text present in the image, provide all of the text in the image, unabridged verbatim',
+    "convert the image to markdown/latex if applicable, otherwise describe the non-text content part of the image in detail. if there is text present in the image, provide all of the text in the image, unabridged verbatim",
   cacheEnabled: true,
   cacheTtlSeconds: 3600,
 };
@@ -98,7 +104,9 @@ async function upsertSetting<T>(
   });
 }
 
-export async function getLoggingSettings(prisma: PrismaClient): Promise<LoggingSettings> {
+export function getLoggingSettings(
+  prisma: PrismaClient,
+): Promise<LoggingSettings> {
   return getSetting(prisma, LOGGING_KEY, defaultLoggingSettings);
 }
 
@@ -114,13 +122,17 @@ export async function saveLoggingSettings(
   return merged;
 }
 
-export async function getStoredOcrSettings(prisma: PrismaClient): Promise<StoredOcrSettings> {
+export function getStoredOcrSettings(
+  prisma: PrismaClient,
+): Promise<StoredOcrSettings> {
   return getSetting(prisma, OCR_KEY, defaultOcrSettings);
 }
 
-export async function getAdminOcrSettings(prisma: PrismaClient): Promise<AdminOcrSettings> {
+export async function getAdminOcrSettings(
+  prisma: PrismaClient,
+): Promise<AdminOcrSettings> {
   const settings = await getStoredOcrSettings(prisma);
-  
+
   // Resolve providerId to get effective providerBaseUrl
   let effectiveProviderBaseUrl = settings.providerBaseUrl;
   if (settings.providerId) {
@@ -131,7 +143,7 @@ export async function getAdminOcrSettings(prisma: PrismaClient): Promise<AdminOc
       effectiveProviderBaseUrl = provider.baseUrl;
     }
   }
-  
+
   return {
     enabled: settings.enabled,
     providerId: settings.providerId,
@@ -144,13 +156,17 @@ export async function getAdminOcrSettings(prisma: PrismaClient): Promise<AdminOc
   };
 }
 
-export async function getOcrRuntimeSettings(prisma: PrismaClient): Promise<OcrRuntimeSettings> {
+export async function getOcrRuntimeSettings(
+  prisma: PrismaClient,
+): Promise<OcrRuntimeSettings> {
   const settings = await getStoredOcrSettings(prisma);
-  
+
   // Resolve provider to get effective baseUrl and apiKey
   let effectiveProviderBaseUrl = settings.providerBaseUrl;
-  let effectiveApiKey = settings.apiKeyEncrypted ? await decryptSecret(settings.apiKeyEncrypted) : '';
-  
+  let effectiveApiKey = settings.apiKeyEncrypted
+    ? await decryptSecret(settings.apiKeyEncrypted)
+    : "";
+
   if (settings.providerId) {
     const provider = await prisma.provider.findUnique({
       where: { id: settings.providerId },
@@ -160,7 +176,7 @@ export async function getOcrRuntimeSettings(prisma: PrismaClient): Promise<OcrRu
       effectiveApiKey = await decryptSecret(provider.apiKeyEncrypted);
     }
   }
-  
+
   return {
     enabled: settings.enabled,
     providerBaseUrl: effectiveProviderBaseUrl,
@@ -186,17 +202,17 @@ export async function saveOcrSettings(
   },
 ): Promise<AdminOcrSettings> {
   const existing = await getStoredOcrSettings(prisma);
-  
+
   // Only save custom API key if using a custom provider
   let apiKeyEncrypted = existing.apiKeyEncrypted;
   if (!input.providerId && input.apiKey?.trim()) {
     apiKeyEncrypted = await encryptSecret(input.apiKey.trim());
   }
-  
+
   const nextValue: StoredOcrSettings = {
     enabled: input.enabled,
-    providerId: input.providerId || '',
-    providerBaseUrl: input.providerBaseUrl.trim().replace(/\/+$/, ''),
+    providerId: input.providerId || "",
+    providerBaseUrl: input.providerBaseUrl.trim().replace(/\/+$/, ""),
     model: input.model.trim(),
     systemPrompt: input.systemPrompt.trim(),
     cacheEnabled: input.cacheEnabled,
@@ -213,7 +229,9 @@ export type RefreshSettings = {
   intervalSeconds: number;
 };
 
-export async function getRefreshSettings(prisma: PrismaClient): Promise<RefreshSettings> {
+export function getRefreshSettings(
+  prisma: PrismaClient,
+): Promise<RefreshSettings> {
   return getSetting(prisma, REFRESH_KEY, defaultRefreshSettings);
 }
 

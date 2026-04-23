@@ -1,8 +1,8 @@
 import { Hono } from "hono";
-import prismaPackage from "npm:@prisma/client";
-import type { Prisma as PrismaTypes } from "npm:@prisma/client";
-import { getEncoding } from "npm:js-tiktoken";
-import { z } from "npm:zod";
+import prismaPackage from "@prisma/client";
+import type { Prisma as PrismaTypes } from "@prisma/client";
+import { getEncoding } from "js-tiktoken";
+import { z } from "zod";
 import { config } from "../config.ts";
 import { db } from "../db.ts";
 import {
@@ -41,7 +41,7 @@ import {
   saveRefreshSettings,
 } from "../services/settings.ts";
 
-const { Prisma } = prismaPackage;
+const { Prisma: _Prisma } = prismaPackage;
 
 const credentialsSchema = z.object({
   username: z.string().trim().min(3),
@@ -187,7 +187,14 @@ const providerSchema = z.object({
 
 const loggingSchema = z.object({
   logPayloads: z.boolean(),
-  payloadRetention: z.enum(["1_hour", "24_hours", "7_days", "30_days", "90_days", "indefinite"]),
+  payloadRetention: z.enum([
+    "1_hour",
+    "24_hours",
+    "7_days",
+    "30_days",
+    "90_days",
+    "indefinite",
+  ]),
 });
 
 const ocrSchema = z.object({
@@ -1388,7 +1395,7 @@ api.put("/api/admin/settings/refresh", async (c) => {
 api.get("/api/admin/migration/export", async (c) => {
   const includeUsageHistory = c.req.query("includeUsageHistory") === "true";
   const snapshot = await createMigrationSnapshot(db, includeUsageHistory);
-  const exportedAt = snapshot.exportedAt.replaceAll(':', '-');
+  const exportedAt = snapshot.exportedAt.replaceAll(":", "-");
   c.header("content-type", "application/json; charset=utf-8");
   c.header(
     "content-disposition",

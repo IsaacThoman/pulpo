@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
-import { Component, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { ApiService } from '../services/api.service';
+import { CommonModule } from "@angular/common";
+import { Component, inject } from "@angular/core";
+import { FormsModule } from "@angular/forms";
+import { Router } from "@angular/router";
+import { ApiService } from "../services/api.service";
 
 @Component({
-  selector: 'app-login-page',
+  selector: "app-login-page",
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
@@ -60,22 +60,22 @@ export class LoginPageComponent {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
 
-  username = '';
-  password = '';
-  error = '';
+  username = "";
+  password = "";
+  error = "";
   submitting = false;
 
   async submit(): Promise<void> {
-    this.error = '';
+    this.error = "";
     this.submitting = true;
     try {
       await this.api.login({
         username: this.username,
         password: this.password,
       });
-      await this.router.navigateByUrl('/admin');
+      await this.router.navigateByUrl("/admin");
     } catch (err) {
-      this.error = err instanceof Error ? err.message : 'Sign in failed';
+      this.error = err instanceof Error ? err.message : "Sign in failed";
     } finally {
       this.submitting = false;
     }

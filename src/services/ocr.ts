@@ -1,18 +1,18 @@
-import OpenAI from 'npm:openai';
-import type { PrismaClient } from 'npm:@prisma/client';
-import { cacheKeyForParts } from '../lib/security.ts';
-import { logError, logInfo } from '../lib/logging.ts';
-import { getOcrRuntimeSettings } from './settings.ts';
+import OpenAI from "openai";
+import type { PrismaClient } from "@prisma/client";
+import { cacheKeyForParts } from "../lib/security.ts";
+import { logError, logInfo } from "../lib/logging.ts";
+import { getOcrRuntimeSettings } from "./settings.ts";
 
 type ChatMessage = {
-  role: 'developer' | 'system' | 'user' | 'assistant';
+  role: "developer" | "system" | "user" | "assistant";
   content: unknown;
 };
 
 function extractBase64FromDataUrl(dataUrl: string): string {
-  const parts = dataUrl.split(',');
+  const parts = dataUrl.split(",");
   if (parts.length !== 2) {
-    throw new Error('Invalid image data URL');
+    throw new Error("Invalid image data URL");
   }
 
   return parts[1];
@@ -24,13 +24,15 @@ async function downloadImageFromUrl(url: string): Promise<string> {
     throw new Error(`Failed to download image: ${response.status}`);
   }
 
-  const contentType = response.headers.get('content-type');
-  if (!contentType?.startsWith('image/')) {
-    throw new Error(`Unsupported image content-type: ${contentType || 'unknown'}`);
+  const contentType = response.headers.get("content-type");
+  if (!contentType?.startsWith("image/")) {
+    throw new Error(
+      `Unsupported image content-type: ${contentType || "unknown"}`,
+    );
   }
 
   const bytes = new Uint8Array(await response.arrayBuffer());
-  let binary = '';
+  let binary = "";
   for (const value of bytes) {
     binary += String.fromCharCode(value);
   }
@@ -38,24 +40,27 @@ async function downloadImageFromUrl(url: string): Promise<string> {
   return `data:${contentType};base64,${btoa(binary)}`;
 }
 
-async function resolveImageDataUrl(imageUrl: string): Promise<string> {
-  if (imageUrl.startsWith('data:image/')) {
-    return imageUrl;
+function resolveImageDataUrl(imageUrl: string): Promise<string> {
+  if (imageUrl.startsWith("data:image/")) {
+    return Promise.resolve(imageUrl);
   }
 
   return downloadImageFromUrl(imageUrl);
 }
 
-async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<string> {
+async function runOcr(
+  prisma: PrismaClient,
+  imageDataUrl: string,
+): Promise<string> {
   const settings = await getOcrRuntimeSettings(prisma);
   if (!settings.enabled || !settings.apiKey) {
-    logInfo('ocr.skipped', {
+    logInfo("ocr.skipped", {
       enabled: settings.enabled,
       apiKeyConfigured: Boolean(settings.apiKey),
       providerBaseUrl: settings.providerBaseUrl,
       model: settings.model,
     });
-    return '[OCR skipped because OCR is not configured.]';
+    return "[OCR skipped because OCR is not configured.]";
   }
 
   const imageBase64 = extractBase64FromDataUrl(imageDataUrl);
@@ -81,7 +86,7 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
     });
 
     if (cached && cached.expiresAt > new Date()) {
-      logInfo('ocr.cache_hit', {
+      logInfo("ocr.cache_hit", {
         providerBaseUrl: settings.providerBaseUrl,
         model: settings.model,
         cacheTtlSeconds: settings.cacheTtlSeconds,
@@ -96,7 +101,7 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
     baseURL: settings.providerBaseUrl,
   });
 
-  logInfo('ocr.request_start', {
+  logInfo("ocr.request_start", {
     providerBaseUrl: settings.providerBaseUrl,
     model: settings.model,
     cacheEnabled: settings.cacheEnabled,
@@ -112,14 +117,14 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
       stream: false,
       messages: [
         {
-          role: 'user',
+          role: "user",
           content: [
             {
-              type: 'text',
+              type: "text",
               text: settings.systemPrompt,
             },
             {
-              type: 'image_url',
+              type: "image_url",
               image_url: {
                 url: imageDataUrl,
               },
@@ -129,7 +134,7 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
       ],
     });
   } catch (error) {
-    logError('ocr.request_failed', error, {
+    logError("ocr.request_failed", error, {
       providerBaseUrl: settings.providerBaseUrl,
       model: settings.model,
       cacheEnabled: settings.cacheEnabled,
@@ -139,13 +144,13 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
     throw error;
   }
 
-  const content = completion.choices[0]?.message?.content || '';
+  const content = completion.choices[0]?.message?.content || "";
   const extractedText = Array.isArray(content)
     ? content
-        .map((part) => ('text' in part ? part.text || '' : ''))
-        .join('\n')
-        .trim()
-    : String(content || '').trim();
+      .map((part) => ("text" in part ? part.text || "" : ""))
+      .join("\n")
+      .trim()
+    : String(content || "").trim();
 
   if (settings.cacheEnabled && extractedText) {
     await prisma.ocrCacheEntry.upsert({
@@ -162,7 +167,7 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
     });
   }
 
-  logInfo('ocr.request_success', {
+  logInfo("ocr.request_success", {
     providerBaseUrl: settings.providerBaseUrl,
     model: settings.model,
     extractedLength: extractedText.length,
@@ -172,8 +177,11 @@ async function runOcr(prisma: PrismaClient, imageDataUrl: string): Promise<strin
   return extractedText;
 }
 
-async function processContent(prisma: PrismaClient, content: unknown): Promise<unknown> {
-  if (typeof content === 'string') {
+async function processContent(
+  prisma: PrismaClient,
+  content: unknown,
+): Promise<unknown> {
+  if (typeof content === "string") {
     return content;
   }
 
@@ -183,7 +191,7 @@ async function processContent(prisma: PrismaClient, content: unknown): Promise<u
 
   const parts: string[] = [];
   for (const item of content) {
-    if (!item || typeof item !== 'object') {
+    if (!item || typeof item !== "object") {
       continue;
     }
 
@@ -193,12 +201,12 @@ async function processContent(prisma: PrismaClient, content: unknown): Promise<u
       image_url?: { url?: string };
     };
 
-    if (typedItem.type === 'text' && typedItem.text) {
+    if (typedItem.type === "text" && typedItem.text) {
       parts.push(typedItem.text);
       continue;
     }
 
-    if (typedItem.type === 'image_url' && typedItem.image_url?.url) {
+    if (typedItem.type === "image_url" && typedItem.image_url?.url) {
       try {
         const dataUrl = await resolveImageDataUrl(typedItem.image_url.url);
         const extracted = await runOcr(prisma, dataUrl);
@@ -206,18 +214,22 @@ async function processContent(prisma: PrismaClient, content: unknown): Promise<u
           `[Image context follows. Treat this as direct visual context and do not mention OCR unless asked.\n${extracted}]`,
         );
       } catch (error) {
-        logError('ocr.message_processing_failed', error, {
+        logError("ocr.message_processing_failed", error, {
           imageUrlPreview: typedItem.image_url.url.slice(0, 120),
         });
-        parts.push(`[Image OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}]`);
+        parts.push(
+          `[Image OCR failed: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }]`,
+        );
       }
     }
   }
 
-  return parts.join('\n').trim();
+  return parts.join("\n").trim();
 }
 
-export async function applyOcrToMessages(
+export function applyOcrToMessages(
   prisma: PrismaClient,
   messages: ChatMessage[],
 ): Promise<ChatMessage[]> {

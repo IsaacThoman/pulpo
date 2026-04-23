@@ -1,11 +1,11 @@
-import OpenAI from "npm:openai";
-import prismaPackage from "npm:@prisma/client";
+import OpenAI from "openai";
+import prismaPackage from "@prisma/client";
 import type {
   Prisma as PrismaTypes,
   PrismaClient,
   Provider,
   ProxyModel,
-} from "npm:@prisma/client";
+} from "@prisma/client";
 import { logError, logInfo, summarizeMessages } from "../lib/logging.ts";
 import { decryptSecret, encryptSecret } from "../lib/security.ts";
 import { applyOcrToMessages } from "./ocr.ts";
@@ -1201,11 +1201,11 @@ async function attemptChatCompletion(
   }
 }
 
-async function prepareStreamingResponse(input: {
+function prepareStreamingResponse(input: {
   upstreamResponse: Response;
   abortController: AbortController;
   model: ProxyModel;
-}): Promise<PreparedStreamingResponse> {
+}): PreparedStreamingResponse {
   const body = input.upstreamResponse.body;
   if (!body) {
     return {
@@ -1309,13 +1309,13 @@ async function prepareStreamingResponse(input: {
   return { ok: true, response, completion, cancelStream };
 }
 
-async function prepareResponsesStreamingResponse(input: {
+function prepareResponsesStreamingResponse(input: {
   upstreamResponse: Response;
   abortController: AbortController;
   model: ProxyModel;
   publicModelName: string;
   reasoningOutputMode: string;
-}): Promise<PreparedStreamingResponse> {
+}): PreparedStreamingResponse {
   const body = input.upstreamResponse.body;
   if (!body) {
     return {
@@ -2641,7 +2641,8 @@ export async function forwardChatCompletion(
           } as PrismaTypes.InputJsonValue)
           : ((buildSummaryResponsePayload(rawResponsePayload ?? usagePayload) ??
             null) as PrismaTypes.InputJsonValue | null),
-        errorMessage: zeroOutputTokensError ?? responsesFailureError ?? undefined,
+        errorMessage: zeroOutputTokensError ?? responsesFailureError ??
+          undefined,
         upstreamRequestId,
         durationMs: Date.now() - requestStartTime,
         isFallback: fallbackContext!.totalRetryCount > 0 ||

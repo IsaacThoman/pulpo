@@ -7,9 +7,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     expose:
-      - '5432'
+      - "5432"
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres -d llm_proxy']
+      test: ["CMD-SHELL", "pg_isready -U postgres -d llm_proxy"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -45,7 +45,7 @@ services:
       PORT: 8000
       FRONTEND_DIST_DIR: /app/frontend/dist/frontend/browser
     expose:
-      - '8000'
+      - "8000"
 
 volumes:
   postgres_data:

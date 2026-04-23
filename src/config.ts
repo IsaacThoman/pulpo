@@ -1,4 +1,4 @@
-import { join } from 'jsr:@std/path@^1.1.2/join';
+import { join } from "@std/path";
 
 function getNumber(name: string, fallback: number): number {
   const raw = Deno.env.get(name);
@@ -11,11 +11,10 @@ function getNumber(name: string, fallback: number): number {
 }
 
 export const config = {
-  port: getNumber('PORT', 8000),
-  appSecret: Deno.env.get('APP_SECRET') || 'change-me-in-production',
-  sessionCookieName: Deno.env.get('SESSION_COOKIE_NAME') || 'llm_proxy_admin',
-  sessionTtlHours: getNumber('SESSION_TTL_HOURS', 24 * 7),
-  frontendDistDir:
-    Deno.env.get('FRONTEND_DIST_DIR') ||
-    join(Deno.cwd(), 'frontend', 'dist', 'frontend', 'browser'),
+  port: getNumber("PORT", 8000),
+  appSecret: Deno.env.get("APP_SECRET") || "change-me-in-production",
+  sessionCookieName: Deno.env.get("SESSION_COOKIE_NAME") || "llm_proxy_admin",
+  sessionTtlHours: getNumber("SESSION_TTL_HOURS", 24 * 7),
+  frontendDistDir: Deno.env.get("FRONTEND_DIST_DIR") ||
+    join(Deno.cwd(), "frontend", "dist", "frontend", "browser"),
 };

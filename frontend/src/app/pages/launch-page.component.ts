@@ -1,9 +1,9 @@
-import { Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
-import { ApiService } from '../services/api.service';
+import { Component, inject } from "@angular/core";
+import { Router } from "@angular/router";
+import { ApiService } from "../services/api.service";
 
 @Component({
-  selector: 'app-launch-page',
+  selector: "app-launch-page",
   standalone: true,
   template: `
     <div class="login-page">
@@ -22,7 +22,7 @@ export class LaunchPageComponent {
   private readonly router = inject(Router);
 
   checking = true;
-  message = 'Initializing...';
+  message = "Initializing...";
 
   constructor() {
     void this.route();
@@ -30,18 +30,18 @@ export class LaunchPageComponent {
 
   private async route(): Promise<void> {
     try {
-      this.message = 'Checking setup...';
+      this.message = "Checking setup...";
       const setup = await this.api.getSetupStatus();
       if (setup.needsSetup) {
-        await this.router.navigateByUrl('/setup');
+        await this.router.navigateByUrl("/setup");
         return;
       }
 
-      this.message = 'Verifying session...';
+      this.message = "Verifying session...";
       const me = await this.api.getMe();
-      await this.router.navigateByUrl(me.admin ? '/admin' : '/login');
+      await this.router.navigateByUrl(me.admin ? "/admin" : "/login");
     } catch {
-      await this.router.navigateByUrl('/login');
+      await this.router.navigateByUrl("/login");
     } finally {
       this.checking = false;
     }

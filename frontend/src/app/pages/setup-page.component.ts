@@ -1,11 +1,11 @@
-import { CommonModule } from '@angular/common';
-import { Component, inject } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { ApiService } from '../services/api.service';
+import { CommonModule } from "@angular/common";
+import { Component, inject } from "@angular/core";
+import { FormsModule } from "@angular/forms";
+import { Router } from "@angular/router";
+import { ApiService } from "../services/api.service";
 
 @Component({
-  selector: 'app-setup-page',
+  selector: "app-setup-page",
   standalone: true,
   imports: [CommonModule, FormsModule],
   template: `
@@ -72,22 +72,22 @@ export class SetupPageComponent {
   private readonly api = inject(ApiService);
   private readonly router = inject(Router);
 
-  username = '';
-  password = '';
-  confirmPassword = '';
-  error = '';
+  username = "";
+  password = "";
+  confirmPassword = "";
+  error = "";
   submitting = false;
 
   async submit(): Promise<void> {
-    this.error = '';
-    
+    this.error = "";
+
     if (this.password !== this.confirmPassword) {
-      this.error = 'Passwords do not match';
+      this.error = "Passwords do not match";
       return;
     }
-    
+
     if (this.password.length < 8) {
-      this.error = 'Password must be at least 8 characters';
+      this.error = "Password must be at least 8 characters";
       return;
     }
 
@@ -97,9 +97,9 @@ export class SetupPageComponent {
         username: this.username,
         password: this.password,
       });
-      await this.router.navigateByUrl('/admin/overview');
+      await this.router.navigateByUrl("/admin/overview");
     } catch (err) {
-      this.error = err instanceof Error ? err.message : 'Setup failed';
+      this.error = err instanceof Error ? err.message : "Setup failed";
     } finally {
       this.submitting = false;
     }

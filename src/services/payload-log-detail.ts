@@ -1,5 +1,5 @@
 function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
 
@@ -16,9 +16,11 @@ export function buildSummaryResponsePayload(
 
   const summary: Record<string, unknown> = {};
 
-  for (const key of ['id', 'object', 'created', 'created_at', 'model'] as const) {
+  for (
+    const key of ["id", "object", "created", "created_at", "model"] as const
+  ) {
     const value = record[key];
-    if (typeof value === 'string' || typeof value === 'number') {
+    if (typeof value === "string" || typeof value === "number") {
       summary[key] = value;
     }
   }
@@ -42,10 +44,10 @@ export function hasDetailedResponsePayload(payload: unknown): boolean {
   }
 
   if (
-    'assistantText' in record ||
-    'reasoningSummaryText' in record ||
-    'translatedResponse' in record ||
-    'upstreamResponse' in record
+    "assistantText" in record ||
+    "reasoningSummaryText" in record ||
+    "translatedResponse" in record ||
+    "upstreamResponse" in record
   ) {
     return true;
   }
@@ -67,7 +69,7 @@ export function hasDetailedResponsePayload(payload: unknown): boolean {
     const message = asRecord(choiceRecord.message);
     if (
       message &&
-      (typeof message.content === 'string' || 'reasoning_content' in message)
+      (typeof message.content === "string" || "reasoning_content" in message)
     ) {
       return true;
     }
@@ -75,7 +77,7 @@ export function hasDetailedResponsePayload(payload: unknown): boolean {
     const delta = asRecord(choiceRecord.delta);
     return Boolean(
       delta &&
-        (typeof delta.content === 'string' || 'reasoning_content' in delta),
+        (typeof delta.content === "string" || "reasoning_content" in delta),
     );
   });
 }

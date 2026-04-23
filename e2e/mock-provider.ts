@@ -1,89 +1,94 @@
-import { Hono } from 'hono';
+import { Hono } from "hono";
 
 const app = new Hono();
 
-app.get('/health', (c) => c.json({ ok: true }));
+app.get("/health", (c) => c.json({ ok: true }));
 
-app.get('/v1/models', (c) =>
+app.get("/v1/models", (c) =>
   c.json({
-    object: 'list',
+    object: "list",
     data: [
-      { id: 'mock-upstream-model', object: 'model', created: 1, owned_by: 'mock' },
-      { id: 'mock-ocr-model', object: 'model', created: 1, owned_by: 'mock' },
+      {
+        id: "mock-upstream-model",
+        object: "model",
+        created: 1,
+        owned_by: "mock",
+      },
+      { id: "mock-ocr-model", object: "model", created: 1, owned_by: "mock" },
     ],
   }));
 
 function extractPromptText(content: unknown): string {
-  if (typeof content === 'string') {
+  if (typeof content === "string") {
     return content;
   }
 
   if (!Array.isArray(content)) {
-    return '';
+    return "";
   }
 
   return content
     .map((item) => {
-      if (!item || typeof item !== 'object') {
-        return '';
+      if (!item || typeof item !== "object") {
+        return "";
       }
       const typedItem = item as {
         type?: string;
         text?: string;
       };
-      return typedItem.type === 'text' ? typedItem.text || '' : '';
+      return typedItem.type === "text" ? typedItem.text || "" : "";
     })
     .filter(Boolean)
-    .join('\n');
+    .join("\n");
 }
 
 function extractResponsesPrompt(input: unknown): string {
   if (!Array.isArray(input)) {
-    return '';
+    return "";
   }
 
   const lastItem = input[input.length - 1];
-  if (!lastItem || typeof lastItem !== 'object') {
-    return '';
+  if (!lastItem || typeof lastItem !== "object") {
+    return "";
   }
 
   const content = (lastItem as { content?: unknown }).content;
   if (!Array.isArray(content)) {
-    return '';
+    return "";
   }
 
   return content
     .map((item) => {
-      if (!item || typeof item !== 'object') {
-        return '';
+      if (!item || typeof item !== "object") {
+        return "";
       }
       const typedItem = item as {
         type?: string;
         text?: string;
       };
-      return typedItem.type === 'input_text' ? typedItem.text || '' : '';
+      return typedItem.type === "input_text" ? typedItem.text || "" : "";
     })
     .filter(Boolean)
-    .join('\n');
+    .join("\n");
 }
 
-app.post('/v1/chat/completions', async (c) => {
+app.post("/v1/chat/completions", async (c) => {
   const body = await c.req.json();
 
-  if (body.model === 'mock-ocr-model') {
+  if (body.model === "mock-ocr-model") {
     return c.json({
-      id: 'chatcmpl-mock-ocr',
-      object: 'chat.completion',
+      id: "chatcmpl-mock-ocr",
+      object: "chat.completion",
       created: Date.now(),
       model: body.model,
       choices: [
         {
           index: 0,
           message: {
-            role: 'assistant',
-            content: 'MOCK OCR OUTPUT: scanned receipt total is 42.00 USD',
+            role: "assistant",
+            content: "MOCK OCR OUTPUT: scanned receipt total is 42.00 USD",
           },
-          finish_reason: 'stop',
+          finish_reason: "stop",
         },
       ],
       usage: {
@@ -104,25 +109,28 @@ app.post('/v1/chat/completions', async (c) => {
       start(controller) {
         const chunks = [
           {
-            id: 'chatcmpl-stream',
-            object: 'chat.completion.chunk',
+            id: "chatcmpl-stream",
+            object: "chat.completion.chunk",
             created: Date.now(),
             model: body.model,
-            choices: [{ index: 0, delta: { role: 'assistant', content: 'Echoed from upstream: ' } }],
+            choices: [{
+              index: 0,
+              delta: { role: "assistant", content: "Echoed from upstream: " },
+            }],
           },
           {
-            id: 'chatcmpl-stream',
-            object: 'chat.completion.chunk',
+            id: "chatcmpl-stream",
+            object: "chat.completion.chunk",
             created: Date.now(),
             model: body.model,
             choices: [{ index: 0, delta: { content: promptText } }],
           },
           {
-            id: 'chatcmpl-stream',
-            object: 'chat.completion.chunk',
+            id: "chatcmpl-stream",
+            object: "chat.completion.chunk",
             created: Date.now(),
             model: body.model,
-            choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
             usage: {
               prompt_tokens: 120,
               prompt_tokens_details: {
@@ -135,35 +143,37 @@ app.post('/v1/chat/completions', async (c) => {
         ];
 
         for (const chunk of chunks) {
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`));
+          controller.enqueue(
+            new TextEncoder().encode(`data: ${JSON.stringify(chunk)}\n\n`),
+          );
         }
-        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
         controller.close();
       },
     });
 
     return new Response(stream, {
       headers: {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache',
-        connection: 'keep-alive',
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
       },
     });
   }
 
   return c.json({
-    id: 'chatcmpl-mock',
-    object: 'chat.completion',
+    id: "chatcmpl-mock",
+    object: "chat.completion",
     created: Date.now(),
     model: body.model,
     choices: [
       {
         index: 0,
         message: {
-          role: 'assistant',
+          role: "assistant",
           content: responseText,
         },
-        finish_reason: 'stop',
+        finish_reason: "stop",
       },
     ],
     usage: {
@@ -177,7 +187,7 @@ app.post('/v1/chat/completions', async (c) => {
   });
 });
 
-app.post('/v1/responses', async (c) => {
+app.post("/v1/responses", async (c) => {
   const body = await c.req.json();
   const promptText = extractResponsesPrompt(body.input);
   const responseText = `Echoed from upstream: ${promptText}`.trim();
@@ -187,32 +197,32 @@ app.post('/v1/responses', async (c) => {
       start(controller) {
         const events = [
           {
-            type: 'response.created',
+            type: "response.created",
             response: {
-              id: 'resp-stream',
-              object: 'response',
+              id: "resp-stream",
+              object: "response",
               created_at: Math.floor(Date.now() / 1000),
             },
           },
           {
-            type: 'response.output_text.delta',
-            delta: 'Echoed from upstream: ',
+            type: "response.output_text.delta",
+            delta: "Echoed from upstream: ",
           },
           {
-            type: 'response.output_text.delta',
+            type: "response.output_text.delta",
             delta: promptText,
           },
           {
-            type: 'response.completed',
+            type: "response.completed",
             response: {
-              id: 'resp-stream',
-              object: 'response',
+              id: "resp-stream",
+              object: "response",
               created_at: Math.floor(Date.now() / 1000),
               output: [
                 {
-                  type: 'message',
-                  role: 'assistant',
-                  content: [{ type: 'output_text', text: responseText }],
+                  type: "message",
+                  role: "assistant",
+                  content: [{ type: "output_text", text: responseText }],
                 },
               ],
               usage: {
@@ -230,31 +240,33 @@ app.post('/v1/responses', async (c) => {
         ];
 
         for (const event of events) {
-          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+          controller.enqueue(
+            new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`),
+          );
         }
-        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'));
+        controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
         controller.close();
       },
     });
 
     return new Response(stream, {
       headers: {
-        'content-type': 'text/event-stream',
-        'cache-control': 'no-cache',
-        connection: 'keep-alive',
+        "content-type": "text/event-stream",
+        "cache-control": "no-cache",
+        connection: "keep-alive",
       },
     });
   }
 
   return c.json({
-    id: 'resp-mock',
-    object: 'response',
+    id: "resp-mock",
+    object: "response",
     created_at: Math.floor(Date.now() / 1000),
     output: [
       {
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'output_text', text: responseText }],
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: responseText }],
       },
     ],
     usage: {

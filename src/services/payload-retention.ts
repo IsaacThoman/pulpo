@@ -1,29 +1,32 @@
-import prismaPackage from 'npm:@prisma/client';
-import type { PrismaClient } from 'npm:@prisma/client';
-import { logError, logInfo } from '../lib/logging.ts';
-import { buildSummaryResponsePayload, hasDetailedPayloads } from './payload-log-detail.ts';
-import { getLoggingSettings, type LoggingSettings } from './settings.ts';
+import prismaPackage from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
+import { logError, logInfo } from "../lib/logging.ts";
+import {
+  buildSummaryResponsePayload,
+  hasDetailedPayloads,
+} from "./payload-log-detail.ts";
+import { getLoggingSettings, type LoggingSettings } from "./settings.ts";
 
 const { Prisma } = prismaPackage;
 
 const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
 const PAYLOAD_RETENTION_MS: Record<
-  Exclude<LoggingSettings['payloadRetention'], 'indefinite'>,
+  Exclude<LoggingSettings["payloadRetention"], "indefinite">,
   number
 > = {
-  '1_hour': 60 * 60 * 1000,
-  '24_hours': 24 * 60 * 60 * 1000,
-  '7_days': 7 * 24 * 60 * 60 * 1000,
-  '30_days': 30 * 24 * 60 * 60 * 1000,
-  '90_days': 90 * 24 * 60 * 60 * 1000,
+  "1_hour": 60 * 60 * 1000,
+  "24_hours": 24 * 60 * 60 * 1000,
+  "7_days": 7 * 24 * 60 * 60 * 1000,
+  "30_days": 30 * 24 * 60 * 60 * 1000,
+  "90_days": 90 * 24 * 60 * 60 * 1000,
 };
 
 export function getPayloadRetentionCutoff(
-  retention: LoggingSettings['payloadRetention'],
+  retention: LoggingSettings["payloadRetention"],
   now = new Date(),
 ): Date | null {
-  if (retention === 'indefinite') {
+  if (retention === "indefinite") {
     return null;
   }
 
@@ -63,14 +66,17 @@ export async function clearExpiredDetailedPayloads(
       continue;
     }
 
-    const summarizedResponsePayload = buildSummaryResponsePayload(log.responsePayload);
+    const summarizedResponsePayload = buildSummaryResponsePayload(
+      log.responsePayload,
+    );
     await prisma.usageLog.update({
       where: {
         id: log.id,
       },
       data: {
         requestPayload: Prisma.JsonNull,
-        responsePayload: (summarizedResponsePayload ?? Prisma.JsonNull) as never,
+        responsePayload:
+          (summarizedResponsePayload ?? Prisma.JsonNull) as never,
       },
     });
     clearedCount += 1;
@@ -92,10 +98,10 @@ export function startPayloadRetentionCleanup(prisma: PrismaClient): void {
     try {
       const clearedCount = await clearExpiredDetailedPayloads(prisma);
       if (clearedCount > 0) {
-        logInfo('payload_retention_cleanup_cleared', { clearedCount });
+        logInfo("payload_retention_cleanup_cleared", { clearedCount });
       }
     } catch (error) {
-      logError('payload_retention_cleanup_failed', error);
+      logError("payload_retention_cleanup_failed", error);
     } finally {
       cleanupRunning = false;
     }

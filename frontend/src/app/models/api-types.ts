@@ -10,14 +10,14 @@ export type SimModel = {
 };
 
 export type SimSegment =
-  | { type: 'delay'; delayMs: number }
+  | { type: "delay"; delayMs: number }
   | {
-      type: 'text';
-      content: string;
-      ratePerSecond: number;
-      unit: 'char' | 'token';
-      maxUpdatesPerSecond: number;
-    };
+    type: "text";
+    content: string;
+    ratePerSecond: number;
+    unit: "char" | "token";
+    maxUpdatesPerSecond: number;
+  };
 
 export type AdminUser = {
   id: string;
@@ -43,9 +43,9 @@ export type ProxyModel = {
   usesCustomProvider: boolean;
   providerBaseUrl: string;
   upstreamModelName: string;
-  providerProtocol: 'chat_completions' | 'responses';
-  reasoningSummaryMode: 'off' | 'auto' | 'concise' | 'detailed';
-  reasoningOutputMode: 'off' | 'think_tags' | 'reasoning_content';
+  providerProtocol: "chat_completions" | "responses";
+  reasoningSummaryMode: "off" | "auto" | "concise" | "detailed";
+  reasoningOutputMode: "off" | "think_tags" | "reasoning_content";
   interceptImagesWithOcr: boolean;
   customParams: Record<string, unknown>;
   inputCostPerMillion: number;
@@ -81,7 +81,13 @@ export type Provider = {
 
 export type LoggingSettings = {
   logPayloads: boolean;
-  payloadRetention: '1_hour' | '24_hours' | '7_days' | '30_days' | '90_days' | 'indefinite';
+  payloadRetention:
+    | "1_hour"
+    | "24_hours"
+    | "7_days"
+    | "30_days"
+    | "90_days"
+    | "indefinite";
 };
 
 export type OcrSettings = {

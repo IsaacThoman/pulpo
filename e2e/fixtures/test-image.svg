@@ -1,4 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="120" height="60" viewBox="0 0 120 60">
-  <rect width="120" height="60" fill="#f4f1ea"/>
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="120"
+  height="60"
+  viewBox="0 0 120 60"
+>
+  <rect width="120" height="60" fill="#f4f1ea" />
   <text x="10" y="35" font-size="14" fill="#1f2320">image fixture</text>
 </svg>
