@@ -36,7 +36,11 @@
   /* Typography */
   --font-mono: "JetBrains Mono", "SF Mono", Monaco, monospace;
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 
   font-family: var(--font-sans);
   font-size: 13px;

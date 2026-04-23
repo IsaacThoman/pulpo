@@ -7,3 +7,5 @@
 /pnpm-debug.log*
 
 .opencode/
+
+.idea/
