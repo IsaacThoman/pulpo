@@ -206,6 +206,7 @@ export function toAdminProxyModelJson(
     slowStickyEnabled: model.slowStickyEnabled,
     slowStickyMinTokensPerSecond: model.slowStickyMinTokensPerSecond,
     slowStickyMinCompletionSeconds: model.slowStickyMinCompletionSeconds,
+    passthroughParams: model.passthroughParams,
     createdAt: model.createdAt,
     updatedAt: model.updatedAt,
   };
@@ -374,6 +375,7 @@ export async function persistModelInput(
     slowStickyEnabled?: boolean;
     slowStickyMinTokensPerSecond?: number;
     slowStickyMinCompletionSeconds?: number;
+    passthroughParams?: boolean;
   },
   existingModelId?: string,
 ) {
@@ -468,6 +470,7 @@ export async function persistModelInput(
     slowStickyEnabled: input.slowStickyEnabled ?? false,
     slowStickyMinTokensPerSecond: input.slowStickyMinTokensPerSecond ?? 5,
     slowStickyMinCompletionSeconds: input.slowStickyMinCompletionSeconds ?? 30,
+    passthroughParams: input.passthroughParams ?? true,
   } satisfies PrismaTypes.ProxyModelUncheckedCreateInput;
 
   if (existingModelId) {
@@ -1112,7 +1115,7 @@ async function attemptChatCompletion(
       upstreamPath = "/responses";
       requestBody = {
         ...baseRequestBody,
-        ...passthroughBody,
+        ...(input.model.passthroughParams ? passthroughBody : {}),
         model: input.model.upstreamModelName,
         stream: shouldStream,
         store: false,
@@ -1132,7 +1135,7 @@ async function attemptChatCompletion(
     } else {
       requestBody = {
         ...baseRequestBody,
-        ...input.body,
+        ...(input.model.passthroughParams ? input.body : {}),
         model: input.model.upstreamModelName,
         messages: processedMessages,
       };

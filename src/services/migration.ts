@@ -58,6 +58,7 @@ const migrationProxyModelSchema = z.object({
   slowStickyEnabled: z.boolean(),
   slowStickyMinTokensPerSecond: z.number().positive(),
   slowStickyMinCompletionSeconds: z.number().int().min(1),
+  passthroughParams: z.boolean(),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),
 });
@@ -260,6 +261,7 @@ export async function createMigrationSnapshot(
       slowStickyEnabled: model.slowStickyEnabled,
       slowStickyMinTokensPerSecond: model.slowStickyMinTokensPerSecond,
       slowStickyMinCompletionSeconds: model.slowStickyMinCompletionSeconds,
+      passthroughParams: model.passthroughParams,
       createdAt: model.createdAt.toISOString(),
       updatedAt: model.updatedAt.toISOString(),
     })),
@@ -488,6 +490,7 @@ export async function importMigrationSnapshot(
     slowStickyEnabled: model.slowStickyEnabled,
     slowStickyMinTokensPerSecond: model.slowStickyMinTokensPerSecond,
     slowStickyMinCompletionSeconds: model.slowStickyMinCompletionSeconds,
+    passthroughParams: model.passthroughParams,
     createdAt: new Date(model.createdAt),
     updatedAt: new Date(model.updatedAt),
   }));

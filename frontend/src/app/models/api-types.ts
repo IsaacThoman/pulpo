@@ -65,6 +65,7 @@ export type ProxyModel = {
   slowStickyEnabled: boolean;
   slowStickyMinTokensPerSecond: number;
   slowStickyMinCompletionSeconds: number;
+  passthroughParams: boolean;
   createdAt: string;
   updatedAt: string;
 };

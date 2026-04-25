@@ -94,6 +94,7 @@ const modelSchema = z.object({
   slowStickyMinCompletionSeconds: z.coerce.number().min(1).max(3600).default(
     30,
   ),
+  passthroughParams: z.boolean().default(true),
 }).superRefine((data, ctx) => {
   if (
     data.providerProtocol === "chat_completions" &&

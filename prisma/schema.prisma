@@ -84,7 +84,8 @@ model ProxyModel {
   slowStickyEnabled           Boolean    @default(false)
   slowStickyMinTokensPerSecond Float     @default(5)
   slowStickyMinCompletionSeconds Int     @default(30)
-  
+  passthroughParams           Boolean    @default(true)
+
   createdAt                   DateTime   @default(now())
   updatedAt                   DateTime   @updatedAt
   usageLogs                   UsageLog[]

@@ -91,6 +91,7 @@ type ModelDraft = {
   slowStickyEnabled: boolean;
   slowStickyMinTokensPerSecond: number;
   slowStickyMinCompletionSeconds: number;
+  passthroughParams: boolean;
 };
 
 type ProviderDraft = {
@@ -133,6 +134,7 @@ function createEmptyModelDraft(): ModelDraft {
     slowStickyEnabled: false,
     slowStickyMinTokensPerSecond: 5,
     slowStickyMinCompletionSeconds: 30,
+    passthroughParams: true,
   };
 }
 
@@ -901,6 +903,7 @@ export class AdminPageComponent implements OnDestroy {
       slowStickyMinTokensPerSecond: model.slowStickyMinTokensPerSecond ?? 5,
       slowStickyMinCompletionSeconds: model.slowStickyMinCompletionSeconds ??
         30,
+      passthroughParams: model.passthroughParams ?? true,
     };
     if (
       model.hasProviderApiKey &&
@@ -1144,6 +1147,7 @@ export class AdminPageComponent implements OnDestroy {
         slowStickyEnabled: stickyEnabled
           ? this.modelDraft.slowStickyEnabled
           : false,
+        passthroughParams: this.modelDraft.passthroughParams,
       };
       if (this.editingModelId) {
         await this.api.updateModel(this.editingModelId, payload);

@@ -66,6 +66,7 @@ function createModel(
     slowStickyEnabled: false,
     slowStickyMinTokensPerSecond: 5,
     slowStickyMinCompletionSeconds: 30,
+    passthroughParams: true,
     createdAt: now,
     updatedAt: now,
     ...rest,
