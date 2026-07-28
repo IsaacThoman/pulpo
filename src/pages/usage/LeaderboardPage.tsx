@@ -87,20 +87,28 @@ export function LeaderboardPage() {
                   )}
                 </div>
                 <div className="h-5 flex-1 overflow-hidden rounded-sm bg-muted">
-                  <div
-                    className="flex h-full items-center justify-end rounded-sm pr-2"
-                    style={{
-                      width: `${Math.max(3, (value / max) * 100)}%`,
-                      backgroundColor: r.user.barColor,
-                    }}
-                  >
-                    <span
-                      className="text-[11px] font-medium tabular-nums"
-                      style={{ color: 'var(--sidebar)' }}
+                  {r.user.barColor === '#fafafa' ? (
+                    <div
+                      className="flex h-full items-center justify-end rounded-sm bg-primary pr-2"
+                      style={{ width: `${Math.max(3, (value / max) * 100)}%` }}
                     >
-                      {fmt(value)}
-                    </span>
-                  </div>
+                      <span className="text-[11px] font-medium tabular-nums text-primary-foreground">
+                        {fmt(value)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      className="flex h-full items-center justify-end rounded-sm pr-2"
+                      style={{
+                        width: `${Math.max(3, (value / max) * 100)}%`,
+                        backgroundColor: r.user.barColor,
+                      }}
+                    >
+                      <span className="text-[11px] font-medium tabular-nums text-white">
+                        {fmt(value)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             )

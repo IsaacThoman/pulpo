@@ -197,7 +197,7 @@ export const useChat = create<ChatState>()((set, get) => {
         content: '',
         modelId,
         timestamp: now + 1,
-        reasoning: '',
+        reasoning: getModel(modelId).tags.includes('reasoning') ? '' : undefined,
         done: false,
       }
       let id = chatId
@@ -268,7 +268,7 @@ export const useChat = create<ChatState>()((set, get) => {
         content: '',
         modelId: chat.modelId,
         timestamp: Date.now(),
-        reasoning: '',
+        reasoning: getModel(chat.modelId).tags.includes('reasoning') ? '' : undefined,
         done: false,
       }
       set((s) => ({
