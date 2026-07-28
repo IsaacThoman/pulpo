@@ -1,0 +1,141 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Ghost, Share2 } from 'lucide-react'
+import { useChat } from '@/stores/chat'
+import { getModel, MODELS, REPLY_SUGGESTIONS } from '@/lib/mock'
+import { ModelSelector } from '@/components/chat/ModelSelector'
+import { Composer } from '@/components/chat/Composer'
+import { MessageItem } from '@/components/chat/MessageItem'
+import { ModelIcon } from '@/components/ModelIcon'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { cn } from '@/lib/utils'
+import { useSettings } from '@/stores/settings'
+
+function Placeholder({ modelId, onPick }: { modelId: string; onPick: (s: string) => void }) {
+  const model = getModel(modelId)
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-4">
+      <ModelIcon model={model} className="size-14 rounded-lg" textClassName="text-2xl" />
+      <h1 className="mt-5 text-2xl font-semibold tracking-tight">where to?</h1>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        chatting with {model.name} · {model.provider}
+      </p>
+      <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+        {REPLY_SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => onPick(s)}
+            className="cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent"
+          >
+            {s}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function ChatPage() {
+  const { chatId } = useParams()
+  const [params] = useSearchParams()
+  const navigate = useNavigate()
+  const chats = useChat((s) => s.chats)
+  const streamingId = useChat((s) => s.streamingId)
+  const chatWidth = useSettings((s) => s.chatWidth)
+
+  const chat = chats.find((c) => c.id === chatId) ?? null
+  const [modelId, setModelId] = useState(
+    () => params.get('model') ?? chat?.modelId ?? MODELS[0].id
+  )
+  useEffect(() => {
+    if (chat) setModelId(chat.modelId)
+    else {
+      const m = params.get('model')
+      if (m) setModelId(m)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId])
+
+  const bottomRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: 'end' })
+  }, [chat?.messages.length, streamingId, chatId])
+
+  const isEmpty = !chat
+  const suggestions = useMemo(() => REPLY_SUGGESTIONS, [])
+
+  const sendSuggestion = (s: string) => {
+    const id = useChat.getState().sendMessage(null, s, modelId)
+    navigate(`/c/${id}`)
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* header */}
+      <header className="flex h-12 shrink-0 items-center gap-1 px-3">
+        <ModelSelector value={modelId} onChange={setModelId} />
+        <div className="flex-1" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Temporary chat"
+            >
+              <Ghost className="size-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Temporary chat</TooltipContent>
+        </Tooltip>
+        {chat && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                onClick={() => {
+                  useChat.getState().shareChat(chat.id)
+                  navigator.clipboard?.writeText(`${location.origin}/share/${chat.id}`).catch(() => {})
+                }}
+                aria-label="Share chat"
+              >
+                <Share2 className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Copy share link</TooltipContent>
+          </Tooltip>
+        )}
+      </header>
+
+      {/* body */}
+      {isEmpty ? (
+        <>
+          <div className="min-h-0 flex-1">
+            <Placeholder modelId={modelId} onPick={sendSuggestion} key={suggestions[0]} />
+          </div>
+          <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+            <Composer chatId={null} modelId={modelId} />
+          </div>
+        </>
+      ) : (
+        <>
+          <ScrollArea className="min-h-0 flex-1">
+            <div
+              className={cn(
+                'mx-auto flex flex-col gap-7 px-4 py-6',
+                chatWidth === 'narrow' ? 'max-w-3xl' : 'max-w-5xl'
+              )}
+            >
+              {chat.messages.map((m) => (
+                <MessageItem key={m.id} chat={chat} message={m} streaming={streamingId === m.id} />
+              ))}
+              <div ref={bottomRef} className="h-px" />
+            </div>
+          </ScrollArea>
+          <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+            <Composer chatId={chat.id} modelId={modelId} />
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
