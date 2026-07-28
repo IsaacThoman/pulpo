@@ -183,7 +183,6 @@ export const useChat = create<ChatState>()((set, get) => {
       })),
 
     sendMessage: (chatId, content, modelId) => {
-      const state = get()
       const now = Date.now()
       const userMsg: Message = {
         id: crypto.randomUUID(),
