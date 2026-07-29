@@ -37,6 +37,21 @@ npm run dev
   budgets; one-time secret reveal; curl + OpenAI SDK snippets
 - **Settings** — general (theme), account, personalization (custom instructions, memories),
   interface, audio, API keys, data controls, about
+- **Admin panel** (`/admin`, options lifted from chat-deathgrips / Open WebUI):
+  - Dashboard — 24h stats, quick links, system info
+  - Users — role selects, add/edit modals; Groups tab with default-permission matrix
+  - Models — search + view filters, per-model menus, enable toggles; full **model editor** with
+    system prompt, advanced params, capability toggles, JSON preview, and the fork's signature
+    **light/dark profile-image upload grid**
+  - Functions — pipe/filter/action/event cards w/ valves, global toggles
+  - Evaluations — arena model sets, Elo leaderboard, feedback table w/ export
+  - Settings — General (feature toggles, banners editor, webhooks), Authentication (roles,
+    signup, API keys, JWT, LDAP, OAuth), Connections (OpenAI/Ollama endpoints w/ verify, plus
+    the fork's **usage portal** config), Interface (task model, title/follow-up/tag generation),
+    Web Search (15+ engines w/ per-engine fields), Documents (extraction engines, embedding,
+    hybrid search, RAG template, danger zone), Images (4 engines), Audio (6 STT + 6 TTS
+    engines), Code Execution (pyodide/jupyter), Integrations (tool/terminal/knowledge servers),
+    Database (import/export)
 - Light/dark/system theme, ⌘K search, ⌘B sidebar toggle, ⌘, settings
 
 ## Mock notes

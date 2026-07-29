@@ -1,0 +1,229 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - button "Home" [ref=e6] [cursor=pointer]:
+        - generic [ref=e7]: k
+      - button "Collapse sidebar" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - generic [ref=e12]:
+      - button "New chat" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+        - generic [ref=e17]: New chat
+      - button "Search chats" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+        - generic [ref=e22]: Search chats
+      - button "Usage" [ref=e23] [cursor=pointer]:
+        - img [ref=e24]
+        - generic [ref=e26]: Usage
+      - button "API keys" [ref=e27] [cursor=pointer]:
+        - img [ref=e28]
+        - generic [ref=e31]: API keys
+    - generic [ref=e32]:
+      - generic [ref=e33]: Favorite models
+      - generic [ref=e34]:
+        - button "Kimi K3" [ref=e35] [cursor=pointer]:
+          - generic [ref=e38]: K
+          - generic [ref=e39]: Kimi K3
+        - button "GPT-4o" [ref=e40] [cursor=pointer]:
+          - generic [ref=e43]: G
+          - generic [ref=e44]: GPT-4o
+        - button "Claude Sonnet 4" [ref=e45] [cursor=pointer]:
+          - generic [ref=e48]: C
+          - generic [ref=e49]: Claude Sonnet 4
+    - generic [ref=e53]:
+      - generic [ref=e54]:
+        - generic [ref=e55]: Pinned
+        - generic [ref=e56]:
+          - generic [ref=e58] [cursor=pointer]: Streaming state architecture
+          - generic [ref=e60] [cursor=pointer]: SSE vs WebSockets
+      - generic [ref=e61]:
+        - button "work 1" [expanded] [ref=e62] [cursor=pointer]:
+          - img [ref=e63]
+          - img [ref=e65]
+          - generic [ref=e67]: work
+          - generic [ref=e68]: "1"
+        - generic [ref=e71] [cursor=pointer]: Zustand store review
+      - generic [ref=e72]:
+        - button "research 0" [expanded] [ref=e73] [cursor=pointer]:
+          - img [ref=e74]
+          - img [ref=e76]
+          - generic [ref=e78]: research
+          - generic [ref=e79]: "0"
+        - generic [ref=e81]: Empty
+      - button "shitposts 1" [ref=e83] [cursor=pointer]:
+        - img [ref=e84]
+        - img [ref=e86]
+        - generic [ref=e88]: shitposts
+        - generic [ref=e89]: "1"
+      - button "New folder" [ref=e90] [cursor=pointer]:
+        - img [ref=e91]
+        - text: New folder
+      - generic [ref=e92]:
+        - generic [ref=e93]: Today
+        - generic [ref=e96] [cursor=pointer]: Sidebar search naming
+      - generic [ref=e97]:
+        - generic [ref=e98]: Yesterday
+        - generic [ref=e99]:
+          - generic [ref=e101] [cursor=pointer]: Scroll anchoring fix
+          - generic [ref=e103] [cursor=pointer]: AbortController wiring
+      - generic [ref=e104]:
+        - generic [ref=e105]: Previous 7 Days
+        - generic [ref=e106]:
+          - generic [ref=e108] [cursor=pointer]: Cmd+K palette patterns
+          - generic [ref=e110] [cursor=pointer]: Folder system design
+          - generic [ref=e112] [cursor=pointer]: Retry policy draft
+      - generic [ref=e113]:
+        - generic [ref=e114]: Previous 30 Days
+        - generic [ref=e115]:
+          - generic [ref=e117] [cursor=pointer]: Release notes v0.4
+          - generic [ref=e119] [cursor=pointer]: Markdown perf notes
+          - generic [ref=e121] [cursor=pointer]: Optimistic sends
+          - generic [ref=e123] [cursor=pointer]: Tokenizer edge cases
+          - generic [ref=e125] [cursor=pointer]: Gradient descent haiku
+          - generic [ref=e127] [cursor=pointer]: Message branching design
+    - button "IT Isaac Thoman isaac@kimi.dev" [ref=e129] [cursor=pointer]:
+      - generic [ref=e131]: IT
+      - generic [ref=e132]:
+        - generic [ref=e133]: Isaac Thoman
+        - generic [ref=e134]: isaac@kimi.dev
+  - main [ref=e135]:
+    - generic [ref=e136]:
+      - generic [ref=e137]:
+        - heading "Admin panel" [level=1] [ref=e138]
+        - navigation [ref=e139]:
+          - link "Dashboard" [ref=e140] [cursor=pointer]:
+            - /url: /admin
+          - link "Users" [ref=e141] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Models" [ref=e142] [cursor=pointer]:
+            - /url: /admin/models
+          - link "Functions" [ref=e143] [cursor=pointer]:
+            - /url: /admin/functions
+          - link "Evaluations" [ref=e144] [cursor=pointer]:
+            - /url: /admin/evaluations
+          - link "Settings" [ref=e145] [cursor=pointer]:
+            - /url: /admin/settings
+      - generic [ref=e150]:
+        - generic [ref=e151]:
+          - heading "Evaluations" [level=2] [ref=e152]
+          - generic [ref=e153]:
+            - button "leaderboard" [ref=e154] [cursor=pointer]
+            - button "feedback" [ref=e155] [cursor=pointer]
+        - generic [ref=e156]:
+          - generic [ref=e158]:
+            - generic [ref=e159]:
+              - generic [ref=e160]: Arena models
+              - paragraph [ref=e161]: Blind A/B battles between model sets, rated by users.
+            - switch [checked] [ref=e162] [cursor=pointer]
+          - generic [ref=e163]:
+            - generic [ref=e165]:
+              - generic [ref=e166]:
+                - img [ref=e167]
+                - generic [ref=e173]: Flagship showdown
+              - paragraph [ref=e174]: All top-tier proprietary models, blind.
+              - generic [ref=e175]:
+                - generic [ref=e178]: K
+                - generic [ref=e181]: G
+                - generic [ref=e184]: C
+                - generic [ref=e185]: 3 models
+                - button "Configure" [ref=e186] [cursor=pointer]
+            - generic [ref=e188]:
+              - generic [ref=e189]:
+                - img [ref=e190]
+                - generic [ref=e196]: Open-weight battle
+              - paragraph [ref=e197]: Llama vs Qwen vs DeepSeek.
+              - generic [ref=e198]:
+                - generic [ref=e201]: L
+                - generic [ref=e204]: Q
+                - generic [ref=e207]: D
+                - generic [ref=e208]: 3 models
+                - button "Configure" [ref=e209] [cursor=pointer]
+          - generic [ref=e210]:
+            - generic [ref=e212]: Arena leaderboard (Elo)
+            - table [ref=e214]:
+              - rowgroup [ref=e215]:
+                - row "# Model Rating Won Lost Draws" [ref=e216]:
+                  - columnheader "#" [ref=e217]
+                  - columnheader "Model" [ref=e218]
+                  - columnheader "Rating" [ref=e219]
+                  - columnheader "Won" [ref=e220]
+                  - columnheader "Lost" [ref=e221]
+                  - columnheader "Draws" [ref=e222]
+              - rowgroup [ref=e223]:
+                - row "1 Kimi K3 1448 160 101 15" [ref=e224]:
+                  - cell "1" [ref=e225]
+                  - cell "Kimi K3" [ref=e226]:
+                    - generic [ref=e227]:
+                      - generic [ref=e230]: K
+                      - text: Kimi K3
+                  - cell "1448" [ref=e231]:
+                    - generic [ref=e235]: "1448"
+                  - cell "160" [ref=e236]
+                  - cell "101" [ref=e237]
+                  - cell "15" [ref=e238]
+                - row "2 Claude Sonnet 4 1383 187 103 12" [ref=e239]:
+                  - cell "2" [ref=e240]
+                  - cell "Claude Sonnet 4" [ref=e241]:
+                    - generic [ref=e242]:
+                      - generic [ref=e245]: C
+                      - text: Claude Sonnet 4
+                  - cell "1383" [ref=e246]:
+                    - generic [ref=e250]: "1383"
+                  - cell "187" [ref=e251]
+                  - cell "103" [ref=e252]
+                  - cell "12" [ref=e253]
+                - row "3 GPT-4o 1352 115 169 22" [ref=e254]:
+                  - cell "3" [ref=e255]
+                  - cell "GPT-4o" [ref=e256]:
+                    - generic [ref=e257]:
+                      - generic [ref=e260]: G
+                      - text: GPT-4o
+                  - cell "1352" [ref=e261]:
+                    - generic [ref=e265]: "1352"
+                  - cell "115" [ref=e266]
+                  - cell "169" [ref=e267]
+                  - cell "22" [ref=e268]
+                - row "4 DeepSeek R1 1295 173 258 22" [ref=e269]:
+                  - cell "4" [ref=e270]
+                  - cell "DeepSeek R1" [ref=e271]:
+                    - generic [ref=e272]:
+                      - generic [ref=e275]: D
+                      - text: DeepSeek R1
+                  - cell "1295" [ref=e276]:
+                    - generic [ref=e280]: "1295"
+                  - cell "173" [ref=e281]
+                  - cell "258" [ref=e282]
+                  - cell "22" [ref=e283]
+                - row "5 Qwen3 235B 1259 229 84 3" [ref=e284]:
+                  - cell "5" [ref=e285]
+                  - cell "Qwen3 235B" [ref=e286]:
+                    - generic [ref=e287]:
+                      - generic [ref=e290]: Q
+                      - text: Qwen3 235B
+                  - cell "1259" [ref=e291]:
+                    - generic [ref=e295]: "1259"
+                  - cell "229" [ref=e296]
+                  - cell "84" [ref=e297]
+                  - cell "3" [ref=e298]
+                - row "6 GPT-4o mini 1199 81 89 6" [ref=e299]:
+                  - cell "6" [ref=e300]
+                  - cell "GPT-4o mini" [ref=e301]:
+                    - generic [ref=e302]:
+                      - generic [ref=e305]: G
+                      - text: GPT-4o mini
+                  - cell "1199" [ref=e306]:
+                    - generic [ref=e310]: "1199"
+                  - cell "81" [ref=e311]
+                  - cell "89" [ref=e312]
+                  - cell "6" [ref=e313]
+                - row "7 Llama 3.3 70B 1164 67 83 12" [ref=e314]:
+                  - cell "7" [ref=e315]
+                  - cell "Llama 3.3 70B" [ref=e316]:
+                    - generic [ref=e317]:
+                      - generic [ref=e320]: L
+                      - text: Llama 3.3 70B
+                  - cell "1164" [ref=e321]:
+                    - generic [ref=e325]: "1164"
+                  - cell "67" [ref=e326]
+                  - cell "83" [ref=e327]
+                  - cell "12" [ref=e328]

@@ -22,7 +22,6 @@ import {
 } from '@/components/ui/select'
 import { Section, SecretField, TextField, Toggle } from '@/components/admin/kit'
 import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
 
 function ConnectionRow({
   conn,

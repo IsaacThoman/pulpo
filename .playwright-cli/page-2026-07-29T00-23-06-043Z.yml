@@ -1,0 +1,222 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - button "Home" [ref=e6] [cursor=pointer]:
+        - generic [ref=e7]: k
+      - button "Collapse sidebar" [ref=e8] [cursor=pointer]:
+        - img [ref=e9]
+    - generic [ref=e12]:
+      - button "New chat" [ref=e13] [cursor=pointer]:
+        - img [ref=e14]
+        - generic [ref=e17]: New chat
+      - button "Search chats" [ref=e18] [cursor=pointer]:
+        - img [ref=e19]
+        - generic [ref=e22]: Search chats
+      - button "Usage" [ref=e23] [cursor=pointer]:
+        - img [ref=e24]
+        - generic [ref=e26]: Usage
+      - button "API keys" [ref=e27] [cursor=pointer]:
+        - img [ref=e28]
+        - generic [ref=e31]: API keys
+    - generic [ref=e32]:
+      - generic [ref=e33]: Favorite models
+      - generic [ref=e34]:
+        - button "Kimi K3" [ref=e35] [cursor=pointer]:
+          - generic [ref=e38]: K
+          - generic [ref=e39]: Kimi K3
+        - button "GPT-4o" [ref=e40] [cursor=pointer]:
+          - generic [ref=e43]: G
+          - generic [ref=e44]: GPT-4o
+        - button "Claude Sonnet 4" [ref=e45] [cursor=pointer]:
+          - generic [ref=e48]: C
+          - generic [ref=e49]: Claude Sonnet 4
+    - generic [ref=e53]:
+      - generic [ref=e54]:
+        - generic [ref=e55]: Pinned
+        - generic [ref=e56]:
+          - generic [ref=e58] [cursor=pointer]: Streaming state architecture
+          - generic [ref=e60] [cursor=pointer]: SSE vs WebSockets
+      - generic [ref=e61]:
+        - button "work 1" [expanded] [ref=e62] [cursor=pointer]:
+          - img [ref=e63]
+          - img [ref=e65]
+          - generic [ref=e67]: work
+          - generic [ref=e68]: "1"
+        - generic [ref=e71] [cursor=pointer]: Zustand store review
+      - generic [ref=e72]:
+        - button "research 0" [expanded] [ref=e73] [cursor=pointer]:
+          - img [ref=e74]
+          - img [ref=e76]
+          - generic [ref=e78]: research
+          - generic [ref=e79]: "0"
+        - generic [ref=e81]: Empty
+      - button "shitposts 1" [ref=e83] [cursor=pointer]:
+        - img [ref=e84]
+        - img [ref=e86]
+        - generic [ref=e88]: shitposts
+        - generic [ref=e89]: "1"
+      - button "New folder" [ref=e90] [cursor=pointer]:
+        - img [ref=e91]
+        - text: New folder
+      - generic [ref=e92]:
+        - generic [ref=e93]: Today
+        - generic [ref=e96] [cursor=pointer]: Sidebar search naming
+      - generic [ref=e97]:
+        - generic [ref=e98]: Yesterday
+        - generic [ref=e99]:
+          - generic [ref=e101] [cursor=pointer]: Scroll anchoring fix
+          - generic [ref=e103] [cursor=pointer]: AbortController wiring
+      - generic [ref=e104]:
+        - generic [ref=e105]: Previous 7 Days
+        - generic [ref=e106]:
+          - generic [ref=e108] [cursor=pointer]: Cmd+K palette patterns
+          - generic [ref=e110] [cursor=pointer]: Folder system design
+          - generic [ref=e112] [cursor=pointer]: Retry policy draft
+      - generic [ref=e113]:
+        - generic [ref=e114]: Previous 30 Days
+        - generic [ref=e115]:
+          - generic [ref=e117] [cursor=pointer]: Release notes v0.4
+          - generic [ref=e119] [cursor=pointer]: Markdown perf notes
+          - generic [ref=e121] [cursor=pointer]: Optimistic sends
+          - generic [ref=e123] [cursor=pointer]: Tokenizer edge cases
+          - generic [ref=e125] [cursor=pointer]: Gradient descent haiku
+          - generic [ref=e127] [cursor=pointer]: Message branching design
+    - button "IT Isaac Thoman isaac@kimi.dev" [ref=e129] [cursor=pointer]:
+      - generic [ref=e131]: IT
+      - generic [ref=e132]:
+        - generic [ref=e133]: Isaac Thoman
+        - generic [ref=e134]: isaac@kimi.dev
+  - main [ref=e135]:
+    - generic [ref=e136]:
+      - generic [ref=e137]:
+        - heading "Admin panel" [level=1] [ref=e138]
+        - navigation [ref=e139]:
+          - link "Dashboard" [ref=e140] [cursor=pointer]:
+            - /url: /admin
+          - link "Users" [ref=e141] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Models" [ref=e142] [cursor=pointer]:
+            - /url: /admin/models
+          - link "Functions" [ref=e143] [cursor=pointer]:
+            - /url: /admin/functions
+          - link "Evaluations" [ref=e144] [cursor=pointer]:
+            - /url: /admin/evaluations
+          - link "Settings" [ref=e145] [cursor=pointer]:
+            - /url: /admin/settings
+      - generic [ref=e150]:
+        - navigation [ref=e151]:
+          - button "General" [ref=e152] [cursor=pointer]:
+            - img [ref=e153]
+            - text: General
+          - button "Authentication" [ref=e154] [cursor=pointer]:
+            - img [ref=e155]
+            - text: Authentication
+          - button "Connections" [ref=e158] [cursor=pointer]:
+            - img [ref=e159]
+            - text: Connections
+          - button "Interface" [ref=e161] [cursor=pointer]:
+            - img [ref=e162]
+            - text: Interface
+          - button "Web Search" [ref=e167] [cursor=pointer]:
+            - img [ref=e168]
+            - text: Web Search
+          - button "Documents" [ref=e171] [cursor=pointer]:
+            - img [ref=e172]
+            - text: Documents
+          - button "Images" [ref=e175] [cursor=pointer]:
+            - img [ref=e176]
+            - text: Images
+          - button "Audio" [ref=e180] [cursor=pointer]:
+            - img [ref=e181]
+            - text: Audio
+          - button "Code Execution" [ref=e182] [cursor=pointer]:
+            - img [ref=e183]
+            - text: Code Execution
+          - button "Integrations" [ref=e186] [cursor=pointer]:
+            - img [ref=e187]
+            - text: Integrations
+          - button "Database" [ref=e189] [cursor=pointer]:
+            - img [ref=e190]
+            - text: Database
+        - generic [ref=e195]:
+          - generic [ref=e196]:
+            - heading "Version" [level=3] [ref=e197]
+            - generic [ref=e199]:
+              - generic [ref=e200]:
+                - generic [ref=e201]: kimi
+                - generic [ref=e202]: 0.10.2-mock — you are on the latest version.
+              - button "Check for updates" [ref=e204] [cursor=pointer]
+          - generic [ref=e205]:
+            - heading "Features" [level=3] [ref=e206]
+            - generic [ref=e207]:
+              - generic [ref=e208]:
+                - generic [ref=e210]: Enable community sharing
+                - switch [checked] [ref=e212] [cursor=pointer]
+              - generic [ref=e213]:
+                - generic [ref=e215]: Enable message rating
+                - switch [checked] [ref=e217] [cursor=pointer]
+              - generic [ref=e218]:
+                - generic [ref=e220]: Folders
+                - switch [checked] [ref=e222] [cursor=pointer]
+              - generic [ref=e223]:
+                - generic [ref=e225]: Folder max file count
+                - spinbutton [ref=e228]: "50"
+              - generic [ref=e229]:
+                - generic [ref=e231]: Memories
+                - switch [checked] [ref=e233] [cursor=pointer]
+              - generic [ref=e234]:
+                - generic [ref=e236]: Memory system context
+                - switch [checked] [ref=e238] [cursor=pointer]
+              - generic [ref=e239]:
+                - generic [ref=e241]: Notes
+                - switch [checked] [ref=e243] [cursor=pointer]
+              - generic [ref=e244]:
+                - generic [ref=e246]: Channels
+                - switch [ref=e248] [cursor=pointer]
+              - generic [ref=e249]:
+                - generic [ref=e251]: Calendar
+                - switch [ref=e253] [cursor=pointer]
+              - generic [ref=e254]:
+                - generic [ref=e256]: Automations
+                - switch [ref=e258] [cursor=pointer]
+              - generic [ref=e259]:
+                - generic [ref=e261]: User webhooks
+                - switch [checked] [ref=e263] [cursor=pointer]
+              - generic [ref=e264]:
+                - generic [ref=e266]: User status
+                - switch [checked] [ref=e268] [cursor=pointer]
+              - generic [ref=e269]:
+                - generic [ref=e270]: Response watermark
+                - generic [ref=e271]: Appended to every assistant response.
+                - textbox [ref=e272]
+              - generic [ref=e273]:
+                - generic [ref=e275]: WebUI URL
+                - textbox [ref=e277]: https://chat.kimi.dev
+          - generic [ref=e278]:
+            - heading "Banners" [level=3] [ref=e279]
+            - paragraph [ref=e280]: Shown at the top of the app for all users.
+            - generic [ref=e281]:
+              - generic [ref=e282]:
+                - img [ref=e283]
+                - combobox [ref=e290] [cursor=pointer]:
+                  - generic: info
+                  - img
+                - textbox [ref=e291]: kimi will be down for maintenance Sunday 03:00–03:30 UTC.
+                - generic [ref=e292]:
+                  - text: Dismissible
+                  - switch [checked] [ref=e293] [cursor=pointer]
+                - button [ref=e294] [cursor=pointer]:
+                  - img
+              - button "Add banner" [ref=e296] [cursor=pointer]:
+                - img
+                - text: Add banner
+          - generic [ref=e297]:
+            - heading "Events (webhooks)" [level=3] [ref=e298]
+            - generic [ref=e300]:
+              - generic [ref=e301]:
+                - generic [ref=e302]: user.signup, chat.shared
+                - generic [ref=e303]: 2 webhook endpoints configured.
+              - button "Add webhook" [ref=e305] [cursor=pointer]:
+                - img
+                - text: Add webhook
+          - button "Save" [ref=e307] [cursor=pointer]

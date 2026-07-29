@@ -3,7 +3,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Cpu,
-  Functions,
+  SquareFunction,
   MessagesSquare,
   Users,
 } from 'lucide-react'
@@ -37,7 +37,7 @@ export function DashboardPage() {
     },
     {
       to: '/admin/functions',
-      icon: Functions,
+      icon: SquareFunction,
       title: 'Functions',
       desc: `${ADMIN_FUNCTIONS.filter((f) => f.enabled).length} of ${ADMIN_FUNCTIONS.length} enabled`,
     },

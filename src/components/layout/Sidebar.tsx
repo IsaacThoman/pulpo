@@ -16,6 +16,7 @@ import {
   Search,
   Settings,
   Share2,
+  ShieldCheck,
   SquarePen,
   Trash2,
   PanelLeftClose,
@@ -424,6 +425,10 @@ export function Sidebar({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <ArchivedItem />
+            <DropdownMenuItem onClick={() => navigate('/admin')}>
+              <ShieldCheck />
+              Admin panel
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive">
               <Trash2 />
