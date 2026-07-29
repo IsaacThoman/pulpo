@@ -89,22 +89,18 @@ export function ModelSelector({
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
+                  type="button"
                   onClick={() => setProvider(null)}
                   className={cn(
-                    'group/star flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                    'group/star flex size-8 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
                     favoritesActive
-                      ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
-                      : 'text-muted-foreground hover:scale-105 hover:bg-accent hover:text-amber-500'
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:scale-110 hover:text-amber-500'
                   )}
                   aria-label="Favorites"
                 >
                   <Star
-                    className={cn(
-                      'size-4 transition-all duration-150',
-                      favoritesActive
-                        ? 'fill-amber-400 text-amber-400'
-                        : 'group-hover/star:fill-amber-400/80 group-hover/star:text-amber-500 group-hover/star:scale-110'
-                    )}
+                    className="size-4 fill-none stroke-current transition-all duration-150 group-hover/star:scale-110 group-hover/star:stroke-amber-500"
                   />
                 </button>
               </TooltipTrigger>
@@ -171,10 +167,10 @@ export function ModelSelector({
                   {/* favorite star — stronger hover */}
                   <button
                     className={cn(
-                      'flex size-7 cursor-pointer items-center justify-center rounded-md transition-all duration-150',
+                      'group/favorite flex size-7 cursor-pointer items-center justify-center bg-transparent transition-all duration-150 hover:scale-110',
                       isFav
-                        ? 'opacity-100 text-amber-400 hover:bg-amber-400/15 hover:scale-110'
-                        : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:bg-accent hover:text-amber-500 hover:scale-110'
+                        ? 'opacity-100 text-amber-400'
+                        : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:text-amber-500'
                     )}
                     onClick={(e) => {
                       e.stopPropagation()
@@ -184,9 +180,10 @@ export function ModelSelector({
                   >
                     <Star
                       className={cn(
-                        'size-3.5 transition-all duration-150',
-                        isFav && 'fill-amber-400 text-amber-400',
-                        'hover:fill-amber-400'
+                        'size-3.5 fill-transparent transition-all duration-150',
+                        isFav
+                          ? 'fill-amber-400 text-amber-400 group-hover/favorite:fill-transparent group-hover/favorite:text-amber-400'
+                          : 'group-hover/favorite:fill-amber-400 group-hover/favorite:text-amber-500'
                       )}
                     />
                   </button>
