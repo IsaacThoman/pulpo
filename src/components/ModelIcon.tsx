@@ -10,13 +10,13 @@ export function ModelIcon({
   model,
   className,
   variant = 'filled',
-  boxed = true,
+  boxed = false,
 }: {
   model: Model
   className?: string
   /** filled solid mark vs softer outline look */
   variant?: 'filled' | 'outline'
-  /** wrap in a subtle square plate (message avatars) */
+  /** optionally wrap in a subtle square plate */
   boxed?: boolean
   /** @deprecated unused — kept so callers with textClassName don't break */
   textClassName?: string
