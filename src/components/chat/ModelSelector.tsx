@@ -8,26 +8,9 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { MODELS } from '@/lib/mock'
 import { ModelIcon } from '@/components/ModelIcon'
-import { PROVIDERS, providerModel, providerMonogram, useModels } from '@/stores/models'
+import { ProviderLogo } from '@/components/ProviderLogo'
+import { PROVIDERS, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
-
-/** provider monogram — theme-aware colored square, matches the brutalist icon style */
-function ProviderMark({ provider, className }: { provider: string; className?: string }) {
-  const rep = providerModel(provider)
-  return (
-    <span
-      className={cn(
-        'relative flex size-5 items-center justify-center overflow-hidden rounded-[3px] text-[9px] font-bold',
-        className
-      )}
-      aria-hidden
-    >
-      <span className="absolute inset-0 dark:hidden" style={{ backgroundColor: rep.iconLight }} />
-      <span className="absolute inset-0 hidden dark:block" style={{ backgroundColor: rep.iconDark }} />
-      <span className="relative text-white mix-blend-difference">{providerMonogram(provider)}</span>
-    </span>
-  )
-}
 
 export function ModelSelector({
   value,
@@ -46,13 +29,18 @@ export function ModelSelector({
   const enabled = MODELS.filter((m) => m.enabled)
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list = provider === null ? enabled.filter((m) => favorites.includes(m.id)) : enabled.filter((m) => m.provider === provider)
+    let list =
+      provider === null
+        ? enabled.filter((m) => favorites.includes(m.id))
+        : enabled.filter((m) => m.provider === provider)
     if (q) list = enabled.filter((m) => m.name.toLowerCase().includes(q))
     return list
   }, [provider, query, favorites, enabled])
 
   const searching = query.trim().length > 0
+  // logos next to models on favorites (and search); no logos when a provider is selected
   const showLogos = provider === null || searching
+  const favoritesActive = provider === null && !searching
 
   const pick = (id: string) => {
     onChange(id)
@@ -72,10 +60,15 @@ export function ModelSelector({
       }}
     >
       <DropdownMenuTrigger asChild>
-        <button className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium hover:bg-accent">
-          <ModelIcon model={selected} className="size-5 rounded-[3px]" />
+        <button className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
+          <ModelIcon model={selected} className="size-5 rounded-[4px]" />
           <span>{selected.name}</span>
-          <ChevronDown className={cn('size-3.5 text-muted-foreground transition-transform', open && 'rotate-180')} />
+          <ChevronDown
+            className={cn(
+              'size-3.5 text-muted-foreground transition-transform duration-200',
+              open && 'rotate-180'
+            )}
+          />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-[300px] p-0">
@@ -92,44 +85,63 @@ export function ModelSelector({
 
         <div className="flex">
           {/* provider rail */}
-          <div className="flex flex-col items-center gap-1 border-r py-2">
+          <div className="flex flex-col items-center gap-0.5 border-r px-1.5 py-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   onClick={() => setProvider(null)}
                   className={cn(
-                    'flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors',
-                    provider === null && !searching
-                      ? 'bg-accent text-foreground'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                    'group/star flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                    favoritesActive
+                      ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
+                      : 'text-muted-foreground hover:scale-105 hover:bg-accent hover:text-amber-500'
                   )}
                   aria-label="Favorites"
                 >
-                  <Star className={cn('size-4', provider === null && !searching && 'fill-current')} />
+                  <Star
+                    className={cn(
+                      'size-4 transition-all duration-150',
+                      favoritesActive
+                        ? 'fill-amber-400 text-amber-400'
+                        : 'group-hover/star:fill-amber-400/80 group-hover/star:text-amber-500 group-hover/star:scale-110'
+                    )}
+                  />
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right">Favorites</TooltipContent>
             </Tooltip>
-            <div className="my-0.5 h-px w-5 bg-border" />
-            {PROVIDERS.map((p) => (
-              <Tooltip key={p}>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={() => setProvider(p)}
-                    className={cn(
-                      'flex size-8 cursor-pointer items-center justify-center rounded-lg transition-colors',
-                      provider === p && !searching
-                        ? 'bg-accent text-foreground'
-                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                    )}
-                    aria-label={p}
-                  >
-                    <ProviderMark provider={p} className="size-5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right">{p}</TooltipContent>
-              </Tooltip>
-            ))}
+
+            <div className="my-1 h-px w-5 bg-border" />
+
+            {PROVIDERS.map((p) => {
+              const active = provider === p && !searching
+              return (
+                <Tooltip key={p}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setProvider(p)}
+                      className={cn(
+                        'group/prov flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                        active
+                          ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
+                          : 'text-muted-foreground hover:scale-105 hover:bg-accent hover:text-foreground'
+                      )}
+                      aria-label={p}
+                    >
+                      <ProviderLogo
+                        provider={p}
+                        variant={active ? 'filled' : 'outline'}
+                        className={cn(
+                          'size-[18px] transition-transform duration-150',
+                          !active && 'group-hover/prov:scale-110'
+                        )}
+                      />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{p}</TooltipContent>
+                </Tooltip>
+              )
+            })}
           </div>
 
           {/* model list */}
@@ -139,37 +151,50 @@ export function ModelSelector({
                 {provider === null && !searching ? 'No favorites yet' : 'No models found'}
               </div>
             )}
-            {rows.map((m) => (
-              <div
-                key={m.id}
-                className="group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-accent"
-                onClick={() => pick(m.id)}
-              >
-                {showLogos && <ModelIcon model={m} className="size-[18px] rounded-[3px]" />}
-                <span className="flex-1 truncate text-left text-sm">{m.name}</span>
-                <button
+            {rows.map((m) => {
+              const isFav = favorites.includes(m.id)
+              const isSelected = m.id === value
+              return (
+                <div
+                  key={m.id}
                   className={cn(
-                    'cursor-pointer rounded p-0.5 text-muted-foreground transition-opacity hover:text-foreground',
-                    favorites.includes(m.id)
-                      ? 'opacity-100'
-                      : 'opacity-0 group-hover:opacity-100'
+                    'group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
+                    isSelected ? 'bg-accent/70' : 'hover:bg-accent'
                   )}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    toggleFavorite(m.id)
-                  }}
-                  aria-label={favorites.includes(m.id) ? 'Remove from favorites' : 'Add to favorites'}
+                  onClick={() => pick(m.id)}
                 >
-                  <Star
+                  {showLogos && (
+                    <ModelIcon model={m} className="size-[18px] rounded-[3px]" boxed={false} />
+                  )}
+                  <span className="flex-1 truncate text-left text-sm">{m.name}</span>
+
+                  {/* favorite star — stronger hover */}
+                  <button
                     className={cn(
-                      'size-3.5',
-                      favorites.includes(m.id) && 'fill-amber-400 text-amber-400'
+                      'flex size-7 cursor-pointer items-center justify-center rounded-md transition-all duration-150',
+                      isFav
+                        ? 'opacity-100 text-amber-400 hover:bg-amber-400/15 hover:scale-110'
+                        : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:bg-accent hover:text-amber-500 hover:scale-110'
                     )}
-                  />
-                </button>
-                {m.id === value && <Check className="size-4 shrink-0" />}
-              </div>
-            ))}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleFavorite(m.id)
+                    }}
+                    aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    <Star
+                      className={cn(
+                        'size-3.5 transition-all duration-150',
+                        isFav && 'fill-amber-400 text-amber-400',
+                        'hover:fill-amber-400'
+                      )}
+                    />
+                  </button>
+
+                  {isSelected && <Check className="size-4 shrink-0 text-foreground" />}
+                </div>
+              )
+            })}
           </div>
         </div>
       </DropdownMenuContent>

@@ -19,6 +19,7 @@ import { MODELS } from '@/lib/mock'
 import { formatNumber } from '@/lib/format'
 import type { Model } from '@/lib/types'
 import { ModelIcon } from '@/components/ModelIcon'
+import { ProviderLogo } from '@/components/ProviderLogo'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -70,18 +71,17 @@ function ThemeImageTile({ mode, model }: { mode: 'light' | 'dark'; model: Model 
     mode === 'dark'
       ? document.documentElement.classList.contains('dark')
       : !document.documentElement.classList.contains('dark')
+  const bg = mode === 'light' ? '#f4f4f5' : '#18181b'
+  const fg = mode === 'light' ? '#18181b' : '#fafafa'
   return (
     <div>
       <Label className="text-xs capitalize">{mode} mode</Label>
-      <div className="relative mt-1.5 flex aspect-square cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed bg-muted/40 transition-colors hover:bg-muted">
-        <div
-          className="absolute inset-0"
-          style={{ backgroundColor: mode === 'light' ? model.iconLight : model.iconDark }}
-        />
-        <span className="relative text-2xl font-bold text-white mix-blend-difference">
-          {model.name.charAt(0)}
-        </span>
-        <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all hover:bg-black/40 hover:opacity-100">
+      <div
+        className="group/tile relative mt-1.5 flex aspect-square cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-dashed transition-colors"
+        style={{ backgroundColor: bg, color: fg }}
+      >
+        <ProviderLogo provider={model.provider} className="size-12 transition-transform duration-150 group-hover/tile:scale-105" />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover/tile:bg-black/35 group-hover/tile:opacity-100">
           <ImagePlus className="size-6 text-white" />
         </div>
       </div>
@@ -89,7 +89,7 @@ function ThemeImageTile({ mode, model }: { mode: 'light' | 'dark'; model: Model 
         <span className="text-[11px] text-muted-foreground">
           {isCurrent ? 'Used in the current theme' : 'Used when that theme is active'}
         </span>
-        <button className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">
+        <button className="cursor-pointer rounded p-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
           <RotateCcw className="size-3" />
         </button>
       </div>
