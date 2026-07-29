@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
+import { useModels } from '@/stores/models'
 import { MODELS } from '@/lib/mock'
 import { chatTimeGroup, timeAgo } from '@/lib/format'
 import type { Chat } from '@/lib/types'
@@ -217,7 +218,8 @@ export function Sidebar({
     groups.get(g)!.push(c)
   }
 
-  const pinnedModels = MODELS.filter((m) => m.pinned && m.enabled)
+  const favorites = useModels((s) => s.favorites)
+  const pinnedModels = MODELS.filter((m) => favorites.includes(m.id) && m.enabled)
 
   const navBtn = cn(
     'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70',
@@ -287,7 +289,7 @@ export function Sidebar({
           {/* pinned models */}
           <div className="mt-4 px-2">
             <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Pinned models
+              Favorite models
             </div>
             <div className="space-y-0.5">
               {pinnedModels.map((m) => (
