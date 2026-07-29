@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Check, ChevronDown, Search, Star } from 'lucide-react'
+import { ChevronDown, Search, Star } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -187,8 +187,6 @@ export function ModelSelector({
                       )}
                     />
                   </button>
-
-                  {isSelected && <Check className="size-4 shrink-0 text-foreground" />}
                 </div>
               )
             })}
