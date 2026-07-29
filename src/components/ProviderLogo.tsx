@@ -47,7 +47,7 @@ export function ProviderLogo({
       viewBox={VIEWBOX[key] ?? '0 0 24 24'}
       className={cn(
         'shrink-0',
-        variant === 'outline' ? 'text-muted-foreground/70' : 'text-foreground',
+        variant === 'outline' ? 'text-muted-foreground opacity-70' : 'text-foreground',
         className
       )}
       fill="currentColor"
