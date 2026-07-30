@@ -2,6 +2,7 @@ export interface Model {
   id: string
   name: string
   provider: string
+  inferenceProvider: string
   description: string
   contextWindow: number
   tags: ('vision' | 'reasoning' | 'tools' | 'fast' | 'code')[]

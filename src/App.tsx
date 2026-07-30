@@ -9,11 +9,8 @@ import { ModelsPage } from '@/pages/usage/ModelsPage'
 import { AnalyticsPage } from '@/pages/usage/AnalyticsPage'
 import { ApiKeysPage } from '@/pages/ApiKeysPage'
 import { AdminLayout } from '@/pages/admin/AdminLayout'
-import { DashboardPage } from '@/pages/admin/DashboardPage'
 import { AdminUsersPage } from '@/pages/admin/AdminUsersPage'
 import { AdminModelsPage } from '@/pages/admin/AdminModelsPage'
-import { FunctionsPage } from '@/pages/admin/FunctionsPage'
-import { EvaluationsPage } from '@/pages/admin/EvaluationsPage'
 import { AdminSettingsPage } from '@/pages/admin/settings/AdminSettingsPage'
 
 export default function App() {
@@ -32,11 +29,9 @@ export default function App() {
           </Route>
           <Route path="api-keys" element={<ApiKeysPage />} />
           <Route path="admin" element={<AdminLayout />}>
-            <Route index element={<DashboardPage />} />
+            <Route index element={<Navigate to="users" replace />} />
             <Route path="users" element={<AdminUsersPage />} />
             <Route path="models" element={<AdminModelsPage />} />
-            <Route path="functions" element={<FunctionsPage />} />
-            <Route path="evaluations" element={<EvaluationsPage />} />
             <Route path="settings" element={<AdminSettingsPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

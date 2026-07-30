@@ -3,11 +3,8 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 const TABS = [
-  { to: '/admin', label: 'Dashboard', end: true },
   { to: '/admin/users', label: 'Users', end: false },
   { to: '/admin/models', label: 'Models', end: false },
-  { to: '/admin/functions', label: 'Functions', end: false },
-  { to: '/admin/evaluations', label: 'Evaluations', end: false },
   { to: '/admin/settings', label: 'Settings', end: false },
 ]
 
