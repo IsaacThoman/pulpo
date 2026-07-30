@@ -28,6 +28,8 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
+    reasoningEfforts: ['low', 'medium', 'high'],
+    speedOptions: ['standard', 'fast'],
   },
   {
     id: 'gpt-4o',
@@ -46,6 +48,8 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
+    reasoningEfforts: [],
+    speedOptions: ['standard', 'fast'],
   },
   {
     id: 'gpt-4o-mini',
@@ -63,6 +67,8 @@ export const MODELS: Model[] = [
     outputPrice: 0.6,
     perMessagePrice: 0,
     enabled: true,
+    reasoningEfforts: [],
+    speedOptions: ['standard'],
   },
   {
     id: 'claude-sonnet-4',
@@ -81,6 +87,8 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
+    reasoningEfforts: [],
+    speedOptions: ['standard', 'fast'],
   },
   {
     id: 'deepseek-r1',
@@ -98,6 +106,8 @@ export const MODELS: Model[] = [
     outputPrice: 2.19,
     perMessagePrice: 0,
     enabled: true,
+    reasoningEfforts: ['low', 'medium', 'high'],
+    speedOptions: ['standard', 'fast'],
   },
   {
     id: 'llama-3.3-70b',
@@ -115,6 +125,8 @@ export const MODELS: Model[] = [
     outputPrice: 0.3,
     perMessagePrice: 0,
     enabled: true,
+    reasoningEfforts: [],
+    speedOptions: ['standard', 'fast'],
   },
   {
     id: 'qwen3-235b',
@@ -132,6 +144,8 @@ export const MODELS: Model[] = [
     outputPrice: 0.88,
     perMessagePrice: 0,
     enabled: true,
+    reasoningEfforts: ['none', 'low', 'medium', 'high'],
+    speedOptions: ['standard', 'fast'],
   },
   {
     id: 'mistral-large',
@@ -149,6 +163,8 @@ export const MODELS: Model[] = [
     outputPrice: 6,
     perMessagePrice: 0,
     enabled: false,
+    reasoningEfforts: [],
+    speedOptions: ['standard'],
   },
   {
     id: 'gemini-2.5-pro',
@@ -166,6 +182,8 @@ export const MODELS: Model[] = [
     outputPrice: 10,
     perMessagePrice: 0,
     enabled: true,
+    reasoningEfforts: ['low', 'medium', 'high'],
+    speedOptions: ['standard'],
   },
   {
     id: 'grok-4',
@@ -183,6 +201,8 @@ export const MODELS: Model[] = [
     outputPrice: 15,
     perMessagePrice: 0,
     enabled: true,
+    reasoningEfforts: ['low', 'high'],
+    speedOptions: ['standard', 'fast'],
   },
 ]
 

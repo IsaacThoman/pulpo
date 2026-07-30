@@ -1,0 +1,236 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - button "Home" [ref=e6] [cursor=pointer]:
+        - img "Pulpo" [ref=e7]
+      - generic [ref=e8]: Pulpo
+      - button "Collapse sidebar" [ref=e9] [cursor=pointer]:
+        - img [ref=e10]
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - button "New chat" [ref=e15] [cursor=pointer]:
+          - img [ref=e17]
+          - generic [ref=e20]: New chat
+        - button "Search chats" [ref=e21] [cursor=pointer]:
+          - img [ref=e23]
+          - generic [ref=e26]: Search chats
+        - button "Usage" [ref=e27] [cursor=pointer]:
+          - img [ref=e29]
+          - generic [ref=e31]: Usage
+        - button "API keys" [ref=e32] [cursor=pointer]:
+          - img [ref=e34]
+          - generic [ref=e37]: API keys
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]: Pinned
+          - generic [ref=e42]:
+            - generic [ref=e44] [cursor=pointer]: Streaming state architecture
+            - generic [ref=e46] [cursor=pointer]: SSE vs WebSockets
+        - generic [ref=e47]:
+          - button "work 1" [expanded] [ref=e48] [cursor=pointer]:
+            - img [ref=e49]
+            - img [ref=e51]
+            - generic [ref=e53]: work
+            - generic [ref=e54]: "1"
+          - generic [ref=e57] [cursor=pointer]: Zustand store review
+        - generic [ref=e58]:
+          - button "research 0" [expanded] [ref=e59] [cursor=pointer]:
+            - img [ref=e60]
+            - img [ref=e62]
+            - generic [ref=e64]: research
+            - generic [ref=e65]: "0"
+          - generic [ref=e67]: Empty
+        - button "shitposts 1" [ref=e69] [cursor=pointer]:
+          - img [ref=e70]
+          - img [ref=e72]
+          - generic [ref=e74]: shitposts
+          - generic [ref=e75]: "1"
+        - button "New folder" [ref=e76] [cursor=pointer]:
+          - img [ref=e77]
+          - text: New folder
+        - generic [ref=e78]:
+          - generic [ref=e79]: Today
+          - generic [ref=e81] [cursor=pointer]:
+            - generic [ref=e82]: Sidebar search naming
+            - button "Chat options" [ref=e83]:
+              - img [ref=e84]
+        - generic [ref=e88]:
+          - generic [ref=e89]: Yesterday
+          - generic [ref=e90]:
+            - generic [ref=e92] [cursor=pointer]: Scroll anchoring fix
+            - generic [ref=e94] [cursor=pointer]: AbortController wiring
+        - generic [ref=e95]:
+          - generic [ref=e96]: Previous 7 Days
+          - generic [ref=e97]:
+            - generic [ref=e99] [cursor=pointer]: Cmd+K palette patterns
+            - generic [ref=e101] [cursor=pointer]: Folder system design
+            - generic [ref=e103] [cursor=pointer]: Retry policy draft
+        - generic [ref=e104]:
+          - generic [ref=e105]: Previous 30 Days
+          - generic [ref=e106]:
+            - generic [ref=e108] [cursor=pointer]: Release notes v0.4
+            - generic [ref=e110] [cursor=pointer]: Markdown perf notes
+            - generic [ref=e112] [cursor=pointer]: Optimistic sends
+            - generic [ref=e114] [cursor=pointer]: Tokenizer edge cases
+            - generic [ref=e116] [cursor=pointer]: Gradient descent haiku
+            - generic [ref=e118] [cursor=pointer]: Message branching design
+    - button "IT Isaac Thoman isaac@pulpo.dev" [ref=e120] [cursor=pointer]:
+      - generic [ref=e123]: IT
+      - generic [ref=e124]:
+        - generic [ref=e125]: Isaac Thoman
+        - generic [ref=e126]: isaac@pulpo.dev
+  - main [ref=e127]:
+    - generic [ref=e128]:
+      - generic [ref=e129]:
+        - heading "Admin panel" [level=1] [ref=e130]
+        - navigation [ref=e131]:
+          - link "Users" [ref=e132] [cursor=pointer]:
+            - /url: /admin/users
+          - link "Models" [ref=e133] [cursor=pointer]:
+            - /url: /admin/models
+          - link "Settings" [ref=e134] [cursor=pointer]:
+            - /url: /admin/settings
+      - generic [ref=e139]:
+        - generic [ref=e140]:
+          - heading "Models" [level=2] [ref=e141]
+          - generic [ref=e142]: "10"
+          - button "Import" [ref=e143] [cursor=pointer]:
+            - img
+            - text: Import
+          - button "Export" [ref=e144] [cursor=pointer]:
+            - img
+            - text: Export
+          - button "Manage" [ref=e145] [cursor=pointer]:
+            - img
+            - text: Manage
+          - button "New model" [ref=e146] [cursor=pointer]:
+            - img
+            - text: New model
+        - generic [ref=e147]:
+          - generic [ref=e148]:
+            - img [ref=e149]
+            - textbox "Search models…" [ref=e152]
+          - combobox [ref=e153] [cursor=pointer]:
+            - generic: all
+            - img
+        - generic [ref=e154]:
+          - generic [ref=e156]:
+            - img [ref=e157]
+            - generic [ref=e158]:
+              - generic [ref=e159]:
+                - generic [ref=e160]: Kimi K3
+                - generic [ref=e161]: Moonshot AI
+              - generic [ref=e162]: Flagship reasoning model with long context and agentic tool use. · 262.1K ctx
+            - button "Edit" [ref=e163] [cursor=pointer]:
+              - img
+            - button "More" [ref=e164] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e165] [cursor=pointer]
+          - generic [ref=e167]:
+            - img [ref=e168]
+            - generic [ref=e169]:
+              - generic [ref=e170]:
+                - generic [ref=e171]: GPT-4o
+                - generic [ref=e172]: OpenAI
+              - generic [ref=e173]: Omni multimodal flagship — fast, capable, great all-rounder. · 128.0K ctx
+            - button "Edit" [ref=e174] [cursor=pointer]:
+              - img
+            - button "More" [ref=e175] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e176] [cursor=pointer]
+          - generic [ref=e178]:
+            - img [ref=e179]
+            - generic [ref=e180]:
+              - generic [ref=e181]:
+                - generic [ref=e182]: GPT-4o mini
+                - generic [ref=e183]: OpenAI
+              - generic [ref=e184]: Small, cheap and fast for everyday tasks. · 128.0K ctx
+            - button "Edit" [ref=e185] [cursor=pointer]:
+              - img
+            - button "More" [ref=e186] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e187] [cursor=pointer]
+          - generic [ref=e189]:
+            - img [ref=e190]
+            - generic [ref=e191]:
+              - generic [ref=e192]:
+                - generic [ref=e193]: Claude Sonnet 4
+                - generic [ref=e194]: Anthropic
+              - generic [ref=e195]: Balanced coding and writing model with sharp reasoning. · 200.0K ctx
+            - button "Edit" [ref=e196] [cursor=pointer]:
+              - img
+            - button "More" [ref=e197] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e198] [cursor=pointer]
+          - generic [ref=e200]:
+            - img [ref=e201]
+            - generic [ref=e202]:
+              - generic [ref=e203]:
+                - generic [ref=e204]: DeepSeek R1
+                - generic [ref=e205]: DeepSeek
+              - generic [ref=e206]: Open reasoning model that thinks out loud before answering. · 65.5K ctx
+            - button "Edit" [ref=e207] [cursor=pointer]:
+              - img
+            - button "More" [ref=e208] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e209] [cursor=pointer]
+          - generic [ref=e211]:
+            - img [ref=e212]
+            - generic [ref=e213]:
+              - generic [ref=e214]:
+                - generic [ref=e215]: Llama 3.3 70B
+                - generic [ref=e216]: Meta
+              - generic [ref=e217]: Open-weight workhorse for general chat and summarization. · 131.1K ctx
+            - button "Edit" [ref=e218] [cursor=pointer]:
+              - img
+            - button "More" [ref=e219] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e220] [cursor=pointer]
+          - generic [ref=e222]:
+            - img [ref=e223]
+            - generic [ref=e224]:
+              - generic [ref=e225]:
+                - generic [ref=e226]: Qwen3 235B
+                - generic [ref=e227]: Alibaba
+              - generic [ref=e228]: Huge MoE model with hybrid thinking modes. · 131.1K ctx
+            - button "Edit" [ref=e229] [cursor=pointer]:
+              - img
+            - button "More" [ref=e230] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e231] [cursor=pointer]
+          - generic [ref=e233]:
+            - img [ref=e234]
+            - generic [ref=e235]:
+              - generic [ref=e236]:
+                - generic [ref=e237]: Mistral Large
+                - generic [ref=e238]: Mistral
+              - generic [ref=e239]: European flagship, strong multilingual performance. · 131.1K ctx
+            - button "Edit" [ref=e240] [cursor=pointer]:
+              - img
+            - button "More" [ref=e241] [cursor=pointer]:
+              - img
+            - switch [ref=e242] [cursor=pointer]
+          - generic [ref=e244]:
+            - img [ref=e245]
+            - generic [ref=e246]:
+              - generic [ref=e247]:
+                - generic [ref=e248]: Gemini 2.5 Pro
+                - generic [ref=e249]: Google
+              - generic [ref=e250]: Google’s multimodal reasoning model for complex analysis and coding. · 1.05M ctx
+            - button "Edit" [ref=e251] [cursor=pointer]:
+              - img
+            - button "More" [ref=e252] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e253] [cursor=pointer]
+          - generic [ref=e255]:
+            - img [ref=e256]
+            - generic [ref=e257]:
+              - generic [ref=e258]:
+                - generic [ref=e259]: Grok 4
+                - generic [ref=e260]: xAI
+              - generic [ref=e261]: xAI’s flagship reasoning model with tools and broad knowledge. · 256.0K ctx
+            - button "Edit" [ref=e262] [cursor=pointer]:
+              - img
+            - button "More" [ref=e263] [cursor=pointer]:
+              - img
+            - switch [checked] [ref=e264] [cursor=pointer]

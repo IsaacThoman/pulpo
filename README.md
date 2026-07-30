@@ -21,7 +21,8 @@ npm run dev
 
 - **Chat** — streaming simulation (token-by-token), reasoning blocks for reasoning models,
   markdown + code blocks, message actions (copy / regenerate / edit / rate),
-  per-message token + cost + latency metadata, stop generation
+  per-message token + cost + latency metadata, stop generation,
+  **reasoning effort + speed controls** in the composer (per-model, admin-configurable)
 - **Sidebar** — collapsible, pinned chats, folders, time-grouped history, per-chat menus
   (pin / rename / move / share / archive / delete), pinned-model shortcuts, archived chats
 - **Model selector** — searchable, theme-aware square avatars (light/dark), context + capability tags
@@ -41,7 +42,8 @@ npm run dev
   - Dashboard — 24h stats, quick links, system info
   - Users — role selects, add/edit modals; Groups tab with default-permission matrix
   - Models — search + view filters, per-model menus, enable toggles; full **model editor** with
-    system prompt, advanced params, capability toggles, JSON preview, and the fork's signature
+    system prompt, advanced params, capability toggles, **chat options** (which reasoning
+    effort / speed choices appear in the composer), JSON preview, and the fork's signature
     **light/dark profile-image upload grid**
   - Functions — pipe/filter/action/event cards w/ valves, global toggles
   - Evaluations — arena model sets, Elo leaderboard, feedback table w/ export

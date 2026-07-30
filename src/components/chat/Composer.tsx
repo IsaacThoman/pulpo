@@ -1,16 +1,43 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUp,
+  Brain,
+  Check,
+  ChevronDown,
   Code2,
   Mic,
   Plus,
   Square,
+  Zap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
+import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
+import { getModel } from '@/lib/mock'
+import type { ReasoningEffort, SpeedOption } from '@/lib/types'
 import { cn } from '@/lib/utils'
+
+const EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  none: 'Off',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+}
+
+const SPEED_LABELS: Record<SpeedOption, string> = {
+  standard: 'Standard',
+  fast: 'Fast',
+}
 
 export function Composer({
   chatId,
@@ -29,6 +56,14 @@ export function Composer({
   const streamingId = useChat((s) => s.streamingId)
   const stopStreaming = useChat((s) => s.stopStreaming)
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
+  const overrides = useModelConfig((s) => s.overrides)
+  const generation = useSettings((s) => s.generation)
+  const setGeneration = useSettings((s) => s.setGeneration)
+
+  const options = chatOptionsFor(getModel(modelId), overrides)
+  const prefs = resolveGeneration(options, generation[modelId])
+  const showEffort = options.reasoningEfforts.length > 0
+  const showSpeed = options.speedOptions.length > 1
 
   useEffect(() => {
     ref.current?.focus()
@@ -111,6 +146,64 @@ export function Composer({
           </button>
 
           {toggle('Code interpreter', codeInterp, setCodeInterp, <Code2 className="size-4" />)}
+
+          {(showEffort || showSpeed) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  aria-label="Generation options"
+                >
+                  {showEffort && <Brain className="size-3.5" />}
+                  {showEffort && prefs.reasoningEffort && (
+                    <span>{EFFORT_LABELS[prefs.reasoningEffort]}</span>
+                  )}
+                  {showEffort && showSpeed && <span className="text-border">·</span>}
+                  {showSpeed && <Zap className="size-3.5" />}
+                  {showSpeed && prefs.speed && <span>{SPEED_LABELS[prefs.speed]}</span>}
+                  <ChevronDown className="size-3 opacity-60" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="top" className="w-44">
+                {showEffort && (
+                  <>
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                      <Brain className="size-3.5" /> Reasoning effort
+                    </DropdownMenuLabel>
+                    {options.reasoningEfforts.map((effort) => (
+                      <DropdownMenuItem
+                        key={effort}
+                        onClick={() => setGeneration(modelId, { reasoningEffort: effort })}
+                        className="justify-between"
+                      >
+                        {EFFORT_LABELS[effort]}
+                        {prefs.reasoningEffort === effort && <Check className="size-3.5" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+                {showEffort && showSpeed && <DropdownMenuSeparator />}
+                {showSpeed && (
+                  <>
+                    <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                      <Zap className="size-3.5" /> Speed
+                    </DropdownMenuLabel>
+                    {options.speedOptions.map((speed) => (
+                      <DropdownMenuItem
+                        key={speed}
+                        onClick={() => setGeneration(modelId, { speed })}
+                        className="justify-between"
+                      >
+                        {SPEED_LABELS[speed]}
+                        {prefs.speed === speed && <Check className="size-3.5" />}
+                      </DropdownMenuItem>
+                    ))}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           <div className="flex-1" />
 

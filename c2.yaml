@@ -1,0 +1,164 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - button:
+            - img
+          - generic: Pulpo
+          - button:
+            - img
+        - generic:
+          - generic:
+            - button:
+              - generic:
+                - img
+              - generic: New chat
+            - button:
+              - generic:
+                - img
+              - generic: Search chats
+            - button:
+              - generic:
+                - img
+              - generic: Usage
+            - button:
+              - generic:
+                - img
+              - generic: API keys
+          - generic:
+            - generic:
+              - generic:
+                - generic: Pinned
+                - generic:
+                  - generic:
+                    - generic: Streaming state architecture
+                  - generic:
+                    - generic: SSE vs WebSockets
+              - generic:
+                - button [expanded]:
+                  - img
+                  - img
+                  - generic: work
+                  - generic: "1"
+                - generic:
+                  - generic:
+                    - generic: Zustand store review
+              - generic:
+                - button [expanded]:
+                  - img
+                  - img
+                  - generic: research
+                  - generic: "0"
+                - generic:
+                  - generic: Empty
+              - generic:
+                - button:
+                  - img
+                  - img
+                  - generic: shitposts
+                  - generic: "1"
+              - button:
+                - img
+                - text: New folder
+              - generic:
+                - generic: Today
+                - generic:
+                  - generic:
+                    - generic: Sidebar search naming
+              - generic:
+                - generic: Yesterday
+                - generic:
+                  - generic:
+                    - generic: Scroll anchoring fix
+                  - generic:
+                    - generic: AbortController wiring
+              - generic:
+                - generic: Previous 7 Days
+                - generic:
+                  - generic:
+                    - generic: Cmd+K palette patterns
+                  - generic:
+                    - generic: Folder system design
+                  - generic:
+                    - generic: Retry policy draft
+              - generic:
+                - generic: Previous 30 Days
+                - generic:
+                  - generic:
+                    - generic: Release notes v0.4
+                  - generic:
+                    - generic: Markdown perf notes
+                  - generic:
+                    - generic: Optimistic sends
+                  - generic:
+                    - generic: Tokenizer edge cases
+                  - generic:
+                    - generic: Gradient descent haiku
+                  - generic:
+                    - generic: Message branching design
+        - generic:
+          - button:
+            - generic:
+              - generic:
+                - generic: IT
+            - generic:
+              - generic: Isaac Thoman
+              - generic: isaac@pulpo.dev
+      - main:
+        - generic:
+          - generic:
+            - button:
+              - img
+              - generic: Kimi K3
+              - img
+            - button:
+              - img
+          - generic:
+            - generic:
+              - generic:
+                - img
+                - heading [level=1]: Kimi K3
+              - paragraph: Moonshot AI · Fireworks
+              - generic:
+                - button: What can you help me build today?
+                - button: Explain how KV caching speeds up decoding
+                - button: Draft a terse commit message for a sidebar refactor
+                - button: Compare mixture-of-experts vs dense models
+          - generic:
+            - generic:
+              - generic:
+                - textbox:
+                  - /placeholder: Message…
+                - generic:
+                  - button:
+                    - img
+                  - button:
+                    - img
+                  - button [expanded]:
+                    - img
+                    - generic: Medium
+                    - generic: ·
+                    - img
+                    - generic: Fast
+                    - img
+                  - button:
+                    - img
+                  - button [disabled]:
+                    - img
+  - menu "Generation options" [active] [ref=e176]:
+    - generic [ref=e177]:
+      - img [ref=e178]
+      - text: Reasoning effort
+    - menuitem "Low" [ref=e186] [cursor=pointer]
+    - menuitem "Medium" [ref=e187] [cursor=pointer]:
+      - text: Medium
+      - img
+    - separator [ref=e188]
+    - generic [ref=e189]:
+      - img [ref=e190]
+      - text: Speed
+    - menuitem "Standard" [ref=e192] [cursor=pointer]
+    - menuitem "Fast" [ref=e193] [cursor=pointer]:
+      - text: Fast
+      - img

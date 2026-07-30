@@ -1,0 +1,391 @@
+- generic:
+  - generic:
+    - generic:
+      - complementary:
+        - generic:
+          - button:
+            - img
+          - generic: Pulpo
+          - button:
+            - img
+        - generic:
+          - generic:
+            - button:
+              - generic:
+                - img
+              - generic: New chat
+            - button:
+              - generic:
+                - img
+              - generic: Search chats
+            - button:
+              - generic:
+                - img
+              - generic: Usage
+            - button:
+              - generic:
+                - img
+              - generic: API keys
+          - generic:
+            - generic:
+              - generic:
+                - generic: Pinned
+                - generic:
+                  - generic:
+                    - generic: Streaming state architecture
+                  - generic:
+                    - generic: SSE vs WebSockets
+              - generic:
+                - button [expanded]:
+                  - img
+                  - img
+                  - generic: work
+                  - generic: "1"
+                - generic:
+                  - generic:
+                    - generic: Zustand store review
+              - generic:
+                - button [expanded]:
+                  - img
+                  - img
+                  - generic: research
+                  - generic: "0"
+                - generic:
+                  - generic: Empty
+              - generic:
+                - button:
+                  - img
+                  - img
+                  - generic: shitposts
+                  - generic: "1"
+              - button:
+                - img
+                - text: New folder
+              - generic:
+                - generic: Today
+                - generic:
+                  - generic:
+                    - generic: Sidebar search naming
+              - generic:
+                - generic: Yesterday
+                - generic:
+                  - generic:
+                    - generic: Scroll anchoring fix
+                  - generic:
+                    - generic: AbortController wiring
+              - generic:
+                - generic: Previous 7 Days
+                - generic:
+                  - generic:
+                    - generic: Cmd+K palette patterns
+                  - generic:
+                    - generic: Folder system design
+                  - generic:
+                    - generic: Retry policy draft
+              - generic:
+                - generic: Previous 30 Days
+                - generic:
+                  - generic:
+                    - generic: Release notes v0.4
+                  - generic:
+                    - generic: Markdown perf notes
+                  - generic:
+                    - generic: Optimistic sends
+                  - generic:
+                    - generic: Tokenizer edge cases
+                  - generic:
+                    - generic: Gradient descent haiku
+                  - generic:
+                    - generic: Message branching design
+        - generic:
+          - button:
+            - generic:
+              - generic:
+                - generic: IT
+            - generic:
+              - generic: Isaac Thoman
+              - generic: isaac@pulpo.dev
+      - main:
+        - generic:
+          - generic:
+            - heading [level=1]: Admin panel
+            - navigation:
+              - link:
+                - /url: /admin/users
+                - text: Users
+              - link:
+                - /url: /admin/models
+                - text: Models
+              - link:
+                - /url: /admin/settings
+                - text: Settings
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - heading [level=2]: Models
+                      - generic: "10"
+                      - button:
+                        - img
+                        - text: Import
+                      - button:
+                        - img
+                        - text: Export
+                      - button:
+                        - img
+                        - text: Manage
+                      - button:
+                        - img
+                        - text: New model
+                    - generic:
+                      - generic:
+                        - img
+                        - textbox:
+                          - /placeholder: Search models…
+                      - combobox:
+                        - generic: all
+                        - img
+                    - generic:
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Kimi K3
+                              - generic: Moonshot AI
+                            - generic: Flagship reasoning model with long context and agentic tool use. · 262.1K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: GPT-4o
+                              - generic: OpenAI
+                            - generic: Omni multimodal flagship — fast, capable, great all-rounder. · 128.0K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: GPT-4o mini
+                              - generic: OpenAI
+                            - generic: Small, cheap and fast for everyday tasks. · 128.0K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Claude Sonnet 4
+                              - generic: Anthropic
+                            - generic: Balanced coding and writing model with sharp reasoning. · 200.0K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: DeepSeek R1
+                              - generic: DeepSeek
+                            - generic: Open reasoning model that thinks out loud before answering. · 65.5K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Llama 3.3 70B
+                              - generic: Meta
+                            - generic: Open-weight workhorse for general chat and summarization. · 131.1K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Qwen3 235B
+                              - generic: Alibaba
+                            - generic: Huge MoE model with hybrid thinking modes. · 131.1K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Mistral Large
+                              - generic: Mistral
+                            - generic: European flagship, strong multilingual performance. · 131.1K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Gemini 2.5 Pro
+                              - generic: Google
+                            - generic: Google’s multimodal reasoning model for complex analysis and coding. · 1.05M ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+                      - generic:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic:
+                              - generic: Grok 4
+                              - generic: xAI
+                            - generic: xAI’s flagship reasoning model with tools and broad knowledge. · 256.0K ctx
+                          - button:
+                            - img
+                          - button:
+                            - img
+                          - switch [checked]
+  - dialog "Edit model kimi-k3" [ref=e266]:
+    - heading "Edit model kimi-k3" [level=2] [ref=e268]:
+      - img [ref=e269]
+      - text: Edit model
+      - generic [ref=e270]: kimi-k3
+    - generic [ref=e274]:
+      - generic [ref=e275]:
+        - generic [ref=e276]:
+          - generic [ref=e277]: Associated lab
+          - button "lab" [active] [ref=e278] [cursor=pointer]:
+            - img [ref=e279]
+            - generic [ref=e280]: lab
+          - paragraph [ref=e281]: Monochrome company mark used in the model picker.
+        - generic [ref=e282]:
+          - generic [ref=e283]: Model logo
+          - button "model" [ref=e284] [cursor=pointer]:
+            - img [ref=e285]
+            - generic [ref=e286]: model
+          - paragraph [ref=e287]: Product mark used in chat, favorites, and model lists.
+      - generic [ref=e288]:
+        - generic [ref=e289]:
+          - generic [ref=e290]: Model name
+          - textbox [ref=e291]: Kimi K3
+        - generic [ref=e292]:
+          - generic [ref=e293]: Model ID
+          - textbox [disabled]: kimi-k3
+      - generic [ref=e294]:
+        - generic [ref=e295]:
+          - generic [ref=e296]: Base model (from)
+          - combobox [ref=e297] [cursor=pointer]:
+            - generic: Kimi K3
+            - img
+        - generic [ref=e298]:
+          - generic [ref=e299]: Access
+          - combobox [ref=e300] [cursor=pointer]:
+            - generic: Public
+            - img
+      - generic [ref=e301]:
+        - generic [ref=e302]: Description
+        - textbox [ref=e303]: Flagship reasoning model with long context and agentic tool use.
+      - generic [ref=e304]:
+        - generic [ref=e305]: System prompt
+        - textbox "You are a helpful assistant." [ref=e306]
+      - button "Advanced params" [ref=e308] [cursor=pointer]:
+        - img [ref=e309]
+        - text: Advanced params
+      - generic [ref=e311]:
+        - generic [ref=e312]: Capabilities
+        - generic [ref=e313]:
+          - generic [ref=e314] [cursor=pointer]:
+            - text: Vision
+            - switch "Vision" [ref=e315]
+          - generic [ref=e316] [cursor=pointer]:
+            - text: File Upload
+            - switch "File Upload" [ref=e317]
+          - generic [ref=e318] [cursor=pointer]:
+            - text: Code Interpreter
+            - switch "Code Interpreter" [checked] [ref=e319]
+          - generic [ref=e320] [cursor=pointer]:
+            - text: Terminal
+            - switch "Terminal" [ref=e321]
+          - generic [ref=e322] [cursor=pointer]:
+            - text: Usage
+            - switch "Usage" [ref=e323]
+          - generic [ref=e324] [cursor=pointer]:
+            - text: Citations
+            - switch "Citations" [ref=e325]
+          - generic [ref=e326] [cursor=pointer]:
+            - text: Status Updates
+            - switch "Status Updates" [ref=e327]
+          - generic [ref=e328] [cursor=pointer]:
+            - text: Builtin Tools
+            - switch "Builtin Tools" [ref=e329]
+      - generic [ref=e330]:
+        - generic [ref=e331]: Chat options
+        - paragraph [ref=e332]: Which reasoning effort and speed choices users can pick in the composer. Disable all options in a group to hide its control.
+        - generic [ref=e333]:
+          - generic [ref=e334]:
+            - generic [ref=e335]: Reasoning effort
+            - generic [ref=e336] [cursor=pointer]:
+              - text: "Off"
+              - switch "Off" [ref=e337]
+            - generic [ref=e338] [cursor=pointer]:
+              - text: Low
+              - switch "Low" [checked] [ref=e339]
+            - generic [ref=e340] [cursor=pointer]:
+              - text: Medium
+              - switch "Medium" [checked] [ref=e341]
+            - generic [ref=e342] [cursor=pointer]:
+              - text: High
+              - switch "High" [checked] [ref=e343]
+          - generic [ref=e344]:
+            - generic [ref=e345]: Speed
+            - generic [ref=e346] [cursor=pointer]:
+              - text: Standard
+              - switch "Standard" [checked] [ref=e347]
+            - generic [ref=e348] [cursor=pointer]:
+              - text: Fast
+              - switch "Fast" [checked] [ref=e349]
+      - generic [ref=e350]:
+        - generic [ref=e351]: Default features
+        - generic [ref=e353]: code_interpreter
+      - button "JSON preview" [ref=e355] [cursor=pointer]:
+        - img [ref=e356]
+        - text: JSON preview
+    - generic [ref=e358]:
+      - button "Cancel" [ref=e359] [cursor=pointer]
+      - button "Save & update" [ref=e360] [cursor=pointer]
+    - button "Close" [ref=e361] [cursor=pointer]:
+      - img
+      - generic [ref=e362]: Close

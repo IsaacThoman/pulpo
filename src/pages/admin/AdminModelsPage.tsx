@@ -16,7 +16,8 @@ import {
 } from 'lucide-react'
 import { MODELS } from '@/lib/mock'
 import { formatNumber } from '@/lib/format'
-import type { Model } from '@/lib/types'
+import type { Model, ReasoningEffort, SpeedOption } from '@/lib/types'
+import { chatOptionsFor, useModelConfig } from '@/stores/modelConfig'
 import { ModelIcon } from '@/components/ModelIcon'
 import { AiLogo } from '@/components/ProviderLogo'
 import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
@@ -63,6 +64,22 @@ const CAPABILITIES = [
 ]
 
 const DEFAULT_PARAMS = { temperature: 1.0, topP: 1.0, topK: 0, seed: 0, maxTokens: 4096, frequencyPenalty: 0 }
+
+const ALL_EFFORTS: { value: ReasoningEffort; label: string }[] = [
+  { value: 'none', label: 'Off' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+]
+
+const ALL_SPEEDS: { value: SpeedOption; label: string }[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'fast', label: 'Fast' },
+]
+
+function toggleInList<T>(list: T[], value: T): T[] {
+  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
+}
 
 function LogoPickerTile({
   label,
@@ -145,6 +162,9 @@ function ModelEditorDialog({
   const [jsonOpen, setJsonOpen] = useState(false)
   const [labLogo, setLabLogo] = useState(model.labLogo)
   const [modelLogo, setModelLogo] = useState(model.modelLogo)
+  const overrides = useModelConfig((s) => s.overrides)
+  const setOptions = useModelConfig((s) => s.setOptions)
+  const [chatOptions, setChatOptions] = useState(() => chatOptionsFor(model, overrides))
   const [caps, setCaps] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
       CAPABILITIES.map((c) => [
@@ -277,6 +297,58 @@ function ModelEditorDialog({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label>Chat options</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Which reasoning effort and speed choices users can pick in the composer. Disable
+                all options in a group to hide its control.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">
+                    Reasoning effort
+                  </div>
+                  {ALL_EFFORTS.map(({ value, label }) => (
+                    <label
+                      key={value}
+                      className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
+                    >
+                      {label}
+                      <Switch
+                        checked={chatOptions.reasoningEfforts.includes(value)}
+                        onCheckedChange={() =>
+                          setChatOptions((o) => ({
+                            ...o,
+                            reasoningEfforts: toggleInList(o.reasoningEfforts, value),
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div>
+                  <div className="mb-1 text-xs font-medium text-muted-foreground">Speed</div>
+                  {ALL_SPEEDS.map(({ value, label }) => (
+                    <label
+                      key={value}
+                      className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
+                    >
+                      {label}
+                      <Switch
+                        checked={chatOptions.speedOptions.includes(value)}
+                        onCheckedChange={() =>
+                          setChatOptions((o) => ({
+                            ...o,
+                            speedOptions: toggleInList(o.speedOptions, value),
+                          }))
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label>Default features</Label>
               <div className="flex gap-2">
@@ -306,6 +378,10 @@ function ModelEditorDialog({
       profile_image_url_dark: `/models/${model.id}/dark.png`,
       description: model.description,
       capabilities: caps,
+      chat_options: {
+        reasoning_efforts: chatOptions.reasoningEfforts,
+        speed_options: chatOptions.speedOptions,
+      },
     },
     params: DEFAULT_PARAMS,
   },
@@ -321,7 +397,14 @@ function ModelEditorDialog({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={onClose}>Save & update</Button>
+          <Button
+            onClick={() => {
+              setOptions(model.id, chatOptions)
+              onClose()
+            }}
+          >
+            Save & update
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

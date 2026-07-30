@@ -1,0 +1,164 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - button "Home" [ref=e6] [cursor=pointer]:
+        - img "Pulpo" [ref=e7]
+      - generic [ref=e8]: Pulpo
+      - button "Collapse sidebar" [ref=e9] [cursor=pointer]:
+        - img [ref=e10]
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - button "New chat" [ref=e15] [cursor=pointer]:
+          - img [ref=e17]
+          - generic [ref=e20]: New chat
+        - button "Search chats" [ref=e21] [cursor=pointer]:
+          - img [ref=e23]
+          - generic [ref=e26]: Search chats
+        - button "Usage" [ref=e27] [cursor=pointer]:
+          - img [ref=e29]
+          - generic [ref=e31]: Usage
+        - button "API keys" [ref=e32] [cursor=pointer]:
+          - img [ref=e34]
+          - generic [ref=e37]: API keys
+      - generic [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]: Pinned
+          - generic [ref=e42]:
+            - generic [ref=e44] [cursor=pointer]: Streaming state architecture
+            - generic [ref=e46] [cursor=pointer]: SSE vs WebSockets
+        - generic [ref=e47]:
+          - button "work 1" [expanded] [ref=e48] [cursor=pointer]:
+            - img [ref=e49]
+            - img [ref=e51]
+            - generic [ref=e53]: work
+            - generic [ref=e54]: "1"
+          - generic [ref=e57] [cursor=pointer]: Zustand store review
+        - generic [ref=e58]:
+          - button "research 0" [expanded] [ref=e59] [cursor=pointer]:
+            - img [ref=e60]
+            - img [ref=e62]
+            - generic [ref=e64]: research
+            - generic [ref=e65]: "0"
+          - generic [ref=e67]: Empty
+        - button "shitposts 1" [ref=e69] [cursor=pointer]:
+          - img [ref=e70]
+          - img [ref=e72]
+          - generic [ref=e74]: shitposts
+          - generic [ref=e75]: "1"
+        - button "New folder" [ref=e76] [cursor=pointer]:
+          - img [ref=e77]
+          - text: New folder
+        - generic [ref=e78]:
+          - generic [ref=e79]: Today
+          - generic [ref=e80]:
+            - generic [ref=e270] [cursor=pointer]:
+              - generic [ref=e271]: no reasoning please
+              - button "Chat options" [ref=e273]:
+                - img [ref=e274]
+            - generic [ref=e82] [cursor=pointer]: Sidebar search naming
+        - generic [ref=e83]:
+          - generic [ref=e84]: Yesterday
+          - generic [ref=e85]:
+            - generic [ref=e87] [cursor=pointer]: Scroll anchoring fix
+            - generic [ref=e89] [cursor=pointer]: AbortController wiring
+        - generic [ref=e90]:
+          - generic [ref=e91]: Previous 7 Days
+          - generic [ref=e92]:
+            - generic [ref=e94] [cursor=pointer]: Cmd+K palette patterns
+            - generic [ref=e96] [cursor=pointer]: Folder system design
+            - generic [ref=e98] [cursor=pointer]: Retry policy draft
+        - generic [ref=e99]:
+          - generic [ref=e100]: Previous 30 Days
+          - generic [ref=e101]:
+            - generic [ref=e103] [cursor=pointer]: Release notes v0.4
+            - generic [ref=e105] [cursor=pointer]: Markdown perf notes
+            - generic [ref=e107] [cursor=pointer]: Optimistic sends
+            - generic [ref=e109] [cursor=pointer]: Tokenizer edge cases
+            - generic [ref=e111] [cursor=pointer]: Gradient descent haiku
+            - generic [ref=e113] [cursor=pointer]: Message branching design
+    - button "IT Isaac Thoman isaac@pulpo.dev" [ref=e115] [cursor=pointer]:
+      - generic [ref=e118]: IT
+      - generic [ref=e119]:
+        - generic [ref=e120]: Isaac Thoman
+        - generic [ref=e121]: isaac@pulpo.dev
+  - main [ref=e122]:
+    - generic [ref=e123]:
+      - generic [ref=e124]:
+        - button "Qwen3 235B" [ref=e247] [cursor=pointer]:
+          - img [ref=e126]
+          - generic [ref=e127]: Qwen3 235B
+          - img [ref=e128]
+        - button "Temporary chat" [ref=e130] [cursor=pointer]:
+          - img [ref=e131]
+        - button "Share chat" [ref=e278] [cursor=pointer]:
+          - img [ref=e279]
+      - generic [ref=e288]:
+        - generic [ref=e289]:
+          - generic [ref=e291]: no reasoning please
+          - generic [ref=e292]:
+            - button "Copy" [ref=e293] [cursor=pointer]:
+              - img [ref=e294]
+            - button "Edit" [ref=e297] [cursor=pointer]:
+              - img [ref=e298]
+        - generic [ref=e301]:
+          - img [ref=e302]
+          - generic [ref=e303]:
+            - generic [ref=e304]:
+              - generic [ref=e305]: Qwen3 235B
+              - generic [ref=e306]: just now
+            - generic [ref=e307]:
+              - paragraph [ref=e308]: "Here is how I would approach it:"
+              - paragraph [ref=e309]:
+                - text: The trick is to treat the stream as a
+                - strong [ref=e310]: single writer
+                - text: and let React subscribe to slices. Each appended token updates one message object; selectors keep everything else still.
+              - generic [ref=e312]:
+                - generic [ref=e313]:
+                  - generic [ref=e314]: ts
+                  - button "copy" [ref=e315] [cursor=pointer]:
+                    - img [ref=e316]
+                    - text: copy
+                - code [ref=e320]: "appendToken(messageId, delta) { set((s) => ({ chats: s.chats.map((c) => c.id === chatId ? { ...c, messages: patchMessage(c.messages, messageId, delta) } : c ), })) }"
+              - paragraph [ref=e321]: "Key points:"
+              - list [ref=e322]:
+                - listitem [ref=e323]:
+                  - strong [ref=e324]: Immutable patches
+                  - text: keep memoization honest — only the active bubble re-renders.
+                - listitem [ref=e325]:
+                  - strong [ref=e326]: Scroll anchoring
+                  - text: belongs in the list component, not the store.
+                - listitem [ref=e327]:
+                  - text: Persist to
+                  - code [ref=e328]: localStorage
+                  - text: on a 500ms debounce so a refresh mid-stream loses nothing.
+              - blockquote [ref=e329]:
+                - paragraph [ref=e330]: This mock generates text locally, but the store shape wouldn't change against a real SSE endpoint.
+              - paragraph [ref=e331]: Want me to go deeper on any of these?
+            - generic [ref=e332]:
+              - button "Copy" [ref=e333] [cursor=pointer]:
+                - img [ref=e334]
+              - button "Good response" [ref=e337] [cursor=pointer]:
+                - img [ref=e338]
+              - button "Bad response" [ref=e340] [cursor=pointer]:
+                - img [ref=e341]
+              - button "Regenerate" [ref=e343] [cursor=pointer]:
+                - img [ref=e344]
+              - generic [ref=e349]: 128→206 tok · $0.0002 · 5.1s · effort none
+      - generic [ref=e146]:
+        - textbox "Message…" [active] [ref=e147]
+        - generic [ref=e148]:
+          - button "Attach files" [ref=e149] [cursor=pointer]:
+            - img [ref=e150]
+          - button "Code interpreter" [ref=e151] [cursor=pointer]:
+            - img [ref=e152]
+          - button "Generation options" [ref=e156] [cursor=pointer]:
+            - img [ref=e157]
+            - generic [ref=e165]: "Off"
+            - generic [ref=e166]: ·
+            - img [ref=e167]
+            - generic [ref=e169]: Standard
+            - img [ref=e170]
+          - button "Voice input" [ref=e172] [cursor=pointer]:
+            - img [ref=e173]
+          - button "Send message" [disabled]:
+            - img

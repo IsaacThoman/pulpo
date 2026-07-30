@@ -1,3 +1,6 @@
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high'
+export type SpeedOption = 'standard' | 'fast'
+
 export interface Model {
   id: string
   name: string
@@ -18,6 +21,10 @@ export interface Model {
   perMessagePrice: number
   enabled: boolean
   pinned?: boolean
+  /** Reasoning effort options shown in the chat composer (admin-configured; empty = hide control). */
+  reasoningEfforts: ReasoningEffort[]
+  /** Speed options shown in the chat composer (admin-configured; empty = hide control). */
+  speedOptions: SpeedOption[]
 }
 
 export interface Attachment {
@@ -38,6 +45,8 @@ export interface Message {
   cost?: number
   latencyMs?: number
   reasoning?: string
+  reasoningEffort?: ReasoningEffort
+  speed?: SpeedOption
   attachments?: Attachment[]
   rating?: 'up' | 'down' | null
   done: boolean

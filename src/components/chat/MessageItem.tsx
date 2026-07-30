@@ -200,6 +200,8 @@ export const MessageItem = memo(function MessageItem({
                   `${formatNumber(message.tokensIn)}→${formatNumber(message.tokensOut ?? 0)} tok`}
                 {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
                 {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
+                {message.reasoningEffort && ` · effort ${message.reasoningEffort}`}
+                {message.speed && message.speed !== 'standard' && ` · ${message.speed}`}
               </span>
             )}
           </div>

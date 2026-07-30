@@ -1,6 +1,8 @@
 import { create } from 'zustand'
-import type { Chat, Folder, Message } from '@/lib/types'
+import type { Chat, Folder, Message, ReasoningEffort, SpeedOption } from '@/lib/types'
 import { getModel, makeMockChats, MODELS } from '@/lib/mock'
+import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
+import { useSettings } from '@/stores/settings'
 
 const seed = makeMockChats()
 
@@ -32,6 +34,29 @@ Want me to go deeper on any of these?`
 
 const REASONING_TEXT =
   'The user sent a new message. I should answer with something concrete and technical, matching the tone of the conversation so far. A short structure with a code sample lands well here. Keep it under ~150 words of prose.'
+
+const REASONING_TEXT_HIGH =
+  REASONING_TEXT +
+  ' Let me also weigh the alternatives: a normalized store would simplify updates but complicate streaming appends, while a flat map by message id would need extra indexing per chat. The slice-subscription approach avoids both pitfalls. Double-checking the abort path: clearing the interval and marking the message done is enough, since the buffer is local.'
+
+interface GenerationSelection {
+  reasoningEffort?: ReasoningEffort
+  speed?: SpeedOption
+}
+
+/** Current composer selection for a model: saved user prefs validated against admin-allowed options. */
+function generationFor(modelId: string): GenerationSelection {
+  const model = getModel(modelId)
+  const options = chatOptionsFor(model, useModelConfig.getState().overrides)
+  return resolveGeneration(options, useSettings.getState().generation[modelId])
+}
+
+function reasoningTextFor(effort: ReasoningEffort | undefined): string | undefined {
+  if (effort === 'none') return undefined
+  if (effort === 'low') return REASONING_TEXT.slice(0, 90) + '…'
+  if (effort === 'high') return REASONING_TEXT_HIGH
+  return REASONING_TEXT
+}
 
 interface ChatState {
   chats: Chat[]
@@ -65,13 +90,22 @@ function patchMessage(messages: Message[], id: string, fn: (m: Message) => Messa
 }
 
 export const useChat = create<ChatState>()((set, get) => {
-  function startStreaming(chatId: string, messageId: string, modelId: string) {
+  function startStreaming(
+    chatId: string,
+    messageId: string,
+    modelId: string,
+    gen: GenerationSelection
+  ) {
     const model = getModel(modelId)
-    const isReasoner = model.tags.includes('reasoning')
+    const reasoningTarget =
+      model.tags.includes('reasoning') || gen.reasoningEffort
+        ? reasoningTextFor(gen.reasoningEffort)
+        : undefined
     let pos = 0
-    let reasoningDone = !isReasoner
+    let reasoningDone = reasoningTarget === undefined
     let rpos = 0
     const started = Date.now()
+    const tickMs = gen.speed === 'fast' ? 10 : 24
 
     const tick = () => {
       const state = get()
@@ -88,8 +122,8 @@ export const useChat = create<ChatState>()((set, get) => {
             messages: patchMessage(c.messages, messageId, (m) => {
               if (!reasoningDone) {
                 rpos += 2 + Math.floor(Math.random() * 3)
-                const reasoning = REASONING_TEXT.slice(0, rpos)
-                if (rpos >= REASONING_TEXT.length) reasoningDone = true
+                const reasoning = reasoningTarget!.slice(0, rpos)
+                if (rpos >= reasoningTarget!.length) reasoningDone = true
                 return { ...m, reasoning }
               }
               pos += 2 + Math.floor(Math.random() * 5)
@@ -109,7 +143,7 @@ export const useChat = create<ChatState>()((set, get) => {
         }),
       }))
     }
-    streamTimer = setInterval(tick, 24)
+    streamTimer = setInterval(tick, tickMs)
     set({
       streamingId: messageId,
       abort: () => {
@@ -184,6 +218,7 @@ export const useChat = create<ChatState>()((set, get) => {
 
     sendMessage: (chatId, content, modelId) => {
       const now = Date.now()
+      const gen = generationFor(modelId)
       const userMsg: Message = {
         id: crypto.randomUUID(),
         role: 'user',
@@ -197,7 +232,9 @@ export const useChat = create<ChatState>()((set, get) => {
         content: '',
         modelId,
         timestamp: now + 1,
-        reasoning: getModel(modelId).tags.includes('reasoning') ? '' : undefined,
+        reasoning: getModel(modelId).tags.includes('reasoning') && gen.reasoningEffort !== 'none' ? '' : undefined,
+        reasoningEffort: gen.reasoningEffort,
+        speed: gen.speed,
         done: false,
       }
       let id = chatId
@@ -226,7 +263,7 @@ export const useChat = create<ChatState>()((set, get) => {
           ),
         }))
       }
-      startStreaming(id, assistantMsg.id, modelId)
+      startStreaming(id, assistantMsg.id, modelId, gen)
       return id
     },
 
@@ -235,6 +272,8 @@ export const useChat = create<ChatState>()((set, get) => {
       const chat = state.chats.find((c) => c.id === chatId)
       const msg = chat?.messages.find((m) => m.id === messageId)
       if (!chat || !msg || state.streamingId) return
+      const modelId = msg.modelId ?? chat.modelId
+      const gen = generationFor(modelId)
       set((s) => ({
         chats: s.chats.map((c) =>
           c.id === chatId
@@ -243,7 +282,12 @@ export const useChat = create<ChatState>()((set, get) => {
                 messages: patchMessage(c.messages, messageId, (m) => ({
                   ...m,
                   content: '',
-                  reasoning: m.reasoning !== undefined ? '' : undefined,
+                  reasoning:
+                    getModel(modelId).tags.includes('reasoning') && gen.reasoningEffort !== 'none'
+                      ? ''
+                      : undefined,
+                  reasoningEffort: gen.reasoningEffort,
+                  speed: gen.speed,
                   done: false,
                   rating: null,
                 })),
@@ -251,7 +295,7 @@ export const useChat = create<ChatState>()((set, get) => {
             : c
         ),
       }))
-      startStreaming(chatId, messageId, msg.modelId ?? chat.modelId)
+      startStreaming(chatId, messageId, modelId, gen)
     },
 
     editUserMessage: (chatId, messageId, content) => {
@@ -261,6 +305,7 @@ export const useChat = create<ChatState>()((set, get) => {
       const idx = chat.messages.findIndex((m) => m.id === messageId)
       if (idx === -1) return
       // truncate after the edited message, then re-answer
+      const gen = generationFor(chat.modelId)
       const kept = chat.messages.slice(0, idx + 1).map((m) => (m.id === messageId ? { ...m, content } : m))
       const assistantMsg: Message = {
         id: crypto.randomUUID(),
@@ -268,7 +313,9 @@ export const useChat = create<ChatState>()((set, get) => {
         content: '',
         modelId: chat.modelId,
         timestamp: Date.now(),
-        reasoning: getModel(chat.modelId).tags.includes('reasoning') ? '' : undefined,
+        reasoning: getModel(chat.modelId).tags.includes('reasoning') && gen.reasoningEffort !== 'none' ? '' : undefined,
+        reasoningEffort: gen.reasoningEffort,
+        speed: gen.speed,
         done: false,
       }
       set((s) => ({
@@ -276,7 +323,7 @@ export const useChat = create<ChatState>()((set, get) => {
           c.id === chatId ? { ...c, messages: [...kept, assistantMsg], updatedAt: Date.now() } : c
         ),
       }))
-      startStreaming(chatId, assistantMsg.id, chat.modelId)
+      startStreaming(chatId, assistantMsg.id, chat.modelId, gen)
     },
 
     stopStreaming: () => get().abort?.(),
