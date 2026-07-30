@@ -1,4 +1,12 @@
-import type { Chat, Folder, Message, Model, MonitorUser, UsageRecord } from './types'
+import type {
+  Chat,
+  Folder,
+  Message,
+  Model,
+  MonitorUser,
+  ReasoningEffortOption,
+  UsageRecord,
+} from './types'
 
 // Deterministic PRNG so mock data is stable between reloads
 export function mulberry32(seed: number) {
@@ -9,6 +17,15 @@ export function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
+
+const effortOptions = (...internalNames: string[]): ReasoningEffortOption[] =>
+  internalNames.map((internalName) => ({
+    displayName:
+      internalName === 'none'
+        ? 'Off'
+        : `${internalName.charAt(0).toUpperCase()}${internalName.slice(1)}`,
+    internalName,
+  }))
 
 export const MODELS: Model[] = [
   {
@@ -28,7 +45,7 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
-    reasoningEfforts: ['low', 'medium', 'high'],
+    reasoningEfforts: effortOptions('low', 'medium', 'high'),
     speedOptions: ['standard', 'fast'],
   },
   {
@@ -106,7 +123,7 @@ export const MODELS: Model[] = [
     outputPrice: 2.19,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: ['low', 'medium', 'high'],
+    reasoningEfforts: effortOptions('low', 'medium', 'high'),
     speedOptions: ['standard', 'fast'],
   },
   {
@@ -144,7 +161,7 @@ export const MODELS: Model[] = [
     outputPrice: 0.88,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: ['none', 'low', 'medium', 'high'],
+    reasoningEfforts: effortOptions('none', 'low', 'medium', 'high'),
     speedOptions: ['standard', 'fast'],
   },
   {
@@ -182,7 +199,7 @@ export const MODELS: Model[] = [
     outputPrice: 10,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: ['low', 'medium', 'high'],
+    reasoningEfforts: effortOptions('low', 'medium', 'high'),
     speedOptions: ['standard'],
   },
   {
@@ -201,7 +218,7 @@ export const MODELS: Model[] = [
     outputPrice: 15,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: ['low', 'high'],
+    reasoningEfforts: effortOptions('low', 'high'),
     speedOptions: ['standard', 'fast'],
   },
 ]

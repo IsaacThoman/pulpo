@@ -1,4 +1,13 @@
-export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high'
+/** Internal reasoning effort name sent to the model API. */
+export type ReasoningEffort = string
+
+export interface ReasoningEffortOption {
+  /** User-facing label shown in the composer. */
+  displayName: string
+  /** Provider-facing value sent to the model API. */
+  internalName: ReasoningEffort
+}
+
 export type SpeedOption = 'standard' | 'fast'
 
 export interface Model {
@@ -22,7 +31,7 @@ export interface Model {
   enabled: boolean
   pinned?: boolean
   /** Reasoning effort options shown in the chat composer (admin-configured; empty = hide control). */
-  reasoningEfforts: ReasoningEffort[]
+  reasoningEfforts: ReasoningEffortOption[]
   /** Speed options shown in the chat composer (admin-configured; empty = hide control). */
   speedOptions: SpeedOption[]
 }

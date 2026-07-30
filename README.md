@@ -37,20 +37,19 @@ npm run dev
 - **API keys** — create/revoke OpenAI-compatible keys with scopes, model restrictions, monthly
   budgets; one-time secret reveal; curl + OpenAI SDK snippets
 - **Settings** — general (theme), account, personalization (custom instructions, memories),
-  interface, audio, API keys, data controls, about
+  interface, API keys, data controls, about
 - **Admin panel** (`/admin`, options lifted from chat-deathgrips / Open WebUI):
   - Dashboard — 24h stats, quick links, system info
-  - Users — role selects, add/edit modals; Groups tab with default-permission matrix
+  - Users — role selects and add/edit modals
   - Models — search + view filters, per-model menus, enable toggles; full **model editor** with
-    system prompt, **chat options** (which reasoning effort / speed choices appear in the
-    composer), JSON preview, and the fork's signature
+    system prompt, **chat options** (custom reasoning display/internal-name pairs and speed
+    choices shown in the composer), JSON preview, and the fork's signature
     **light/dark profile-image upload grid**
   - Functions — pipe/filter/action/event cards w/ valves, global toggles
   - Evaluations — arena model sets, Elo leaderboard, feedback table w/ export
-  - Settings — General feature toggles, Authentication (roles, signup, API keys, JWT),
+  - Settings — General feature toggles, Authentication (roles, signup, API keys),
     Connections (OpenAI/Ollama endpoints w/ verify), Interface (task model and background
-    generation tasks), Integrations (tool/terminal/knowledge servers), and Database
-    (import/export)
+    generation tasks), and Database (import/export)
 - Light/dark/system theme, ⌘K search, ⌘B sidebar toggle, ⌘, settings
 
 ## Mock notes

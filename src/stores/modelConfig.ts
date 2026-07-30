@@ -1,9 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { Model, ReasoningEffort, SpeedOption } from '@/lib/types'
+import type {
+  Model,
+  ReasoningEffort,
+  ReasoningEffortOption,
+  SpeedOption,
+} from '@/lib/types'
 
 export interface ChatOptions {
-  reasoningEfforts: ReasoningEffort[]
+  reasoningEfforts: ReasoningEffortOption[]
   speedOptions: SpeedOption[]
 }
 
@@ -24,20 +29,42 @@ export const useModelConfig = create<ModelConfigState>()(
   )
 )
 
-/** Effective chat options for a model: admin override wins, else the model's defaults. */
-export function chatOptionsFor(model: Model, overrides: Record<string, ChatOptions>): ChatOptions {
-  return (
-    overrides[model.id] ?? {
-      reasoningEfforts: model.reasoningEfforts,
-      speedOptions: model.speedOptions,
-    }
+function displayNameForLegacyEffort(internalName: string): string {
+  if (internalName === 'none') return 'Off'
+  return `${internalName.charAt(0).toUpperCase()}${internalName.slice(1)}`
+}
+
+/** Convert persisted pre-pair options to the current display/internal-name shape. */
+function normalizeReasoningEfforts(
+  efforts: Array<ReasoningEffortOption | ReasoningEffort> | undefined
+): ReasoningEffortOption[] {
+  return (efforts ?? []).map((effort) =>
+    typeof effort === 'string'
+      ? { displayName: displayNameForLegacyEffort(effort), internalName: effort }
+      : effort
   )
 }
 
-function defaultEffort(efforts: ReasoningEffort[]): ReasoningEffort | undefined {
+/** Effective chat options for a model: admin override wins, else the model's defaults. */
+export function chatOptionsFor(model: Model, overrides: Record<string, ChatOptions>): ChatOptions {
+  const options = overrides[model.id] ?? {
+    reasoningEfforts: model.reasoningEfforts,
+    speedOptions: model.speedOptions,
+  }
+  return {
+    ...options,
+    reasoningEfforts: normalizeReasoningEfforts(options.reasoningEfforts),
+  }
+}
+
+function defaultEffort(efforts: ReasoningEffortOption[]): ReasoningEffort | undefined {
   if (efforts.length === 0) return undefined
-  if (efforts.includes('medium')) return 'medium'
-  return efforts.find((e) => e !== 'none') ?? efforts[0]
+  const medium = efforts.find((effort) => effort.internalName === 'medium')
+  if (medium) return medium.internalName
+  return (
+    efforts.find((effort) => effort.internalName !== 'none')?.internalName ??
+    efforts[0].internalName
+  )
 }
 
 function defaultSpeed(speeds: SpeedOption[]): SpeedOption | undefined {
@@ -52,7 +79,8 @@ export function resolveGeneration(
 ): { reasoningEffort?: ReasoningEffort; speed?: SpeedOption } {
   return {
     reasoningEffort:
-      prefs?.reasoningEffort && options.reasoningEfforts.includes(prefs.reasoningEffort)
+      prefs?.reasoningEffort &&
+      options.reasoningEfforts.some((effort) => effort.internalName === prefs.reasoningEffort)
         ? prefs.reasoningEffort
         : defaultEffort(options.reasoningEfforts),
     speed:

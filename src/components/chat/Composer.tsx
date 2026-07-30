@@ -8,6 +8,7 @@ import {
   Plus,
   Square,
   Zap,
+  ZapOff,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -23,15 +24,8 @@ import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { getModel } from '@/lib/mock'
-import type { ReasoningEffort, SpeedOption } from '@/lib/types'
+import type { SpeedOption } from '@/lib/types'
 import { cn } from '@/lib/utils'
-
-const EFFORT_LABELS: Record<ReasoningEffort, string> = {
-  none: 'Off',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-}
 
 const SPEED_LABELS: Record<SpeedOption, string> = {
   standard: 'Standard',
@@ -62,6 +56,9 @@ export function Composer({
   const prefs = resolveGeneration(options, generation[modelId])
   const showEffort = options.reasoningEfforts.length > 0
   const showSpeed = options.speedOptions.length > 1
+  const selectedEffort = options.reasoningEfforts.find(
+    (effort) => effort.internalName === prefs.reasoningEffort
+  )
 
   useEffect(() => {
     ref.current?.focus()
@@ -124,11 +121,14 @@ export function Composer({
                   aria-label="Generation options"
                 >
                   {showEffort && <Brain className="size-3.5" />}
-                  {showEffort && prefs.reasoningEffort && (
-                    <span>{EFFORT_LABELS[prefs.reasoningEffort]}</span>
-                  )}
+                  {showEffort && selectedEffort && <span>{selectedEffort.displayName}</span>}
                   {showEffort && showSpeed && <span className="text-border">·</span>}
-                  {showSpeed && <Zap className="size-3.5" />}
+                  {showSpeed &&
+                    (prefs.speed === 'standard' ? (
+                      <ZapOff className="size-3.5" />
+                    ) : (
+                      <Zap className="size-3.5" />
+                    ))}
                   {showSpeed && prefs.speed && <span>{SPEED_LABELS[prefs.speed]}</span>}
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
@@ -141,12 +141,16 @@ export function Composer({
                     </DropdownMenuLabel>
                     {options.reasoningEfforts.map((effort) => (
                       <DropdownMenuItem
-                        key={effort}
-                        onClick={() => setGeneration(modelId, { reasoningEffort: effort })}
+                        key={effort.internalName}
+                        onClick={() =>
+                          setGeneration(modelId, { reasoningEffort: effort.internalName })
+                        }
                         className="justify-between"
                       >
-                        {EFFORT_LABELS[effort]}
-                        {prefs.reasoningEffort === effort && <Check className="size-3.5" />}
+                        {effort.displayName}
+                        {prefs.reasoningEffort === effort.internalName && (
+                          <Check className="size-3.5" />
+                        )}
                       </DropdownMenuItem>
                     ))}
                   </>

@@ -12,11 +12,12 @@ import {
   Plus,
   Search,
   Settings2,
+  Trash2,
   Upload,
 } from 'lucide-react'
 import { MODELS } from '@/lib/mock'
 import { formatNumber } from '@/lib/format'
-import type { Model, ReasoningEffort, SpeedOption } from '@/lib/types'
+import type { Model, SpeedOption } from '@/lib/types'
 import { chatOptionsFor, useModelConfig } from '@/stores/modelConfig'
 import { ModelIcon } from '@/components/ModelIcon'
 import { AiLogo } from '@/components/ProviderLogo'
@@ -51,13 +52,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-
-const ALL_EFFORTS: { value: ReasoningEffort; label: string }[] = [
-  { value: 'none', label: 'Off' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-]
 
 const ALL_SPEEDS: { value: SpeedOption; label: string }[] = [
   { value: 'standard', label: 'Standard' },
@@ -151,6 +145,13 @@ function ModelEditorDialog({
   const overrides = useModelConfig((s) => s.overrides)
   const setOptions = useModelConfig((s) => s.setOptions)
   const [chatOptions, setChatOptions] = useState(() => chatOptionsFor(model, overrides))
+  const reasoningInternalNames = chatOptions.reasoningEfforts.map((effort) =>
+    effort.internalName.trim()
+  )
+  const reasoningEffortsValid =
+    chatOptions.reasoningEfforts.every(
+      (effort) => effort.displayName.trim() && effort.internalName.trim()
+    ) && new Set(reasoningInternalNames).size === reasoningInternalNames.length
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -235,51 +236,113 @@ function ModelEditorDialog({
             <div className="space-y-2">
               <Label>Chat options</Label>
               <p className="text-[11px] text-muted-foreground">
-                Which reasoning effort and speed choices users can pick in the composer. Disable
-                all options in a group to hide its control.
+                Configure the choices users can pick in the composer. Reasoning internal names are
+                sent to the model API.
               </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="mb-1 text-xs font-medium text-muted-foreground">
-                    Reasoning effort
-                  </div>
-                  {ALL_EFFORTS.map(({ value, label }) => (
-                    <label
-                      key={value}
-                      className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
-                    >
-                      {label}
-                      <Switch
-                        checked={chatOptions.reasoningEfforts.includes(value)}
-                        onCheckedChange={() =>
-                          setChatOptions((o) => ({
-                            ...o,
-                            reasoningEfforts: toggleInList(o.reasoningEfforts, value),
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="text-xs font-medium text-muted-foreground">Reasoning effort</div>
+                  {chatOptions.reasoningEfforts.length > 0 && (
+                    <div className="grid grid-cols-[1fr_1fr_32px] gap-2 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                      <span>Display name</span>
+                      <span>Internal name</span>
+                      <span />
+                    </div>
+                  )}
+                  {chatOptions.reasoningEfforts.map((effort, index) => (
+                    <div key={index} className="grid grid-cols-[1fr_1fr_32px] gap-2">
+                      <Input
+                        value={effort.displayName}
+                        onChange={(event) =>
+                          setChatOptions((options) => ({
+                            ...options,
+                            reasoningEfforts: options.reasoningEfforts.map((option, optionIndex) =>
+                              optionIndex === index
+                                ? { ...option, displayName: event.target.value }
+                                : option
+                            ),
                           }))
                         }
+                        placeholder="e.g. High"
+                        className="h-8"
                       />
-                    </label>
+                      <Input
+                        value={effort.internalName}
+                        onChange={(event) =>
+                          setChatOptions((options) => ({
+                            ...options,
+                            reasoningEfforts: options.reasoningEfforts.map((option, optionIndex) =>
+                              optionIndex === index
+                                ? { ...option, internalName: event.target.value }
+                                : option
+                            ),
+                          }))
+                        }
+                        placeholder="e.g. high"
+                        className="h-8 font-mono text-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Remove ${effort.displayName || 'reasoning effort'}`}
+                        onClick={() =>
+                          setChatOptions((options) => ({
+                            ...options,
+                            reasoningEfforts: options.reasoningEfforts.filter(
+                              (_, optionIndex) => optionIndex !== index
+                            ),
+                          }))
+                        }
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   ))}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setChatOptions((options) => ({
+                        ...options,
+                        reasoningEfforts: [
+                          ...options.reasoningEfforts,
+                          { displayName: '', internalName: '' },
+                        ],
+                      }))
+                    }
+                  >
+                    <Plus />
+                    Add effort
+                  </Button>
+                  {!reasoningEffortsValid && (
+                    <p className="text-xs text-destructive">
+                      Each effort needs a display name and a unique internal name.
+                    </p>
+                  )}
                 </div>
                 <div>
                   <div className="mb-1 text-xs font-medium text-muted-foreground">Speed</div>
-                  {ALL_SPEEDS.map(({ value, label }) => (
-                    <label
-                      key={value}
-                      className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
-                    >
-                      {label}
-                      <Switch
-                        checked={chatOptions.speedOptions.includes(value)}
-                        onCheckedChange={() =>
-                          setChatOptions((o) => ({
-                            ...o,
-                            speedOptions: toggleInList(o.speedOptions, value),
-                          }))
-                        }
-                      />
-                    </label>
-                  ))}
+                  <div className="grid grid-cols-2 gap-2">
+                    {ALL_SPEEDS.map(({ value, label }) => (
+                      <label
+                        key={value}
+                        className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
+                      >
+                        {label}
+                        <Switch
+                          checked={chatOptions.speedOptions.includes(value)}
+                          onCheckedChange={() =>
+                            setChatOptions((o) => ({
+                              ...o,
+                              speedOptions: toggleInList(o.speedOptions, value),
+                            }))
+                          }
+                        />
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -313,7 +376,10 @@ function ModelEditorDialog({
       profile_image_url_dark: `/models/${model.id}/dark.png`,
       description: model.description,
       chat_options: {
-        reasoning_efforts: chatOptions.reasoningEfforts,
+        reasoning_efforts: chatOptions.reasoningEfforts.map((effort) => ({
+          display_name: effort.displayName,
+          internal_name: effort.internalName,
+        })),
         speed_options: chatOptions.speedOptions,
       },
     },
@@ -331,8 +397,15 @@ function ModelEditorDialog({
             Cancel
           </Button>
           <Button
+            disabled={!reasoningEffortsValid}
             onClick={() => {
-              setOptions(model.id, chatOptions)
+              setOptions(model.id, {
+                ...chatOptions,
+                reasoningEfforts: chatOptions.reasoningEfforts.map((effort) => ({
+                  displayName: effort.displayName.trim(),
+                  internalName: effort.internalName.trim(),
+                })),
+              })
               onClose()
             }}
           >
