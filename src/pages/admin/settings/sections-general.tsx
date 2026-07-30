@@ -68,12 +68,8 @@ export function GeneralSection() {
 export function AuthenticationSection() {
   const [t, setT] = useState({
     role: 'pending' as string,
-    group: 'none' as string,
     signup: true,
     apiKeys: true,
-    apiKeyRestrict: false,
-    allowedEndpoints: '/chat/completions,/models',
-    jwt: '10d',
     pendingDetails: true,
     adminEmail: 'isaac@pulpo.dev',
   })
@@ -92,44 +88,8 @@ export function AuthenticationSection() {
             { value: 'admin', label: 'admin' },
           ]}
         />
-        <SelectField
-          label="Default group"
-          value={t.group}
-          onChange={(v) => s('group', v)}
-          options={[
-            { value: 'none', label: 'None' },
-            { value: 'engineering', label: 'engineering' },
-            { value: 'externals', label: 'externals' },
-          ]}
-        />
         <Toggle label="Enable new sign ups" checked={t.signup} onChange={(v) => s('signup', v)} />
         <Toggle label="Enable API keys" checked={t.apiKeys} onChange={(v) => s('apiKeys', v)} />
-        {t.apiKeys && (
-          <>
-            <Toggle
-              label="API key endpoint restrictions"
-              checked={t.apiKeyRestrict}
-              onChange={(v) => s('apiKeyRestrict', v)}
-              indent
-            />
-            {t.apiKeyRestrict && (
-              <TextField
-                label="Allowed endpoints"
-                value={t.allowedEndpoints}
-                onChange={(v) => s('allowedEndpoints', v)}
-                mono
-                indent
-              />
-            )}
-          </>
-        )}
-        <TextField
-          label="JWT expiration"
-          hint='e.g. "30m", "1h", "10d". "-1" disables expiry (not recommended).'
-          value={t.jwt}
-          onChange={(v) => s('jwt', v)}
-          mono
-        />
       </Section>
 
       <Section title="Pending accounts">
