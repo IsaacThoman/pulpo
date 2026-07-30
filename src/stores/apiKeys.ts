@@ -28,7 +28,7 @@ const seedKeys: ApiKey[] = [
   },
   {
     id: 'key-2',
-    name: 'home-assistant TTS',
+    name: 'home-assistant voice input',
     prefix: 'sk-pulpo-Qx91',
     createdAt: Date.now() - 40 * 86_400_000,
     lastUsedAt: Date.now() - 26 * 3_600_000,

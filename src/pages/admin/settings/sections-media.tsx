@@ -99,8 +99,6 @@ export function ImagesSection() {
 
 export function AudioSection() {
   const [stt, setStt] = useState('whisper')
-  const [tts, setTts] = useState('openai')
-  const [splitting, setSplitting] = useState('punctuation')
 
   return (
     <div>
@@ -144,57 +142,6 @@ export function AudioSection() {
           </>
         )}
         {stt !== 'web' && <TextField label="Supported MIME types" value="audio/*,video/*" onChange={() => {}} />}
-      </Section>
-
-      <Section title="Text-to-speech">
-        <SelectField
-          label="TTS engine"
-          value={tts}
-          onChange={setTts}
-          options={[
-            { value: 'web', label: 'Web API' },
-            { value: 'transformers', label: 'Transformers (local)' },
-            { value: 'openai', label: 'OpenAI' },
-            { value: 'elevenlabs', label: 'ElevenLabs' },
-            { value: 'azure', label: 'Azure AI Speech' },
-            { value: 'mistral', label: 'MistralAI' },
-          ]}
-        />
-        {tts === 'openai' && (
-          <>
-            <TextField label="API base URL" value="" onChange={() => {}} mono indent />
-            <SecretField label="API key" value="" onChange={() => {}} indent />
-            <TextField label="TTS voice" value="alloy" onChange={() => {}} indent />
-            <TextField label="TTS model" value="tts-1" onChange={() => {}} indent />
-          </>
-        )}
-        {tts === 'elevenlabs' && (
-          <>
-            <SecretField label="API key" value="" onChange={() => {}} indent />
-            <TextField label="Voice" value="Brian" onChange={() => {}} indent />
-            <TextField label="Model" value="eleven_multilingual_v2" onChange={() => {}} indent />
-          </>
-        )}
-        {tts === 'azure' && (
-          <>
-            <SecretField label="API key" value="" onChange={() => {}} indent />
-            <TextField label="Azure region" value="eastus" onChange={() => {}} indent />
-          </>
-        )}
-        {tts === 'transformers' && (
-          <TextField label="TTS model" value="microsoft/speecht5_tts" onChange={() => {}} mono indent />
-        )}
-        <SelectField
-          label="Response splitting"
-          hint="How responses are chunked before synthesis."
-          value={splitting}
-          onChange={setSplitting}
-          options={[
-            { value: 'punctuation', label: 'punctuation' },
-            { value: 'paragraphs', label: 'paragraphs' },
-            { value: 'none', label: 'none' },
-          ]}
-        />
       </Section>
 
       <SaveBar />

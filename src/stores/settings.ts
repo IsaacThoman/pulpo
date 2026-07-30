@@ -14,8 +14,6 @@ interface SettingsState {
   notifications: boolean
   customInstructions: string
   nickname: string
-  ttsVoice: string
-  autoReadAloud: boolean
   setTheme: (t: Theme) => void
   set: <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => void
 }
@@ -33,8 +31,6 @@ export const useSettings = create<SettingsState>()(
       notifications: true,
       customInstructions: '',
       nickname: '',
-      ttsVoice: 'alloy',
-      autoReadAloud: false,
       setTheme: (theme) => set({ theme }),
       set: (key, value) => set({ [key]: value } as Partial<SettingsState>),
     }),

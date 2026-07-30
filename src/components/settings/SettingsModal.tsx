@@ -278,23 +278,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Audio</h2>
                   <Separator className="my-3" />
-                  <Row label="Text-to-speech voice">
-                    <Select value={s.ttsVoice} onValueChange={(v) => s.set('ttsVoice', v)}>
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'].map((v) => (
-                          <SelectItem key={v} value={v}>
-                            {v}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Row>
-                  <Row label="Auto read-aloud" hint="Speak responses as they complete.">
-                    <Switch checked={s.autoReadAloud} onCheckedChange={(v) => s.set('autoReadAloud', v)} />
-                  </Row>
                   <Row label="Speech-to-text">
                     <Select defaultValue="whisper">
                       <SelectTrigger className="w-40">

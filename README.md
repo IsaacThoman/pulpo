@@ -20,7 +20,7 @@ npm run dev
 ## Features
 
 - **Chat** — streaming simulation (token-by-token), reasoning blocks for reasoning models,
-  markdown + code blocks, message actions (copy / regenerate / edit / rate / read-aloud),
+  markdown + code blocks, message actions (copy / regenerate / edit / rate),
   per-message token + cost + latency metadata, stop generation
 - **Sidebar** — collapsible, pinned chats, folders, time-grouped history, per-chat menus
   (pin / rename / move / share / archive / delete), pinned-model shortcuts, archived chats
@@ -49,8 +49,8 @@ npm run dev
     signup, API keys, JWT, LDAP, OAuth), Connections (OpenAI/Ollama endpoints w/ verify, plus
     the fork's **usage portal** config), Interface (task model, title/follow-up/tag generation),
     Web Search (15+ engines w/ per-engine fields), Documents (extraction engines, embedding,
-    hybrid search, RAG template, danger zone), Images (4 engines), Audio (6 STT + 6 TTS
-    engines), Code Execution (pyodide/jupyter), Integrations (tool/terminal/knowledge servers),
+    hybrid search, RAG template, danger zone), Images (4 engines), Audio (6 STT engines),
+    Code Execution (pyodide/jupyter), Integrations (tool/terminal/knowledge servers),
     Database (import/export)
 - Light/dark/system theme, ⌘K search, ⌘B sidebar toggle, ⌘, settings
 

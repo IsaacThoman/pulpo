@@ -8,7 +8,6 @@ import {
   RefreshCw,
   ThumbsDown,
   ThumbsUp,
-  Volume2,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
 import { getModel } from '@/lib/mock'
@@ -191,9 +190,6 @@ export const MessageItem = memo(function MessageItem({
               onClick={() => rateMessage(chat.id, message.id, message.rating === 'down' ? null : 'down')}
             >
               <ThumbsDown className="size-3.5" />
-            </ActionButton>
-            <ActionButton label="Read aloud">
-              <Volume2 className="size-3.5" />
             </ActionButton>
             <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id)}>
               <RefreshCw className="size-3.5" />
