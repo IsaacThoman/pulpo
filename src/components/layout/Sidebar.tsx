@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   BarChart3,
   ChevronRight,
-  Copy,
   Folder as FolderIcon,
   FolderInput,
   KeyRound,
@@ -406,16 +405,6 @@ export function Sidebar({
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
               Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => navigator.clipboard?.writeText('https://pulpo.dev/u/token-isaac').catch(() => {})}
-            >
-              <Copy />
-              Copy usage portal link
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/usage')}>
-              <BarChart3 />
-              Usage dashboard
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate('/admin')}>
