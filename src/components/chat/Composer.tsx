@@ -4,7 +4,6 @@ import {
   Brain,
   Check,
   ChevronDown,
-  Code2,
   Mic,
   Plus,
   Square,
@@ -49,7 +48,6 @@ export function Composer({
   centered?: boolean
 }) {
   const [value, setValue] = useState('')
-  const [codeInterp, setCodeInterp] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sendMessage = useChat((s) => s.sendMessage)
@@ -86,34 +84,6 @@ export function Composer({
     })
   }
 
-  const toggle = (
-    label: string,
-    active: boolean,
-    set: (v: boolean) => void,
-    icon: React.ReactNode
-  ) => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          onClick={() => set(!active)}
-          className={cn(
-            'flex size-8 cursor-pointer items-center justify-center rounded-full border transition-colors',
-            active
-              ? 'border-foreground/20 bg-secondary text-foreground'
-              : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'
-          )}
-          aria-label={label}
-          aria-pressed={active}
-        >
-          {icon}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top">
-        {label} {active ? '(on)' : '(off)'}
-      </TooltipContent>
-    </Tooltip>
-  )
-
   return (
     <div className={cn('w-full', centered && 'px-2')}>
       <div className="rounded-2xl border bg-card shadow-sm transition-shadow focus-within:shadow-md">
@@ -144,8 +114,6 @@ export function Composer({
           >
             <Plus className="size-4.5" />
           </button>
-
-          {toggle('Code interpreter', codeInterp, setCodeInterp, <Code2 className="size-4" />)}
 
           {(showEffort || showSpeed) && (
             <DropdownMenu>
