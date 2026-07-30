@@ -6,6 +6,7 @@ import {
   Folder as FolderIcon,
   FolderInput,
   KeyRound,
+  LogOut,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -406,14 +407,12 @@ export function Sidebar({
               <Settings />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => navigate('/admin')}>
               <ShieldCheck />
               Admin panel
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive">
-              <Trash2 />
+              <LogOut />
               Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>
