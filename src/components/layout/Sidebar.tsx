@@ -27,7 +27,6 @@ import { useChat } from '@/stores/chat'
 import { chatTimeGroup, timeAgo } from '@/lib/format'
 import type { Chat } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
@@ -302,7 +301,7 @@ export function Sidebar({
       </div>
 
       {/* The complete menu shares one scroll position; the header and account stay anchored. */}
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
           {iconBtn('New chat', () => navigate('/'), <SquarePen className="size-4" />)}
@@ -384,7 +383,7 @@ export function Sidebar({
             })}
           </div>
         </div>
-      </ScrollArea>
+      </div>
 
       {/* user footer */}
       <div className="border-t border-sidebar-border p-2">
