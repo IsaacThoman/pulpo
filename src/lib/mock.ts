@@ -287,13 +287,13 @@ export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
 // ---------------------------------------------------------------------------
 
 export const MONITOR_USERS: MonitorUser[] = [
-  { id: 'u-isaac', name: 'Isaac Thoman', nickname: null, email: 'isaac@kimi.dev', role: 'admin', balance: 84.12, joinedAt: Date.now() - 340 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#fafafa' },
-  { id: 'u-maya', name: 'Maya Chen', nickname: 'myc', email: 'maya@kimi.dev', role: 'user', balance: 31.77, joinedAt: Date.now() - 290 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#60a5fa' },
-  { id: 'u-jonas', name: 'Jonas Weber', nickname: null, email: 'jonas@kimi.dev', role: 'user', balance: 12.04, joinedAt: Date.now() - 210 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#34d399' },
-  { id: 'u-priya', name: 'Priya Nair', nickname: 'pri', email: 'priya@kimi.dev', role: 'user', balance: 55.9, joinedAt: Date.now() - 180 * 86_400_000, blocked: false, showOnLeaderboard: false, barColor: '#f472b6' },
-  { id: 'u-tom', name: 'Tom Alvarez', nickname: null, email: 'tom@kimi.dev', role: 'user', balance: 0.42, joinedAt: Date.now() - 96 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#fbbf24' },
-  { id: 'u-elena', name: 'Elena Rossi', nickname: null, email: 'elena@kimi.dev', role: 'user', balance: 23.31, joinedAt: Date.now() - 64 * 86_400_000, blocked: true, showOnLeaderboard: false, barColor: '#a78bfa' },
-  { id: 'u-sam', name: 'Sam Okafor', nickname: 'sammo', email: 'sam@kimi.dev', role: 'user', balance: 47.65, joinedAt: Date.now() - 30 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#fb923c' },
+  { id: 'u-isaac', name: 'Isaac Thoman', nickname: null, email: 'isaac@pulpo.dev', role: 'admin', balance: 84.12, joinedAt: Date.now() - 340 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#fafafa' },
+  { id: 'u-maya', name: 'Maya Chen', nickname: 'myc', email: 'maya@pulpo.dev', role: 'user', balance: 31.77, joinedAt: Date.now() - 290 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#60a5fa' },
+  { id: 'u-jonas', name: 'Jonas Weber', nickname: null, email: 'jonas@pulpo.dev', role: 'user', balance: 12.04, joinedAt: Date.now() - 210 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#34d399' },
+  { id: 'u-priya', name: 'Priya Nair', nickname: 'pri', email: 'priya@pulpo.dev', role: 'user', balance: 55.9, joinedAt: Date.now() - 180 * 86_400_000, blocked: false, showOnLeaderboard: false, barColor: '#f472b6' },
+  { id: 'u-tom', name: 'Tom Alvarez', nickname: null, email: 'tom@pulpo.dev', role: 'user', balance: 0.42, joinedAt: Date.now() - 96 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#fbbf24' },
+  { id: 'u-elena', name: 'Elena Rossi', nickname: null, email: 'elena@pulpo.dev', role: 'user', balance: 23.31, joinedAt: Date.now() - 64 * 86_400_000, blocked: true, showOnLeaderboard: false, barColor: '#a78bfa' },
+  { id: 'u-sam', name: 'Sam Okafor', nickname: 'sammo', email: 'sam@pulpo.dev', role: 'user', balance: 47.65, joinedAt: Date.now() - 30 * 86_400_000, blocked: false, showOnLeaderboard: true, barColor: '#fb923c' },
 ]
 
 export const CURRENT_USER_ID = 'u-isaac'

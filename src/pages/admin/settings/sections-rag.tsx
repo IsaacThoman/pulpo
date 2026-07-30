@@ -47,7 +47,7 @@ export function WebSearchSection() {
             />
             {engine === 'searxng' && (
               <>
-                <TextField label="SearXNG query URL" value="https://searx.kimi.dev/search?q=<query>" onChange={() => {}} mono indent />
+                <TextField label="SearXNG query URL" value="https://searx.pulpo.dev/search?q=<query>" onChange={() => {}} mono indent />
                 <TextField label="Search language" value="en" onChange={() => {}} indent />
               </>
             )}

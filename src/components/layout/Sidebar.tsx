@@ -252,29 +252,39 @@ export function Sidebar({
       )}
     >
       {/* header */}
-      <div className={cn('flex items-center gap-1 p-2', collapsed && 'flex-col')}>
-        <button
-          className="flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
-          onClick={() => navigate('/')}
-          aria-label="Home"
-        >
-          <div className="flex size-6 items-center justify-center rounded-md bg-primary text-[13px] font-bold text-primary-foreground">
-            k
-          </div>
-        </button>
-        <div className="flex-1" />
+      <div className="flex items-center gap-1 p-2">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
-              onClick={onToggle}
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="group/logo flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
+              onClick={collapsed ? onToggle : () => navigate('/')}
+              aria-label={collapsed ? 'Open sidebar' : 'Home'}
             >
-              {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
+              <img
+                src="/pulpo-smiley.png"
+                alt="Pulpo"
+                className={cn('size-6', collapsed && 'group-hover/logo:hidden')}
+              />
+              {collapsed && <PanelLeftOpen className="hidden size-4 group-hover/logo:block" />}
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">{collapsed ? 'Expand' : 'Collapse'}</TooltipContent>
+          {collapsed && <TooltipContent side="right">Open sidebar</TooltipContent>}
         </Tooltip>
+        <div className="flex-1" />
+        {!collapsed && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
+                onClick={onToggle}
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Collapse</TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       {/* primary nav */}
@@ -403,7 +413,7 @@ export function Sidebar({
               {!collapsed && (
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium">Isaac Thoman</div>
-                  <div className="truncate text-xs text-muted-foreground">isaac@kimi.dev</div>
+                  <div className="truncate text-xs text-muted-foreground">isaac@pulpo.dev</div>
                 </div>
               )}
             </button>
@@ -414,7 +424,7 @@ export function Sidebar({
               Settings
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => navigator.clipboard?.writeText('https://kimi.dev/u/token-isaac').catch(() => {})}
+              onClick={() => navigator.clipboard?.writeText('https://pulpo.dev/u/token-isaac').catch(() => {})}
             >
               <Copy />
               Copy usage portal link

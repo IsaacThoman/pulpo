@@ -38,7 +38,7 @@ export function GeneralSection() {
     webhooks: true,
     userStatus: true,
     watermark: '',
-    webuiUrl: 'https://chat.kimi.dev',
+    webuiUrl: 'https://chat.pulpo.dev',
   })
   const [banners, setBanners] = useState<Banner[]>(SEED_BANNERS)
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
@@ -46,7 +46,7 @@ export function GeneralSection() {
   return (
     <div>
       <Section title="Version">
-        <Field label="kimi" hint="0.10.2-mock — you are on the latest version.">
+        <Field label="pulpo" hint="0.10.2-mock — you are on the latest version.">
           <Button variant="outline" size="sm">
             Check for updates
           </Button>
@@ -168,7 +168,7 @@ export function AuthenticationSection() {
     allowedEndpoints: '/chat/completions,/models',
     jwt: '10d',
     pendingDetails: true,
-    adminEmail: 'isaac@kimi.dev',
+    adminEmail: 'isaac@pulpo.dev',
     ldap: false,
     oauth: false,
   })
@@ -249,7 +249,7 @@ export function AuthenticationSection() {
             <SecretField label="Application DN password" value="" onChange={() => {}} indent />
             <TextField label="Attribute for mail" value="mail" onChange={() => {}} indent />
             <TextField label="Attribute for username" value="uid" onChange={() => {}} indent />
-            <TextField label="Search base" value="ou=users,dc=kimi,dc=dev" onChange={() => {}} indent />
+            <TextField label="Search base" value="ou=users,dc=pulpo,dc=dev" onChange={() => {}} indent />
           </>
         )}
       </Section>
@@ -259,8 +259,8 @@ export function AuthenticationSection() {
         {t.oauth && (
           <>
             <TextField label="Provider name" value="Keycloak" onChange={() => {}} indent />
-            <TextField label="Provider URL" value="https://sso.kimi.dev/realms/main" onChange={() => {}} mono indent />
-            <TextField label="Client ID" value="kimi-webui" onChange={() => {}} indent />
+            <TextField label="Provider URL" value="https://sso.pulpo.dev/realms/main" onChange={() => {}} mono indent />
+            <TextField label="Client ID" value="pulpo-webui" onChange={() => {}} indent />
             <SecretField label="Client secret" value="" onChange={() => {}} indent />
             <TextField label="Scopes" value="openid email profile" onChange={() => {}} indent />
             <Toggle label="Merge accounts by email" checked={true} onChange={() => {}} indent />

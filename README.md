@@ -1,4 +1,4 @@
-# kimi
+# pulpo
 
 A ChatGPT/Open WebUI-style chat interface **UI mockup** — no backend, all data is mocked locally.
 

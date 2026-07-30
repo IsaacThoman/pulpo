@@ -120,7 +120,7 @@ export function UsersPage() {
                           title="Copy viewer login link"
                           onClick={() => {
                             navigator.clipboard
-                              ?.writeText(`https://kimi.dev/u/token-${u.id}`)
+                              ?.writeText(`https://pulpo.dev/u/token-${u.id}`)
                               .catch(() => {})
                             setCopied(u.id)
                             setTimeout(() => setCopied(null), 1200)

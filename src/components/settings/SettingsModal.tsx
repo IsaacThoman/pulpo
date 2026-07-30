@@ -160,7 +160,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </Avatar>
                     <div>
                       <div className="font-medium">Isaac Thoman</div>
-                      <div className="text-sm text-muted-foreground">isaac@kimi.dev · admin</div>
+                      <div className="text-sm text-muted-foreground">isaac@pulpo.dev · admin</div>
                     </div>
                     <div className="flex-1" />
                     <Button variant="outline" size="sm">
@@ -210,7 +210,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <div className="py-3">
                     <Label className="text-sm font-medium">Memories</Label>
                     <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-                      Facts kimi has remembered across chats.
+                      Facts pulpo has remembered across chats.
                     </p>
                     <div className="space-y-1.5">
                       {['Prefers zustand over redux', 'Uses pnpm on personal projects', 'Lives in EST'].map(
@@ -358,7 +358,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">API endpoint</span>
-                      <span className="font-mono text-xs">https://api.kimi.dev/v1</span>
+                      <span className="font-mono text-xs">https://api.pulpo.dev/v1</span>
                     </div>
                   </div>
                 </div>

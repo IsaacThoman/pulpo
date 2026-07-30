@@ -18,7 +18,7 @@ export const useModels = create<ModelsState>()(
             : [...get().favorites, id],
         }),
     }),
-    { name: 'kimi-models' }
+    { name: 'pulpo-models' }
   )
 )
 

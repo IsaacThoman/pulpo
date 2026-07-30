@@ -91,7 +91,7 @@ export function DashboardPage() {
         <CardContent className="space-y-1.5 px-5 pb-5 text-sm">
           {[
             ['Version', '0.10.2-mock (latest)'],
-            ['Usage monitor', 'connected · https://monitor.kimi.dev'],
+            ['Usage monitor', 'connected · https://monitor.pulpo.dev'],
             ['Database', 'sqlite · 214 MB'],
             ['Vector storage', 'qdrant · 38,412 vectors'],
             ['Update channel', 'stable'],

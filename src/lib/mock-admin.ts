@@ -122,7 +122,7 @@ export interface Banner {
 }
 
 export const SEED_BANNERS: Banner[] = [
-  { id: 'bn-1', type: 'info', content: 'kimi will be down for maintenance Sunday 03:00–03:30 UTC.', dismissible: true },
+  { id: 'bn-1', type: 'info', content: 'pulpo will be down for maintenance Sunday 03:00–03:30 UTC.', dismissible: true },
 ]
 
 export interface ToolServer {

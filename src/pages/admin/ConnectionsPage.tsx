@@ -57,7 +57,7 @@ export function ConnectionsPage() {
   const [verify, setVerify] = useState<'idle' | 'checking' | 'ok' | 'fail'>('idle')
   // deathgrips usage portal config
   const [usagePortal, setUsagePortal] = useState(true)
-  const [usageEndpoint, setUsageEndpoint] = useState('https://monitor.kimi.dev/api/portal')
+  const [usageEndpoint, setUsageEndpoint] = useState('https://monitor.pulpo.dev/api/portal')
   const [usageKey, setUsageKey] = useState('')
 
   const byType = (t: 'openai' | 'ollama') => conns.filter((c) => c.type === t)

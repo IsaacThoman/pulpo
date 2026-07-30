@@ -179,7 +179,7 @@ export function Composer({
         </div>
       </div>
       <p className="mt-2 text-center text-[11px] text-muted-foreground">
-        kimi can make mistakes. check important info. · enter to send, shift+enter for newline
+        pulpo can make mistakes. check important info. · enter to send, shift+enter for newline
       </p>
     </div>
   )

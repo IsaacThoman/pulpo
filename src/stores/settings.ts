@@ -38,7 +38,7 @@ export const useSettings = create<SettingsState>()(
       setTheme: (theme) => set({ theme }),
       set: (key, value) => set({ [key]: value } as Partial<SettingsState>),
     }),
-    { name: 'kimi-settings' }
+    { name: 'pulpo-settings' }
   )
 )
 
