@@ -216,8 +216,10 @@ export function Sidebar({
     collapsed ? '-translate-x-1' : 'translate-x-0'
   )
 
-  const navBtn =
-    'flex h-8 w-full cursor-pointer items-center overflow-hidden rounded-lg text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70'
+  const navBtn = cn(
+    'flex h-8 cursor-pointer items-center overflow-hidden rounded-lg text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70',
+    collapsed ? 'w-9' : 'w-full'
+  )
 
   const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode) => (
     <Tooltip
