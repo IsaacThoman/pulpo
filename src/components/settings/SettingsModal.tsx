@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  AudioLines,
   Database,
   Info,
   KeyRound,
@@ -37,7 +36,6 @@ const SECTIONS = [
   { id: 'account', label: 'Account', icon: User },
   { id: 'personalization', label: 'Personalization', icon: Sparkles },
   { id: 'interface', label: 'Interface', icon: Monitor },
-  { id: 'audio', label: 'Audio', icon: AudioLines },
   { id: 'api', label: 'API keys', icon: KeyRound },
   { id: 'data', label: 'Data controls', icon: Database },
   { id: 'about', label: 'About', icon: Info },
@@ -262,24 +260,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </Row>
                   <Row label="Show reasoning" hint="Expandable thinking blocks for reasoning models.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
-                  </Row>
-                </div>
-              )}
-
-              {section === 'audio' && (
-                <div>
-                  <h2 className="text-base font-semibold">Audio</h2>
-                  <Separator className="my-3" />
-                  <Row label="Speech-to-text">
-                    <Select defaultValue="whisper">
-                      <SelectTrigger className="w-40">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="whisper">Whisper (local)</SelectItem>
-                        <SelectItem value="web">Browser API</SelectItem>
-                      </SelectContent>
-                    </Select>
                   </Row>
                 </div>
               )}
