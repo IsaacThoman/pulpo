@@ -24,7 +24,7 @@ export function SearchModal({ open, onClose }: { open: boolean; onClose: () => v
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     const sorted = [...chats].sort((a, b) => b.updatedAt - a.updatedAt)
-    if (!q) return sorted.filter((c) => !c.archived).slice(0, 10)
+    if (!q) return sorted.slice(0, 10)
     return sorted.filter(
       (c) =>
         c.title.toLowerCase().includes(q) ||

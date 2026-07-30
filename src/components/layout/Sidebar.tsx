@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Archive,
   BarChart3,
   ChevronRight,
   Copy,
@@ -24,7 +23,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
-import { chatTimeGroup, timeAgo } from '@/lib/format'
+import { chatTimeGroup } from '@/lib/format'
 import type { Chat } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -52,7 +51,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
 function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
-  const { togglePin, toggleArchive, shareChat, deleteChat, moveToFolder, folders } = useChat()
+  const { togglePin, shareChat, deleteChat, moveToFolder, folders } = useChat()
   return (
     <DropdownMenuContent side="right" align="start" className="w-48">
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
@@ -89,10 +88,6 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
       >
         <Share2 />
         Copy share link
-      </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => toggleArchive(chat.id)}>
-        <Archive />
-        Archive
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => deleteChat(chat.id)}>
@@ -187,10 +182,7 @@ export function Sidebar({
     setActiveTooltip(null)
   }, [collapsed])
 
-  const visible = useMemo(
-    () => chats.filter((c) => !c.archived).sort((a, b) => b.updatedAt - a.updatedAt),
-    [chats]
-  )
+  const visible = useMemo(() => [...chats].sort((a, b) => b.updatedAt - a.updatedAt), [chats])
   const pinned = visible.filter((c) => c.pinned)
   const unpinned = visible.filter((c) => !c.pinned)
   const inFolders = new Map<string, Chat[]>()
@@ -426,7 +418,6 @@ export function Sidebar({
               Usage dashboard
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <ArchivedItem />
             <DropdownMenuItem onClick={() => navigate('/admin')}>
               <ShieldCheck />
               Admin panel
@@ -465,31 +456,5 @@ export function Sidebar({
         </DialogContent>
       </Dialog>
     </aside>
-  )
-}
-
-function ArchivedItem() {
-  const chats = useChat((s) => s.chats)
-  const archived = chats.filter((c) => c.archived)
-  const toggleArchive = useChat((s) => s.toggleArchive)
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <Archive />
-        Archived
-        <span className="ml-auto text-xs text-muted-foreground">{archived.length}</span>
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent className="w-56">
-        {archived.length === 0 && (
-          <div className="px-2 py-1.5 text-sm text-muted-foreground">No archived chats</div>
-        )}
-        {archived.map((c) => (
-          <DropdownMenuItem key={c.id} onClick={() => toggleArchive(c.id)}>
-            <span className="flex-1 truncate">{c.title}</span>
-            <span className="text-xs text-muted-foreground">{timeAgo(c.updatedAt)}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
   )
 }

@@ -70,7 +70,6 @@ interface ChatState {
   deleteChat: (id: string) => void
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
-  toggleArchive: (id: string) => void
   moveToFolder: (id: string, folderId: string | null) => void
   shareChat: (id: string) => void
   addFolder: (name: string) => void
@@ -186,12 +185,6 @@ export const useChat = create<ChatState>()((set, get) => {
     togglePin: (id) =>
       set((s) => ({ chats: s.chats.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)) })),
 
-    toggleArchive: (id) =>
-      set((s) => ({
-        chats: s.chats.map((c) => (c.id === id ? { ...c, archived: !c.archived } : c)),
-        activeChatId: s.activeChatId === id ? null : s.activeChatId,
-      })),
-
     moveToFolder: (id, folderId) =>
       set((s) => ({ chats: s.chats.map((c) => (c.id === id ? { ...c, folderId } : c)) })),
 
@@ -249,7 +242,6 @@ export const useChat = create<ChatState>()((set, get) => {
           createdAt: now,
           updatedAt: now,
           pinned: false,
-          archived: false,
           folderId: null,
           tags: [],
         }

@@ -318,11 +318,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       Import
                     </Button>
                   </Row>
-                  <Row label="Archive all chats">
-                    <Button variant="outline" size="sm">
-                      Archive all
-                    </Button>
-                  </Row>
                   <Row label="Delete all chats" hint="This cannot be undone.">
                     <Button variant="destructive" size="sm">
                       Delete all

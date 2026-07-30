@@ -352,7 +352,6 @@ export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
       createdAt,
       updatedAt,
       pinned: i < 2,
-      archived: false,
       folderId: i % 5 === 1 ? folders[i % 3].id : null,
       tags: i % 4 === 0 ? ['dev'] : i % 7 === 0 ? ['writing'] : [],
     })

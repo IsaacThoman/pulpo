@@ -24,7 +24,7 @@ npm run dev
   per-message token + cost + latency metadata, stop generation,
   **reasoning effort + speed controls** in the composer (per-model, admin-configurable)
 - **Sidebar** — collapsible, pinned chats, folders, time-grouped history, per-chat menus
-  (pin / rename / move / share / archive / delete), pinned-model shortcuts, archived chats
+  (pin / rename / move / share / delete), pinned-model shortcuts
 - **Model selector** — searchable, theme-aware square avatars (light/dark), context + capability tags
 - **Usage dashboard** (inspired by OpenWebUI-Monitor) — balance, stat cards (calls / tokens /
   spend / avg / water use), time-range + metric toggles, daily bar chart, 365-day heatmap,

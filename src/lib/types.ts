@@ -60,7 +60,6 @@ export interface Chat {
   createdAt: number
   updatedAt: number
   pinned: boolean
-  archived: boolean
   folderId: string | null
   tags: string[]
   shareId?: string
