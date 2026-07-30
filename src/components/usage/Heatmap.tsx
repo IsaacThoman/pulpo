@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import type { DailyUsage } from '@/lib/mock'
 import { formatCost, formatNumber } from '@/lib/format'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Metric } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -47,6 +46,15 @@ export function Heatmap({ data, metric }: { data: DailyUsage[]; metric: Metric }
     'bg-emerald-600 dark:bg-emerald-400',
   ]
 
+  const label = (date: string, value: number) =>
+    `${date} · ${
+      metric === 'cost'
+        ? formatCost(value)
+        : metric === 'tokens'
+          ? `${formatNumber(value)} tokens`
+          : `${value} calls`
+    }`
+
   return (
     <div className="flex gap-[3px] overflow-x-auto pb-1">
       {weeks.cols.map((week, wi) => (
@@ -55,19 +63,12 @@ export function Heatmap({ data, metric }: { data: DailyUsage[]; metric: Metric }
             day === null ? (
               <div key={`pad-${di}`} className="size-[11px]" />
             ) : (
-              <Tooltip key={day.date}>
-                <TooltipTrigger asChild>
-                  <div className={cn('size-[11px] rounded-[2px]', colors[level(day.value)])} />
-                </TooltipTrigger>
-                <TooltipContent>
-                  {day.date} ·{' '}
-                  {metric === 'cost'
-                    ? formatCost(day.value)
-                    : metric === 'tokens'
-                      ? `${formatNumber(day.value)} tokens`
-                      : `${day.value} calls`}
-                </TooltipContent>
-              </Tooltip>
+              <div
+                key={day.date}
+                className={cn('size-[11px] rounded-[2px]', colors[level(day.value)])}
+                title={label(day.date, day.value)}
+                aria-label={label(day.date, day.value)}
+              />
             )
           )}
         </div>

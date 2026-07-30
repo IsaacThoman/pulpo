@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Droplets, Phone, TrendingUp, Wallet, Zap } from 'lucide-react'
 import {
   Bar,
@@ -77,6 +77,18 @@ export function PersonalPage() {
   const me = users.find((u) => u.id === userId)!
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<Metric>('cost')
+  const [detailsReady, setDetailsReady] = useState(false)
+
+  useEffect(() => {
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => setDetailsReady(true))
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+    }
+  }, [])
 
   const mine = useMemo(() => records.filter((r) => r.userId === userId), [records, userId])
   const inRange = useMemo(
@@ -154,59 +166,65 @@ export function PersonalPage() {
         />
       </div>
 
-      {/* daily bar chart */}
-      <Card className="shadow-none">
-        <CardHeader>
-          <CardTitle className="text-sm">Daily usage</CardTitle>
-        </CardHeader>
-        <CardContent className="h-52">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dailyRange} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
-              <XAxis
-                dataKey="date"
-                tick={{ fontSize: 10 }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(d: string) => d.slice(5)}
-                minTickGap={30}
-              />
-              <YAxis
-                tick={{ fontSize: 10 }}
-                tickLine={false}
-                axisLine={false}
-                width={44}
-                tickFormatter={(v: number) =>
-                  metric === 'cost' ? `$${v.toFixed(2)}` : formatNumber(v)
-                }
-              />
-              <RTooltip
-                cursor={{ fill: 'var(--muted)' }}
-                contentStyle={{
-                  background: 'var(--popover)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  fontSize: 12,
-                }}
-                formatter={(v) => [
-                  metric === 'cost' ? formatCost(Number(v)) : formatNumber(Number(v)),
-                  metric,
-                ]}
-              />
-              <Bar dataKey={metric} fill="var(--primary)" radius={[3, 3, 0, 0]} maxBarSize={28} />
-            </BarChart>
-          </ResponsiveContainer>
-        </CardContent>
-      </Card>
+      {detailsReady ? (
+        <>
+          {/* daily bar chart */}
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="text-sm">Daily usage</CardTitle>
+            </CardHeader>
+            <CardContent className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyRange} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(d: string) => d.slice(5)}
+                    minTickGap={30}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={44}
+                    tickFormatter={(v: number) =>
+                      metric === 'cost' ? `$${v.toFixed(2)}` : formatNumber(v)
+                    }
+                  />
+                  <RTooltip
+                    cursor={{ fill: 'var(--muted)' }}
+                    contentStyle={{
+                      background: 'var(--popover)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                    formatter={(v) => [
+                      metric === 'cost' ? formatCost(Number(v)) : formatNumber(Number(v)),
+                      metric,
+                    ]}
+                  />
+                  <Bar dataKey={metric} fill="var(--primary)" radius={[3, 3, 0, 0]} maxBarSize={28} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
 
-      {/* heatmap */}
-      <Card className="shadow-none">
-        <CardHeader>
-          <CardTitle className="text-sm">Last 365 days</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Heatmap data={daily} metric={metric} />
-        </CardContent>
-      </Card>
+          {/* heatmap */}
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="text-sm">Last 365 days</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Heatmap data={daily} metric={metric} />
+            </CardContent>
+          </Card>
+        </>
+      ) : (
+        <div className="h-[378px]" aria-hidden="true" />
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* recent usage */}

@@ -83,7 +83,7 @@ export function ModelSelector({
           />
         </div>
 
-        <div className="flex">
+        <div className="flex h-[264px] min-h-0">
           {/* provider rail */}
           <div className="flex flex-col items-center gap-0.5 border-r px-1.5 py-2">
             <Tooltip>
@@ -141,7 +141,7 @@ export function ModelSelector({
           </div>
 
           {/* model list */}
-          <div className="max-h-[320px] min-w-0 flex-1 overflow-y-auto p-1.5">
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1.5">
             {rows.length === 0 && (
               <div className="px-3 py-8 text-center text-sm text-muted-foreground">
                 {provider === null && !searching ? 'No favorites yet' : 'No models found'}

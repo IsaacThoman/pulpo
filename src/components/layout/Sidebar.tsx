@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Archive,
@@ -24,13 +24,10 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
-import { useModels } from '@/stores/models'
-import { MODELS } from '@/lib/mock'
 import { chatTimeGroup, timeAgo } from '@/lib/format'
 import type { Chat } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   DropdownMenu,
@@ -52,7 +49,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { ModelIcon } from '@/components/ModelIcon'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -111,11 +107,9 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
 function ChatRow({
   chat,
   active,
-  collapsed,
 }: {
   chat: Chat
   active: boolean
-  collapsed: boolean
 }) {
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
@@ -133,20 +127,18 @@ function ChatRow({
       onClick={() => navigate(`/c/${chat.id}`)}
     >
       <span className="flex-1 truncate">{chat.title}</span>
-      {!collapsed && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
-              onClick={(e) => e.stopPropagation()}
-              aria-label="Chat options"
-            >
-              <MoreHorizontal className="size-4" />
-            </button>
-          </DropdownMenuTrigger>
-          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
-        </DropdownMenu>
-      )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Chat options"
+          >
+            <MoreHorizontal className="size-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
+      </DropdownMenu>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
@@ -168,14 +160,6 @@ function ChatRow({
     </div>
   )
 
-  if (collapsed) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{row}</TooltipTrigger>
-        <TooltipContent side="right">{chat.title}</TooltipContent>
-      </Tooltip>
-    )
-  }
   return row
 }
 
@@ -198,6 +182,11 @@ export function Sidebar({
   const addFolder = useChat((s) => s.addFolder)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
+
+  useEffect(() => {
+    setActiveTooltip(null)
+  }, [collapsed])
 
   const visible = useMemo(
     () => chats.filter((c) => !c.archived).sort((a, b) => b.updatedAt - a.updatedAt),
@@ -219,41 +208,57 @@ export function Sidebar({
     groups.get(g)!.push(c)
   }
 
-  const favorites = useModels((s) => s.favorites)
-  const pinnedModels = MODELS.filter((m) => favorites.includes(m.id) && m.enabled)
-
-  const navBtn = cn(
-    'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70',
-    collapsed && 'justify-center px-0'
+  const sidebarContentTransition = collapsed
+    ? 'pointer-events-none opacity-0 duration-100'
+    : 'opacity-100 delay-100 duration-150'
+  const sidebarTextTransition = cn(
+    sidebarContentTransition,
+    collapsed ? '-translate-x-1' : 'translate-x-0'
   )
 
-  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode) =>
-    collapsed ? (
-      <Tooltip key={label}>
-        <TooltipTrigger asChild>
-          <button className={navBtn} onClick={onClick} aria-label={label}>
-            {icon}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="right">{label}</TooltipContent>
-      </Tooltip>
-    ) : (
-      <button key={label} className={navBtn} onClick={onClick}>
-        {icon}
-        <span>{label}</span>
-      </button>
-    )
+  const navBtn =
+    'flex h-8 w-full cursor-pointer items-center overflow-hidden rounded-lg text-sm text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent/70'
+
+  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode) => (
+    <Tooltip
+      key={label}
+      open={collapsed && activeTooltip === label}
+      onOpenChange={(open) => {
+        if (collapsed) setActiveTooltip(open ? label : null)
+      }}
+    >
+      <TooltipTrigger asChild>
+        <button className={navBtn} onClick={onClick} aria-label={label}>
+          <span className="flex size-8 shrink-0 items-center justify-center">{icon}</span>
+          <span
+            className={cn(
+              'min-w-0 truncate whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+              sidebarTextTransition
+            )}
+          >
+            {label}
+          </span>
+        </button>
+      </TooltipTrigger>
+      {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
+    </Tooltip>
+  )
 
   return (
     <aside
       className={cn(
-        'flex h-full shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200',
+        'flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] motion-reduce:transition-none',
         collapsed ? 'w-[52px]' : 'w-[264px]'
       )}
     >
       {/* header */}
       <div className="flex items-center gap-1 p-2">
-        <Tooltip>
+        <Tooltip
+          open={collapsed && activeTooltip === 'Open sidebar'}
+          onOpenChange={(open) => {
+            if (collapsed) setActiveTooltip(open ? 'Open sidebar' : null)
+          }}
+        >
           <TooltipTrigger asChild>
             <button
               className="group/logo flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
@@ -270,7 +275,14 @@ export function Sidebar({
           </TooltipTrigger>
           {collapsed && <TooltipContent side="right">Open sidebar</TooltipContent>}
         </Tooltip>
-        <div className="flex-1" />
+        <span
+          className={cn(
+            'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold text-sidebar-foreground transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+            sidebarTextTransition
+          )}
+        >
+          Pulpo
+        </span>
         {!collapsed && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -287,50 +299,27 @@ export function Sidebar({
         )}
       </div>
 
-      {/* primary nav */}
-      <div className="space-y-0.5 px-2">
-        {iconBtn('New chat', () => navigate('/'), <SquarePen className="size-4" />)}
-        {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
-        {iconBtn('Usage', () => navigate('/usage'), <BarChart3 className="size-4" />)}
-        {iconBtn('API keys', () => navigate('/api-keys'), <KeyRound className="size-4" />)}
-      </div>
+      {/* The complete menu shares one scroll position; the header and account stay anchored. */}
+      <ScrollArea className="min-h-0 flex-1">
+        {/* primary nav */}
+        <div className="space-y-0.5 px-2">
+          {iconBtn('New chat', () => navigate('/'), <SquarePen className="size-4" />)}
+          {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
+          {iconBtn('Usage', () => navigate('/usage'), <BarChart3 className="size-4" />)}
+          {iconBtn('API keys', () => navigate('/api-keys'), <KeyRound className="size-4" />)}
+        </div>
 
-      {!collapsed && (
-        <>
-          {/* pinned models */}
-          <div className="mt-4 px-2">
-            <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              Favorite models
-            </div>
-            <div className="space-y-0.5">
-              {pinnedModels.map((m) => (
-                <button
-                  key={m.id}
-                  className={navBtn}
-                  onClick={() => navigate(`/?model=${m.id}`)}
-                  title={`New chat with ${m.name}`}
-                >
-                  <ModelIcon model={m} className="size-[18px] rounded-[3px]" />
-                  <span className="truncate">{m.name}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <Separator className="mx-3 my-3 w-auto bg-sidebar-border" />
-        </>
-      )}
-
-      {/* chat list */}
-      <ScrollArea className="min-h-0 flex-1 px-2">
-        {collapsed ? (
-          <div className="space-y-0.5">
-            {visible.slice(0, 12).map((c) => (
-              <ChatRow key={c.id} chat={c} active={c.id === chatId} collapsed />
-            ))}
-          </div>
-        ) : (
-          <div className="pb-4">
+        {/* Secondary content stays mounted so every section animates on one timeline. */}
+        <div
+          aria-hidden={collapsed}
+          className={cn(
+            'transition-opacity ease-[cubic-bezier(0.4,0,0.2,1)]',
+            collapsed && 'h-0 overflow-hidden',
+            sidebarContentTransition
+          )}
+        >
+          {/* chat list */}
+          <div className="px-2 pb-4 pt-4">
             {pinned.length > 0 && (
               <div className="mb-2">
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -338,7 +327,7 @@ export function Sidebar({
                 </div>
                 <div className="space-y-0.5">
                   {pinned.map((c) => (
-                    <ChatRow key={c.id} chat={c} active={c.id === chatId} collapsed={false} />
+                    <ChatRow key={c.id} chat={c} active={c.id === chatId} />
                   ))}
                 </div>
               </div>
@@ -361,7 +350,7 @@ export function Sidebar({
                       <div className="px-2 py-1 text-xs text-muted-foreground">Empty</div>
                     )}
                     {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} collapsed={false} />
+                      <ChatRow key={c.id} chat={c} active={c.id === chatId} />
                     ))}
                   </CollapsibleContent>
                 </Collapsible>
@@ -385,14 +374,14 @@ export function Sidebar({
                   </div>
                   <div className="space-y-0.5">
                     {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} collapsed={false} />
+                      <ChatRow key={c.id} chat={c} active={c.id === chatId} />
                     ))}
                   </div>
                 </div>
               )
             })}
           </div>
-        )}
+        </div>
       </ScrollArea>
 
       {/* user footer */}
@@ -400,22 +389,24 @@ export function Sidebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className={cn(
-                'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-sidebar-accent',
-                collapsed && 'justify-center px-0'
-              )}
+              className="flex h-10 w-full cursor-pointer items-center overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
             >
-              <Avatar className="size-7">
-                <AvatarFallback className="bg-zinc-700 text-[11px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                  IT
-                </AvatarFallback>
-              </Avatar>
-              {!collapsed && (
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">Isaac Thoman</div>
-                  <div className="truncate text-xs text-muted-foreground">isaac@pulpo.dev</div>
-                </div>
-              )}
+              <span className="flex size-8 shrink-0 items-center justify-center">
+                <Avatar className="size-7">
+                  <AvatarFallback className="bg-zinc-700 text-[11px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
+                    IT
+                  </AvatarFallback>
+                </Avatar>
+              </span>
+              <div
+                className={cn(
+                  'min-w-0 flex-1 whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  sidebarTextTransition
+                )}
+              >
+                <div className="truncate text-sm font-medium">Isaac Thoman</div>
+                <div className="truncate text-xs text-muted-foreground">isaac@pulpo.dev</div>
+              </div>
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
