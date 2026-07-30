@@ -11,6 +11,7 @@ export interface AiIconDefinition {
 
 /** One catalog for every company and model mark available to the UI. */
 export const AI_ICONS = [
+  { id: 'alibaba', label: 'Alibaba', kind: 'lab', color: false, file: 'qwen.svg' },
   { id: 'anthropic', label: 'Anthropic', kind: 'lab', color: false, file: 'anthropic.svg' },
   { id: 'claude', label: 'Claude', kind: 'model', color: false, file: 'claude.svg' },
   { id: 'claude-color', label: 'Claude color', kind: 'model', color: true, file: 'claude-color.svg' },
@@ -47,7 +48,7 @@ export const DEFAULT_PROVIDER_ICONS: Record<string, AiIconId> = {
   anthropic: 'anthropic',
   deepseek: 'deepseek',
   meta: 'meta',
-  alibaba: 'qwen',
+  alibaba: 'alibaba',
   mistral: 'mistral',
   xai: 'xai',
   google: 'google',

@@ -149,7 +149,7 @@ export const MODELS: Model[] = [
     id: 'qwen3-235b',
     name: 'Qwen3 235B',
     provider: 'Alibaba',
-    labLogo: 'qwen',
+    labLogo: 'alibaba',
     modelLogo: 'qwen-color',
     inferenceProvider: 'Fireworks',
     description: 'Huge MoE model with hybrid thinking modes.',
