@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   Check,
+  ChevronRight,
   Copy,
   Eye,
   EyeOff,
@@ -17,11 +18,16 @@ import { formatCost, maskKey, timeAgo } from '@/lib/format'
 import type { ApiKey } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { CheckboxRow, Snippet } from '@/components/api/misc'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   Dialog,
   DialogContent,
@@ -138,6 +144,7 @@ export function ApiKeysPage() {
   const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [confirmRevoke, setConfirmRevoke] = useState<ApiKey | null>(null)
+  const [usageDocsOpen, setUsageDocsOpen] = useState(false)
 
   const selectableModels = MODELS.filter((m) => m.enabled)
 
@@ -341,35 +348,43 @@ export function ApiKeysPage() {
         </div>
 
         {/* usage docs */}
-        <Card className="shadow-none">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm">
+        <Collapsible open={usageDocsOpen} onOpenChange={setUsageDocsOpen} asChild>
+          <Card className="shadow-none">
+            <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-2 px-6 text-left">
+              <ChevronRight
+                className={cn('size-4 transition-transform', usageDocsOpen && 'rotate-90')}
+              />
               <Terminal className="size-4" />
-              Using the API
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-2 text-sm sm:grid-cols-2">
-              {[
-                ['POST', '/v1/chat/completions'],
-                ['GET', '/v1/models'],
-                ['POST', '/v1/embeddings'],
-              ].map(([method, path]) => (
-                <div key={path} className="flex items-center gap-2 rounded-lg border px-3 py-2">
-                  <Badge
-                    variant={method === 'GET' ? 'secondary' : 'default'}
-                    className="font-mono text-[10px]"
-                  >
-                    {method}
-                  </Badge>
-                  <code className="font-mono text-xs">{path}</code>
+              <span className="text-sm font-semibold">Using the API</span>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <CardContent className="space-y-4">
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  {[
+                    ['POST', '/v1/chat/completions'],
+                    ['GET', '/v1/models'],
+                    ['POST', '/v1/embeddings'],
+                  ].map(([method, path]) => (
+                    <div
+                      key={path}
+                      className="flex items-center gap-2 rounded-lg border px-3 py-2"
+                    >
+                      <Badge
+                        variant={method === 'GET' ? 'secondary' : 'default'}
+                        className="font-mono text-[10px]"
+                      >
+                        {method}
+                      </Badge>
+                      <code className="font-mono text-xs">{path}</code>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <Snippet title="curl" code={CURL_SNIPPET} />
-            <Snippet title="openai (node)" code={SDK_SNIPPET} />
-          </CardContent>
-        </Card>
+                <Snippet title="curl" code={CURL_SNIPPET} />
+                <Snippet title="openai (node)" code={SDK_SNIPPET} />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
       </div>
 
       {/* create dialog */}
