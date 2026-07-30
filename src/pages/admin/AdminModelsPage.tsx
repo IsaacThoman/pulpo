@@ -52,19 +52,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
-const CAPABILITIES = [
-  'Vision',
-  'File Upload',
-  'Code Interpreter',
-  'Terminal',
-  'Usage',
-  'Citations',
-  'Status Updates',
-  'Builtin Tools',
-]
-
-const DEFAULT_PARAMS = { temperature: 1.0, topP: 1.0, topK: 0, seed: 0, maxTokens: 4096, frequencyPenalty: 0 }
-
 const ALL_EFFORTS: { value: ReasoningEffort; label: string }[] = [
   { value: 'none', label: 'Off' },
   { value: 'low', label: 'Low' },
@@ -158,22 +145,12 @@ function ModelEditorDialog({
   open: boolean
   onClose: () => void
 }) {
-  const [paramsOpen, setParamsOpen] = useState(false)
   const [jsonOpen, setJsonOpen] = useState(false)
   const [labLogo, setLabLogo] = useState(model.labLogo)
   const [modelLogo, setModelLogo] = useState(model.modelLogo)
   const overrides = useModelConfig((s) => s.overrides)
   const setOptions = useModelConfig((s) => s.setOptions)
   const [chatOptions, setChatOptions] = useState(() => chatOptionsFor(model, overrides))
-  const [caps, setCaps] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(
-      CAPABILITIES.map((c) => [
-        c,
-        (c === 'Vision' && model.tags.includes('vision')) ||
-          (c === 'Code Interpreter' && model.tags.includes('code')),
-      ])
-    )
-  )
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -253,48 +230,6 @@ function ModelEditorDialog({
             <div className="space-y-1.5">
               <Label>System prompt</Label>
               <Textarea rows={3} placeholder="You are a helpful assistant." />
-            </div>
-
-            <Collapsible open={paramsOpen} onOpenChange={setParamsOpen}>
-              <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-sm font-medium">
-                <ChevronRight className={cn('size-4 transition-transform', paramsOpen && 'rotate-90')} />
-                Advanced params
-              </CollapsibleTrigger>
-              <CollapsibleContent className="mt-3 grid grid-cols-3 gap-3">
-                {(
-                  [
-                    ['temperature', 'Temperature', 0.1],
-                    ['topP', 'Top P', 0.05],
-                    ['topK', 'Top K', 1],
-                    ['seed', 'Seed', 1],
-                    ['maxTokens', 'Max tokens', 128],
-                    ['frequencyPenalty', 'Freq. penalty', 0.1],
-                  ] as const
-                ).map(([key, label, step]) => (
-                  <div key={key} className="space-y-1">
-                    <Label className="text-xs">{label}</Label>
-                    <Input type="number" step={step} defaultValue={DEFAULT_PARAMS[key]} />
-                  </div>
-                ))}
-              </CollapsibleContent>
-            </Collapsible>
-
-            <div className="space-y-2">
-              <Label>Capabilities</Label>
-              <div className="grid grid-cols-2 gap-x-4">
-                {CAPABILITIES.map((c) => (
-                  <label
-                    key={c}
-                    className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
-                  >
-                    {c}
-                    <Switch
-                      checked={caps[c]}
-                      onCheckedChange={(v) => setCaps((s) => ({ ...s, [c]: v }))}
-                    />
-                  </label>
-                ))}
-              </div>
             </div>
 
             <div className="space-y-2">
@@ -377,13 +312,11 @@ function ModelEditorDialog({
       profile_image_url_light: `/models/${model.id}/light.png`,
       profile_image_url_dark: `/models/${model.id}/dark.png`,
       description: model.description,
-      capabilities: caps,
       chat_options: {
         reasoning_efforts: chatOptions.reasoningEfforts,
         speed_options: chatOptions.speedOptions,
       },
     },
-    params: DEFAULT_PARAMS,
   },
   null,
   2

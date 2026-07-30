@@ -42,8 +42,8 @@ npm run dev
   - Dashboard — 24h stats, quick links, system info
   - Users — role selects, add/edit modals; Groups tab with default-permission matrix
   - Models — search + view filters, per-model menus, enable toggles; full **model editor** with
-    system prompt, advanced params, capability toggles, **chat options** (which reasoning
-    effort / speed choices appear in the composer), JSON preview, and the fork's signature
+    system prompt, **chat options** (which reasoning effort / speed choices appear in the
+    composer), JSON preview, and the fork's signature
     **light/dark profile-image upload grid**
   - Functions — pipe/filter/action/event cards w/ valves, global toggles
   - Evaluations — arena model sets, Elo leaderboard, feedback table w/ export
