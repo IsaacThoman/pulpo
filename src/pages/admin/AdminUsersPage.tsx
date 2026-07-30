@@ -36,7 +36,7 @@ interface Group {
 
 const GROUPS: Group[] = [
   { id: 'g-1', name: 'engineering', color: '#3b82f6', members: 4, description: 'Full model access, higher rate limits.' },
-  { id: 'g-2', name: 'design', color: '#ec4899', members: 2, description: 'Image generation models enabled.' },
+  { id: 'g-2', name: 'design', color: '#ec4899', members: 2, description: 'Creative models and shared prompts.' },
   { id: 'g-3', name: 'externals', color: '#f59e0b', members: 1, description: 'Sandboxed — cheap models only, no tools.' },
 ]
 
@@ -45,8 +45,6 @@ const PERMISSIONS: [string, boolean][] = [
   ['Workspace: knowledge', true],
   ['Workspace: prompts', true],
   ['Workspace: tools', false],
-  ['Features: web search', true],
-  ['Features: image generation', true],
   ['Features: code interpreter', false],
   ['Features: temporary chats', true],
   ['Sharing: public models', false],

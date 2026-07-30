@@ -45,13 +45,10 @@ npm run dev
     **light/dark profile-image upload grid**
   - Functions — pipe/filter/action/event cards w/ valves, global toggles
   - Evaluations — arena model sets, Elo leaderboard, feedback table w/ export
-  - Settings — General (feature toggles, banners editor, webhooks), Authentication (roles,
-    signup, API keys, JWT, LDAP, OAuth), Connections (OpenAI/Ollama endpoints w/ verify, plus
-    the fork's **usage portal** config), Interface (task model, title/follow-up/tag generation),
-    Web Search (15+ engines w/ per-engine fields), Documents (extraction engines, embedding,
-    hybrid search, RAG template, danger zone), Images (4 engines), Audio (6 STT engines),
-    Code Execution (pyodide/jupyter), Integrations (tool/terminal/knowledge servers),
-    Database (import/export)
+  - Settings — General feature toggles, Authentication (roles, signup, API keys, JWT),
+    Connections (OpenAI/Ollama endpoints w/ verify), Interface (task model and background
+    generation tasks), Integrations (tool/terminal/knowledge servers), and Database
+    (import/export)
 - Light/dark/system theme, ⌘K search, ⌘B sidebar toggle, ⌘, settings
 
 ## Mock notes

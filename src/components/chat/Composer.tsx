@@ -2,23 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import {
   ArrowUp,
   Code2,
-  Globe,
-  ImagePlus,
-  Lightbulb,
   Mic,
-  Paperclip,
   Plus,
   Square,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { cn } from '@/lib/utils'
@@ -33,10 +22,9 @@ export function Composer({
   centered?: boolean
 }) {
   const [value, setValue] = useState('')
-  const [webSearch, setWebSearch] = useState(false)
-  const [imageGen, setImageGen] = useState(false)
   const [codeInterp, setCodeInterp] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const sendMessage = useChat((s) => s.sendMessage)
   const streamingId = useChat((s) => s.streamingId)
   const stopStreaming = useChat((s) => s.stopStreaming)
@@ -112,34 +100,16 @@ export function Composer({
           className="max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-1 px-2.5 pb-2.5">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Attach"
-              >
-                <Plus className="size-4.5" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="top" align="start" className="w-52">
-              <DropdownMenuItem>
-                <Paperclip />
-                Attach files
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <ImagePlus />
-                Upload image
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <Lightbulb />
-                Connect knowledge base
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <input ref={fileInputRef} type="file" multiple className="hidden" />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+            aria-label="Attach files"
+          >
+            <Plus className="size-4.5" />
+          </button>
 
-          {toggle('Web search', webSearch, setWebSearch, <Globe className="size-4" />)}
-          {toggle('Image generation', imageGen, setImageGen, <ImagePlus className="size-4" />)}
           {toggle('Code interpreter', codeInterp, setCodeInterp, <Code2 className="size-4" />)}
 
           <div className="flex-1" />
@@ -178,9 +148,6 @@ export function Composer({
           )}
         </div>
       </div>
-      <p className="mt-2 text-center text-[11px] text-muted-foreground">
-        pulpo can make mistakes. check important info. · enter to send, shift+enter for newline
-      </p>
     </div>
   )
 }

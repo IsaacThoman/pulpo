@@ -32,7 +32,7 @@ const seedKeys: ApiKey[] = [
     prefix: 'sk-pulpo-Qx91',
     createdAt: Date.now() - 40 * 86_400_000,
     lastUsedAt: Date.now() - 26 * 3_600_000,
-    scopes: ['chat', 'images'],
+    scopes: ['chat'],
     allowedModels: ['gpt-4o-mini', 'llama-3.3-70b'],
     monthlyBudget: 5,
     totalBudget: null,

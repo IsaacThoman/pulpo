@@ -54,8 +54,6 @@ import { cn } from '@/lib/utils'
 const CAPABILITIES = [
   'Vision',
   'File Upload',
-  'Web Search',
-  'Image Generation',
   'Code Interpreter',
   'Terminal',
   'Usage',
@@ -152,7 +150,6 @@ function ModelEditorDialog({
       CAPABILITIES.map((c) => [
         c,
         (c === 'Vision' && model.tags.includes('vision')) ||
-          (c === 'Web Search' && model.tags.includes('tools')) ||
           (c === 'Code Interpreter' && model.tags.includes('code')),
       ])
     )
@@ -283,7 +280,7 @@ function ModelEditorDialog({
             <div className="space-y-1.5">
               <Label>Default features</Label>
               <div className="flex gap-2">
-                {['web_search', 'code_interpreter', 'image_generation'].map((f) => (
+                {['code_interpreter'].map((f) => (
                   <Badge key={f} variant="secondary" className="font-normal">
                     {f}
                   </Badge>

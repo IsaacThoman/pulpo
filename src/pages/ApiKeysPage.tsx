@@ -43,7 +43,6 @@ import { cn } from '@/lib/utils'
 const ALL_SCOPES = [
   { id: 'chat', label: 'Chat completions' },
   { id: 'embeddings', label: 'Embeddings' },
-  { id: 'images', label: 'Image generation' },
   { id: 'models', label: 'List models' },
 ] as const
 
@@ -355,7 +354,6 @@ export function ApiKeysPage() {
                 ['POST', '/v1/chat/completions'],
                 ['GET', '/v1/models'],
                 ['POST', '/v1/embeddings'],
-                ['POST', '/v1/images/generations'],
               ].map(([method, path]) => (
                 <div key={path} className="flex items-center gap-2 rounded-lg border px-3 py-2">
                   <Badge
