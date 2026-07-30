@@ -16,8 +16,10 @@ function Placeholder({ modelId, onPick }: { modelId: string; onPick: (s: string)
   const model = getModel(modelId)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
-      <ModelIcon model={model} className="size-14" boxed={false} />
-      <h1 className="mt-5 text-2xl font-semibold tracking-tight">{model.name}</h1>
+      <div className="flex items-center gap-3">
+        <ModelIcon model={model} className="size-12" boxed={false} />
+        <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
+      </div>
       <p className="mt-1.5 text-sm text-muted-foreground">
         {model.provider} · {model.inferenceProvider}
       </p>
