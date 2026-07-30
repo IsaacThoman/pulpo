@@ -15,37 +15,43 @@ const seedKeys: ApiKey[] = [
   {
     id: 'key-1',
     name: 'scripts / dotfiles',
-    prefix: 'sk-kimi-7Kd2',
+    prefix: 'sk-pulpo-7Kd2',
     createdAt: Date.now() - 92 * 86_400_000,
     lastUsedAt: Date.now() - 2 * 3_600_000,
     scopes: ['chat', 'models'],
     allowedModels: [],
     monthlyBudget: 20,
+    totalBudget: 100,
     spentThisMonth: 6.42,
+    spentTotal: 41.18,
     revoked: false,
   },
   {
     id: 'key-2',
     name: 'home-assistant TTS',
-    prefix: 'sk-kimi-Qx91',
+    prefix: 'sk-pulpo-Qx91',
     createdAt: Date.now() - 40 * 86_400_000,
     lastUsedAt: Date.now() - 26 * 3_600_000,
     scopes: ['chat', 'images'],
     allowedModels: ['gpt-4o-mini', 'llama-3.3-70b'],
     monthlyBudget: 5,
+    totalBudget: null,
     spentThisMonth: 1.08,
+    spentTotal: 3.74,
     revoked: false,
   },
   {
     id: 'key-3',
     name: 'old ci job',
-    prefix: 'sk-kimi-Zz00',
+    prefix: 'sk-pulpo-Zz00',
     createdAt: Date.now() - 200 * 86_400_000,
     lastUsedAt: Date.now() - 61 * 86_400_000,
     scopes: ['chat'],
     allowedModels: [],
     monthlyBudget: null,
+    totalBudget: 25,
     spentThisMonth: 0,
+    spentTotal: 25,
     revoked: true,
   },
 ]
@@ -53,7 +59,7 @@ const seedKeys: ApiKey[] = [
 interface ApiKeysState {
   keys: ApiKey[]
   createKey: (
-    input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget'>
+    input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>
   ) => { key: ApiKey; secret: string }
   revokeKey: (id: string) => void
   deleteKey: (id: string) => void
@@ -64,7 +70,7 @@ export const useApiKeys = create<ApiKeysState>()(
     (set, get) => ({
       keys: seedKeys,
       createKey: (input) => {
-        const secret = `sk-kimi-${randomSecret()}`
+        const secret = `sk-pulpo-${randomSecret()}`
         const key: ApiKey = {
           id: crypto.randomUUID(),
           name: input.name,
@@ -74,7 +80,9 @@ export const useApiKeys = create<ApiKeysState>()(
           scopes: input.scopes,
           allowedModels: input.allowedModels,
           monthlyBudget: input.monthlyBudget,
+          totalBudget: input.totalBudget,
           spentThisMonth: 0,
+          spentTotal: 0,
           revoked: false,
         }
         set({ keys: [key, ...get().keys] })
@@ -84,6 +92,6 @@ export const useApiKeys = create<ApiKeysState>()(
         set((s) => ({ keys: s.keys.map((k) => (k.id === id ? { ...k, revoked: true } : k)) })),
       deleteKey: (id) => set((s) => ({ keys: s.keys.filter((k) => k.id !== id) })),
     }),
-    { name: 'kimi-api-keys' }
+    { name: 'pulpo-api-keys' }
   )
 )
