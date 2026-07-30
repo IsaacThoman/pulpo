@@ -61,7 +61,11 @@ export function ModelSelector({
     >
       <DropdownMenuTrigger asChild>
         <button className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
-          <ModelIcon model={selected} className="size-5 rounded-[4px]" />
+          <ProviderLogo
+            provider={selected.provider}
+            icon={selected.labLogo}
+            className="size-5"
+          />
           <span>{selected.name}</span>
           <ChevronDown
             className={cn(
@@ -126,6 +130,7 @@ export function ModelSelector({
                     >
                       <ProviderLogo
                         provider={p}
+                        icon={enabled.find((m) => m.provider === p)?.labLogo}
                         variant={active ? 'filled' : 'outline'}
                         className={cn(
                           'size-[18px] transition-transform duration-150',

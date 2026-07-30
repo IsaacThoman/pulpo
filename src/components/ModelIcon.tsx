@@ -1,10 +1,9 @@
 import type { Model } from '@/lib/types'
-import { ProviderLogo } from '@/components/ProviderLogo'
+import { AiLogo } from '@/components/ProviderLogo'
 import { cn } from '@/lib/utils'
 
 /**
- * Theme-aware model avatar using real provider marks (from ai-icons).
- * variant filled = solid mark; outline = softer inactive look.
+ * Model/product avatar. Provider/lab marks intentionally live in ProviderLogo.
  */
 export function ModelIcon({
   model,
@@ -22,9 +21,9 @@ export function ModelIcon({
   textClassName?: string
 }) {
   const logo = (
-    <ProviderLogo
-      provider={model.provider}
-      variant={variant}
+    <AiLogo
+      icon={model.modelLogo}
+      muted={variant === 'outline'}
       className={cn(boxed ? 'size-[65%]' : 'size-full', !boxed && className)}
     />
   )
@@ -39,7 +38,7 @@ export function ModelIcon({
         className
       )}
       aria-hidden
-      title={model.provider}
+      title={model.name}
     >
       {logo}
     </div>

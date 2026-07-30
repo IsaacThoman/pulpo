@@ -2,6 +2,10 @@ export interface Model {
   id: string
   name: string
   provider: string
+  /** Monochrome company/lab mark used in the picker header and provider rail. */
+  labLogo: string
+  /** Model/product mark used in chat, favorites, and model lists. */
+  modelLogo: string
   inferenceProvider: string
   description: string
   contextWindow: number
