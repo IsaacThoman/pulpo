@@ -391,7 +391,7 @@ export function Sidebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex h-10 w-full cursor-pointer items-center overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
+              className="flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
             >
               <span className="flex size-8 shrink-0 items-center justify-center">
                 <Avatar className="size-7">
