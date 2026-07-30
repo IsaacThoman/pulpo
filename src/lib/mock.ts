@@ -16,7 +16,7 @@ export const MODELS: Model[] = [
     name: 'Kimi K3',
     provider: 'Moonshot AI',
     labLogo: 'moonshot',
-    modelLogo: 'kimi-color',
+    modelLogo: 'moonshot',
     inferenceProvider: 'Fireworks',
     description: 'Flagship reasoning model with long context and agentic tool use.',
     contextWindow: 262144,

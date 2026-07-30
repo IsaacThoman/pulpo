@@ -4,6 +4,7 @@ export interface AiIconDefinition {
   id: string
   label: string
   kind: AiIconKind
+  contexts?: readonly AiIconKind[]
   color: boolean
   file: string
 }
@@ -20,13 +21,18 @@ export const AI_ICONS = [
   { id: 'google', label: 'Google', kind: 'lab', color: false, file: 'google.svg' },
   { id: 'google-color', label: 'Google color', kind: 'lab', color: true, file: 'google-color.svg' },
   { id: 'grok', label: 'Grok', kind: 'model', color: false, file: 'grok.svg' },
-  { id: 'kimi', label: 'Kimi', kind: 'model', color: false, file: 'kimi.svg' },
-  { id: 'kimi-color', label: 'Kimi color', kind: 'model', color: true, file: 'kimi-color.svg' },
   { id: 'meta', label: 'Meta', kind: 'lab', color: false, file: 'meta.svg' },
   { id: 'meta-color', label: 'Meta color', kind: 'model', color: true, file: 'meta-color.svg' },
   { id: 'mistral', label: 'Mistral', kind: 'lab', color: false, file: 'mistral.svg' },
   { id: 'mistral-color', label: 'Mistral color', kind: 'model', color: true, file: 'mistral-color.svg' },
-  { id: 'moonshot', label: 'Moonshot AI', kind: 'lab', color: false, file: 'moonshot.svg' },
+  {
+    id: 'moonshot',
+    label: 'Moonshot AI',
+    kind: 'lab',
+    contexts: ['lab', 'model'],
+    color: false,
+    file: 'moonshot.svg',
+  },
   { id: 'openai', label: 'OpenAI', kind: 'lab', color: false, file: 'openai.svg' },
   { id: 'qwen', label: 'Qwen', kind: 'model', color: false, file: 'qwen.svg' },
   { id: 'qwen-color', label: 'Qwen color', kind: 'model', color: true, file: 'qwen-color.svg' },
@@ -49,6 +55,10 @@ export const DEFAULT_PROVIDER_ICONS: Record<string, AiIconId> = {
 
 export function getAiIcon(id: string) {
   return AI_ICONS.find((icon) => icon.id === id) ?? AI_ICONS[0]
+}
+
+export function isAiIconAvailable(icon: (typeof AI_ICONS)[number], context: AiIconKind) {
+  return icon.kind === context || ('contexts' in icon && icon.contexts.includes(context))
 }
 
 export function providerIcon(provider: string): AiIconId {

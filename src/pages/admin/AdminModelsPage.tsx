@@ -19,7 +19,7 @@ import { formatNumber } from '@/lib/format'
 import type { Model } from '@/lib/types'
 import { ModelIcon } from '@/components/ModelIcon'
 import { AiLogo } from '@/components/ProviderLogo'
-import { AI_ICONS, getAiIcon, type AiIconKind } from '@/lib/ai-icons'
+import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -79,9 +79,8 @@ function LogoPickerTile({
   value: string
   onChange: (value: string) => void
 }) {
-  const selected = getAiIcon(value)
   const options = AI_ICONS.filter(
-    (icon) => icon.kind === kind && (kind !== 'lab' || !icon.color)
+    (icon) => isAiIconAvailable(icon, kind) && (kind !== 'lab' || !icon.color)
   )
   return (
     <div>
@@ -97,7 +96,7 @@ function LogoPickerTile({
               className="size-14 transition-transform duration-150 group-hover/tile:scale-105"
             />
             <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">
-              {selected.kind === 'lab' ? 'lab' : 'model'}
+              {kind}
             </Badge>
           </button>
         </DropdownMenuTrigger>
