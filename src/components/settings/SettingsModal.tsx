@@ -188,11 +188,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       Change password
                     </Button>
                   </Row>
-                  <Row label="Usage portal link" hint="Passwordless link to your personal usage dashboard.">
-                    <Button variant="outline" size="sm" onClick={() => { onClose(); navigate('/usage') }}>
-                      Open usage
-                    </Button>
-                  </Row>
                 </div>
               )}
 
@@ -267,9 +262,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </Row>
                   <Row label="Show reasoning" hint="Expandable thinking blocks for reasoning models.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
-                  </Row>
-                  <Row label="Haptics" hint="Subtle vibration on mobile when a reply lands.">
-                    <Switch checked={s.haptics} onCheckedChange={(v) => s.set('haptics', v)} />
                   </Row>
                 </div>
               )}

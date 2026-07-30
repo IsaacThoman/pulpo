@@ -10,7 +10,6 @@ interface SettingsState {
   streamResponses: boolean
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
-  haptics: boolean
   notifications: boolean
   customInstructions: string
   nickname: string
@@ -27,7 +26,6 @@ export const useSettings = create<SettingsState>()(
       streamResponses: true,
       showReasoning: true,
       chatWidth: 'narrow',
-      haptics: false,
       notifications: true,
       customInstructions: '',
       nickname: '',
