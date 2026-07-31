@@ -2,10 +2,9 @@
 # running `docker compose` without explicit `-f` arguments. Coolify reads only
 # compose.yaml, so deployment services remain internal to its Docker network.
 services:
-  caddy:
+  web:
     ports:
       - "${PULPO_HTTP_PORT:-8080}:80"
-      - "${PULPO_HTTPS_PORT:-8443}:443"
 
   postgres:
     ports:

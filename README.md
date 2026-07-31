@@ -10,7 +10,7 @@ Pulpo is a self-hostable, local-first interface and OpenAI-compatible gateway fo
 - PostgreSQL for users, catalog, conversations, typed response items, accounting, and audit data.
 - Redis for jobs, recent sequenced events, Socket.IO recovery, and replica fanout.
 - SeaweedFS through its S3 API, or local disk through the same `BlobStore` interface.
-- Caddy and Docker Compose for the supported self-hosted deployment.
+- An nginx web gateway and Docker Compose for the supported self-hosted deployment.
 
 The source directories are:
 
@@ -19,7 +19,7 @@ src/                 React application
 server/src/          API, worker, storage, accounting, and realtime services
 server/drizzle/      ordered PostgreSQL migrations
 packages/contracts/  shared Zod and Socket.IO contracts
-deploy/              Caddy configuration
+deploy/              nginx gateway configuration
 ```
 
 ## Quick start with Docker Compose
@@ -52,28 +52,28 @@ Use `/compose.yaml` as the Docker Compose location. It exposes services only to
 the internal Compose network, avoiding collisions with PostgreSQL, Redis, and
 other workloads already using host ports. `compose.override.yaml` contains the
 localhost bindings and is merged automatically only by normal local
-`docker compose` commands. The Caddy configuration is baked into its image so
-the deployment does not depend on repository-relative host bind mounts.
+`docker compose` commands. The web image serves the React application and
+proxies API, Responses, health, and Socket.IO traffic to Fastify.
 
 In Coolify:
 
-1. Assign the Pulpo application domain to the `caddy` service on port `80`.
-   Do not route it directly to `web`; Caddy routes `/api`, `/v1`, `/health`, and
-   `/socket.io` to the API and sends other traffic to the web container.
+1. Assign the Pulpo application domain to the `web` service on port `80`.
+   Its nginx gateway routes `/api`, `/v1`, `/health`, and `/socket.io` to the
+   API and serves the React application for other requests.
 2. Assign a separate HTTPS object-storage domain to `seaweed-s3` on port
    `8333` when using the bundled SeaweedFS profile.
 3. Set `PUBLIC_URL` to the Pulpo application origin, `S3_PUBLIC_ENDPOINT` to
    the object-storage origin, and `COOKIE_SECURE=true`.
 4. Configure strong values for `POSTGRES_PASSWORD`, `ENCRYPTION_KEY`,
    `BOOTSTRAP_ADMIN_PASSWORD`, `S3_ACCESS_KEY_ID`, and
-   `S3_SECRET_ACCESS_KEY`. Set `DATABASE_URL` to the internal `postgres`
-   service using the same URL-encoded database password, and set
-   `REDIS_URL=redis://redis:6379`. Set `PULPO_ENV_FILE=.env.example`; Coolify
-   injects the configured environment values at runtime.
-5. Configure the health check on the `caddy` service as HTTP port `80`, path
+   `S3_SECRET_ACCESS_KEY`. The API receives `POSTGRES_HOST`, `POSTGRES_PORT`,
+   `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DATABASE` directly, so
+   generated passwords do not need URL encoding. Set
+   `PULPO_ENV_FILE=.env.example`; Coolify injects configured values at runtime.
+5. Configure the health check on the `web` service as HTTP port `80`, path
    `/health`, expected status `200`.
 
-No Pulpo service should publish `5432`, `6379`, `8080`, `8443`, or `8333`
+No Pulpo service should publish `5432`, `6379`, `8080`, or `8333`
 directly on the Coolify host.
 
 ## Local development

@@ -1,5 +1,0 @@
-FROM caddy:2.10-alpine
-
-# Repository-relative bind mounts are not portable to remote Compose builders
-# such as Coolify. Bake the routing configuration into the immutable image.
-COPY deploy/Caddyfile /etc/caddy/Caddyfile

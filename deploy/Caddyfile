@@ -1,8 +1,0 @@
-:80 {
-  encode zstd gzip
-
-  @backend path /api/* /v1/* /health /socket.io/*
-  reverse_proxy @backend api:3000
-
-  reverse_proxy web:80
-}
