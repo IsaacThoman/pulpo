@@ -3,18 +3,15 @@ import {
   Database,
   LayoutGrid,
   Lock,
-  Plug,
   SlidersHorizontal,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
-import { ConnectionsPage } from '../ConnectionsPage'
 import { cn } from '@/lib/utils'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal, el: <GeneralSection /> },
   { id: 'auth', label: 'Authentication', icon: Lock, el: <AuthenticationSection /> },
-  { id: 'connections', label: 'Connections', icon: Plug, el: <ConnectionsPage /> },
   { id: 'interface', label: 'Interface', icon: LayoutGrid, el: <InterfaceSection /> },
   { id: 'database', label: 'Database', icon: Database, el: <DatabaseSection /> },
 ] as const

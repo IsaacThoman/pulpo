@@ -1,20 +1,46 @@
-export interface AdminConnection {
+import { MODELS } from './mock'
+
+export interface AdminProvider {
   id: string
-  type: 'openai' | 'ollama'
-  url: string
-  auth: 'none' | 'bearer' | 'session' | 'oauth' | 'entra'
-  key: string
-  prefixId: string
-  modelIds: string[]
-  enabled: boolean
+  name: string
+  baseUrl: string
+  hasApiKey: boolean
+  modelCount: number
 }
 
-export const ADMIN_CONNECTIONS: AdminConnection[] = [
-  { id: 'conn-1', type: 'openai', url: 'https://api.openai.com/v1', auth: 'bearer', key: 'sk-••••••••', prefixId: '', modelIds: [], enabled: true },
-  { id: 'conn-2', type: 'openai', url: 'https://openrouter.ai/api/v1', auth: 'bearer', key: 'sk-or-••••••••', prefixId: 'or', modelIds: ['anthropic/claude-sonnet-4', 'deepseek/deepseek-r1'], enabled: true },
-  { id: 'conn-3', type: 'openai', url: 'https://api.groq.com/openai/v1', auth: 'bearer', key: '', prefixId: 'groq', modelIds: [], enabled: false },
-  { id: 'conn-4', type: 'ollama', url: 'http://host.docker.internal:11434', auth: 'none', key: '', prefixId: '', modelIds: [], enabled: true },
+export const ADMIN_PROVIDERS: AdminProvider[] = [
+  { id: 'prov-1', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', hasApiKey: true, modelCount: 3 },
+  { id: 'prov-2', name: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', hasApiKey: true, modelCount: 4 },
+  { id: 'prov-3', name: 'Anthropic', baseUrl: 'https://api.anthropic.com/v1', hasApiKey: true, modelCount: 2 },
+  { id: 'prov-4', name: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', hasApiKey: false, modelCount: 0 },
+  { id: 'prov-5', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', hasApiKey: true, modelCount: 1 },
 ]
+
+export interface AdminLab {
+  id: string
+  name: string
+  logo: string
+  modelCount: number
+}
+
+/** Labs currently used by models in the catalog. */
+export const ADMIN_LABS: AdminLab[] = (() => {
+  const byName = new Map<string, AdminLab>()
+  for (const m of MODELS) {
+    const existing = byName.get(m.provider)
+    if (existing) {
+      existing.modelCount += 1
+    } else {
+      byName.set(m.provider, {
+        id: m.labLogo,
+        name: m.provider,
+        logo: m.labLogo,
+        modelCount: 1,
+      })
+    }
+  }
+  return [...byName.values()]
+})()
 
 export interface Banner {
   id: string
