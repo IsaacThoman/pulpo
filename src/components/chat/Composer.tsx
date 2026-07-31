@@ -67,7 +67,7 @@ export function Composer({
 
   const submit = () => {
     const text = value.trim()
-    if (!text || streamingId) return
+    if (!text || !modelId || streamingId) return
     const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => attachment.id), temporary)
     if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
     setValue('')
@@ -221,7 +221,7 @@ export function Composer({
               size="icon-sm"
               className="rounded-full"
               onClick={submit}
-              disabled={!value.trim() || uploading}
+              disabled={!value.trim() || !modelId || uploading}
               aria-label="Send message"
             >
               <ArrowUp className="size-4" />

@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { useCatalog } from '@/stores/catalog'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { resolveProviderOrder, useModels } from '@/stores/models'
@@ -36,7 +36,7 @@ export function ModelSelector({
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
   const catalogModels = useCatalog((state) => state.models)
-  const selected = catalogModels.find((m) => m.id === value) ?? catalogModels[0]!
+  const selected = catalogModels.find((m) => m.id === value) ?? catalogModels[0] ?? getCatalogModel(value)
 
   const enabled = useMemo(() => catalogModels.filter((m) => m.enabled), [catalogModels])
   const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.provider))], [enabled])

@@ -54,6 +54,10 @@ export function ChatPage() {
     () => params.get('model') ?? chat?.modelId ?? models[0]?.id ?? ''
   )
   useEffect(() => {
+    if (chat || models.length === 0 || models.some((model) => model.id === modelId)) return
+    setModelId(models.find((model) => model.enabled)?.id ?? models[0]!.id)
+  }, [chat, modelId, models])
+  useEffect(() => {
     if (chat) setModelId(chat.modelId)
     else {
       const m = params.get('model')
