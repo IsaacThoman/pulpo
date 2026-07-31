@@ -33,7 +33,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Open `http://localhost:8080` by default. Sign in with `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`, then immediately change the password. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users.
+Open `http://localhost:8080` by default. On an empty database, Pulpo creates a one-time administrator from `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`. Sign in and immediately change the password. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users. After another administrator has been verified, the bootstrap account can be deleted and will not be recreated on restart.
 
 SeaweedFS is the default Compose storage backend. For a small single-host install, set:
 

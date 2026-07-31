@@ -1,5 +1,5 @@
 import argon2 from 'argon2'
-import { and, eq, gt, sql } from 'drizzle-orm'
+import { and, eq, gt } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { User } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -108,8 +108,11 @@ export function requireAdmin(request: FastifyRequest): AuthenticatedUser {
 
 export async function ensureBootstrapAdmin(): Promise<void> {
   const config = getConfig()
-  const [existing] = await db.select().from(users).where(sql`lower(${users.email}) = lower(${config.BOOTSTRAP_ADMIN_EMAIL})`).limit(1)
-  if (existing) return
+  // Bootstrap is a one-time empty-database operation. Once any account exists,
+  // administrators own the user lifecycle and a deleted bootstrap account must
+  // not silently return after a restart.
+  const [existingUser] = await db.select({ id: users.id }).from(users).limit(1)
+  if (existingUser) return
   const userId = newId()
   await db.transaction(async (tx) => {
     await tx.insert(users).values({
