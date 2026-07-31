@@ -434,10 +434,12 @@ export function makeUsageRecords(): UsageRecord[] {
   const rand = mulberry32(9001)
   const records: UsageRecord[] = []
   const now = Date.now()
+  const me = MONITOR_USERS.find((u) => u.id === CURRENT_USER_ID)!
   let balance = 100
-  for (let i = 0; i < 420; i++) {
-    const user = MONITOR_USERS[Math.floor(rand() * MONITOR_USERS.length)]
-    const model = MODELS[Math.floor(rand() * 7)]
+  for (let i = 0; i < 1400; i++) {
+    // bias toward the current user so personal stats are dense
+    const user = rand() < 0.32 ? me : MONITOR_USERS[Math.floor(rand() * MONITOR_USERS.length)]
+    const model = MODELS[Math.floor(rand() * MODELS.length)]
     const tokensIn = 50 + Math.floor(rand() * 4000)
     const tokensOut = 100 + Math.floor(rand() * 2500)
     const cost = (tokensIn * model.inputPrice + tokensOut * model.outputPrice) / 1_000_000
@@ -461,23 +463,34 @@ export function makeUsageRecords(): UsageRecord[] {
   return records.sort((a, b) => b.timestamp - a.timestamp)
 }
 
-export interface DailyUsage {
+export interface DailyModelUsage {
   date: string // yyyy-mm-dd
   calls: number
   tokens: number
   cost: number
+  models: { modelId: string; calls: number; tokens: number; cost: number }[]
 }
 
-export function makeDailyUsage(records: UsageRecord[], userId?: string): DailyUsage[] {
-  const map = new Map<string, DailyUsage>()
+/** Daily totals with a per-model breakdown, for stacked usage charts. */
+export function makeDailyModelUsage(records: UsageRecord[], userId?: string): DailyModelUsage[] {
+  const map = new Map<string, DailyModelUsage>()
   for (const r of records) {
     if (userId && r.userId !== userId) continue
-    const date = new Date(r.timestamp).toISOString().slice(0, 10)
-    const d = map.get(date) ?? { date, calls: 0, tokens: 0, cost: 0 }
-    d.calls += 1
-    d.tokens += r.tokensIn + r.tokensOut
-    d.cost += r.cost
-    map.set(date, d)
+    const d = new Date(r.timestamp)
+    const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    const day = map.get(date) ?? { date, calls: 0, tokens: 0, cost: 0, models: [] }
+    day.calls += 1
+    day.tokens += r.tokensIn + r.tokensOut
+    day.cost += r.cost
+    let m = day.models.find((x) => x.modelId === r.modelId)
+    if (!m) {
+      m = { modelId: r.modelId, calls: 0, tokens: 0, cost: 0 }
+      day.models.push(m)
+    }
+    m.calls += 1
+    m.tokens += r.tokensIn + r.tokensOut
+    m.cost += r.cost
+    map.set(date, day)
   }
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }

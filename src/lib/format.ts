@@ -11,6 +11,11 @@ export function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`
 }
 
+/** Always 4 decimals ("$0.2245") — matches OpenWebUI-Monitor usage displays. */
+export function formatUsd(usd: number): string {
+  return `$${usd.toFixed(4)}`
+}
+
 export function formatTokens(inTok: number, outTok: number): string {
   return `${formatNumber(inTok)} in / ${formatNumber(outTok)} out`
 }
@@ -40,6 +45,17 @@ export function formatDate(ts: number): string {
 export function formatDateTime(ts: number): string {
   return new Date(ts).toLocaleString(undefined, {
     month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
+/** "7/31/2026, 12:25 AM" — dense timestamp for usage record tables. */
+export function formatUsageTime(ts: number): string {
+  return new Date(ts).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'numeric',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
