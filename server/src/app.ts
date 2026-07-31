@@ -12,6 +12,12 @@ import { registerCatalogRoutes } from './catalog/routes.js'
 import { registerChatRoutes } from './chats/routes.js'
 import { registerApiKeyRoutes } from './api-keys/routes.js'
 import { registerPublicApiRoutes } from './public-api/routes.js'
+import { registerSettingsRoutes } from './settings/routes.js'
+import { registerShareRoutes } from './shares/routes.js'
+import { registerUsageRoutes } from './usage/routes.js'
+import { registerAdminRoutes } from './admin/routes.js'
+import { registerMessageRoutes } from './messages/routes.js'
+import { registerAttachmentRoutes } from './attachments/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -80,6 +86,12 @@ export async function buildApp() {
   await registerCatalogRoutes(app)
   await registerChatRoutes(app)
   await registerApiKeyRoutes(app)
+  await registerSettingsRoutes(app)
+  await registerShareRoutes(app)
+  await registerUsageRoutes(app)
+  await registerAdminRoutes(app)
+  await registerMessageRoutes(app)
+  await registerAttachmentRoutes(app)
   await registerPublicApiRoutes(app)
 
   await ensureBootstrapAdmin()

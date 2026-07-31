@@ -7,7 +7,7 @@ import { authenticateApiKey, assertApiKeyModelAllowed } from '../api-keys/routes
 import { newId } from '../lib/ids.js'
 import { createResponse } from '../responses/service.js'
 import { createRedis } from '../redis.js'
-import { requestCancellation } from '../responses/events.js'
+import { readResponseEvents, requestCancellation } from '../responses/events.js'
 import { notFound } from '../lib/errors.js'
 
 const publicResponseInput = z.object({
@@ -55,7 +55,11 @@ async function streamResponse(reply: FastifyReply, responseId: string): Promise<
     connection: 'keep-alive',
   })
   await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots')
+  let lastSequence = 0
+  let closed = false
   const close = async () => {
+    if (closed) return
+    closed = true
     await subscriber.quit()
     if (!reply.raw.writableEnded) reply.raw.end()
   }
@@ -64,12 +68,25 @@ async function streamResponse(reply: FastifyReply, responseId: string): Promise<
     const parsed = JSON.parse(message)
     if (parsed.responseId !== responseId) return
     if (channel === 'pulpo:response-events') {
+      if (parsed.sequence <= lastSequence) return
+      lastSequence = parsed.sequence
       reply.raw.write(`data: ${JSON.stringify(parsed.payload)}\n\n`)
     } else if (['completed', 'failed', 'cancelled', 'incomplete'].includes(parsed.status)) {
       reply.raw.write('data: [DONE]\n\n')
       void close()
     }
   })
+  const replay = await readResponseEvents(responseId, 0)
+  for (const event of replay) {
+    if (event.sequence <= lastSequence) continue
+    lastSequence = event.sequence
+    reply.raw.write(`data: ${JSON.stringify(event.payload)}\n\n`)
+  }
+  const [current] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+  if (current && !['queued', 'in_progress'].includes(current.status)) {
+    reply.raw.write('data: [DONE]\n\n')
+    await close()
+  }
 }
 
 async function waitForTerminal(responseId: string) {
@@ -99,6 +116,14 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     const user = request.user!
     const input = publicResponseInput.parse(request.body)
     await assertApiKeyModelAllowed(key.id, input.model)
+    const idempotencyKey = request.headers['idempotency-key'] as string | undefined
+    if (idempotencyKey) {
+      const [existing] = await db.select().from(responses).where(and(eq(responses.userId, user.id), eq(responses.idempotencyKey, idempotencyKey))).limit(1)
+      if (existing) {
+        if (input.stream) return streamResponse(reply, existing.id)
+        return publicResponse(existing)
+      }
+    }
     const chatId = newId()
     await db.insert(chats).values({
       id: chatId,
@@ -112,7 +137,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
       userId: user.id,
       chatId,
       apiKeyId: key.id,
-      idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+      idempotencyKey,
       input: {
         input: typeof input.input === 'string' ? input.input : '[structured input]',
         modelId: input.model,

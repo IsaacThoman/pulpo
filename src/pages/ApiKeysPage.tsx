@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Check,
   ChevronRight,
@@ -13,7 +13,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import { useApiKeys } from '@/stores/apiKeys'
-import { MODELS } from '@/lib/mock'
+import { useCatalog } from '@/stores/catalog'
 import { formatCost, maskKey, timeAgo } from '@/lib/format'
 import type { ApiKey } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -47,17 +47,16 @@ import { ModelIcon } from '@/components/ModelIcon'
 import { cn } from '@/lib/utils'
 
 const ALL_SCOPES = [
-  { id: 'chat', label: 'Chat completions' },
-  { id: 'embeddings', label: 'Embeddings' },
+  { id: 'responses', label: 'Responses' },
   { id: 'models', label: 'List models' },
 ] as const
 
-const CURL_SNIPPET = `curl https://api.pulpo.dev/v1/chat/completions \\
+const CURL_SNIPPET = `curl https://api.pulpo.dev/v1/responses \\
   -H "Authorization: Bearer $PULPO_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "kimi-k3",
-    "messages": [{"role": "user", "content": "hello"}],
+    "input": "hello",
     "stream": true
   }'`
 
@@ -68,14 +67,14 @@ const client = new OpenAI({
   apiKey: process.env.PULPO_API_KEY,
 });
 
-const stream = await client.chat.completions.create({
+const stream = await client.responses.create({
   model: "kimi-k3",
-  messages: [{ role: "user", content: "hello" }],
+  input: "hello",
   stream: true,
 });
 
 for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+  if (chunk.type === "response.output_text.delta") process.stdout.write(chunk.delta);
 }`
 
 function LimitRow({
@@ -131,11 +130,13 @@ export function ApiKeysPage() {
   const createKey = useApiKeys((s) => s.createKey)
   const revokeKey = useApiKeys((s) => s.revokeKey)
   const deleteKey = useApiKeys((s) => s.deleteKey)
+  const load = useApiKeys((s) => s.load)
+  const models = useCatalog((state) => state.models)
 
   const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
-  const [scopes, setScopes] = useState<string[]>(['chat', 'models'])
+  const [scopes, setScopes] = useState<string[]>(['responses', 'models'])
   const [allModels, setAllModels] = useState(true)
   const [selectedModels, setSelectedModels] = useState<string[]>([])
   const [monthlyBudget, setMonthlyBudget] = useState('')
@@ -146,7 +147,9 @@ export function ApiKeysPage() {
   const [confirmRevoke, setConfirmRevoke] = useState<ApiKey | null>(null)
   const [usageDocsOpen, setUsageDocsOpen] = useState(false)
 
-  const selectableModels = MODELS.filter((m) => m.enabled)
+  useEffect(() => { void load() }, [load])
+
+  const selectableModels = models.filter((m) => m.enabled)
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -162,7 +165,7 @@ export function ApiKeysPage() {
     setTotalBudget('')
     setAllModels(true)
     setSelectedModels([])
-    setScopes(['chat', 'models'])
+    setScopes(['responses', 'models'])
   }
 
   const toggleModel = (id: string, on: boolean) => {
@@ -173,8 +176,8 @@ export function ApiKeysPage() {
     })
   }
 
-  const submit = () => {
-    const { secret } = createKey({
+  const submit = async () => {
+    const { secret } = await createKey({
       name: name.trim() || 'untitled key',
       scopes: scopes as ApiKey['scopes'],
       allowedModels: allModels ? [] : selectedModels,
@@ -190,7 +193,7 @@ export function ApiKeysPage() {
 
   const modelLabel = (ids: string[]) => {
     if (ids.length === 0) return 'All models'
-    if (ids.length === 1) return MODELS.find((m) => m.id === ids[0])?.name ?? '1 model'
+    if (ids.length === 1) return models.find((m) => m.id === ids[0])?.name ?? '1 model'
     return `${ids.length} models`
   }
 
@@ -322,7 +325,7 @@ export function ApiKeysPage() {
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                           variant="destructive"
-                          onClick={() => deleteKey(k.id)}
+                          onClick={() => void deleteKey(k.id)}
                         >
                           <Trash2 />
                           Delete
@@ -361,9 +364,9 @@ export function ApiKeysPage() {
               <CardContent className="space-y-4">
                 <div className="grid gap-2 text-sm sm:grid-cols-2">
                   {[
-                    ['POST', '/v1/chat/completions'],
+                    ['POST', '/v1/responses'],
                     ['GET', '/v1/models'],
-                    ['POST', '/v1/embeddings'],
+                    ['GET', '/v1/responses/:id'],
                   ].map(([method, path]) => (
                     <div
                       key={path}
@@ -476,7 +479,7 @@ export function ApiKeysPage() {
               {!allModels && selectedModels.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
                   {selectedModels.map((id) => {
-                    const m = MODELS.find((x) => x.id === id)
+                    const m = models.find((x) => x.id === id)
                     if (!m) return null
                     return (
                       <Badge key={id} variant="secondary" className="gap-1 font-normal">
@@ -601,7 +604,7 @@ export function ApiKeysPage() {
             <Button
               variant="destructive"
               onClick={() => {
-                if (confirmRevoke) revokeKey(confirmRevoke.id)
+                if (confirmRevoke) void revokeKey(confirmRevoke.id)
                 setConfirmRevoke(null)
               }}
             >

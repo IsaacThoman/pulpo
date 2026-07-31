@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
 import { formatCost, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
+import { apiRequest } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
@@ -29,6 +30,13 @@ export function AdminUsersPage() {
   const [query, setQuery] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<MonitorUser | null>(null)
+  const loadAdmin = useUsage((s) => s.loadAdmin)
+  useEffect(() => { void loadAdmin() }, [loadAdmin])
+
+  const patchUser = async (id: string, patch: Record<string, unknown>) => {
+    await apiRequest(`/api/admin/users/${id}`, { method: 'PATCH', body: patch })
+    await loadAdmin()
+  }
 
   const filtered = users.filter(
     (u) =>
@@ -74,7 +82,7 @@ export function AdminUsersPage() {
               {filtered.map((u) => (
                 <tr key={u.id} className="border-b last:border-0">
                   <td className="px-5 py-2.5">
-                    <Select defaultValue={u.role}>
+                    <Select value={u.role} onValueChange={(role) => void patchUser(u.id, { role })}>
                       <SelectTrigger className="h-7 w-24 text-xs">
                         <SelectValue />
                       </SelectTrigger>
@@ -118,6 +126,11 @@ export function AdminUsersPage() {
                         variant="ghost"
                         title="Delete"
                         className="hover:text-destructive"
+                        onClick={() => {
+                          if (confirm(`Delete ${u.email}? This cannot be undone.`)) {
+                            void apiRequest(`/api/admin/users/${u.id}`, { method: 'DELETE' }).then(loadAdmin)
+                          }
+                        }}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -133,13 +146,20 @@ export function AdminUsersPage() {
       {/* add user */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="sm:max-w-sm">
+          <form onSubmit={(event) => {
+            event.preventDefault()
+            const values = new FormData(event.currentTarget)
+            void apiRequest('/api/admin/users', { method: 'POST', body: {
+              role: values.get('role'), name: values.get('name'), email: values.get('email'), password: values.get('password'),
+            }}).then(() => { setAddOpen(false); return loadAdmin() })
+          }} className="contents">
           <DialogHeader>
             <DialogTitle>Add user</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Role</Label>
-              <Select defaultValue="user">
+              <Select name="role" defaultValue="user">
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -152,26 +172,36 @@ export function AdminUsersPage() {
             </div>
             <div className="space-y-1.5">
               <Label>Name</Label>
-              <Input placeholder="Full name" />
+              <Input name="name" placeholder="Full name" required />
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>
-              <Input type="email" placeholder="name@example.com" />
+              <Input name="email" type="email" placeholder="name@example.com" required />
             </div>
             <div className="space-y-1.5">
               <Label>Password</Label>
-              <Input type="password" placeholder="Temporary password" />
+              <Input name="password" type="password" minLength={8} placeholder="Temporary password" required />
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setAddOpen(false)}>Create</Button>
+            <Button type="submit">Create</Button>
           </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
       {/* edit user */}
       <Dialog open={!!editUser} onOpenChange={(v) => !v && setEditUser(null)}>
         <DialogContent className="sm:max-w-sm">
+          <form onSubmit={(event) => {
+            event.preventDefault()
+            if (!editUser) return
+            const values = new FormData(event.currentTarget)
+            const password = String(values.get('password') ?? '')
+            void patchUser(editUser.id, {
+              name: values.get('name'), email: values.get('email'), ...(password ? { password } : {}),
+            }).then(() => setEditUser(null))
+          }} className="contents">
           <DialogHeader>
             <DialogTitle>Edit user</DialogTitle>
             <DialogDescription>Joined {editUser && formatDate(editUser.joinedAt)}</DialogDescription>
@@ -179,20 +209,21 @@ export function AdminUsersPage() {
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Name</Label>
-              <Input defaultValue={editUser?.name} />
+              <Input name="name" defaultValue={editUser?.name} required />
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>
-              <Input defaultValue={editUser?.email} />
+              <Input name="email" type="email" defaultValue={editUser?.email} required />
             </div>
             <div className="space-y-1.5">
               <Label>New password</Label>
-              <Input type="password" placeholder="Leave blank to keep" />
+              <Input name="password" type="password" minLength={8} placeholder="Leave blank to keep" />
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={() => setEditUser(null)}>Save</Button>
+            <Button type="submit">Save</Button>
           </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { SearchModal } from './SearchModal'
 import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
+import { SettingsBridge } from '@/features/settings/SettingsBridge'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
@@ -33,6 +34,7 @@ export function AppLayout() {
   return (
     <TooltipProvider delayDuration={200}>
       <ChatDataBridge />
+      <SettingsBridge />
       <div className="flex h-full overflow-hidden">
         <Sidebar
           collapsed={collapsed}

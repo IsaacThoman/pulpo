@@ -19,6 +19,7 @@ import { LoginPage } from '@/pages/auth/LoginPage'
 import { SignupPage } from '@/pages/auth/SignupPage'
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
 import { PendingPage } from '@/pages/auth/PendingPage'
+import { SharedChatPage } from '@/pages/SharedChatPage'
 import { useAuth } from '@/stores/auth'
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="forgot-password" element={<ForgotPasswordPage />} />
         </Route>
         <Route path="pending" element={<PendingPage />} />
+        <Route path="share/:token" element={<SharedChatPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>

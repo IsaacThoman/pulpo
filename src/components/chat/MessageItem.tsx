@@ -10,7 +10,7 @@ import {
   ThumbsUp,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
-import { getModel } from '@/lib/mock'
+import { getCatalogModel } from '@/stores/catalog'
 import { formatCost, formatDuration, formatNumber, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
@@ -129,7 +129,7 @@ export const MessageItem = memo(function MessageItem({
     )
   }
 
-  const model = getModel(message.modelId ?? chat.modelId)
+  const model = getCatalogModel(message.modelId ?? chat.modelId)
   const isThinking = streaming && !message.content && message.reasoning !== undefined
 
   return (

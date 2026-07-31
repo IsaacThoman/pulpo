@@ -1,0 +1,92 @@
+import { createHash } from 'node:crypto'
+import { and, eq } from 'drizzle-orm'
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { requireUser } from '../auth/service.js'
+import { getConfig } from '../config.js'
+import { db } from '../database/client.js'
+import { attachments, chats } from '../database/schema.js'
+import { AppError, notFound } from '../lib/errors.js'
+import { newId } from '../lib/ids.js'
+import { getBlobStore } from '../storage/index.js'
+
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+
+export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
+
+  app.post('/api/attachments', async (request, reply) => {
+    const user = requireUser(request)
+    const input = z.object({
+      chatId: z.uuid().nullable().default(null), originalName: z.string().trim().min(1).max(255),
+      mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_BYTES),
+    }).parse(request.body)
+    if (input.chatId) {
+      const [chat] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, input.chatId), eq(chats.userId, user.id))).limit(1)
+      if (!chat) throw notFound('Chat')
+    }
+    const id = newId()
+    const objectKey = `users/${user.id}/attachments/${id}`
+    const [created] = await db.insert(attachments).values({ id, userId: user.id, objectKey, ...input }).returning()
+    const uploadUrl = await getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
+    reply.code(201)
+    return { attachment: created, uploadUrl, uploadHeaders: { 'content-type': input.mimeType } }
+  })
+
+  app.put('/api/attachments/local-upload/:key', async (request, reply) => {
+    const user = requireUser(request)
+    if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Upload')
+    const { key } = request.params as { key: string }
+    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.objectKey, key), eq(attachments.userId, user.id), eq(attachments.status, 'pending'))).limit(1)
+    if (!attachment) throw notFound('Attachment')
+    const body = request.body as Buffer
+    if (!Buffer.isBuffer(body) || body.byteLength !== attachment.sizeBytes) throw new AppError(400, 'attachment_size_mismatch', 'Uploaded size does not match the declared size')
+    await getBlobStore().put(key, body, { contentType: attachment.mimeType, contentLength: body.byteLength })
+    reply.code(204).send()
+  })
+
+  app.post('/api/attachments/:id/confirm', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1)
+    if (!attachment) throw notFound('Attachment')
+    try {
+      const body = await getBlobStore().get(attachment.objectKey)
+      if (body.byteLength !== attachment.sizeBytes) throw new Error('Uploaded size does not match')
+      const checksum = createHash('sha256').update(body).digest('base64url')
+      const [ready] = await db.update(attachments).set({ status: 'ready', checksum, updatedAt: new Date() }).where(eq(attachments.id, id)).returning()
+      return ready
+    } catch (cause) {
+      await db.update(attachments).set({ status: 'failed', error: cause instanceof Error ? cause.message : 'Validation failed', updatedAt: new Date() }).where(eq(attachments.id, id))
+      throw new AppError(400, 'attachment_validation_failed', 'Attachment validation failed')
+    }
+  })
+
+  app.get('/api/attachments/:id/download', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id), eq(attachments.status, 'ready'))).limit(1)
+    if (!attachment) throw notFound('Attachment')
+    return { url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300) }
+  })
+
+  app.get('/api/attachments/local-download/:key', async (request, reply) => {
+    const user = requireUser(request)
+    if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Download')
+    const { key } = request.params as { key: string }
+    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.objectKey, key), eq(attachments.userId, user.id), eq(attachments.status, 'ready'))).limit(1)
+    if (!attachment) throw notFound('Attachment')
+    reply.type(attachment.mimeType).header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`)
+    return Buffer.from(await getBlobStore().get(key))
+  })
+
+  app.delete('/api/attachments/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1)
+    if (!attachment) throw notFound('Attachment')
+    await getBlobStore().delete(attachment.objectKey)
+    await db.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))
+    reply.code(204).send()
+  })
+}

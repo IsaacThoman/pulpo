@@ -1,10 +1,12 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { loginInputSchema, signupInputSchema } from '@pulpo/contracts'
+import { z } from 'zod'
 import { db } from '../database/client.js'
-import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
+import { applicationSettings, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { hashToken, randomToken } from '../lib/crypto.js'
 import {
   createPasswordHash,
   createSession,
@@ -50,6 +52,35 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/auth/logout', async (request, reply) => {
     await destroySession(request, reply)
+    reply.code(204).send()
+  })
+
+  app.post('/api/auth/forgot-password', async (request, reply) => {
+    const { email } = z.object({ email: z.email() }).parse(request.body)
+    const [user] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = lower(${email})`).limit(1)
+    if (user) {
+      const token = randomToken(32)
+      await db.insert(passwordResetTokens).values({
+        id: newId(), userId: user.id, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + 60 * 60 * 1_000),
+      })
+      // SMTP delivery is intentionally pluggable; administrators can generate
+      // an equivalent one-time link when no mail transport is configured.
+    }
+    reply.code(202)
+    return { accepted: true }
+  })
+
+  app.post('/api/auth/reset-password', async (request, reply) => {
+    const input = z.object({ token: z.string().min(20), password: z.string().min(8).max(1_000) }).parse(request.body)
+    const [reset] = await db.select().from(passwordResetTokens).where(and(
+      eq(passwordResetTokens.tokenHash, hashToken(input.token)), isNull(passwordResetTokens.consumedAt), gt(passwordResetTokens.expiresAt, new Date()),
+    )).limit(1)
+    if (!reset) throw new AppError(400, 'reset_token_invalid', 'This password reset link is invalid or expired')
+    await db.transaction(async (tx) => {
+      await tx.update(passwordCredentials).set({ passwordHash: await createPasswordHash(input.password), changedAt: new Date() }).where(eq(passwordCredentials.userId, reset.userId))
+      await tx.update(passwordResetTokens).set({ consumedAt: new Date() }).where(eq(passwordResetTokens.id, reset.id))
+      await tx.delete(sessions).where(eq(sessions.userId, reset.userId))
+    })
     reply.code(204).send()
   })
 

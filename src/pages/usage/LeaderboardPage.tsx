@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { BarChart3, Crown, Save } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
+import { useAuth } from '@/stores/auth'
 import { getModel, makeDailyModelUsage } from '@/lib/mock'
 import { formatDate, formatUsd } from '@/lib/format'
 import { periodDays, rangeMs } from '@/lib/time-range'
@@ -124,7 +125,13 @@ export function LeaderboardPage() {
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
 
-  const me = users.find((u) => u.id === currentUserId)!
+  const authUser = useAuth((state) => state.user)
+  const me = users.find((u) => u.id === currentUserId) ?? {
+    id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
+    nickname: null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
+    joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
+    showOnLeaderboard: true, barColor: '#10b981',
+  }
 
   // preference editor state (saved explicitly)
   const [show, setShow] = useState(me.showOnLeaderboard)

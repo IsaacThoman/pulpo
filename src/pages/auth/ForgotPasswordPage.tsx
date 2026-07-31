@@ -4,19 +4,22 @@ import { ArrowLeft, CheckCircle2, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { apiRequest } from '@/lib/api'
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
-    window.setTimeout(() => {
+    try {
+      await apiRequest('/api/auth/forgot-password', { method: 'POST', body: { email } })
+    } finally {
       setLoading(false)
       setSent(true)
-    }, 600)
+    }
   }
 
   return (

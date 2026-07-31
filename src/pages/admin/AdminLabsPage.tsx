@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
-import { ADMIN_LABS, type AdminLab } from '@/lib/mock-admin'
 import { AI_ICONS, isAiIconAvailable } from '@/lib/ai-icons'
+import { apiRequest } from '@/lib/api'
 import { AiLogo } from '@/components/ProviderLogo'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,6 +28,13 @@ type Draft = {
   logo: string
 }
 
+interface AdminLab {
+  id: string
+  name: string
+  logo: string
+  modelCount: number
+}
+
 const emptyDraft = (): Draft => ({
   name: '',
   logo: 'openai',
@@ -36,8 +43,14 @@ const emptyDraft = (): Draft => ({
 const LAB_ICONS = AI_ICONS.filter((icon) => isAiIconAvailable(icon, 'lab') && !icon.color)
 
 export function AdminLabsPage() {
-  const [labs, setLabs] = useState(ADMIN_LABS)
+  const [labs, setLabs] = useState<AdminLab[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
+
+  const load = async () => {
+    const result = await apiRequest<{ data: Array<Omit<AdminLab, 'modelCount'>> }>('/api/admin/labs')
+    setLabs(result.data.map((lab) => ({ ...lab, modelCount: 0 })))
+  }
+  useEffect(() => { void load() }, [])
 
   const openAdd = () => setDraft(emptyDraft())
 
@@ -45,32 +58,20 @@ export function AdminLabsPage() {
     setDraft({ id: lab.id, name: lab.name, logo: lab.logo })
   }
 
-  const save = () => {
+  const save = async () => {
     if (!draft?.name.trim()) return
     if (draft.id) {
-      setLabs((ls) =>
-        ls.map((l) =>
-          l.id === draft.id
-            ? { ...l, name: draft.name.trim(), logo: draft.logo }
-            : l
-        )
-      )
+      await apiRequest(`/api/admin/labs/${draft.id}`, { method: 'PATCH', body: { name: draft.name.trim(), logo: draft.logo } })
     } else {
-      setLabs((ls) => [
-        ...ls,
-        {
-          id: draft.logo + '-' + crypto.randomUUID().slice(0, 8),
-          name: draft.name.trim(),
-          logo: draft.logo,
-          modelCount: 0,
-        },
-      ])
+      await apiRequest('/api/admin/labs', { method: 'POST', body: { name: draft.name.trim(), logo: draft.logo } })
     }
     setDraft(null)
+    await load()
   }
 
-  const remove = (id: string) => {
-    setLabs((ls) => ls.filter((l) => l.id !== id))
+  const remove = async (id: string) => {
+    await apiRequest(`/api/admin/labs/${id}`, { method: 'DELETE' })
+    await load()
   }
 
   return (
@@ -131,7 +132,7 @@ export function AdminLabsPage() {
                         variant="ghost"
                         title="Delete"
                         className="hover:text-destructive"
-                        onClick={() => remove(lab.id)}
+                        onClick={() => void remove(lab.id)}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -221,7 +222,7 @@ export function AdminLabsPage() {
             <Button variant="outline" onClick={() => setDraft(null)}>
               Cancel
             </Button>
-            <Button onClick={save} disabled={!draft?.name.trim()}>
+            <Button onClick={() => void save()} disabled={!draft?.name.trim()}>
               {draft?.id ? 'Save' : 'Create'}
             </Button>
           </DialogFooter>

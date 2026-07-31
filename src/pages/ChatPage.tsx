@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Share2 } from 'lucide-react'
 import { useChat } from '@/stores/chat'
-import { getModel, MODELS, REPLY_SUGGESTIONS } from '@/lib/mock'
+import { REPLY_SUGGESTIONS } from '@/lib/mock'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer } from '@/components/chat/Composer'
 import { MessageItem } from '@/components/chat/MessageItem'
@@ -13,7 +14,7 @@ import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 
 function Placeholder({ modelId, onPick }: { modelId: string; onPick: (s: string) => void }) {
-  const model = getModel(modelId)
+  const model = getCatalogModel(modelId)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
       <div className="flex items-center gap-3">
@@ -45,10 +46,11 @@ export function ChatPage() {
   const chats = useChat((s) => s.chats)
   const streamingId = useChat((s) => s.streamingId)
   const chatWidth = useSettings((s) => s.chatWidth)
+  const models = useCatalog((state) => state.models)
 
   const chat = chats.find((c) => c.id === chatId) ?? null
   const [modelId, setModelId] = useState(
-    () => params.get('model') ?? chat?.modelId ?? MODELS[0].id
+    () => params.get('model') ?? chat?.modelId ?? models[0]?.id ?? ''
   )
   useEffect(() => {
     if (chat) setModelId(chat.modelId)
@@ -94,10 +96,8 @@ export function ChatPage() {
             <TooltipTrigger asChild>
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                onClick={() => {
-                  useChat.getState().shareChat(chat.id)
-                  navigator.clipboard?.writeText(`${location.origin}/share/${chat.id}`).catch(() => {})
-                }}
+                onClick={() => void useChat.getState().shareChat(chat.id)
+                  .then((url) => navigator.clipboard?.writeText(url))}
                 aria-label="Share chat"
               >
                 <Share2 className="size-4" />

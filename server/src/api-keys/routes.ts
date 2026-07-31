@@ -1,9 +1,9 @@
 import argon2 from 'argon2'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { apiKeyModelPermissions, apiKeys, users } from '../database/schema.js'
+import { apiKeyModelPermissions, apiKeys, usageEvents, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { randomToken } from '../lib/crypto.js'
@@ -40,7 +40,15 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
   app.get('/api/api-keys', async (request) => {
     const user = requireUser(request)
     const rows = await db.select().from(apiKeys).where(eq(apiKeys.userId, user.id))
-    return { data: rows.map(({ secretHash: _, ...row }) => row) }
+    const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
+    return { data: await Promise.all(rows.map(async ({ secretHash: _, ...row }) => {
+      const allowedModels = await db.select({ modelId: apiKeyModelPermissions.modelId }).from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, row.id))
+      const [spend] = await db.select({
+        lifetime: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+        monthly: sql<number>`coalesce(sum(${usageEvents.costMicros}) filter (where ${usageEvents.createdAt} >= ${monthStart}), 0)::bigint`,
+      }).from(usageEvents).where(eq(usageEvents.apiKeyId, row.id))
+      return { ...row, allowedModels: allowedModels.map((item) => item.modelId), spentThisMonthMicros: Number(spend?.monthly ?? 0), spentLifetimeMicros: Number(spend?.lifetime ?? 0) }
+    })) }
   })
 
   app.post('/api/api-keys', async (request, reply) => {
@@ -78,5 +86,13 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
       .returning({ id: apiKeys.id })
     if (!result.length) throw new AppError(404, 'not_found', 'API key not found')
     return { id, revoked: true }
+  })
+
+  app.delete('/api/api-keys/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const deleted = await db.delete(apiKeys).where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id))).returning({ id: apiKeys.id })
+    if (!deleted.length) throw new AppError(404, 'not_found', 'API key not found')
+    reply.code(204).send()
   })
 }

@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { BlobMetadata, BlobStore } from './blob-store.js'
 
@@ -13,6 +13,7 @@ export interface S3BlobStoreOptions {
 
 export class S3BlobStore implements BlobStore {
   private readonly client: S3Client
+  private ready: Promise<void> | undefined
 
   constructor(private readonly options: S3BlobStoreOptions) {
     this.client = new S3Client({
@@ -23,7 +24,15 @@ export class S3BlobStore implements BlobStore {
     })
   }
 
+  private ensureReady(): Promise<void> {
+    this.ready ??= this.client.send(new HeadBucketCommand({ Bucket: this.options.bucket }))
+      .then(() => undefined)
+      .catch(async () => { await this.client.send(new CreateBucketCommand({ Bucket: this.options.bucket })) })
+    return this.ready
+  }
+
   async put(key: string, body: Uint8Array, metadata: BlobMetadata): Promise<void> {
+    await this.ensureReady()
     await this.client.send(new PutObjectCommand({
       Bucket: this.options.bucket,
       Key: key,
@@ -36,16 +45,19 @@ export class S3BlobStore implements BlobStore {
   }
 
   async get(key: string): Promise<Uint8Array> {
+    await this.ensureReady()
     const result = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: key }))
     if (!result.Body) throw new Error('Object body is empty')
     return result.Body.transformToByteArray()
   }
 
   async delete(key: string): Promise<void> {
+    await this.ensureReady()
     await this.client.send(new DeleteObjectCommand({ Bucket: this.options.bucket, Key: key }))
   }
 
-  createUploadUrl(key: string, metadata: BlobMetadata, expiresInSeconds: number): Promise<string> {
+  async createUploadUrl(key: string, metadata: BlobMetadata, expiresInSeconds: number): Promise<string> {
+    await this.ensureReady()
     return getSignedUrl(this.client, new PutObjectCommand({
       Bucket: this.options.bucket,
       Key: key,
@@ -54,7 +66,8 @@ export class S3BlobStore implements BlobStore {
     }), { expiresIn: expiresInSeconds })
   }
 
-  createDownloadUrl(key: string, expiresInSeconds: number): Promise<string> {
+  async createDownloadUrl(key: string, expiresInSeconds: number): Promise<string> {
+    await this.ensureReady()
     return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.options.bucket, Key: key }), { expiresIn: expiresInSeconds })
   }
 }

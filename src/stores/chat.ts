@@ -6,7 +6,7 @@ import { enqueueMutation } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { useSettings } from '@/stores/settings'
-import { getModel, MODELS } from '@/lib/mock'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { useAuth } from './auth'
 
 interface ServerResponse {
@@ -56,11 +56,11 @@ interface ChatState {
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
   moveToFolder: (id: string, folderId: string | null) => void
-  shareChat: (id: string) => void
+  shareChat: (id: string) => Promise<string>
   addFolder: (name: string) => void
   toggleFolder: (id: string) => void
   deleteFolder: (id: string) => void
-  sendMessage: (chatId: string | null, content: string, modelId: string) => string
+  sendMessage: (chatId: string | null, content: string, modelId: string, attachmentIds?: string[]) => string
   regenerate: (chatId: string, messageId: string) => void
   editUserMessage: (chatId: string, messageId: string, content: string) => void
   stopStreaming: () => void
@@ -227,7 +227,7 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   newChat: (modelId) => {
     set({ activeChatId: null })
-    return modelId ?? MODELS[0].id
+    return modelId ?? useCatalog.getState().models[0]?.id ?? ''
   },
   setActive: (activeChatId) => set({ activeChatId }),
 
@@ -250,7 +250,14 @@ export const useChat = create<ChatState>()((set, get) => ({
     set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId } : chat) }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
   },
-  shareChat: () => undefined,
+  shareChat: async (id) => {
+    const share = await apiRequest<{ token: string }>('/api/chat-shares', {
+      method: 'POST',
+      body: { chatId: id, expiresAt: null },
+      idempotencyKey: crypto.randomUUID(),
+    })
+    return `${location.origin}/share/${share.token}`
+  },
   addFolder: (name) => {
     const id = crypto.randomUUID()
     set((state) => ({ folders: [...state.folders, { id, name, expanded: true }] }))
@@ -267,14 +274,14 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('DELETE', `/api/folders/${id}`)
   },
 
-  sendMessage: (chatId, content, modelId) => {
+  sendMessage: (chatId, content, modelId, attachmentIds = []) => {
     const userId = currentUserId()
     if (!userId) return chatId ?? ''
     const id = chatId ?? crypto.randomUUID()
     const responseId = crypto.randomUUID()
     const timestamp = Date.now()
     const generation = resolveGeneration(
-      chatOptionsFor(getModel(modelId), useModelConfig.getState().overrides),
+      chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
       useSettings.getState().generation[modelId],
       modelId,
     )
@@ -302,7 +309,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         input: content,
         modelId: generation.effectiveModelId || modelId,
         presetSelections: generation.selections,
-        attachmentIds: [],
+        attachmentIds,
       }) as { response?: ResponseSnapshot } | undefined
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {

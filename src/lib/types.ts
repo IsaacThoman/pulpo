@@ -110,7 +110,7 @@ export interface ApiKey {
   prefix: string // e.g. sk-pulpo-a1b2
   createdAt: number
   lastUsedAt: number | null
-  scopes: ('chat' | 'embeddings' | 'models')[]
+  scopes: ('responses' | 'models')[]
   allowedModels: string[] // empty = all
   monthlyBudget: number | null // USD
   totalBudget: number | null // USD lifetime cap
@@ -136,7 +136,7 @@ export interface MonitorUser {
   name: string
   nickname: string | null
   email: string
-  role: 'admin' | 'user'
+  role: 'pending' | 'admin' | 'user'
   balance: number
   joinedAt: number
   blocked: boolean

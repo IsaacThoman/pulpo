@@ -9,6 +9,7 @@ import { flushOutbox } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
+import { useCatalog } from '@/stores/catalog'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -33,6 +34,7 @@ export function ChatDataBridge() {
   const applyResponseEvent = useChat((state) => state.applyResponseEvent)
   const applyResponseSnapshot = useChat((state) => state.applyResponseSnapshot)
   const socketRef = useRef<PulpoSocket | null>(null)
+  const loadCatalog = useCatalog((state) => state.load)
   const revisionRef = useRef(user?.stateRevision ?? 0)
   const currentTabId = useMemo(tabId, [])
 
@@ -55,6 +57,7 @@ export function ChatDataBridge() {
   useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
   useEffect(() => { if (foldersQuery.data) replaceFolders(foldersQuery.data) }, [foldersQuery.data, replaceFolders])
   useEffect(() => { if (chatQuery.data) setDetailedChat(chatQuery.data) }, [chatQuery.data, setDetailedChat])
+  useEffect(() => { if (userId) void loadCatalog() }, [userId, loadCatalog])
 
   useEffect(() => {
     if (!userId || userRole === 'pending') return

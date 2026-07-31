@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
+import { useAuth } from '@/stores/auth'
 import { makeDailyModelUsage } from '@/lib/mock'
 import { formatDate, formatUsd } from '@/lib/format'
 import { periodDays, rangeMs } from '@/lib/time-range'
@@ -27,7 +28,13 @@ export function PersonalPage() {
   const records = useUsage((s) => s.records)
   const userId = useUsage((s) => s.currentUserId)
   const users = useUsage((s) => s.users)
-  const me = users.find((u) => u.id === userId)!
+  const authUser = useAuth((state) => state.user)
+  const me = users.find((u) => u.id === userId) ?? {
+    id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
+    nickname: null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
+    joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
+    showOnLeaderboard: true, barColor: '#10b981',
+  }
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<Metric>('cost')
 

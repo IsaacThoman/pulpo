@@ -1,0 +1,120 @@
+import { and, desc, eq, ne, sql } from 'drizzle-orm'
+import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
+import { createPasswordHash, requireAdmin } from '../auth/service.js'
+import { db } from '../database/client.js'
+import { apiKeys, auditEvents, creditLedger, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
+import { hashToken, randomToken } from '../lib/crypto.js'
+import { AppError, notFound } from '../lib/errors.js'
+import { newId } from '../lib/ids.js'
+import { publishStateChange } from '../responses/events.js'
+
+const patchUserSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  email: z.email().optional(),
+  password: z.string().min(8).max(1_000).optional(),
+  role: z.enum(['pending', 'user', 'admin']).optional(),
+  blocked: z.boolean().optional(),
+  balanceMicros: z.number().int().nonnegative().optional(),
+  nickname: z.string().trim().max(80).nullable().optional(),
+  leaderboardVisible: z.boolean().optional(),
+  leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+})
+
+export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
+  app.post('/api/admin/users', async (request, reply) => {
+    const admin = requireAdmin(request)
+    const input = z.object({
+      name: z.string().trim().min(1).max(120), email: z.email(), password: z.string().min(8).max(1_000),
+      role: z.enum(['pending', 'user', 'admin']).default('user'), balanceMicros: z.number().int().nonnegative().default(0),
+    }).parse(request.body)
+    const id = newId()
+    await db.transaction(async (tx) => {
+      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros: input.balanceMicros })
+      await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
+      await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
+    })
+    const [created] = await db.select().from(users).where(eq(users.id, id)).limit(1)
+    reply.code(201)
+    return created
+  })
+
+  app.get('/api/admin/users', async (request) => {
+    requireAdmin(request)
+    const rows = await db.select({
+      user: users,
+      calls: sql<number>`count(${usageEvents.id})::int`,
+      spentMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+    }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
+    return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros) })) }
+  })
+
+  app.patch('/api/admin/users/:id', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const patch = patchUserSchema.parse(request.body)
+    if (id === admin.id && (patch.blocked || (patch.role && patch.role !== 'admin'))) {
+      throw new AppError(409, 'cannot_demote_self', 'You cannot block or demote your own administrator account')
+    }
+    await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(users).where(eq(users.id, id)).limit(1)
+      if (!current) throw notFound('User')
+      const balanceChanged = patch.balanceMicros !== undefined && patch.balanceMicros !== current.balanceMicros
+      const { password, ...userPatch } = patch
+      const [updated] = await tx.update(users).set({
+        ...userPatch,
+        stateRevision: sql`${users.stateRevision} + 1`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, id)).returning()
+      if (balanceChanged) {
+        await tx.insert(creditLedger).values({
+          id: newId(), userId: id, type: 'admin_adjustment',
+          amountMicros: patch.balanceMicros! - current.balanceMicros,
+          balanceAfterMicros: patch.balanceMicros!, metadata: { actorUserId: admin.id },
+        })
+      }
+      if (updated!.blocked) {
+        await tx.delete(sessions).where(eq(sessions.userId, id))
+        await tx.update(apiKeys).set({ status: 'revoked', revokedAt: new Date() }).where(and(eq(apiKeys.userId, id), ne(apiKeys.status, 'revoked')))
+      }
+      if (password) {
+        const passwordHash = await createPasswordHash(password)
+        await tx.insert(passwordCredentials).values({ userId: id, passwordHash })
+          .onConflictDoUpdate({ target: passwordCredentials.userId, set: { passwordHash } })
+        await tx.delete(sessions).where(eq(sessions.userId, id))
+      }
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id, metadata: patch,
+      })
+    })
+    const [updated] = await db.select().from(users).where(eq(users.id, id)).limit(1)
+    await publishStateChange({ userId: id, revision: updated!.stateRevision })
+    return updated
+  })
+
+  app.post('/api/admin/users/:id/reset-link', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1)
+    if (!target) throw notFound('User')
+    const token = randomToken(32)
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1_000)
+    await db.insert(passwordResetTokens).values({ id: newId(), userId: id, tokenHash: hashToken(token), expiresAt })
+    await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'password_reset.create', targetType: 'user', targetId: id })
+    return { token, expiresAt: expiresAt.toISOString() }
+  })
+
+  app.delete('/api/admin/users/:id', async (request, reply) => {
+    const admin = requireAdmin(request)
+    const { id } = request.params as { id: string }
+    if (id === admin.id) throw new AppError(409, 'cannot_delete_self', 'You cannot delete your own account')
+    const deleted = await db.delete(users).where(eq(users.id, id)).returning({ id: users.id })
+    if (!deleted.length) throw notFound('User')
+    reply.code(204).send()
+  })
+
+  app.get('/api/admin/audit-events', async (request) => {
+    requireAdmin(request)
+    return { data: await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(500) }
+  })
+}

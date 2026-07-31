@@ -82,10 +82,7 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         </DropdownMenuSubContent>
       </DropdownMenuSub>
       <DropdownMenuItem
-        onClick={() => {
-          shareChat(chat.id)
-          navigator.clipboard?.writeText(`${location.origin}/share/${chat.id}`).catch(() => {})
-        }}
+        onClick={() => void shareChat(chat.id).then((url) => navigator.clipboard?.writeText(url))}
       >
         <Share2 />
         Copy share link

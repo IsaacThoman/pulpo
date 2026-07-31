@@ -1,9 +1,10 @@
-import OpenAI from 'openai'
+import OpenAI, { toFile } from 'openai'
 import { and, asc, eq, ne } from 'drizzle-orm'
 import type { ResponseEvent, ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   chats,
+  attachments,
   models,
   notifications,
   providerConnections,
@@ -17,6 +18,7 @@ import { newId } from '../lib/ids.js'
 import { isCancellationRequested, publishResponseEvent, publishSnapshot } from './events.js'
 import { releaseBudget, settleBudget } from '../accounting/service.js'
 import { toSnapshot } from './service.js'
+import { getBlobStore } from '../storage/index.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -78,6 +80,40 @@ function previewFromOutput(output: unknown[]): string {
   return 'Response completed'
 }
 
+async function prepareInputFiles(client: OpenAI, input: unknown[]): Promise<unknown[]> {
+  const prepared: unknown[] = []
+  for (const item of input) {
+    const typed = item as { content?: unknown[] }
+    if (!Array.isArray(typed.content)) {
+      prepared.push(item)
+      continue
+    }
+    const content: unknown[] = []
+    for (const part of typed.content) {
+      const filePart = part as { type?: string; attachment_id?: string }
+      if (filePart.type !== 'input_file' || !filePart.attachment_id) {
+        content.push(part)
+        continue
+      }
+      const [attachment] = await db.select().from(attachments).where(eq(attachments.id, filePart.attachment_id)).limit(1)
+      if (!attachment || attachment.status !== 'ready') throw new Error('Attachment is unavailable')
+      let fileId = attachment.openaiFileId
+      if (!fileId) {
+        const bytes = await getBlobStore().get(attachment.objectKey)
+        const uploaded = await client.files.create({
+          file: await toFile(bytes, attachment.originalName, { type: attachment.mimeType }),
+          purpose: 'user_data',
+        })
+        fileId = uploaded.id
+        await db.update(attachments).set({ openaiFileId: fileId, updatedAt: new Date() }).where(eq(attachments.id, attachment.id))
+      }
+      content.push({ type: 'input_file', file_id: fileId })
+    }
+    prepared.push({ ...typed, content })
+  }
+  return prepared
+}
+
 export async function processGeneration(
   responseId: string,
   options: { willRetry?: boolean } = {},
@@ -99,18 +135,63 @@ export async function processGeneration(
     project: record.provider.projectId ?? undefined,
     timeout: record.provider.requestTimeoutMs,
   })
+  if (record.response.executionMode === 'background' && record.response.openaiResponseId) {
+    const openaiResponseId = record.response.openaiResponseId
+    await db.update(responses).set({ status: 'in_progress', updatedAt: new Date() }).where(eq(responses.id, responseId))
+    try {
+      for (let attempt = 0; attempt < 1_800; attempt += 1) {
+        if (await isCancellationRequested(responseId)) {
+          await client.responses.cancel(openaiResponseId).catch(() => undefined)
+          await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
+          await releaseBudget(responseId)
+          return
+        }
+        const recovered = await client.responses.retrieve(openaiResponseId)
+        if (recovered.status && ['queued', 'in_progress'].includes(recovered.status)) {
+          await new Promise((resolve) => setTimeout(resolve, 2_000))
+          continue
+        }
+        const output = recovered.output as unknown[]
+        const usage = normalizeUsage(recovered.usage)
+        const status = recovered.status === 'completed' ? 'completed'
+          : recovered.status === 'cancelled' ? 'cancelled'
+            : recovered.status === 'incomplete' ? 'incomplete' : 'failed'
+        await persistItems(responseId, output)
+        const completedAt = new Date()
+        await db.update(responses).set({
+          status, output, usage, completedAt, updatedAt: completedAt,
+          error: recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
+        }).where(eq(responses.id, responseId))
+        if (status === 'completed') await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
+        else await releaseBudget(responseId)
+        const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        if (snapshot) await publishSnapshot(toSnapshot(snapshot))
+        return
+      }
+      throw new Error('Background response recovery timed out')
+    } catch (error) {
+      if (options.willRetry) throw error
+      await db.update(responses).set({
+        status: 'failed', error: { message: error instanceof Error ? error.message : 'Recovery failed' },
+        completedAt: new Date(), updatedAt: new Date(),
+      }).where(eq(responses.id, responseId))
+      await releaseBudget(responseId)
+      throw error
+    }
+  }
   const history = await db
     .select()
     .from(responses)
     .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId)))
     .orderBy(asc(responses.createdAt))
-  const input = [
+  const input = await prepareInputFiles(client, [
     ...history.flatMap((turn) => [...(turn.input as unknown[]), ...(turn.output as unknown[])]),
     ...(record.response.input as unknown[]),
-  ]
+  ])
   let sequence = record.response.lastSequence
   let output = record.response.output as unknown[]
   let usage: ResponseUsage | null = null
+  let upstreamResponseId = record.response.openaiResponseId
   let lastSnapshotAt = 0
   const controller = new AbortController()
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
@@ -125,6 +206,9 @@ export async function processGeneration(
     }, { signal: controller.signal })
     for await (const rawEvent of stream) {
       if (await isCancellationRequested(responseId)) {
+        if (record.response.executionMode === 'background' && upstreamResponseId) {
+          await client.responses.cancel(upstreamResponseId).catch(() => undefined)
+        }
         controller.abort()
         throw new Error('Generation cancelled')
       }
@@ -139,6 +223,7 @@ export async function processGeneration(
       }
       const upstreamResponse = upstream.response as { id?: string; output?: unknown[]; usage?: unknown } | undefined
       if (upstreamResponse?.id) {
+        upstreamResponseId = upstreamResponse.id
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }
       if (upstreamResponse?.output) output = upstreamResponse.output

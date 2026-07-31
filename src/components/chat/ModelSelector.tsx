@@ -6,7 +6,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { MODELS } from '@/lib/mock'
+import { useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { resolveProviderOrder, useModels } from '@/stores/models'
@@ -35,10 +35,12 @@ export function ModelSelector({
   const toggleFavorite = useModels((s) => s.toggleFavorite)
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
-  const selected = MODELS.find((m) => m.id === value) ?? MODELS[0]
+  const catalogModels = useCatalog((state) => state.models)
+  const selected = catalogModels.find((m) => m.id === value) ?? catalogModels[0]!
 
-  const providers = useMemo(() => resolveProviderOrder(providerOrder), [providerOrder])
-  const enabled = useMemo(() => MODELS.filter((m) => m.enabled), [])
+  const enabled = useMemo(() => catalogModels.filter((m) => m.enabled), [catalogModels])
+  const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.provider))], [enabled])
+  const providers = useMemo(() => resolveProviderOrder(providerOrder, availableProviders), [providerOrder, availableProviders])
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (q) return enabled.filter((m) => m.name.toLowerCase().includes(q))

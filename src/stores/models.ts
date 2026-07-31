@@ -23,10 +23,10 @@ function reorderList(
 }
 
 /** Merge persisted order with catalog so new providers still appear. */
-export function resolveProviderOrder(order: string[]) {
-  const known = new Set(CATALOG_PROVIDERS)
+export function resolveProviderOrder(order: string[], available = CATALOG_PROVIDERS) {
+  const known = new Set(available)
   const ordered = order.filter((p) => known.has(p))
-  for (const p of CATALOG_PROVIDERS) {
+  for (const p of available) {
     if (!ordered.includes(p)) ordered.push(p)
   }
   return ordered

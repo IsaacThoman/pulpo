@@ -1,7 +1,7 @@
-import { and, desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { chats, models, responses } from '../database/schema.js'
+import { attachments, chats, models, responses } from '../database/schema.js'
 import { getActivePricing, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -43,6 +43,20 @@ export async function createResponse(options: CreateResponseOptions) {
     .orderBy(desc(responses.createdAt))
     .limit(1)
   const executionMode = options.input.executionMode ?? model.executionMode
+  if (options.input.attachmentIds.length) {
+    const ownedAttachments = await db.select().from(attachments).where(and(
+      eq(attachments.userId, options.userId), eq(attachments.status, 'ready'), inArray(attachments.id, options.input.attachmentIds),
+    ))
+    if (ownedAttachments.length !== options.input.attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
+    await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(inArray(attachments.id, options.input.attachmentIds))
+  }
+  const storedInput = options.rawInput ?? [{
+    role: 'user',
+    content: [
+      { type: 'input_text', text: options.input.input },
+      ...options.input.attachmentIds.map((attachmentId) => ({ type: 'input_file', attachment_id: attachmentId })),
+    ],
+  }]
   await db.insert(responses).values({
     id,
     chatId: chat.id,
@@ -51,7 +65,7 @@ export async function createResponse(options: CreateResponseOptions) {
     previousResponseId: previous?.id,
     parentResponseId: previous?.id,
     executionMode,
-    input: options.rawInput ?? [{ role: 'user', content: options.input.input }],
+    input: storedInput,
     presetSelections: options.input.presetSelections,
     idempotencyKey: options.idempotencyKey,
   })
@@ -60,7 +74,7 @@ export async function createResponse(options: CreateResponseOptions) {
       responseId: id,
       userId: options.userId,
       apiKeyId: options.apiKeyId,
-      requestInput: options.rawInput ?? options.input.input,
+      requestInput: storedInput,
       maxOutputTokens,
       pricing,
     })

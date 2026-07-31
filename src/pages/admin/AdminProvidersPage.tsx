@@ -1,11 +1,20 @@
-import { useState } from 'react'
-import { Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
-import { ADMIN_PROVIDERS, type AdminProvider } from '@/lib/mock-admin'
+import { useEffect, useState } from 'react'
+import { Activity, Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
+import { apiRequest } from '@/lib/api'
+
+interface AdminProvider {
+  id: string
+  name: string
+  baseUrl: string
+  hasApiKey: boolean
+  modelCount: number
+  lastHealthStatus?: string | null
+}
 import {
   Dialog,
   DialogContent,
@@ -28,9 +37,22 @@ const emptyDraft = (): Draft => ({
 })
 
 export function AdminProvidersPage() {
-  const [providers, setProviders] = useState(ADMIN_PROVIDERS)
+  const [providers, setProviders] = useState<AdminProvider[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showKey, setShowKey] = useState(false)
+
+  const load = async () => {
+    const [providerResponse, modelResponse] = await Promise.all([
+      apiRequest<{ data: Omit<AdminProvider, 'modelCount'>[] }>('/api/admin/providers'),
+      apiRequest<{ data: Array<{ providerConnectionId: string }> }>('/api/admin/models'),
+    ])
+    setProviders(providerResponse.data.map((provider) => ({
+      ...provider,
+      modelCount: modelResponse.data.filter((model) => model.providerConnectionId === provider.id).length,
+    })))
+  }
+
+  useEffect(() => { void load() }, [])
 
   const openAdd = () => {
     setShowKey(false)
@@ -47,38 +69,27 @@ export function AdminProvidersPage() {
     })
   }
 
-  const save = () => {
+  const save = async () => {
     if (!draft?.name.trim() || !draft.baseUrl.trim()) return
     if (draft.id) {
-      setProviders((ps) =>
-        ps.map((p) =>
-          p.id === draft.id
-            ? {
-                ...p,
-                name: draft.name.trim(),
-                baseUrl: draft.baseUrl.trim(),
-                hasApiKey: p.hasApiKey || !!draft.apiKey.replace(/•/g, '').trim(),
-              }
-            : p
-        )
-      )
-    } else {
-      setProviders((ps) => [
-        ...ps,
-        {
-          id: crypto.randomUUID(),
-          name: draft.name.trim(),
-          baseUrl: draft.baseUrl.trim(),
-          hasApiKey: !!draft.apiKey.trim(),
-          modelCount: 0,
+      await apiRequest(`/api/admin/providers/${draft.id}`, {
+        method: 'PATCH', body: {
+          name: draft.name.trim(), baseUrl: draft.baseUrl.trim(),
+          ...(draft.apiKey.replace(/•/g, '').trim() ? { apiKey: draft.apiKey } : {}),
         },
-      ])
+      })
+    } else {
+      await apiRequest('/api/admin/providers', {
+        method: 'POST', body: { name: draft.name.trim(), baseUrl: draft.baseUrl.trim(), apiKey: draft.apiKey, requestTimeoutMs: 120_000 },
+      })
     }
+    await load()
     setDraft(null)
   }
 
-  const remove = (id: string) => {
-    setProviders((ps) => ps.filter((p) => p.id !== id))
+  const remove = async (id: string) => {
+    await apiRequest(`/api/admin/providers/${id}`, { method: 'DELETE' })
+    await load()
   }
 
   return (
@@ -128,6 +139,14 @@ export function AdminProvidersPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
+                        title="Check health"
+                        onClick={() => void apiRequest(`/api/admin/providers/${p.id}/health`, { method: 'POST' }).then(load)}
+                      >
+                        <Activity className="size-3.5" />
+                      </Button>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
                         title="Edit"
                         onClick={() => openEdit(p)}
                       >
@@ -138,7 +157,7 @@ export function AdminProvidersPage() {
                         variant="ghost"
                         title="Delete"
                         className="hover:text-destructive"
-                        onClick={() => remove(p.id)}
+                        onClick={() => void remove(p.id)}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -215,7 +234,7 @@ export function AdminProvidersPage() {
               Cancel
             </Button>
             <Button
-              onClick={save}
+              onClick={() => void save()}
               disabled={!draft?.name.trim() || !draft.baseUrl.trim()}
             >
               {draft?.id ? 'Save' : 'Create'}

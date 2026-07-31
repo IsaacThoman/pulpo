@@ -1,97 +1,80 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import type { ApiKey } from '@/lib/types'
+import { apiRequest } from '@/lib/api'
 
-function randomSecret(): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-  let out = ''
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  for (const b of bytes) out += chars[b % chars.length]
-  return out
+interface ServerApiKey {
+  id: string
+  name: string
+  prefix: string
+  status: 'active' | 'revoked'
+  scopes: ApiKey['scopes']
+  allowedModels: string[]
+  monthlyBudgetMicros: number | null
+  lifetimeBudgetMicros: number | null
+  spentThisMonthMicros: number
+  spentLifetimeMicros: number
+  lastUsedAt: string | null
+  createdAt: string
 }
 
-const seedKeys: ApiKey[] = [
-  {
-    id: 'key-1',
-    name: 'scripts / dotfiles',
-    prefix: 'sk-pulpo-7Kd2',
-    createdAt: Date.now() - 92 * 86_400_000,
-    lastUsedAt: Date.now() - 2 * 3_600_000,
-    scopes: ['chat', 'models'],
-    allowedModels: [],
-    monthlyBudget: 20,
-    totalBudget: 100,
-    spentThisMonth: 6.42,
-    spentTotal: 41.18,
-    revoked: false,
-  },
-  {
-    id: 'key-2',
-    name: 'home-assistant voice input',
-    prefix: 'sk-pulpo-Qx91',
-    createdAt: Date.now() - 40 * 86_400_000,
-    lastUsedAt: Date.now() - 26 * 3_600_000,
-    scopes: ['chat'],
-    allowedModels: ['gpt-4o-mini', 'llama-3.3-70b'],
-    monthlyBudget: 5,
-    totalBudget: null,
-    spentThisMonth: 1.08,
-    spentTotal: 3.74,
-    revoked: false,
-  },
-  {
-    id: 'key-3',
-    name: 'old ci job',
-    prefix: 'sk-pulpo-Zz00',
-    createdAt: Date.now() - 200 * 86_400_000,
-    lastUsedAt: Date.now() - 61 * 86_400_000,
-    scopes: ['chat'],
-    allowedModels: [],
-    monthlyBudget: null,
-    totalBudget: 25,
-    spentThisMonth: 0,
-    spentTotal: 25,
-    revoked: true,
-  },
-]
+function fromServer(key: ServerApiKey): ApiKey {
+  return {
+    id: key.id,
+    name: key.name,
+    prefix: key.prefix,
+    createdAt: Date.parse(key.createdAt),
+    lastUsedAt: key.lastUsedAt ? Date.parse(key.lastUsedAt) : null,
+    scopes: key.scopes,
+    allowedModels: key.allowedModels,
+    monthlyBudget: key.monthlyBudgetMicros === null ? null : key.monthlyBudgetMicros / 1_000_000,
+    totalBudget: key.lifetimeBudgetMicros === null ? null : key.lifetimeBudgetMicros / 1_000_000,
+    spentThisMonth: key.spentThisMonthMicros / 1_000_000,
+    spentTotal: key.spentLifetimeMicros / 1_000_000,
+    revoked: key.status === 'revoked',
+  }
+}
 
 interface ApiKeysState {
   keys: ApiKey[]
-  createKey: (
-    input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>
-  ) => { key: ApiKey; secret: string }
-  revokeKey: (id: string) => void
-  deleteKey: (id: string) => void
+  loading: boolean
+  load: () => Promise<void>
+  createKey: (input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>) => Promise<{ key: ApiKey; secret: string }>
+  revokeKey: (id: string) => Promise<void>
+  deleteKey: (id: string) => Promise<void>
 }
 
-export const useApiKeys = create<ApiKeysState>()(
-  persist(
-    (set, get) => ({
-      keys: seedKeys,
-      createKey: (input) => {
-        const secret = `sk-pulpo-${randomSecret()}`
-        const key: ApiKey = {
-          id: crypto.randomUUID(),
-          name: input.name,
-          prefix: secret.slice(0, 12),
-          createdAt: Date.now(),
-          lastUsedAt: null,
-          scopes: input.scopes,
-          allowedModels: input.allowedModels,
-          monthlyBudget: input.monthlyBudget,
-          totalBudget: input.totalBudget,
-          spentThisMonth: 0,
-          spentTotal: 0,
-          revoked: false,
-        }
-        set({ keys: [key, ...get().keys] })
-        return { key, secret }
+export const useApiKeys = create<ApiKeysState>()((set, get) => ({
+  keys: [],
+  loading: false,
+  load: async () => {
+    set({ loading: true })
+    try {
+      const response = await apiRequest<{ data: ServerApiKey[] }>('/api/api-keys')
+      set({ keys: response.data.map(fromServer), loading: false })
+    } catch {
+      set({ loading: false })
+    }
+  },
+  createKey: async (input) => {
+    const response = await apiRequest<{ id: string; prefix: string; secret: string }>('/api/api-keys', {
+      method: 'POST',
+      body: {
+        name: input.name,
+        scopes: input.scopes,
+        allowedModels: input.allowedModels,
+        monthlyBudgetMicros: input.monthlyBudget === null ? null : Math.round(input.monthlyBudget * 1_000_000),
+        lifetimeBudgetMicros: input.totalBudget === null ? null : Math.round(input.totalBudget * 1_000_000),
       },
-      revokeKey: (id) =>
-        set((s) => ({ keys: s.keys.map((k) => (k.id === id ? { ...k, revoked: true } : k)) })),
-      deleteKey: (id) => set((s) => ({ keys: s.keys.filter((k) => k.id !== id) })),
-    }),
-    { name: 'pulpo-api-keys' }
-  )
-)
+    })
+    await get().load()
+    return { key: get().keys.find((key) => key.id === response.id)!, secret: response.secret }
+  },
+  revokeKey: async (id) => {
+    set({ keys: get().keys.map((key) => key.id === id ? { ...key, revoked: true } : key) })
+    await apiRequest(`/api/api-keys/${id}/revoke`, { method: 'POST' })
+  },
+  deleteKey: async (id) => {
+    set({ keys: get().keys.filter((key) => key.id !== id) })
+    await apiRequest(`/api/api-keys/${id}`, { method: 'DELETE' })
+  },
+}))
