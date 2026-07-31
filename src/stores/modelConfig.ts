@@ -83,12 +83,7 @@ export function resolveGeneration(
       effectiveModelId = choice.action.modelId
     }
     if (choice.action.type === 'params') {
-      try {
-        const parsed = JSON.parse(choice.action.params || '{}') as Record<string, unknown>
-        Object.assign(customParams, parsed)
-      } catch {
-        /* ignore invalid JSON in mock */
-      }
+      Object.assign(customParams, choice.action.params)
     }
   }
 

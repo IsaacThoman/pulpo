@@ -35,7 +35,7 @@ function reasoningPreset(...levels: string[]): ChatPreset {
           ? { type: 'none' as const }
           : {
               type: 'params' as const,
-              params: JSON.stringify({ reasoning_effort: level }),
+              params: { reasoning_effort: level },
             },
     })),
   }
@@ -63,7 +63,7 @@ function speedPreset(opts: { standard?: boolean; fastRedirect?: string } = {}): 
       id: 'fast',
       displayName: 'Fast',
       icon: 'zap',
-      action: { type: 'params', params: JSON.stringify({ service_tier: 'priority' }) },
+      action: { type: 'params', params: { service_tier: 'priority' } },
     })
   }
   return {

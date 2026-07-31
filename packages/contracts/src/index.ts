@@ -107,6 +107,8 @@ export const modelSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string(),
   enabled: z.boolean(),
+  visible: z.boolean(),
+  logo: z.string().nullable(),
   executionMode: executionModeSchema,
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
@@ -134,16 +136,65 @@ export const createModelSchema = z.object({
   name: z.string().trim().min(1).max(120),
   description: z.string().max(2_000).default(''),
   enabled: z.boolean().default(true),
+  visible: z.boolean().default(true),
+  logo: z.string().max(120).nullable().default(null),
+  systemPrompt: z.string().max(100_000).default(''),
+  defaultParameters: z.record(z.string(), z.unknown()).default({}),
+  interceptImagesWithOcr: z.boolean().default(false),
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),
   allowedParameters: z.array(z.string()).default([]),
+  fallbackModelId: z.string().min(1).max(120).nullable().default(null),
+  maxRetries: z.number().int().min(0).max(10).default(0),
+  retryDelaySeconds: z.number().int().min(0).max(300).default(1),
+  stickyFallbackSeconds: z.number().int().min(0).max(86_400).default(0),
+  firstTokenTimeoutEnabled: z.boolean().default(false),
+  firstTokenTimeoutSeconds: z.number().int().min(1).max(900).default(30),
+  slowStickyEnabled: z.boolean().default(false),
+  slowStickyMinTokensPerSecond: z.number().positive().max(10_000).default(5),
+  slowStickyMinCompletionSeconds: z.number().int().min(1).max(86_400).default(30),
   inputPriceMicros: z.number().int().nonnegative(),
   cachedInputPriceMicros: z.number().int().nonnegative(),
   outputPriceMicros: z.number().int().nonnegative(),
   perRequestPriceMicros: z.number().int().nonnegative().default(0),
 })
+
+export const detailedPayloadRetentionSchema = z.enum(['1h', '24h', '7d', '30d', '90d', 'indefinite'])
+export const loggingSettingsSchema = z.object({
+  logDetailedPayloads: z.boolean().default(false),
+  payloadRetention: detailedPayloadRetentionSchema.default('7d'),
+})
+export const ocrSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  cacheEnabled: z.boolean().default(true),
+  cacheTtlSeconds: z.number().int().min(60).max(31_536_000).default(3600),
+  providerMode: z.enum(['existing', 'custom']).default('existing'),
+  providerConnectionId: idSchema.nullable().default(null),
+  customBaseUrl: z.url().nullable().default(null),
+  customApiKey: z.string().min(1).optional(),
+  model: z.string().min(1).max(200).default('gpt-4.1-mini'),
+  systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
+})
+
+export const adminUsageStatusSchema = z.enum(['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'])
+export const adminUsageEventSchema = z.object({
+  requestId: idSchema,
+  responseId: idSchema,
+  status: adminUsageStatusSchema,
+  elapsedMs: z.number().int().nonnegative(),
+  currentModelId: z.string().nullable(),
+  currentAttempt: z.number().int().nonnegative(),
+  retryCount: z.number().int().nonnegative(),
+  fallbackUsed: z.boolean(),
+  ocrStatus: z.string(),
+  eventCount: z.number().int().nonnegative(),
+  inputTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  updatedAt: isoDateSchema,
+})
+export type AdminUsageEvent = z.infer<typeof adminUsageEventSchema>
 
 export const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -204,6 +255,8 @@ export interface ClientToServerEvents {
   'chat.unsubscribe': (input: { chatId: string }) => void
   'response.subscribe': (input: { responseId: string; afterSequence: number }) => void
   'response.unsubscribe': (input: { responseId: string }) => void
+  'admin.usage.subscribe': () => void
+  'admin.usage.unsubscribe': () => void
 }
 
 export interface ServerToClientEvents {
@@ -214,4 +267,5 @@ export interface ServerToClientEvents {
   'account.revision': (input: { revision: number }) => void
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
   'sync.result': (result: SyncResult) => void
+  'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void
 }

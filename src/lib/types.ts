@@ -14,7 +14,7 @@ export type ChatPresetIcon =
 export type ChatPresetAction =
   | { type: 'none' }
   | { type: 'redirect'; modelId: string }
-  | { type: 'params'; params: string }
+  | { type: 'params'; params: Record<string, unknown> }
 
 export interface ChatPresetChoice {
   id: string

@@ -29,6 +29,20 @@
       "when": 1785538999368,
       "tag": "0003_yummy_quasimodo",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785540462783,
+      "tag": "0004_hot_juggernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785541560246,
+      "tag": "0005_mighty_joshua_kane",
+      "breakpoints": true
     }
   ]
 }
