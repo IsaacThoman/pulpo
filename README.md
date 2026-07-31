@@ -52,7 +52,8 @@ Use `/compose.yaml` as the Docker Compose location. It exposes services only to
 the internal Compose network, avoiding collisions with PostgreSQL, Redis, and
 other workloads already using host ports. `compose.override.yaml` contains the
 localhost bindings and is merged automatically only by normal local
-`docker compose` commands.
+`docker compose` commands. The Caddy configuration is baked into its image so
+the deployment does not depend on repository-relative host bind mounts.
 
 In Coolify:
 

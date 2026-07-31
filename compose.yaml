@@ -16,11 +16,12 @@ x-server: &server
 
 services:
   caddy:
-    image: caddy:2.10-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
     expose:
       - "80"
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
