@@ -78,10 +78,10 @@ export function AdminModelsPage() {
         <Field label="Execution"><Select value={draft.executionMode} onValueChange={(value: 'stream' | 'background') => setDraft({ ...draft, executionMode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="stream">Streaming</SelectItem><SelectItem value="background">Background</SelectItem></SelectContent></Select></Field>
         <Field label="Context window"><Input type="number" value={draft.contextWindow} onChange={(e) => setDraft({ ...draft, contextWindow: Number(e.target.value) })} /></Field>
         <Field label="Maximum output tokens"><Input type="number" value={draft.maxOutputTokens} onChange={(e) => setDraft({ ...draft, maxOutputTokens: Number(e.target.value) })} /></Field>
-        <Field label="Input price, μUSD / 1M tokens"><Input type="number" value={draft.inputPriceMicros} onChange={(e) => setDraft({ ...draft, inputPriceMicros: Number(e.target.value) })} /></Field>
-        <Field label="Cached input price, μUSD / 1M"><Input type="number" value={draft.cachedInputPriceMicros} onChange={(e) => setDraft({ ...draft, cachedInputPriceMicros: Number(e.target.value) })} /></Field>
-        <Field label="Output price, μUSD / 1M tokens"><Input type="number" value={draft.outputPriceMicros} onChange={(e) => setDraft({ ...draft, outputPriceMicros: Number(e.target.value) })} /></Field>
-        <Field label="Per-request price, μUSD"><Input type="number" value={draft.perRequestPriceMicros} onChange={(e) => setDraft({ ...draft, perRequestPriceMicros: Number(e.target.value) })} /></Field>
+        <PriceField label="Input price (USD / 1M tokens)" valueMicros={draft.inputPriceMicros} onChange={(inputPriceMicros) => setDraft({ ...draft, inputPriceMicros })} />
+        <PriceField label="Cached input price (USD / 1M tokens)" valueMicros={draft.cachedInputPriceMicros} onChange={(cachedInputPriceMicros) => setDraft({ ...draft, cachedInputPriceMicros })} />
+        <PriceField label="Output price (USD / 1M tokens)" valueMicros={draft.outputPriceMicros} onChange={(outputPriceMicros) => setDraft({ ...draft, outputPriceMicros })} />
+        <PriceField label="Per-request price (USD)" valueMicros={draft.perRequestPriceMicros} onChange={(perRequestPriceMicros) => setDraft({ ...draft, perRequestPriceMicros })} />
         <Field label="Tags (comma separated)"><Input value={draft.tags.join(', ')} onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} /></Field>
         <Field label="Allowed Responses parameters"><Input value={draft.allowedParameters.join(', ')} onChange={(e) => setDraft({ ...draft, allowedParameters: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} /></Field>
         <Field label="Description" className="col-span-2"><Textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></Field>
@@ -94,6 +94,21 @@ export function AdminModelsPage() {
 
 function Field({ label, className = '', children }: { label: string; className?: string; children: ReactNode }) {
   return <div className={`space-y-1.5 ${className}`}><Label>{label}</Label>{children}</div>
+}
+
+function PriceField({ label, valueMicros, onChange }: { label: string; valueMicros: number; onChange: (valueMicros: number) => void }) {
+  return <Field label={label}><div className="relative">
+    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
+    <Input
+      type="number"
+      min={0}
+      step="any"
+      inputMode="decimal"
+      className="pl-7 tabular-nums"
+      value={valueMicros / 1_000_000}
+      onChange={(event) => onChange(Math.round(Math.max(0, Number(event.target.value) || 0) * 1_000_000))}
+    />
+  </div></Field>
 }
 
 function PresetsEditor({ value, onChange }: { value: unknown[]; onChange: (value: unknown[]) => void }) {
