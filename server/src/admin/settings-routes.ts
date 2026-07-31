@@ -8,6 +8,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
+import { authSettingsSchema } from '../settings/application-settings.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -26,6 +27,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/settings', async (request) => {
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
+    if (values.auth !== undefined) values.auth = authSettingsSchema.parse(values.auth)
     await db.transaction(async (tx) => {
       for (const [key, value] of Object.entries(values)) {
         await tx.insert(applicationSettings).values({ key, value, updatedBy: admin.id })

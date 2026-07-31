@@ -3,11 +3,12 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { apiKeys, auditEvents, creditLedger, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
+import { apiKeys, applicationSettings, auditEvents, creditLedger, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
+import { parseAuthSettings } from '../settings/application-settings.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -26,11 +27,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const admin = requireAdmin(request)
     const input = z.object({
       name: z.string().trim().min(1).max(120), email: z.email(), password: z.string().min(8).max(1_000),
-      role: z.enum(['pending', 'user', 'admin']).default('user'), balanceMicros: z.number().int().nonnegative().default(0),
+      role: z.enum(['pending', 'user', 'admin']).default('user'), balanceMicros: z.number().int().nonnegative().optional(),
     }).parse(request.body)
     const id = newId()
     await db.transaction(async (tx) => {
-      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros: input.balanceMicros })
+      const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
+      const balanceMicros = input.balanceMicros ?? parseAuthSettings(setting?.value).defaultBalanceMicros
+      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros })
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
     })

@@ -15,11 +15,20 @@ import { apiRequest } from '@/lib/api'
 
 interface AdminSettings { values: Record<string, unknown> }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function useAdminSetting<T>(key: string, initial: T) {
   const [value, setValue] = useState(initial)
   useEffect(() => {
     void apiRequest<AdminSettings>('/api/admin/settings').then((result) => {
-      if (result.values[key] !== undefined) setValue(result.values[key] as T)
+      if (result.values[key] !== undefined) {
+        const stored = result.values[key]
+        setValue((current) => isRecord(current) && isRecord(stored)
+          ? { ...current, ...stored } as T
+          : stored as T)
+      }
     })
   }, [key])
   const save = async () => { await apiRequest('/api/admin/settings', { method: 'PATCH', body: { [key]: value } }) }
@@ -52,6 +61,7 @@ export function AuthenticationSection() {
   const auth = useAuth()
   const [t, setT, save] = useAdminSetting('auth', {
     signupEnabled: auth.signupEnabled,
+    defaultBalanceMicros: 5_000_000,
     pendingDetails: auth.pendingDetails,
     adminEmail: auth.adminEmail,
     pendingMessage: auth.pendingMessage,
@@ -65,6 +75,15 @@ export function AuthenticationSection() {
           label="Enable new sign ups"
           checked={t.signupEnabled}
           onChange={(v) => s('signupEnabled', v)}
+        />
+        <NumField
+          label="Default balance"
+          hint="Credit assigned to each newly created user."
+          value={t.defaultBalanceMicros / 1_000_000}
+          onChange={(value) => s('defaultBalanceMicros', Math.round(Math.max(0, value) * 1_000_000))}
+          min={0}
+          step={0.01}
+          suffix="USD"
         />
       </Section>
 

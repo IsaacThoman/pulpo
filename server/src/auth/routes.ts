@@ -8,6 +8,7 @@ import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
+import { parseAuthSettings } from '../settings/application-settings.js'
 import {
   createPasswordHash,
   createSession,
@@ -63,8 +64,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/auth/signup', async (request, reply) => {
     const input = signupInputSchema.parse(request.body)
     const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
-    const signupEnabled = (setting?.value as { signupEnabled?: boolean } | undefined)?.signupEnabled ?? true
-    if (!signupEnabled) throw new AppError(403, 'signup_disabled', 'New signups are disabled')
+    const authSettings = parseAuthSettings(setting?.value)
+    if (!authSettings.signupEnabled) throw new AppError(403, 'signup_disabled', 'New signups are disabled')
     const userId = newId()
     await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747743)`)
@@ -72,7 +73,13 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       if (!existingUser) throw new AppError(409, 'setup_required', 'Create the initial administrator before accepting signups')
       const [existing] = await tx.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = lower(${input.email})`).limit(1)
       if (existing) throw new AppError(409, 'email_taken', 'An account with this email already exists')
-      await tx.insert(users).values({ id: userId, email: input.email, name: input.name, role: 'pending' })
+      await tx.insert(users).values({
+        id: userId,
+        email: input.email,
+        name: input.name,
+        role: 'pending',
+        balanceMicros: authSettings.defaultBalanceMicros,
+      })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
     })
     await createSession(userId, request, reply)

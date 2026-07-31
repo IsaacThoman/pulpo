@@ -120,6 +120,9 @@ export function NumField({
   onChange,
   indent,
   suffix,
+  min,
+  max,
+  step,
 }: {
   label: string
   hint?: string
@@ -127,12 +130,18 @@ export function NumField({
   onChange?: (v: number) => void
   indent?: boolean
   suffix?: string
+  min?: number
+  max?: number
+  step?: number
 }) {
   return (
     <Field label={label} hint={hint} indent={indent}>
       <div className="flex items-center gap-2">
         <Input
           type="number"
+          min={min}
+          max={max}
+          step={step}
           className="w-28 text-right tabular-nums"
           value={value}
           onChange={(e) => onChange?.(parseFloat(e.target.value) || 0)}
