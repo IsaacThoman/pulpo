@@ -91,6 +91,9 @@ export function ChatDataBridge() {
     socket.on('connect', sync)
     socket.on('response.event', persistEvent)
     socket.on('response.snapshot', applyResponseSnapshot)
+    socket.on('response.completed', () => {
+      void queryClient.invalidateQueries({ queryKey: ['notifications', userId] })
+    })
     socket.on('chat.changed', ({ chatId: changedChatId }) => {
       void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
       void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
