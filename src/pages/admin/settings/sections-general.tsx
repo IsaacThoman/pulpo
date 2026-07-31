@@ -10,6 +10,7 @@ import {
   Toggle,
 } from '@/components/admin/kit'
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/stores/auth'
 
 export function GeneralSection() {
   const [publicUrl, setPublicUrl] = useState('https://chat.pulpo.dev')
@@ -34,12 +35,10 @@ export function GeneralSection() {
 }
 
 export function AuthenticationSection() {
+  const auth = useAuth()
   const [t, setT] = useState({
     role: 'pending' as string,
-    signup: true,
     apiKeys: true,
-    pendingDetails: true,
-    adminEmail: 'isaac@pulpo.dev',
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
 
@@ -56,20 +55,33 @@ export function AuthenticationSection() {
             { value: 'admin', label: 'admin' },
           ]}
         />
-        <Toggle label="Enable new sign ups" checked={t.signup} onChange={(v) => s('signup', v)} />
+        <Toggle
+          label="Enable new sign ups"
+          checked={auth.signupEnabled}
+          onChange={(v) => auth.setSignupEnabled(v)}
+        />
         <Toggle label="Enable API keys" checked={t.apiKeys} onChange={(v) => s('apiKeys', v)} />
       </Section>
 
       <Section title="Pending accounts">
         <Toggle
           label="Show admin details in pending overlay"
-          checked={t.pendingDetails}
-          onChange={(v) => s('pendingDetails', v)}
+          checked={auth.pendingDetails}
+          onChange={(v) => useAuth.setState({ pendingDetails: v })}
         />
-        {t.pendingDetails && (
-          <TextField label="Admin contact email" value={t.adminEmail} onChange={(v) => s('adminEmail', v)} indent />
+        {auth.pendingDetails && (
+          <TextField
+            label="Admin contact email"
+            value={auth.adminEmail}
+            onChange={(v) => useAuth.setState({ adminEmail: v })}
+            indent
+          />
         )}
-        <TextAreaField label="Pending overlay content" value={'Your account is pending approval. An admin will review it shortly.'} onChange={() => {}} />
+        <TextAreaField
+          label="Pending overlay content"
+          value={auth.pendingMessage}
+          onChange={(v) => useAuth.setState({ pendingMessage: v })}
+        />
       </Section>
 
       <SaveBar />
@@ -95,7 +107,7 @@ export function InterfaceSection() {
         hint="Small model used for background tasks like titles and follow-ups."
       >
         <SelectField
-          label="Local task model"
+          label="Task model"
           value={t.localTask}
           onChange={(v) => s('localTask', v)}
           options={[

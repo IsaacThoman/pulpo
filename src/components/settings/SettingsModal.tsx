@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useSettings, type Theme } from '@/stores/settings'
+import { useAuth } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 
 const SECTIONS = [
@@ -85,6 +86,8 @@ function ThemePicker() {
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [section, setSection] = useState<SectionId>('general')
   const s = useSettings()
+  const user = useAuth((a) => a.user)
+  const logout = useAuth((a) => a.logout)
   const navigate = useNavigate()
 
   return (
@@ -112,18 +115,20 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 </button>
               ))}
             </div>
-            <div className="mt-auto border-t pt-3">
-              <button
-                onClick={() => {
-                  onClose()
-                  navigate('/admin')
-                }}
-                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-              >
-                <ShieldCheck className="size-4" />
-                Admin settings
-              </button>
-            </div>
+            {user?.role === 'admin' && (
+              <div className="mt-auto border-t pt-3">
+                <button
+                  onClick={() => {
+                    onClose()
+                    navigate('/admin')
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
+                >
+                  <ShieldCheck className="size-4" />
+                  Admin settings
+                </button>
+              </div>
+            )}
           </div>
 
           {/* content */}
@@ -166,12 +171,14 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <div className="flex items-center gap-4 py-3">
                     <Avatar className="size-14">
                       <AvatarFallback className="bg-zinc-700 text-lg font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                        IT
+                        {user?.initials ?? '?'}
                       </AvatarFallback>
                     </Avatar>
                     <div>
-                      <div className="font-medium">Isaac Thoman</div>
-                      <div className="text-sm text-muted-foreground">isaac@pulpo.dev · admin</div>
+                      <div className="font-medium">{user?.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {user?.email} · {user?.role}
+                      </div>
                     </div>
                     <div className="flex-1" />
                     <Button variant="outline" size="sm">
@@ -179,11 +186,25 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </Button>
                   </div>
                   <Row label="Display name">
-                    <Input defaultValue="Isaac Thoman" className="w-52" />
+                    <Input defaultValue={user?.name ?? ''} className="w-52" />
                   </Row>
                   <Row label="Password">
                     <Button variant="outline" size="sm">
                       Change password
+                    </Button>
+                  </Row>
+                  <Separator className="my-3" />
+                  <Row label="Sign out" hint="End this session on this device.">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        onClose()
+                        logout()
+                        navigate('/login')
+                      }}
+                    >
+                      Sign out
                     </Button>
                   </Row>
                 </div>

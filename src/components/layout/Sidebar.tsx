@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
+import { useAuth } from '@/stores/auth'
 import { chatTimeGroup } from '@/lib/format'
 import type { Chat } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -174,6 +175,8 @@ export function Sidebar({
   const folders = useChat((s) => s.folders)
   const toggleFolder = useChat((s) => s.toggleFolder)
   const addFolder = useChat((s) => s.addFolder)
+  const user = useAuth((s) => s.user)
+  const logout = useAuth((s) => s.logout)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
@@ -387,7 +390,7 @@ export function Sidebar({
               <span className="flex size-8 shrink-0 items-center justify-center">
                 <Avatar className="size-7">
                   <AvatarFallback className="bg-zinc-700 text-[11px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                    IT
+                    {user?.initials ?? '?'}
                   </AvatarFallback>
                 </Avatar>
               </span>
@@ -397,8 +400,8 @@ export function Sidebar({
                   sidebarTextTransition
                 )}
               >
-                <div className="truncate text-sm font-medium">Isaac Thoman</div>
-                <div className="truncate text-xs text-muted-foreground">isaac@pulpo.dev</div>
+                <div className="truncate text-sm font-medium">{user?.name ?? 'Signed out'}</div>
+                <div className="truncate text-xs text-muted-foreground">{user?.email ?? ''}</div>
               </div>
             </button>
           </DropdownMenuTrigger>
@@ -407,11 +410,19 @@ export function Sidebar({
               <Settings />
               Settings
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate('/admin')}>
-              <ShieldCheck />
-              Admin panel
-            </DropdownMenuItem>
-            <DropdownMenuItem variant="destructive">
+            {user?.role === 'admin' && (
+              <DropdownMenuItem onClick={() => navigate('/admin')}>
+                <ShieldCheck />
+                Admin panel
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => {
+                logout()
+                navigate('/login')
+              }}
+            >
               <LogOut />
               Sign out
             </DropdownMenuItem>
