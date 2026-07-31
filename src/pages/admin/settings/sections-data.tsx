@@ -1,5 +1,5 @@
 import { Download } from 'lucide-react'
-import { Field, SaveBar, Section } from '@/components/admin/kit'
+import { Field, Section } from '@/components/admin/kit'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/api'
 
@@ -53,8 +53,6 @@ export function DatabaseSection() {
           <Button variant="outline" size="sm" onClick={() => void requestExport('usage')}><Download />Export CSV</Button>
         </Field>
       </Section>
-
-      <SaveBar />
     </div>
   )
 }

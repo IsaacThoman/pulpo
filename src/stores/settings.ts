@@ -16,6 +16,7 @@ interface SettingsState {
   notifications: boolean
   customInstructions: string
   nickname: string
+  memoryEnabled: boolean
   localChatLimit: number
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
@@ -37,6 +38,7 @@ export const useSettings = create<SettingsState>()(
       notifications: true,
       customInstructions: '',
       nickname: '',
+      memoryEnabled: false,
       localChatLimit: 50,
       generation: {},
       setTheme: (theme) => set({ theme }),

@@ -108,7 +108,7 @@ export function AdminUsersPage() {
                     <BalanceCell user={u} />
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
-                    {timeAgo(Date.now() - 3 * 3_600_000)}
+                    {u.lastActiveAt ? timeAgo(u.lastActiveAt) : 'Never'}
                   </td>
                   <td className="py-2.5 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-5 py-2.5">

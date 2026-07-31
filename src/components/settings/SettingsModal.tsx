@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Database,
@@ -47,6 +47,11 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]['id']
 
+interface Memory {
+  id: string
+  content: string
+}
+
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-6 py-3">
@@ -92,6 +97,21 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
   const navigate = useNavigate()
+  const [memories, setMemories] = useState<Memory[]>([])
+  const [memoriesLoading, setMemoriesLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open || section !== 'personalization') return
+    setMemoriesLoading(true)
+    void apiRequest<{ data: Memory[] }>('/api/memories')
+      .then((result) => setMemories(result.data))
+      .finally(() => setMemoriesLoading(false))
+  }, [open, section])
+
+  const forgetMemory = async (id: string) => {
+    await apiRequest(`/api/memories/${id}`, { method: 'DELETE' })
+    setMemories((items) => items.filter((memory) => memory.id !== id))
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -238,24 +258,40 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     />
                   </div>
                   <div className="py-3">
-                    <Label className="text-sm font-medium">Memories</Label>
-                    <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-                      Facts pulpo has remembered across chats.
-                    </p>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <Label className="text-sm font-medium">Memories</Label>
+                        <p className="mt-0.5 text-xs text-muted-foreground">
+                          Allow Pulpo to remember durable facts from future chats.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={s.memoryEnabled}
+                        onCheckedChange={(value) => s.set('memoryEnabled', value)}
+                      />
+                    </div>
                     <div className="space-y-1.5">
-                      {['Prefers zustand over redux', 'Uses pnpm on personal projects', 'Lives in EST'].map(
-                        (m) => (
-                          <div
-                            key={m}
-                            className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-                          >
-                            {m}
-                            <button className="cursor-pointer text-xs text-muted-foreground hover:text-destructive">
-                              forget
-                            </button>
-                          </div>
-                        )
+                      {memoriesLoading && (
+                        <div className="pt-2 text-sm text-muted-foreground">Loading memories…</div>
                       )}
+                      {!memoriesLoading && memories.length === 0 && (
+                        <div className="pt-2 text-sm text-muted-foreground">No saved memories.</div>
+                      )}
+                      {memories.map((memory) => (
+                        <div
+                          key={memory.id}
+                          className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+                        >
+                          <span>{memory.content}</span>
+                          <button
+                            type="button"
+                            onClick={() => void forgetMemory(memory.id)}
+                            className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
+                          >
+                            forget
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>

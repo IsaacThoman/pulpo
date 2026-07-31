@@ -9,6 +9,7 @@ interface AdminUserRow {
     role: 'pending' | 'user' | 'admin'; balanceMicros: number; createdAt: string
     blocked: boolean; leaderboardVisible: boolean; leaderboardColor: string
   }
+  lastActiveAt: string | null
 }
 
 interface UsageState {
@@ -31,6 +32,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     role: row.user.role, balance: row.user.balanceMicros / 1_000_000,
     joinedAt: Date.parse(row.user.createdAt), blocked: row.user.blocked,
     showOnLeaderboard: row.user.leaderboardVisible, barColor: row.user.leaderboardColor,
+    lastActiveAt: row.lastActiveAt ? Date.parse(row.lastActiveAt) : null,
   }
 }
 

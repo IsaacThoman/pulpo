@@ -255,18 +255,28 @@ export function TextAreaField({
 
 /** sticky save bar for settings pages */
 export function SaveBar({ onSave }: { onSave?: () => void | Promise<void> }) {
-  const [saved, setSaved] = useState(false)
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  const save = async () => {
+    if (!onSave || status === 'saving') return
+    setStatus('saving')
+    try {
+      await onSave()
+      setStatus('saved')
+      setTimeout(() => setStatus('idle'), 1500)
+    } catch {
+      setStatus('error')
+    }
+  }
+
   return (
     <div className="sticky bottom-0 -mx-1 flex justify-end border-t bg-background/80 px-1 py-3 backdrop-blur">
       <Button
         size="sm"
-        onClick={() => {
-          void onSave?.()
-          setSaved(true)
-          setTimeout(() => setSaved(false), 1500)
-        }}
+        onClick={() => void save()}
+        disabled={!onSave || status === 'saving'}
       >
-        {saved ? 'Saved ✓' : 'Save'}
+        {status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved ✓' : status === 'error' ? 'Save failed — retry' : 'Save'}
       </Button>
     </div>
   )

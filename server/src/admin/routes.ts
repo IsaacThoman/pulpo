@@ -48,6 +48,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       user: users,
       calls: sql<number>`count(${usageEvents.id})::int`,
       spentMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+      lastActiveAt: sql<Date | null>`(
+        select max(${sessions.lastSeenAt})
+        from ${sessions}
+        where ${sessions.userId} = ${users.id}
+      )`,
     }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
     return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros) })) }
   })

@@ -51,7 +51,9 @@ const ALL_SCOPES = [
   { id: 'models', label: 'List models' },
 ] as const
 
-const CURL_SNIPPET = `curl https://api.pulpo.dev/v1/responses \\
+const API_BASE_URL = `${window.location.origin}/v1`
+
+const CURL_SNIPPET = `curl ${API_BASE_URL}/responses \\
   -H "Authorization: Bearer $PULPO_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -63,7 +65,7 @@ const CURL_SNIPPET = `curl https://api.pulpo.dev/v1/responses \\
 const SDK_SNIPPET = `import OpenAI from "openai";
 
 const client = new OpenAI({
-  baseURL: "https://api.pulpo.dev/v1",
+  baseURL: "${API_BASE_URL}",
   apiKey: process.env.PULPO_API_KEY,
 });
 
@@ -209,7 +211,7 @@ export function ApiKeysPage() {
             <p className="mt-1 text-sm text-muted-foreground">
               Create and manage OpenAI-compatible keys.{' '}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                https://api.pulpo.dev/v1
+                {API_BASE_URL}
               </code>
             </p>
           </div>

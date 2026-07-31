@@ -6,7 +6,7 @@ import { useSettings } from '@/stores/settings'
 
 const persistedKeys = [
   'theme', 'language', 'sendWithEnter', 'streamResponses', 'showReasoning',
-  'chatWidth', 'notifications', 'customInstructions', 'nickname', 'generation',
+  'chatWidth', 'notifications', 'customInstructions', 'nickname', 'memoryEnabled', 'generation',
   'localChatLimit',
 ] as const
 
