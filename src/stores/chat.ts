@@ -48,7 +48,7 @@ interface ChatState {
   replaceSummaries: (chats: ServerChat[]) => void
   replaceFolders: (folders: ServerFolder[]) => void
   setDetailedChat: (chat: ServerChat) => void
-  applyResponseEvent: (event: ResponseEvent) => void
+  applyResponseEvent: (event: ResponseEvent) => boolean
   applyResponseSnapshot: (snapshot: ResponseSnapshot) => void
   newChat: (modelId?: string) => string
   setActive: (id: string | null) => void
@@ -190,7 +190,9 @@ export const useChat = create<ChatState>()((set, get) => ({
   }),
 
   applyResponseEvent: (event) => {
-    if ((get().responseSequences[event.responseId] ?? 0) >= event.sequence) return
+    if ((get().responseSequences[event.responseId] ?? 0) >= event.sequence) return true
+    const hasMessage = get().chats.some((chat) => chat.messages.some((message) => message.id === event.responseId))
+    if (!hasMessage) return false
     const payload = event.payload as { delta?: string; type?: string }
     const textDelta = typeof payload.delta === 'string' ? payload.delta : ''
     const reasoningDelta = event.type === 'response.reasoning_summary_text.delta' ? textDelta : ''
@@ -205,6 +207,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         }),
       })),
     }))
+    return true
   },
 
   applyResponseSnapshot: (snapshot) => {

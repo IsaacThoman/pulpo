@@ -138,6 +138,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       input,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
     })
+    await bumpRevision(user.id, id)
     reply.code(202)
     return { response: toSnapshot(response) }
   })

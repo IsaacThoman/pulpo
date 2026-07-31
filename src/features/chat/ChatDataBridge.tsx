@@ -65,7 +65,7 @@ export function ChatDataBridge() {
     socketRef.current = socket
 
     const persistEvent = (event: ResponseEvent) => {
-      applyResponseEvent(event)
+      if (!applyResponseEvent(event)) return
       void localDb.responseCursors.put({
         id: `${currentTabId}:${event.responseId}`, tabId: currentTabId,
         responseId: event.responseId, sequence: event.sequence, updatedAt: Date.now(),
@@ -91,7 +91,10 @@ export function ChatDataBridge() {
     socket.on('connect', sync)
     socket.on('response.event', persistEvent)
     socket.on('response.snapshot', applyResponseSnapshot)
-    socket.on('chat.changed', () => void queryClient.invalidateQueries({ queryKey: ['chats', userId] }))
+    socket.on('chat.changed', ({ chatId: changedChatId }) => {
+      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
+      void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
+    })
     socket.on('account.revision', ({ revision }) => {
       revisionRef.current = revision
       void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
