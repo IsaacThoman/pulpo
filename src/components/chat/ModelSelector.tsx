@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState, type DragEvent } from 'react'
 import { ChevronDown, Search, Star } from 'lucide-react'
 import {
   DropdownMenu,
@@ -9,8 +9,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { MODELS } from '@/lib/mock'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
-import { PROVIDERS, useModels } from '@/stores/models'
+import { resolveProviderOrder, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
+
+type DragKind = 'model' | 'provider'
 
 export function ModelSelector({
   value,
@@ -22,30 +24,71 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState<string | null>(null) // null = favorites
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragKind, setDragKind] = useState<DragKind | null>(null)
+  const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
+  const dragIdRef = useRef<string | null>(null)
+  const dragKindRef = useRef<DragKind | null>(null)
+  const didDragRef = useRef(false)
   const favorites = useModels((s) => s.favorites)
+  const providerOrder = useModels((s) => s.providers)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
+  const reorderFavorites = useModels((s) => s.reorderFavorites)
+  const reorderProviders = useModels((s) => s.reorderProviders)
   const selected = MODELS.find((m) => m.id === value) ?? MODELS[0]
 
-  const enabled = MODELS.filter((m) => m.enabled)
+  const providers = useMemo(() => resolveProviderOrder(providerOrder), [providerOrder])
+  const enabled = useMemo(() => MODELS.filter((m) => m.enabled), [])
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
-    let list =
-      provider === null
-        ? enabled.filter((m) => favorites.includes(m.id))
-        : enabled.filter((m) => m.provider === provider)
-    if (q) list = enabled.filter((m) => m.name.toLowerCase().includes(q))
-    return list
+    if (q) return enabled.filter((m) => m.name.toLowerCase().includes(q))
+    if (provider === null) {
+      return favorites
+        .map((id) => enabled.find((m) => m.id === id))
+        .filter((m): m is (typeof enabled)[number] => !!m)
+    }
+    return enabled.filter((m) => m.provider === provider)
   }, [provider, query, favorites, enabled])
 
   const searching = query.trim().length > 0
   // logos next to models on favorites (and search); no logos when a provider is selected
   const showLogos = provider === null || searching
   const favoritesActive = provider === null && !searching
+  const canReorderModels = favoritesActive && rows.length > 1
+  const canReorderProviders = providers.length > 1
 
   const pick = (id: string) => {
     onChange(id)
     setOpen(false)
     setQuery('')
+  }
+
+  const clearDrag = () => {
+    dragIdRef.current = null
+    dragKindRef.current = null
+    setDragId(null)
+    setDragKind(null)
+    setDrop(null)
+  }
+
+  const startDrag = (kind: DragKind, id: string, e: DragEvent) => {
+    didDragRef.current = false
+    dragIdRef.current = id
+    dragKindRef.current = kind
+    setDragId(id)
+    setDragKind(kind)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+
+  const onItemDragOver = (kind: DragKind, id: string, e: DragEvent<HTMLElement>) => {
+    if (dragKindRef.current !== kind || !dragIdRef.current || dragIdRef.current === id) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    didDragRef.current = true
+    const rect = e.currentTarget.getBoundingClientRect()
+    const edge = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    if (drop?.id !== id || drop.edge !== edge) setDrop({ id, edge })
   }
 
   return (
@@ -56,6 +99,7 @@ export function ModelSelector({
         if (!v) {
           setQuery('')
           setProvider(null)
+          clearDrag()
         }
       }}
     >
@@ -113,21 +157,55 @@ export function ModelSelector({
 
             <div className="my-1 h-px w-5 bg-border" />
 
-            {PROVIDERS.map((p) => {
+            {providers.map((p) => {
               const active = provider === p && !searching
+              const isDragging = dragKind === 'provider' && dragId === p
+              const showLineBefore =
+                dragKind === 'provider' && drop?.id === p && drop.edge === 'before' && !isDragging
+              const showLineAfter =
+                dragKind === 'provider' && drop?.id === p && drop.edge === 'after' && !isDragging
               return (
                 <Tooltip key={p}>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => setProvider(p)}
+                      type="button"
+                      draggable={canReorderProviders}
+                      onDragStart={(e) => {
+                        if (!canReorderProviders) return
+                        startDrag('provider', p, e)
+                      }}
+                      onDragOver={(e) => onItemDragOver('provider', p, e)}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        if (dragKindRef.current !== 'provider') return
+                        const from = dragIdRef.current ?? e.dataTransfer.getData('text/plain')
+                        const edge = drop?.id === p ? drop.edge : 'before'
+                        if (from) reorderProviders(from, p, edge)
+                        clearDrag()
+                      }}
+                      onDragEnd={clearDrag}
+                      onClick={() => {
+                        if (didDragRef.current) {
+                          didDragRef.current = false
+                          return
+                        }
+                        setProvider(p)
+                      }}
                       className={cn(
-                        'group/prov flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                        'group/prov relative flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
                         active
                           ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
-                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                        isDragging && 'opacity-40'
                       )}
                       aria-label={p}
                     >
+                      {showLineBefore && (
+                        <div className="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full bg-foreground/35" />
+                      )}
+                      {showLineAfter && (
+                        <div className="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-foreground/35" />
+                      )}
                       <ProviderLogo
                         provider={p}
                         icon={enabled.find((m) => m.provider === p)?.labLogo}
@@ -155,15 +233,48 @@ export function ModelSelector({
             {rows.map((m) => {
               const isFav = favorites.includes(m.id)
               const isSelected = m.id === value
+              const isDragging = dragKind === 'model' && dragId === m.id
+              const showLineBefore =
+                dragKind === 'model' && drop?.id === m.id && drop.edge === 'before' && !isDragging
+              const showLineAfter =
+                dragKind === 'model' && drop?.id === m.id && drop.edge === 'after' && !isDragging
               return (
                 <div
                   key={m.id}
+                  draggable={canReorderModels}
+                  onDragStart={(e) => {
+                    if (!canReorderModels) return
+                    startDrag('model', m.id, e)
+                  }}
+                  onDragOver={(e) => onItemDragOver('model', m.id, e)}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (dragKindRef.current !== 'model') return
+                    const from = dragIdRef.current ?? e.dataTransfer.getData('text/plain')
+                    const edge = drop?.id === m.id ? drop.edge : 'before'
+                    if (from) reorderFavorites(from, m.id, edge)
+                    clearDrag()
+                  }}
+                  onDragEnd={clearDrag}
                   className={cn(
-                    'group flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
-                    isSelected ? 'bg-accent/70' : 'hover:bg-accent'
+                    'group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
+                    isSelected ? 'bg-accent/70' : 'hover:bg-accent',
+                    isDragging && 'opacity-40'
                   )}
-                  onClick={() => pick(m.id)}
+                  onClick={() => {
+                    if (dragIdRef.current || didDragRef.current) {
+                      didDragRef.current = false
+                      return
+                    }
+                    pick(m.id)
+                  }}
                 >
+                  {showLineBefore && (
+                    <div className="pointer-events-none absolute inset-x-2 -top-px h-0.5 rounded-full bg-foreground/35" />
+                  )}
+                  {showLineAfter && (
+                    <div className="pointer-events-none absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground/35" />
+                  )}
                   {showLogos && (
                     <ModelIcon model={m} className="size-[18px] rounded-[3px]" boxed={false} />
                   )}
