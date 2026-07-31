@@ -13,8 +13,23 @@ const preferencesSchema = z.record(z.string(), z.unknown())
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
-    const [row] = await db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
-    return { values: row?.values ?? {}, updatedAt: row?.updatedAt.toISOString() ?? null }
+    const [[row], [profile]] = await Promise.all([
+      db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1),
+      db.select({
+        nickname: users.nickname,
+        leaderboardVisible: users.leaderboardVisible,
+        leaderboardColor: users.leaderboardColor,
+      }).from(users).where(eq(users.id, user.id)).limit(1),
+    ])
+    return {
+      values: {
+        ...(row?.values as Record<string, unknown> | undefined),
+        nickname: profile?.nickname ?? '',
+        leaderboardVisible: profile?.leaderboardVisible ?? true,
+        leaderboardColor: profile?.leaderboardColor ?? '#10b981',
+      },
+      updatedAt: row?.updatedAt.toISOString() ?? null,
+    }
   })
 
   app.patch('/api/settings', async (request) => {

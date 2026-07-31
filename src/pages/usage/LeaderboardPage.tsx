@@ -1,21 +1,17 @@
-import { useMemo, useState } from 'react'
-import { BarChart3, Crown, Save } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { BarChart3, Save } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
-import { makeDailyModelUsage } from '@/lib/mock'
-import { getCatalogModel } from '@/stores/catalog'
-import { formatDate, formatUsd } from '@/lib/format'
-import { periodDays, rangeMs } from '@/lib/time-range'
+import { formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
-import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
-import { RecentUsagePanel, TopModelsPanel, type TopModelStat } from '@/components/usage/UsagePanels'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { useSettings } from '@/stores/settings'
 
 type LBMetric = Metric | 'balance' | 'water'
 
@@ -119,64 +115,70 @@ function LeaderboardTip({
 }
 
 export function LeaderboardPage() {
-  const records = useUsage((s) => s.records)
   const users = useUsage((s) => s.users)
   const currentUserId = useUsage((s) => s.currentUserId)
   const setLeaderboardPref = useUsage((s) => s.setLeaderboardPref)
+  const loadLeaderboard = useUsage((s) => s.loadLeaderboard)
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
 
   const authUser = useAuth((state) => state.user)
-  const me = users.find((u) => u.id === currentUserId) ?? {
+  const savedNickname = useSettings((state) => state.nickname)
+  const savedVisibility = useSettings((state) => state.leaderboardVisible)
+  const savedColor = useSettings((state) => state.leaderboardColor)
+  const leaderboardMe = users.find((u) => u.id === currentUserId)
+  const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
-    nickname: null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
+    nickname: savedNickname || null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
     joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
-    showOnLeaderboard: true, barColor: '#10b981',
+    showOnLeaderboard: savedVisibility, barColor: savedColor,
+    ...(leaderboardMe ? { balance: leaderboardMe.balance } : {}),
   }
+
+  useEffect(() => { void loadLeaderboard(range) }, [loadLeaderboard, range])
 
   // preference editor state (saved explicitly)
   const [show, setShow] = useState(me.showOnLeaderboard)
   const [nickname, setNickname] = useState(me.nickname ?? '')
   const [color, setColor] = useState(me.barColor)
+  useEffect(() => {
+    setShow(savedVisibility)
+    setNickname(savedNickname)
+    setColor(savedColor)
+  }, [savedColor, savedNickname, savedVisibility])
   const normalizedNick = nickname.trim() === '' || nickname.trim() === me.name ? null : nickname.trim()
   const dirty =
     show !== me.showOnLeaderboard || normalizedNick !== me.nickname || color !== me.barColor
-  const save = () =>
+  const save = () => {
+    useSettings.setState({ nickname: normalizedNick ?? '', leaderboardVisible: show, leaderboardColor: color })
     setLeaderboardPref(me.id, { showOnLeaderboard: show, nickname: normalizedNick, barColor: color })
-
-  const inRange = useMemo(
-    () => records.filter((r) => Date.now() - r.timestamp <= rangeMs(range)),
-    [records, range]
-  )
+  }
 
   const totals = useMemo(
     () => ({
-      calls: inRange.length,
-      tokens: inRange.reduce((a, r) => a + r.tokensIn + r.tokensOut, 0),
-      cost: inRange.reduce((a, r) => a + r.cost, 0),
+      calls: users.reduce((sum, user) => sum + (user.usageCalls ?? 0), 0),
+      tokens: users.reduce((sum, user) => sum + (user.usageTokens ?? 0), 0),
+      cost: users.reduce((sum, user) => sum + (user.usageCost ?? 0), 0),
     }),
-    [inRange]
+    [users]
   )
 
   const rows = useMemo<Row[]>(() => {
-    const stats = new Map<string, { calls: number; tokens: number; cost: number }>()
-    for (const r of inRange) {
-      const e = stats.get(r.userId) ?? { calls: 0, tokens: 0, cost: 0 }
-      e.calls++
-      e.tokens += r.tokensIn + r.tokensOut
-      e.cost += r.cost
-      stats.set(r.userId, e)
-    }
     return users
       .filter((u) => !u.blocked)
-      .map((user) => ({ user, ...(stats.get(user.id) ?? { calls: 0, tokens: 0, cost: 0 }) }))
+      .map((user) => ({
+        user,
+        calls: user.usageCalls ?? 0,
+        tokens: user.usageTokens ?? 0,
+        cost: user.usageCost ?? 0,
+      }))
       .sort(
         (a, b) =>
           rowValue(b, metric) - rowValue(a, metric) ||
           b.cost - a.cost ||
           displayName(a.user).localeCompare(displayName(b.user))
       )
-  }, [inRange, users, metric])
+  }, [users, metric])
 
   const chartData = useMemo(
     () =>
@@ -188,30 +190,6 @@ export function LeaderboardPage() {
       })),
     [rows, metric]
   )
-
-  const expensive = useMemo(() => [...inRange].sort((a, b) => b.cost - a.cost)[0], [inRange])
-
-  const dailyAll = useMemo(() => makeDailyModelUsage(records), [records])
-  const dailyRange = useMemo(
-    () => dailyAll.filter((d) => Date.now() - new Date(`${d.date}T00:00:00`).getTime() <= rangeMs(range)),
-    [dailyAll, range]
-  )
-  const chartMetric: Metric = metric === 'balance' || metric === 'water' ? 'cost' : metric
-
-  const topModels = useMemo<TopModelStat[]>(() => {
-    const m = new Map<string, { calls: number; cost: number }>()
-    for (const r of inRange) {
-      const e = m.get(r.modelId) ?? { calls: 0, cost: 0 }
-      e.calls++
-      e.cost += r.cost
-      m.set(r.modelId, e)
-    }
-    return [...m.entries()]
-      .map(([modelId, s]) => ({ modelId, ...s }))
-      .sort((a, b) => b.cost - a.cost)
-  }, [inRange])
-
-  const firstUse = records.length > 0 ? records[records.length - 1].timestamp : null
 
   return (
     <div className="space-y-6">
@@ -326,65 +304,6 @@ export function LeaderboardPage() {
         )}
       </section>
 
-      {/* most expensive call */}
-      {expensive && (
-        <section>
-          <div className="flex items-center gap-2">
-            <Crown className="size-4 text-amber-500" />
-            <h3 className="text-sm font-medium">Most expensive call</h3>
-          </div>
-          <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-5 md:gap-0 md:divide-x">
-            {(() => {
-              const u = users.find((x) => x.id === expensive.userId)
-              const model = getCatalogModel(expensive.modelId)
-              return (
-                <>
-                  <div className="p-3 md:first:pl-0">
-                    <div className="mb-1 text-xs text-muted-foreground">User</div>
-                    <div className="text-lg font-medium">{u ? displayName(u) : '—'}</div>
-                  </div>
-                  <div className="p-3">
-                    <div className="mb-1 text-xs text-muted-foreground">Model</div>
-                    <div className="truncate text-lg font-medium" title={model.name}>
-                      {model.name}
-                    </div>
-                  </div>
-                  <div className="p-3">
-                    <div className="mb-1 text-xs text-muted-foreground">Tokens</div>
-                    <div className="text-lg font-medium">
-                      {(expensive.tokensIn + expensive.tokensOut).toLocaleString()}
-                    </div>
-                  </div>
-                  <div className="p-3">
-                    <div className="mb-1 text-xs text-muted-foreground">Cost</div>
-                    <div className="text-lg font-medium text-amber-500">{formatUsd(expensive.cost)}</div>
-                  </div>
-                  <div className="p-3 md:last:pr-0">
-                    <div className="mb-1 text-xs text-muted-foreground">Time</div>
-                    <div className="text-sm font-medium md:pt-1">{formatDate(expensive.timestamp)}</div>
-                  </div>
-                </>
-              )
-            })()}
-          </div>
-        </section>
-      )}
-
-      {/* daily chart + contribution graph (all users) */}
-      <DailyUsageChart
-        data={dailyRange}
-        contributionData={dailyAll}
-        metric={chartMetric}
-        periodDayCount={periodDays(range, firstUse)}
-      />
-
-      {/* records + model ranking (all users) */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RecentUsagePanel records={inRange} users={users} showUser displayName={displayName} />
-        </div>
-        <TopModelsPanel models={topModels} />
-      </div>
     </div>
   )
 }

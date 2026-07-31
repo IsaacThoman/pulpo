@@ -52,6 +52,10 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/usage/leaderboard', async (request) => {
     requireUser(request)
+    const days = (request.query as { days?: string }).days ?? '30'
+    const since = days === 'all'
+      ? null
+      : new Date(Date.now() - Math.min(365, Math.max(1, Number(days) || 30)) * 86_400_000)
     const rows = await db.select({
       userId: users.id,
       name: sql<string>`coalesce(${users.nickname}, ${users.name})`,
@@ -60,7 +64,12 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       calls: sql<number>`count(${usageEvents.id})::int`,
       tokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-    }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id))
+    }).from(users).leftJoin(
+      usageEvents,
+      since
+        ? and(eq(usageEvents.userId, users.id), gte(usageEvents.createdAt, since))
+        : eq(usageEvents.userId, users.id),
+    )
       .where(and(eq(users.leaderboardVisible, true), eq(users.blocked, false)))
       .groupBy(users.id).orderBy(desc(sql`coalesce(sum(${usageEvents.costMicros}), 0)`)).limit(100)
     return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), tokens: Number(row.tokens), costMicros: Number(row.costMicros) })) }

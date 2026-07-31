@@ -17,6 +17,8 @@ interface SettingsState {
   customInstructions: string
   nickname: string
   memoryEnabled: boolean
+  leaderboardVisible: boolean
+  leaderboardColor: string
   localChatLimit: number
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
@@ -39,6 +41,8 @@ export const useSettings = create<SettingsState>()(
       customInstructions: '',
       nickname: '',
       memoryEnabled: false,
+      leaderboardVisible: true,
+      leaderboardColor: '#10b981',
       localChatLimit: 50,
       generation: {},
       setTheme: (theme) => set({ theme }),
