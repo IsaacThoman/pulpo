@@ -44,7 +44,11 @@ export async function reserveBudget(input: {
 }): Promise<number> {
   const amount = calculateReservationMicros(input.requestInput, input.maxOutputTokens, input.pricing)
   await db.transaction(async (tx) => {
-    const [user] = await tx.execute<typeof users.$inferSelect>(sql`select * from users where id = ${input.userId} for update`)
+    const [user] = await tx
+      .select()
+      .from(users)
+      .where(eq(users.id, input.userId))
+      .for('update')
     if (!user || user.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
     const [reserved] = await tx
       .select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` })
@@ -100,9 +104,11 @@ export async function settleBudget(input: {
   latencyMs: number
 }): Promise<number> {
   return db.transaction(async (tx) => {
-    const [reservation] = await tx.execute<typeof budgetReservations.$inferSelect>(
-      sql`select * from budget_reservations where response_id = ${input.responseId} for update`,
-    )
+    const [reservation] = await tx
+      .select()
+      .from(budgetReservations)
+      .where(eq(budgetReservations.responseId, input.responseId))
+      .for('update')
     if (!reservation) throw new AppError(409, 'reservation_missing', 'Budget reservation is missing')
     if (reservation.status === 'settled') return reservation.settledAmountMicros ?? 0
     const [response] = await tx.select().from(responses).where(eq(responses.id, input.responseId)).limit(1)
@@ -111,7 +117,11 @@ export async function settleBudget(input: {
       : []
     if (!response || !pricing) throw new AppError(409, 'pricing_snapshot_missing', 'Pricing snapshot is missing')
     const cost = calculateCostMicros(input.usage, pricing)
-    const [user] = await tx.execute<typeof users.$inferSelect>(sql`select * from users where id = ${reservation.userId} for update`)
+    const [user] = await tx
+      .select()
+      .from(users)
+      .where(eq(users.id, reservation.userId))
+      .for('update')
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
     const balanceAfter = user.balanceMicros - cost
     await tx.update(users).set({ balanceMicros: balanceAfter, stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, user.id))

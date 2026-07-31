@@ -192,14 +192,16 @@ export const useChat = create<ChatState>()((set, get) => ({
   applyResponseEvent: (event) => {
     if ((get().responseSequences[event.responseId] ?? 0) >= event.sequence) return
     const payload = event.payload as { delta?: string; type?: string }
+    const textDelta = typeof payload.delta === 'string' ? payload.delta : ''
+    const reasoningDelta = event.type === 'response.reasoning_summary_text.delta' ? textDelta : ''
     set((state) => ({
       responseSequences: { ...state.responseSequences, [event.responseId]: event.sequence },
       chats: state.chats.map((chat) => ({
         ...chat,
         messages: chat.messages.map((message) => message.id !== event.responseId ? message : {
           ...message,
-          content: event.type === 'response.output_text.delta' ? message.content + payload.delta : message.content,
-          reasoning: event.type.includes('reasoning') ? (message.reasoning ?? '') + payload.delta : message.reasoning,
+          content: event.type === 'response.output_text.delta' ? message.content + textDelta : message.content,
+          reasoning: reasoningDelta ? (message.reasoning ?? '') + reasoningDelta : message.reasoning,
         }),
       })),
     }))
