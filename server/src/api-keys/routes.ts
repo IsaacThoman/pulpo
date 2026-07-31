@@ -1,5 +1,5 @@
 import argon2 from 'argon2'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -48,11 +48,13 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
     const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
     return { data: await Promise.all(rows.map(async ({ secretHash: _, ...row }) => {
       const allowedModels = await db.select({ modelId: apiKeyModelPermissions.modelId }).from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, row.id))
-      const [spend] = await db.select({
-        lifetime: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-        monthly: sql<number>`coalesce(sum(${usageEvents.costMicros}) filter (where ${usageEvents.createdAt} >= ${monthStart}), 0)::bigint`,
-      }).from(usageEvents).where(eq(usageEvents.apiKeyId, row.id))
-      return { ...row, allowedModels: allowedModels.map((item) => item.modelId), spentThisMonthMicros: Number(spend?.monthly ?? 0), spentLifetimeMicros: Number(spend?.lifetime ?? 0) }
+      const [[lifetime], [monthly]] = await Promise.all([
+        db.select({ total: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint` })
+          .from(usageEvents).where(eq(usageEvents.apiKeyId, row.id)),
+        db.select({ total: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint` })
+          .from(usageEvents).where(and(eq(usageEvents.apiKeyId, row.id), gte(usageEvents.createdAt, monthStart))),
+      ])
+      return { ...row, allowedModels: allowedModels.map((item) => item.modelId), spentThisMonthMicros: Number(monthly?.total ?? 0), spentLifetimeMicros: Number(lifetime?.total ?? 0) }
     })) }
   })
 
