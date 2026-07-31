@@ -85,15 +85,15 @@ export function InterfaceSection() {
     title: true,
     titlePrompt: 'Create a concise 3-5 word title for this chat.',
     followUp: true,
-    tags: true,
-    retrievalQuery: false,
-    autocomplete: false,
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
 
   return (
     <div>
-      <Section title="Task model" hint="Small model used for background tasks like titles and tags.">
+      <Section
+        title="Task model"
+        hint="Small model used for background tasks like titles and follow-ups."
+      >
         <SelectField
           label="Local task model"
           value={t.localTask}
@@ -123,9 +123,6 @@ export function InterfaceSection() {
           </div>
         )}
         <Toggle label="Follow-up generation" checked={t.followUp} onChange={(v) => s('followUp', v)} />
-        <Toggle label="Tags generation" checked={t.tags} onChange={(v) => s('tags', v)} />
-        <Toggle label="Retrieval query generation" checked={t.retrievalQuery} onChange={(v) => s('retrievalQuery', v)} />
-        <Toggle label="Autocomplete generation" checked={t.autocomplete} onChange={(v) => s('autocomplete', v)} />
       </Section>
 
       <SaveBar />

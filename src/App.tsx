@@ -4,7 +4,6 @@ import { ChatPage } from '@/pages/ChatPage'
 import { UsageLayout } from '@/pages/usage/UsageLayout'
 import { PersonalPage } from '@/pages/usage/PersonalPage'
 import { LeaderboardPage } from '@/pages/usage/LeaderboardPage'
-import { UsersPage } from '@/pages/usage/UsersPage'
 import { ModelsPage } from '@/pages/usage/ModelsPage'
 import { AnalyticsPage } from '@/pages/usage/AnalyticsPage'
 import { ApiKeysPage } from '@/pages/ApiKeysPage'
@@ -23,7 +22,6 @@ export default function App() {
           <Route path="usage" element={<UsageLayout />}>
             <Route index element={<PersonalPage />} />
             <Route path="leaderboard" element={<LeaderboardPage />} />
-            <Route path="users" element={<UsersPage />} />
             <Route path="models" element={<ModelsPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
           </Route>

@@ -99,12 +99,12 @@ export function ModelSelector({
                     'group/star flex size-8 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
                     favoritesActive
                       ? 'text-foreground'
-                      : 'text-muted-foreground hover:scale-110 hover:text-amber-500'
+                      : 'text-muted-foreground hover:text-amber-500'
                   )}
                   aria-label="Favorites"
                 >
                   <Star
-                    className="size-4 fill-none stroke-current transition-all duration-150 group-hover/star:scale-110 group-hover/star:stroke-amber-500"
+                    className="size-4 fill-none stroke-current transition-colors duration-150 group-hover/star:stroke-amber-500"
                   />
                 </button>
               </TooltipTrigger>
@@ -124,7 +124,7 @@ export function ModelSelector({
                         'group/prov flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
                         active
                           ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
-                          : 'text-muted-foreground hover:scale-105 hover:bg-accent hover:text-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       )}
                       aria-label={p}
                     >
@@ -133,8 +133,8 @@ export function ModelSelector({
                         icon={enabled.find((m) => m.provider === p)?.labLogo}
                         variant={active ? 'filled' : 'outline'}
                         className={cn(
-                          'size-[18px] transition-transform duration-150',
-                          !active && 'group-hover/prov:scale-110'
+                          'size-[18px] transition-opacity duration-150',
+                          !active && 'group-hover/prov:opacity-100'
                         )}
                       />
                     </button>
@@ -172,7 +172,7 @@ export function ModelSelector({
                   {/* favorite star — stronger hover */}
                   <button
                     className={cn(
-                      'group/favorite flex size-7 cursor-pointer items-center justify-center bg-transparent transition-all duration-150 hover:scale-110',
+                      'group/favorite flex size-7 cursor-pointer items-center justify-center bg-transparent transition-colors duration-150',
                       isFav
                         ? 'opacity-100 text-amber-400'
                         : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:text-amber-500'

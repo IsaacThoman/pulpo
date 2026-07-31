@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { MessagesSquare, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
-import { formatDate, timeAgo } from '@/lib/format'
+import { formatCost, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -64,7 +64,8 @@ export function AdminUsersPage() {
                 <th className="px-5 py-2.5 font-medium">Role</th>
                 <th className="py-2.5 font-medium">Name</th>
                 <th className="py-2.5 font-medium">Email</th>
-                <th className="py-2.5 font-medium">Last active</th>
+                <th className="px-4 py-2.5 text-right font-medium">Balance</th>
+                <th className="px-4 py-2.5 font-medium">Last active</th>
                 <th className="py-2.5 font-medium">Created</th>
                 <th className="px-5 py-2.5 text-right font-medium">Actions</th>
               </tr>
@@ -95,15 +96,15 @@ export function AdminUsersPage() {
                     </span>
                   </td>
                   <td className="py-2.5 text-muted-foreground">{u.email}</td>
-                  <td className="py-2.5 text-muted-foreground">
+                  <td className="px-4 py-2.5 text-right tabular-nums">
+                    <BalanceCell user={u} />
+                  </td>
+                  <td className="px-4 py-2.5 text-muted-foreground">
                     {timeAgo(Date.now() - 3 * 3_600_000)}
                   </td>
                   <td className="py-2.5 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-5 py-2.5">
                     <div className="flex justify-end gap-1">
-                      <Button size="icon-sm" variant="ghost" title="User chats">
-                        <MessagesSquare className="size-3.5" />
-                      </Button>
                       <Button
                         size="icon-sm"
                         variant="ghost"
@@ -195,5 +196,51 @@ export function AdminUsersPage() {
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function BalanceCell({ user }: { user: MonitorUser }) {
+  const updateBalance = useUsage((s) => s.updateBalance)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+
+  const save = () => {
+    const n = parseFloat(value)
+    if (!Number.isNaN(n) && n >= 0) updateBalance(user.id, n)
+    setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        title="Edit balance"
+        onClick={() => {
+          setValue(user.balance.toFixed(2))
+          setEditing(true)
+        }}
+        className="-mr-1.5 cursor-pointer rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent"
+      >
+        {formatCost(user.balance)}
+      </button>
+    )
+  }
+
+  return (
+    <Input
+      type="number"
+      step="0.01"
+      min="0"
+      autoFocus
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      onBlur={save}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') save()
+        if (e.key === 'Escape') setEditing(false)
+      }}
+      className="ml-auto h-7 w-24 px-1.5 text-right tabular-nums"
+    />
   )
 }

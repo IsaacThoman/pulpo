@@ -5,7 +5,6 @@ import { cn } from '@/lib/utils'
 const TABS = [
   { to: '/usage', label: 'Personal', end: true },
   { to: '/usage/leaderboard', label: 'Leaderboard', end: false },
-  { to: '/usage/users', label: 'Users', end: false },
   { to: '/usage/models', label: 'Models', end: false },
   { to: '/usage/analytics', label: 'Analytics', end: false },
 ]
