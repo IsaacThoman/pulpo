@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ModelIcon } from '@/components/ModelIcon'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/stores/auth'
 
 const ALL_SCOPES = [
   { id: 'responses', label: 'Responses' },
@@ -128,6 +129,7 @@ function LimitCell({ k }: { k: ApiKey }) {
 }
 
 export function ApiKeysPage() {
+  const apiKeysEnabled = useAuth((state) => state.apiKeysEnabled)
   const keys = useApiKeys((s) => s.keys)
   const createKey = useApiKeys((s) => s.createKey)
   const revokeKey = useApiKeys((s) => s.revokeKey)
@@ -200,6 +202,8 @@ export function ApiKeysPage() {
   }
 
   const canCreate = scopes.length > 0 && (allModels || selectedModels.length > 0)
+
+  if (!apiKeysEnabled) return <div className="grid h-full place-items-center p-8"><div className="max-w-md rounded-xl border p-6 text-center"><TriangleAlert className="mx-auto size-8 text-amber-500" /><h1 className="mt-3 text-lg font-semibold">API keys are disabled</h1><p className="mt-2 text-sm text-muted-foreground">The administrator has suspended API-key authentication. Existing keys remain stored and can be used again if the policy is re-enabled.</p></div></div>
 
   return (
     <ScrollArea className="h-full">

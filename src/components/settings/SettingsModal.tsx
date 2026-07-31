@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
+import { useCatalog } from '@/stores/catalog'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -99,6 +100,15 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const navigate = useNavigate()
   const [memories, setMemories] = useState<Memory[]>([])
   const [memoriesLoading, setMemoriesLoading] = useState(false)
+  const models = useCatalog((state) => state.models)
+  const [importFallback, setImportFallback] = useState('')
+  const [importResult, setImportResult] = useState('')
+
+  const chooseImport = (source: 'pulpo' | 'openwebui') => {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
+    input.onchange = () => { const file = input.files?.[0]; if (!file) return; void file.text().then((text) => JSON.parse(text)).then((data) => apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', { method: 'POST', body: { source, data, fallbackModelId: importFallback || undefined } })).then((result) => { setImportResult(`Imported ${result.imported}; ${result.duplicates} duplicate(s).${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`); return queryClient.invalidateQueries({ queryKey: ['chats'] }) }).catch((error) => setImportResult(error instanceof Error ? error.message : 'Import failed')) }
+    input.click()
+  }
 
   useEffect(() => {
     if (!open || section !== 'personalization') return
@@ -122,7 +132,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           <div className="flex w-52 shrink-0 flex-col border-r bg-muted/30 p-3">
             <div className="px-2 pb-2 text-sm font-semibold">Settings</div>
             <div className="space-y-0.5">
-              {SECTIONS.map((sec) => (
+              {SECTIONS.filter((sec) => sec.id !== 'api' || useAuth.getState().apiKeysEnabled).map((sec) => (
                 <button
                   key={sec.id}
                   onClick={() => setSection(sec.id)}
@@ -331,11 +341,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">API keys</h2>
                   <Separator className="my-3" />
-                  <p className="py-2 text-sm text-muted-foreground">
-                    Create OpenAI-compatible API keys for scripts and third-party tools. Keys are
-                    managed on the dedicated API page.
-                  </p>
+                  <p className="py-2 text-sm text-muted-foreground">{useAuth.getState().apiKeysEnabled ? 'Create OpenAI-compatible API keys for scripts and third-party tools. Keys are managed on the dedicated API page.' : 'API keys are disabled by the administrator. Existing keys are retained but cannot authenticate until the policy is re-enabled.'}</p>
                   <Button
+                    disabled={!useAuth.getState().apiKeysEnabled}
                     onClick={() => {
                       onClose()
                       navigate('/api-keys')
@@ -356,6 +364,10 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       Export
                     </Button>
                   </Row>
+                  <Row label="Fallback model" hint="Used when an imported source model is unavailable."><Select value={importFallback} onValueChange={setImportFallback}><SelectTrigger className="w-44"><SelectValue placeholder="Select if needed" /></SelectTrigger><SelectContent>{models.filter((model) => model.enabled).map((model) => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}</SelectContent></Select></Row>
+                  <Row label="Import Pulpo chats" hint="Accepts portable v2 and legacy v1 exports."><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>Import</Button></Row>
+                  <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
+                  {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
                   <Row label="Delete all chats" hint="This cannot be undone.">
                     <Button variant="destructive" size="sm" onClick={() => {
                       if (!confirm('Delete every chat in your Pulpo account?')) return

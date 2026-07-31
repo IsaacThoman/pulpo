@@ -65,6 +65,8 @@ export function AuthenticationSection() {
     pendingDetails: auth.pendingDetails,
     adminEmail: auth.adminEmail,
     pendingMessage: auth.pendingMessage,
+    defaultSignupRole: 'pending' as 'pending' | 'user',
+    apiKeysEnabled: true,
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
 
@@ -86,6 +88,8 @@ export function AuthenticationSection() {
           decimals={2}
           suffix="USD"
         />
+        <SelectField label="Default user role" hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: 'Pending approval' }, { value: 'user', label: 'User' }]} />
+        <Toggle label="Enable API keys" hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />
       </Section>
 
       <Section title="Pending accounts">
@@ -109,7 +113,7 @@ export function AuthenticationSection() {
         />
       </Section>
 
-      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage }) }} />
+      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled }) }} />
     </div>
   )
 }

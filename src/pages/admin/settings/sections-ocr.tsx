@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Field,
   NumField,
@@ -10,7 +10,7 @@ import {
   TextField,
   Toggle,
 } from '@/components/admin/kit'
-import { ADMIN_PROVIDERS } from '@/lib/mock-admin'
+import { apiRequest } from '@/lib/api'
 
 const CUSTOM = 'custom'
 
@@ -18,33 +18,35 @@ const DEFAULT_PROMPT =
   'convert the image to markdown/latex if applicable, otherwise describe the non-text content part of the image in detail. if there is text present in the image, provide all of the text in the image, unabridged verbatim'
 
 export function OcrSection() {
+  const [providers, setProviders] = useState<Array<{ id: string; name: string; baseUrl: string; hasApiKey: boolean }>>([])
   const [enabled, setEnabled] = useState(false)
   const [cacheEnabled, setCacheEnabled] = useState(true)
   const [providerId, setProviderId] = useState(CUSTOM)
   const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
   const [apiKey, setApiKey] = useState('')
-  const [apiKeyConfigured] = useState(false)
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(false)
   const [model, setModel] = useState('gpt-4.1-mini')
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
   const [cacheTtl, setCacheTtl] = useState(3600)
+  useEffect(() => { void Promise.all([apiRequest<{ data: Array<{ id: string; name: string; baseUrl: string; hasApiKey: boolean }> }>('/api/admin/providers'), apiRequest<{ enabled: boolean; cacheEnabled: boolean; cacheTtlSeconds: number; providerMode: 'existing' | 'custom'; providerConnectionId: string | null; customBaseUrl: string | null; model: string; systemPrompt: string; hasCustomApiKey: boolean }>('/api/admin/settings/ocr')]).then(([p, value]) => { setProviders(p.data); setEnabled(value.enabled); setCacheEnabled(value.cacheEnabled); setCacheTtl(value.cacheTtlSeconds); setProviderId(value.providerMode === 'custom' ? CUSTOM : value.providerConnectionId ?? CUSTOM); setBaseUrl(value.customBaseUrl ?? 'https://api.openai.com/v1'); setModel(value.model); setSystemPrompt(value.systemPrompt); setApiKeyConfigured(value.hasCustomApiKey) }) }, [])
 
   const isCustom = providerId === CUSTOM
   const selected = useMemo(
-    () => (isCustom ? null : ADMIN_PROVIDERS.find((p) => p.id === providerId) ?? null),
-    [isCustom, providerId]
+    () => (isCustom ? null : providers.find((p) => p.id === providerId) ?? null),
+    [isCustom, providerId, providers]
   )
 
   const onProviderChange = (id: string) => {
     setProviderId(id)
     if (id === CUSTOM) return
-    const p = ADMIN_PROVIDERS.find((x) => x.id === id)
+    const p = providers.find((x) => x.id === id)
     if (p) setBaseUrl(p.baseUrl)
     setApiKey('')
   }
 
   const providerOptions = [
     { value: CUSTOM, label: 'Custom provider for OCR' },
-    ...ADMIN_PROVIDERS.map((p) => ({ value: p.id, label: p.name })),
+    ...providers.map((p) => ({ value: p.id, label: p.name })),
   ]
 
   return (
@@ -119,7 +121,7 @@ export function OcrSection() {
         />
       </Section>
 
-      <SaveBar />
+      <SaveBar onSave={async () => { await apiRequest('/api/admin/settings/ocr', { method: 'PATCH', body: { enabled, cacheEnabled, cacheTtlSeconds: cacheTtl, providerMode: isCustom ? 'custom' : 'existing', providerConnectionId: isCustom ? null : providerId, customBaseUrl: isCustom ? baseUrl : null, customApiKey: apiKey || undefined, model, systemPrompt } }); setApiKey(''); if (apiKey) setApiKeyConfigured(true) }} />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import {
   Copy,
   Pencil,
   RefreshCw,
+  Trash2,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
@@ -112,14 +113,14 @@ export const MessageItem = memo(function MessageItem({
   message: Message
   streaming: boolean
 }) {
-  const { regenerate, editUserMessage, editAssistantMessage } = useChat()
+  const { regenerate, editUserMessage, editAssistantMessage, deleteUserMessage } = useChat()
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [reasoningOpen, setReasoningOpen] = useState(true)
   const submitEdit = () => {
     const content = draft.trim()
-    if (!content || content === message.content) return
+    if (!content || (message.role === 'assistant' && content === message.content)) return
     setEditing(false)
     if (message.role === 'user') editUserMessage(chat.id, message.id, content)
     else editAssistantMessage(chat.id, message.id, content)
@@ -151,7 +152,7 @@ export const MessageItem = memo(function MessageItem({
               <Button
                 size="sm"
                 onClick={submitEdit}
-                disabled={!draft.trim() || draft.trim() === message.content}
+                disabled={!draft.trim()}
               >
                 Save & resend
               </Button>
@@ -175,6 +176,9 @@ export const MessageItem = memo(function MessageItem({
                 }}
               >
                 <Pencil className="size-3.5" />
+              </ActionButton>
+              <ActionButton label="Delete message" onClick={() => { if (confirm('Delete this user message and every response that follows from it?')) deleteUserMessage(chat.id, message.id) }}>
+                <Trash2 className="size-3.5" />
               </ActionButton>
             </div>
           </div>

@@ -173,6 +173,7 @@ export function Sidebar({
   const toggleFolder = useChat((s) => s.toggleFolder)
   const addFolder = useChat((s) => s.addFolder)
   const user = useAuth((s) => s.user)
+  const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
   const logout = useAuth((s) => s.logout)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
@@ -299,7 +300,7 @@ export function Sidebar({
           {iconBtn('New chat', () => navigate('/'), <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
           {iconBtn('Usage', () => navigate('/usage'), <BarChart3 className="size-4" />)}
-          {iconBtn('API keys', () => navigate('/api-keys'), <KeyRound className="size-4" />)}
+          {apiKeysEnabled && iconBtn('API keys', () => navigate('/api-keys'), <KeyRound className="size-4" />)}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}

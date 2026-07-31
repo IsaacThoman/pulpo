@@ -20,6 +20,8 @@ interface ServerModel {
   outputPriceMicros: number
   perRequestPriceMicros: number
   enabled: boolean
+  visible: boolean
+  logo: string | null
   iconLight: string | null
   iconDark: string | null
   provider: { name: string }
@@ -31,7 +33,7 @@ function fromServer(model: ServerModel): Model {
   return {
     id: model.id, name: model.name, description: model.description,
     provider: model.lab?.name ?? 'Internal', inferenceProvider: model.provider.name,
-    labLogo: model.lab?.logo ?? 'pulpo', modelLogo: model.lab?.logo ?? 'pulpo',
+    labLogo: model.lab?.logo ?? 'pulpo', modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
     contextWindow: model.contextWindow,
     tags: model.tags.filter((tag): tag is Model['tags'][number] => ['vision', 'reasoning', 'tools', 'fast', 'code'].includes(tag)),
     iconLight: model.iconLight ?? '#18181b', iconDark: model.iconDark ?? '#fafafa',

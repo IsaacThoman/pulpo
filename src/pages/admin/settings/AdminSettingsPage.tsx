@@ -3,16 +3,22 @@ import {
   Database,
   LayoutGrid,
   Lock,
+  FileSearch,
+  ScrollText,
   SlidersHorizontal,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
+import { OcrSection } from './sections-ocr'
+import { LoggingSection } from './sections-logging'
 import { cn } from '@/lib/utils'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal, el: <GeneralSection /> },
   { id: 'auth', label: 'Authentication', icon: Lock, el: <AuthenticationSection /> },
   { id: 'interface', label: 'Interface', icon: LayoutGrid, el: <InterfaceSection /> },
+  { id: 'ocr', label: 'OCR', icon: FileSearch, el: <OcrSection /> },
+  { id: 'logging', label: 'Logging', icon: ScrollText, el: <LoggingSection /> },
   { id: 'database', label: 'Database', icon: Database, el: <DatabaseSection /> },
 ] as const
 

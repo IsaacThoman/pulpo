@@ -24,6 +24,7 @@ interface PublicAuthSettings {
   pendingDetails: boolean
   adminEmail: string
   pendingMessage: string
+  apiKeysEnabled: boolean
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
 
@@ -35,6 +36,7 @@ interface AuthState {
   pendingDetails: boolean
   adminEmail: string
   pendingMessage: string
+  apiKeysEnabled: boolean
   bootstrap: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthResult>
   signup: (name: string, email: string, password: string) => Promise<AuthResult>
@@ -76,6 +78,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   pendingDetails: true,
   adminEmail: '',
   pendingMessage: 'Your account is pending approval. An admin will review it shortly.',
+  apiKeysEnabled: true,
 
   bootstrap: async () => {
     if (!get().checkingSession) return
@@ -88,6 +91,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       pendingDetails: get().pendingDetails,
       adminEmail: get().adminEmail,
       pendingMessage: get().pendingMessage,
+      apiKeysEnabled: get().apiKeysEnabled,
     }
     try {
       const response = await apiRequest<AuthResponse>('/api/me')

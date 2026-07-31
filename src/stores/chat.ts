@@ -68,6 +68,7 @@ interface ChatState {
   regenerate: (chatId: string, messageId: string) => void
   editUserMessage: (chatId: string, messageId: string, content: string) => void
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
+  deleteUserMessage: (chatId: string, messageId: string) => void
   activateBranch: (chatId: string, responseId: string) => void
   stopStreaming: () => void
 }
@@ -362,6 +363,12 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   editAssistantMessage: (chatId, messageId, content) => {
     void optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  },
+  deleteUserMessage: (chatId, messageId) => {
+    void optimisticRequest('DELETE', `/api/messages/${messageId}`).then(async () => {
+      await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+      await queryClient.invalidateQueries({ queryKey: chatsKey() })
+    })
   },
   activateBranch: (chatId, responseId) => {
     void optimisticRequest('POST', `/api/messages/${responseId}/activate`).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))

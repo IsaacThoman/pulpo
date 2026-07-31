@@ -16,6 +16,7 @@ const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((m
 const AdminProvidersPage = lazy(() => import('@/pages/admin/AdminProvidersPage').then((module) => ({ default: module.AdminProvidersPage })))
 const AdminLabsPage = lazy(() => import('@/pages/admin/AdminLabsPage').then((module) => ({ default: module.AdminLabsPage })))
 const AdminModelsPage = lazy(() => import('@/pages/admin/AdminModelsPage').then((module) => ({ default: module.AdminModelsPage })))
+const AdminUsagePage = lazy(() => import('@/pages/admin/AdminUsagePage').then((module) => ({ default: module.AdminUsagePage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
 const SetupPage = lazy(() => import('@/pages/auth/SetupPage').then((module) => ({ default: module.SetupPage })))
@@ -59,6 +60,7 @@ export default function App() {
                 <Route path="providers" element={<AdminProvidersPage />} />
                 <Route path="labs" element={<AdminLabsPage />} />
                 <Route path="models" element={<AdminModelsPage />} />
+                <Route path="usage" element={<AdminUsagePage />} />
                 <Route path="settings" element={<AdminSettingsPage />} />
               </Route>
             </Route>
