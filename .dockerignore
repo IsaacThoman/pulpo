@@ -1,0 +1,8 @@
+node_modules
+dist
+server/dist
+packages/*/dist
+.git
+.env
+*.yaml
+!compose.yaml

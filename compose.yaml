@@ -1,0 +1,116 @@
+name: pulpo
+
+x-server: &server
+  build:
+    context: .
+    dockerfile: server/Dockerfile
+  env_file: ${PULPO_ENV_FILE:-.env.example}
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "${PULPO_HTTP_PORT:-8080}:80"
+      - "${PULPO_HTTPS_PORT:-8443}:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    restart: unless-stopped
+
+  api:
+    <<: *server
+    command: ["sh", "-c", "npm run db:migrate -w @pulpo/server && npm run start:api -w @pulpo/server"]
+    expose:
+      - "3000"
+
+  worker:
+    <<: *server
+    command: ["npm", "run", "start:worker", "-w", "@pulpo/server"]
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: pulpo
+      POSTGRES_USER: pulpo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulpo}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulpo -d pulpo"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  seaweed-master:
+    image: chrislusf/seaweedfs:4.29
+    command: ["master", "-ip=seaweed-master", "-mdir=/data"]
+    volumes:
+      - seaweed_master_data:/data
+    restart: unless-stopped
+
+  seaweed-volume:
+    image: chrislusf/seaweedfs:4.29
+    command: ["volume", "-mserver=seaweed-master:9333", "-ip=seaweed-volume", "-dir=/data", "-max=0"]
+    depends_on:
+      - seaweed-master
+    volumes:
+      - seaweed_volume_data:/data
+    restart: unless-stopped
+
+  seaweed-filer:
+    image: chrislusf/seaweedfs:4.29
+    command: ["filer", "-master=seaweed-master:9333", "-ip=seaweed-filer"]
+    depends_on:
+      - seaweed-master
+      - seaweed-volume
+    volumes:
+      - seaweed_filer_data:/data
+    restart: unless-stopped
+
+  seaweed-s3:
+    image: chrislusf/seaweedfs:4.29
+    command: ["s3", "-filer=seaweed-filer:8888", "-ip.bind=0.0.0.0"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-pulpo-development-secret}
+    depends_on:
+      - seaweed-filer
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
+  postgres_data:
+  redis_data:
+  seaweed_master_data:
+  seaweed_volume_data:
+  seaweed_filer_data:
