@@ -3,6 +3,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useUsage } from '@/stores/usage'
+import { useAuth } from '@/stores/auth'
 
 const TABS = [
   { to: '/usage', label: 'Personal', end: true },
@@ -11,6 +12,7 @@ const TABS = [
 ]
 
 export function UsageLayout() {
+  const role = useAuth((state) => state.user?.role)
   const loadPersonal = useUsage((state) => state.loadPersonal)
   const loadLeaderboard = useUsage((state) => state.loadLeaderboard)
   useEffect(() => {
@@ -22,7 +24,7 @@ export function UsageLayout() {
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
         <h1 className="text-sm font-semibold">Usage</h1>
         <nav className="flex items-center gap-1">
-          {TABS.map((t) => (
+          {TABS.filter((tab) => tab.to !== '/usage/analytics' || role === 'admin').map((t) => (
             <NavLink
               key={t.to}
               to={t.to}

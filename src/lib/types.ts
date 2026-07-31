@@ -82,6 +82,7 @@ export interface Message {
   attachments?: Attachment[]
   rating?: 'up' | 'down' | null
   error?: string
+  outputItems?: unknown[]
   done: boolean
 }
 

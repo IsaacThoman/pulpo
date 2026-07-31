@@ -31,6 +31,9 @@ import {
 import { useSettings, type Theme } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { cn } from '@/lib/utils'
+import { apiRequest } from '@/lib/api'
+import { queryClient } from '@/lib/query-client'
+import { useChat } from '@/stores/chat'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -313,17 +316,18 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <h2 className="text-base font-semibold">Data controls</h2>
                   <Separator className="my-3" />
                   <Row label="Export chats" hint="Download all conversations as JSON.">
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => location.assign('/api/chats/export')}>
                       Export
                     </Button>
                   </Row>
-                  <Row label="Import chats" hint="Restore from a previous export.">
-                    <Button variant="outline" size="sm">
-                      Import
-                    </Button>
-                  </Row>
                   <Row label="Delete all chats" hint="This cannot be undone.">
-                    <Button variant="destructive" size="sm">
+                    <Button variant="destructive" size="sm" onClick={() => {
+                      if (!confirm('Delete every chat in your Pulpo account?')) return
+                      void apiRequest('/api/chats', { method: 'DELETE' }).then(() => {
+                        useChat.setState({ chats: [], activeChatId: null })
+                        return queryClient.invalidateQueries({ queryKey: ['chats'] })
+                      })
+                    }}>
                       Delete all
                     </Button>
                   </Row>
@@ -337,15 +341,15 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <div className="space-y-2 py-3 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Version</span>
-                      <span className="font-mono">0.1.0-mock</span>
+                      <span className="font-mono">0.1.0</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Stack</span>
-                      <span>react · vite · tailwind · shadcn · zustand</span>
+                      <span>React · Fastify · PostgreSQL · Redis</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">API endpoint</span>
-                      <span className="font-mono text-xs">https://api.pulpo.dev/v1</span>
+                      <span className="font-mono text-xs">{location.origin}/v1</span>
                     </div>
                   </div>
                 </div>

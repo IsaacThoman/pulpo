@@ -1,5 +1,6 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { createModelSchema, createProviderSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
@@ -18,6 +19,83 @@ import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
+
+const presetSchema = z.array(z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
+  name: z.string().trim().min(1).max(80),
+  icon: z.string().min(1).max(80),
+  defaultChoiceId: z.string().nullable().optional(),
+  choices: z.array(z.object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
+    displayName: z.string().trim().min(1).max(80),
+    icon: z.string().max(80).nullable().optional(),
+    action: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('none') }),
+      z.object({ type: z.literal('redirect'), modelId: z.string().min(1).max(120) }),
+      z.object({ type: z.literal('params'), params: z.record(z.string(), z.unknown()) }),
+    ]),
+  })).min(1).max(20),
+})).max(10)
+
+type PresetInput = z.infer<typeof presetSchema>
+
+async function validatePresets(modelId: string, presets: PresetInput, allowedParameters: string[]): Promise<void> {
+  for (const preset of presets) {
+    if (preset.defaultChoiceId && !preset.choices.some((choice) => choice.id === preset.defaultChoiceId)) {
+      throw new AppError(400, 'invalid_preset_default', `Preset ${preset.id} has an invalid default choice`)
+    }
+    for (const choice of preset.choices) {
+      if (choice.action.type === 'params') {
+        const invalid = Object.keys(choice.action.params).find((key) => !allowedParameters.includes(key))
+        if (invalid) throw new AppError(400, 'parameter_not_allowed', `Preset parameter ${invalid} is not allowed for this model`)
+      }
+    }
+  }
+  const existingPresets = await db.select().from(modelPresets)
+  const existingChoices = await db.select().from(modelPresetChoices)
+  const ownerByPreset = new Map(existingPresets.map((preset) => [preset.id, preset.modelId]))
+  const graph = new Map<string, Set<string>>()
+  for (const choice of existingChoices) {
+    const owner = ownerByPreset.get(choice.presetId)
+    const action = choice.action as { modelId?: string }
+    if (owner && owner !== modelId && choice.actionType === 'redirect' && action.modelId) {
+      const edges = graph.get(owner) ?? new Set<string>(); edges.add(action.modelId); graph.set(owner, edges)
+    }
+  }
+  for (const preset of presets) for (const choice of preset.choices) if (choice.action.type === 'redirect') {
+    const [target] = await db.select({ id: models.id }).from(models).where(eq(models.id, choice.action.modelId)).limit(1)
+    if (!target && choice.action.modelId !== modelId) throw new AppError(400, 'redirect_model_missing', `Redirect model ${choice.action.modelId} does not exist`)
+    const edges = graph.get(modelId) ?? new Set<string>(); edges.add(choice.action.modelId); graph.set(modelId, edges)
+  }
+  const visiting = new Set<string>(); const visited = new Set<string>()
+  const visit = (node: string): boolean => {
+    if (visiting.has(node)) return true
+    if (visited.has(node)) return false
+    visiting.add(node)
+    for (const next of graph.get(node) ?? []) if (visit(next)) return true
+    visiting.delete(node); visited.add(node); return false
+  }
+  if ([...graph.keys()].some(visit)) throw new AppError(409, 'preset_redirect_cycle', 'Preset redirects cannot contain a cycle')
+}
+
+async function replacePresets(tx: Parameters<Parameters<typeof db.transaction>[0]>[0], modelId: string, presets: PresetInput): Promise<void> {
+  await tx.delete(modelPresets).where(eq(modelPresets.modelId, modelId))
+  for (const [presetIndex, preset] of presets.entries()) {
+    const presetId = newId()
+    await tx.insert(modelPresets).values({ id: presetId, modelId, publicId: preset.id, name: preset.name, icon: preset.icon, sortOrder: presetIndex })
+    let defaultChoiceUuid: string | null = null
+    for (const [choiceIndex, choice] of preset.choices.entries()) {
+      const choiceId = newId()
+      if (choice.id === preset.defaultChoiceId) defaultChoiceUuid = choiceId
+      const { type, ...action } = choice.action
+      await tx.insert(modelPresetChoices).values({
+        id: choiceId, presetId, publicId: choice.id, displayName: choice.displayName, icon: choice.icon,
+        actionType: type, action, sortOrder: choiceIndex,
+      })
+    }
+    if (defaultChoiceUuid) await tx.update(modelPresets).set({ defaultChoiceId: defaultChoiceUuid }).where(eq(modelPresets.id, presetId))
+  }
+}
 
 export async function registerCatalogRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/models', async (request) => {
@@ -179,18 +257,28 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     requireAdmin(request)
     const rows = await db.select({ model: models, pricing: modelPricingVersions }).from(models)
       .leftJoin(modelPricingVersions, and(eq(models.id, modelPricingVersions.modelId), isNull(modelPricingVersions.effectiveTo)))
-    return { data: rows.map(({ model, pricing }) => ({
+    return { data: await Promise.all(rows.map(async ({ model, pricing }) => ({
       ...model,
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
       cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
       outputPriceMicros: pricing?.outputPriceMicros ?? 0,
       perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
-    })) }
+      presets: await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => ({
+        id: preset.publicId, name: preset.name, icon: preset.icon,
+        defaultChoiceId: preset.defaultChoiceId ? (await db.select({ publicId: modelPresetChoices.publicId }).from(modelPresetChoices).where(eq(modelPresetChoices.id, preset.defaultChoiceId)).limit(1))[0]?.publicId ?? null : null,
+        choices: (await db.select().from(modelPresetChoices).where(eq(modelPresetChoices.presetId, preset.id)).orderBy(modelPresetChoices.sortOrder)).map((choice) => ({
+          id: choice.publicId, displayName: choice.displayName, icon: choice.icon,
+          action: { type: choice.actionType, ...(choice.action as Record<string, unknown>) },
+        })),
+      }))),
+    }))) }
   })
 
   app.post('/api/admin/models', async (request, reply) => {
     const admin = requireAdmin(request)
-    const input = createModelSchema.parse(request.body)
+    const raw = z.object({ presets: presetSchema.default([]) }).passthrough().parse(request.body)
+    const input = createModelSchema.parse(raw)
+    await validatePresets(input.id, raw.presets, input.allowedParameters)
     const pricingId = newId()
     await db.transaction(async (tx) => {
       await tx.insert(models).values({
@@ -215,6 +303,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         outputPriceMicros: input.outputPriceMicros,
         perRequestPriceMicros: input.perRequestPriceMicros,
       })
+      await replacePresets(tx, input.id, raw.presets)
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'model.create', targetType: 'model', targetId: input.id,
       })
@@ -229,6 +318,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const body = request.body as Record<string, unknown>
     const [current] = await db.select().from(models).where(eq(models.id, id)).limit(1)
     if (!current) throw notFound('Model')
+    const parsedPresets = body.presets === undefined ? undefined : presetSchema.parse(body.presets)
+    const effectiveAllowed = Array.isArray(body.allowedParameters) ? body.allowedParameters.filter((value): value is string => typeof value === 'string') : current.allowedParameters as string[]
+    if (parsedPresets) await validatePresets(id, parsedPresets, effectiveAllowed)
     const [updated] = await db.update(models).set({
       name: typeof body.name === 'string' ? body.name : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
@@ -251,6 +343,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         outputPriceMicros: Number(body.outputPriceMicros ?? 0), perRequestPriceMicros: Number(body.perRequestPriceMicros ?? 0),
       })
     }
+    if (parsedPresets) await db.transaction((tx) => replacePresets(tx, id, parsedPresets))
     await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'model.update', targetType: 'model', targetId: id })
     return updated
   })

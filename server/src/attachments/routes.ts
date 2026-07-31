@@ -11,6 +11,12 @@ import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+const ALLOWED_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'])
+
+function extensionOf(name: string): string {
+  const index = name.lastIndexOf('.')
+  return index < 0 ? '' : name.slice(index).toLowerCase()
+}
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
@@ -21,6 +27,10 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       chatId: z.uuid().nullable().default(null), originalName: z.string().trim().min(1).max(255),
       mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_BYTES),
     }).parse(request.body)
+    const extension = extensionOf(input.originalName)
+    if (!ALLOWED_EXTENSIONS.has(extension) || input.mimeType === 'text/html' || input.mimeType === 'image/svg+xml') {
+      throw new AppError(400, 'attachment_type_not_allowed', 'This attachment type is not supported')
+    }
     if (input.chatId) {
       const [chat] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, input.chatId), eq(chats.userId, user.id))).limit(1)
       if (!chat) throw notFound('Chat')

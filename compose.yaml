@@ -11,6 +11,8 @@ x-server: &server
     redis:
       condition: service_healthy
   restart: unless-stopped
+  volumes:
+    - object_data:/app/data/objects
 
 services:
   caddy:
@@ -35,7 +37,7 @@ services:
 
   api:
     <<: *server
-    command: ["sh", "-c", "npm run db:migrate -w @pulpo/server && npm run start:api -w @pulpo/server"]
+    command: ["sh", "-c", "node server/dist/database/migrate.js && npm run start:api -w @pulpo/server"]
     expose:
       - "3000"
 
@@ -105,7 +107,9 @@ services:
     command: ["s3", "-filer=seaweed-filer:8888", "-ip.bind=0.0.0.0"]
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
-      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-pulpo-development-secret}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
+    ports:
+      - "${S3_BIND_ADDRESS:-127.0.0.1}:${S3_PORT:-8333}:8333"
     depends_on:
       - seaweed-filer
     restart: unless-stopped
@@ -118,3 +122,4 @@ volumes:
   seaweed_master_data:
   seaweed_volume_data:
   seaweed_filer_data:
+  object_data:

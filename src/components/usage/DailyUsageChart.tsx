@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import type { DailyModelUsage } from '@/lib/mock'
-import { getModel } from '@/lib/mock'
+import { getCatalogModel } from '@/stores/catalog'
 import { formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'
 import { ContributionGraph } from './ContributionGraph'
@@ -155,7 +155,7 @@ export function DailyUsageChart({
         .reverse()
         .map((id) => ({
           key: id,
-          name: getModel(id).name,
+          name: getCatalogModel(id).name,
           color: CHART_COLORS[top.indexOf(id) % CHART_COLORS.length],
         })),
     ]

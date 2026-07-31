@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Download } from 'lucide-react'
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RTooltip } from 'recharts'
 import { useUsage } from '@/stores/usage'
-import { getModel, MODELS } from '@/lib/mock'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatCost, formatDateTime, formatNumber } from '@/lib/format'
 import type { TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
@@ -16,6 +16,9 @@ const PIE_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#14b
 export function AnalyticsPage() {
   const records = useUsage((s) => s.records)
   const users = useUsage((s) => s.users)
+  const catalogModels = useCatalog((s) => s.models)
+  const loadAnalytics = useUsage((s) => s.loadAnalytics)
+  useEffect(() => { void loadAnalytics() }, [loadAnalytics])
   const [range, setRange] = useState<TimeRange>('30d')
   const [page, setPage] = useState(0)
   const pageSize = 12
@@ -47,7 +50,7 @@ export function AnalyticsPage() {
     const m = new Map<string, number>()
     for (const r of inRange) m.set(r.modelId, (m.get(r.modelId) ?? 0) + r.cost)
     return [...m.entries()]
-      .map(([id, cost]) => ({ name: getModel(id).name, value: Number(cost.toFixed(4)) }))
+      .map(([id, cost]) => ({ id, name: getCatalogModel(id).name, value: Number(cost.toFixed(4)) }))
       .sort((a, b) => b.value - a.value)
   }, [inRange])
 
@@ -85,7 +88,7 @@ export function AnalyticsPage() {
         <StatCard label="Tokens" value={formatNumber(totals.tokens)} />
         <StatCard label="Calls" value={formatNumber(totals.calls)} />
         <StatCard label="Active users" value={String(users.filter((u) => !u.blocked).length)} />
-        <StatCard label="Models" value={String(MODELS.filter((m) => m.enabled).length)} />
+        <StatCard label="Models" value={String(catalogModels.filter((m) => m.enabled).length)} />
       </div>
 
       <div className="grid gap-5 lg:grid-cols-2">
@@ -133,7 +136,7 @@ export function AnalyticsPage() {
                 <div className="text-xs font-medium text-muted-foreground">Most used model</div>
                 <div className="mt-1.5 flex items-center gap-2">
                   <ModelIcon
-                    model={MODELS.find((m) => m.name === modelDist[0].name) ?? MODELS[0]}
+                    model={getCatalogModel(modelDist[0].id)}
                     className="size-5 rounded-[3px]"
                   />
                   <span className="font-medium">{modelDist[0].name}</span>
@@ -191,8 +194,8 @@ export function AnalyticsPage() {
                     <td className="py-2">{u.nickname ?? u.name}</td>
                     <td className="py-2">
                       <span className="flex items-center gap-1.5">
-                        <ModelIcon model={getModel(r.modelId)} className="size-4 rounded-[2px]" />
-                        {getModel(r.modelId).name}
+                        <ModelIcon model={getCatalogModel(r.modelId)} className="size-4 rounded-[2px]" />
+                        {getCatalogModel(r.modelId).name}
                       </span>
                     </td>
                     <td className="py-2 text-right tabular-nums">{formatNumber(r.tokensIn)}</td>

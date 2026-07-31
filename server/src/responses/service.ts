@@ -1,7 +1,7 @@
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chats, models, responses } from '../database/schema.js'
+import { attachments, chats, modelPresetChoices, modelPresets, models, responses } from '../database/schema.js'
 import { getActivePricing, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -16,6 +16,33 @@ export interface CreateResponseOptions {
   parameters?: Record<string, unknown>
   idempotencyKey?: string | null
   parentResponseId?: string | null
+}
+
+async function resolveModel(modelId: string, selections: Record<string, string>): Promise<typeof models.$inferSelect | undefined> {
+  const visited = new Set<string>()
+  let currentId = modelId
+  while (!visited.has(currentId)) {
+    visited.add(currentId)
+    const [current] = await db.select().from(models).where(and(eq(models.id, currentId), eq(models.enabled, true))).limit(1)
+    if (!current) return undefined
+    const presets = await db.select().from(modelPresets).where(eq(modelPresets.modelId, current.id))
+    const redirects = new Set<string>()
+    for (const preset of presets) {
+      const selected = selections[preset.publicId]
+      if (!selected) continue
+      const [choice] = await db.select().from(modelPresetChoices).where(and(
+        eq(modelPresetChoices.presetId, preset.id), eq(modelPresetChoices.publicId, selected),
+      )).limit(1)
+      if (choice?.actionType === 'redirect') {
+        const target = (choice.action as { modelId?: string }).modelId
+        if (target) redirects.add(target)
+      }
+    }
+    if (redirects.size === 0) return current
+    if (redirects.size > 1) throw new AppError(400, 'conflicting_model_redirects', 'Preset choices redirect to different models')
+    currentId = [...redirects][0]!
+  }
+  throw new AppError(409, 'preset_redirect_cycle', 'Preset redirects contain a cycle')
 }
 
 export async function createResponse(options: CreateResponseOptions) {
@@ -33,7 +60,7 @@ export async function createResponse(options: CreateResponseOptions) {
     .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.userId), isNull(chats.deletedAt)))
     .limit(1)
   if (!chat) throw notFound('Chat')
-  const [model] = await db.select().from(models).where(and(eq(models.id, options.input.modelId), eq(models.enabled, true))).limit(1)
+  const model = await resolveModel(options.input.modelId, options.input.presetSelections)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
   const maxOutputTokens = Math.min(options.input.maxOutputTokens ?? model.maxOutputTokens, model.maxOutputTokens)
   const pricing = await getActivePricing(model.id)
@@ -50,7 +77,9 @@ export async function createResponse(options: CreateResponseOptions) {
     if (ownedAttachments.length !== options.input.attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
     await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(inArray(attachments.id, options.input.attachmentIds))
   }
-  const storedInput = options.rawInput ?? [{
+  const storedInput = options.rawInput !== undefined
+    ? (typeof options.rawInput === 'string' ? [{ role: 'user', content: options.rawInput }] : options.rawInput)
+    : [{
     role: 'user',
     content: [
       { type: 'input_text', text: options.input.input },

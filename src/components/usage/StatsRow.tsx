@@ -2,7 +2,7 @@ import { Info } from 'lucide-react'
 import { formatUsd } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
-/** Flat divide-x stat strip: calls, tokens, spend, avg/call, water — no cards. */
+/** Flat divide-x stat strip: calls, tokens, spend, avg/call, estimated water — no cards. */
 export function StatsRow({ calls, tokens, cost }: { calls: number; tokens: number; cost: number }) {
   const stats = [
     { label: 'Calls', value: calls.toLocaleString() },
@@ -10,9 +10,9 @@ export function StatsRow({ calls, tokens, cost }: { calls: number; tokens: numbe
     { label: 'Spend', value: formatUsd(cost) },
     { label: 'Avg per call', value: formatUsd(calls > 0 ? cost / calls : 0) },
     {
-      label: 'Water use',
+      label: 'Estimated water',
       value: `${(cost / 23.04).toFixed(4)} Gal`,
-      info: "Based on Altman's estimate where a query uses 1/15 tsp of water & assumes typical prompt cost ~$0.002 (common medical question to gpt-5 mini in flex mode)",
+      info: 'A rough spend-based estimate for comparison only. Actual water use varies by model, datacenter, workload, and energy mix.',
     },
   ]
   return (

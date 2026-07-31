@@ -43,6 +43,21 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return { data: [...result] }
   })
 
+  app.get('/api/chats/export', async (request, reply) => {
+    const user = requireUser(request)
+    const chatRows = await db.select().from(chats).where(eq(chats.userId, user.id))
+    const responseRows = await db.select().from(responses).where(eq(responses.userId, user.id))
+    return reply.type('application/json').header('content-disposition', 'attachment; filename="pulpo-chats.json"')
+      .send({ version: 1, exportedAt: new Date().toISOString(), chats: chatRows, responses: responseRows })
+  })
+
+  app.delete('/api/chats', async (request, reply) => {
+    const user = requireUser(request)
+    await db.update(chats).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(chats.userId, user.id))
+    await bumpRevision(user.id)
+    reply.code(204).send()
+  })
+
   app.post('/api/chats', async (request, reply) => {
     const user = requireUser(request)
     const input = createChatSchema.parse(request.body)

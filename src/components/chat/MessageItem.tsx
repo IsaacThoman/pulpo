@@ -178,6 +178,23 @@ export const MessageItem = memo(function MessageItem({
           )}
         </div>
 
+        {message.outputItems
+          ?.filter((item) => !['message', 'reasoning'].includes((item as { type?: string }).type ?? ''))
+          .map((item, index) => {
+            const type = (item as { type?: string }).type ?? 'unknown'
+            return (
+              <details
+                key={`${type}:${index}`}
+                className="mt-3 rounded-lg border bg-muted/20 px-3 py-2 text-xs"
+              >
+                <summary className="cursor-pointer font-medium">{type.replaceAll('_', ' ')}</summary>
+                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
+                  {JSON.stringify(item, null, 2)}
+                </pre>
+              </details>
+            )
+          })}
+
         {message.done && (
           <div className="mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
             <CopyButton text={message.content} />

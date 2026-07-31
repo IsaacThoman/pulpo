@@ -19,6 +19,7 @@ interface UsageState {
   loadPersonal: () => Promise<void>
   loadLeaderboard: () => Promise<void>
   loadAdmin: () => Promise<void>
+  loadAnalytics: () => Promise<void>
   updateBalance: (userId: string, balance: number) => void
   toggleBlocked: (userId: string) => void
   setLeaderboardPref: (userId: string, patch: Partial<MonitorUser>) => void
@@ -68,6 +69,21 @@ export const useUsage = create<UsageState>()((set, get) => ({
       const result = await apiRequest<{ data: AdminUserRow[] }>('/api/admin/users')
       set({ users: result.data.map(mapAdmin), currentUserId: useAuth.getState().user?.id ?? '' })
     } finally { set({ loading: false }) }
+  },
+  loadAnalytics: async () => {
+    if (useAuth.getState().user?.role !== 'admin') return
+    const [usage, adminUsers] = await Promise.all([
+      apiRequest<{ data: Array<{ id: string; createdAt: string; userId: string; modelId: string; inputTokens: number; outputTokens: number; costMicros: number; latencyMs: number }> }>('/api/admin/usage?days=365'),
+      apiRequest<{ data: AdminUserRow[] }>('/api/admin/users'),
+    ])
+    set({
+      users: adminUsers.data.map(mapAdmin),
+      records: usage.data.map((row) => ({
+        id: row.id, timestamp: Date.parse(row.createdAt), userId: row.userId, modelId: row.modelId,
+        tokensIn: row.inputTokens, tokensOut: row.outputTokens, cost: row.costMicros / 1_000_000,
+        balanceAfter: 0, latencyMs: row.latencyMs,
+      })),
+    })
   },
   updateBalance: (userId, balance) => {
     set((state) => ({ users: state.users.map((user) => user.id === userId ? { ...user, balance } : user) }))

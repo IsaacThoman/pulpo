@@ -7,6 +7,7 @@ import { applicationSettings, passwordCredentials, passwordResetTokens, sessions
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
+import { sendPasswordReset } from '../lib/mail.js'
 import {
   createPasswordHash,
   createSession,
@@ -63,8 +64,9 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       await db.insert(passwordResetTokens).values({
         id: newId(), userId: user.id, tokenHash: hashToken(token), expiresAt: new Date(Date.now() + 60 * 60 * 1_000),
       })
-      // SMTP delivery is intentionally pluggable; administrators can generate
-      // an equivalent one-time link when no mail transport is configured.
+      await sendPasswordReset(email, token).catch(() => {
+        request.log.error('Password reset email delivery failed')
+      })
     }
     reply.code(202)
     return { accepted: true }

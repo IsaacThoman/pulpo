@@ -116,6 +116,7 @@ function messagesFromResponses(responses: ServerResponse[]): Message[] {
         reasoning: reasoningText(response.output), presetSelections: response.presetSelections,
         tokensIn: response.usage?.inputTokens, tokensOut: response.usage?.outputTokens,
         error: response.error?.message,
+        outputItems: response.output,
       },
     ]
   })
@@ -219,6 +220,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           tokensIn: snapshot.usage?.inputTokens,
           tokensOut: snapshot.usage?.outputTokens,
           error: (snapshot.error as { message?: string } | null)?.message,
+          outputItems: snapshot.output,
         }),
       })),
     }))

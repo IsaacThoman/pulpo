@@ -4,15 +4,19 @@ import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, chatShares, responses } from '../database/schema.js'
-import { hashToken, randomToken } from '../lib/crypto.js'
+import { decryptSecret, encryptSecret, hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { createRedis } from '../redis.js'
+import { getConfig } from '../config.js'
 
 function publicOutput(output: unknown[]): unknown[] {
   return output.filter((item) => (item as { type?: string }).type !== 'reasoning')
 }
 
 export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
+  const redis = createRedis()
+  app.addHook('onClose', async () => { await redis.quit() })
   app.get('/api/chat-shares', async (request) => {
     const user = requireUser(request)
     return { data: await db.select({ share: chatShares, title: chats.title }).from(chatShares)
@@ -23,6 +27,12 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/chat-shares', async (request, reply) => {
     const user = requireUser(request)
     const input = z.object({ chatId: z.uuid(), expiresAt: z.iso.datetime().nullable().default(null) }).parse(request.body)
+    const idempotencyKey = request.headers['idempotency-key'] as string | undefined
+    const redisKey = idempotencyKey ? `pulpo:idempotency:share:${user.id}:${idempotencyKey}` : null
+    if (redisKey) {
+      const cached = await redis.get(redisKey)
+      if (cached) { reply.code(201); return JSON.parse(decryptSecret(cached, getConfig().ENCRYPTION_KEY)) }
+    }
     const [chat] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, input.chatId), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
     const token = randomToken(32)
@@ -30,8 +40,10 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       id: newId(), chatId: chat.id, userId: user.id, tokenHash: hashToken(token),
       expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
     }).returning()
+    const result = { ...created, token }
+    if (redisKey) await redis.set(redisKey, encryptSecret(JSON.stringify(result), getConfig().ENCRYPTION_KEY), 'EX', 86_400, 'NX')
     reply.code(201)
-    return { ...created, token }
+    return result
   })
 
   app.delete('/api/chat-shares/:id', async (request, reply) => {

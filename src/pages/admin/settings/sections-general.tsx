@@ -51,8 +51,6 @@ export function GeneralSection() {
 export function AuthenticationSection() {
   const auth = useAuth()
   const [t, setT, save] = useAdminSetting('auth', {
-    role: 'pending' as string,
-    apiKeys: true,
     signupEnabled: auth.signupEnabled,
     pendingDetails: auth.pendingDetails,
     adminEmail: auth.adminEmail,
@@ -63,22 +61,11 @@ export function AuthenticationSection() {
   return (
     <div>
       <Section title="User access">
-        <SelectField
-          label="Default user role"
-          value={t.role}
-          onChange={(v) => s('role', v)}
-          options={[
-            { value: 'pending', label: 'pending' },
-            { value: 'user', label: 'user' },
-            { value: 'admin', label: 'admin' },
-          ]}
-        />
         <Toggle
           label="Enable new sign ups"
           checked={t.signupEnabled}
           onChange={(v) => s('signupEnabled', v)}
         />
-        <Toggle label="Enable API keys" checked={t.apiKeys} onChange={(v) => s('apiKeys', v)} />
       </Section>
 
       <Section title="Pending accounts">

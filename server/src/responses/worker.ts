@@ -14,6 +14,8 @@ import {
   userPreferences,
   memories,
   applicationSettings,
+  modelPresets,
+  modelPresetChoices,
 } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
@@ -182,6 +184,22 @@ async function runPostResponseTasks(client: OpenAI, record: { response: typeof r
   }
 }
 
+async function resolvedParameters(record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }): Promise<Record<string, unknown>> {
+  const allowed = new Set(record.model.allowedParameters as string[])
+  const result = Object.fromEntries(Object.entries(record.response.parameters as Record<string, unknown>).filter(([key]) => allowed.has(key)))
+  const selections = record.response.presetSelections as Record<string, string>
+  const presets = await db.select().from(modelPresets).where(eq(modelPresets.modelId, record.model.id))
+  for (const preset of presets) {
+    const selected = selections[preset.publicId]
+    if (!selected) continue
+    const [choice] = await db.select().from(modelPresetChoices).where(and(eq(modelPresetChoices.presetId, preset.id), eq(modelPresetChoices.publicId, selected))).limit(1)
+    if (!choice || choice.actionType !== 'params') continue
+    const action = choice.action as { params?: Record<string, unknown> }
+    for (const [key, value] of Object.entries(action.params ?? {})) if (allowed.has(key)) result[key] = value
+  }
+  return result
+}
+
 export async function processGeneration(
   responseId: string,
   options: { willRetry?: boolean } = {},
@@ -207,6 +225,29 @@ export async function processGeneration(
     const openaiResponseId = record.response.openaiResponseId
     await db.update(responses).set({ status: 'in_progress', updatedAt: new Date() }).where(eq(responses.id, responseId))
     try {
+      try {
+        const resumed = await client.responses.retrieve(openaiResponseId, {
+          stream: true,
+          starting_after: record.response.upstreamSequence,
+        })
+        let localSequence = record.response.lastSequence
+        for await (const rawEvent of resumed) {
+          const upstream = rawEvent as unknown as UpstreamEvent
+          localSequence += 1
+          const event: ResponseEvent = { responseId, sequence: localSequence, type: upstream.type, payload: upstream, emittedAt: new Date().toISOString() }
+          await publishResponseEvent(event)
+          const upstreamResponse = upstream.response as { output?: unknown[]; usage?: unknown } | undefined
+          await db.update(responses).set({
+            output: upstreamResponse?.output ?? record.response.output,
+            usage: upstreamResponse?.usage ? normalizeUsage(upstreamResponse.usage) : record.response.usage,
+            lastSequence: localSequence,
+            upstreamSequence: Number(upstream.sequence_number ?? record.response.upstreamSequence),
+            updatedAt: new Date(),
+          }).where(eq(responses.id, responseId))
+        }
+      } catch {
+        // Retrieval polling below is the authoritative fallback when stream resumption is unavailable.
+      }
       for (let attempt = 0; attempt < 1_800; attempt += 1) {
         if (await isCancellationRequested(responseId)) {
           await client.responses.cancel(openaiResponseId).catch(() => undefined)
@@ -232,6 +273,13 @@ export async function processGeneration(
         }).where(eq(responses.id, responseId))
         if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
         else await releaseBudget(responseId)
+        if (status === 'completed') {
+          await db.insert(notifications).values({
+            id: newId(), userId: record.response.userId, type: 'response.completed', title: 'Response complete',
+            body: previewFromOutput(output), data: { responseId, chatId: record.response.chatId },
+          })
+          await runPostResponseTasks(client, record, output).catch(() => undefined)
+        }
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
         return
@@ -272,8 +320,9 @@ export async function processGeneration(
   const controller = new AbortController()
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
+    const parameters = await resolvedParameters(record)
     const stream = await client.responses.create({
-      ...(Object.fromEntries(Object.entries(record.response.parameters as Record<string, unknown>).filter(([key]) => (record.model.allowedParameters as string[]).includes(key))) as Record<string, never>),
+      ...(parameters as Record<string, never>),
       model: record.model.upstreamModelId,
       input: input as never,
       stream: true,

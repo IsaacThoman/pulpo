@@ -1,8 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Model } from '@/lib/types'
-import { MODELS as FALLBACK_MODELS } from '@/lib/mock'
 import { apiRequest } from '@/lib/api'
+
+const EMPTY_MODEL: Model = {
+  id: '', name: 'Configure a model', provider: 'OpenAI', inferenceProvider: 'Not configured',
+  labLogo: 'openai', modelLogo: 'openai', description: 'An administrator needs to configure an OpenAI model.',
+  contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
+  outputPrice: 0, perMessagePrice: 0, enabled: false, presets: [],
+}
 
 interface ServerModel {
   id: string
@@ -43,7 +49,7 @@ interface CatalogState {
 }
 
 export const useCatalog = create<CatalogState>()(persist((set) => ({
-  models: FALLBACK_MODELS,
+  models: [],
   loaded: false,
   load: async () => {
     try {
@@ -58,5 +64,5 @@ export const useCatalog = create<CatalogState>()(persist((set) => ({
 
 export function getCatalogModel(id: string): Model {
   const models = useCatalog.getState().models
-  return models.find((model) => model.id === id) ?? models[0] ?? FALLBACK_MODELS[0]!
+  return models.find((model) => model.id === id) ?? models[0] ?? EMPTY_MODEL
 }

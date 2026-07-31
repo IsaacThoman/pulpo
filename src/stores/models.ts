@@ -1,10 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { MODELS } from '@/lib/mock'
-
-export const CATALOG_PROVIDERS = [
-  ...new Set(MODELS.filter((m) => m.enabled).map((m) => m.provider)),
-]
+export const CATALOG_PROVIDERS: string[] = []
 
 function reorderList(
   list: string[],
@@ -43,7 +39,7 @@ interface ModelsState {
 export const useModels = create<ModelsState>()(
   persist(
     (set, get) => ({
-      favorites: MODELS.filter((m) => m.pinned && m.enabled).map((m) => m.id),
+      favorites: [],
       providers: [...CATALOG_PROVIDERS],
       toggleFavorite: (id) =>
         set({

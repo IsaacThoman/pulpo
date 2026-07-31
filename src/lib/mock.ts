@@ -77,8 +77,8 @@ function speedPreset(opts: { standard?: boolean; fastRedirect?: string } = {}): 
 
 export const MODELS: Model[] = [
   {
-    id: 'kimi-k3',
-    name: 'Kimi K3',
+    id: 'example-model',
+    name: 'Example model',
     provider: 'Moonshot AI',
     labLogo: 'moonshot',
     modelLogo: 'moonshot',

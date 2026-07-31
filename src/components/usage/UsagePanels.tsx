@@ -1,7 +1,7 @@
 import { useEffect, useState, type UIEvent } from 'react'
 import { BarChart3, Zap } from 'lucide-react'
 import type { MonitorUser, UsageRecord } from '@/lib/types'
-import { getModel } from '@/lib/mock'
+import { getCatalogModel } from '@/stores/catalog'
 import { formatUsd, formatUsageTime } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
 
@@ -70,7 +70,7 @@ export function RecentUsagePanel({
             </thead>
             <tbody className="divide-y">
               {shown.map((r) => {
-                const model = getModel(r.modelId)
+                const model = getCatalogModel(r.modelId)
                 return (
                   <tr key={r.id}>
                     <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
@@ -129,7 +129,7 @@ export function TopModelsPanel({ models }: { models: TopModelStat[] }) {
       ) : (
         <div className="max-h-96 divide-y overflow-y-auto">
           {models.map((m, i) => {
-            const model = getModel(m.modelId)
+            const model = getCatalogModel(m.modelId)
             return (
               <div key={m.modelId} className="flex items-center justify-between gap-2 px-3 py-2">
                 <div className="flex min-w-0 flex-1 items-center gap-2">

@@ -7,7 +7,10 @@ import { apiKeyModelPermissions, apiKeys, usageEvents, users } from '../database
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { randomToken } from '../lib/crypto.js'
+import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { requireUser, serializeUser } from '../auth/service.js'
+import { createRedis } from '../redis.js'
+import { getConfig } from '../config.js'
 
 export async function authenticateApiKey(request: FastifyRequest, requiredScope: 'responses' | 'models') {
   const authorization = request.headers.authorization
@@ -37,6 +40,8 @@ export async function assertApiKeyModelAllowed(apiKeyId: string, modelId: string
 }
 
 export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> {
+  const redis = createRedis()
+  app.addHook('onClose', async () => { await redis.quit() })
   app.get('/api/api-keys', async (request) => {
     const user = requireUser(request)
     const rows = await db.select().from(apiKeys).where(eq(apiKeys.userId, user.id))
@@ -54,6 +59,15 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
   app.post('/api/api-keys', async (request, reply) => {
     const user = requireUser(request)
     const input = createApiKeySchema.parse(request.body)
+    const idempotencyKey = request.headers['idempotency-key'] as string | undefined
+    const redisKey = idempotencyKey ? `pulpo:idempotency:api-key:${user.id}:${idempotencyKey}` : null
+    if (redisKey) {
+      const cached = await redis.get(redisKey)
+      if (cached) {
+        reply.code(201)
+        return JSON.parse(decryptSecret(cached, getConfig().ENCRYPTION_KEY))
+      }
+    }
     const id = newId()
     const prefix = `sk-pulpo-${randomToken(6)}`
     const secret = `${prefix}.${randomToken(32)}`
@@ -72,8 +86,10 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
         await tx.insert(apiKeyModelPermissions).values(input.allowedModels.map((modelId) => ({ apiKeyId: id, modelId })))
       }
     })
+    const result = { id, prefix, secret }
+    if (redisKey) await redis.set(redisKey, encryptSecret(JSON.stringify(result), getConfig().ENCRYPTION_KEY), 'EX', 86_400, 'NX')
     reply.code(201)
-    return { id, prefix, secret }
+    return result
   })
 
   app.post('/api/api-keys/:id/revoke', async (request) => {

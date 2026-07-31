@@ -18,6 +18,7 @@ interface AdminModel {
   name: string; description: string; enabled: boolean; contextWindow: number; maxOutputTokens: number
   executionMode: 'stream' | 'background'; tags: string[]; allowedParameters: string[]
   inputPriceMicros: number; cachedInputPriceMicros: number; outputPriceMicros: number; perRequestPriceMicros: number
+  presets: unknown[]
 }
 interface Provider { id: string; name: string }
 interface Lab { id: string; name: string }
@@ -26,6 +27,7 @@ const empty = (providerConnectionId = ''): AdminModel => ({
   id: '', providerConnectionId, labId: null, upstreamModelId: '', name: '', description: '', enabled: true,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   inputPriceMicros: 0, cachedInputPriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
+  presets: [],
 })
 
 export function AdminModelsPage() {
@@ -83,6 +85,7 @@ export function AdminModelsPage() {
         <Field label="Tags (comma separated)"><Input value={draft.tags.join(', ')} onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} /></Field>
         <Field label="Allowed Responses parameters"><Input value={draft.allowedParameters.join(', ')} onChange={(e) => setDraft({ ...draft, allowedParameters: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} /></Field>
         <Field label="Description" className="col-span-2"><Textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></Field>
+        <Field label="Composer presets (JSON)" className="col-span-2"><PresetsEditor key={draft.id || 'new'} value={draft.presets} onChange={(presets) => setDraft({ ...draft, presets })} /></Field>
       </div>}
       <DialogFooter><Button onClick={() => void save()} disabled={!draft?.id || !draft?.name || !draft?.upstreamModelId || !draft.providerConnectionId}>Save</Button></DialogFooter>
     </DialogContent></Dialog>
@@ -91,4 +94,17 @@ export function AdminModelsPage() {
 
 function Field({ label, className = '', children }: { label: string; className?: string; children: ReactNode }) {
   return <div className={`space-y-1.5 ${className}`}><Label>{label}</Label>{children}</div>
+}
+
+function PresetsEditor({ value, onChange }: { value: unknown[]; onChange: (value: unknown[]) => void }) {
+  const [text, setText] = useState(() => JSON.stringify(value, null, 2))
+  const [error, setError] = useState('')
+  return <><Textarea className="min-h-40 font-mono text-xs" value={text} onChange={(event) => {
+    setText(event.target.value)
+    try {
+      const parsed = JSON.parse(event.target.value)
+      if (!Array.isArray(parsed)) throw new Error('Presets must be an array')
+      setError(''); onChange(parsed)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Invalid JSON') }
+  }} />{error && <p className="text-xs text-destructive">{error}</p>}</>
 }

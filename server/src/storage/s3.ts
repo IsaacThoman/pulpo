@@ -1,18 +1,21 @@
-import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { BlobMetadata, BlobStore } from './blob-store.js'
 
 export interface S3BlobStoreOptions {
   endpoint: string
+  publicEndpoint?: string
   region: string
   bucket: string
   accessKeyId: string
   secretAccessKey: string
   forcePathStyle: boolean
+  corsOrigin?: string
 }
 
 export class S3BlobStore implements BlobStore {
   private readonly client: S3Client
+  private readonly publicClient: S3Client
   private ready: Promise<void> | undefined
 
   constructor(private readonly options: S3BlobStoreOptions) {
@@ -21,13 +24,33 @@ export class S3BlobStore implements BlobStore {
       region: options.region,
       forcePathStyle: options.forcePathStyle,
       credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
     })
+    this.publicClient = options.publicEndpoint ? new S3Client({
+      endpoint: options.publicEndpoint,
+      region: options.region,
+      forcePathStyle: options.forcePathStyle,
+      credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
+      requestChecksumCalculation: 'WHEN_REQUIRED',
+      responseChecksumValidation: 'WHEN_REQUIRED',
+    }) : this.client
   }
 
   private ensureReady(): Promise<void> {
     this.ready ??= this.client.send(new HeadBucketCommand({ Bucket: this.options.bucket }))
       .then(() => undefined)
       .catch(async () => { await this.client.send(new CreateBucketCommand({ Bucket: this.options.bucket })) })
+      .then(async () => {
+        if (!this.options.corsOrigin) return
+        await this.client.send(new PutBucketCorsCommand({
+          Bucket: this.options.bucket,
+          CORSConfiguration: { CORSRules: [{
+            AllowedOrigins: [this.options.corsOrigin], AllowedMethods: ['GET', 'PUT', 'HEAD'],
+            AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3_600,
+          }] },
+        }))
+      })
     return this.ready
   }
 
@@ -58,7 +81,7 @@ export class S3BlobStore implements BlobStore {
 
   async createUploadUrl(key: string, metadata: BlobMetadata, expiresInSeconds: number): Promise<string> {
     await this.ensureReady()
-    return getSignedUrl(this.client, new PutObjectCommand({
+    return getSignedUrl(this.publicClient, new PutObjectCommand({
       Bucket: this.options.bucket,
       Key: key,
       ContentType: metadata.contentType,
@@ -68,6 +91,6 @@ export class S3BlobStore implements BlobStore {
 
   async createDownloadUrl(key: string, expiresInSeconds: number): Promise<string> {
     await this.ensureReady()
-    return getSignedUrl(this.client, new GetObjectCommand({ Bucket: this.options.bucket, Key: key }), { expiresIn: expiresInSeconds })
+    return getSignedUrl(this.publicClient, new GetObjectCommand({ Bucket: this.options.bucket, Key: key }), { expiresIn: expiresInSeconds })
   }
 }

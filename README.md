@@ -1,60 +1,137 @@
-# pulpo
+# Pulpo
 
-A ChatGPT/Open WebUI-style chat interface **UI mockup** — no backend, all data is mocked locally.
+Pulpo is a self-hostable, local-first interface and OpenAI-compatible gateway for the OpenAI Responses API. Chats feel immediate because recent query data, drafts, response cursors, and pending mutations live in IndexedDB; PostgreSQL remains authoritative and every tab reconciles through Socket.IO after reconnecting or waking.
 
-## Stack
+## Architecture
 
-- **React 19 + Vite** (TypeScript)
-- **Tailwind CSS v4** + **shadcn/ui** primitives
-- **zustand** for state (chat, settings, usage, API keys)
-- **lucide-react** icons
-- **recharts** for usage charts, **react-markdown** for message rendering
+- React 19, Vite, TanStack Query, Zustand, Dexie, and shared Zod contracts.
+- Fastify API with secure cookie sessions and `/v1/responses` compatibility.
+- Independent BullMQ worker that owns OpenAI streams after browsers disconnect.
+- PostgreSQL for users, catalog, conversations, typed response items, accounting, and audit data.
+- Redis for jobs, recent sequenced events, Socket.IO recovery, and replica fanout.
+- SeaweedFS through its S3 API, or local disk through the same `BlobStore` interface.
+- Caddy and Docker Compose for the supported self-hosted deployment.
 
-## Run
+The source directories are:
+
+```text
+src/                 React application
+server/src/          API, worker, storage, accounting, and realtime services
+server/drizzle/      ordered PostgreSQL migrations
+packages/contracts/  shared Zod and Socket.IO contracts
+deploy/              Caddy configuration
+```
+
+## Quick start with Docker Compose
+
+1. Copy `.env.example` to `.env` and replace every development secret. `ENCRYPTION_KEY`, the bootstrap password, the PostgreSQL password, and the S3 secret must be private random values.
+2. Set `PUBLIC_URL` to the URL users will open. Set `COOKIE_SECURE=true` behind HTTPS.
+3. Start Pulpo:
+
+```bash
+docker compose up --build -d
+docker compose ps
+```
+
+Open `http://localhost:8080` by default. Sign in with `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`, then immediately change the password. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users.
+
+SeaweedFS is the default Compose storage backend. For a small single-host install, set:
+
+```dotenv
+STORAGE_DRIVER=local
+STORAGE_LOCAL_PATH=/app/data/objects
+```
+
+and mount a persistent volume at that path. Any supported S3-compatible service can replace SeaweedFS by changing the `S3_*` values.
+
+`S3_ENDPOINT` is the worker/API address and may use the Compose service name. `S3_PUBLIC_ENDPOINT` is embedded in presigned browser URLs; set it to an HTTPS object-storage origin reachable by users. The localhost default exposes SeaweedFS on port 8333 for single-host development. Configure that origin's S3 CORS policy to allow `PUT`, `GET`, and `HEAD` from `PUBLIC_URL` in production.
+
+## Local development
+
+Node.js 22+, PostgreSQL 17, and Redis 7 are recommended.
 
 ```bash
 npm install
+docker compose up -d postgres redis
+npm run db:migrate
+npm run dev:api
+npm run dev:worker
 npm run dev
 ```
 
-## Features
+The Vite server runs at `http://127.0.0.1:5173` and proxies API and Socket.IO traffic to port 3000.
 
-- **Chat** — streaming simulation (token-by-token), reasoning blocks for reasoning models,
-  markdown + code blocks, message actions (copy / regenerate / edit / rate),
-  per-message token + cost + latency metadata, stop generation,
-  **reasoning effort + speed controls** in the composer (per-model, admin-configurable)
-- **Sidebar** — collapsible, pinned chats, folders, time-grouped history, per-chat menus
-  (pin / rename / move / share / delete), pinned-model shortcuts
-- **Model selector** — searchable, theme-aware square avatars (light/dark), context + capability tags
-- **Usage dashboard** (inspired by OpenWebUI-Monitor) — balance, stat cards (calls / tokens /
-  spend / avg / water use), time-range + metric toggles, daily bar chart, 365-day heatmap,
-  recent usage, top models
-- **Leaderboard** — sortable by spend/tokens/calls/balance, custom nicknames + bar colors,
-  most-expensive-call highlight, global activity feed
-- **Admin** — user table (edit balances, block, copy viewer links), model pricing table with
-  inline editing + availability testing + JSON import/export, analytics with pie chart,
-  highlights, paginated records, CSV export
-- **API keys** — create/revoke OpenAI-compatible keys with scopes, model restrictions, monthly
-  budgets; one-time secret reveal; curl + OpenAI SDK snippets
-- **Settings** — general (theme), account, personalization (custom instructions, memories),
-  interface, API keys, data controls, about
-- **Admin panel** (`/admin`, options lifted from chat-deathgrips / Open WebUI):
-  - Dashboard — 24h stats, quick links, system info
-  - Users — role selects and add/edit modals
-  - Models — search + view filters, per-model menus, enable toggles; full **model editor** with
-    system prompt, **chat options** (custom reasoning display/internal-name pairs and speed
-    choices shown in the composer), JSON preview, and the fork's signature
-    **light/dark profile-image upload grid**
-  - Functions — pipe/filter/action/event cards w/ valves, global toggles
-  - Evaluations — arena model sets, Elo leaderboard, feedback table w/ export
-  - Settings — General feature toggles, Authentication (roles, signup, API keys),
-    Connections (OpenAI/Ollama endpoints w/ verify), Interface (task model and background
-    generation tasks), and Database (import/export)
-- Light/dark/system theme, ⌘K search, ⌘B sidebar toggle, ⌘, settings
+Validation commands:
 
-## Mock notes
+```bash
+npm run build
+npm test
+npm run lint
+docker compose config --quiet
+```
 
-- All data is generated with a seeded PRNG (`src/lib/mock.ts`) so it's stable between reloads.
-- Streaming is a local timer-based simulation in `src/stores/chat.ts` — swap `startStreaming`
-  for an SSE reader to go live.
-- Settings and API keys persist to `localStorage`.
+## Local-first and realtime behavior
+
+- The most recent 50 detailed chats are retained locally by default; users may choose 0–500 in Settings → Interface.
+- Cached chats open immediately. TanStack Query revalidates in the background when the network is usable.
+- Offline-safe chat and folder mutations enter an IndexedDB outbox with idempotency keys.
+- Each tab has its own cursor. Events are deduplicated by response ID and sequence.
+- Socket.IO recovery handles short interruptions. Redis replays recent gaps; PostgreSQL snapshots repair expired or large gaps.
+- Worker ownership is independent of sockets. Closing every tab does not cancel generation.
+- Background Responses resume from their upstream sequence after worker restart and fall back to retrieval polling.
+
+## Public API
+
+Create a scoped key in Pulpo and point an OpenAI SDK at Pulpo's `/v1` base URL.
+
+```ts
+import OpenAI from 'openai'
+
+const client = new OpenAI({
+  apiKey: process.env.PULPO_API_KEY,
+  baseURL: 'https://pulpo.example.com/v1',
+})
+
+const response = await client.responses.create({
+  model: 'your-pulpo-model-id',
+  input: 'Hello from Pulpo',
+})
+```
+
+Implemented endpoints:
+
+- `POST /v1/responses`
+- `GET /v1/responses/:id`
+- `POST /v1/responses/:id/cancel`
+- `GET /v1/models`
+
+Streaming uses standard Responses SSE events. Background requests return immediately and support retrieval and cancellation. Keys can be restricted by scope, model, monthly budget, and lifetime budget.
+
+## Data protection and operations
+
+- Passwords and API-key secrets use Argon2id. Only Pulpo API-key prefixes and hashes are stored.
+- Provider credentials are encrypted with `ENCRYPTION_KEY`.
+- Session cookies are HTTP-only and same-site. Mutating browser requests enforce an allowed Origin.
+- Provider base URLs reject private-network targets unless `ALLOW_PRIVATE_PROVIDER_URLS=true` is explicitly set.
+- Prompts, response bodies, API keys, passwords, and provider secrets are excluded from normal structured logs.
+- Private attachments use presigned uploads, server-side ownership records, checksums, and cleanup of abandoned objects.
+- Accounting uses atomic maximum-cost reservations and idempotent settlement against immutable pricing versions.
+
+The admin export UI produces logical JSON/CSV exports. It is not a substitute for operator backups. Back up both PostgreSQL and object storage:
+
+```bash
+docker compose exec -T postgres pg_dump -U pulpo -Fc pulpo > pulpo-postgres.dump
+docker compose exec -T postgres pg_dumpall -U pulpo --globals-only > pulpo-globals.sql
+```
+
+For SeaweedFS, snapshot or copy the named master, volume, and filer volumes while the services are stopped, or use your infrastructure's volume snapshot facility. Practice restoring the database and objects into a clean installation before relying on the backup procedure.
+
+Upgrades should always include a backup. Pull the target release, run `docker compose build`, and use `docker compose up -d`; the API runs ordered migrations before accepting traffic. Roll back application images only to a version compatible with the migrated database.
+
+## SMTP and password resets
+
+Set `SMTP_URL` and `SMTP_FROM` to email one-time reset links. Without SMTP, an administrator can generate a one-hour reset token from the user administration API/UI workflow. Reset completion invalidates existing sessions.
+
+## Horizontal API replicas
+
+All gateways use the Redis Streams Socket.IO adapter. If more than one API replica is placed behind a load balancer, keep sticky sessions enabled while Socket.IO polling fallback is available. PostgreSQL snapshots remain authoritative even if Redis recovery data is unavailable.

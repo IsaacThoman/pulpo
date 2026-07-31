@@ -3,7 +3,8 @@ import { BarChart3, Crown, Save } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
-import { getModel, makeDailyModelUsage } from '@/lib/mock'
+import { makeDailyModelUsage } from '@/lib/mock'
+import { getCatalogModel } from '@/stores/catalog'
 import { formatDate, formatUsd } from '@/lib/format'
 import { periodDays, rangeMs } from '@/lib/time-range'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
@@ -30,7 +31,7 @@ const METRICS: { id: LBMetric; label: string }[] = [
   { id: 'tokens', label: 'Tokens' },
   { id: 'calls', label: 'Calls' },
   { id: 'balance', label: 'Balance' },
-  { id: 'water', label: 'Water' },
+  { id: 'water', label: 'Estimated water' },
 ]
 
 const BAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
@@ -335,7 +336,7 @@ export function LeaderboardPage() {
           <div className="mt-1 grid grid-cols-2 gap-1 sm:grid-cols-5 md:gap-0 md:divide-x">
             {(() => {
               const u = users.find((x) => x.id === expensive.userId)
-              const model = getModel(expensive.modelId)
+              const model = getCatalogModel(expensive.modelId)
               return (
                 <>
                   <div className="p-3 md:first:pl-0">

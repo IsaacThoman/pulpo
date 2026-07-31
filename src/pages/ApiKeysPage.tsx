@@ -55,7 +55,7 @@ const CURL_SNIPPET = `curl https://api.pulpo.dev/v1/responses \\
   -H "Authorization: Bearer $PULPO_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "kimi-k3",
+    "model": "your-model-id",
     "input": "hello",
     "stream": true
   }'`
@@ -68,7 +68,7 @@ const client = new OpenAI({
 });
 
 const stream = await client.responses.create({
-  model: "kimi-k3",
+  model: "your-model-id",
   input: "hello",
   stream: true,
 });

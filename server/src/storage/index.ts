@@ -10,11 +10,13 @@ export function getBlobStore(): BlobStore {
   store ??= config.STORAGE_DRIVER === 's3'
     ? new S3BlobStore({
         endpoint: config.S3_ENDPOINT,
+        publicEndpoint: config.S3_PUBLIC_ENDPOINT,
         region: config.S3_REGION,
         bucket: config.S3_BUCKET,
         accessKeyId: config.S3_ACCESS_KEY_ID,
         secretAccessKey: config.S3_SECRET_ACCESS_KEY,
         forcePathStyle: config.S3_FORCE_PATH_STYLE,
+        corsOrigin: config.S3_CONFIGURE_CORS ? new URL(config.PUBLIC_URL).origin : undefined,
       })
     : new LocalBlobStore(config.STORAGE_LOCAL_PATH)
   return store
