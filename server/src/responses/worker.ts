@@ -152,12 +152,12 @@ async function runPostResponseTasks(client: OpenAI, record: { response: typeof r
   const task = (setting?.value ?? {}) as { title?: boolean; titlePrompt?: string; followUp?: boolean }
   const inputText = JSON.stringify(record.response.input).slice(0, 8_000)
   const answer = previewFromOutput(output)
-  if (task.title !== false) {
+  if (task.title !== false && !record.response.parentResponseId) {
     const titleResult = await client.responses.create({
       model: record.model.upstreamModelId,
       input: [{ role: 'user', content: `${task.titlePrompt ?? 'Create a concise 3-5 word title for this chat. Return only the title.'}\n\nUser: ${inputText}\nAssistant: ${answer}` }],
       store: false,
-      max_output_tokens: 32,
+      max_output_tokens: Math.min(256, record.model.maxOutputTokens),
     })
     const title = titleResult.output_text.trim().replace(/^['"]|['"]$/g, '').slice(0, 200)
     if (title) await db.update(chats).set({ title, updatedAt: new Date() }).where(eq(chats.id, record.response.chatId))
