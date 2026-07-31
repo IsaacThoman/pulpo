@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from 'openai'
-import { and, asc, eq, ne } from 'drizzle-orm'
+import { createHash } from 'node:crypto'
+import { and, asc, eq, gt, isNull, ne, sql } from 'drizzle-orm'
 import type { ResponseEvent, ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
@@ -15,14 +16,21 @@ import {
   applicationSettings,
   modelPresets,
   modelPresetChoices,
+  requestLogs,
+  generationAttempts,
+  ocrAttempts,
+  ocrCacheEntries,
 } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
 import { isCancellationRequested, publishResponseEvent, publishSnapshot } from './events.js'
-import { releaseBudget, settleBudget } from '../accounting/service.js'
+import { getActivePricing, releaseBudget, settleBudget } from '../accounting/service.js'
 import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
+import { publishAdminUsage } from '../admin/usage-events.js'
+import { redis } from '../redis.js'
+import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -84,7 +92,13 @@ function previewFromOutput(output: unknown[]): string {
   return 'Response completed'
 }
 
-async function prepareInputFiles(client: OpenAI, input: unknown[]): Promise<unknown[]> {
+async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof models.$inferSelect, requestLogId: string): Promise<unknown[]> {
+  const [ocrRow, loggingRow] = await Promise.all([
+    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1).then((rows) => rows[0]),
+    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
+  ])
+  const ocrSettings = parseOcrSettings(ocrRow?.value)
+  const logging = parseLoggingSettings(loggingRow?.value)
   const prepared: unknown[] = []
   for (const item of input) {
     const typed = item as { content?: unknown[] }
@@ -101,9 +115,49 @@ async function prepareInputFiles(client: OpenAI, input: unknown[]): Promise<unkn
       }
       const [attachment] = await db.select().from(attachments).where(eq(attachments.id, filePart.attachment_id)).limit(1)
       if (!attachment || attachment.status !== 'ready') throw new Error('Attachment is unavailable')
+      const bytes = await getBlobStore().get(attachment.objectKey)
+      if (attachment.mimeType.startsWith('image/')) {
+        const dataUrl = `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString('base64')}`
+        if (!ocrSettings.enabled || !model.interceptImagesWithOcr) {
+          content.push({ type: 'input_image', image_url: dataUrl })
+          continue
+        }
+        const attemptId = newId()
+        const started = Date.now()
+        const providerFingerprint = `${ocrSettings.providerMode}:${ocrSettings.providerConnectionId ?? ocrSettings.customBaseUrl}:${ocrSettings.model}`
+        const checksum = createHash('sha256').update(providerFingerprint).update(bytes).digest('hex')
+        try {
+          const [cached] = ocrSettings.cacheEnabled ? await db.select().from(ocrCacheEntries).where(and(eq(ocrCacheEntries.checksum, checksum), gt(ocrCacheEntries.expiresAt, new Date()))).limit(1) : []
+          let text = cached?.text
+          let rawResponse: unknown
+          if (!text) {
+            let ocrClient: OpenAI
+            if (ocrSettings.providerMode === 'existing' && ocrSettings.providerConnectionId) {
+              const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, ocrSettings.providerConnectionId)).limit(1)
+              if (!provider) throw new Error('OCR provider is unavailable')
+              ocrClient = new OpenAI({ apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), baseURL: provider.baseUrl, timeout: provider.requestTimeoutMs })
+            } else if (ocrSettings.customBaseUrl && ocrSettings.encryptedCustomApiKey) {
+              ocrClient = new OpenAI({ apiKey: decryptSecret(ocrSettings.encryptedCustomApiKey, getConfig().ENCRYPTION_KEY), baseURL: ocrSettings.customBaseUrl })
+            } else throw new Error('OCR provider is not configured')
+            rawResponse = await ocrClient.responses.create({ model: ocrSettings.model, instructions: ocrSettings.systemPrompt, input: [{ role: 'user', content: [{ type: 'input_image', image_url: dataUrl, detail: 'auto' }] }], store: false })
+            text = (rawResponse as { output_text?: string }).output_text?.trim()
+            if (!text) throw new Error('OCR returned no text')
+            if (ocrSettings.cacheEnabled) await db.insert(ocrCacheEntries).values({ checksum, providerFingerprint, text, expiresAt: new Date(Date.now() + ocrSettings.cacheTtlSeconds * 1000) }).onConflictDoUpdate({ target: ocrCacheEntries.checksum, set: { text, expiresAt: new Date(Date.now() + ocrSettings.cacheTtlSeconds * 1000) } })
+          }
+          await db.insert(ocrAttempts).values({ id: attemptId, requestLogId, attachmentId: attachment.id, sourceChecksum: attachment.checksum, modelId: ocrSettings.model, status: 'completed', cached: Boolean(cached), requestPayload: logging.logDetailedPayloads ? { model: ocrSettings.model, input: dataUrl } : null, responsePayload: logging.logDetailedPayloads ? rawResponse : null, durationMs: Date.now() - started })
+          await db.update(requestLogs).set({ ocrStatus: 'completed', updatedAt: new Date() }).where(eq(requestLogs.id, requestLogId))
+          content.push({ type: 'input_text', text: `[OCR text from ${attachment.originalName}]\n${text}` })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'OCR failed'
+          await db.insert(ocrAttempts).values({ id: attemptId, requestLogId, attachmentId: attachment.id, sourceChecksum: attachment.checksum, modelId: ocrSettings.model, status: 'failed', errorMessage: message, durationMs: Date.now() - started })
+          await db.update(requestLogs).set({ ocrStatus: 'failed', updatedAt: new Date() }).where(eq(requestLogs.id, requestLogId))
+          content.push({ type: 'input_text', text: `[OCR error for ${attachment.originalName}: ${message}]` })
+        }
+        await publishAdminUsage(requestLogId, true)
+        continue
+      }
       let fileId = attachment.openaiFileId
       if (!fileId) {
-        const bytes = await getBlobStore().get(attachment.objectKey)
         const uploaded = await client.files.create({
           file: await toFile(bytes, attachment.originalName, { type: attachment.mimeType }),
           purpose: 'user_data',
@@ -141,6 +195,7 @@ async function contextualInput(client: OpenAI, record: { response: typeof respon
     conversation = [{ role: 'developer', content: `Summary of earlier conversation:\n${summaryResponse.output_text}` }, ...retained]
   }
   const context: unknown[] = []
+  if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
   if (values.customInstructions?.trim()) context.push({ role: 'developer', content: `User-provided custom instructions:\n${values.customInstructions.trim()}` })
   if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory.content}`).join('\n')}` })
   return [...context, ...conversation, ...(record.response.input as unknown[])]
@@ -185,7 +240,9 @@ async function runPostResponseTasks(client: OpenAI, record: { response: typeof r
 
 async function resolvedParameters(record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }): Promise<Record<string, unknown>> {
   const allowed = new Set(record.model.allowedParameters as string[])
-  const result = Object.fromEntries(Object.entries(record.response.parameters as Record<string, unknown>).filter(([key]) => allowed.has(key)))
+  const reserved = new Set(['model', 'input', 'stream', 'store', 'metadata'])
+  const result = Object.fromEntries(Object.entries(record.model.defaultParameters as Record<string, unknown>).filter(([key]) => allowed.has(key) && !reserved.has(key)))
+  for (const [key, value] of Object.entries(record.response.parameters as Record<string, unknown>)) if (allowed.has(key) && !reserved.has(key)) result[key] = value
   const selections = record.response.presetSelections as Record<string, string>
   const presets = await db.select().from(modelPresets).where(eq(modelPresets.modelId, record.model.id))
   for (const preset of presets) {
@@ -199,15 +256,20 @@ async function resolvedParameters(record: { response: typeof responses.$inferSel
   return result
 }
 
-export async function processGeneration(
+class GenerationAttemptError extends Error {
+  constructor(message: string, readonly outputStarted: boolean) { super(message) }
+}
+
+async function processGenerationAttempt(
   responseId: string,
+  modelId: string,
   options: { willRetry?: boolean } = {},
 ): Promise<void> {
   const startedAt = Date.now()
   const [record] = await db
     .select({ response: responses, model: models, provider: providerConnections })
     .from(responses)
-    .innerJoin(models, eq(responses.modelId, models.id))
+    .innerJoin(models, eq(models.id, modelId))
     .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId))
     .limit(1)
@@ -281,7 +343,7 @@ export async function processGeneration(
       }
       throw new Error('Background response recovery timed out')
     } catch (error) {
-      if (options.willRetry) throw error
+      if (options.willRetry) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Recovery failed', false)
       await db.update(responses).set({
         status: 'failed', error: { message: error instanceof Error ? error.message : 'Recovery failed' },
         completedAt: new Date(), updatedAt: new Date(),
@@ -293,7 +355,7 @@ export async function processGeneration(
   const allHistory = await db
     .select()
     .from(responses)
-    .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId)))
+    .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt)))
     .orderBy(asc(responses.createdAt))
   const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
   const history: typeof allHistory = []
@@ -306,25 +368,32 @@ export async function processGeneration(
     history.unshift(parent)
     parentId = parent.parentResponseId
   }
-  const input = await prepareInputFiles(client, await contextualInput(client, record, history))
+  const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+  if (!requestLog) throw new Error('Request log is missing')
+  const input = await prepareInputFiles(client, await contextualInput(client, record, history), record.model, requestLog.id)
   let sequence = record.response.lastSequence
   let output = record.response.output as unknown[]
   let usage: ResponseUsage | null = null
   let upstreamResponseId = record.response.openaiResponseId
   let lastSnapshotAt = 0
   const controller = new AbortController()
+  let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
+  if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
     const parameters = await resolvedParameters(record)
-    const stream = await client.responses.create({
+    const upstreamPayload = {
       ...(parameters as Record<string, never>),
       model: record.model.upstreamModelId,
       input: input as never,
-      stream: true,
+      stream: true as const,
       background: record.response.executionMode === 'background',
-      store: false,
+      store: false as const,
       metadata: { pulpo_response_id: responseId, pulpo_chat_id: record.response.chatId },
-    }, { signal: controller.signal })
+    }
+    const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
+    if (parseLoggingSettings(loggingRow?.value).logDetailedPayloads) await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    const stream = await client.responses.create(upstreamPayload, { signal: controller.signal })
     for await (const rawEvent of stream) {
       if (await isCancellationRequested(responseId)) {
         if (record.response.executionMode === 'background' && upstreamResponseId) {
@@ -334,6 +403,7 @@ export async function processGeneration(
         throw new Error('Generation cancelled')
       }
       const upstream = rawEvent as unknown as UpstreamEvent
+      if (firstTokenTimer && (upstream.type.includes('output_text.delta') || upstream.type.includes('content_part.added'))) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
       sequence += 1
       const event: ResponseEvent = {
         responseId,
@@ -350,6 +420,8 @@ export async function processGeneration(
       if (upstreamResponse?.output) output = upstreamResponse.output
       if (upstreamResponse?.usage) usage = normalizeUsage(upstreamResponse.usage)
       await publishResponseEvent(event)
+      await db.update(requestLogs).set({ eventCount: sql`${requestLogs.eventCount} + 1`, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+      await publishAdminUsage(requestLog.id)
       const snapshotDue = Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS
       const itemBoundary = upstream.type.endsWith('.done') || upstream.type === 'response.completed'
       if (snapshotDue || itemBoundary) {
@@ -365,6 +437,7 @@ export async function processGeneration(
         if (updated) await publishSnapshot(toSnapshot(updated))
       }
     }
+    if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
     await persistItems(responseId, output)
     const completedAt = new Date()
     await db.update(responses).set({
@@ -379,6 +452,7 @@ export async function processGeneration(
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await publishSnapshot(toSnapshot(completed))
   } catch (error) {
+    if (firstTokenTimer) clearTimeout(firstTokenTimer)
     const cancelled = await isCancellationRequested(responseId)
     const completedAt = new Date()
     await db.update(responses).set({
@@ -394,6 +468,100 @@ export async function processGeneration(
       const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
-    if (!cancelled) throw error
+    if (!cancelled) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Generation failed', sequence > record.response.lastSequence)
   }
+}
+
+function classifyError(error: unknown): string {
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  if (message.includes('rate') || message.includes('429')) return 'rate_limit'
+  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout'
+  if (message.includes('budget') || message.includes('balance')) return 'budget'
+  if (message.includes('validation') || message.includes('invalid')) return 'validation'
+  if (/\b5\d\d\b/.test(message) || message.includes('fetch') || message.includes('network') || message.includes('connect')) return 'provider_http'
+  if (message.includes('cancel')) return 'cancellation'
+  return 'worker'
+}
+
+export async function processGeneration(responseId: string): Promise<void> {
+  const [base] = await db.select({ response: responses, model: models, log: requestLogs })
+    .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
+    .where(eq(responses.id, responseId)).limit(1)
+  if (!base || ['completed', 'cancelled'].includes(base.response.status)) return
+  const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
+  const logging = parseLoggingSettings(loggingRow?.value)
+  let model: typeof models.$inferSelect | undefined = base.model
+  let fallbackFrom: string | null = null
+  let lastError: unknown
+  const visited = new Set<string>()
+
+  while (model && visited.size < 8 && !visited.has(model.id)) {
+    visited.add(model.id)
+    if (await redis.get(`pulpo:model-sticky:${model.id}`) && model.fallbackModelId) {
+      fallbackFrom = model.id
+      ;[model] = await db.select().from(models).where(and(eq(models.id, model.fallbackModelId), eq(models.enabled, true))).limit(1)
+      await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: model?.id ?? null, updatedAt: new Date() }).where(eq(requestLogs.id, base.log.id))
+      await publishAdminUsage(base.log.id, true)
+      continue
+    }
+    for (let attempt = 0; attempt <= model.maxRetries; attempt += 1) {
+      const attemptId = newId()
+      const attemptStarted = Date.now()
+      await db.insert(generationAttempts).values({ id: attemptId, requestLogId: base.log.id, modelId: model.id, attempt: attempt + 1, fallbackFromModelId: fallbackFrom })
+      await db.update(requestLogs).set({ status: 'in_progress', startedAt: base.log.startedAt ?? new Date(), currentModelId: model.id, currentAttempt: attempt + 1, retryCount: sql`${requestLogs.retryCount} + ${attempt > 0 ? 1 : 0}`, fallbackUsed: fallbackFrom !== null, updatedAt: new Date() }).where(eq(requestLogs.id, base.log.id))
+      await publishAdminUsage(base.log.id, true)
+      try {
+        const actualPricing = await getActivePricing(model.id)
+        await db.update(responses).set({ pricingVersionId: actualPricing.id, actualModelId: model.id }).where(eq(responses.id, responseId))
+        await processGenerationAttempt(responseId, model.id, { willRetry: true })
+        const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        const usage = completed?.usage as ResponseUsage | null
+        const durationMs = Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime()
+        const [costRow] = await db.execute<{ cost: string }>(sql`select coalesce(sum(cost_micros), 0)::text as cost from usage_events where response_id = ${responseId}`)
+        await db.transaction(async (tx) => {
+          await tx.update(generationAttempts).set({ status: 'completed', durationMs: Date.now() - attemptStarted, upstreamResponseId: completed?.openaiResponseId, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
+          await tx.update(responses).set({ actualModelId: model!.id }).where(eq(responses.id, responseId))
+          await tx.update(requestLogs).set({
+            status: completed?.status ?? 'completed', actualModelId: model!.id, currentModelId: model!.id,
+            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0,
+            outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
+            costMicros: Number(costRow?.cost ?? 0), durationMs,
+            tokensPerSecond: durationMs > 0 ? ((usage?.outputTokens ?? 0) * 1000) / durationMs : null,
+            responsePayload: logging.logDetailedPayloads ? { output: completed?.output ?? [], usage } : null,
+            completedAt: new Date(), updatedAt: new Date(),
+          }).where(eq(requestLogs.id, base.log.id))
+        })
+        if (model.slowStickyEnabled && model.stickyFallbackSeconds > 0 && durationMs >= model.slowStickyMinCompletionSeconds * 1000 && ((usage?.outputTokens ?? 0) * 1000) / Math.max(durationMs, 1) < model.slowStickyMinTokensPerSecond) {
+          await redis.set(`pulpo:model-sticky:${model.id}`, 'slow_completion', 'EX', model.stickyFallbackSeconds)
+        }
+        await publishAdminUsage(base.log.id, true)
+        return
+      } catch (error) {
+        lastError = error
+        const category = classifyError(error)
+        await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: error instanceof Error ? error.message : String(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
+        if ((error instanceof GenerationAttemptError && error.outputStarted) || !['provider_http', 'rate_limit', 'timeout', 'worker'].includes(category)) { model = undefined; break }
+        if (attempt < model.maxRetries && model.retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, model!.retryDelaySeconds * 1000))
+      }
+    }
+    if (!model) break
+    if (model.stickyFallbackSeconds > 0) await redis.set(`pulpo:model-sticky:${model.id}`, classifyError(lastError), 'EX', model.stickyFallbackSeconds)
+    fallbackFrom = model.id
+    if (!model.fallbackModelId) { model = undefined; break }
+    ;[model] = await db.select().from(models).where(and(eq(models.id, model.fallbackModelId), eq(models.enabled, true))).limit(1)
+    await db.update(requestLogs).set({ fallbackUsed: true, currentModelId: model?.id ?? null, updatedAt: new Date() }).where(eq(requestLogs.id, base.log.id))
+    await publishAdminUsage(base.log.id, true)
+  }
+
+  const message = lastError instanceof Error ? lastError.message : 'Generation failed'
+  const category = classifyError(lastError)
+  const completedAt = new Date()
+  await db.transaction(async (tx) => {
+    await tx.update(responses).set({ status: 'failed', error: { message, category }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
+    await tx.update(requestLogs).set({ status: 'failed', errorCategory: category, errorMessage: message, durationMs: Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime(), completedAt, updatedAt: completedAt }).where(eq(requestLogs.id, base.log.id))
+  })
+  await releaseBudget(responseId)
+  const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+  if (terminal) await publishSnapshot(toSnapshot(terminal))
+  await publishAdminUsage(base.log.id, true)
 }

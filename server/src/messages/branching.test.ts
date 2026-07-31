@@ -31,4 +31,20 @@ describe('response branches', () => {
     expect(lineageFromLeaf(turns, 'follow-up').map((turn) => turn.id)).toEqual(['regenerated', 'follow-up'])
     expect(lineageFromLeaf(turns, 'edited-prompt').map((turn) => turn.id)).toEqual(['edited-prompt'])
   })
+
+  it('keeps identical user-message edits as separate user branches', () => {
+    const identical: BranchTurn[] = [
+      { id: 'answer-1', parentResponseId: null, userMessageId: 'user-1', input: originalInput },
+      { id: 'answer-2', parentResponseId: null, userMessageId: 'user-1', input: originalInput },
+      { id: 'answer-3', parentResponseId: null, userMessageId: 'user-2', input: originalInput },
+    ]
+    expect(metadataForTurn(identical, identical[1]!)).toEqual({
+      user: { ids: ['answer-2', 'answer-3'], index: 0 },
+      assistant: { ids: ['answer-1', 'answer-2'], index: 1 },
+    })
+    expect(metadataForTurn(identical, identical[2]!)).toEqual({
+      user: { ids: ['answer-2', 'answer-3'], index: 1 },
+      assistant: { ids: ['answer-3'], index: 0 },
+    })
+  })
 })

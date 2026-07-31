@@ -104,6 +104,10 @@ export async function createSocketServer(httpServer: HttpServer) {
       }
     })
     socket.on('response.unsubscribe', ({ responseId }) => void socket.leave(`response:${responseId}`))
+    socket.on('admin.usage.subscribe', () => {
+      if (user.role === 'admin') void socket.join('admin:usage')
+    })
+    socket.on('admin.usage.unsubscribe', () => void socket.leave('admin:usage'))
   })
 
   const responseOwners = new Map<string, { userId: string; chatId: string }>()
@@ -116,9 +120,11 @@ export async function createSocketServer(httpServer: HttpServer) {
     return row
   }
 
-  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes')
+  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:admin-usage')
   subscriber.on('message', (channel: string, message: string) => {
-    if (channel === 'pulpo:response-events') {
+    if (channel === 'pulpo:admin-usage') {
+      io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
+    } else if (channel === 'pulpo:response-events') {
       const event = JSON.parse(message) as { responseId: string }
       void ownerFor(event.responseId).then((owner) => {
         let rooms = io.to(`response:${event.responseId}`)

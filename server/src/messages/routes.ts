@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
@@ -7,7 +7,7 @@ import { chats, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { newestDescendantId } from './branching.js'
-import { publishStateChange } from '../responses/events.js'
+import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 
 function inputText(input: unknown): string {
@@ -23,7 +23,7 @@ function inputText(input: unknown): string {
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
-  const [row] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, userId))).limit(1)
+  const [row] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, userId), isNull(responses.deletedAt))).limit(1)
   if (!row) throw notFound('Message')
   return row
 }
@@ -53,6 +53,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       userId: user.id,
       chatId: original.chatId,
       parentResponseId: original.parentResponseId,
+      userMessageId: original.userMessageId ?? undefined,
       branchReason: 'regenerate',
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
@@ -109,6 +110,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         pricingVersionId: original.pricingVersionId,
         previousResponseId: original.parentResponseId,
         parentResponseId: original.parentResponseId,
+        userMessageId: original.userMessageId,
         branchReason: 'assistant_edit',
         status: 'completed',
         executionMode: original.executionMode,
@@ -142,11 +144,39 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const turns = await db.select().from(responses).where(and(
       eq(responses.chatId, selected.chatId),
       eq(responses.userId, user.id),
+      isNull(responses.deletedAt),
     )).orderBy(asc(responses.createdAt))
     const leafId = newestDescendantId(turns, selected.id)
     await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: new Date() })
       .where(and(eq(chats.id, selected.chatId), eq(chats.userId, user.id)))
     await bumpRevision(user.id, selected.chatId)
     return { activeBranchLeafId: leafId }
+  })
+
+  app.delete('/api/messages/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    if (!id.endsWith(':input')) throw new AppError(400, 'user_message_required', 'Only user messages can be deleted from this control')
+    const original = await ownedResponse(user.id, id)
+    const [chat] = await db.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).limit(1)
+    const turns = await db.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt))
+    const sameVariant = (turn: typeof responses.$inferSelect) => turn.parentResponseId === original.parentResponseId && (original.userMessageId ? turn.userMessageId === original.userMessageId : JSON.stringify(turn.input) === JSON.stringify(original.input))
+    const deleting = new Set(turns.filter(sameVariant).map((turn) => turn.id))
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const turn of turns) if (turn.parentResponseId && deleting.has(turn.parentResponseId) && !deleting.has(turn.id)) { deleting.add(turn.id); changed = true }
+    }
+    const now = new Date()
+    if (deleting.size) {
+      await Promise.all(turns.filter((turn) => deleting.has(turn.id) && ['queued', 'in_progress'].includes(turn.status)).map((turn) => requestCancellation(turn.id)))
+      await db.update(responses).set({ deletedAt: now, updatedAt: now }).where(inArray(responses.id, [...deleting]))
+    }
+    const remaining = turns.filter((turn) => !deleting.has(turn.id))
+    const currentLeaf = chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null
+    const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : remaining.at(-1)?.id ?? null
+    await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now }).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id)))
+    await bumpRevision(user.id, original.chatId)
+    reply.code(204).send()
   })
 }

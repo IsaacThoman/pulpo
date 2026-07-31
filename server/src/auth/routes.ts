@@ -24,8 +24,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .from(applicationSettings)
       .where(eq(applicationSettings.key, 'auth'))
       .limit(1)
-    const { signupEnabled, pendingDetails, adminEmail, pendingMessage } = parseAuthSettings(setting?.value)
-    return { signupEnabled, pendingDetails, adminEmail, pendingMessage }
+    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled } = parseAuthSettings(setting?.value)
+    return { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled }
   })
 
   app.get('/api/auth/setup-status', async () => {
@@ -86,7 +86,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         id: userId,
         email: input.email,
         name: input.name,
-        role: 'pending',
+        role: authSettings.defaultSignupRole,
         balanceMicros: authSettings.defaultBalanceMicros,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })

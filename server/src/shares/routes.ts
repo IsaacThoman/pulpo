@@ -64,7 +64,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       .where(and(eq(chatShares.tokenHash, hashToken(token)), isNull(chatShares.revokedAt), or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now))))
       .limit(1)
     if (!row) throw new AppError(404, 'share_not_found', 'This share does not exist or has expired')
-    const allTurns = await db.select().from(responses).where(eq(responses.chatId, row.chat.id)).orderBy(responses.createdAt)
+    const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, row.chat.id), isNull(responses.deletedAt))).orderBy(responses.createdAt)
     const turns = lineageFromLeaf(
       allTurns,
       row.chat.activeBranchLeafId ?? row.chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,

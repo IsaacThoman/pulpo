@@ -1,11 +1,13 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chats, modelPresetChoices, modelPresets, models, responses } from '../database/schema.js'
+import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses } from '../database/schema.js'
 import { getActivePricing, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { generationQueue } from '../jobs.js'
+import { parseLoggingSettings } from '../settings/application-settings.js'
+import { publishAdminUsage } from '../admin/usage-events.js'
 
 export interface CreateResponseOptions {
   userId: string
@@ -16,6 +18,7 @@ export interface CreateResponseOptions {
   parameters?: Record<string, unknown>
   idempotencyKey?: string | null
   parentResponseId?: string | null
+  userMessageId?: string
   branchReason?: 'message' | 'regenerate' | 'user_edit'
 }
 
@@ -64,7 +67,18 @@ export async function createResponse(options: CreateResponseOptions) {
   const model = await resolveModel(options.input.modelId, options.input.presetSelections)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
   const maxOutputTokens = Math.min(options.input.maxOutputTokens ?? model.maxOutputTokens, model.maxOutputTokens)
-  const pricing = await getActivePricing(model.id)
+  let pricing = await getActivePricing(model.id)
+  let fallbackId = model.fallbackModelId
+  const pricedModels = new Set([model.id])
+  for (let depth = 0; fallbackId && depth < 8 && !pricedModels.has(fallbackId); depth += 1) {
+    pricedModels.add(fallbackId)
+    const [fallback] = await db.select().from(models).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
+    if (!fallback) break
+    const candidate = await getActivePricing(fallback.id)
+    const score = (value: typeof candidate) => value.inputPriceMicros * model.contextWindow + value.outputPriceMicros * maxOutputTokens + value.perRequestPriceMicros * 1_000_000
+    if (score(candidate) > score(pricing)) pricing = candidate
+    fallbackId = fallback.fallbackModelId
+  }
   const id = newId()
   const [previous] = chat.activeResponseId
     ? await db.select({ id: responses.id }).from(responses).where(eq(responses.id, chat.activeResponseId)).limit(1)
@@ -94,13 +108,27 @@ export async function createResponse(options: CreateResponseOptions) {
     modelId: model.id,
     previousResponseId: parentResponseId,
     parentResponseId,
+    userMessageId: options.userMessageId ?? newId(),
     branchReason: options.branchReason ?? 'message',
     executionMode,
     input: storedInput,
     presetSelections: options.input.presetSelections,
     parameters: options.parameters ?? {},
     idempotencyKey: options.idempotencyKey,
+    origin: options.apiKeyId ? 'api' : 'web',
   })
+  const requestLogId = newId()
+  const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
+  const logging = parseLoggingSettings(loggingRow?.value)
+  const retentionMs: Record<string, number | null> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000, '90d': 7_776_000_000, indefinite: null }
+  const ttl = retentionMs[logging.payloadRetention] ?? 604_800_000
+  await db.insert(requestLogs).values({
+    id: requestLogId, responseId: id, userId: options.userId, apiKeyId: options.apiKeyId,
+    origin: options.apiKeyId ? 'api' : 'web', requestedModelId: model.id, currentModelId: model.id,
+    requestPayload: logging.logDetailedPayloads ? { input: storedInput, parameters: options.parameters ?? {}, presetSelections: options.input.presetSelections } : null,
+    payloadExpiresAt: logging.logDetailedPayloads && ttl !== null ? new Date(Date.now() + ttl) : null,
+  })
+  await publishAdminUsage(requestLogId, true)
   try {
     await reserveBudget({
       responseId: id,

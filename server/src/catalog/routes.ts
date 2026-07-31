@@ -39,8 +39,35 @@ const presetSchema = z.array(z.object({
 })).max(10)
 
 type PresetInput = z.infer<typeof presetSchema>
+const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
+
+function validateDefaultParameters(value: Record<string, unknown>, allowedParameters: string[]): void {
+  for (const key of Object.keys(value)) {
+    if (RESERVED_PARAMETERS.has(key)) throw new AppError(400, 'reserved_parameter', `${key} is reserved and cannot be configured`)
+    if (!allowedParameters.includes(key)) throw new AppError(400, 'parameter_not_allowed', `Default parameter ${key} is not allowed for this model`)
+  }
+}
+
+async function validateFallback(modelId: string, fallbackModelId: string | null): Promise<void> {
+  if (!fallbackModelId) return
+  if (fallbackModelId === modelId) throw new AppError(409, 'fallback_cycle', 'A model cannot fall back to itself')
+  const all = await db.select({ id: models.id, enabled: models.enabled, fallbackModelId: models.fallbackModelId }).from(models)
+  const byId = new Map(all.map((model) => [model.id, model]))
+  const target = byId.get(fallbackModelId)
+  if (!target?.enabled) throw new AppError(409, 'fallback_unavailable', 'Fallback models must exist and be enabled')
+  const seen = new Set([modelId])
+  let cursor: string | null = fallbackModelId
+  for (let depth = 0; cursor; depth += 1) {
+    if (depth >= 8) throw new AppError(409, 'fallback_chain_too_deep', 'Fallback chains may contain at most eight models')
+    if (seen.has(cursor)) throw new AppError(409, 'fallback_cycle', 'Fallback models cannot contain a cycle')
+    seen.add(cursor)
+    cursor = byId.get(cursor)?.fallbackModelId ?? null
+  }
+}
 
 async function validatePresets(modelId: string, presets: PresetInput, allowedParameters: string[]): Promise<void> {
+  const reserved = allowedParameters.find((key) => RESERVED_PARAMETERS.has(key))
+  if (reserved) throw new AppError(400, 'reserved_parameter', `${reserved} is reserved and cannot be configured`)
   for (const preset of presets) {
     if (preset.defaultChoiceId && !preset.choices.some((choice) => choice.id === preset.defaultChoiceId)) {
       throw new AppError(400, 'invalid_preset_default', `Preset ${preset.id} has an invalid default choice`)
@@ -110,13 +137,15 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       ))
       .leftJoin(labs, eq(models.labId, labs.id))
       .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
-      .where(eq(models.enabled, true))
+      .where(and(eq(models.enabled, true), eq(models.visible, true)))
     return { data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
       upstreamModelId: model.upstreamModelId,
       name: model.name,
       description: model.description,
       enabled: model.enabled,
+      visible: model.visible,
+      logo: model.logo,
       executionMode: model.executionMode,
       contextWindow: model.contextWindow,
       maxOutputTokens: model.maxOutputTokens,
@@ -298,6 +327,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const admin = requireAdmin(request)
     const raw = z.object({ presets: presetSchema.default([]) }).passthrough().parse(request.body)
     const input = createModelSchema.parse(raw)
+    validateDefaultParameters(input.defaultParameters, input.allowedParameters)
+    await validateFallback(input.id, input.fallbackModelId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
     const pricingId = newId()
     await db.transaction(async (tx) => {
@@ -309,11 +340,25 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         name: input.name,
         description: input.description,
         enabled: input.enabled,
+        visible: input.visible,
+        logo: input.logo,
+        systemPrompt: input.systemPrompt,
+        defaultParameters: input.defaultParameters,
+        interceptImagesWithOcr: input.interceptImagesWithOcr,
         contextWindow: input.contextWindow,
         maxOutputTokens: input.maxOutputTokens,
         executionMode: input.executionMode,
         tags: input.tags,
         allowedParameters: input.allowedParameters,
+        fallbackModelId: input.fallbackModelId,
+        maxRetries: input.maxRetries,
+        retryDelaySeconds: input.retryDelaySeconds,
+        stickyFallbackSeconds: input.stickyFallbackSeconds,
+        firstTokenTimeoutEnabled: input.firstTokenTimeoutEnabled,
+        firstTokenTimeoutSeconds: input.firstTokenTimeoutSeconds,
+        slowStickyEnabled: input.slowStickyEnabled,
+        slowStickyMinTokensPerSecond: input.slowStickyMinTokensPerSecond,
+        slowStickyMinCompletionSeconds: input.slowStickyMinCompletionSeconds,
       })
       await tx.insert(modelPricingVersions).values({
         id: pricingId,
@@ -340,7 +385,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (!current) throw notFound('Model')
     const parsedPresets = body.presets === undefined ? undefined : presetSchema.parse(body.presets)
     const effectiveAllowed = Array.isArray(body.allowedParameters) ? body.allowedParameters.filter((value): value is string => typeof value === 'string') : current.allowedParameters as string[]
+    const effectiveDefaults = body.defaultParameters && typeof body.defaultParameters === 'object' && !Array.isArray(body.defaultParameters) ? body.defaultParameters as Record<string, unknown> : current.defaultParameters as Record<string, unknown>
+    validateDefaultParameters(effectiveDefaults, effectiveAllowed)
     if (parsedPresets) await validatePresets(id, parsedPresets, effectiveAllowed)
+    if (body.fallbackModelId !== undefined) await validateFallback(id, typeof body.fallbackModelId === 'string' ? body.fallbackModelId : null)
     const [updated] = await db.update(models).set({
       name: typeof body.name === 'string' ? body.name : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
@@ -348,11 +396,25 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       providerConnectionId: typeof body.providerConnectionId === 'string' ? body.providerConnectionId : undefined,
       labId: typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : undefined,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
+      visible: typeof body.visible === 'boolean' ? body.visible : undefined,
+      logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
+      systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
+      defaultParameters: body.defaultParameters && typeof body.defaultParameters === 'object' ? body.defaultParameters : undefined,
+      interceptImagesWithOcr: typeof body.interceptImagesWithOcr === 'boolean' ? body.interceptImagesWithOcr : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,
       executionMode: body.executionMode === 'background' ? 'background' : body.executionMode === 'stream' ? 'stream' : undefined,
       tags: Array.isArray(body.tags) ? body.tags : undefined,
       allowedParameters: Array.isArray(body.allowedParameters) ? body.allowedParameters : undefined,
+      fallbackModelId: typeof body.fallbackModelId === 'string' ? body.fallbackModelId : body.fallbackModelId === null ? null : undefined,
+      maxRetries: typeof body.maxRetries === 'number' ? body.maxRetries : undefined,
+      retryDelaySeconds: typeof body.retryDelaySeconds === 'number' ? body.retryDelaySeconds : undefined,
+      stickyFallbackSeconds: typeof body.stickyFallbackSeconds === 'number' ? body.stickyFallbackSeconds : undefined,
+      firstTokenTimeoutEnabled: typeof body.firstTokenTimeoutEnabled === 'boolean' ? body.firstTokenTimeoutEnabled : undefined,
+      firstTokenTimeoutSeconds: typeof body.firstTokenTimeoutSeconds === 'number' ? body.firstTokenTimeoutSeconds : undefined,
+      slowStickyEnabled: typeof body.slowStickyEnabled === 'boolean' ? body.slowStickyEnabled : undefined,
+      slowStickyMinTokensPerSecond: typeof body.slowStickyMinTokensPerSecond === 'number' ? body.slowStickyMinTokensPerSecond : undefined,
+      slowStickyMinCompletionSeconds: typeof body.slowStickyMinCompletionSeconds === 'number' ? body.slowStickyMinCompletionSeconds : undefined,
       updatedAt: new Date(),
     }).where(eq(models.id, id)).returning()
     if (['inputPriceMicros', 'cachedInputPriceMicros', 'outputPriceMicros', 'perRequestPriceMicros'].some((key) => typeof body[key] === 'number')) {

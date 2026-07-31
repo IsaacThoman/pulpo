@@ -3,6 +3,7 @@ import cookie from '@fastify/cookie'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
+import multipart from '@fastify/multipart'
 import { ZodError } from 'zod'
 import { getAllowedOrigins, getConfig } from './config.js'
 import { AppError } from './lib/errors.js'
@@ -17,6 +18,7 @@ import { registerShareRoutes } from './shares/routes.js'
 import { registerUsageRoutes } from './usage/routes.js'
 import { registerAdminRoutes } from './admin/routes.js'
 import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
+import { registerAdminUsageRoutes } from './admin/usage-routes.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
 import { ensureBuiltinLabs } from './catalog/defaults.js'
@@ -37,6 +39,7 @@ export async function buildApp() {
     credentials: true,
   })
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' })
+  await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024, files: 1 } })
 
   app.decorateRequest('user', null)
   app.decorateRequest('apiKeyId', null)
@@ -94,6 +97,7 @@ export async function buildApp() {
   await registerUsageRoutes(app)
   await registerAdminRoutes(app)
   await registerAdminSettingsRoutes(app)
+  await registerAdminUsageRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerPublicApiRoutes(app)

@@ -3,6 +3,7 @@ import { db } from './database/client.js'
 import {
   applicationSettings, attachments, chats, dailyUsageRollups, exportJobs, idempotencyRecords,
   passwordResetTokens, responses, sessions, usageEvents, users,
+  requestLogs, ocrCacheEntries,
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
 
@@ -60,6 +61,9 @@ export async function runCleanup(): Promise<void> {
   await db.delete(sessions).where(lt(sessions.expiresAt, now))
   await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now))
   await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
+  await db.update(requestLogs).set({ requestPayload: null, responsePayload: null, updatedAt: now }).where(lt(requestLogs.payloadExpiresAt, now))
+  await db.execute(sql`update ocr_attempts set request_payload = null, response_payload = null, updated_at = ${now} where request_log_id in (select id from request_logs where payload_expires_at < ${now})`)
+  await db.delete(ocrCacheEntries).where(lt(ocrCacheEntries.expiresAt, now))
   const expiredExports = await db.select().from(exportJobs).where(lt(exportJobs.expiresAt, now))
   for (const job of expiredExports) if (job.objectKey) await getBlobStore().delete(job.objectKey).catch(() => undefined)
   if (expiredExports.length) await db.delete(exportJobs).where(inArray(exportJobs.id, expiredExports.map((row) => row.id)))

@@ -109,7 +109,7 @@ async function waitForTerminal(responseId: string) {
 export async function registerPublicApiRoutes(app: FastifyInstance): Promise<void> {
   app.get('/v1/models', async (request) => {
     await authenticateApiKey(request, 'models')
-    const rows = await db.select().from(models).where(eq(models.enabled, true))
+    const rows = await db.select().from(models).where(and(eq(models.enabled, true), eq(models.visible, true)))
     return { object: 'list', data: rows.map((model) => ({
       id: model.id,
       object: 'model',

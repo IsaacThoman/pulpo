@@ -6,7 +6,7 @@ export interface GenerationJob {
 }
 
 export interface MaintenanceJob {
-  type: 'cleanup' | 'rollup' | 'export'
+  type: 'cleanup' | 'rollup' | 'export' | 'backup' | 'restore'
   payload?: Record<string, unknown>
 }
 
@@ -15,8 +15,7 @@ const connection = { url: getConfig().REDIS_URL }
 export const generationQueue = new Queue<GenerationJob>('generation', {
   connection,
   defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 1_000 },
+    attempts: 1,
     removeOnComplete: 1_000,
     removeOnFail: 5_000,
   },

@@ -1,6 +1,7 @@
 export interface BranchTurn {
   id: string
   parentResponseId: string | null
+  userMessageId?: string | null
   input: unknown
 }
 
@@ -13,17 +14,21 @@ function inputSignature(input: unknown): string {
   return JSON.stringify(input)
 }
 
+function userBranchKey(turn: BranchTurn): string {
+  return turn.userMessageId ?? `legacy:${inputSignature(turn.input)}`
+}
+
 export function metadataForTurn(turns: BranchTurn[], active: BranchTurn): BranchMetadata {
   const siblings = turns.filter((turn) => turn.parentResponseId === active.parentResponseId)
   const groups = new Map<string, BranchTurn[]>()
   for (const sibling of siblings) {
-    const signature = inputSignature(sibling.input)
+    const signature = userBranchKey(sibling)
     const group = groups.get(signature) ?? []
     group.push(sibling)
     groups.set(signature, group)
   }
 
-  const activeSignature = inputSignature(active.input)
+  const activeSignature = userBranchKey(active)
   const userIds = [...groups.entries()].map(([signature, group]) =>
     signature === activeSignature ? active.id : group.at(-1)!.id
   )

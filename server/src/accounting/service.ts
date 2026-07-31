@@ -144,7 +144,7 @@ export async function settleBudget(input: {
       userId: user.id,
       apiKeyId: reservation.apiKeyId,
       responseId: response.id,
-      modelId: response.modelId,
+      modelId: response.actualModelId ?? response.modelId,
       pricingVersionId: pricing.id,
       inputTokens: input.usage.inputTokens,
       cachedInputTokens: input.usage.cachedInputTokens,

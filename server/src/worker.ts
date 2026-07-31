@@ -6,15 +6,13 @@ import { responses } from './database/schema.js'
 import { generationQueue, maintenanceQueue, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
+import { createFullBackup, restoreFullBackup } from './admin/backup.js'
 
 const config = getConfig()
 console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.started', environment: config.NODE_ENV }))
 
 const generationWorker = new Worker<GenerationJob>('generation', async (job) => {
-  const attempts = job.opts.attempts ?? 1
-  await processGeneration(job.data.responseId, {
-    willRetry: job.attemptsMade + 1 < attempts,
-  })
+  await processGeneration(job.data.responseId)
 }, {
   connection: { url: config.REDIS_URL },
   concurrency: 4,
@@ -24,9 +22,11 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'cleanup') await runCleanup()
   if (job.data.type === 'rollup') await rebuildDailyRollups()
+  if (job.data.type === 'backup') await createFullBackup(String(job.data.payload?.jobId))
+  if (job.data.type === 'restore') await restoreFullBackup(String(job.data.payload?.jobId))
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
-await maintenanceQueue.upsertJobScheduler('hourly-cleanup', { every: 60 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
+await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
 await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })
 

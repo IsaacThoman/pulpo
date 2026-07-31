@@ -3,7 +3,7 @@ import { and, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { apiKeyModelPermissions, apiKeys, usageEvents, users } from '../database/schema.js'
+import { apiKeyModelPermissions, apiKeys, applicationSettings, usageEvents, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { randomToken } from '../lib/crypto.js'
@@ -11,8 +11,15 @@ import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { requireUser, serializeUser } from '../auth/service.js'
 import { createRedis } from '../redis.js'
 import { getConfig } from '../config.js'
+import { parseAuthSettings } from '../settings/application-settings.js'
+
+async function assertApiKeysEnabled(): Promise<void> {
+  const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
+  if (!parseAuthSettings(setting?.value).apiKeysEnabled) throw new AppError(403, 'api_keys_disabled', 'API keys are disabled by the administrator', 'permission_error')
+}
 
 export async function authenticateApiKey(request: FastifyRequest, requiredScope: 'responses' | 'models') {
+  await assertApiKeysEnabled()
   const authorization = request.headers.authorization
   if (!authorization?.startsWith('Bearer sk-pulpo-')) throw unauthorized('Invalid API key')
   const secret = authorization.slice(7)
@@ -44,9 +51,11 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
   app.addHook('onClose', async () => { await redis.quit() })
   app.get('/api/api-keys', async (request) => {
     const user = requireUser(request)
+    const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
+    const enabled = parseAuthSettings(setting?.value).apiKeysEnabled
     const rows = await db.select().from(apiKeys).where(eq(apiKeys.userId, user.id))
     const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1))
-    return { data: await Promise.all(rows.map(async ({ secretHash: _, ...row }) => {
+    return { enabled, data: await Promise.all(rows.map(async ({ secretHash: _, ...row }) => {
       const allowedModels = await db.select({ modelId: apiKeyModelPermissions.modelId }).from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, row.id))
       const [[lifetime], [monthly]] = await Promise.all([
         db.select({ total: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint` })
@@ -60,6 +69,7 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
 
   app.post('/api/api-keys', async (request, reply) => {
     const user = requireUser(request)
+    await assertApiKeysEnabled()
     const input = createApiKeySchema.parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     const redisKey = idempotencyKey ? `pulpo:idempotency:api-key:${user.id}:${idempotencyKey}` : null
