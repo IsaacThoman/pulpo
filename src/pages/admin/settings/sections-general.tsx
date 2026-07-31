@@ -12,20 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 
 export function GeneralSection() {
-  const [t, setT] = useState({
-    community: true,
-    rating: true,
-    folders: true,
-    folderMax: 50,
-    memories: true,
-    memoryCtx: true,
-    notes: true,
-    webhooks: true,
-    userStatus: true,
-    watermark: '',
-    webuiUrl: 'https://chat.pulpo.dev',
-  })
-  const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
+  const [publicUrl, setPublicUrl] = useState('https://chat.pulpo.dev')
 
   return (
     <div>
@@ -37,27 +24,8 @@ export function GeneralSection() {
         </Field>
       </Section>
 
-      <Section title="Features">
-        <Toggle label="Enable community sharing" checked={t.community} onChange={(v) => s('community', v)} />
-        <Toggle label="Enable message rating" checked={t.rating} onChange={(v) => s('rating', v)} />
-        <Toggle label="Folders" checked={t.folders} onChange={(v) => s('folders', v)} />
-        {t.folders && (
-          <NumField label="Folder max file count" value={t.folderMax} onChange={(v) => s('folderMax', v)} indent />
-        )}
-        <Toggle label="Memories" checked={t.memories} onChange={(v) => s('memories', v)} />
-        {t.memories && (
-          <Toggle label="Memory system context" checked={t.memoryCtx} onChange={(v) => s('memoryCtx', v)} indent />
-        )}
-        <Toggle label="Notes" checked={t.notes} onChange={(v) => s('notes', v)} />
-        <Toggle label="User webhooks" checked={t.webhooks} onChange={(v) => s('webhooks', v)} />
-        <Toggle label="User status" checked={t.userStatus} onChange={(v) => s('userStatus', v)} />
-        <TextAreaField
-          label="Response watermark"
-          hint="Appended to every assistant response."
-          value={t.watermark}
-          onChange={(v) => s('watermark', v)}
-        />
-        <TextField label="WebUI URL" value={t.webuiUrl} onChange={(v) => s('webuiUrl', v)} mono />
+      <Section title="General">
+        <TextField label="Public URL" value={publicUrl} onChange={setPublicUrl} mono />
       </Section>
 
       <SaveBar />

@@ -185,10 +185,6 @@ export function AdminUsersPage() {
               <Input defaultValue={editUser?.email} />
             </div>
             <div className="space-y-1.5">
-              <Label>OAuth ID</Label>
-              <Input placeholder="—" />
-            </div>
-            <div className="space-y-1.5">
               <Label>New password</Label>
               <Input type="password" placeholder="Leave blank to keep" />
             </div>
