@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { useChat } from '@/stores/chat'
-import { getModel } from '@/lib/mock'
+import { getCatalogModel } from '@/stores/catalog'
+import { apiRequest } from '@/lib/api'
+import type { ServerChat } from '@/stores/chat'
 import { timeAgo } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
 import { cn } from '@/lib/utils'
@@ -13,6 +15,7 @@ export function SearchModal({ open, onClose }: { open: boolean; onClose: () => v
   const [cursor, setCursor] = useState(0)
   const chats = useChat((s) => s.chats)
   const navigate = useNavigate()
+  const [remote, setRemote] = useState<ServerChat[]>([])
 
   useEffect(() => {
     if (open) {
@@ -21,16 +24,31 @@ export function SearchModal({ open, onClose }: { open: boolean; onClose: () => v
     }
   }, [open])
 
+  useEffect(() => {
+    const q = query.trim()
+    if (!open || !q) { setRemote([]); return }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      void apiRequest<{ data: ServerChat[] }>(`/api/chats/search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
+        .then((result) => setRemote(result.data)).catch(() => undefined)
+    }, 180)
+    return () => { window.clearTimeout(timer); controller.abort() }
+  }, [open, query])
+
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     const sorted = [...chats].sort((a, b) => b.updatedAt - a.updatedAt)
     if (!q) return sorted.slice(0, 10)
-    return sorted.filter(
+    const local = sorted.filter(
       (c) =>
         c.title.toLowerCase().includes(q) ||
         c.messages.some((m) => m.content.toLowerCase().includes(q))
     )
-  }, [chats, query])
+    const localIds = new Set(local.map((chat) => chat.id))
+    return [...local, ...remote.filter((chat) => !localIds.has(chat.id)).map((chat) => ({
+      ...chat, messages: [], createdAt: Date.parse(chat.createdAt), updatedAt: Date.parse(chat.updatedAt), tags: [],
+    }))]
+  }, [chats, query, remote])
 
   const go = (idx: number) => {
     const c = results[idx]
@@ -83,7 +101,7 @@ export function SearchModal({ open, onClose }: { open: boolean; onClose: () => v
             >
               <MessageSquare className="size-4 shrink-0 text-muted-foreground" />
               <span className="flex-1 truncate">{c.title}</span>
-              <ModelIcon model={getModel(c.modelId)} className="size-4 rounded-[2px]" />
+              <ModelIcon model={getCatalogModel(c.modelId)} className="size-4 rounded-[2px]" />
               <span className="text-xs text-muted-foreground">{timeAgo(c.updatedAt)}</span>
             </button>
           ))}

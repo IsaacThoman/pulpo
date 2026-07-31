@@ -16,6 +16,7 @@ interface SettingsState {
   notifications: boolean
   customInstructions: string
   nickname: string
+  localChatLimit: number
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -36,6 +37,7 @@ export const useSettings = create<SettingsState>()(
       notifications: true,
       customInstructions: '',
       nickname: '',
+      localChatLimit: 50,
       generation: {},
       setTheme: (theme) => set({ theme }),
       set: (key, value) => set({ [key]: value } as Partial<SettingsState>),

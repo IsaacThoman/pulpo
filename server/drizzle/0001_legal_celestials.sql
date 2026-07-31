@@ -1,0 +1,1 @@
+ALTER TABLE "responses" ADD COLUMN "parameters" jsonb DEFAULT '{}'::jsonb NOT NULL;

@@ -11,6 +11,9 @@ import {
   responseContentParts,
   responseItems,
   responses,
+  userPreferences,
+  memories,
+  applicationSettings,
 } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
@@ -114,6 +117,71 @@ async function prepareInputFiles(client: OpenAI, input: unknown[]): Promise<unkn
   return prepared
 }
 
+async function contextualInput(client: OpenAI, record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }, history: Array<typeof responses.$inferSelect>): Promise<unknown[]> {
+  const [preferences] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
+  const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean }
+  const enabledMemories = values.memoryEnabled
+    ? await db.select().from(memories).where(and(eq(memories.userId, record.response.userId), eq(memories.enabled, true)))
+    : []
+  const [interfaceSetting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
+  const task = (interfaceSetting?.value ?? {}) as { compaction?: boolean; compactionTokens?: number }
+  let conversation = history.flatMap((turn) => [...(turn.input as unknown[]), ...(turn.output as unknown[])])
+  const threshold = Math.max(2_000, task.compactionTokens ?? 12_000)
+  const estimatedTokens = JSON.stringify(conversation).length / 4
+  if (task.compaction !== false && estimatedTokens > threshold && conversation.length > 4) {
+    const retained = conversation.slice(-4)
+    const older = conversation.slice(0, -4)
+    const summaryResponse = await client.responses.create({
+      model: record.model.upstreamModelId,
+      input: [{ role: 'user', content: `Summarize this earlier conversation faithfully for context. Preserve decisions, facts, code constraints, and unresolved tasks.\n\n${JSON.stringify(older)}` }],
+      store: false,
+      max_output_tokens: Math.min(2_000, record.model.maxOutputTokens),
+    })
+    conversation = [{ role: 'developer', content: `Summary of earlier conversation:\n${summaryResponse.output_text}` }, ...retained]
+  }
+  const context: unknown[] = []
+  if (values.customInstructions?.trim()) context.push({ role: 'developer', content: `User-provided custom instructions:\n${values.customInstructions.trim()}` })
+  if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory.content}`).join('\n')}` })
+  return [...context, ...conversation, ...(record.response.input as unknown[])]
+}
+
+async function runPostResponseTasks(client: OpenAI, record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }, output: unknown[]): Promise<void> {
+  const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
+  const task = (setting?.value ?? {}) as { title?: boolean; titlePrompt?: string; followUp?: boolean }
+  const inputText = JSON.stringify(record.response.input).slice(0, 8_000)
+  const answer = previewFromOutput(output)
+  if (task.title !== false) {
+    const titleResult = await client.responses.create({
+      model: record.model.upstreamModelId,
+      input: [{ role: 'user', content: `${task.titlePrompt ?? 'Create a concise 3-5 word title for this chat. Return only the title.'}\n\nUser: ${inputText}\nAssistant: ${answer}` }],
+      store: false,
+      max_output_tokens: 32,
+    })
+    const title = titleResult.output_text.trim().replace(/^['"]|['"]$/g, '').slice(0, 200)
+    if (title) await db.update(chats).set({ title, updatedAt: new Date() }).where(eq(chats.id, record.response.chatId))
+  }
+  const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
+  const values = (preference?.values ?? {}) as { memoryEnabled?: boolean }
+  if (values.memoryEnabled) {
+    const memoryResult = await client.responses.create({
+      model: record.model.upstreamModelId,
+      input: [{ role: 'user', content: `Extract at most 3 durable user facts or preferences worth remembering from this exchange. Return a JSON array of short strings, or [] if there are none.\n\n${inputText}` }],
+      store: false,
+      max_output_tokens: 200,
+    })
+    try {
+      const parsed = JSON.parse(memoryResult.output_text.replace(/^```json\s*|```$/g, '').trim()) as unknown
+      if (Array.isArray(parsed)) {
+        const existing = new Set((await db.select({ content: memories.content }).from(memories).where(eq(memories.userId, record.response.userId))).map((row) => row.content.toLowerCase()))
+        for (const content of parsed.slice(0, 3)) {
+          if (typeof content !== 'string' || !content.trim() || existing.has(content.trim().toLowerCase())) continue
+          await db.insert(memories).values({ id: newId(), userId: record.response.userId, sourceChatId: record.response.chatId, content: content.trim().slice(0, 2_000) })
+        }
+      }
+    } catch { /* malformed task output is non-fatal */ }
+  }
+}
+
 export async function processGeneration(
   responseId: string,
   options: { willRetry?: boolean } = {},
@@ -162,7 +230,7 @@ export async function processGeneration(
           status, output, usage, completedAt, updatedAt: completedAt,
           error: recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
         }).where(eq(responses.id, responseId))
-        if (status === 'completed') await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
+        if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
         else await releaseBudget(responseId)
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
@@ -179,15 +247,23 @@ export async function processGeneration(
       throw error
     }
   }
-  const history = await db
+  const allHistory = await db
     .select()
     .from(responses)
     .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId)))
     .orderBy(asc(responses.createdAt))
-  const input = await prepareInputFiles(client, [
-    ...history.flatMap((turn) => [...(turn.input as unknown[]), ...(turn.output as unknown[])]),
-    ...(record.response.input as unknown[]),
-  ])
+  const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
+  const history: typeof allHistory = []
+  let parentId = record.response.parentResponseId
+  const seenParents = new Set<string>()
+  while (parentId && !seenParents.has(parentId)) {
+    seenParents.add(parentId)
+    const parent = byId.get(parentId)
+    if (!parent) break
+    history.unshift(parent)
+    parentId = parent.parentResponseId
+  }
+  const input = await prepareInputFiles(client, await contextualInput(client, record, history))
   let sequence = record.response.lastSequence
   let output = record.response.output as unknown[]
   let usage: ResponseUsage | null = null
@@ -197,6 +273,7 @@ export async function processGeneration(
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
     const stream = await client.responses.create({
+      ...(Object.fromEntries(Object.entries(record.response.parameters as Record<string, unknown>).filter(([key]) => (record.model.allowedParameters as string[]).includes(key))) as Record<string, never>),
       model: record.model.upstreamModelId,
       input: input as never,
       stream: true,
@@ -251,6 +328,9 @@ export async function processGeneration(
     }).where(eq(responses.id, responseId))
     if (usage) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
     else await releaseBudget(responseId)
+    await runPostResponseTasks(client, record, output).catch((error) => {
+      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
+    })
     const preview = previewFromOutput(output)
     await db.insert(notifications).values({
       id: newId(),
@@ -273,7 +353,10 @@ export async function processGeneration(
       completedAt: cancelled || !options.willRetry ? completedAt : null,
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
-    if (cancelled || !options.willRetry) await releaseBudget(responseId)
+    if (cancelled || !options.willRetry) {
+      if (usage && usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
+      else await releaseBudget(responseId)
+    }
     if (!cancelled) throw error
   }
 }

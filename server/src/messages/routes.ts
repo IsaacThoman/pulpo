@@ -33,6 +33,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const created = await createResponse({
       userId: user.id,
       chatId: original.chatId,
+      parentResponseId: original.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
         input: inputText(original.input), modelId: original.modelId,
@@ -51,6 +52,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const created = await createResponse({
       userId: user.id,
       chatId: original.chatId,
+      parentResponseId: original.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
         input: content, modelId: original.modelId, executionMode: original.executionMode,

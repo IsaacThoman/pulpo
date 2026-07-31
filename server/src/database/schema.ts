@@ -204,6 +204,7 @@ export const responses = pgTable('responses', {
   input: jsonb('input').notNull(),
   instructions: text('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
+  parameters: jsonb('parameters').notNull().default({}),
   output: jsonb('output').notNull().default([]),
   usage: jsonb('usage'),
   error: jsonb('error'),

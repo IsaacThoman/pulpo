@@ -29,10 +29,12 @@ export function Composer({
   chatId,
   modelId,
   centered,
+  temporary = false,
 }: {
   chatId: string | null
   modelId: string
   centered?: boolean
+  temporary?: boolean
 }) {
   const navigate = useNavigate()
   const [value, setValue] = useState('')
@@ -66,7 +68,7 @@ export function Composer({
   const submit = () => {
     const text = value.trim()
     if (!text || streamingId) return
-    const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => attachment.id))
+    const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => attachment.id), temporary)
     if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
     setValue('')
     setAttachments([])

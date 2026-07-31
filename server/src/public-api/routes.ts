@@ -17,6 +17,13 @@ const publicResponseInput = z.object({
   background: z.boolean().default(false),
   max_output_tokens: z.number().int().positive().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
+  instructions: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  top_p: z.number().min(0).max(1).optional(),
+  tools: z.array(z.unknown()).optional(),
+  tool_choice: z.unknown().optional(),
+  reasoning: z.unknown().optional(),
+  text: z.unknown().optional(),
 })
 
 function publicResponse(row: typeof responses.$inferSelect) {
@@ -147,6 +154,10 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
         attachmentIds: [],
       },
       rawInput: input.input,
+      parameters: Object.fromEntries(Object.entries({
+        instructions: input.instructions, temperature: input.temperature, top_p: input.top_p,
+        tools: input.tools, tool_choice: input.tool_choice, reasoning: input.reasoning, text: input.text,
+      }).filter(([, value]) => value !== undefined)),
     })
     if (input.stream) return streamResponse(reply, created.id)
     if (input.background) {

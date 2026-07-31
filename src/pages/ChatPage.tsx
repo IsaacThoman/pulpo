@@ -47,6 +47,7 @@ export function ChatPage() {
   const streamingId = useChat((s) => s.streamingId)
   const chatWidth = useSettings((s) => s.chatWidth)
   const models = useCatalog((state) => state.models)
+  const [temporary, setTemporary] = useState(params.get('temporary') === '1')
 
   const chat = chats.find((c) => c.id === chatId) ?? null
   const [modelId, setModelId] = useState(
@@ -70,7 +71,7 @@ export function ChatPage() {
   const suggestions = useMemo(() => REPLY_SUGGESTIONS, [])
 
   const sendSuggestion = (s: string) => {
-    const id = useChat.getState().sendMessage(null, s, modelId)
+    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary)
     navigate(`/c/${id}`)
   }
 
@@ -85,8 +86,10 @@ export function ChatPage() {
             <button
               className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
               aria-label="Temporary chat"
+              onClick={() => setTemporary((value) => !value)}
+              data-active={temporary}
             >
-              <Ghost className="size-4" />
+              <Ghost className={cn('size-4', temporary && 'text-primary')} />
             </button>
           </TooltipTrigger>
           <TooltipContent>Temporary chat</TooltipContent>
@@ -115,7 +118,7 @@ export function ChatPage() {
             <Placeholder modelId={modelId} onPick={sendSuggestion} key={suggestions[0]} />
           </div>
           <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
-            <Composer chatId={null} modelId={modelId} />
+            <Composer chatId={null} modelId={modelId} temporary={temporary} />
           </div>
         </>
       ) : (

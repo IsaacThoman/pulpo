@@ -1,7 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 
-const MAX_LOCAL_CHATS = 50
+const DEFAULT_MAX_LOCAL_CHATS = 50
 const QUERY_CACHE_KEY = 'query-cache-v1'
 
 interface KeyValueRow {
@@ -65,11 +65,17 @@ class PulpoLocalDatabase extends Dexie {
 export const localDb = new PulpoLocalDatabase()
 
 function trimChatQueries(client: PersistedClient): PersistedClient {
+  let maxLocalChats = DEFAULT_MAX_LOCAL_CHATS
+  try {
+    const persisted = JSON.parse(localStorage.getItem('pulpo-settings') ?? '{}') as { state?: { localChatLimit?: number } }
+    const configured = Number(persisted.state?.localChatLimit)
+    if (Number.isFinite(configured)) maxLocalChats = Math.min(500, Math.max(0, Math.floor(configured)))
+  } catch { /* retain the safe default */ }
   const queries = client.clientState.queries
   const chatDetails = queries
     .filter((query) => query.queryKey[0] === 'chat' && typeof query.queryKey[2] === 'string')
     .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
-  const retainedHashes = new Set(chatDetails.slice(0, MAX_LOCAL_CHATS).map((query) => query.queryHash))
+  const retainedHashes = new Set(chatDetails.slice(0, maxLocalChats).map((query) => query.queryHash))
   return {
     ...client,
     clientState: {
@@ -104,4 +110,4 @@ export async function clearLocalUserData(userId: string): Promise<void> {
   await indexedDbPersister.removeClient()
 }
 
-export const localChatLimit = MAX_LOCAL_CHATS
+export const localChatLimit = DEFAULT_MAX_LOCAL_CHATS

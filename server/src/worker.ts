@@ -3,8 +3,9 @@ import { inArray } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { responses } from './database/schema.js'
-import { generationQueue, type GenerationJob } from './jobs.js'
+import { generationQueue, maintenanceQueue, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
+import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
 
 const config = getConfig()
 console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.started', environment: config.NODE_ENV }))
@@ -18,6 +19,16 @@ const generationWorker = new Worker<GenerationJob>('generation', async (job) => 
   connection: { url: config.REDIS_URL },
   concurrency: 4,
 })
+
+const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
+  if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
+  if (job.data.type === 'cleanup') await runCleanup()
+  if (job.data.type === 'rollup') await rebuildDailyRollups()
+}, { connection: { url: config.REDIS_URL }, concurrency: 1 })
+
+await maintenanceQueue.upsertJobScheduler('hourly-cleanup', { every: 60 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
+await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
+await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })
 
 generationWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({
@@ -38,6 +49,7 @@ for (const response of recoverable) {
 const shutdown = async (signal: string) => {
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
   await generationWorker.close()
+  await maintenanceWorker.close()
   process.exit(0)
 }
 

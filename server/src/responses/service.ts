@@ -13,7 +13,9 @@ export interface CreateResponseOptions {
   apiKeyId?: string | null
   input: CreateChatResponseInput
   rawInput?: unknown
+  parameters?: Record<string, unknown>
   idempotencyKey?: string | null
+  parentResponseId?: string | null
 }
 
 export async function createResponse(options: CreateResponseOptions) {
@@ -36,12 +38,10 @@ export async function createResponse(options: CreateResponseOptions) {
   const maxOutputTokens = Math.min(options.input.maxOutputTokens ?? model.maxOutputTokens, model.maxOutputTokens)
   const pricing = await getActivePricing(model.id)
   const id = newId()
-  const [previous] = await db
-    .select({ id: responses.id })
-    .from(responses)
-    .where(eq(responses.chatId, chat.id))
-    .orderBy(desc(responses.createdAt))
-    .limit(1)
+  const [previous] = chat.activeResponseId
+    ? await db.select({ id: responses.id }).from(responses).where(eq(responses.id, chat.activeResponseId)).limit(1)
+    : []
+  const parentResponseId = options.parentResponseId === undefined ? previous?.id ?? null : options.parentResponseId
   const executionMode = options.input.executionMode ?? model.executionMode
   if (options.input.attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
@@ -62,11 +62,12 @@ export async function createResponse(options: CreateResponseOptions) {
     chatId: chat.id,
     userId: options.userId,
     modelId: model.id,
-    previousResponseId: previous?.id,
-    parentResponseId: previous?.id,
+    previousResponseId: parentResponseId,
+    parentResponseId,
     executionMode,
     input: storedInput,
     presetSelections: options.input.presetSelections,
+    parameters: options.parameters ?? {},
     idempotencyKey: options.idempotencyKey,
   })
   try {
@@ -78,7 +79,7 @@ export async function createResponse(options: CreateResponseOptions) {
       maxOutputTokens,
       pricing,
     })
-    await db.update(chats).set({ activeResponseId: id, updatedAt: new Date() }).where(eq(chats.id, chat.id))
+    await db.update(chats).set({ activeResponseId: id, activeBranchLeafId: id, updatedAt: new Date() }).where(eq(chats.id, chat.id))
     await generationQueue.add('generate', { responseId: id }, { jobId: id })
   } catch (error) {
     await db.delete(responses).where(eq(responses.id, id))

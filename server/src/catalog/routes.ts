@@ -177,7 +177,15 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/admin/models', async (request) => {
     requireAdmin(request)
-    return { data: await db.select().from(models) }
+    const rows = await db.select({ model: models, pricing: modelPricingVersions }).from(models)
+      .leftJoin(modelPricingVersions, and(eq(models.id, modelPricingVersions.modelId), isNull(modelPricingVersions.effectiveTo)))
+    return { data: rows.map(({ model, pricing }) => ({
+      ...model,
+      inputPriceMicros: pricing?.inputPriceMicros ?? 0,
+      cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
+      outputPriceMicros: pricing?.outputPriceMicros ?? 0,
+      perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
+    })) }
   })
 
   app.post('/api/admin/models', async (request, reply) => {
@@ -225,6 +233,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       name: typeof body.name === 'string' ? body.name : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
       upstreamModelId: typeof body.upstreamModelId === 'string' ? body.upstreamModelId : undefined,
+      providerConnectionId: typeof body.providerConnectionId === 'string' ? body.providerConnectionId : undefined,
+      labId: typeof body.labId === 'string' || body.labId === null ? body.labId : undefined,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,

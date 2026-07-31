@@ -28,6 +28,21 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return { data: rows }
   })
 
+  app.get('/api/chats/search', async (request) => {
+    const user = requireUser(request)
+    const query = String((request.query as { q?: string }).q ?? '').trim().slice(0, 200)
+    if (!query) return { data: [] }
+    const result = await db.execute<typeof chats.$inferSelect>(sql`
+      select distinct c.* from chats c
+      left join responses r on r.chat_id = c.id
+      where c.user_id = ${user.id} and c.deleted_at is null and c.temporary = false
+        and to_tsvector('simple', coalesce(c.title, '') || ' ' || coalesce(r.input::text, '') || ' ' || coalesce(r.output::text, ''))
+          @@ plainto_tsquery('simple', ${query})
+      order by c.updated_at desc limit 50
+    `)
+    return { data: [...result] }
+  })
+
   app.post('/api/chats', async (request, reply) => {
     const user = requireUser(request)
     const input = createChatSchema.parse(request.body)
@@ -58,7 +73,18 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
-    const turns = await db.select().from(responses).where(eq(responses.chatId, id)).orderBy(responses.createdAt)
+    const allTurns = await db.select().from(responses).where(eq(responses.chatId, id)).orderBy(responses.createdAt)
+    const byId = new Map(allTurns.map((turn) => [turn.id, turn]))
+    const turns: typeof allTurns = []
+    let cursor = chat.activeBranchLeafId ?? chat.activeResponseId ?? allTurns.at(-1)?.id ?? null
+    const seen = new Set<string>()
+    while (cursor && !seen.has(cursor)) {
+      seen.add(cursor)
+      const turn = byId.get(cursor)
+      if (!turn) break
+      turns.unshift(turn)
+      cursor = turn.parentResponseId
+    }
     return { ...chat, responses: turns.map((response) => ({ ...response, snapshot: toSnapshot(response) })) }
   })
 

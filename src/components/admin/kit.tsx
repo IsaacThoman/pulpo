@@ -245,13 +245,14 @@ export function TextAreaField({
 }
 
 /** sticky save bar for settings pages */
-export function SaveBar() {
+export function SaveBar({ onSave }: { onSave?: () => void | Promise<void> }) {
   const [saved, setSaved] = useState(false)
   return (
     <div className="sticky bottom-0 -mx-1 flex justify-end border-t bg-background/80 px-1 py-3 backdrop-blur">
       <Button
         size="sm"
         onClick={() => {
+          void onSave?.()
           setSaved(true)
           setTimeout(() => setSaved(false), 1500)
         }}

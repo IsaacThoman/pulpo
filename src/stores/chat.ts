@@ -60,7 +60,7 @@ interface ChatState {
   addFolder: (name: string) => void
   toggleFolder: (id: string) => void
   deleteFolder: (id: string) => void
-  sendMessage: (chatId: string | null, content: string, modelId: string, attachmentIds?: string[]) => string
+  sendMessage: (chatId: string | null, content: string, modelId: string, attachmentIds?: string[], temporary?: boolean) => string
   regenerate: (chatId: string, messageId: string) => void
   editUserMessage: (chatId: string, messageId: string, content: string) => void
   stopStreaming: () => void
@@ -274,7 +274,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('DELETE', `/api/folders/${id}`)
   },
 
-  sendMessage: (chatId, content, modelId, attachmentIds = []) => {
+  sendMessage: (chatId, content, modelId, attachmentIds = [], temporary = false) => {
     const userId = currentUserId()
     if (!userId) return chatId ?? ''
     const id = chatId ?? crypto.randomUUID()
@@ -304,7 +304,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
 
     void (async () => {
-      if (!chatId) await optimisticRequest('POST', '/api/chats', { clientId: id, modelId, title: content.slice(0, 200), temporary: false })
+      if (!chatId) await optimisticRequest('POST', '/api/chats', { clientId: id, modelId, title: content.slice(0, 200), temporary })
       const result = await optimisticRequest('POST', `/api/chats/${id}/responses`, {
         input: content,
         modelId: generation.effectiveModelId || modelId,

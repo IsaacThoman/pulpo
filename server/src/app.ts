@@ -16,6 +16,7 @@ import { registerSettingsRoutes } from './settings/routes.js'
 import { registerShareRoutes } from './shares/routes.js'
 import { registerUsageRoutes } from './usage/routes.js'
 import { registerAdminRoutes } from './admin/routes.js'
+import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
 
@@ -90,6 +91,7 @@ export async function buildApp() {
   await registerShareRoutes(app)
   await registerUsageRoutes(app)
   await registerAdminRoutes(app)
+  await registerAdminSettingsRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerPublicApiRoutes(app)

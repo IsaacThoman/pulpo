@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Field,
   NumField,
@@ -11,14 +11,28 @@ import {
 } from '@/components/admin/kit'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/stores/auth'
+import { apiRequest } from '@/lib/api'
+
+interface AdminSettings { values: Record<string, unknown> }
+
+function useAdminSetting<T>(key: string, initial: T) {
+  const [value, setValue] = useState(initial)
+  useEffect(() => {
+    void apiRequest<AdminSettings>('/api/admin/settings').then((result) => {
+      if (result.values[key] !== undefined) setValue(result.values[key] as T)
+    })
+  }, [key])
+  const save = async () => { await apiRequest('/api/admin/settings', { method: 'PATCH', body: { [key]: value } }) }
+  return [value, setValue, save] as const
+}
 
 export function GeneralSection() {
-  const [publicUrl, setPublicUrl] = useState('https://chat.pulpo.dev')
+  const [publicUrl, setPublicUrl, save] = useAdminSetting('publicUrl', location.origin)
 
   return (
     <div>
       <Section title="Version">
-        <Field label="pulpo" hint="0.10.2-mock — you are on the latest version.">
+        <Field label="Pulpo" hint="Self-hosted source build">
           <Button variant="outline" size="sm">
             Check for updates
           </Button>
@@ -29,16 +43,20 @@ export function GeneralSection() {
         <TextField label="Public URL" value={publicUrl} onChange={setPublicUrl} mono />
       </Section>
 
-      <SaveBar />
+      <SaveBar onSave={save} />
     </div>
   )
 }
 
 export function AuthenticationSection() {
   const auth = useAuth()
-  const [t, setT] = useState({
+  const [t, setT, save] = useAdminSetting('auth', {
     role: 'pending' as string,
     apiKeys: true,
+    signupEnabled: auth.signupEnabled,
+    pendingDetails: auth.pendingDetails,
+    adminEmail: auth.adminEmail,
+    pendingMessage: auth.pendingMessage,
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
 
@@ -57,8 +75,8 @@ export function AuthenticationSection() {
         />
         <Toggle
           label="Enable new sign ups"
-          checked={auth.signupEnabled}
-          onChange={(v) => auth.setSignupEnabled(v)}
+          checked={t.signupEnabled}
+          onChange={(v) => s('signupEnabled', v)}
         />
         <Toggle label="Enable API keys" checked={t.apiKeys} onChange={(v) => s('apiKeys', v)} />
       </Section>
@@ -66,31 +84,31 @@ export function AuthenticationSection() {
       <Section title="Pending accounts">
         <Toggle
           label="Show admin details in pending overlay"
-          checked={auth.pendingDetails}
-          onChange={(v) => useAuth.setState({ pendingDetails: v })}
+          checked={t.pendingDetails}
+          onChange={(v) => s('pendingDetails', v)}
         />
-        {auth.pendingDetails && (
+        {t.pendingDetails && (
           <TextField
             label="Admin contact email"
-            value={auth.adminEmail}
-            onChange={(v) => useAuth.setState({ adminEmail: v })}
+            value={t.adminEmail}
+            onChange={(v) => s('adminEmail', v)}
             indent
           />
         )}
         <TextAreaField
           label="Pending overlay content"
-          value={auth.pendingMessage}
-          onChange={(v) => useAuth.setState({ pendingMessage: v })}
+          value={t.pendingMessage}
+          onChange={(v) => s('pendingMessage', v)}
         />
       </Section>
 
-      <SaveBar />
+      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage }) }} />
     </div>
   )
 }
 
 export function InterfaceSection() {
-  const [t, setT] = useState({
+  const [t, setT, save] = useAdminSetting('interface', {
     localTask: 'current',
     compaction: true,
     compactionTokens: 12000,
@@ -137,7 +155,7 @@ export function InterfaceSection() {
         <Toggle label="Follow-up generation" checked={t.followUp} onChange={(v) => s('followUp', v)} />
       </Section>
 
-      <SaveBar />
+      <SaveBar onSave={save} />
     </div>
   )
 }

@@ -282,6 +282,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Show reasoning" hint="Expandable thinking blocks for reasoning models.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>
+                  <Row label="Chats kept on this device" hint="Recent chats remain available instantly and while offline (0–500).">
+                    <Input className="w-28" type="number" min={0} max={500} value={s.localChatLimit} onChange={(event) => s.set('localChatLimit', Math.min(500, Math.max(0, Number(event.target.value))))} />
+                  </Row>
                 </div>
               )}
 
