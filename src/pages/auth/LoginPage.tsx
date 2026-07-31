@@ -4,12 +4,11 @@ import { Eye, EyeOff, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { DEMO_ACCOUNTS, useAuth } from '@/stores/auth'
+import { useAuth } from '@/stores/auth'
 
 export function LoginPage() {
   const user = useAuth((s) => s.user)
   const login = useAuth((s) => s.login)
-  const loginAs = useAuth((s) => s.loginAs)
   const signupEnabled = useAuth((s) => s.signupEnabled)
   const navigate = useNavigate()
 
@@ -22,20 +21,18 @@ export function LoginPage() {
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
   if (user) return <Navigate to="/" replace />
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    window.setTimeout(() => {
-      const res = login(email, password)
-      setLoading(false)
-      if (!res.ok) {
-        setError(res.error)
-        return
-      }
-      const u = useAuth.getState().user
-      navigate(u?.role === 'pending' ? '/pending' : '/')
-    }, 450)
+    const res = await login(email, password)
+    setLoading(false)
+    if (!res.ok) {
+      setError(res.error)
+      return
+    }
+    const currentUser = useAuth.getState().user
+    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
   }
 
   return (
@@ -101,31 +98,6 @@ export function LoginPage() {
           Sign in
         </Button>
       </form>
-
-      <div className="mt-6 rounded-lg border bg-muted/40 p-3">
-        <div className="mb-2 text-xs font-medium text-muted-foreground">Demo accounts</div>
-        <div className="space-y-1.5">
-          {DEMO_ACCOUNTS.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => {
-                loginAs(a)
-                navigate(a.role === 'pending' ? '/pending' : '/')
-              }}
-              className="flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent"
-            >
-              <span className="truncate">
-                <span className="font-medium">{a.name}</span>
-                <span className="ml-1.5 text-xs text-muted-foreground">{a.email}</span>
-              </span>
-              <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-secondary-foreground">
-                {a.role}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
 
       {signupEnabled && (
         <p className="mt-6 text-center text-sm text-muted-foreground">

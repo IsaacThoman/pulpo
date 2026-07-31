@@ -36,6 +36,10 @@ export async function publishSnapshot(snapshot: ResponseSnapshot): Promise<void>
   await redis.publish('pulpo:response-snapshots', JSON.stringify(snapshot))
 }
 
+export async function publishStateChange(input: { userId: string; revision: number; chatId?: string }): Promise<void> {
+  await redis.publish('pulpo:state-changes', JSON.stringify(input))
+}
+
 export async function requestCancellation(responseId: string): Promise<void> {
   await redis.set(`pulpo:response:${responseId}:cancel`, '1', 'EX', 3_600)
 }

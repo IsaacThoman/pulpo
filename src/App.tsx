@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/auth/RequireAuth'
@@ -18,8 +19,12 @@ import { LoginPage } from '@/pages/auth/LoginPage'
 import { SignupPage } from '@/pages/auth/SignupPage'
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
 import { PendingPage } from '@/pages/auth/PendingPage'
+import { useAuth } from '@/stores/auth'
 
 export default function App() {
+  const bootstrap = useAuth((state) => state.bootstrap)
+  useEffect(() => { void bootstrap() }, [bootstrap])
+
   return (
     <BrowserRouter>
       <Routes>

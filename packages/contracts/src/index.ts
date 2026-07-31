@@ -164,6 +164,7 @@ export const chatSummarySchema = z.object({
 export type ChatSummary = z.infer<typeof chatSummarySchema>
 
 export const createChatSchema = z.object({
+  clientId: idSchema.optional(),
   modelId: z.string().min(1),
   title: z.string().trim().min(1).max(200).optional(),
   temporary: z.boolean().default(false),

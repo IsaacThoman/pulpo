@@ -1,77 +1,55 @@
 import { create } from 'zustand'
+import type { ResponseEvent, ResponseSnapshot } from '@pulpo/contracts'
 import type { Chat, Folder, Message } from '@/lib/types'
-import { getModel, makeMockChats, MODELS } from '@/lib/mock'
+import { apiRequest, isNetworkError } from '@/lib/api'
+import { enqueueMutation } from '@/lib/local-first/outbox'
+import { queryClient } from '@/lib/query-client'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { useSettings } from '@/stores/settings'
+import { getModel, MODELS } from '@/lib/mock'
+import { useAuth } from './auth'
 
-const seed = makeMockChats()
-
-const STREAM_BUFFER = `Here is how I would approach it:
-
-The trick is to treat the stream as a **single writer** and let React subscribe to slices. Each appended token updates one message object; selectors keep everything else still.
-
-\`\`\`ts
-appendToken(messageId, delta) {
-  set((s) => ({
-    chats: s.chats.map((c) =>
-      c.id === chatId
-        ? { ...c, messages: patchMessage(c.messages, messageId, delta) }
-        : c
-    ),
-  }))
-}
-\`\`\`
-
-Key points:
-
-1. **Immutable patches** keep memoization honest — only the active bubble re-renders.
-2. **Scroll anchoring** belongs in the list component, not the store.
-3. Persist to \`localStorage\` on a 500ms debounce so a refresh mid-stream loses nothing.
-
-> This mock generates text locally, but the store shape wouldn't change against a real SSE endpoint.
-
-Want me to go deeper on any of these?`
-
-const REASONING_TEXT =
-  'The user sent a new message. I should answer with something concrete and technical, matching the tone of the conversation so far. A short structure with a code sample lands well here. Keep it under ~150 words of prose.'
-
-const REASONING_TEXT_HIGH =
-  REASONING_TEXT +
-  ' Let me also weigh the alternatives: a normalized store would simplify updates but complicate streaming appends, while a flat map by message id would need extra indexing per chat. The slice-subscription approach avoids both pitfalls. Double-checking the abort path: clearing the interval and marking the message done is enough, since the buffer is local.'
-
-type GenerationSelection = ReturnType<typeof resolveGeneration>
-
-/** Current composer selection for a model: saved user prefs validated against admin-allowed options. */
-function generationFor(modelId: string): GenerationSelection {
-  const model = getModel(modelId)
-  const options = chatOptionsFor(model, useModelConfig.getState().overrides)
-  return resolveGeneration(options, useSettings.getState().generation[modelId], modelId)
+interface ServerResponse {
+  id: string
+  modelId: string
+  status: ResponseSnapshot['status']
+  input: unknown[]
+  output: unknown[]
+  presetSelections: Record<string, string>
+  usage: { inputTokens: number; outputTokens: number } | null
+  error: { message?: string } | null
+  createdAt: string
+  completedAt: string | null
+  snapshot: ResponseSnapshot
 }
 
-function reasoningTextFor(params: Record<string, unknown>, tags: string[]): string | undefined {
-  const effort = params.reasoning_effort
-  if (effort === 'none' || effort === false) return undefined
-  if (typeof effort === 'string') {
-    if (effort === 'low') return REASONING_TEXT.slice(0, 90) + '…'
-    if (effort === 'high') return REASONING_TEXT_HIGH
-    return REASONING_TEXT
-  }
-  if (tags.includes('reasoning')) return REASONING_TEXT
-  return undefined
+export interface ServerChat {
+  id: string
+  title: string
+  modelId: string
+  pinned: boolean
+  folderId: string | null
+  createdAt: string
+  updatedAt: string
+  responses?: ServerResponse[]
 }
 
-function isFastGeneration(gen: GenerationSelection): boolean {
-  if (gen.customParams.service_tier === 'priority') return true
-  return gen.choices.some((c) => c.action.type === 'redirect' || c.id === 'fast')
+export interface ServerFolder {
+  id: string
+  name: string
 }
 
 interface ChatState {
   chats: Chat[]
   folders: Folder[]
   activeChatId: string | null
-  streamingId: string | null // message id currently streaming
-  abort: (() => void) | null
-  // selectors-ish helpers
+  streamingId: string | null
+  responseSequences: Record<string, number>
+  replaceSummaries: (chats: ServerChat[]) => void
+  replaceFolders: (folders: ServerFolder[]) => void
+  setDetailedChat: (chat: ServerChat) => void
+  applyResponseEvent: (event: ResponseEvent) => void
+  applyResponseSnapshot: (snapshot: ResponseSnapshot) => void
   newChat: (modelId?: string) => string
   setActive: (id: string | null) => void
   deleteChat: (id: string) => void
@@ -89,248 +67,278 @@ interface ChatState {
   rateMessage: (chatId: string, messageId: string, rating: 'up' | 'down' | null) => void
 }
 
-let streamTimer: ReturnType<typeof setInterval> | null = null
-
-function patchMessage(messages: Message[], id: string, fn: (m: Message) => Message): Message[] {
-  return messages.map((m) => (m.id === id ? fn(m) : m))
+function textFromContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((part) => {
+    if (typeof part === 'string') return part
+    const typed = part as { text?: string; content?: string; refusal?: string }
+    return typed.text ?? typed.content ?? typed.refusal ?? ''
+  }).join('')
 }
 
-export const useChat = create<ChatState>()((set, get) => {
-  function startStreaming(
-    chatId: string,
-    messageId: string,
-    modelId: string,
-    gen: GenerationSelection
-  ) {
-    const model = getModel(gen.effectiveModelId || modelId)
-    const reasoningTarget = reasoningTextFor(gen.customParams, model.tags)
-    let pos = 0
-    let reasoningDone = reasoningTarget === undefined
-    let rpos = 0
-    const started = Date.now()
-    const tickMs = isFastGeneration(gen) ? 10 : 24
+function outputText(output: unknown[]): string {
+  return output.map((item) => {
+    const typed = item as { type?: string; content?: unknown }
+    return typed.type === 'message' ? textFromContent(typed.content) : ''
+  }).join('\n')
+}
 
-    const tick = () => {
-      const state = get()
-      if (state.streamingId !== messageId) {
-        if (streamTimer) clearInterval(streamTimer)
-        return
-      }
-      set((s) => ({
-        chats: s.chats.map((c) => {
-          if (c.id !== chatId) return c
-          return {
-            ...c,
-            updatedAt: Date.now(),
-            messages: patchMessage(c.messages, messageId, (m) => {
-              if (!reasoningDone) {
-                rpos += 2 + Math.floor(Math.random() * 3)
-                const reasoning = reasoningTarget!.slice(0, rpos)
-                if (rpos >= reasoningTarget!.length) reasoningDone = true
-                return { ...m, reasoning }
-              }
-              pos += 2 + Math.floor(Math.random() * 5)
-              const content = STREAM_BUFFER.slice(0, pos)
-              const tokensOut = Math.ceil(pos / 4)
-              if (pos >= STREAM_BUFFER.length) {
-                if (streamTimer) clearInterval(streamTimer)
-                const latencyMs = Date.now() - started
-                const tokensIn = 128
-                const cost = (tokensIn * model.inputPrice + tokensOut * model.outputPrice) / 1_000_000
-                queueMicrotask(() => set({ streamingId: null, abort: null }))
-                return { ...m, content, done: true, tokensIn, tokensOut, cost, latencyMs }
-              }
-              return { ...m, content, tokensOut }
-            }),
-          }
-        }),
-      }))
-    }
-    streamTimer = setInterval(tick, tickMs)
-    set({
-      streamingId: messageId,
-      abort: () => {
-        if (streamTimer) clearInterval(streamTimer)
-        set((s) => ({
-          streamingId: null,
-          abort: null,
-          chats: s.chats.map((c) =>
-            c.id === chatId
-              ? { ...c, messages: patchMessage(c.messages, messageId, (m) => ({ ...m, done: true })) }
-              : c
-          ),
-        }))
+function reasoningText(output: unknown[]): string | undefined {
+  const parts = output.flatMap((item) => {
+    const typed = item as { type?: string; summary?: unknown[] }
+    return typed.type === 'reasoning' ? typed.summary ?? [] : []
+  })
+  const text = textFromContent(parts)
+  return text || undefined
+}
+
+function inputText(input: unknown[]): string {
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const item = input[index] as { role?: string; content?: unknown }
+    if (item.role === 'user') return textFromContent(item.content)
+  }
+  return ''
+}
+
+function messagesFromResponses(responses: ServerResponse[]): Message[] {
+  return responses.flatMap((response) => {
+    const timestamp = Date.parse(response.createdAt)
+    const done = !['queued', 'in_progress'].includes(response.status)
+    return [
+      {
+        id: `${response.id}:input`, role: 'user' as const, content: inputText(response.input),
+        timestamp, done: true,
       },
-    })
-  }
+      {
+        id: response.id, role: 'assistant' as const, content: outputText(response.output),
+        modelId: response.modelId, timestamp: timestamp + 1, done,
+        reasoning: reasoningText(response.output), presetSelections: response.presetSelections,
+        tokensIn: response.usage?.inputTokens, tokensOut: response.usage?.outputTokens,
+        error: response.error?.message,
+      },
+    ]
+  })
+}
 
+function toChat(row: ServerChat, current?: Chat): Chat {
+  const serverMessages = row.responses ? messagesFromResponses(row.responses) : current?.messages ?? []
+  const messages = serverMessages.map((message) => {
+    const local = current?.messages.find((candidate) => candidate.id === message.id)
+    if (!local || message.content || message.done) return message
+    return { ...message, content: local.content, reasoning: local.reasoning }
+  })
   return {
-    chats: seed.chats,
-    folders: seed.folders,
-    activeChatId: null,
-    streamingId: null,
-    abort: null,
+    id: row.id,
+    title: row.title,
+    modelId: row.modelId,
+    messages,
+    createdAt: Date.parse(row.createdAt),
+    updatedAt: Date.parse(row.updatedAt),
+    pinned: row.pinned,
+    folderId: row.folderId,
+    tags: current?.tags ?? [],
+  }
+}
 
-    newChat: (modelId) => {
-      set({ activeChatId: null })
-      return modelId ?? MODELS[0].id
-    },
-    setActive: (id) => set({ activeChatId: id }),
+function currentUserId(): string | null { return useAuth.getState().user?.id ?? null }
+function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
+function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
-    deleteChat: (id) =>
-      set((s) => ({
-        chats: s.chats.filter((c) => c.id !== id),
-        activeChatId: s.activeChatId === id ? null : s.activeChatId,
+async function optimisticRequest(
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown,
+): Promise<unknown> {
+  const userId = currentUserId()
+  if (!userId) return
+  const idempotencyKey = crypto.randomUUID()
+  try {
+    return await apiRequest(path, { method, body, idempotencyKey })
+  } catch (error) {
+    if (isNetworkError(error)) {
+      await enqueueMutation({ userId, method, path, body, idempotencyKey })
+      return
+    }
+    throw error
+  }
+}
+
+export const useChat = create<ChatState>()((set, get) => ({
+  chats: [],
+  folders: [],
+  activeChatId: null,
+  streamingId: null,
+  responseSequences: {},
+
+  replaceSummaries: (rows) => set((state) => ({
+    chats: rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id))),
+  })),
+  replaceFolders: (rows) => set((state) => ({
+    folders: rows.map((row) => ({
+      ...row,
+      expanded: state.folders.find((folder) => folder.id === row.id)?.expanded ?? true,
+    })),
+  })),
+  setDetailedChat: (row) => set((state) => {
+    const chat = toChat(row, state.chats.find((item) => item.id === row.id))
+    const exists = state.chats.some((item) => item.id === row.id)
+    const streaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
+    return {
+      chats: exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats],
+      streamingId: streaming,
+    }
+  }),
+
+  applyResponseEvent: (event) => {
+    if ((get().responseSequences[event.responseId] ?? 0) >= event.sequence) return
+    const payload = event.payload as { delta?: string; type?: string }
+    set((state) => ({
+      responseSequences: { ...state.responseSequences, [event.responseId]: event.sequence },
+      chats: state.chats.map((chat) => ({
+        ...chat,
+        messages: chat.messages.map((message) => message.id !== event.responseId ? message : {
+          ...message,
+          content: event.type === 'response.output_text.delta' ? message.content + payload.delta : message.content,
+          reasoning: event.type.includes('reasoning') ? (message.reasoning ?? '') + payload.delta : message.reasoning,
+        }),
       })),
+    }))
+  },
 
-    renameChat: (id, title) =>
-      set((s) => ({ chats: s.chats.map((c) => (c.id === id ? { ...c, title } : c)) })),
-
-    togglePin: (id) =>
-      set((s) => ({ chats: s.chats.map((c) => (c.id === id ? { ...c, pinned: !c.pinned } : c)) })),
-
-    moveToFolder: (id, folderId) =>
-      set((s) => ({ chats: s.chats.map((c) => (c.id === id ? { ...c, folderId } : c)) })),
-
-    shareChat: (id) =>
-      set((s) => ({
-        chats: s.chats.map((c) => (c.id === id ? { ...c, shareId: crypto.randomUUID() } : c)),
+  applyResponseSnapshot: (snapshot) => {
+    if ((get().responseSequences[snapshot.responseId] ?? 0) > snapshot.sequence) return
+    set((state) => ({
+      responseSequences: { ...state.responseSequences, [snapshot.responseId]: snapshot.sequence },
+      streamingId: ['queued', 'in_progress'].includes(snapshot.status) ? snapshot.responseId : state.streamingId === snapshot.responseId ? null : state.streamingId,
+      chats: state.chats.map((chat) => ({
+        ...chat,
+        messages: chat.messages.map((message) => message.id !== snapshot.responseId ? message : {
+          ...message,
+          content: snapshot.output.length ? outputText(snapshot.output) : message.content,
+          reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
+          done: !['queued', 'in_progress'].includes(snapshot.status),
+          tokensIn: snapshot.usage?.inputTokens,
+          tokensOut: snapshot.usage?.outputTokens,
+          error: (snapshot.error as { message?: string } | null)?.message,
+        }),
       })),
+    }))
+    if (!['queued', 'in_progress'].includes(snapshot.status)) void queryClient.invalidateQueries({ queryKey: chatsKey() })
+  },
 
-    addFolder: (name) =>
-      set((s) => ({
-        folders: [...s.folders, { id: `f-${crypto.randomUUID()}`, name, expanded: true }],
-      })),
+  newChat: (modelId) => {
+    set({ activeChatId: null })
+    return modelId ?? MODELS[0].id
+  },
+  setActive: (activeChatId) => set({ activeChatId }),
 
-    toggleFolder: (id) =>
-      set((s) => ({
-        folders: s.folders.map((f) => (f.id === id ? { ...f, expanded: !f.expanded } : f)),
-      })),
+  deleteChat: (id) => {
+    set((state) => ({ chats: state.chats.filter((chat) => chat.id !== id) }))
+    queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows?.filter((row) => row.id !== id))
+    void optimisticRequest('DELETE', `/api/chats/${id}`).catch(() => void queryClient.invalidateQueries({ queryKey: chatsKey() }))
+  },
+  renameChat: (id, title) => {
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, title } : chat) }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { title })
+  },
+  togglePin: (id) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat) return
+    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item) }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: !chat.pinned })
+  },
+  moveToFolder: (id, folderId) => {
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId } : chat) }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
+  },
+  shareChat: () => undefined,
+  addFolder: (name) => {
+    const id = crypto.randomUUID()
+    set((state) => ({ folders: [...state.folders, { id, name, expanded: true }] }))
+    void optimisticRequest('POST', '/api/folders', { clientId: id, name })
+  },
+  toggleFolder: (id) => set((state) => ({
+    folders: state.folders.map((folder) => folder.id === id ? { ...folder, expanded: !folder.expanded } : folder),
+  })),
+  deleteFolder: (id) => {
+    set((state) => ({
+      folders: state.folders.filter((folder) => folder.id !== id),
+      chats: state.chats.map((chat) => chat.folderId === id ? { ...chat, folderId: null } : chat),
+    }))
+    void optimisticRequest('DELETE', `/api/folders/${id}`)
+  },
 
-    deleteFolder: (id) =>
-      set((s) => ({
-        folders: s.folders.filter((f) => f.id !== id),
-        chats: s.chats.map((c) => (c.folderId === id ? { ...c, folderId: null } : c)),
-      })),
-
-    sendMessage: (chatId, content, modelId) => {
-      const now = Date.now()
-      const gen = generationFor(modelId)
-      const userMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'user',
-        content,
-        timestamp: now,
-        done: true,
+  sendMessage: (chatId, content, modelId) => {
+    const userId = currentUserId()
+    if (!userId) return chatId ?? ''
+    const id = chatId ?? crypto.randomUUID()
+    const responseId = crypto.randomUUID()
+    const timestamp = Date.now()
+    const generation = resolveGeneration(
+      chatOptionsFor(getModel(modelId), useModelConfig.getState().overrides),
+      useSettings.getState().generation[modelId],
+      modelId,
+    )
+    const userMessage: Message = { id: `${responseId}:input`, role: 'user', content, timestamp, done: true }
+    const assistantMessage: Message = {
+      id: responseId, role: 'assistant', content: '', modelId: generation.effectiveModelId || modelId,
+      timestamp: timestamp + 1, done: false, presetSelections: generation.selections,
+    }
+    set((state) => {
+      const existing = state.chats.find((chat) => chat.id === id)
+      const title = content.length > 42 ? `${content.slice(0, 42)}…` : content
+      const updated: Chat = existing
+        ? { ...existing, updatedAt: timestamp, messages: [...existing.messages, userMessage, assistantMessage] }
+        : { id, title, modelId, messages: [userMessage, assistantMessage], createdAt: timestamp, updatedAt: timestamp, pinned: false, folderId: null, tags: [] }
+      return {
+        chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
+        activeChatId: id,
+        streamingId: responseId,
       }
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: '',
-        modelId: gen.effectiveModelId || modelId,
-        timestamp: now + 1,
-        reasoning: reasoningTextFor(gen.customParams, getModel(modelId).tags) !== undefined ? '' : undefined,
-        presetSelections: gen.selections,
-        done: false,
-      }
-      let id = chatId
-      if (!id) {
-        id = `chat-${crypto.randomUUID()}`
-        const title = content.length > 42 ? `${content.slice(0, 42)}…` : content
-        const chat: Chat = {
-          id,
-          title,
-          modelId,
-          messages: [userMsg, assistantMsg],
-          createdAt: now,
-          updatedAt: now,
-          pinned: false,
-          folderId: null,
-          tags: [],
-        }
-        set((s) => ({ chats: [chat, ...s.chats], activeChatId: id }))
-      } else {
-        set((s) => ({
-          chats: s.chats.map((c) =>
-            c.id === id
-              ? { ...c, updatedAt: now, messages: [...c.messages, userMsg, assistantMsg] }
-              : c
-          ),
+    })
+
+    void (async () => {
+      if (!chatId) await optimisticRequest('POST', '/api/chats', { clientId: id, modelId, title: content.slice(0, 200), temporary: false })
+      const result = await optimisticRequest('POST', `/api/chats/${id}/responses`, {
+        input: content,
+        modelId: generation.effectiveModelId || modelId,
+        presetSelections: generation.selections,
+        attachmentIds: [],
+      }) as { response?: ResponseSnapshot } | undefined
+      const serverId = result?.response?.responseId
+      if (serverId && serverId !== responseId) {
+        set((state) => ({
+          streamingId: state.streamingId === responseId ? serverId : state.streamingId,
+          chats: state.chats.map((chat) => chat.id !== id ? chat : {
+            ...chat,
+            messages: chat.messages.map((message) => message.id === responseId ? { ...message, id: serverId } : message),
+          }),
         }))
       }
-      startStreaming(id, assistantMsg.id, modelId, gen)
-      return id
-    },
+      await queryClient.invalidateQueries({ queryKey: chatsKey() })
+      await queryClient.invalidateQueries({ queryKey: chatKey(id) })
+    })().catch(() => undefined)
+    return id
+  },
 
-    regenerate: (chatId, messageId) => {
-      const state = get()
-      const chat = state.chats.find((c) => c.id === chatId)
-      const msg = chat?.messages.find((m) => m.id === messageId)
-      if (!chat || !msg || state.streamingId) return
-      const modelId = msg.modelId ?? chat.modelId
-      const gen = generationFor(modelId)
-      set((s) => ({
-        chats: s.chats.map((c) =>
-          c.id === chatId
-            ? {
-                ...c,
-                messages: patchMessage(c.messages, messageId, (m) => ({
-                  ...m,
-                  content: '',
-                  reasoning:
-                    reasoningTextFor(gen.customParams, getModel(modelId).tags) !== undefined
-                      ? ''
-                      : undefined,
-                  presetSelections: gen.selections,
-                  done: false,
-                  rating: null,
-                })),
-              }
-            : c
-        ),
-      }))
-      startStreaming(chatId, messageId, modelId, gen)
-    },
-
-    editUserMessage: (chatId, messageId, content) => {
-      const state = get()
-      const chat = state.chats.find((c) => c.id === chatId)
-      if (!chat || state.streamingId) return
-      const idx = chat.messages.findIndex((m) => m.id === messageId)
-      if (idx === -1) return
-      // truncate after the edited message, then re-answer
-      const gen = generationFor(chat.modelId)
-      const kept = chat.messages.slice(0, idx + 1).map((m) => (m.id === messageId ? { ...m, content } : m))
-      const assistantMsg: Message = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: '',
-        modelId: gen.effectiveModelId || chat.modelId,
-        timestamp: Date.now(),
-        reasoning:
-          reasoningTextFor(gen.customParams, getModel(chat.modelId).tags) !== undefined
-            ? ''
-            : undefined,
-        presetSelections: gen.selections,
-        done: false,
-      }
-      set((s) => ({
-        chats: s.chats.map((c) =>
-          c.id === chatId ? { ...c, messages: [...kept, assistantMsg], updatedAt: Date.now() } : c
-        ),
-      }))
-      startStreaming(chatId, assistantMsg.id, chat.modelId, gen)
-    },
-
-    stopStreaming: () => get().abort?.(),
-
-    rateMessage: (chatId, messageId, rating) =>
-      set((s) => ({
-        chats: s.chats.map((c) =>
-          c.id === chatId
-            ? { ...c, messages: patchMessage(c.messages, messageId, (m) => ({ ...m, rating })) }
-            : c
-        ),
-      })),
-  }
-})
+  regenerate: (chatId, messageId) => {
+    void optimisticRequest('POST', `/api/messages/${messageId}/regenerate`).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  },
+  editUserMessage: (chatId, messageId, content) => {
+    set((state) => ({ chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+      ...chat, messages: chat.messages.map((message) => message.id === messageId ? { ...message, content } : message),
+    }) }))
+    void optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  },
+  stopStreaming: () => {
+    const responseId = get().streamingId
+    if (!responseId) return
+    set({ streamingId: null })
+    void optimisticRequest('POST', `/api/responses/${responseId}/cancel`)
+  },
+  rateMessage: (chatId, messageId, rating) => {
+    set((state) => ({ chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+      ...chat, messages: chat.messages.map((message) => message.id === messageId ? { ...message, rating } : message),
+    }) }))
+    void optimisticRequest('PUT', `/api/messages/${messageId}/feedback`, { rating })
+  },
+}))

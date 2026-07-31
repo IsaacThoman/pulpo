@@ -38,7 +38,7 @@ export function SignupPage() {
     )
   }
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
     if (password !== confirm) {
@@ -46,16 +46,14 @@ export function SignupPage() {
       return
     }
     setLoading(true)
-    window.setTimeout(() => {
-      const res = signup(name, email, password)
-      setLoading(false)
-      if (!res.ok) {
-        setError(res.error)
-        return
-      }
-      const u = useAuth.getState().user
-      navigate(u?.role === 'pending' ? '/pending' : '/')
-    }, 500)
+    const res = await signup(name, email, password)
+    setLoading(false)
+    if (!res.ok) {
+      setError(res.error)
+      return
+    }
+    const currentUser = useAuth.getState().user
+    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
   }
 
   return (

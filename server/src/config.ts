@@ -43,3 +43,12 @@ export function getConfig(): Config {
   cached ??= configSchema.parse(process.env)
   return cached
 }
+
+export function getAllowedOrigins(config = getConfig()): Set<string> {
+  const origins = new Set([new URL(config.PUBLIC_URL).origin])
+  if (config.NODE_ENV === 'development') {
+    origins.add('http://localhost:5173')
+    origins.add('http://127.0.0.1:5173')
+  }
+  return origins
+}

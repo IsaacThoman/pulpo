@@ -2,10 +2,10 @@ import type { Server as HttpServer } from 'node:http'
 import { and, eq, inArray } from 'drizzle-orm'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
-import type { ClientToServerEvents, ServerToClientEvents, SyncResult } from '@pulpo/contracts'
+import type { ClientToServerEvents, ResponseSnapshot, ServerToClientEvents, SyncResult } from '@pulpo/contracts'
 import { syncRequestSchema } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
-import { getConfig } from '../config.js'
+import { getAllowedOrigins, getConfig } from '../config.js'
 import { authenticateSessionToken, type AuthenticatedUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, responses, users } from '../database/schema.js'
@@ -27,11 +27,12 @@ function cookieValue(header: string | undefined, name: string): string | undefin
 
 export async function createSocketServer(httpServer: HttpServer) {
   const config = getConfig()
+  const allowedOrigins = getAllowedOrigins(config)
   const adapterRedis = createRedis()
   const subscriber = createRedis()
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
     path: '/socket.io',
-    cors: { origin: config.PUBLIC_URL, credentials: true },
+    cors: { origin: [...allowedOrigins], credentials: true },
     connectionStateRecovery: {
       maxDisconnectionDuration: 120_000,
       skipMiddlewares: false,
@@ -96,14 +97,41 @@ export async function createSocketServer(httpServer: HttpServer) {
     socket.on('response.unsubscribe', ({ responseId }) => void socket.leave(`response:${responseId}`))
   })
 
-  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots')
+  const responseOwners = new Map<string, { userId: string; chatId: string }>()
+  const ownerFor = async (responseId: string) => {
+    const cached = responseOwners.get(responseId)
+    if (cached) return cached
+    const [row] = await db.select({ userId: responses.userId, chatId: responses.chatId })
+      .from(responses).where(eq(responses.id, responseId)).limit(1)
+    if (row) responseOwners.set(responseId, row)
+    return row
+  }
+
+  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes')
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:response-events') {
-      const event = JSON.parse(message)
-      io.to(`response:${event.responseId}`).emit('response.event', event)
+      const event = JSON.parse(message) as { responseId: string }
+      void ownerFor(event.responseId).then((owner) => {
+        let rooms = io.to(`response:${event.responseId}`)
+        if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
+        rooms.emit('response.event', event as never)
+      })
+    } else if (channel === 'pulpo:response-snapshots') {
+      const snapshot = JSON.parse(message) as ResponseSnapshot
+      void ownerFor(snapshot.responseId).then((owner) => {
+        let rooms = io.to(`response:${snapshot.responseId}`)
+        if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
+        rooms.emit('response.snapshot', snapshot)
+        if (owner && !['queued', 'in_progress'].includes(snapshot.status)) {
+          io.to(`user:${owner.userId}`).emit('response.completed', {
+            responseId: snapshot.responseId, chatId: owner.chatId, preview: 'Response completed',
+          })
+        }
+      })
     } else {
-      const snapshot = JSON.parse(message)
-      io.to(`response:${snapshot.responseId}`).emit('response.snapshot', snapshot)
+      const change = JSON.parse(message) as { userId: string; revision: number; chatId?: string }
+      io.to(`user:${change.userId}`).emit('account.revision', { revision: change.revision })
+      if (change.chatId) io.to(`user:${change.userId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
     }
   })
 

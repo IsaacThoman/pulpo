@@ -7,11 +7,15 @@ import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
-import { requestCancellation } from '../responses/events.js'
+import { publishStateChange, requestCancellation } from '../responses/events.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
-  const bumpRevision = async (userId: string) => {
-    await db.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, userId))
+  const bumpRevision = async (userId: string, chatId?: string) => {
+    const [updated] = await db.update(users)
+      .set({ stateRevision: sql`${users.stateRevision} + 1` })
+      .where(eq(users.id, userId))
+      .returning({ revision: users.stateRevision })
+    if (updated) await publishStateChange({ userId, revision: updated.revision, chatId })
   }
 
   app.get('/api/chats', async (request) => {
@@ -29,7 +33,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const input = createChatSchema.parse(request.body)
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
-    const id = newId()
+    const id = input.clientId ?? newId()
     const expiresAt = input.temporary ? new Date(Date.now() + 86_400_000) : null
     const [created] = await db.insert(chats).values({
       id,
@@ -38,8 +42,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       title: input.title ?? 'New chat',
       temporary: input.temporary,
       expiresAt,
-    }).returning()
-    await bumpRevision(user.id)
+    }).onConflictDoNothing().returning()
+    if (!created) {
+      const [existing] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id))).limit(1)
+      if (!existing) throw new AppError(409, 'chat_id_conflict', 'Chat identifier is already in use')
+      return existing
+    }
+    await bumpRevision(user.id, id)
     reply.code(201)
     return created
   })
@@ -65,7 +74,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: new Date(),
     }).where(and(eq(chats.id, id), eq(chats.userId, user.id))).returning()
     if (!updated) throw notFound('Chat')
-    await bumpRevision(user.id)
+    await bumpRevision(user.id, id)
     return updated
   })
 
@@ -74,7 +83,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const result = await db.update(chats).set({ deletedAt: new Date() }).where(and(eq(chats.id, id), eq(chats.userId, user.id))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
-    await bumpRevision(user.id)
+    await bumpRevision(user.id, id)
     reply.code(204).send()
   })
 
@@ -119,11 +128,30 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.post('/api/folders', async (request, reply) => {
     const user = requireUser(request)
-    const name = (request.body as { name?: string }).name?.trim()
+    const body = request.body as { clientId?: string; name?: string }
+    const name = body.name?.trim()
     if (!name) throw new AppError(400, 'name_required', 'Folder name is required')
-    const [created] = await db.insert(folders).values({ id: newId(), userId: user.id, name }).returning()
+    const id = body.clientId ?? newId()
+    const [created] = await db.insert(folders).values({ id, userId: user.id, name }).onConflictDoNothing().returning()
+    if (!created) {
+      const [existing] = await db.select().from(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).limit(1)
+      if (!existing) throw new AppError(409, 'folder_id_conflict', 'Folder identifier is already in use')
+      return existing
+    }
     await bumpRevision(user.id)
     reply.code(201)
     return created
+  })
+
+  app.delete('/api/folders/:id', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    await db.transaction(async (tx) => {
+      await tx.update(chats).set({ folderId: null }).where(and(eq(chats.userId, user.id), eq(chats.folderId, id)))
+      const deleted = await tx.delete(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning({ id: folders.id })
+      if (!deleted.length) throw notFound('Folder')
+    })
+    await bumpRevision(user.id)
+    reply.code(204).send()
   })
 }

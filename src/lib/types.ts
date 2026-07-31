@@ -81,6 +81,7 @@ export interface Message {
   presetSelections?: Record<string, string>
   attachments?: Attachment[]
   rating?: 'up' | 'down' | null
+  error?: string
   done: boolean
 }
 

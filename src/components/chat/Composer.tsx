@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { ArrowUp, Check, ChevronDown, Mic, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -26,6 +27,7 @@ export function Composer({
   modelId: string
   centered?: boolean
 }) {
+  const navigate = useNavigate()
   const [value, setValue] = useState('')
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -55,7 +57,8 @@ export function Composer({
   const submit = () => {
     const text = value.trim()
     if (!text || streamingId) return
-    sendMessage(chatId, text, modelId)
+    const targetChatId = sendMessage(chatId, text, modelId)
+    if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
     setValue('')
     requestAnimationFrame(() => {
       if (ref.current) ref.current.style.height = 'auto'

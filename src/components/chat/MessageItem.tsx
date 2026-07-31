@@ -161,7 +161,11 @@ export const MessageItem = memo(function MessageItem({
         )}
 
         <div className={cn('mt-1 text-[15px]', streaming && message.content && 'stream-caret')}>
-          {message.content ? (
+          {message.error ? (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {message.error}
+            </div>
+          ) : message.content ? (
             <Markdown content={message.content} />
           ) : (
             !isThinking && (
