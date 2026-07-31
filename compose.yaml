@@ -17,9 +17,8 @@ x-server: &server
 services:
   caddy:
     image: caddy:2.10-alpine
-    ports:
-      - "${PULPO_HTTP_PORT:-8080}:80"
-      - "${PULPO_HTTPS_PORT:-8443}:443"
+    expose:
+      - "80"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -53,8 +52,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulpo}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    expose:
+      - "5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pulpo -d pulpo"]
       interval: 5s
@@ -67,8 +66,8 @@ services:
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_data:/data
-    ports:
-      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    expose:
+      - "6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -108,8 +107,8 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
-    ports:
-      - "${S3_BIND_ADDRESS:-127.0.0.1}:${S3_PORT:-8333}:8333"
+    expose:
+      - "8333"
     depends_on:
       - seaweed-filer
     restart: unless-stopped

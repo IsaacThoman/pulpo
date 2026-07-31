@@ -46,6 +46,35 @@ and mount a persistent volume at that path. Any supported S3-compatible service 
 
 `S3_ENDPOINT` is the worker/API address and may use the Compose service name. `S3_PUBLIC_ENDPOINT` is embedded in presigned browser URLs; set it to an HTTPS object-storage origin reachable by users. The localhost default exposes SeaweedFS on port 8333 for single-host development. Configure that origin's S3 CORS policy to allow `PUT`, `GET`, and `HEAD` from `PUBLIC_URL` in production.
 
+## Coolify deployment
+
+Use `/compose.yaml` as the Docker Compose location. It exposes services only to
+the internal Compose network, avoiding collisions with PostgreSQL, Redis, and
+other workloads already using host ports. `compose.override.yaml` contains the
+localhost bindings and is merged automatically only by normal local
+`docker compose` commands.
+
+In Coolify:
+
+1. Assign the Pulpo application domain to the `caddy` service on port `80`.
+   Do not route it directly to `web`; Caddy routes `/api`, `/v1`, `/health`, and
+   `/socket.io` to the API and sends other traffic to the web container.
+2. Assign a separate HTTPS object-storage domain to `seaweed-s3` on port
+   `8333` when using the bundled SeaweedFS profile.
+3. Set `PUBLIC_URL` to the Pulpo application origin, `S3_PUBLIC_ENDPOINT` to
+   the object-storage origin, and `COOKIE_SECURE=true`.
+4. Configure strong values for `POSTGRES_PASSWORD`, `ENCRYPTION_KEY`,
+   `BOOTSTRAP_ADMIN_PASSWORD`, `S3_ACCESS_KEY_ID`, and
+   `S3_SECRET_ACCESS_KEY`. Set `DATABASE_URL` to the internal `postgres`
+   service using the same URL-encoded database password, and set
+   `REDIS_URL=redis://redis:6379`. Set `PULPO_ENV_FILE=.env.example`; Coolify
+   injects the configured environment values at runtime.
+5. Configure the health check on the `caddy` service as HTTP port `80`, path
+   `/health`, expected status `200`.
+
+No Pulpo service should publish `5432`, `6379`, `8080`, `8443`, or `8333`
+directly on the Coolify host.
+
 ## Local development
 
 Node.js 22+, PostgreSQL 17, and Redis 7 are recommended.
