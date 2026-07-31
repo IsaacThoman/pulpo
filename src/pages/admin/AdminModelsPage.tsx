@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Check,
   ChevronRight,
@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { MODELS } from '@/lib/mock'
+import { ADMIN_PROVIDERS } from '@/lib/mock-admin'
 import { formatNumber } from '@/lib/format'
 import type { Model, SpeedOption } from '@/lib/types'
 import { chatOptionsFor, useModelConfig } from '@/stores/modelConfig'
@@ -27,6 +28,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { Card, CardContent } from '@/components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -128,6 +130,47 @@ function LogoPickerTile({
   )
 }
 
+function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn('space-y-1.5', className)}>
+      <Label className="text-xs">{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onChange,
+  disabled,
+}: {
+  label: string
+  checked: boolean
+  onChange: (v: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <label
+      className={cn(
+        'flex cursor-pointer items-center justify-between gap-3 rounded-md py-1 text-sm',
+        disabled && 'cursor-not-allowed opacity-50'
+      )}
+    >
+      <span>{label}</span>
+      <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} />
+    </label>
+  )
+}
+
 function ModelEditorDialog({
   model,
   open,
@@ -140,6 +183,25 @@ function ModelEditorDialog({
   const [jsonOpen, setJsonOpen] = useState(false)
   const [labLogo, setLabLogo] = useState(model.labLogo)
   const [modelLogo, setModelLogo] = useState(model.modelLogo)
+  const [providerId, setProviderId] = useState(
+    () => ADMIN_PROVIDERS.find((p) => p.name === model.provider)?.id ?? ADMIN_PROVIDERS[0]?.id ?? ''
+  )
+  const [upstreamModel, setUpstreamModel] = useState(model.id)
+  const [inputPrice, setInputPrice] = useState(String(model.inputPrice))
+  const [cachedPrice, setCachedPrice] = useState(String(model.inputPrice * 0.5))
+  const [outputPrice, setOutputPrice] = useState(String(model.outputPrice))
+  const [customParams, setCustomParams] = useState('{}')
+  const [retryEnabled, setRetryEnabled] = useState(false)
+  const [fallbackModelId, setFallbackModelId] = useState('')
+  const [maxRetries, setMaxRetries] = useState('3')
+  const [retryDelay, setRetryDelay] = useState('2')
+  const [stickyBlock, setStickyBlock] = useState('60')
+  const [firstTokenTimeoutEnabled, setFirstTokenTimeoutEnabled] = useState(false)
+  const [firstTokenTimeout, setFirstTokenTimeout] = useState('15')
+  const [slowStickyEnabled, setSlowStickyEnabled] = useState(false)
+  const [slowMinTokPerSec, setSlowMinTokPerSec] = useState('10')
+  const [slowMinCompletion, setSlowMinCompletion] = useState('5')
+  const [ocrEnabled, setOcrEnabled] = useState(false)
   const overrides = useModelConfig((s) => s.overrides)
   const setOptions = useModelConfig((s) => s.setOptions)
   const [chatOptions, setChatOptions] = useState(() => chatOptionsFor(model, overrides))
@@ -150,10 +212,12 @@ function ModelEditorDialog({
     chatOptions.reasoningEfforts.every(
       (effort) => effort.displayName.trim() && effort.internalName.trim()
     ) && new Set(reasoningInternalNames).size === reasoningInternalNames.length
+  const selectedProvider = ADMIN_PROVIDERS.find((p) => p.id === providerId)
+  const stickySeconds = Number(stickyBlock) || 0
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="h-[640px] max-h-[88vh] gap-0 overflow-hidden p-0 sm:max-w-2xl">
+      <DialogContent className="h-[720px] max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b px-6 py-4">
           <DialogTitle className="flex items-center gap-2.5">
             <ModelIcon model={model} className="size-6 rounded-[3px]" />
@@ -181,50 +245,228 @@ function ModelEditorDialog({
             </div>
 
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Model name</Label>
+              <Field label="Model name">
                 <Input defaultValue={model.name} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Model ID</Label>
+              </Field>
+              <Field label="Model ID">
                 <Input defaultValue={model.id} disabled className="font-mono text-xs" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Base model (from)</Label>
-                <Select defaultValue={model.id}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {MODELS.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Access</Label>
-                <Select defaultValue="public">
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="public">Public</SelectItem>
-                    <SelectItem value="admin">Admin only</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              </Field>
             </div>
 
             <div className="space-y-1.5">
               <Label>Description</Label>
               <Textarea rows={2} defaultValue={model.description} />
             </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <div className="text-sm font-medium">Upstream</div>
+              <Field label="Provider">
+                <Select value={providerId} onValueChange={setProviderId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ADMIN_PROVIDERS.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              {selectedProvider && (
+                <div className="rounded-lg border bg-muted/30 px-3 py-2.5">
+                  <div className="text-xs font-medium">{selectedProvider.name}</div>
+                  <code className="mt-0.5 block truncate font-mono text-[11px] text-muted-foreground">
+                    {selectedProvider.baseUrl}
+                  </code>
+                </div>
+              )}
+              <Field label="Upstream model">
+                <Input
+                  className="font-mono text-xs"
+                  value={upstreamModel}
+                  onChange={(e) => setUpstreamModel(e.target.value)}
+                  placeholder="Select or type model name"
+                />
+              </Field>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3">
+              <div className="text-sm font-medium">Pricing</div>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Input $/M tokens">
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={inputPrice}
+                    onChange={(e) => setInputPrice(e.target.value)}
+                    className="tabular-nums"
+                  />
+                </Field>
+                <Field label="Cached $/M tokens">
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={cachedPrice}
+                    onChange={(e) => setCachedPrice(e.target.value)}
+                    className="tabular-nums"
+                  />
+                </Field>
+                <Field label="Output $/M tokens">
+                  <Input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    value={outputPrice}
+                    onChange={(e) => setOutputPrice(e.target.value)}
+                    className="tabular-nums"
+                  />
+                </Field>
+              </div>
+              <Field label="Custom parameters (JSON)">
+                <Textarea
+                  rows={3}
+                  className="font-mono text-xs"
+                  value={customParams}
+                  onChange={(e) => setCustomParams(e.target.value)}
+                  placeholder='{"temperature": 0.7}'
+                />
+              </Field>
+            </div>
+
+            <Separator />
+
+            <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+              <ToggleRow
+                label="Enable retry on failure"
+                checked={retryEnabled}
+                onChange={setRetryEnabled}
+              />
+              {retryEnabled && (
+                <div className="space-y-3 pt-1">
+                  <Field label="Fallback model">
+                    <Select
+                      value={fallbackModelId || '__same__'}
+                      onValueChange={(v) => setFallbackModelId(v === '__same__' ? '' : v)}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__same__">
+                          Same model ({model.name}) — retry on current
+                        </SelectItem>
+                        {MODELS.filter((m) => m.id !== model.id).map((m) => (
+                          <SelectItem key={m.id} value={m.id}>
+                            {m.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  <div className="grid grid-cols-3 gap-3">
+                    <Field label="Max retries">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={10}
+                        value={maxRetries}
+                        onChange={(e) => setMaxRetries(e.target.value)}
+                        className="tabular-nums"
+                      />
+                    </Field>
+                    <Field label="Retry delay (sec)">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={300}
+                        value={retryDelay}
+                        onChange={(e) => setRetryDelay(e.target.value)}
+                        className="tabular-nums"
+                      />
+                    </Field>
+                    <Field label="Sticky block (sec)">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={3600}
+                        value={stickyBlock}
+                        onChange={(e) => setStickyBlock(e.target.value)}
+                        className="tabular-nums"
+                      />
+                    </Field>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <ToggleRow
+                      label="Fallback if no first streamed token arrives in time"
+                      checked={firstTokenTimeoutEnabled}
+                      onChange={setFirstTokenTimeoutEnabled}
+                    />
+                    <Field label="First token timeout (sec)">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={300}
+                        value={firstTokenTimeout}
+                        onChange={(e) => setFirstTokenTimeout(e.target.value)}
+                        disabled={!firstTokenTimeoutEnabled}
+                        className="tabular-nums"
+                      />
+                    </Field>
+                  </div>
+                  <div className="space-y-3">
+                    <ToggleRow
+                      label="Sticky-block slow completions"
+                      checked={slowStickyEnabled}
+                      onChange={setSlowStickyEnabled}
+                      disabled={stickySeconds <= 0}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Min avg output tok/sec">
+                        <Input
+                          type="number"
+                          min={0.1}
+                          max={1000}
+                          step={0.1}
+                          value={slowMinTokPerSec}
+                          onChange={(e) => setSlowMinTokPerSec(e.target.value)}
+                          disabled={!slowStickyEnabled || stickySeconds <= 0}
+                          className="tabular-nums"
+                        />
+                      </Field>
+                      <Field label="Min completion time (sec)">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={3600}
+                          value={slowMinCompletion}
+                          onChange={(e) => setSlowMinCompletion(e.target.value)}
+                          disabled={!slowStickyEnabled || stickySeconds <= 0}
+                          className="tabular-nums"
+                        />
+                      </Field>
+                    </div>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    If “Same model” is selected, retries use the current model. Sticky block
+                    temporarily routes to fallback without attempting the primary. First-token
+                    timeout applies to streamed requests only. Slow sticky blocking requires sticky
+                    block &gt; 0.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <ToggleRow label="Enable OCR for images" checked={ocrEnabled} onChange={setOcrEnabled} />
+
+            <Separator />
 
             <div className="space-y-1.5">
               <Label>System prompt</Label>
@@ -367,11 +609,26 @@ function ModelEditorDialog({
   {
     id: model.id,
     name: model.name,
+    provider_id: providerId,
+    upstream_model_name: upstreamModel,
+    input_cost_per_million: Number(inputPrice) || 0,
+    cached_input_cost_per_million: Number(cachedPrice) || 0,
+    output_cost_per_million: Number(outputPrice) || 0,
+    custom_params: customParams,
+    fallback_enabled: retryEnabled,
+    fallback_model_id: fallbackModelId || null,
+    max_retries: Number(maxRetries) || 0,
+    fallback_delay_seconds: Number(retryDelay) || 0,
+    sticky_fallback_seconds: Number(stickyBlock) || 0,
+    first_token_timeout_enabled: firstTokenTimeoutEnabled,
+    first_token_timeout_seconds: Number(firstTokenTimeout) || 0,
+    slow_sticky_enabled: slowStickyEnabled,
+    slow_sticky_min_tokens_per_second: Number(slowMinTokPerSec) || 0,
+    slow_sticky_min_completion_seconds: Number(slowMinCompletion) || 0,
+    intercept_images_with_ocr: ocrEnabled,
     meta: {
       lab_logo: labLogo,
       model_logo: modelLogo,
-      profile_image_url_light: `/models/${model.id}/light.png`,
-      profile_image_url_dark: `/models/${model.id}/dark.png`,
       description: model.description,
       chat_options: {
         reasoning_efforts: chatOptions.reasoningEfforts.map((effort) => ({
