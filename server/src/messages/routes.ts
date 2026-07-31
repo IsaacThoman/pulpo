@@ -1,10 +1,13 @@
-import { and, eq } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { messageFeedback, responseItems, responses } from '../database/schema.js'
-import { notFound } from '../lib/errors.js'
+import { chats, responses, users } from '../database/schema.js'
+import { AppError, notFound } from '../lib/errors.js'
+import { newId } from '../lib/ids.js'
+import { newestDescendantId } from './branching.js'
+import { publishStateChange } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 
 function inputText(input: unknown): string {
@@ -25,6 +28,22 @@ async function ownedResponse(userId: string, id: string) {
   return row
 }
 
+async function bumpRevision(userId: string, chatId: string): Promise<void> {
+  const [updated] = await db.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+    .where(eq(users.id, userId)).returning({ revision: users.stateRevision })
+  if (updated) await publishStateChange({ userId, chatId, revision: updated.revision })
+}
+
+function editedOutput(content: string): unknown[] {
+  return [{
+    id: `msg_${newId()}`,
+    type: 'message',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: content, annotations: [] }],
+  }]
+}
+
 export async function registerMessageRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/messages/:id/regenerate', async (request, reply) => {
     const user = requireUser(request)
@@ -34,12 +53,14 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       userId: user.id,
       chatId: original.chatId,
       parentResponseId: original.parentResponseId,
+      branchReason: 'regenerate',
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
         input: inputText(original.input), modelId: original.modelId,
         executionMode: original.executionMode, presetSelections: original.presetSelections as Record<string, string>, attachmentIds: [],
       },
     })
+    await bumpRevision(user.id, original.chatId)
     reply.code(202)
     return { response: toSnapshot(created) }
   })
@@ -49,40 +70,83 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
     const { content } = z.object({ content: z.string().trim().min(1).max(1_000_000) }).parse(request.body)
-    const created = await createResponse({
-      userId: user.id,
-      chatId: original.chatId,
-      parentResponseId: original.parentResponseId,
-      idempotencyKey: request.headers['idempotency-key'] as string | undefined,
-      input: {
-        input: content, modelId: original.modelId, executionMode: original.executionMode,
-        presetSelections: original.presetSelections as Record<string, string>, attachmentIds: [],
-      },
+    const idempotencyKey = request.headers['idempotency-key'] as string | undefined
+    if (id.endsWith(':input')) {
+      const created = await createResponse({
+        userId: user.id,
+        chatId: original.chatId,
+        parentResponseId: original.parentResponseId,
+        branchReason: 'user_edit',
+        idempotencyKey,
+        input: {
+          input: content, modelId: original.modelId, executionMode: original.executionMode,
+          presetSelections: original.presetSelections as Record<string, string>, attachmentIds: [],
+        },
+      })
+      await bumpRevision(user.id, original.chatId)
+      reply.code(202)
+      return { response: toSnapshot(created) }
+    }
+    if (idempotencyKey) {
+      const [existing] = await db.select().from(responses).where(and(
+        eq(responses.userId, user.id),
+        eq(responses.idempotencyKey, idempotencyKey),
+      )).limit(1)
+      if (existing) {
+        reply.code(201)
+        return { response: toSnapshot(existing) }
+      }
+    }
+    const createdAt = new Date()
+    const createdId = newId()
+    const output = editedOutput(content)
+    await db.transaction(async (tx) => {
+      await tx.insert(responses).values({
+        id: createdId,
+        chatId: original.chatId,
+        userId: user.id,
+        modelId: original.modelId,
+        pricingVersionId: original.pricingVersionId,
+        previousResponseId: original.parentResponseId,
+        parentResponseId: original.parentResponseId,
+        branchReason: 'assistant_edit',
+        status: 'completed',
+        executionMode: original.executionMode,
+        input: original.input,
+        instructions: original.instructions,
+        presetSelections: original.presetSelections,
+        parameters: original.parameters,
+        idempotencyKey,
+        output,
+        completedAt: createdAt,
+        createdAt,
+        updatedAt: createdAt,
+      })
+      await tx.update(chats).set({
+        activeResponseId: createdId,
+        activeBranchLeafId: createdId,
+        updatedAt: createdAt,
+      }).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id)))
     })
-    reply.code(202)
+    await bumpRevision(user.id, original.chatId)
+    const [created] = await db.select().from(responses).where(eq(responses.id, createdId)).limit(1)
+    if (!created) throw new AppError(500, 'assistant_edit_failed', 'The edited response could not be saved')
+    reply.code(201)
     return { response: toSnapshot(created) }
   })
 
-  app.put('/api/messages/:id/feedback', async (request, reply) => {
+  app.post('/api/messages/:id/activate', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const response = await ownedResponse(user.id, id)
-    const { rating, comment } = z.object({
-      rating: z.enum(['up', 'down']).nullable(), comment: z.string().max(2_000).nullable().optional(),
-    }).parse(request.body)
-    const [item] = await db.select({ id: responseItems.id }).from(responseItems)
-      .where(and(eq(responseItems.responseId, response.id), eq(responseItems.type, 'message'))).limit(1)
-    if (!item) throw notFound('Response item')
-    if (rating === null) {
-      await db.delete(messageFeedback).where(and(eq(messageFeedback.responseItemId, item.id), eq(messageFeedback.userId, user.id)))
-      reply.code(204).send()
-      return
-    }
-    await db.insert(messageFeedback).values({ responseItemId: item.id, userId: user.id, rating, comment })
-      .onConflictDoUpdate({
-        target: [messageFeedback.responseItemId, messageFeedback.userId],
-        set: { rating, comment, createdAt: new Date() },
-      })
-    return { rating, comment: comment ?? null }
+    const selected = await ownedResponse(user.id, id)
+    const turns = await db.select().from(responses).where(and(
+      eq(responses.chatId, selected.chatId),
+      eq(responses.userId, user.id),
+    )).orderBy(asc(responses.createdAt))
+    const leafId = newestDescendantId(turns, selected.id)
+    await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: new Date() })
+      .where(and(eq(chats.id, selected.chatId), eq(chats.userId, user.id)))
+    await bumpRevision(user.id, selected.chatId)
+    return { activeBranchLeafId: leafId }
   })
 }

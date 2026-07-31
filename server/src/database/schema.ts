@@ -199,6 +199,7 @@ export const responses = pgTable('responses', {
   openaiResponseId: text('openai_response_id'),
   previousResponseId: uuid('previous_response_id'),
   parentResponseId: uuid('parent_response_id'),
+  branchReason: text('branch_reason').notNull().default('message'),
   status: responseStatusEnum('status').notNull().default('queued'),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   input: jsonb('input').notNull(),
@@ -237,14 +238,6 @@ export const responseContentParts = pgTable('response_content_parts', {
   position: integer('position').notNull(),
   payload: jsonb('payload').notNull(),
 }, (table) => [uniqueIndex('content_parts_position_unique').on(table.responseItemId, table.position)])
-
-export const messageFeedback = pgTable('message_feedback', {
-  responseItemId: uuid('response_item_id').notNull().references(() => responseItems.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  rating: text('rating').notNull(),
-  comment: text('comment'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [primaryKey({ columns: [table.responseItemId, table.userId] })])
 
 export const chatShares = pgTable('chat_shares', {
   id: uuid('id').primaryKey(),

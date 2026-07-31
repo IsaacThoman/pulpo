@@ -6,6 +6,7 @@ import { chats, folders, models, responses, users } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 
@@ -89,18 +90,15 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
     const allTurns = await db.select().from(responses).where(eq(responses.chatId, id)).orderBy(responses.createdAt)
-    const byId = new Map(allTurns.map((turn) => [turn.id, turn]))
-    const turns: typeof allTurns = []
-    let cursor = chat.activeBranchLeafId ?? chat.activeResponseId ?? allTurns.at(-1)?.id ?? null
-    const seen = new Set<string>()
-    while (cursor && !seen.has(cursor)) {
-      seen.add(cursor)
-      const turn = byId.get(cursor)
-      if (!turn) break
-      turns.unshift(turn)
-      cursor = turn.parentResponseId
-    }
-    return { ...chat, responses: turns.map((response) => ({ ...response, snapshot: toSnapshot(response) })) }
+    const turns = lineageFromLeaf(
+      allTurns,
+      chat.activeBranchLeafId ?? chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,
+    )
+    return { ...chat, responses: turns.map((response) => ({
+      ...response,
+      snapshot: toSnapshot(response),
+      branches: metadataForTurn(allTurns, response),
+    })) }
   })
 
   app.patch('/api/chats/:id', async (request) => {

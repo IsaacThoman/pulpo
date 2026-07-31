@@ -80,7 +80,7 @@ export interface Message {
   /** Selected preset choice ids keyed by preset id. */
   presetSelections?: Record<string, string>
   attachments?: Attachment[]
-  rating?: 'up' | 'down' | null
+  branch?: { ids: string[]; index: number }
   error?: string
   outputItems?: unknown[]
   done: boolean

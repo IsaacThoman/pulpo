@@ -21,6 +21,10 @@ interface ServerResponse {
   createdAt: string
   completedAt: string | null
   snapshot: ResponseSnapshot
+  branches: {
+    user: { ids: string[]; index: number }
+    assistant: { ids: string[]; index: number }
+  }
 }
 
 export interface ServerChat {
@@ -63,8 +67,9 @@ interface ChatState {
   sendMessage: (chatId: string | null, content: string, modelId: string, attachmentIds?: string[], temporary?: boolean) => string
   regenerate: (chatId: string, messageId: string) => void
   editUserMessage: (chatId: string, messageId: string, content: string) => void
+  editAssistantMessage: (chatId: string, messageId: string, content: string) => void
+  activateBranch: (chatId: string, responseId: string) => void
   stopStreaming: () => void
-  rateMessage: (chatId: string, messageId: string, rating: 'up' | 'down' | null) => void
 }
 
 function textFromContent(content: unknown): string {
@@ -108,7 +113,7 @@ function messagesFromResponses(responses: ServerResponse[]): Message[] {
     return [
       {
         id: `${response.id}:input`, role: 'user' as const, content: inputText(response.input),
-        timestamp, done: true,
+        timestamp, done: true, branch: response.branches.user,
       },
       {
         id: response.id, role: 'assistant' as const, content: outputText(response.output),
@@ -117,6 +122,7 @@ function messagesFromResponses(responses: ServerResponse[]): Message[] {
         tokensIn: response.usage?.inputTokens, tokensOut: response.usage?.outputTokens,
         error: response.error?.message,
         outputItems: response.output,
+        branch: response.branches.assistant,
       },
     ]
   })
@@ -352,21 +358,18 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('POST', `/api/messages/${messageId}/regenerate`).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
   editUserMessage: (chatId, messageId, content) => {
-    set((state) => ({ chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
-      ...chat, messages: chat.messages.map((message) => message.id === messageId ? { ...message, content } : message),
-    }) }))
     void optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  },
+  editAssistantMessage: (chatId, messageId, content) => {
+    void optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  },
+  activateBranch: (chatId, responseId) => {
+    void optimisticRequest('POST', `/api/messages/${responseId}/activate`).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
   stopStreaming: () => {
     const responseId = get().streamingId
     if (!responseId) return
     set({ streamingId: null })
     void optimisticRequest('POST', `/api/responses/${responseId}/cancel`)
-  },
-  rateMessage: (chatId, messageId, rating) => {
-    set((state) => ({ chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
-      ...chat, messages: chat.messages.map((message) => message.id === messageId ? { ...message, rating } : message),
-    }) }))
-    void optimisticRequest('PUT', `/api/messages/${messageId}/feedback`, { rating })
   },
 }))

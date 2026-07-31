@@ -16,6 +16,7 @@ export interface CreateResponseOptions {
   parameters?: Record<string, unknown>
   idempotencyKey?: string | null
   parentResponseId?: string | null
+  branchReason?: 'message' | 'regenerate' | 'user_edit'
 }
 
 async function resolveModel(modelId: string, selections: Record<string, string>): Promise<typeof models.$inferSelect | undefined> {
@@ -93,6 +94,7 @@ export async function createResponse(options: CreateResponseOptions) {
     modelId: model.id,
     previousResponseId: parentResponseId,
     parentResponseId,
+    branchReason: options.branchReason ?? 'message',
     executionMode,
     input: storedInput,
     presetSelections: options.input.presetSelections,

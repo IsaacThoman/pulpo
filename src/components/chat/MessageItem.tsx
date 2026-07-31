@@ -2,12 +2,11 @@ import { memo, useState } from 'react'
 import {
   Brain,
   Check,
+  ChevronLeft,
   ChevronRight,
   Copy,
   Pencil,
   RefreshCw,
-  ThumbsDown,
-  ThumbsUp,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
@@ -25,11 +24,13 @@ function ActionButton({
   label,
   onClick,
   active,
+  disabled,
   children,
 }: {
   label: string
   onClick?: () => void
   active?: boolean
+  disabled?: boolean
   children: React.ReactNode
 }) {
   return (
@@ -37,8 +38,9 @@ function ActionButton({
       title={label}
       aria-label={label}
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        'flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground',
+        'flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-foreground',
         active && 'text-foreground'
       )}
     >
@@ -63,6 +65,44 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+function BranchControls({
+  chatId,
+  branch,
+}: {
+  chatId: string
+  branch?: Message['branch']
+}) {
+  const activateBranch = useChat((state) => state.activateBranch)
+  if (!branch || branch.ids.length < 2) return null
+
+  const activate = (index: number) => {
+    const responseId = branch.ids[index]
+    if (responseId) activateBranch(chatId, responseId)
+  }
+
+  return (
+    <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
+      <ActionButton
+        label="Previous branch"
+        onClick={() => activate(branch.index - 1)}
+        disabled={branch.index === 0}
+      >
+        <ChevronLeft className="size-3.5" />
+      </ActionButton>
+      <span className="min-w-8 text-center tabular-nums">
+        {branch.index + 1} / {branch.ids.length}
+      </span>
+      <ActionButton
+        label="Next branch"
+        onClick={() => activate(branch.index + 1)}
+        disabled={branch.index === branch.ids.length - 1}
+      >
+        <ChevronRight className="size-3.5" />
+      </ActionButton>
+    </div>
+  )
+}
+
 export const MessageItem = memo(function MessageItem({
   chat,
   message,
@@ -72,7 +112,7 @@ export const MessageItem = memo(function MessageItem({
   message: Message
   streaming: boolean
 }) {
-  const { regenerate, editUserMessage, rateMessage } = useChat()
+  const { regenerate, editUserMessage, editAssistantMessage } = useChat()
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
@@ -112,17 +152,20 @@ export const MessageItem = memo(function MessageItem({
           </div>
         )}
         {!editing && (
-          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <CopyButton text={message.content} />
-            <ActionButton
-              label="Edit"
-              onClick={() => {
-                setDraft(message.content)
-                setEditing(true)
-              }}
-            >
-              <Pencil className="size-3.5" />
-            </ActionButton>
+          <div className="flex items-center gap-1">
+            <BranchControls chatId={chat.id} branch={message.branch} />
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <CopyButton text={message.content} />
+              <ActionButton
+                label="Edit"
+                onClick={() => {
+                  setDraft(message.content)
+                  setEditing(true)
+                }}
+              >
+                <Pencil className="size-3.5" />
+              </ActionButton>
+            </div>
           </div>
         )}
       </div>
@@ -160,6 +203,33 @@ export const MessageItem = memo(function MessageItem({
           </Collapsible>
         )}
 
+        {editing ? (
+          <div className="mt-2 rounded-2xl border bg-card p-3">
+            <textarea
+              className="w-full resize-none bg-transparent text-sm leading-6 outline-none"
+              rows={Math.min(16, Math.max(3, draft.split('\n').length + 1))}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              autoFocus
+            />
+            <div className="mt-2 flex justify-end gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditing(false)
+                  if (draft.trim() && draft !== message.content) {
+                    editAssistantMessage(chat.id, message.id, draft.trim())
+                  }
+                }}
+              >
+                Save as branch
+              </Button>
+            </div>
+          </div>
+        ) : (
         <div className={cn('mt-1 text-[15px]', streaming && message.content && 'stream-caret')}>
           {message.error ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -177,6 +247,7 @@ export const MessageItem = memo(function MessageItem({
             )
           )}
         </div>
+        )}
 
         {message.outputItems
           ?.filter((item) => !['message', 'reasoning'].includes((item as { type?: string }).type ?? ''))
@@ -196,25 +267,23 @@ export const MessageItem = memo(function MessageItem({
           })}
 
         {message.done && (
-          <div className="mt-1.5 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <CopyButton text={message.content} />
-            <ActionButton
-              label="Good response"
-              active={message.rating === 'up'}
-              onClick={() => rateMessage(chat.id, message.id, message.rating === 'up' ? null : 'up')}
-            >
-              <ThumbsUp className="size-3.5" />
-            </ActionButton>
-            <ActionButton
-              label="Bad response"
-              active={message.rating === 'down'}
-              onClick={() => rateMessage(chat.id, message.id, message.rating === 'down' ? null : 'down')}
-            >
-              <ThumbsDown className="size-3.5" />
-            </ActionButton>
-            <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id)}>
-              <RefreshCw className="size-3.5" />
-            </ActionButton>
+          <div className="mt-1.5 flex items-center gap-1">
+            <BranchControls chatId={chat.id} branch={message.branch} />
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <CopyButton text={message.content} />
+              <ActionButton
+                label="Edit response"
+                onClick={() => {
+                  setDraft(message.content)
+                  setEditing(true)
+                }}
+              >
+                <Pencil className="size-3.5" />
+              </ActionButton>
+              <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id)}>
+                <RefreshCw className="size-3.5" />
+              </ActionButton>
+            </div>
             {(message.tokensIn !== undefined || message.cost !== undefined) && (
               <span className="ml-2 text-[11px] text-muted-foreground">
                 {message.tokensIn !== undefined &&

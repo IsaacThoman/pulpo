@@ -7,6 +7,7 @@ import { chats, chatShares, responses } from '../database/schema.js'
 import { decryptSecret, encryptSecret, hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { lineageFromLeaf } from '../messages/branching.js'
 import { createRedis } from '../redis.js'
 import { getConfig } from '../config.js'
 
@@ -63,7 +64,11 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       .where(and(eq(chatShares.tokenHash, hashToken(token)), isNull(chatShares.revokedAt), or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now))))
       .limit(1)
     if (!row) throw new AppError(404, 'share_not_found', 'This share does not exist or has expired')
-    const turns = await db.select().from(responses).where(eq(responses.chatId, row.chat.id)).orderBy(responses.createdAt)
+    const allTurns = await db.select().from(responses).where(eq(responses.chatId, row.chat.id)).orderBy(responses.createdAt)
+    const turns = lineageFromLeaf(
+      allTurns,
+      row.chat.activeBranchLeafId ?? row.chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,
+    )
     return {
       id: row.share.id,
       chat: { id: row.chat.id, title: row.chat.title, modelId: row.chat.modelId, createdAt: row.chat.createdAt },
