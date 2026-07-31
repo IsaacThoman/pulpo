@@ -295,18 +295,18 @@ export const MessageItem = memo(function MessageItem({
               <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id)}>
                 <RefreshCw className="size-3.5" />
               </ActionButton>
+              {(message.tokensIn !== undefined || message.cost !== undefined) && (
+                <span className="ml-1 text-[11px] text-muted-foreground">
+                  {message.tokensIn !== undefined &&
+                    `${formatNumber(message.tokensIn)}→${formatNumber(message.tokensOut ?? 0)} tok`}
+                  {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
+                  {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
+                  {message.presetSelections &&
+                    Object.keys(message.presetSelections).length > 0 &&
+                    ` · ${Object.values(message.presetSelections).join(' · ')}`}
+                </span>
+              )}
             </div>
-            {(message.tokensIn !== undefined || message.cost !== undefined) && (
-              <span className="ml-2 text-[11px] text-muted-foreground">
-                {message.tokensIn !== undefined &&
-                  `${formatNumber(message.tokensIn)}→${formatNumber(message.tokensOut ?? 0)} tok`}
-                {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
-                {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
-                {message.presetSelections &&
-                  Object.keys(message.presetSelections).length > 0 &&
-                  ` · ${Object.values(message.presetSelections).join(' · ')}`}
-              </span>
-            )}
           </div>
         )}
       </div>
