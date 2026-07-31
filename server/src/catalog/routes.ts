@@ -130,7 +130,13 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       iconLight: model.iconLight,
       iconDark: model.iconDark,
       presets: await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => ({
-        id: preset.publicId, name: preset.name, icon: preset.icon, defaultChoiceId: preset.defaultChoiceId,
+        id: preset.publicId, name: preset.name, icon: preset.icon,
+        defaultChoiceId: preset.defaultChoiceId
+          ? (await db.select({ publicId: modelPresetChoices.publicId })
+            .from(modelPresetChoices)
+            .where(eq(modelPresetChoices.id, preset.defaultChoiceId))
+            .limit(1))[0]?.publicId ?? null
+          : null,
         choices: (await db.select().from(modelPresetChoices).where(eq(modelPresetChoices.presetId, preset.id)).orderBy(modelPresetChoices.sortOrder)).map((choice) => ({
           id: choice.publicId, displayName: choice.displayName, icon: choice.icon,
           action: { type: choice.actionType, ...(choice.action as Record<string, unknown>) },
