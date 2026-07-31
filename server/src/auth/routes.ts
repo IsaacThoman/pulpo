@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { loginInputSchema, signupInputSchema } from '@pulpo/contracts'
+import { loginInputSchema, setupInputSchema, signupInputSchema } from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
@@ -18,6 +18,33 @@ import {
 } from './service.js'
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/auth/setup-status', async () => {
+    const [existingUser] = await db.select({ id: users.id }).from(users).limit(1)
+    return { required: !existingUser }
+  })
+
+  app.post('/api/auth/setup', async (request, reply) => {
+    const input = setupInputSchema.parse(request.body)
+    const userId = newId()
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747743)`)
+      const [existingUser] = await tx.select({ id: users.id }).from(users).limit(1)
+      if (existingUser) throw new AppError(409, 'setup_complete', 'Pulpo has already been set up')
+      await tx.insert(users).values({
+        id: userId,
+        email: input.email,
+        name: input.name,
+        role: 'admin',
+        balanceMicros: 100_000_000,
+      })
+      await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
+    })
+    await createSession(userId, request, reply)
+    const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
+    reply.code(201)
+    return { user: serializeUser(created!) }
+  })
+
   app.post('/api/auth/login', async (request, reply) => {
     const input = loginInputSchema.parse(request.body)
     const [row] = await db
@@ -38,10 +65,13 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
     const signupEnabled = (setting?.value as { signupEnabled?: boolean } | undefined)?.signupEnabled ?? true
     if (!signupEnabled) throw new AppError(403, 'signup_disabled', 'New signups are disabled')
-    const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = lower(${input.email})`).limit(1)
-    if (existing) throw new AppError(409, 'email_taken', 'An account with this email already exists')
     const userId = newId()
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747743)`)
+      const [existingUser] = await tx.select({ id: users.id }).from(users).limit(1)
+      if (!existingUser) throw new AppError(409, 'setup_required', 'Create the initial administrator before accepting signups')
+      const [existing] = await tx.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = lower(${input.email})`).limit(1)
+      if (existing) throw new AppError(409, 'email_taken', 'An account with this email already exists')
       await tx.insert(users).values({ id: userId, email: input.email, name: input.name, role: 'pending' })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
     })

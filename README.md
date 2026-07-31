@@ -24,7 +24,7 @@ deploy/              nginx gateway configuration
 
 ## Quick start with Docker Compose
 
-1. Copy `.env.example` to `.env` and replace every development secret. `ENCRYPTION_KEY`, the bootstrap password, the PostgreSQL password, and the S3 secret must be private random values.
+1. Copy `.env.example` to `.env` and replace every development secret. `ENCRYPTION_KEY`, the PostgreSQL password, and the S3 secret must be private random values.
 2. Set `PUBLIC_URL` to the URL users will open. Set `COOKIE_SECURE=true` behind HTTPS.
 3. Start Pulpo:
 
@@ -33,7 +33,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Open `http://localhost:8080` by default. On an empty database, Pulpo creates a one-time administrator from `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PASSWORD`. Sign in and immediately change the password. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users. After another administrator has been verified, the bootstrap account can be deleted and will not be recreated on restart.
+Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users.
 
 SeaweedFS is the default Compose storage backend. For a small single-host install, set:
 
@@ -65,7 +65,7 @@ In Coolify:
 3. Set `PUBLIC_URL` to the Pulpo application origin, `S3_PUBLIC_ENDPOINT` to
    the object-storage origin, and `COOKIE_SECURE=true`.
 4. Configure strong values for `POSTGRES_PASSWORD`, `ENCRYPTION_KEY`,
-   `BOOTSTRAP_ADMIN_PASSWORD`, `S3_ACCESS_KEY_ID`, and
+   `S3_ACCESS_KEY_ID`, and
    `S3_SECRET_ACCESS_KEY`. The API receives `POSTGRES_HOST`, `POSTGRES_PORT`,
    `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DATABASE` directly, so
    generated passwords do not need URL encoding. Set

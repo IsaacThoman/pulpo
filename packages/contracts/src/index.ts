@@ -29,6 +29,8 @@ export const signupInputSchema = z.object({
   password: z.string().min(8).max(1024),
 })
 
+export const setupInputSchema = signupInputSchema
+
 export const apiErrorSchema = z.object({
   error: z.object({
     message: z.string(),

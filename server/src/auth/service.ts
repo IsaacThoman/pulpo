@@ -3,7 +3,7 @@ import { and, eq, gt } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { User } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { passwordCredentials, sessions, users } from '../database/schema.js'
+import { sessions, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
@@ -104,29 +104,6 @@ export function requireAdmin(request: FastifyRequest): AuthenticatedUser {
   const user = requireUser(request)
   if (user.role !== 'admin') throw forbidden('Administrator access required')
   return user
-}
-
-export async function ensureBootstrapAdmin(): Promise<void> {
-  const config = getConfig()
-  // Bootstrap is a one-time empty-database operation. Once any account exists,
-  // administrators own the user lifecycle and a deleted bootstrap account must
-  // not silently return after a restart.
-  const [existingUser] = await db.select({ id: users.id }).from(users).limit(1)
-  if (existingUser) return
-  const userId = newId()
-  await db.transaction(async (tx) => {
-    await tx.insert(users).values({
-      id: userId,
-      email: config.BOOTSTRAP_ADMIN_EMAIL,
-      name: config.BOOTSTRAP_ADMIN_NAME,
-      role: 'admin',
-      balanceMicros: config.BOOTSTRAP_ADMIN_BALANCE_MICROS,
-    })
-    await tx.insert(passwordCredentials).values({
-      userId,
-      passwordHash: await createPasswordHash(config.BOOTSTRAP_ADMIN_PASSWORD),
-    })
-  })
 }
 
 export { serializeUser }

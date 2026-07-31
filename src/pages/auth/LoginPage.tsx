@@ -10,6 +10,7 @@ export function LoginPage() {
   const user = useAuth((s) => s.user)
   const login = useAuth((s) => s.login)
   const signupEnabled = useAuth((s) => s.signupEnabled)
+  const setupRequired = useAuth((s) => s.setupRequired)
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -20,6 +21,7 @@ export function LoginPage() {
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
   if (user) return <Navigate to="/" replace />
+  if (setupRequired) return <Navigate to="/setup" replace />
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()

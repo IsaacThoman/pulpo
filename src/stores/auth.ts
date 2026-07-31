@@ -24,6 +24,7 @@ type AuthResult = { ok: true } | { ok: false; error: string }
 interface AuthState {
   user: AuthUser | null
   checkingSession: boolean
+  setupRequired: boolean | null
   signupEnabled: boolean
   pendingDetails: boolean
   adminEmail: string
@@ -31,6 +32,7 @@ interface AuthState {
   bootstrap: () => Promise<void>
   login: (email: string, password: string) => Promise<AuthResult>
   signup: (name: string, email: string, password: string) => Promise<AuthResult>
+  setup: (name: string, email: string, password: string) => Promise<AuthResult>
   logout: () => Promise<void>
   setSignupEnabled: (value: boolean) => void
 }
@@ -63,6 +65,7 @@ const cachedProfile = readCachedProfile()
 export const useAuth = create<AuthState>()((set, get) => ({
   user: cachedProfile,
   checkingSession: true,
+  setupRequired: null,
   signupEnabled: true,
   pendingDetails: true,
   adminEmail: '',
@@ -70,20 +73,21 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   bootstrap: async () => {
     if (!get().checkingSession) return
+    const setupStatus = await apiRequest<{ required: boolean }>('/api/auth/setup-status').catch(() => null)
     try {
       const response = await apiRequest<AuthResponse>('/api/me')
       const user = normalizeUser(response.user)
       cacheProfile(user)
-      set({ user, checkingSession: false })
+      set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false })
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         cacheProfile(null)
-        set({ user: null, checkingSession: false })
+        set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false })
         return
       }
       // A cached profile may render offline data, while every server mutation
       // remains protected by the HTTP-only session once connectivity returns.
-      set({ checkingSession: false })
+      set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired })
     }
   },
 
@@ -112,6 +116,20 @@ export const useAuth = create<AuthState>()((set, get) => ({
       return { ok: true }
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : 'Unable to create account.' }
+    }
+  },
+
+  setup: async (name, email, password) => {
+    try {
+      const response = await apiRequest<AuthResponse>('/api/auth/setup', {
+        method: 'POST', body: { name, email, password },
+      })
+      const user = normalizeUser(response.user)
+      cacheProfile(user)
+      set({ user, checkingSession: false, setupRequired: false })
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Unable to finish setup.' }
     }
   },
 

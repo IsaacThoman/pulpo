@@ -10,6 +10,7 @@ export function SignupPage() {
   const user = useAuth((s) => s.user)
   const signup = useAuth((s) => s.signup)
   const signupEnabled = useAuth((s) => s.signupEnabled)
+  const setupRequired = useAuth((s) => s.setupRequired)
   const navigate = useNavigate()
 
   const [name, setName] = useState('')
@@ -22,6 +23,7 @@ export function SignupPage() {
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
   if (user) return <Navigate to="/" replace />
+  if (setupRequired) return <Navigate to="/setup" replace />
 
   if (!signupEnabled) {
     return (

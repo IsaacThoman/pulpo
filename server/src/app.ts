@@ -6,7 +6,7 @@ import rateLimit from '@fastify/rate-limit'
 import { ZodError } from 'zod'
 import { getAllowedOrigins, getConfig } from './config.js'
 import { AppError } from './lib/errors.js'
-import { authenticateSession, ensureBootstrapAdmin } from './auth/service.js'
+import { authenticateSession } from './auth/service.js'
 import { registerAuthRoutes } from './auth/routes.js'
 import { registerCatalogRoutes } from './catalog/routes.js'
 import { registerChatRoutes } from './chats/routes.js'
@@ -96,6 +96,5 @@ export async function buildApp() {
   await registerAttachmentRoutes(app)
   await registerPublicApiRoutes(app)
 
-  await ensureBootstrapAdmin()
   return app
 }
