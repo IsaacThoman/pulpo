@@ -66,7 +66,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       : new Date(Date.now() - Math.min(365, Math.max(1, Number(days) || 30)) * 86_400_000)
     const rows = await db.select({
       userId: users.id,
-      name: sql<string>`coalesce(${users.nickname}, ${users.name})`,
+      name: sql<string>`coalesce(nullif(trim(${users.nickname}), ''), ${users.name})`,
       color: users.leaderboardColor,
       balanceMicros: users.balanceMicros,
       calls: sql<number>`count(${usageEvents.id})::int`,

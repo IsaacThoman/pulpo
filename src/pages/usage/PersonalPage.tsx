@@ -27,10 +27,10 @@ const METRICS: { id: Metric; label: string }[] = [
 export function PersonalPage() {
   const loadPersonal = useUsage((s) => s.loadPersonal)
   const records = useUsage((s) => s.records)
-  const userId = useUsage((s) => s.currentUserId)
-  const users = useUsage((s) => s.users)
+  const usageUserId = useUsage((s) => s.currentUserId)
   const authUser = useAuth((state) => state.user)
-  const me = users.find((u) => u.id === userId) ?? {
+  const userId = authUser?.id ?? usageUserId
+  const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
     nickname: null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
     joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,

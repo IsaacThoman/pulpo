@@ -39,7 +39,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     const values = { ...(existing?.values as Record<string, unknown> | undefined), ...patch }
     const [saved] = await db.insert(userPreferences).values({ userId: user.id, values })
       .onConflictDoUpdate({ target: userPreferences.userId, set: { values, updatedAt: new Date() } }).returning()
-    const nickname = typeof patch.nickname === 'string' || patch.nickname === null ? patch.nickname : undefined
+    const nickname = typeof patch.nickname === 'string'
+      ? patch.nickname.trim() || null
+      : patch.nickname === null ? null : undefined
     const leaderboardVisible = typeof patch.leaderboardVisible === 'boolean' ? patch.leaderboardVisible : undefined
     const leaderboardColor = typeof patch.leaderboardColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(patch.leaderboardColor) ? patch.leaderboardColor : undefined
     const [revision] = await db.update(users).set({
