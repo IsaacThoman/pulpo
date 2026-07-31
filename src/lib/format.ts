@@ -16,6 +16,11 @@ export function formatUsd(usd: number): string {
   return `$${usd.toFixed(4)}`
 }
 
+/** Account balances are human-facing currency and always use cents. */
+export function formatBalance(usd: number): string {
+  return `$${usd.toFixed(2)}`
+}
+
 export function formatTokens(inTok: number, outTok: number): string {
   return `${formatNumber(inTok)} in / ${formatNumber(outTok)} out`
 }

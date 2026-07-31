@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -113,6 +113,10 @@ export function TextField({
   )
 }
 
+function formatNumFieldValue(value: number, decimals?: number): string {
+  return decimals === undefined ? String(value) : value.toFixed(decimals)
+}
+
 export function NumField({
   label,
   hint,
@@ -123,6 +127,7 @@ export function NumField({
   min,
   max,
   step,
+  decimals,
 }: {
   label: string
   hint?: string
@@ -133,7 +138,14 @@ export function NumField({
   min?: number
   max?: number
   step?: number
+  decimals?: number
 }) {
+  const focused = useRef(false)
+  const [draft, setDraft] = useState(() => formatNumFieldValue(value, decimals))
+  useEffect(() => {
+    if (!focused.current) setDraft(formatNumFieldValue(value, decimals))
+  }, [value, decimals])
+
   return (
     <Field label={label} hint={hint} indent={indent}>
       <div className="flex items-center gap-2">
@@ -143,8 +155,21 @@ export function NumField({
           max={max}
           step={step}
           className="w-28 text-right tabular-nums"
-          value={value}
-          onChange={(e) => onChange?.(parseFloat(e.target.value) || 0)}
+          value={decimals === undefined ? value : draft}
+          onFocus={() => { focused.current = true }}
+          onChange={(e) => {
+            if (decimals !== undefined) setDraft(e.target.value)
+            const parsed = parseFloat(e.target.value)
+            onChange?.(Number.isFinite(parsed) ? parsed : 0)
+          }}
+          onBlur={() => {
+            focused.current = false
+            if (decimals === undefined) return
+            const parsed = parseFloat(draft)
+            const normalized = Number.isFinite(parsed) ? parsed : 0
+            onChange?.(normalized)
+            setDraft(normalized.toFixed(decimals))
+          }}
         />
         {suffix && <span className="text-xs text-muted-foreground">{suffix}</span>}
       </div>

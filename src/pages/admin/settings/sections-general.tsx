@@ -83,6 +83,7 @@ export function AuthenticationSection() {
           onChange={(value) => s('defaultBalanceMicros', Math.round(Math.max(0, value) * 1_000_000))}
           min={0}
           step={0.01}
+          decimals={2}
           suffix="USD"
         />
       </Section>

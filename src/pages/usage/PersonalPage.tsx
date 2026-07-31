@@ -3,7 +3,7 @@ import { Clock } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
 import { makeDailyModelUsage } from '@/lib/mock'
-import { formatDate, formatUsd } from '@/lib/format'
+import { formatBalance, formatDate } from '@/lib/format'
 import { periodDays, rangeMs } from '@/lib/time-range'
 import type { Metric, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
@@ -89,7 +89,7 @@ export function PersonalPage() {
         <div className="text-right">
           <div className="mb-1 text-xs text-muted-foreground">Balance</div>
           <div className="text-2xl font-medium text-emerald-600 dark:text-emerald-400">
-            {formatUsd(me.balance)}
+            {formatBalance(me.balance)}
           </div>
         </div>
       </div>

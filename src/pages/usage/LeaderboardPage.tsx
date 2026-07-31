@@ -3,7 +3,7 @@ import { BarChart3, Save } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
-import { formatUsd } from '@/lib/format'
+import { formatBalance, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
@@ -48,7 +48,8 @@ function metricLabel(m: LBMetric): string {
 }
 
 function formatMetric(v: number, m: LBMetric): string {
-  if (m === 'cost' || m === 'balance') return formatUsd(v)
+  if (m === 'balance') return formatBalance(v)
+  if (m === 'cost') return formatUsd(v)
   if (m === 'water') return `${v.toFixed(4)} Gal`
   return Math.round(v).toLocaleString()
 }
@@ -281,8 +282,10 @@ export function LeaderboardPage() {
                   axisLine={{ stroke: 'var(--border)' }}
                   width={48}
                   tickFormatter={(v: number) =>
-                    metric === 'cost' || metric === 'balance'
-                      ? axisMoney(v)
+                    metric === 'balance'
+                      ? formatBalance(v)
+                      : metric === 'cost'
+                        ? axisMoney(v)
                       : metric === 'water'
                         ? v < 0.1
                           ? v.toFixed(3)

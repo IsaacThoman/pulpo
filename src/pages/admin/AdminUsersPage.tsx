@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
-import { formatCost, formatDate, timeAgo } from '@/lib/format'
+import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/api'
@@ -252,7 +252,7 @@ function BalanceCell({ user }: { user: MonitorUser }) {
         }}
         className="-mr-1.5 cursor-pointer rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent"
       >
-        {formatCost(user.balance)}
+        {formatBalance(user.balance)}
       </button>
     )
   }
