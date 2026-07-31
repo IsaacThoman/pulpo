@@ -405,6 +405,8 @@ export async function processGeneration(
     if (cancelled || !options.willRetry) {
       if (usage && usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
       else await releaseBudget(responseId)
+      const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+      if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
     if (!cancelled) throw error
   }
