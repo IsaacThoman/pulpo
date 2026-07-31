@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BarChart3, Check, Loader2, Plus, Settings2, X } from 'lucide-react'
+import { Check, Loader2, Plus, Settings2, X } from 'lucide-react'
 import { ADMIN_CONNECTIONS, type AdminConnection } from '@/lib/mock-admin'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Section, SecretField, TextField, Toggle } from '@/components/admin/kit'
+import { Section, Toggle } from '@/components/admin/kit'
 import { Switch } from '@/components/ui/switch'
 
 function ConnectionRow({
@@ -50,15 +50,8 @@ function ConnectionRow({
 export function ConnectionsPage() {
   const [conns, setConns] = useState(ADMIN_CONNECTIONS)
   const [openaiEnabled, setOpenaiEnabled] = useState(true)
-  const [ollamaEnabled, setOllamaEnabled] = useState(true)
-  const [direct, setDirect] = useState(false)
-  const [cache, setCache] = useState(true)
   const [editing, setEditing] = useState<AdminConnection | null>(null)
   const [verify, setVerify] = useState<'idle' | 'checking' | 'ok' | 'fail'>('idle')
-  // deathgrips usage portal config
-  const [usagePortal, setUsagePortal] = useState(true)
-  const [usageEndpoint, setUsageEndpoint] = useState('https://monitor.pulpo.dev/api/portal')
-  const [usageKey, setUsageKey] = useState('')
 
   const byType = (t: 'openai' | 'ollama') => conns.filter((c) => c.type === t)
   const toggle = (id: string, v: boolean) =>
@@ -100,59 +93,6 @@ export function ConnectionsPage() {
                 <Plus />
                 Add connection
               </Button>
-            </div>
-          </>
-        )}
-      </Section>
-
-      <Section title="Ollama API">
-        <Toggle label="Enable Ollama API" checked={ollamaEnabled} onChange={setOllamaEnabled} />
-        {ollamaEnabled && (
-          <>
-            {byType('ollama').map((c) => (
-              <ConnectionRow
-                key={c.id}
-                conn={c}
-                onConfigure={() => setEditing(c)}
-                onToggle={(v) => toggle(c.id, v)}
-              />
-            ))}
-            <div>
-              <Button variant="outline" size="sm">
-                <Plus />
-                Add connection
-              </Button>
-            </div>
-          </>
-        )}
-      </Section>
-
-      <Section title="General">
-        <Toggle
-          label="Direct connections"
-          hint="Allow users to connect to OpenAI-compatible endpoints from the browser."
-          checked={direct}
-          onChange={setDirect}
-        />
-        <Toggle label="Cache base model list" checked={cache} onChange={setCache} />
-      </Section>
-
-      {/* chat-deathgrips custom: usage portal */}
-      <Section title="Usage portal" hint="Custom integration — shows a Usage button in the sidebar that opens each user's monitor dashboard.">
-        <Toggle label="Enable usage portal" checked={usagePortal} onChange={setUsagePortal} />
-        {usagePortal && (
-          <>
-            <TextField
-              label="Monitor API endpoint"
-              value={usageEndpoint}
-              onChange={setUsageEndpoint}
-              mono
-              indent
-            />
-            <SecretField label="Monitor API key" value={usageKey} onChange={setUsageKey} indent />
-            <div className="flex items-center gap-2 pl-4 text-xs text-muted-foreground">
-              <BarChart3 className="size-3.5" />
-              Sidebar button posts id, email, name and role, then opens the returned URL.
             </div>
           </>
         )}
