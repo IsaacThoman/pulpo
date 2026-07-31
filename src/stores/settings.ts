@@ -7,6 +7,7 @@ export type Theme = 'light' | 'dark' | 'system'
 export type GenerationPrefs = Record<string, string>
 
 interface SettingsState {
+  ownerUserId: string | null
   theme: Theme
   language: string
   sendWithEnter: boolean
@@ -28,23 +29,28 @@ interface SettingsState {
   setPresetChoice: (modelId: string, presetId: string, choiceId: string) => void
 }
 
+export const DEFAULT_SETTINGS = {
+  theme: 'system' as Theme,
+  language: 'en-US',
+  sendWithEnter: true,
+  streamResponses: true,
+  showReasoning: true,
+  chatWidth: 'narrow' as const,
+  notifications: true,
+  customInstructions: '',
+  nickname: '',
+  memoryEnabled: false,
+  leaderboardVisible: true,
+  leaderboardColor: '#10b981',
+  localChatLimit: 50,
+  generation: {},
+}
+
 export const useSettings = create<SettingsState>()(
   persist(
     (set) => ({
-      theme: 'system',
-      language: 'en-US',
-      sendWithEnter: true,
-      streamResponses: true,
-      showReasoning: true,
-      chatWidth: 'narrow',
-      notifications: true,
-      customInstructions: '',
-      nickname: '',
-      memoryEnabled: false,
-      leaderboardVisible: true,
-      leaderboardColor: '#10b981',
-      localChatLimit: 50,
-      generation: {},
+      ownerUserId: null,
+      ...DEFAULT_SETTINGS,
       setTheme: (theme) => set({ theme }),
       set: (key, value) => set({ [key]: value } as Partial<SettingsState>),
       setGeneration: (modelId, prefs) =>

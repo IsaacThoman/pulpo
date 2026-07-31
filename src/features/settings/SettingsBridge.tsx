@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
-import { useSettings } from '@/stores/settings'
+import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
 
 const persistedKeys = [
   'theme', 'language', 'sendWithEnter', 'streamResponses', 'showReasoning',
@@ -26,10 +26,15 @@ export function SettingsBridge() {
   })
 
   useEffect(() => {
-    if (!query.data) return
-    if (Object.keys(query.data.values).length) useSettings.setState(query.data.values)
+    if (!userId || useSettings.getState().ownerUserId === userId) return
+    useSettings.setState({ ...DEFAULT_SETTINGS, ownerUserId: userId })
+  }, [userId])
+
+  useEffect(() => {
+    if (!query.data || !userId) return
+    useSettings.setState({ ...DEFAULT_SETTINGS, ...query.data.values, ownerUserId: userId })
     hydrated.current = true
-  }, [query.data])
+  }, [query.data, userId])
 
   useEffect(() => {
     if (!userId) return
