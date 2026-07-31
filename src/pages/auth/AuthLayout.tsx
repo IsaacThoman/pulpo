@@ -12,9 +12,6 @@ export function AuthLayout() {
       <div className="w-full max-w-[400px]">
         <Outlet />
       </div>
-      <p className="mt-10 text-center text-xs text-muted-foreground">
-        By continuing you agree to the Terms of Service and Privacy Policy.
-      </p>
     </div>
   )
 }
