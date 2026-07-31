@@ -183,9 +183,17 @@ export const useChat = create<ChatState>()((set, get) => ({
     const chat = toChat(row, state.chats.find((item) => item.id === row.id))
     const exists = state.chats.some((item) => item.id === row.id)
     const streaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
+    const responseSequences = { ...state.responseSequences }
+    for (const response of row.responses ?? []) {
+      responseSequences[response.id] = Math.max(
+        responseSequences[response.id] ?? 0,
+        response.snapshot.sequence,
+      )
+    }
     return {
       chats: exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats],
       streamingId: streaming,
+      responseSequences,
     }
   }),
 
