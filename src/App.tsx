@@ -10,7 +10,6 @@ const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ defau
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
 const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((module) => ({ default: module.PersonalPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
-const AnalyticsPage = lazy(() => import('@/pages/usage/AnalyticsPage').then((module) => ({ default: module.AnalyticsPage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
 const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
@@ -51,9 +50,6 @@ export default function App() {
             <Route path="usage" element={<UsageLayout />}>
               <Route index element={<PersonalPage />} />
               <Route path="leaderboard" element={<LeaderboardPage />} />
-              <Route element={<RequireAdmin />}>
-                <Route path="analytics" element={<AnalyticsPage />} />
-              </Route>
             </Route>
             <Route path="api-keys" element={<ApiKeysPage />} />
             <Route element={<RequireAdmin />}>

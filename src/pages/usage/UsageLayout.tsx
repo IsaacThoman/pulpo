@@ -1,23 +1,19 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useAuth } from '@/stores/auth'
 
 const TABS = [
   { to: '/usage', label: 'Personal', end: true },
   { to: '/usage/leaderboard', label: 'Leaderboard', end: false },
-  { to: '/usage/analytics', label: 'Analytics', end: false },
 ]
 
 export function UsageLayout() {
-  const role = useAuth((state) => state.user?.role)
-
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
         <h1 className="text-sm font-semibold">Usage</h1>
         <nav className="flex items-center gap-1">
-          {TABS.filter((tab) => tab.to !== '/usage/analytics' || role === 'admin').map((t) => (
+          {TABS.map((t) => (
             <NavLink
               key={t.to}
               to={t.to}
