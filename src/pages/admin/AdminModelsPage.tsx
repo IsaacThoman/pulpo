@@ -11,9 +11,7 @@ import {
   Pencil,
   Plus,
   Search,
-  Settings2,
   Trash2,
-  Upload,
 } from 'lucide-react'
 import { MODELS } from '@/lib/mock'
 import { formatNumber } from '@/lib/format'
@@ -419,7 +417,7 @@ function ModelEditorDialog({
 
 export function AdminModelsPage() {
   const [query, setQuery] = useState('')
-  const [view, setView] = useState('all')
+  const [view, setView] = useState('visible')
   const [enabled, setEnabled] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(MODELS.map((m) => [m.id, m.enabled]))
   )
@@ -441,18 +439,6 @@ export function AdminModelsPage() {
         <h2 className="text-lg font-semibold">Models</h2>
         <Badge variant="secondary">{MODELS.length}</Badge>
         <div className="flex-1" />
-        <Button variant="outline" size="sm">
-          <Upload />
-          Import
-        </Button>
-        <Button variant="outline" size="sm">
-          <Download />
-          Export
-        </Button>
-        <Button variant="outline" size="sm">
-          <Settings2 />
-          Manage
-        </Button>
         <Button size="sm">
           <Plus />
           New model
@@ -474,7 +460,7 @@ export function AdminModelsPage() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {['all', 'enabled', 'disabled', 'visible', 'hidden'].map((v) => (
+            {['visible', 'hidden', 'all', 'enabled', 'disabled'].map((v) => (
               <SelectItem key={v} value={v} className="capitalize">
                 {v}
               </SelectItem>
