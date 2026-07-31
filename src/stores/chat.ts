@@ -220,6 +220,9 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   applyResponseSnapshot: (snapshot) => {
     if ((get().responseSequences[snapshot.responseId] ?? 0) > snapshot.sequence) return
+    const affectedChatId = get().chats.find((chat) =>
+      chat.messages.some((message) => message.id === snapshot.responseId)
+    )?.id
     set((state) => ({
       responseSequences: { ...state.responseSequences, [snapshot.responseId]: snapshot.sequence },
       streamingId: ['queued', 'in_progress'].includes(snapshot.status) ? snapshot.responseId : state.streamingId === snapshot.responseId ? null : state.streamingId,
@@ -237,7 +240,10 @@ export const useChat = create<ChatState>()((set, get) => ({
         }),
       })),
     }))
-    if (!['queued', 'in_progress'].includes(snapshot.status)) void queryClient.invalidateQueries({ queryKey: chatsKey() })
+    if (!['queued', 'in_progress'].includes(snapshot.status)) {
+      void queryClient.invalidateQueries({ queryKey: chatsKey() })
+      if (affectedChatId) void queryClient.invalidateQueries({ queryKey: chatKey(affectedChatId) })
+    }
   },
 
   newChat: (modelId) => {
