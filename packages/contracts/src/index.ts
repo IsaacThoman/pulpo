@@ -115,6 +115,42 @@ export const modelSchema = z.object({
 })
 export type Model = z.infer<typeof modelSchema>
 
+export const createProviderSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  baseUrl: z.url().default('https://api.openai.com/v1'),
+  apiKey: z.string().min(1),
+  organizationId: z.string().trim().optional(),
+  projectId: z.string().trim().optional(),
+  requestTimeoutMs: z.number().int().min(1_000).max(900_000).default(120_000),
+})
+
+export const createModelSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
+  providerConnectionId: idSchema,
+  labId: idSchema.nullable().default(null),
+  upstreamModelId: z.string().min(1).max(200),
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(2_000).default(''),
+  enabled: z.boolean().default(true),
+  contextWindow: z.number().int().positive(),
+  maxOutputTokens: z.number().int().positive(),
+  executionMode: executionModeSchema.default('stream'),
+  tags: z.array(z.string()).default([]),
+  allowedParameters: z.array(z.string()).default([]),
+  inputPriceMicros: z.number().int().nonnegative(),
+  cachedInputPriceMicros: z.number().int().nonnegative(),
+  outputPriceMicros: z.number().int().nonnegative(),
+  perRequestPriceMicros: z.number().int().nonnegative().default(0),
+})
+
+export const createApiKeySchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  scopes: z.array(z.enum(['responses', 'models'])).min(1),
+  allowedModels: z.array(z.string()).default([]),
+  monthlyBudgetMicros: z.number().int().positive().nullable().default(null),
+  lifetimeBudgetMicros: z.number().int().positive().nullable().default(null),
+})
+
 export const chatSummarySchema = z.object({
   id: idSchema,
   title: z.string(),
