@@ -2,7 +2,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { usageEvents, users } from '../database/schema.js'
+import { creditLedger, usageEvents, users } from '../database/schema.js'
 
 function sinceFromQuery(query: unknown): Date {
   const days = Math.min(365, Math.max(1, Number((query as { days?: string }).days ?? 30)))
@@ -34,7 +34,15 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/usage/records', async (request) => {
     const user = requireUser(request)
     const limit = Math.min(200, Math.max(1, Number((request.query as { limit?: string }).limit ?? 50)))
-    return { data: await db.select().from(usageEvents).where(eq(usageEvents.userId, user.id)).orderBy(desc(usageEvents.createdAt)).limit(limit) }
+    const rows = await db.select({
+      usage: usageEvents,
+      balanceAfterMicros: creditLedger.balanceAfterMicros,
+    }).from(usageEvents)
+      .leftJoin(creditLedger, eq(creditLedger.responseId, usageEvents.responseId))
+      .where(eq(usageEvents.userId, user.id))
+      .orderBy(desc(usageEvents.createdAt))
+      .limit(limit)
+    return { data: rows.map(({ usage, balanceAfterMicros }) => ({ ...usage, balanceAfterMicros })) }
   })
 
   app.get('/api/usage/daily', async (request) => {
