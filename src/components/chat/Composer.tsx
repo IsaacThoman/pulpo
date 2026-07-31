@@ -1,15 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  ArrowUp,
-  Brain,
-  Check,
-  ChevronDown,
-  Mic,
-  Plus,
-  Square,
-  Zap,
-  ZapOff,
-} from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, Mic, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -22,15 +12,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
-import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
+import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
 import { getModel } from '@/lib/mock'
-import type { SpeedOption } from '@/lib/types'
+import { PresetIcon } from '@/components/chat/PresetIcon'
 import { cn } from '@/lib/utils'
-
-const SPEED_LABELS: Record<SpeedOption, string> = {
-  standard: 'Standard',
-  fast: 'Fast',
-}
 
 export function Composer({
   chatId,
@@ -50,15 +35,11 @@ export function Composer({
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
-  const setGeneration = useSettings((s) => s.setGeneration)
+  const setPresetChoice = useSettings((s) => s.setPresetChoice)
 
   const options = chatOptionsFor(getModel(modelId), overrides)
-  const prefs = resolveGeneration(options, generation[modelId])
-  const showEffort = options.reasoningEfforts.length > 0
-  const showSpeed = options.speedOptions.length > 1
-  const selectedEffort = options.reasoningEfforts.find(
-    (effort) => effort.internalName === prefs.reasoningEffort
-  )
+  const selections = resolveSelections(options, generation[modelId])
+  const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
   useEffect(() => {
     ref.current?.focus()
@@ -112,7 +93,7 @@ export function Composer({
             <Plus className="size-4.5" />
           </button>
 
-          {(showEffort || showSpeed) && (
+          {activePresets.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -120,59 +101,43 @@ export function Composer({
                   className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   aria-label="Generation options"
                 >
-                  {showEffort && <Brain className="size-3.5" />}
-                  {showEffort && selectedEffort && <span>{selectedEffort.displayName}</span>}
-                  {showEffort && showSpeed && <span className="text-border">·</span>}
-                  {showSpeed &&
-                    (prefs.speed === 'standard' ? (
-                      <ZapOff className="size-3.5" />
-                    ) : (
-                      <Zap className="size-3.5" />
-                    ))}
-                  {showSpeed && prefs.speed && <span>{SPEED_LABELS[prefs.speed]}</span>}
+                  {activePresets.map((preset, i) => {
+                    const choice = preset.choices.find((c) => c.id === selections[preset.id])
+                    const icon = choice?.icon ?? preset.icon
+                    return (
+                      <span key={preset.id} className="flex items-center gap-1">
+                        {i > 0 && <span className="text-border">·</span>}
+                        <PresetIcon name={icon} />
+                        {choice && <span>{choice.displayName}</span>}
+                      </span>
+                    )
+                  })}
                   <ChevronDown className="size-3 opacity-60" />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" className="w-44">
-                {showEffort && (
-                  <>
+              <DropdownMenuContent align="start" side="top" className="w-48">
+                {activePresets.map((preset, i) => (
+                  <div key={preset.id}>
+                    {i > 0 && <DropdownMenuSeparator />}
                     <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
-                      <Brain className="size-3.5" /> Reasoning effort
+                      <PresetIcon name={preset.icon} />
+                      {preset.name}
                     </DropdownMenuLabel>
-                    {options.reasoningEfforts.map((effort) => (
+                    {preset.choices.map((choice) => (
                       <DropdownMenuItem
-                        key={effort.internalName}
-                        onClick={() =>
-                          setGeneration(modelId, { reasoningEffort: effort.internalName })
-                        }
+                        key={choice.id}
+                        onClick={() => setPresetChoice(modelId, preset.id, choice.id)}
                         className="justify-between"
                       >
-                        {effort.displayName}
-                        {prefs.reasoningEffort === effort.internalName && (
-                          <Check className="size-3.5" />
-                        )}
+                        <span className="flex items-center gap-1.5">
+                          <PresetIcon name={choice.icon ?? preset.icon} className="opacity-70" />
+                          {choice.displayName}
+                        </span>
+                        {selections[preset.id] === choice.id && <Check className="size-3.5" />}
                       </DropdownMenuItem>
                     ))}
-                  </>
-                )}
-                {showEffort && showSpeed && <DropdownMenuSeparator />}
-                {showSpeed && (
-                  <>
-                    <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
-                      <Zap className="size-3.5" /> Speed
-                    </DropdownMenuLabel>
-                    {options.speedOptions.map((speed) => (
-                      <DropdownMenuItem
-                        key={speed}
-                        onClick={() => setGeneration(modelId, { speed })}
-                        className="justify-between"
-                      >
-                        {SPEED_LABELS[speed]}
-                        {prefs.speed === speed && <Check className="size-3.5" />}
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
+                  </div>
+                ))}
               </DropdownMenuContent>
             </DropdownMenu>
           )}

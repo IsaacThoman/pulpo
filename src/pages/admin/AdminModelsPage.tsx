@@ -16,10 +16,11 @@ import {
 import { MODELS } from '@/lib/mock'
 import { ADMIN_PROVIDERS } from '@/lib/mock-admin'
 import { formatNumber } from '@/lib/format'
-import type { Model, SpeedOption } from '@/lib/types'
+import type { ChatPreset, ChatPresetAction, ChatPresetIcon, Model } from '@/lib/types'
 import { chatOptionsFor, useModelConfig } from '@/stores/modelConfig'
 import { ModelIcon } from '@/components/ModelIcon'
 import { AiLogo } from '@/components/ProviderLogo'
+import { PRESET_ICON_OPTIONS, PresetIcon } from '@/components/chat/PresetIcon'
 import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -52,15 +53,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-
-const ALL_SPEEDS: { value: SpeedOption; label: string }[] = [
-  { value: 'standard', label: 'Standard' },
-  { value: 'fast', label: 'Fast' },
-]
-
-function toggleInList<T>(list: T[], value: T): T[] {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
-}
 
 function LogoPickerTile({
   label,
@@ -205,15 +197,60 @@ function ModelEditorDialog({
   const overrides = useModelConfig((s) => s.overrides)
   const setOptions = useModelConfig((s) => s.setOptions)
   const [chatOptions, setChatOptions] = useState(() => chatOptionsFor(model, overrides))
-  const reasoningInternalNames = chatOptions.reasoningEfforts.map((effort) =>
-    effort.internalName.trim()
+  const presetsValid = chatOptions.presets.every(
+    (preset) =>
+      preset.name.trim() &&
+      preset.choices.length > 0 &&
+      preset.choices.every((c) => {
+        if (!c.displayName.trim()) return false
+        if (c.action.type === 'redirect' && !c.action.modelId) return false
+        if (c.action.type === 'params') {
+          try {
+            JSON.parse(c.action.params || '{}')
+          } catch {
+            return false
+          }
+        }
+        return true
+      })
   )
-  const reasoningEffortsValid =
-    chatOptions.reasoningEfforts.every(
-      (effort) => effort.displayName.trim() && effort.internalName.trim()
-    ) && new Set(reasoningInternalNames).size === reasoningInternalNames.length
   const selectedProvider = ADMIN_PROVIDERS.find((p) => p.id === providerId)
   const stickySeconds = Number(stickyBlock) || 0
+
+  const updatePreset = (index: number, patch: Partial<ChatPreset>) =>
+    setChatOptions((o) => ({
+      presets: o.presets.map((p, i) => (i === index ? { ...p, ...patch } : p)),
+    }))
+
+  const updateChoice = (
+    presetIndex: number,
+    choiceIndex: number,
+    patch: Partial<ChatPreset['choices'][number]>
+  ) =>
+    setChatOptions((o) => ({
+      presets: o.presets.map((p, i) =>
+        i === presetIndex
+          ? {
+              ...p,
+              choices: p.choices.map((c, j) => (j === choiceIndex ? { ...c, ...patch } : c)),
+            }
+          : p
+      ),
+    }))
+
+  const setChoiceAction = (
+    presetIndex: number,
+    choiceIndex: number,
+    type: ChatPresetAction['type']
+  ) => {
+    const action: ChatPresetAction =
+      type === 'none'
+        ? { type: 'none' }
+        : type === 'redirect'
+          ? { type: 'redirect', modelId: '' }
+          : { type: 'params', params: '{}' }
+    updateChoice(presetIndex, choiceIndex, { action })
+  }
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -473,117 +510,239 @@ function ModelEditorDialog({
               <Textarea rows={3} placeholder="You are a helpful assistant." />
             </div>
 
-            <div className="space-y-2">
-              <Label>Chat options</Label>
-              <p className="text-[11px] text-muted-foreground">
-                Configure the choices users can pick in the composer. Reasoning internal names are
-                sent to the model API.
-              </p>
+            <div className="space-y-3">
+              <div>
+                <Label>Chat presets</Label>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Generic composer controls. Each choice can do nothing, override custom params, or
+                  redirect to another model.
+                </p>
+              </div>
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">Reasoning effort</div>
-                  {chatOptions.reasoningEfforts.length > 0 && (
-                    <div className="grid grid-cols-[1fr_1fr_32px] gap-2 px-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-                      <span>Display name</span>
-                      <span>Internal name</span>
-                      <span />
-                    </div>
-                  )}
-                  {chatOptions.reasoningEfforts.map((effort, index) => (
-                    <div key={index} className="grid grid-cols-[1fr_1fr_32px] gap-2">
-                      <Input
-                        value={effort.displayName}
-                        onChange={(event) =>
-                          setChatOptions((options) => ({
-                            ...options,
-                            reasoningEfforts: options.reasoningEfforts.map((option, optionIndex) =>
-                              optionIndex === index
-                                ? { ...option, displayName: event.target.value }
-                                : option
-                            ),
-                          }))
-                        }
-                        placeholder="e.g. High"
-                        className="h-8"
-                      />
-                      <Input
-                        value={effort.internalName}
-                        onChange={(event) =>
-                          setChatOptions((options) => ({
-                            ...options,
-                            reasoningEfforts: options.reasoningEfforts.map((option, optionIndex) =>
-                              optionIndex === index
-                                ? { ...option, internalName: event.target.value }
-                                : option
-                            ),
-                          }))
-                        }
-                        placeholder="e.g. high"
-                        className="h-8 font-mono text-xs"
-                      />
+                {chatOptions.presets.map((preset, presetIndex) => (
+                  <div key={preset.id} className="space-y-3 rounded-lg border p-3">
+                    <div className="flex items-start gap-2">
+                      <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+                        <Field label="Preset name">
+                          <Input
+                            value={preset.name}
+                            onChange={(e) => updatePreset(presetIndex, { name: e.target.value })}
+                            placeholder="e.g. Reasoning"
+                            className="h-8"
+                          />
+                        </Field>
+                        <Field label="Default icon">
+                          <Select
+                            value={preset.icon}
+                            onValueChange={(v) =>
+                              updatePreset(presetIndex, { icon: v as ChatPresetIcon })
+                            }
+                          >
+                            <SelectTrigger className="h-8 w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {PRESET_ICON_OPTIONS.map((opt) => (
+                                <SelectItem key={opt.id} value={opt.id}>
+                                  <span className="flex items-center gap-2">
+                                    <PresetIcon name={opt.id} />
+                                    {opt.label}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </Field>
+                      </div>
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon-sm"
-                        aria-label={`Remove ${effort.displayName || 'reasoning effort'}`}
+                        className="mt-6"
+                        aria-label="Remove preset"
                         onClick={() =>
-                          setChatOptions((options) => ({
-                            ...options,
-                            reasoningEfforts: options.reasoningEfforts.filter(
-                              (_, optionIndex) => optionIndex !== index
-                            ),
+                          setChatOptions((o) => ({
+                            presets: o.presets.filter((_, i) => i !== presetIndex),
                           }))
                         }
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
                     </div>
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setChatOptions((options) => ({
-                        ...options,
-                        reasoningEfforts: [
-                          ...options.reasoningEfforts,
-                          { displayName: '', internalName: '' },
-                        ],
-                      }))
-                    }
-                  >
-                    <Plus />
-                    Add effort
-                  </Button>
-                  {!reasoningEffortsValid && (
-                    <p className="text-xs text-destructive">
-                      Each effort needs a display name and a unique internal name.
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <div className="mb-1 text-xs font-medium text-muted-foreground">Speed</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {ALL_SPEEDS.map(({ value, label }) => (
-                      <label
-                        key={value}
-                        className="flex cursor-pointer items-center justify-between rounded-md px-1 py-1.5 text-sm hover:bg-accent/60"
+
+                    <div className="space-y-2">
+                      <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        Choices
+                      </div>
+                      {preset.choices.map((choice, choiceIndex) => (
+                        <div
+                          key={choice.id}
+                          className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2.5"
+                        >
+                          <div className="grid grid-cols-[1fr_120px_32px] gap-2">
+                            <Input
+                              value={choice.displayName}
+                              onChange={(e) =>
+                                updateChoice(presetIndex, choiceIndex, {
+                                  displayName: e.target.value,
+                                })
+                              }
+                              placeholder="Display name"
+                              className="h-8"
+                            />
+                            <Select
+                              value={choice.icon ?? '__none__'}
+                              onValueChange={(v) =>
+                                updateChoice(presetIndex, choiceIndex, {
+                                  icon: v === '__none__' ? undefined : (v as ChatPresetIcon),
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-full">
+                                <SelectValue placeholder="Icon" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">Default</SelectItem>
+                                {PRESET_ICON_OPTIONS.map((opt) => (
+                                  <SelectItem key={opt.id} value={opt.id}>
+                                    <span className="flex items-center gap-2">
+                                      <PresetIcon name={opt.id} />
+                                      {opt.label}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label="Remove choice"
+                              onClick={() =>
+                                updatePreset(presetIndex, {
+                                  choices: preset.choices.filter((_, i) => i !== choiceIndex),
+                                })
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+                          <div className="grid grid-cols-[140px_1fr] gap-2">
+                            <Select
+                              value={choice.action.type}
+                              onValueChange={(v) =>
+                                setChoiceAction(
+                                  presetIndex,
+                                  choiceIndex,
+                                  v as ChatPresetAction['type']
+                                )
+                              }
+                            >
+                              <SelectTrigger className="h-8 w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                <SelectItem value="redirect">Redirect</SelectItem>
+                                <SelectItem value="params">Custom params</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            {choice.action.type === 'none' && (
+                              <div className="flex h-8 items-center text-xs text-muted-foreground">
+                                No override when selected
+                              </div>
+                            )}
+                            {choice.action.type === 'redirect' && (
+                              <Select
+                                value={choice.action.modelId || undefined}
+                                onValueChange={(v) =>
+                                  updateChoice(presetIndex, choiceIndex, {
+                                    action: { type: 'redirect', modelId: v },
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="h-8 w-full">
+                                  <SelectValue placeholder="Target model" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {MODELS.filter((m) => m.id !== model.id).map((m) => (
+                                    <SelectItem key={m.id} value={m.id}>
+                                      {m.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                            {choice.action.type === 'params' && (
+                              <Input
+                                value={choice.action.params}
+                                onChange={(e) =>
+                                  updateChoice(presetIndex, choiceIndex, {
+                                    action: { type: 'params', params: e.target.value },
+                                  })
+                                }
+                                placeholder='{"reasoning_effort":"high"}'
+                                className="h-8 font-mono text-xs"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          updatePreset(presetIndex, {
+                            choices: [
+                              ...preset.choices,
+                              {
+                                id: crypto.randomUUID().slice(0, 8),
+                                displayName: '',
+                                action: { type: 'none' },
+                              },
+                            ],
+                          })
+                        }
                       >
-                        {label}
-                        <Switch
-                          checked={chatOptions.speedOptions.includes(value)}
-                          onCheckedChange={() =>
-                            setChatOptions((o) => ({
-                              ...o,
-                              speedOptions: toggleInList(o.speedOptions, value),
-                            }))
-                          }
-                        />
-                      </label>
-                    ))}
+                        <Plus />
+                        Add choice
+                      </Button>
+                    </div>
                   </div>
-                </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setChatOptions((o) => ({
+                      presets: [
+                        ...o.presets,
+                        {
+                          id: crypto.randomUUID().slice(0, 8),
+                          name: '',
+                          icon: 'circle',
+                          choices: [
+                            {
+                              id: crypto.randomUUID().slice(0, 8),
+                              displayName: 'Default',
+                              action: { type: 'none' },
+                            },
+                          ],
+                        },
+                      ],
+                    }))
+                  }
+                >
+                  <Plus />
+                  Add preset
+                </Button>
+                {!presetsValid && chatOptions.presets.length > 0 && (
+                  <p className="text-xs text-destructive">
+                    Each preset needs a name and valid choices (redirect target or JSON params).
+                  </p>
+                )}
               </div>
             </div>
 
@@ -631,11 +790,18 @@ function ModelEditorDialog({
       model_logo: modelLogo,
       description: model.description,
       chat_options: {
-        reasoning_efforts: chatOptions.reasoningEfforts.map((effort) => ({
-          display_name: effort.displayName,
-          internal_name: effort.internalName,
+        presets: chatOptions.presets.map((preset) => ({
+          id: preset.id,
+          name: preset.name,
+          icon: preset.icon,
+          default_choice_id: preset.defaultChoiceId,
+          choices: preset.choices.map((c) => ({
+            id: c.id,
+            display_name: c.displayName,
+            icon: c.icon,
+            action: c.action,
+          })),
         })),
-        speed_options: chatOptions.speedOptions,
       },
     },
   },
@@ -652,13 +818,16 @@ function ModelEditorDialog({
             Cancel
           </Button>
           <Button
-            disabled={!reasoningEffortsValid}
+            disabled={!presetsValid}
             onClick={() => {
               setOptions(model.id, {
-                ...chatOptions,
-                reasoningEfforts: chatOptions.reasoningEfforts.map((effort) => ({
-                  displayName: effort.displayName.trim(),
-                  internalName: effort.internalName.trim(),
+                presets: chatOptions.presets.map((preset) => ({
+                  ...preset,
+                  name: preset.name.trim(),
+                  choices: preset.choices.map((c) => ({
+                    ...c,
+                    displayName: c.displayName.trim(),
+                  })),
                 })),
               })
               onClose()

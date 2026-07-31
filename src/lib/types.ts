@@ -1,14 +1,39 @@
-/** Internal reasoning effort name sent to the model API. */
-export type ReasoningEffort = string
+/** Lucide icon id used for preset / choice marks in the composer. */
+export type ChatPresetIcon =
+  | 'brain'
+  | 'zap'
+  | 'zap-off'
+  | 'gauge'
+  | 'sparkles'
+  | 'rocket'
+  | 'circle'
+  | 'flame'
+  | 'timer'
 
-export interface ReasoningEffortOption {
-  /** User-facing label shown in the composer. */
+/** What happens when a preset choice is selected. */
+export type ChatPresetAction =
+  | { type: 'none' }
+  | { type: 'redirect'; modelId: string }
+  | { type: 'params'; params: string }
+
+export interface ChatPresetChoice {
+  id: string
   displayName: string
-  /** Provider-facing value sent to the model API. */
-  internalName: ReasoningEffort
+  /** Optional icon when this choice is the active selection. */
+  icon?: ChatPresetIcon
+  action: ChatPresetAction
 }
 
-export type SpeedOption = 'standard' | 'fast'
+/** A named group of composer choices (e.g. Reasoning, Speed). */
+export interface ChatPreset {
+  id: string
+  name: string
+  /** Default icon for the group when no choice-specific icon applies. */
+  icon: ChatPresetIcon
+  choices: ChatPresetChoice[]
+  /** Choice selected by default when the user has no saved preference. */
+  defaultChoiceId?: string
+}
 
 export interface Model {
   id: string
@@ -30,10 +55,8 @@ export interface Model {
   perMessagePrice: number
   enabled: boolean
   pinned?: boolean
-  /** Reasoning effort options shown in the chat composer (admin-configured; empty = hide control). */
-  reasoningEfforts: ReasoningEffortOption[]
-  /** Speed options shown in the chat composer (admin-configured; empty = hide control). */
-  speedOptions: SpeedOption[]
+  /** Composer presets (admin-configured; empty = no extra controls). */
+  presets: ChatPreset[]
 }
 
 export interface Attachment {
@@ -54,8 +77,8 @@ export interface Message {
   cost?: number
   latencyMs?: number
   reasoning?: string
-  reasoningEffort?: ReasoningEffort
-  speed?: SpeedOption
+  /** Selected preset choice ids keyed by preset id. */
+  presetSelections?: Record<string, string>
   attachments?: Attachment[]
   rating?: 'up' | 'down' | null
   done: boolean

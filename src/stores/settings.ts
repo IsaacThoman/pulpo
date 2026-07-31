@@ -1,13 +1,10 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { ReasoningEffort, SpeedOption } from '@/lib/types'
 
 export type Theme = 'light' | 'dark' | 'system'
 
-export interface GenerationPrefs {
-  reasoningEffort?: ReasoningEffort
-  speed?: SpeedOption
-}
+/** Per-model map of preset id → selected choice id. */
+export type GenerationPrefs = Record<string, string>
 
 interface SettingsState {
   theme: Theme
@@ -19,11 +16,12 @@ interface SettingsState {
   notifications: boolean
   customInstructions: string
   nickname: string
-  /** Per-model composer selections (reasoning effort / speed). */
+  /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
   set: <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => void
   setGeneration: (modelId: string, prefs: GenerationPrefs) => void
+  setPresetChoice: (modelId: string, presetId: string, choiceId: string) => void
 }
 
 export const useSettings = create<SettingsState>()(
@@ -44,6 +42,13 @@ export const useSettings = create<SettingsState>()(
       setGeneration: (modelId, prefs) =>
         set((s) => ({
           generation: { ...s.generation, [modelId]: { ...s.generation[modelId], ...prefs } },
+        })),
+      setPresetChoice: (modelId, presetId, choiceId) =>
+        set((s) => ({
+          generation: {
+            ...s.generation,
+            [modelId]: { ...s.generation[modelId], [presetId]: choiceId },
+          },
         })),
     }),
     { name: 'pulpo-settings' }

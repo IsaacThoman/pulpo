@@ -1,19 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type {
-  Model,
-  ReasoningEffort,
-  ReasoningEffortOption,
-  SpeedOption,
-} from '@/lib/types'
+import type { ChatPreset, ChatPresetChoice, Model } from '@/lib/types'
 
 export interface ChatOptions {
-  reasoningEfforts: ReasoningEffortOption[]
-  speedOptions: SpeedOption[]
+  presets: ChatPreset[]
 }
 
 interface ModelConfigState {
-  /** Admin overrides per model id — which effort/speed options appear in the composer. */
+  /** Admin overrides per model id. */
   overrides: Record<string, ChatOptions>
   setOptions: (modelId: string, options: ChatOptions) => void
 }
@@ -29,63 +23,74 @@ export const useModelConfig = create<ModelConfigState>()(
   )
 )
 
-function displayNameForLegacyEffort(internalName: string): string {
-  if (internalName === 'none') return 'Off'
-  return `${internalName.charAt(0).toUpperCase()}${internalName.slice(1)}`
-}
-
-/** Convert persisted pre-pair options to the current display/internal-name shape. */
-function normalizeReasoningEfforts(
-  efforts: Array<ReasoningEffortOption | ReasoningEffort> | undefined
-): ReasoningEffortOption[] {
-  return (efforts ?? []).map((effort) =>
-    typeof effort === 'string'
-      ? { displayName: displayNameForLegacyEffort(effort), internalName: effort }
-      : effort
-  )
-}
-
 /** Effective chat options for a model: admin override wins, else the model's defaults. */
 export function chatOptionsFor(model: Model, overrides: Record<string, ChatOptions>): ChatOptions {
-  const options = overrides[model.id] ?? {
-    reasoningEfforts: model.reasoningEfforts,
-    speedOptions: model.speedOptions,
+  return overrides[model.id] ?? { presets: model.presets }
+}
+
+/** Resolve saved choice ids against available presets. */
+export function resolveSelections(
+  options: ChatOptions,
+  prefs: Record<string, string> | undefined
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const preset of options.presets) {
+    if (preset.choices.length === 0) continue
+    const saved = prefs?.[preset.id]
+    if (saved && preset.choices.some((c) => c.id === saved)) {
+      out[preset.id] = saved
+    } else if (preset.defaultChoiceId && preset.choices.some((c) => c.id === preset.defaultChoiceId)) {
+      out[preset.id] = preset.defaultChoiceId
+    } else {
+      out[preset.id] = preset.choices[0]!.id
+    }
   }
-  return {
-    ...options,
-    reasoningEfforts: normalizeReasoningEfforts(options.reasoningEfforts),
-  }
+  return out
 }
 
-function defaultEffort(efforts: ReasoningEffortOption[]): ReasoningEffort | undefined {
-  if (efforts.length === 0) return undefined
-  const medium = efforts.find((effort) => effort.internalName === 'medium')
-  if (medium) return medium.internalName
-  return (
-    efforts.find((effort) => effort.internalName !== 'none')?.internalName ??
-    efforts[0].internalName
-  )
+export function choiceFor(
+  options: ChatOptions,
+  selections: Record<string, string>,
+  presetId: string
+): ChatPresetChoice | undefined {
+  const preset = options.presets.find((p) => p.id === presetId)
+  if (!preset) return undefined
+  const id = selections[presetId]
+  return preset.choices.find((c) => c.id === id) ?? preset.choices[0]
 }
 
-function defaultSpeed(speeds: SpeedOption[]): SpeedOption | undefined {
-  if (speeds.length === 0) return undefined
-  return speeds.includes('standard') ? 'standard' : speeds[0]
-}
-
-/** Resolve the user's saved prefs against the options an admin allows, falling back to defaults. */
+/** Apply redirects and merge custom params from selected choices. */
 export function resolveGeneration(
   options: ChatOptions,
-  prefs: { reasoningEffort?: ReasoningEffort; speed?: SpeedOption } | undefined
-): { reasoningEffort?: ReasoningEffort; speed?: SpeedOption } {
-  return {
-    reasoningEffort:
-      prefs?.reasoningEffort &&
-      options.reasoningEfforts.some((effort) => effort.internalName === prefs.reasoningEffort)
-        ? prefs.reasoningEffort
-        : defaultEffort(options.reasoningEfforts),
-    speed:
-      prefs?.speed && options.speedOptions.includes(prefs.speed)
-        ? prefs.speed
-        : defaultSpeed(options.speedOptions),
+  prefs: Record<string, string> | undefined,
+  baseModelId: string
+): {
+  selections: Record<string, string>
+  effectiveModelId: string
+  customParams: Record<string, unknown>
+  choices: ChatPresetChoice[]
+} {
+  const selections = resolveSelections(options, prefs)
+  let effectiveModelId = baseModelId
+  const customParams: Record<string, unknown> = {}
+  const choices: ChatPresetChoice[] = []
+
+  for (const preset of options.presets) {
+    const choice = choiceFor(options, selections, preset.id)
+    if (!choice) continue
+    choices.push(choice)
+    if (choice.action.type === 'redirect' && choice.action.modelId) {
+      effectiveModelId = choice.action.modelId
+    }
+    if (choice.action.type === 'params') {
+      try {
+        const parsed = JSON.parse(choice.action.params || '{}') as Record<string, unknown>
+        Object.assign(customParams, parsed)
+      } catch {
+        /* ignore invalid JSON in mock */
+      }
+    }
   }
+
+  return { selections, effectiveModelId, customParams, choices }
 }

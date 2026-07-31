@@ -1,10 +1,10 @@
 import type {
   Chat,
+  ChatPreset,
   Folder,
   Message,
   Model,
   MonitorUser,
-  ReasoningEffortOption,
   UsageRecord,
 } from './types'
 
@@ -18,14 +18,62 @@ export function mulberry32(seed: number) {
   }
 }
 
-const effortOptions = (...internalNames: string[]): ReasoningEffortOption[] =>
-  internalNames.map((internalName) => ({
-    displayName:
-      internalName === 'none'
-        ? 'Off'
-        : `${internalName.charAt(0).toUpperCase()}${internalName.slice(1)}`,
-    internalName,
-  }))
+function reasoningPreset(...levels: string[]): ChatPreset {
+  return {
+    id: 'reasoning',
+    name: 'Reasoning',
+    icon: 'brain',
+    defaultChoiceId: levels.includes('medium')
+      ? 'medium'
+      : levels.find((l) => l !== 'none') ?? levels[0],
+    choices: levels.map((level) => ({
+      id: level,
+      displayName:
+        level === 'none' ? 'Off' : `${level.charAt(0).toUpperCase()}${level.slice(1)}`,
+      action:
+        level === 'none'
+          ? { type: 'none' as const }
+          : {
+              type: 'params' as const,
+              params: JSON.stringify({ reasoning_effort: level }),
+            },
+    })),
+  }
+}
+
+function speedPreset(opts: { standard?: boolean; fastRedirect?: string } = {}): ChatPreset {
+  const choices: ChatPreset['choices'] = []
+  if (opts.standard !== false) {
+    choices.push({
+      id: 'standard',
+      displayName: 'Standard',
+      icon: 'zap-off',
+      action: { type: 'none' },
+    })
+  }
+  if (opts.fastRedirect) {
+    choices.push({
+      id: 'fast',
+      displayName: 'Fast',
+      icon: 'zap',
+      action: { type: 'redirect', modelId: opts.fastRedirect },
+    })
+  } else {
+    choices.push({
+      id: 'fast',
+      displayName: 'Fast',
+      icon: 'zap',
+      action: { type: 'params', params: JSON.stringify({ service_tier: 'priority' }) },
+    })
+  }
+  return {
+    id: 'speed',
+    name: 'Speed',
+    icon: 'gauge',
+    defaultChoiceId: 'standard',
+    choices,
+  }
+}
 
 export const MODELS: Model[] = [
   {
@@ -45,8 +93,7 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
-    reasoningEfforts: effortOptions('low', 'medium', 'high'),
-    speedOptions: ['standard', 'fast'],
+    presets: [reasoningPreset('low', 'medium', 'high'), speedPreset()],
   },
   {
     id: 'gpt-4o',
@@ -65,8 +112,7 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
-    reasoningEfforts: [],
-    speedOptions: ['standard', 'fast'],
+    presets: [speedPreset()],
   },
   {
     id: 'gpt-4o-mini',
@@ -84,8 +130,7 @@ export const MODELS: Model[] = [
     outputPrice: 0.6,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: [],
-    speedOptions: ['standard'],
+    presets: [],
   },
   {
     id: 'claude-sonnet-4',
@@ -104,8 +149,7 @@ export const MODELS: Model[] = [
     perMessagePrice: 0,
     enabled: true,
     pinned: true,
-    reasoningEfforts: [],
-    speedOptions: ['standard', 'fast'],
+    presets: [speedPreset()],
   },
   {
     id: 'deepseek-r1',
@@ -123,8 +167,7 @@ export const MODELS: Model[] = [
     outputPrice: 2.19,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: effortOptions('low', 'medium', 'high'),
-    speedOptions: ['standard', 'fast'],
+    presets: [reasoningPreset('low', 'medium', 'high'), speedPreset()],
   },
   {
     id: 'llama-3.3-70b',
@@ -142,8 +185,7 @@ export const MODELS: Model[] = [
     outputPrice: 0.3,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: [],
-    speedOptions: ['standard', 'fast'],
+    presets: [speedPreset()],
   },
   {
     id: 'qwen3-235b',
@@ -161,8 +203,7 @@ export const MODELS: Model[] = [
     outputPrice: 0.88,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: effortOptions('none', 'low', 'medium', 'high'),
-    speedOptions: ['standard', 'fast'],
+    presets: [reasoningPreset('none', 'low', 'medium', 'high'), speedPreset()],
   },
   {
     id: 'mistral-large',
@@ -180,8 +221,7 @@ export const MODELS: Model[] = [
     outputPrice: 6,
     perMessagePrice: 0,
     enabled: false,
-    reasoningEfforts: [],
-    speedOptions: ['standard'],
+    presets: [],
   },
   {
     id: 'gemini-2.5-pro',
@@ -199,8 +239,7 @@ export const MODELS: Model[] = [
     outputPrice: 10,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: effortOptions('low', 'medium', 'high'),
-    speedOptions: ['standard'],
+    presets: [reasoningPreset('low', 'medium', 'high')],
   },
   {
     id: 'grok-4',
@@ -218,8 +257,7 @@ export const MODELS: Model[] = [
     outputPrice: 15,
     perMessagePrice: 0,
     enabled: true,
-    reasoningEfforts: effortOptions('low', 'high'),
-    speedOptions: ['standard', 'fast'],
+    presets: [reasoningPreset('low', 'high'), speedPreset()],
   },
 ]
 

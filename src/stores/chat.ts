@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Chat, Folder, Message, ReasoningEffort, SpeedOption } from '@/lib/types'
+import type { Chat, Folder, Message } from '@/lib/types'
 import { getModel, makeMockChats, MODELS } from '@/lib/mock'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { useSettings } from '@/stores/settings'
@@ -39,23 +39,30 @@ const REASONING_TEXT_HIGH =
   REASONING_TEXT +
   ' Let me also weigh the alternatives: a normalized store would simplify updates but complicate streaming appends, while a flat map by message id would need extra indexing per chat. The slice-subscription approach avoids both pitfalls. Double-checking the abort path: clearing the interval and marking the message done is enough, since the buffer is local.'
 
-interface GenerationSelection {
-  reasoningEffort?: ReasoningEffort
-  speed?: SpeedOption
-}
+type GenerationSelection = ReturnType<typeof resolveGeneration>
 
 /** Current composer selection for a model: saved user prefs validated against admin-allowed options. */
 function generationFor(modelId: string): GenerationSelection {
   const model = getModel(modelId)
   const options = chatOptionsFor(model, useModelConfig.getState().overrides)
-  return resolveGeneration(options, useSettings.getState().generation[modelId])
+  return resolveGeneration(options, useSettings.getState().generation[modelId], modelId)
 }
 
-function reasoningTextFor(effort: ReasoningEffort | undefined): string | undefined {
-  if (effort === 'none') return undefined
-  if (effort === 'low') return REASONING_TEXT.slice(0, 90) + '…'
-  if (effort === 'high') return REASONING_TEXT_HIGH
-  return REASONING_TEXT
+function reasoningTextFor(params: Record<string, unknown>, tags: string[]): string | undefined {
+  const effort = params.reasoning_effort
+  if (effort === 'none' || effort === false) return undefined
+  if (typeof effort === 'string') {
+    if (effort === 'low') return REASONING_TEXT.slice(0, 90) + '…'
+    if (effort === 'high') return REASONING_TEXT_HIGH
+    return REASONING_TEXT
+  }
+  if (tags.includes('reasoning')) return REASONING_TEXT
+  return undefined
+}
+
+function isFastGeneration(gen: GenerationSelection): boolean {
+  if (gen.customParams.service_tier === 'priority') return true
+  return gen.choices.some((c) => c.action.type === 'redirect' || c.id === 'fast')
 }
 
 interface ChatState {
@@ -95,16 +102,13 @@ export const useChat = create<ChatState>()((set, get) => {
     modelId: string,
     gen: GenerationSelection
   ) {
-    const model = getModel(modelId)
-    const reasoningTarget =
-      model.tags.includes('reasoning') || gen.reasoningEffort
-        ? reasoningTextFor(gen.reasoningEffort)
-        : undefined
+    const model = getModel(gen.effectiveModelId || modelId)
+    const reasoningTarget = reasoningTextFor(gen.customParams, model.tags)
     let pos = 0
     let reasoningDone = reasoningTarget === undefined
     let rpos = 0
     const started = Date.now()
-    const tickMs = gen.speed === 'fast' ? 10 : 24
+    const tickMs = isFastGeneration(gen) ? 10 : 24
 
     const tick = () => {
       const state = get()
@@ -223,11 +227,10 @@ export const useChat = create<ChatState>()((set, get) => {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: '',
-        modelId,
+        modelId: gen.effectiveModelId || modelId,
         timestamp: now + 1,
-        reasoning: getModel(modelId).tags.includes('reasoning') && gen.reasoningEffort !== 'none' ? '' : undefined,
-        reasoningEffort: gen.reasoningEffort,
-        speed: gen.speed,
+        reasoning: reasoningTextFor(gen.customParams, getModel(modelId).tags) !== undefined ? '' : undefined,
+        presetSelections: gen.selections,
         done: false,
       }
       let id = chatId
@@ -275,11 +278,10 @@ export const useChat = create<ChatState>()((set, get) => {
                   ...m,
                   content: '',
                   reasoning:
-                    getModel(modelId).tags.includes('reasoning') && gen.reasoningEffort !== 'none'
+                    reasoningTextFor(gen.customParams, getModel(modelId).tags) !== undefined
                       ? ''
                       : undefined,
-                  reasoningEffort: gen.reasoningEffort,
-                  speed: gen.speed,
+                  presetSelections: gen.selections,
                   done: false,
                   rating: null,
                 })),
@@ -303,11 +305,13 @@ export const useChat = create<ChatState>()((set, get) => {
         id: crypto.randomUUID(),
         role: 'assistant',
         content: '',
-        modelId: chat.modelId,
+        modelId: gen.effectiveModelId || chat.modelId,
         timestamp: Date.now(),
-        reasoning: getModel(chat.modelId).tags.includes('reasoning') && gen.reasoningEffort !== 'none' ? '' : undefined,
-        reasoningEffort: gen.reasoningEffort,
-        speed: gen.speed,
+        reasoning:
+          reasoningTextFor(gen.customParams, getModel(chat.modelId).tags) !== undefined
+            ? ''
+            : undefined,
+        presetSelections: gen.selections,
         done: false,
       }
       set((s) => ({
