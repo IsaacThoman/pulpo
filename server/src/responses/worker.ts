@@ -6,7 +6,6 @@ import {
   chats,
   attachments,
   models,
-  notifications,
   providerConnections,
   responseContentParts,
   responseItems,
@@ -274,10 +273,6 @@ export async function processGeneration(
         if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
         else await releaseBudget(responseId)
         if (status === 'completed') {
-          await db.insert(notifications).values({
-            id: newId(), userId: record.response.userId, type: 'response.completed', title: 'Response complete',
-            body: previewFromOutput(output), data: { responseId, chatId: record.response.chatId },
-          })
           await runPostResponseTasks(client, record, output).catch(() => undefined)
         }
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
@@ -379,15 +374,6 @@ export async function processGeneration(
     else await releaseBudget(responseId)
     await runPostResponseTasks(client, record, output).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
-    })
-    const preview = previewFromOutput(output)
-    await db.insert(notifications).values({
-      id: newId(),
-      userId: record.response.userId,
-      type: 'response.completed',
-      title: 'Response complete',
-      body: preview,
-      data: { responseId, chatId: record.response.chatId },
     })
     await db.update(chats).set({ updatedAt: completedAt }).where(eq(chats.id, record.response.chatId))
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)

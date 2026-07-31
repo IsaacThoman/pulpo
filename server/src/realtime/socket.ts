@@ -25,6 +25,15 @@ function cookieValue(header: string | undefined, name: string): string | undefin
   return undefined
 }
 
+function snapshotPreview(snapshot: ResponseSnapshot): string {
+  for (const item of snapshot.output) {
+    const content = (item as { type?: string; content?: Array<{ type?: string; text?: string }> }).content
+    const text = content?.find((part) => part.type === 'output_text')?.text
+    if (text) return text.slice(0, 160)
+  }
+  return 'Open the chat to view the response.'
+}
+
 export async function createSocketServer(httpServer: HttpServer) {
   const config = getConfig()
   const allowedOrigins = getAllowedOrigins(config)
@@ -122,9 +131,9 @@ export async function createSocketServer(httpServer: HttpServer) {
         let rooms = io.to(`response:${snapshot.responseId}`)
         if (owner) rooms = rooms.to(`chat:${owner.chatId}`).to(`user:${owner.userId}`)
         rooms.emit('response.snapshot', snapshot)
-        if (owner && !['queued', 'in_progress'].includes(snapshot.status)) {
+        if (owner && snapshot.status === 'completed') {
           io.to(`user:${owner.userId}`).emit('response.completed', {
-            responseId: snapshot.responseId, chatId: owner.chatId, preview: 'Response completed',
+            responseId: snapshot.responseId, chatId: owner.chatId, preview: snapshotPreview(snapshot),
           })
         }
       })

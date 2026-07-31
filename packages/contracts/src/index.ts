@@ -213,6 +213,5 @@ export interface ServerToClientEvents {
   'chat.changed': (input: { chatId: string; revision: number }) => void
   'account.revision': (input: { revision: number }) => void
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
-  'notification.created': (input: { id: string; type: string; title: string; body: string }) => void
   'sync.result': (result: SyncResult) => void
 }

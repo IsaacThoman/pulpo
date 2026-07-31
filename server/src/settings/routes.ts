@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { memories, notifications, userPreferences, users } from '../database/schema.js'
+import { memories, userPreferences, users } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { notFound } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
@@ -49,21 +49,6 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       .where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
     if (revision) await publishStateChange({ userId: user.id, revision: revision.revision })
     return { values: saved!.values, updatedAt: saved!.updatedAt.toISOString() }
-  })
-
-  app.get('/api/notifications', async (request) => {
-    const user = requireUser(request)
-    return { data: await db.select().from(notifications).where(eq(notifications.userId, user.id)).orderBy(desc(notifications.createdAt)).limit(100) }
-  })
-
-  app.patch('/api/notifications/:id', async (request) => {
-    const user = requireUser(request)
-    const { id } = request.params as { id: string }
-    const read = z.object({ read: z.boolean() }).parse(request.body).read
-    const [updated] = await db.update(notifications).set({ readAt: read ? new Date() : null })
-      .where(and(eq(notifications.id, id), eq(notifications.userId, user.id))).returning()
-    if (!updated) throw notFound('Notification')
-    return updated
   })
 
   app.get('/api/memories', async (request) => {

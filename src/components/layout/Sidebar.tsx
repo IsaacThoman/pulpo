@@ -48,7 +48,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { NotificationCenter } from '@/components/notifications/NotificationCenter'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -301,7 +300,6 @@ export function Sidebar({
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
           {iconBtn('Usage', () => navigate('/usage'), <BarChart3 className="size-4" />)}
           {iconBtn('API keys', () => navigate('/api-keys'), <KeyRound className="size-4" />)}
-          <NotificationCenter collapsed={collapsed} />
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}

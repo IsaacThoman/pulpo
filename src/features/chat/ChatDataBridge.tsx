@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CheckCircle2, X } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { io, type Socket } from 'socket.io-client'
 import type { ResponseEvent, ServerToClientEvents, ClientToServerEvents, SyncResult } from '@pulpo/contracts'
@@ -10,8 +11,10 @@ import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
+import { useSettings } from '@/stores/settings'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
+type CompletionToast = { responseId: string; chatId: string; preview: string }
 
 function tabId(): string {
   const existing = sessionStorage.getItem('pulpo-tab-id')
@@ -26,6 +29,8 @@ export function ChatDataBridge() {
   const userId = user?.id
   const userRole = user?.role
   const location = useLocation()
+  const navigate = useNavigate()
+  const [completionToasts, setCompletionToasts] = useState<CompletionToast[]>([])
   const chatId = /^\/c\/([^/]+)/.exec(location.pathname)?.[1]
   const streamingId = useChat((state) => state.streamingId)
   const replaceSummaries = useChat((state) => state.replaceSummaries)
@@ -91,8 +96,15 @@ export function ChatDataBridge() {
     socket.on('connect', sync)
     socket.on('response.event', persistEvent)
     socket.on('response.snapshot', applyResponseSnapshot)
-    socket.on('response.completed', () => {
-      void queryClient.invalidateQueries({ queryKey: ['notifications', userId] })
+    socket.on('response.completed', (completion) => {
+      if (!useSettings.getState().notifications) return
+      if (completion.chatId === chatId && document.visibilityState === 'visible') return
+      setCompletionToasts((current) => current.some((toast) => toast.responseId === completion.responseId)
+        ? current
+        : [...current, completion].slice(-3))
+      window.setTimeout(() => {
+        setCompletionToasts((current) => current.filter((toast) => toast.responseId !== completion.responseId))
+      }, 8_000)
     })
     socket.on('chat.changed', ({ chatId: changedChatId }) => {
       void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
@@ -132,5 +144,20 @@ export function ChatDataBridge() {
     return () => { socket.emit('chat.unsubscribe', { chatId }) }
   }, [chatId])
 
-  return null
+  if (!completionToasts.length) return null
+  return <div className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2" aria-live="polite">
+    {completionToasts.map((toast) => <div key={toast.responseId} role="status" className="pointer-events-auto flex items-start gap-3 rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg">
+      <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-primary" />
+      <button className="min-w-0 flex-1 text-left" onClick={() => {
+        setCompletionToasts((current) => current.filter((item) => item.responseId !== toast.responseId))
+        navigate(`/c/${toast.chatId}`)
+      }}>
+        <span className="block text-sm font-medium">Response complete</span>
+        <span className="mt-0.5 block truncate text-xs text-muted-foreground">{toast.preview || 'Open the chat to view the response.'}</span>
+      </button>
+      <button className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label="Dismiss notification" onClick={() => setCompletionToasts((current) => current.filter((item) => item.responseId !== toast.responseId))}>
+        <X className="size-3.5" />
+      </button>
+    </div>)}
+  </div>
 }
