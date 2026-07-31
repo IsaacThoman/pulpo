@@ -117,6 +117,19 @@ export const MessageItem = memo(function MessageItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [reasoningOpen, setReasoningOpen] = useState(true)
+  const submitEdit = () => {
+    const content = draft.trim()
+    if (!content || content === message.content) return
+    setEditing(false)
+    if (message.role === 'user') editUserMessage(chat.id, message.id, content)
+    else editAssistantMessage(chat.id, message.id, content)
+  }
+  const handleEditKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
+      event.preventDefault()
+      submitEdit()
+    }
+  }
 
   if (message.role === 'user') {
     return (
@@ -128,6 +141,7 @@ export const MessageItem = memo(function MessageItem({
               rows={Math.min(10, draft.split('\n').length + 1)}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleEditKeyDown}
               autoFocus
             />
             <div className="mt-2 flex justify-end gap-2">
@@ -136,11 +150,8 @@ export const MessageItem = memo(function MessageItem({
               </Button>
               <Button
                 size="sm"
-                onClick={() => {
-                  setEditing(false)
-                  if (draft.trim() && draft !== message.content)
-                    editUserMessage(chat.id, message.id, draft.trim())
-                }}
+                onClick={submitEdit}
+                disabled={!draft.trim() || draft.trim() === message.content}
               >
                 Save & resend
               </Button>
@@ -210,6 +221,7 @@ export const MessageItem = memo(function MessageItem({
               rows={Math.min(16, Math.max(3, draft.split('\n').length + 1))}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={handleEditKeyDown}
               autoFocus
             />
             <div className="mt-2 flex justify-end gap-2">
@@ -218,12 +230,8 @@ export const MessageItem = memo(function MessageItem({
               </Button>
               <Button
                 size="sm"
-                onClick={() => {
-                  setEditing(false)
-                  if (draft.trim() && draft !== message.content) {
-                    editAssistantMessage(chat.id, message.id, draft.trim())
-                  }
-                }}
+                onClick={submitEdit}
+                disabled={!draft.trim() || draft.trim() === message.content}
               >
                 Save as branch
               </Button>
