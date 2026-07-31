@@ -29,7 +29,7 @@ export function PendingPage() {
         <h1 className="text-lg font-semibold">Account pending approval</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pendingMessage}</p>
 
-        {pendingDetails && (
+        {pendingDetails && adminEmail && (
           <div className="mt-5 rounded-lg border bg-muted/40 p-3">
             <div className="flex items-start gap-2.5 text-sm">
               <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" />

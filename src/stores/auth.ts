@@ -19,6 +19,12 @@ export interface AuthUser {
 
 interface ServerUser extends Omit<AuthUser, 'initials'> {}
 interface AuthResponse { user: ServerUser }
+interface PublicAuthSettings {
+  signupEnabled: boolean
+  pendingDetails: boolean
+  adminEmail: string
+  pendingMessage: string
+}
 type AuthResult = { ok: true } | { ok: false; error: string }
 
 interface AuthState {
@@ -73,21 +79,30 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   bootstrap: async () => {
     if (!get().checkingSession) return
-    const setupStatus = await apiRequest<{ required: boolean }>('/api/auth/setup-status').catch(() => null)
+    const [setupStatus, authSettings] = await Promise.all([
+      apiRequest<{ required: boolean }>('/api/auth/setup-status').catch(() => null),
+      apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
+    ])
+    const publicSettings = authSettings ?? {
+      signupEnabled: get().signupEnabled,
+      pendingDetails: get().pendingDetails,
+      adminEmail: get().adminEmail,
+      pendingMessage: get().pendingMessage,
+    }
     try {
       const response = await apiRequest<AuthResponse>('/api/me')
       const user = normalizeUser(response.user)
       cacheProfile(user)
-      set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false })
+      set({ user, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         cacheProfile(null)
-        set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false })
+        set({ user: null, checkingSession: false, setupRequired: setupStatus?.required ?? false, ...publicSettings })
         return
       }
       // A cached profile may render offline data, while every server mutation
       // remains protected by the HTTP-only session once connectivity returns.
-      set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired })
+      set({ checkingSession: false, setupRequired: setupStatus?.required ?? get().setupRequired, ...publicSettings })
     }
   },
 

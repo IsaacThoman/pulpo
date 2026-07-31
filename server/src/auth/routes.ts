@@ -19,6 +19,15 @@ import {
 } from './service.js'
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/auth/settings', async () => {
+    const [setting] = await db.select({ value: applicationSettings.value })
+      .from(applicationSettings)
+      .where(eq(applicationSettings.key, 'auth'))
+      .limit(1)
+    const { signupEnabled, pendingDetails, adminEmail, pendingMessage } = parseAuthSettings(setting?.value)
+    return { signupEnabled, pendingDetails, adminEmail, pendingMessage }
+  })
+
   app.get('/api/auth/setup-status', async () => {
     const [existingUser] = await db.select({ id: users.id }).from(users).limit(1)
     return { required: !existingUser }
