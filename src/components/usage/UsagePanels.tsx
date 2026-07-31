@@ -56,14 +56,16 @@ export function RecentUsagePanel({
       ) : (
         <div className="max-h-96 overflow-auto" onScroll={onScroll}>
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-background">
+            <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b text-left text-muted-foreground">
-                <th className="px-3 py-2 font-normal">Time</th>
-                <th className="px-3 py-2 font-normal">Model</th>
-                {showUser && <th className="px-3 py-2 font-normal">User</th>}
-                <th className="px-3 py-2 text-right font-normal">Tokens</th>
-                <th className="px-3 py-2 text-right font-normal">Cost</th>
-                {showBalance && <th className="px-3 py-2 text-right font-normal">Balance after</th>}
+                <th className="bg-background px-3 py-2 font-normal">Time</th>
+                <th className="bg-background px-3 py-2 font-normal">Model</th>
+                {showUser && <th className="bg-background px-3 py-2 font-normal">User</th>}
+                <th className="bg-background px-3 py-2 text-right font-normal">Tokens</th>
+                <th className="bg-background px-3 py-2 text-right font-normal">Cost</th>
+                {showBalance && (
+                  <th className="bg-background px-3 py-2 text-right font-normal">Balance after</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y">
