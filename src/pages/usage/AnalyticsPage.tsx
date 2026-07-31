@@ -61,7 +61,7 @@ export function AnalyticsPage() {
     return uid ? { user: users.find((u) => u.id === uid)!, cost } : null
   }, [inRange, users])
 
-  const pageCount = Math.ceil(inRange.length / pageSize)
+  const pageCount = Math.max(1, Math.ceil(inRange.length / pageSize))
   const pageRows = inRange.slice(page * pageSize, (page + 1) * pageSize)
 
   return (

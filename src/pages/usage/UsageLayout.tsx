@@ -1,8 +1,6 @@
-import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
 
 const TABS = [
@@ -13,11 +11,6 @@ const TABS = [
 
 export function UsageLayout() {
   const role = useAuth((state) => state.user?.role)
-  const loadPersonal = useUsage((state) => state.loadPersonal)
-  const loadLeaderboard = useUsage((state) => state.loadLeaderboard)
-  useEffect(() => {
-    void Promise.all([loadPersonal(), loadLeaderboard()])
-  }, [loadLeaderboard, loadPersonal])
 
   return (
     <div className="flex h-full flex-col">

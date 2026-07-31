@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Clock } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
@@ -25,6 +25,7 @@ const METRICS: { id: Metric; label: string }[] = [
 ]
 
 export function PersonalPage() {
+  const loadPersonal = useUsage((s) => s.loadPersonal)
   const records = useUsage((s) => s.records)
   const userId = useUsage((s) => s.currentUserId)
   const users = useUsage((s) => s.users)
@@ -37,6 +38,8 @@ export function PersonalPage() {
   }
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<Metric>('cost')
+
+  useEffect(() => { void loadPersonal() }, [loadPersonal])
 
   const mine = useMemo(() => records.filter((r) => r.userId === userId), [records, userId])
   const inRange = useMemo(
