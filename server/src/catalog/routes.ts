@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createModelSchema, createProviderSchema } from '@pulpo/contracts'
@@ -19,6 +19,7 @@ import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
+import { INTERNAL_LAB_ID } from './defaults.js'
 
 const presetSchema = z.array(z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
@@ -224,7 +225,15 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/admin/labs', async (request) => {
     requireAdmin(request)
-    return { data: await db.select().from(labs) }
+    const rows = await db.select({
+      lab: labs,
+      modelCount: sql<number>`count(${models.id})::int`,
+    }).from(labs).leftJoin(models, eq(models.labId, labs.id)).groupBy(labs.id).orderBy(labs.createdAt)
+    return { data: rows.map(({ lab, modelCount }) => ({
+      ...lab,
+      modelCount: Number(modelCount),
+      builtin: lab.id === INTERNAL_LAB_ID,
+    })) }
   })
 
   app.post('/api/admin/labs', async (request, reply) => {
@@ -239,6 +248,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/labs/:id', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === INTERNAL_LAB_ID) throw new AppError(409, 'builtin_lab', 'The Internal lab cannot be edited')
     const body = request.body as { name?: string; logo?: string }
     const [updated] = await db.update(labs).set({ name: body.name?.trim(), logo: body.logo?.trim(), updatedAt: new Date() }).where(eq(labs.id, id)).returning()
     if (!updated) throw notFound('Lab')
@@ -248,7 +258,11 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/admin/labs/:id', async (request, reply) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    const deleted = await db.delete(labs).where(eq(labs.id, id)).returning({ id: labs.id })
+    if (id === INTERNAL_LAB_ID) throw new AppError(409, 'builtin_lab', 'The Internal lab cannot be deleted')
+    const deleted = await db.transaction(async (tx) => {
+      await tx.update(models).set({ labId: INTERNAL_LAB_ID, updatedAt: new Date() }).where(eq(models.labId, id))
+      return tx.delete(labs).where(eq(labs.id, id)).returning({ id: labs.id })
+    })
     if (!deleted.length) throw notFound('Lab')
     reply.code(204).send()
   })
@@ -284,7 +298,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       await tx.insert(models).values({
         id: input.id,
         providerConnectionId: input.providerConnectionId,
-        labId: input.labId,
+        labId: input.labId ?? INTERNAL_LAB_ID,
         upstreamModelId: input.upstreamModelId,
         name: input.name,
         description: input.description,
@@ -326,7 +340,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       description: typeof body.description === 'string' ? body.description : undefined,
       upstreamModelId: typeof body.upstreamModelId === 'string' ? body.upstreamModelId : undefined,
       providerConnectionId: typeof body.providerConnectionId === 'string' ? body.providerConnectionId : undefined,
-      labId: typeof body.labId === 'string' || body.labId === null ? body.labId : undefined,
+      labId: typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : undefined,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,

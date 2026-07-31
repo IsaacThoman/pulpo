@@ -35,6 +35,14 @@ export const AI_ICONS = [
     file: 'moonshot.svg',
   },
   { id: 'openai', label: 'OpenAI', kind: 'lab', color: false, file: 'openai.svg' },
+  {
+    id: 'pulpo',
+    label: 'Pulpo',
+    kind: 'lab',
+    contexts: ['lab', 'model'],
+    color: true,
+    file: '/pulpo-smiley.png',
+  },
   { id: 'qwen', label: 'Qwen', kind: 'model', color: false, file: 'qwen.svg' },
   { id: 'qwen-color', label: 'Qwen color', kind: 'model', color: true, file: 'qwen-color.svg' },
   { id: 'xai', label: 'xAI', kind: 'lab', color: false, file: 'xai.svg' },
@@ -52,6 +60,8 @@ export const DEFAULT_PROVIDER_ICONS: Record<string, AiIconId> = {
   mistral: 'mistral',
   xai: 'xai',
   google: 'google',
+  internal: 'pulpo',
+  pulpo: 'pulpo',
 }
 
 export function getAiIcon(id: string) {
@@ -67,5 +77,6 @@ export function providerIcon(provider: string): AiIconId {
 }
 
 export function aiIconPath(id: string) {
-  return `/ai-icons/${getAiIcon(id).file}`
+  const file = getAiIcon(id).file
+  return file.startsWith('/') ? file : `/ai-icons/${file}`
 }

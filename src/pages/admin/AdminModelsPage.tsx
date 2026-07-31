@@ -23,8 +23,8 @@ interface AdminModel {
 interface Provider { id: string; name: string }
 interface Lab { id: string; name: string }
 
-const empty = (providerConnectionId = ''): AdminModel => ({
-  id: '', providerConnectionId, labId: null, upstreamModelId: '', name: '', description: '', enabled: true,
+const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   inputPriceMicros: 0, cachedInputPriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
@@ -53,20 +53,20 @@ export function AdminModelsPage() {
     if (!draft) return
     const body = { ...draft, tags: draft.tags, allowedParameters: draft.allowedParameters }
     await apiRequest(creating ? '/api/admin/models' : `/api/admin/models/${draft.id}`, { method: creating ? 'POST' : 'PATCH', body })
-    setDraft(null); await load(); await useCatalog.getState().load()
+    setDraft(null); await Promise.all([load(), useCatalog.getState().load()])
   }
 
   return <div className="space-y-4">
     <div className="flex items-center gap-2">
       <h2 className="text-lg font-semibold">Models</h2><Badge variant="secondary">{models.length}</Badge><div className="flex-1" />
-      <Button size="sm" disabled={!providers.length} onClick={() => { setCreating(true); setDraft(empty(providers[0]?.id)) }}><Plus />New model</Button>
+      <Button size="sm" disabled={!providers.length || !labs.length} onClick={() => { setCreating(true); setDraft(empty(providers[0]?.id, labs.find((lab) => lab.name === 'Internal')?.id ?? labs[0]?.id ?? null)) }}><Plus />New model</Button>
     </div>
     <div className="relative"><Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" /><Input className="pl-8" placeholder="Search models…" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
     <div className="space-y-2">{filtered.map((model) => <Card key={model.id} className={!model.enabled ? 'opacity-60' : ''}><CardContent className="flex items-center gap-4 px-4 py-3">
       <div className="min-w-0 flex-1"><div className="flex gap-2"><span className="font-medium">{model.name}</span><Badge variant="outline">{model.id}</Badge><Badge variant="secondary">{model.executionMode}</Badge></div><div className="mt-1 truncate text-xs text-muted-foreground">{model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} context</div></div>
-      <Switch checked={model.enabled} onCheckedChange={(enabled) => void apiRequest(`/api/admin/models/${model.id}`, { method: 'PATCH', body: { enabled } }).then(load)} />
+      <Switch checked={model.enabled} onCheckedChange={(enabled) => void apiRequest(`/api/admin/models/${model.id}`, { method: 'PATCH', body: { enabled } }).then(() => Promise.all([load(), useCatalog.getState().load()]))} />
       <Button size="icon-sm" variant="ghost" onClick={() => { setCreating(false); setDraft({ ...model }) }}><Pencil /></Button>
-      <Button size="icon-sm" variant="ghost" className="hover:text-destructive" onClick={() => { if (confirm(`Delete ${model.name}?`)) void apiRequest(`/api/admin/models/${model.id}`, { method: 'DELETE' }).then(load) }}><Trash2 /></Button>
+      <Button size="icon-sm" variant="ghost" className="hover:text-destructive" onClick={() => { if (confirm(`Delete ${model.name}?`)) void apiRequest(`/api/admin/models/${model.id}`, { method: 'DELETE' }).then(() => Promise.all([load(), useCatalog.getState().load()])) }}><Trash2 /></Button>
     </CardContent></Card>)}</div>
     <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{creating ? 'New model' : 'Edit model'}</DialogTitle></DialogHeader>
       {draft && <div className="grid grid-cols-2 gap-4">
@@ -74,7 +74,7 @@ export function AdminModelsPage() {
         <Field label="Display name"><Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></Field>
         <Field label="Provider"><Select value={draft.providerConnectionId} onValueChange={(value) => setDraft({ ...draft, providerConnectionId: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{providers.map((provider) => <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>)}</SelectContent></Select></Field>
         <Field label="Upstream model ID"><Input value={draft.upstreamModelId} onChange={(e) => setDraft({ ...draft, upstreamModelId: e.target.value })} /></Field>
-        <Field label="Lab"><Select value={draft.labId ?? 'none'} onValueChange={(value) => setDraft({ ...draft, labId: value === 'none' ? null : value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{labs.map((lab) => <SelectItem key={lab.id} value={lab.id}>{lab.name}</SelectItem>)}</SelectContent></Select></Field>
+        <Field label="Lab"><Select value={draft.labId ?? undefined} onValueChange={(value) => setDraft({ ...draft, labId: value })}><SelectTrigger><SelectValue placeholder="Select a lab" /></SelectTrigger><SelectContent>{labs.map((lab) => <SelectItem key={lab.id} value={lab.id}>{lab.name}</SelectItem>)}</SelectContent></Select></Field>
         <Field label="Execution"><Select value={draft.executionMode} onValueChange={(value: 'stream' | 'background') => setDraft({ ...draft, executionMode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="stream">Streaming</SelectItem><SelectItem value="background">Background</SelectItem></SelectContent></Select></Field>
         <Field label="Context window"><Input type="number" value={draft.contextWindow} onChange={(e) => setDraft({ ...draft, contextWindow: Number(e.target.value) })} /></Field>
         <Field label="Maximum output tokens"><Input type="number" value={draft.maxOutputTokens} onChange={(e) => setDraft({ ...draft, maxOutputTokens: Number(e.target.value) })} /></Field>
@@ -87,7 +87,7 @@ export function AdminModelsPage() {
         <Field label="Description" className="col-span-2"><Textarea value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></Field>
         <Field label="Composer presets (JSON)" className="col-span-2"><PresetsEditor key={draft.id || 'new'} value={draft.presets} onChange={(presets) => setDraft({ ...draft, presets })} /></Field>
       </div>}
-      <DialogFooter><Button onClick={() => void save()} disabled={!draft?.id || !draft?.name || !draft?.upstreamModelId || !draft.providerConnectionId}>Save</Button></DialogFooter>
+      <DialogFooter><Button onClick={() => void save()} disabled={!draft?.id || !draft?.name || !draft?.upstreamModelId || !draft.providerConnectionId || !draft.labId}>Save</Button></DialogFooter>
     </DialogContent></Dialog>
   </div>
 }

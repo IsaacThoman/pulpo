@@ -30,8 +30,8 @@ interface ServerModel {
 function fromServer(model: ServerModel): Model {
   return {
     id: model.id, name: model.name, description: model.description,
-    provider: model.lab?.name ?? 'OpenAI', inferenceProvider: model.provider.name,
-    labLogo: model.lab?.logo ?? 'openai', modelLogo: model.lab?.logo ?? 'openai',
+    provider: model.lab?.name ?? 'Internal', inferenceProvider: model.provider.name,
+    labLogo: model.lab?.logo ?? 'pulpo', modelLogo: model.lab?.logo ?? 'pulpo',
     contextWindow: model.contextWindow,
     tags: model.tags.filter((tag): tag is Model['tags'][number] => ['vision', 'reasoning', 'tools', 'fast', 'code'].includes(tag)),
     iconLight: model.iconLight ?? '#18181b', iconDark: model.iconDark ?? '#fafafa',

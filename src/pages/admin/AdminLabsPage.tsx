@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useCatalog } from '@/stores/catalog'
 
 type Draft = {
   id?: string
@@ -33,6 +34,7 @@ interface AdminLab {
   name: string
   logo: string
   modelCount: number
+  builtin: boolean
 }
 
 const emptyDraft = (): Draft => ({
@@ -47,8 +49,8 @@ export function AdminLabsPage() {
   const [draft, setDraft] = useState<Draft | null>(null)
 
   const load = async () => {
-    const result = await apiRequest<{ data: Array<Omit<AdminLab, 'modelCount'>> }>('/api/admin/labs')
-    setLabs(result.data.map((lab) => ({ ...lab, modelCount: 0 })))
+    const result = await apiRequest<{ data: AdminLab[] }>('/api/admin/labs')
+    setLabs(result.data)
   }
   useEffect(() => { void load() }, [])
 
@@ -66,12 +68,12 @@ export function AdminLabsPage() {
       await apiRequest('/api/admin/labs', { method: 'POST', body: { name: draft.name.trim(), logo: draft.logo } })
     }
     setDraft(null)
-    await load()
+    await Promise.all([load(), useCatalog.getState().load()])
   }
 
   const remove = async (id: string) => {
     await apiRequest(`/api/admin/labs/${id}`, { method: 'DELETE' })
-    await load()
+    await Promise.all([load(), useCatalog.getState().load()])
   }
 
   return (
@@ -118,7 +120,7 @@ export function AdminLabsPage() {
                     {lab.modelCount}
                   </td>
                   <td className="px-5 py-3">
-                    <div className="flex justify-end gap-1">
+                    {lab.builtin ? <div className="flex justify-end"><Badge variant="outline">Built-in</Badge></div> : <div className="flex justify-end gap-1">
                       <Button
                         size="icon-sm"
                         variant="ghost"
@@ -136,7 +138,7 @@ export function AdminLabsPage() {
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
-                    </div>
+                    </div>}
                   </td>
                 </tr>
               ))}

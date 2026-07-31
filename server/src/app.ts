@@ -19,6 +19,7 @@ import { registerAdminRoutes } from './admin/routes.js'
 import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
+import { ensureBuiltinLabs } from './catalog/defaults.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -83,6 +84,7 @@ export async function buildApp() {
   })
 
   app.get('/health', async () => ({ status: 'ok', service: 'pulpo-api' }))
+  await ensureBuiltinLabs()
   await registerAuthRoutes(app)
   await registerCatalogRoutes(app)
   await registerChatRoutes(app)
