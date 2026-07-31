@@ -140,13 +140,13 @@ export function LeaderboardPage() {
 
   // preference editor state (saved explicitly)
   const [show, setShow] = useState(me.showOnLeaderboard)
-  const [nickname, setNickname] = useState(me.nickname ?? '')
+  const [nickname, setNickname] = useState(me.nickname ?? me.name)
   const [color, setColor] = useState(me.barColor)
   useEffect(() => {
     setShow(savedVisibility)
-    setNickname(savedNickname)
+    setNickname(savedNickname || authUser?.name || 'Pulpo user')
     setColor(savedColor)
-  }, [savedColor, savedNickname, savedVisibility])
+  }, [authUser?.name, savedColor, savedNickname, savedVisibility])
   const normalizedNick = nickname.trim() === '' || nickname.trim() === me.name ? null : nickname.trim()
   const dirty =
     show !== me.showOnLeaderboard || normalizedNick !== me.nickname || color !== me.barColor
