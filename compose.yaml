@@ -6,6 +6,8 @@ x-server: &server
     dockerfile: server/Dockerfile
   env_file: ${PULPO_ENV_FILE:-.env.example}
   depends_on:
+    object-storage-init:
+      condition: service_completed_successfully
     postgres:
       condition: service_healthy
     redis:
@@ -24,6 +26,13 @@ x-server: &server
     - object_data:/app/data/objects
 
 services:
+  object-storage-init:
+    image: alpine:3.22
+    command: ["chown", "1000:1000", "/data"]
+    volumes:
+      - object_data:/data
+    restart: "no"
+
   web:
     build:
       context: .
