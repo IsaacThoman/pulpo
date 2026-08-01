@@ -181,7 +181,7 @@ export const MessageItem = memo(function MessageItem({
                 ))}
               </div>
             )}
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            <Markdown content={message.content} />
           </div>
         )}
         {!editing && (

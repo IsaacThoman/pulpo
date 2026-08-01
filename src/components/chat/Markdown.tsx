@@ -1,10 +1,23 @@
-import { memo, useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Check, Copy } from 'lucide-react'
 import 'katex/dist/katex.min.css'
+
+/** Convert \( \) / \[ \] (common in LLM output) to $ / $$ for remark-math. Skip fenced/inline code. */
+function normalizeMathDelimiters(content: string): string {
+  const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
+  return parts
+    .map((part, i) => {
+      if (i % 2 === 1) return part
+      return part
+        .replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_, tex: string) => `\n$$\n${tex.trim()}\n$$\n`)
+        .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_, tex: string) => `$${tex}$`)
+    })
+    .join('')
+}
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
@@ -32,6 +45,8 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 }
 
 export const Markdown = memo(function Markdown({ content }: { content: string }) {
+  const normalized = useMemo(() => normalizeMathDelimiters(content), [content])
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath]}
@@ -40,6 +55,13 @@ export const Markdown = memo(function Markdown({ content }: { content: string })
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || '')
           const text = String(children).replace(/\n$/, '')
+          if (match?.[1] === 'math') {
+            return (
+              <code className={className} {...props}>
+                {children}
+              </code>
+            )
+          }
           const isBlock = text.includes('\n') || match
           if (!isBlock) {
             return (
@@ -88,7 +110,7 @@ export const Markdown = memo(function Markdown({ content }: { content: string })
         strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
       }}
     >
-      {content}
+      {normalized}
     </ReactMarkdown>
   )
 })
