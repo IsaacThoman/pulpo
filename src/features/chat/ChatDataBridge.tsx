@@ -33,7 +33,7 @@ export function ChatDataBridge() {
   const navigate = useNavigate()
   const [completionToasts, setCompletionToasts] = useState<CompletionToast[]>([])
   const chatId = /^\/c\/([^/]+)/.exec(location.pathname)?.[1]
-  const streamingId = useChat((state) => state.streamingId)
+  const streamingIds = useChat((state) => state.streamingIds)
   const replaceSummaries = useChat((state) => state.replaceSummaries)
   const replaceFolders = useChat((state) => state.replaceFolders)
   const setDetailedChat = useChat((state) => state.setDetailedChat)
@@ -142,12 +142,21 @@ export function ChatDataBridge() {
 
   useEffect(() => {
     const socket = socketRef.current
-    if (!socket || !streamingId) return
-    void localDb.responseCursors.get(`${currentTabId}:${streamingId}`).then((cursor) => {
-      socket.emit('response.subscribe', { responseId: streamingId, afterSequence: cursor?.sequence ?? 0 })
-    })
-    return () => { socket.emit('response.unsubscribe', { responseId: streamingId }) }
-  }, [streamingId, currentTabId])
+    if (!socket || streamingIds.length === 0) return
+    let cancelled = false
+    for (const responseId of streamingIds) {
+      void localDb.responseCursors.get(`${currentTabId}:${responseId}`).then((cursor) => {
+        if (cancelled) return
+        socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
+      })
+    }
+    return () => {
+      cancelled = true
+      for (const responseId of streamingIds) {
+        socket.emit('response.unsubscribe', { responseId })
+      }
+    }
+  }, [streamingIds, currentTabId])
 
   useEffect(() => {
     const socket = socketRef.current

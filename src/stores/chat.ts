@@ -63,7 +63,7 @@ interface ChatState {
   chats: Chat[]
   folders: Folder[]
   activeChatId: string | null
-  streamingId: string | null
+  streamingIds: string[]
   responseSequences: Record<string, number>
   replaceSummaries: (chats: ServerChat[]) => void
   replaceFolders: (folders: ServerFolder[]) => void
@@ -86,7 +86,38 @@ interface ChatState {
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
   deleteUserMessage: (chatId: string, messageId: string) => void
   activateBranch: (chatId: string, responseId: string) => void
-  stopStreaming: () => void
+  stopStreaming: (responseId: string) => void
+}
+
+function addStreamingId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids : [...ids, id]
+}
+
+function removeStreamingId(ids: string[], id: string): string[] {
+  return ids.filter((item) => item !== id)
+}
+
+function replaceStreamingId(ids: string[], from: string, to: string): string[] {
+  if (from === to || !ids.includes(from)) return ids
+  return addStreamingId(removeStreamingId(ids, from), to)
+}
+
+function reconcileStreamingIds(chats: Chat[], previous: string[]): string[] {
+  const unfinished = new Set<string>()
+  const known = new Set<string>()
+  for (const chat of chats) {
+    for (const message of chat.messages) {
+      if (message.role !== 'assistant') continue
+      known.add(message.id)
+      if (!message.done) unfinished.add(message.id)
+    }
+  }
+  const next = [
+    ...unfinished,
+    ...previous.filter((id) => !known.has(id) && !unfinished.has(id)),
+  ]
+  if (next.length === previous.length && next.every((id, index) => id === previous[index])) return previous
+  return next
 }
 
 function textFromContent(content: unknown): string {
@@ -173,7 +204,7 @@ function toChat(
   row: ServerChat,
   current?: Chat,
   responseSequences: Record<string, number> = {},
-  streamingId: string | null = null,
+  streamingIds: readonly string[] = [],
 ): Chat {
   const selectedResponses = row.responses
     ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
@@ -191,7 +222,7 @@ function toChat(
       return { ...message, content: local.content, reasoning: local.reasoning }
     }),
     selectedResponses ? current?.messages : undefined,
-    streamingId,
+    streamingIds,
   )
   return {
     id: row.id,
@@ -393,11 +424,11 @@ export const useChat = create<ChatState>()((set, get) => ({
   chats: [],
   folders: [],
   activeChatId: null,
-  streamingId: null,
+  streamingIds: [],
   responseSequences: {},
 
   replaceSummaries: (rows) => set((state) => ({
-    chats: rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id))),
+    chats: rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds)),
   })),
   replaceFolders: (rows) => set((state) => ({
     folders: rows.map((row) => ({
@@ -414,21 +445,12 @@ export const useChat = create<ChatState>()((set, get) => ({
         response.snapshot.sequence,
       )
     }
-    const chat = toChat(row, state.chats.find((item) => item.id === row.id), responseSequences, state.streamingId)
+    const chat = toChat(row, state.chats.find((item) => item.id === row.id), responseSequences, state.streamingIds)
     const exists = state.chats.some((item) => item.id === row.id)
-    const derivedStreaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
-    const streamingStillLocal = state.streamingId
-      && chat.messages.some((message) => message.id === state.streamingId && !message.done)
-      ? state.streamingId
-      : null
-    const streamingOnOtherChat = state.streamingId
-      && !state.chats.some((item) => item.id === row.id && item.messages.some((message) => message.id === state.streamingId))
-      && !chat.messages.some((message) => message.id === state.streamingId)
-      ? state.streamingId
-      : null
+    const chats = exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
     return {
-      chats: exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats],
-      streamingId: derivedStreaming ?? streamingStillLocal ?? streamingOnOtherChat,
+      chats,
+      streamingIds: reconcileStreamingIds(chats, state.streamingIds),
       responseSequences,
     }
   }),
@@ -461,30 +483,34 @@ export const useChat = create<ChatState>()((set, get) => ({
       chat.messages.some((message) => message.id === snapshot.responseId)
     )?.id
     if (affectedChatId) persistResponseSnapshot(affectedChatId, snapshot)
-    set((state) => ({
-      responseSequences: { ...state.responseSequences, [snapshot.responseId]: snapshot.sequence },
-      streamingId: ['queued', 'in_progress'].includes(snapshot.status) ? snapshot.responseId : state.streamingId === snapshot.responseId ? null : state.streamingId,
-      chats: state.chats.map((chat) => ({
-        ...chat,
-        messages: chat.messages.map((message) => {
-          if (message.id !== snapshot.responseId) return message
-          const done = !['queued', 'in_progress'].includes(snapshot.status)
-          return {
-            ...message,
-            content: snapshot.output.length ? outputText(snapshot.output) : message.content,
-            reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
-            done,
-            tokensIn: snapshot.usage?.inputTokens,
-            tokensOut: snapshot.usage?.outputTokens,
-            latencyMs: done
-              ? Math.max(0, Date.parse(snapshot.updatedAt) - message.timestamp)
-              : message.latencyMs,
-            error: (snapshot.error as { message?: string } | null)?.message,
-            outputItems: snapshot.output,
-          }
-        }),
-      })),
-    }))
+    set((state) => {
+      const inFlight = ['queued', 'in_progress'].includes(snapshot.status)
+      return {
+        responseSequences: { ...state.responseSequences, [snapshot.responseId]: snapshot.sequence },
+        streamingIds: inFlight
+          ? addStreamingId(state.streamingIds, snapshot.responseId)
+          : removeStreamingId(state.streamingIds, snapshot.responseId),
+        chats: state.chats.map((chat) => ({
+          ...chat,
+          messages: chat.messages.map((message) => {
+            if (message.id !== snapshot.responseId) return message
+            return {
+              ...message,
+              content: snapshot.output.length ? outputText(snapshot.output) : message.content,
+              reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
+              done: !inFlight,
+              tokensIn: snapshot.usage?.inputTokens,
+              tokensOut: snapshot.usage?.outputTokens,
+              latencyMs: !inFlight
+                ? Math.max(0, Date.parse(snapshot.updatedAt) - message.timestamp)
+                : message.latencyMs,
+              error: (snapshot.error as { message?: string } | null)?.message,
+              outputItems: snapshot.output,
+            }
+          }),
+        })),
+      }
+    })
     if (!['queued', 'in_progress'].includes(snapshot.status)) {
       void queryClient.invalidateQueries({ queryKey: chatsKey() })
       if (affectedChatId) void queryClient.invalidateQueries({ queryKey: chatKey(affectedChatId) })
@@ -498,7 +524,16 @@ export const useChat = create<ChatState>()((set, get) => ({
   setActive: (activeChatId) => set({ activeChatId }),
 
   deleteChat: (id) => {
-    set((state) => ({ chats: state.chats.filter((chat) => chat.id !== id) }))
+    set((state) => {
+      const removed = state.chats.find((chat) => chat.id === id)
+      const removedIds = new Set(
+        removed?.messages.filter((message) => message.role === 'assistant').map((message) => message.id) ?? [],
+      )
+      return {
+        chats: state.chats.filter((chat) => chat.id !== id),
+        streamingIds: state.streamingIds.filter((responseId) => !removedIds.has(responseId)),
+      }
+    })
     queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows?.filter((row) => row.id !== id))
     void optimisticRequest('DELETE', `/api/chats/${id}`).catch(() => void queryClient.invalidateQueries({ queryKey: chatsKey() }))
   },
@@ -565,7 +600,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
         activeChatId: id,
-        streamingId: responseId,
+        streamingIds: addStreamingId(state.streamingIds, responseId),
       }
     })
     cacheOptimisticTurn({
@@ -601,7 +636,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             delete responseSequences[responseId]
           }
           return {
-            streamingId: state.streamingId === responseId ? serverId : state.streamingId,
+            streamingIds: replaceStreamingId(state.streamingIds, responseId, serverId),
             responseSequences,
             chats: state.chats.map((chat) => chat.id !== id ? chat : {
               ...chat,
@@ -633,7 +668,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       const errorMessage = error instanceof Error ? error.message : 'Unable to generate a response'
       const failedAt = new Date().toISOString()
       set((state) => ({
-        streamingId: state.streamingId === responseId ? null : state.streamingId,
+        streamingIds: removeStreamingId(state.streamingIds, responseId),
         chats: state.chats.map((chat) => chat.id !== id ? chat : {
           ...chat,
           messages: chat.messages.map((message) => message.id !== responseId ? message : {
@@ -698,10 +733,18 @@ export const useChat = create<ChatState>()((set, get) => ({
       get().setDetailedChat(updated)
     })
   },
-  stopStreaming: () => {
-    const responseId = get().streamingId
+  stopStreaming: (responseId) => {
     if (!responseId) return
-    set({ streamingId: null })
+    set((state) => ({
+      streamingIds: removeStreamingId(state.streamingIds, responseId),
+      chats: state.chats.map((chat) => ({
+        ...chat,
+        messages: chat.messages.map((message) => message.id !== responseId ? message : {
+          ...message,
+          done: true,
+        }),
+      })),
+    }))
     void optimisticRequest('POST', `/api/responses/${responseId}/cancel`)
   },
 }))

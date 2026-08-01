@@ -46,7 +46,15 @@ export function Composer({
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const sendMessage = useChat((s) => s.sendMessage)
-  const streamingId = useChat((s) => s.streamingId)
+  const streamingResponseId = useChat((s) => {
+    if (!chatId) return null
+    const chat = s.chats.find((item) => item.id === chatId)
+    if (!chat) return null
+    const unfinished = chat.messages.filter((message) => message.role === 'assistant' && !message.done)
+    return unfinished.find((message) => s.streamingIds.includes(message.id))?.id
+      ?? unfinished.at(-1)?.id
+      ?? null
+  })
   const stopStreaming = useChat((s) => s.stopStreaming)
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
   const overrides = useModelConfig((s) => s.overrides)
@@ -70,7 +78,7 @@ export function Composer({
 
   const submit = () => {
     const text = value.trim()
-    if (!text || !modelId || streamingId) return
+    if (!text || !modelId || streamingResponseId) return
     const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => ({
       id: attachment.id,
       name: attachment.name,
@@ -225,11 +233,11 @@ export function Composer({
             <TooltipContent side="top">Dictate</TooltipContent>
           </Tooltip>
 
-          {streamingId ? (
+          {streamingResponseId ? (
             <Button
               size="icon-sm"
               className="rounded-full"
-              onClick={stopStreaming}
+              onClick={() => stopStreaming(streamingResponseId)}
               aria-label="Stop generating"
             >
               <Square className="size-3 fill-current" />

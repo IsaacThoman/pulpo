@@ -80,7 +80,11 @@ export function ChatPage() {
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const chats = useChat((s) => s.chats)
-  const streamingId = useChat((s) => s.streamingId)
+  const streamingHere = useChat((s) => {
+    if (!chatId) return false
+    const current = s.chats.find((item) => item.id === chatId)
+    return current?.messages.some((message) => message.role === 'assistant' && !message.done) ?? false
+  })
   const chatWidth = useSettings((s) => s.chatWidth)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
@@ -114,7 +118,7 @@ export function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [chat?.messages.length, streamingId, chatId])
+  }, [chat?.messages.length, streamingHere, chatId])
 
   const isEmpty = !chat
   const suggestions = useMemo(
@@ -185,7 +189,7 @@ export function ChatPage() {
               )}
             >
               {chat.messages.map((m) => (
-                <MessageItem key={m.id} chat={chat} message={m} streaming={streamingId === m.id} />
+                <MessageItem key={m.id} chat={chat} message={m} streaming={m.role === 'assistant' && !m.done} />
               ))}
               <div ref={bottomRef} className="h-px" />
             </div>

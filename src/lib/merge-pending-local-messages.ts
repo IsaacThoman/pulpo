@@ -4,15 +4,20 @@ import type { Message } from './types'
 export function mergePendingLocalMessages(
   serverMessages: Message[],
   localMessages: Message[] | undefined,
-  streamingId: string | null = null,
+  streamingIds: readonly string[] = [],
 ): Message[] {
   if (!localMessages?.length) return serverMessages
   if (!serverMessages.length) {
-    if (!streamingId) return serverMessages
-    const assistant = localMessages.find((message) => message.id === streamingId && message.role === 'assistant' && !message.done)
-    if (!assistant) return serverMessages
-    const user = localMessages.find((message) => message.id === `${streamingId}:input` && message.role === 'user')
-    return user ? [user, assistant] : [assistant]
+    if (!streamingIds.length) return serverMessages
+    const streaming = new Set(streamingIds)
+    const assistants = localMessages.filter((message) =>
+      message.role === 'assistant' && !message.done && streaming.has(message.id),
+    )
+    if (!assistants.length) return serverMessages
+    return assistants.flatMap((assistant) => {
+      const user = localMessages.find((message) => message.id === `${assistant.id}:input` && message.role === 'user')
+      return user ? [user, assistant] : [assistant]
+    })
   }
 
   const serverIds = new Set(serverMessages.map((message) => message.id))
