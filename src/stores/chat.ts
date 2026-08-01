@@ -629,7 +629,39 @@ export const useChat = create<ChatState>()((set, get) => ({
       }
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
       await queryClient.invalidateQueries({ queryKey: chatKey(id) })
-    })().catch(() => undefined)
+    })().catch((error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : 'Unable to generate a response'
+      const failedAt = new Date().toISOString()
+      set((state) => ({
+        streamingId: state.streamingId === responseId ? null : state.streamingId,
+        chats: state.chats.map((chat) => chat.id !== id ? chat : {
+          ...chat,
+          messages: chat.messages.map((message) => message.id !== responseId ? message : {
+            ...message,
+            done: true,
+            error: errorMessage,
+          }),
+        }),
+      }))
+      queryClient.setQueryData<ServerChat>(chatKey(id), (chat) => {
+        if (!chat?.responses) return chat
+        return {
+          ...chat,
+          responses: chat.responses.map((response) => response.id !== responseId ? response : {
+            ...response,
+            status: 'failed',
+            error: { message: errorMessage },
+            completedAt: failedAt,
+            snapshot: {
+              ...response.snapshot,
+              status: 'failed',
+              error: { message: errorMessage },
+              updatedAt: failedAt,
+            },
+          }),
+        }
+      })
+    })
     return id
   },
 
