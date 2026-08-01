@@ -122,10 +122,12 @@ function ChatRow({
   chat,
   active,
   shiftHeld,
+  onNavigate,
 }: {
   chat: Chat
   active: boolean
   shiftHeld: boolean
+  onNavigate?: () => void
 }) {
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
@@ -143,7 +145,10 @@ function ChatRow({
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
           : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60'
       )}
-      onClick={() => navigate(`/c/${chat.id}`)}
+      onClick={() => {
+        navigate(`/c/${chat.id}`)
+        onNavigate?.()
+      }}
     >
       <span className="flex-1 truncate">{chat.title}</span>
       {shiftHeld ? (
@@ -197,12 +202,18 @@ function ChatRow({
 
 export function Sidebar({
   collapsed,
+  mobile,
+  mobileOpen,
   onToggle,
+  onNavigate,
   onOpenSearch,
   onOpenSettings,
 }: {
   collapsed: boolean
+  mobile: boolean
+  mobileOpen: boolean
   onToggle: () => void
+  onNavigate: () => void
   onOpenSearch: () => void
   onOpenSettings: () => void
 }) {
@@ -219,6 +230,11 @@ export function Sidebar({
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const shiftHeld = useShiftHeld()
+
+  const go = (path: string) => {
+    navigate(path)
+    onNavigate()
+  }
 
   useEffect(() => {
     setActiveTooltip(null)
@@ -281,9 +297,16 @@ export function Sidebar({
 
   return (
     <aside
+      aria-label="Sidebar"
+      aria-hidden={mobile && !mobileOpen}
+      inert={mobile && !mobileOpen}
       className={cn(
-        'flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width] motion-reduce:transition-none',
-        collapsed ? 'w-[52px]' : 'w-[264px]'
+        'flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
+        mobile
+          ? 'fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl transition-transform duration-200 ease-out'
+          : 'relative transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width]',
+        mobile && !mobileOpen && '-translate-x-full',
+        !mobile && (collapsed ? 'w-[52px]' : 'w-[264px]')
       )}
     >
       {/* header */}
@@ -297,7 +320,7 @@ export function Sidebar({
           <TooltipTrigger asChild>
             <button
               className="group/logo flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
-              onClick={collapsed ? onToggle : () => navigate('/')}
+              onClick={collapsed ? onToggle : () => go('/')}
               aria-label={collapsed ? 'Open sidebar' : 'Home'}
             >
               <img
@@ -338,10 +361,10 @@ export function Sidebar({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
-          {iconBtn('New chat', () => navigate('/'), <SquarePen className="size-4" />)}
+          {iconBtn('New chat', () => go('/'), <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
-          {iconBtn('Usage', () => navigate('/usage'), <BarChart3 className="size-4" />)}
-          {apiKeysEnabled && iconBtn('API keys', () => navigate('/api-keys'), <KeyRound className="size-4" />)}
+          {iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
+          {apiKeysEnabled && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -362,7 +385,7 @@ export function Sidebar({
                 </div>
                 <div className="space-y-0.5">
                   {pinned.map((c) => (
-                    <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} />
+                    <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
                   ))}
                 </div>
               </div>
@@ -385,7 +408,7 @@ export function Sidebar({
                       <div className="px-2 py-1 text-xs text-muted-foreground">Empty</div>
                     )}
                     {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} />
+                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
                     ))}
                   </CollapsibleContent>
                 </Collapsible>
@@ -409,7 +432,7 @@ export function Sidebar({
                   </div>
                   <div className="space-y-0.5">
                     {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} />
+                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
                     ))}
                   </div>
                 </div>
@@ -450,7 +473,7 @@ export function Sidebar({
               Settings
             </DropdownMenuItem>
             {user?.role === 'admin' && (
-              <DropdownMenuItem onClick={() => navigate('/admin')}>
+              <DropdownMenuItem onClick={() => go('/admin')}>
                 <ShieldCheck />
                 Admin panel
               </DropdownMenuItem>
@@ -460,6 +483,7 @@ export function Sidebar({
               onClick={() => {
                 logout()
                 navigate('/login')
+                onNavigate()
               }}
             >
               <LogOut />

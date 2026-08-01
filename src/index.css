@@ -108,6 +108,20 @@ body {
   overscroll-behavior: none;
 }
 
+.mobile-sidebar-opener {
+  display: none;
+}
+
+@media (width < 750px) {
+  .mobile-sidebar-opener {
+    display: flex;
+  }
+
+  .app-main > div > header {
+    padding-left: 3rem;
+  }
+}
+
 /* Thin minimal scrollbars */
 * {
   scrollbar-width: thin;
