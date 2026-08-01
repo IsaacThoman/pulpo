@@ -13,6 +13,7 @@ import { useAuth } from '@/stores/auth'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { useSettings } from '@/stores/settings'
+import { isTerminalSnapshot, syncInvalidationScopes } from './response-sync'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 type CompletionToast = { responseId: string; chatId: string; preview: string }
@@ -90,8 +91,23 @@ export function ChatDataBridge() {
     const applySync = (result: SyncResult) => {
       revisionRef.current = result.accountRevision
       for (const event of result.events) persistEvent(event)
-      for (const snapshot of result.snapshots) applyResponseSnapshot(snapshot)
-      for (const scope of result.invalidate) void queryClient.invalidateQueries({ queryKey: [scope, userId] })
+      for (const snapshot of result.snapshots) {
+        applyResponseSnapshot(snapshot, { invalidate: false })
+        if (isTerminalSnapshot(snapshot)) {
+          void localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`)
+        }
+      }
+      const scopes = syncInvalidationScopes(result)
+      for (const scope of scopes) void queryClient.invalidateQueries({ queryKey: [scope, userId] })
+      if (scopes.includes('chats') && activeChatIdRef.current) {
+        void queryClient.invalidateQueries({ queryKey: ['chat', userId, activeChatIdRef.current] })
+      }
+    }
+    const applyLiveSnapshot = (snapshot: Parameters<typeof applyResponseSnapshot>[0]) => {
+      applyResponseSnapshot(snapshot)
+      if (isTerminalSnapshot(snapshot)) {
+        void localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`)
+      }
     }
     const sync = async () => {
       const cursors = await localDb.responseCursors.where('tabId').equals(currentTabId).toArray()
@@ -107,7 +123,7 @@ export function ChatDataBridge() {
 
     socket.on('connect', sync)
     socket.on('response.event', persistEvent)
-    socket.on('response.snapshot', applyResponseSnapshot)
+    socket.on('response.snapshot', applyLiveSnapshot)
     socket.on('response.completed', (completion) => {
       if (!useSettings.getState().notifications) return
       if (completion.chatId === activeChatIdRef.current && document.visibilityState === 'visible') return

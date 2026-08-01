@@ -70,7 +70,7 @@ interface ChatState {
   replaceFolders: (folders: ServerFolder[]) => void
   setDetailedChat: (chat: ServerChat) => void
   applyResponseEvent: (event: ResponseEvent) => boolean
-  applyResponseSnapshot: (snapshot: ResponseSnapshot) => void
+  applyResponseSnapshot: (snapshot: ResponseSnapshot, options?: { invalidate?: boolean }) => void
   newChat: (modelId?: string) => string
   setActive: (id: string | null) => void
   deleteChat: (id: string) => void
@@ -479,7 +479,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     return true
   },
 
-  applyResponseSnapshot: (snapshot) => {
+  applyResponseSnapshot: (snapshot, options) => {
     if ((get().responseSequences[snapshot.responseId] ?? 0) > snapshot.sequence) return
     const affectedChatId = get().chats.find((chat) =>
       chat.messages.some((message) => message.id === snapshot.responseId)
@@ -513,7 +513,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         })),
       }
     })
-    if (!['queued', 'in_progress'].includes(snapshot.status)) {
+    if (!['queued', 'in_progress'].includes(snapshot.status) && options?.invalidate !== false) {
       void queryClient.invalidateQueries({ queryKey: chatsKey() })
       if (affectedChatId) void queryClient.invalidateQueries({ queryKey: chatKey(affectedChatId) })
     }
