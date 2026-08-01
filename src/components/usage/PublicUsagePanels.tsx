@@ -2,7 +2,7 @@ import { useEffect, useRef, type UIEvent } from 'react'
 import { BarChart3, MoreHorizontal, Zap } from 'lucide-react'
 import { getCatalogModel } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
-import { formatDuration, formatUsd } from '@/lib/format'
+import { formatUsd } from '@/lib/format'
 
 export interface PublicUsageRecord {
   id: string
@@ -12,7 +12,6 @@ export interface PublicUsageRecord {
   inputTokens: number
   outputTokens: number
   costMicros: number
-  latencyMs: number
 }
 
 export interface PublicTopModel {
@@ -69,14 +68,13 @@ export function PublicRecentUsagePanel({
       <div ref={scrollRef} className="max-h-96 overflow-auto" onScroll={onScroll}>
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-background"><tr className="border-b text-left text-muted-foreground">
-            <th className="bg-background px-3 py-2 font-normal">Time</th><th className="bg-background px-3 py-2 font-normal">User</th><th className="bg-background px-3 py-2 font-normal">Model</th><th className="bg-background px-3 py-2 text-right font-normal">Tokens</th><th className="bg-background px-3 py-2 text-right font-normal">Latency</th><th className="bg-background px-3 py-2 text-right font-normal">Cost</th>
+            <th className="bg-background px-3 py-2 font-normal">Time</th><th className="bg-background px-3 py-2 font-normal">User</th><th className="bg-background px-3 py-2 font-normal">Model</th><th className="bg-background px-3 py-2 text-right font-normal">Tokens</th><th className="bg-background px-3 py-2 text-right font-normal">Cost</th>
           </tr></thead>
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString()}</td>
             <td className="px-3 py-2"><span className="block max-w-28 truncate">{record.participant.name}</span></td>
             <td className="px-3 py-2"><span className="flex max-w-40 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString()}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{formatDuration(record.latencyMs)}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatUsd(record.costMicros / 1_000_000)}</td>
           </tr>)}</tbody>
         </table>

@@ -190,7 +190,6 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         inputTokens: row.usage.inputTokens,
         outputTokens: row.usage.outputTokens,
         costMicros: Number(row.usage.costMicros),
-        latencyMs: row.usage.latencyMs,
       })),
       nextCursor: rows.length > limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
     }
