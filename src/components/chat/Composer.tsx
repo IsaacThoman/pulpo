@@ -18,11 +18,14 @@ import { getCatalogModel } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
+import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
+import { useAuth } from '@/stores/auth'
 
 interface PendingAttachment {
   id: string
   name: string
   size: number
+  mimeType: string
 }
 
 export function Composer({
@@ -68,7 +71,12 @@ export function Composer({
   const submit = () => {
     const text = value.trim()
     if (!text || !modelId || streamingId) return
-    const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => attachment.id), temporary)
+    const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => ({
+      id: attachment.id,
+      name: attachment.name,
+      type: attachment.mimeType.startsWith('image/') ? 'image' : 'file',
+      size: attachment.size,
+    })), temporary)
     if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
     setValue('')
     setAttachments([])
@@ -92,7 +100,17 @@ export function Composer({
         })
         if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
         await apiRequest(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
-        setAttachments((current) => [...current, { id: created.attachment.id, name: file.name, size: file.size }])
+        const mimeType = file.type || 'application/octet-stream'
+        const userId = useAuth.getState().user?.id
+        if (userId) {
+          await cacheAttachmentBlob(userId, {
+            id: created.attachment.id,
+            originalName: file.name,
+            mimeType,
+            sizeBytes: file.size,
+          }, file, useSettings.getState().localAttachmentCacheMb).catch(() => false)
+        }
+        setAttachments((current) => [...current, { id: created.attachment.id, name: file.name, size: file.size, mimeType }])
       }
     } finally {
       setUploading(false)

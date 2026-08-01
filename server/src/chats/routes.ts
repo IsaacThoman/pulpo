@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { chatImportSources, chats, folders, models, requestLogs, responses, users } from '../database/schema.js'
+import { attachments, chatImportSources, chats, folders, models, requestLogs, responses, users } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -183,7 +183,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
     const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, id), isNull(responses.deletedAt))).orderBy(responses.createdAt)
-    return { ...chat, responses: allTurns.map((response) => ({
+    const attachmentRows = await db.select({
+      id: attachments.id,
+      originalName: attachments.originalName,
+      mimeType: attachments.mimeType,
+      sizeBytes: attachments.sizeBytes,
+    }).from(attachments).where(and(eq(attachments.chatId, id), eq(attachments.userId, user.id), eq(attachments.status, 'ready')))
+    return { ...chat, attachments: attachmentRows, responses: allTurns.map((response) => ({
       ...response,
       snapshot: toSnapshot(response),
       branches: metadataForTurn(allTurns, response),

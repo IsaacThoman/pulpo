@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { apiRequest } from '@/lib/api'
+import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
 import { useAuth } from '@/stores/auth'
 import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
 
@@ -9,6 +10,7 @@ const persistedKeys = [
   'chatWidth', 'notifications', 'customInstructions', 'nickname', 'memoryEnabled',
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',
+  'localAttachmentCacheMb',
 ] as const
 
 function settingsSnapshot() {
@@ -18,6 +20,7 @@ function settingsSnapshot() {
 
 export function SettingsBridge() {
   const userId = useAuth((state) => state.user?.id)
+  const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const hydrated = useRef(false)
   const query = useQuery({
     queryKey: ['settings', userId],
@@ -29,6 +32,10 @@ export function SettingsBridge() {
     if (!userId || useSettings.getState().ownerUserId === userId) return
     useSettings.setState({ ...DEFAULT_SETTINGS, ownerUserId: userId })
   }, [userId])
+
+  useEffect(() => {
+    if (userId) void enforceAttachmentQuota(userId, attachmentCacheMb)
+  }, [userId, attachmentCacheMb])
 
   useEffect(() => {
     if (!query.data || !userId) return

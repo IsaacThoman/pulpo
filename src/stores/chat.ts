@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ResponseEvent, ResponseSnapshot } from '@pulpo/contracts'
-import type { Chat, Folder, Message } from '@/lib/types'
+import type { Attachment, Chat, Folder, Message } from '@/lib/types'
 import { apiRequest, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
@@ -31,6 +31,13 @@ interface ServerResponse {
   }
 }
 
+export interface ServerAttachment {
+  id: string
+  originalName: string
+  mimeType: string
+  sizeBytes: number
+}
+
 export interface ServerChat {
   id: string
   title: string
@@ -41,6 +48,7 @@ export interface ServerChat {
   updatedAt: string
   activeResponseId: string | null
   activeBranchLeafId: string | null
+  attachments?: ServerAttachment[]
   responses?: ServerResponse[]
 }
 
@@ -70,7 +78,7 @@ interface ChatState {
   addFolder: (name: string) => void
   toggleFolder: (id: string) => void
   deleteFolder: (id: string) => void
-  sendMessage: (chatId: string | null, content: string, modelId: string, attachmentIds?: string[], temporary?: boolean) => string
+  sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean) => string
   regenerate: (chatId: string, messageId: string) => void
   editUserMessage: (chatId: string, messageId: string, content: string) => void
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
@@ -113,14 +121,35 @@ function inputText(input: unknown[]): string {
   return ''
 }
 
-function messagesFromResponses(responses: ServerResponse[]): Message[] {
+function attachmentIdsFromInput(input: unknown[]): string[] {
+  return input.flatMap((item) => {
+    const content = (item as { content?: unknown }).content
+    if (!Array.isArray(content)) return []
+    return content.flatMap((part) => {
+      const typed = part as { type?: string; attachment_id?: string }
+      return typed.type === 'input_file' && typed.attachment_id ? [typed.attachment_id] : []
+    })
+  })
+}
+
+function messagesFromResponses(responses: ServerResponse[], attachmentRows: ServerAttachment[]): Message[] {
+  const attachments = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
   return responses.flatMap((response) => {
     const timestamp = Date.parse(response.createdAt)
     const done = !['queued', 'in_progress'].includes(response.status)
+    const messageAttachments = attachmentIdsFromInput(response.input).flatMap((id): Attachment[] => {
+      const attachment = attachments.get(id)
+      return attachment ? [{
+        id: attachment.id,
+        name: attachment.originalName,
+        type: attachment.mimeType.startsWith('image/') ? 'image' : 'file',
+        size: attachment.sizeBytes,
+      }] : []
+    })
     return [
       {
         id: `${response.id}:input`, role: 'user' as const, content: inputText(response.input),
-        timestamp, done: true, branch: response.branches.user,
+        timestamp, done: true, branch: response.branches.user, attachments: messageAttachments,
       },
       {
         id: response.id, role: 'assistant' as const, content: outputText(response.output),
@@ -139,7 +168,7 @@ function toChat(row: ServerChat, current?: Chat): Chat {
   const selectedResponses = row.responses
     ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
     : undefined
-  const serverMessages = selectedResponses ? messagesFromResponses(selectedResponses) : current?.messages ?? []
+  const serverMessages = selectedResponses ? messagesFromResponses(selectedResponses, row.attachments ?? []) : current?.messages ?? []
   const messages = serverMessages.map((message) => {
     const local = current?.messages.find((candidate) => candidate.id === message.id)
     if (!local || message.content || message.done) return message
@@ -169,6 +198,7 @@ function cacheOptimisticTurn(input: {
   modelId: string
   title: string
   temporary: boolean
+  attachments: Attachment[]
   presetSelections: Record<string, string>
   createdAt: number
 }): void {
@@ -181,7 +211,10 @@ function cacheOptimisticTurn(input: {
     userMessageId: crypto.randomUUID(),
     modelId: input.modelId,
     status: 'queued',
-    input: [{ role: 'user', content: input.content }],
+    input: [{ role: 'user', content: [
+      { type: 'input_text', text: input.content },
+      ...input.attachments.map((attachment) => ({ type: 'input_file', attachment_id: attachment.id })),
+    ] }],
     output: [],
     presetSelections: input.presetSelections,
     usage: null,
@@ -205,6 +238,15 @@ function cacheOptimisticTurn(input: {
         updatedAt: createdAt,
         activeResponseId: input.responseId,
         activeBranchLeafId: input.responseId,
+        attachments: [
+          ...(existing.attachments ?? []).filter((attachment) => !input.attachments.some((item) => item.id === attachment.id)),
+          ...input.attachments.map((attachment) => ({
+            id: attachment.id,
+            originalName: attachment.name,
+            mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
+            sizeBytes: attachment.size,
+          })),
+        ],
         responses: [...(existing.responses ?? []), response],
       }
     : {
@@ -217,6 +259,12 @@ function cacheOptimisticTurn(input: {
         updatedAt: createdAt,
         activeResponseId: input.responseId,
         activeBranchLeafId: input.responseId,
+        attachments: input.attachments.map((attachment) => ({
+          id: attachment.id,
+          originalName: attachment.name,
+          mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
+          sizeBytes: attachment.size,
+        })),
         responses: [response],
       }
   queryClient.setQueryData(chatKey(input.chatId), detail)
@@ -427,7 +475,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('DELETE', `/api/folders/${id}`)
   },
 
-  sendMessage: (chatId, content, modelId, attachmentIds = [], temporary = false) => {
+  sendMessage: (chatId, content, modelId, attachments = [], temporary = false) => {
     const userId = currentUserId()
     if (!userId) return chatId ?? ''
     const id = chatId ?? crypto.randomUUID()
@@ -462,6 +510,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId: generation.effectiveModelId || modelId,
       title: content.slice(0, 200),
       temporary,
+      attachments,
       presetSelections: generation.selections,
       createdAt: timestamp,
     })
@@ -472,7 +521,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         input: content,
         modelId: generation.effectiveModelId || modelId,
         presetSelections: generation.selections,
-        attachmentIds,
+        attachmentIds: attachments.map((attachment) => attachment.id),
       }) as { response?: ResponseSnapshot } | undefined
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {

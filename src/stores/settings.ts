@@ -21,6 +21,7 @@ interface SettingsState {
   leaderboardVisible: boolean
   leaderboardColor: string
   localChatLimit: number
+  localAttachmentCacheMb: number
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -43,6 +44,7 @@ export const DEFAULT_SETTINGS = {
   leaderboardVisible: true,
   leaderboardColor: '#10b981',
   localChatLimit: 50,
+  localAttachmentCacheMb: 50,
   generation: {},
 }
 

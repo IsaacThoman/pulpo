@@ -39,11 +39,22 @@ export interface DraftRow {
   updatedAt: number
 }
 
+export interface CachedAttachmentRow {
+  id: string
+  userId: string
+  originalName: string
+  mimeType: string
+  sizeBytes: number
+  blob: Blob
+  lastAccessed: number
+}
+
 class PulpoLocalDatabase extends Dexie {
   kv!: EntityTable<KeyValueRow, 'key'>
   outbox!: EntityTable<OutboxMutation, 'id'>
   responseCursors!: EntityTable<ResponseCursorRow, 'id'>
   drafts!: EntityTable<DraftRow, 'id'>
+  attachmentBlobs!: EntityTable<CachedAttachmentRow, 'id'>
 
   constructor() {
     super('pulpo-local-v1')
@@ -58,6 +69,13 @@ class PulpoLocalDatabase extends Dexie {
       outbox: '&id, userId, [userId+nextAttemptAt], createdAt',
       responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
       drafts: '&id, userId, [userId+chatId], updatedAt',
+    })
+    this.version(3).stores({
+      kv: '&key, updatedAt',
+      outbox: '&id, userId, [userId+nextAttemptAt], createdAt',
+      responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
+      drafts: '&id, userId, [userId+chatId], updatedAt',
+      attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
     })
   }
 }
@@ -103,9 +121,10 @@ export const indexedDbPersister: Persister = {
 }
 
 export async function clearLocalUserData(userId: string): Promise<void> {
-  await localDb.transaction('rw', localDb.outbox, localDb.drafts, async () => {
+  await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, async () => {
     await localDb.outbox.where('userId').equals(userId).delete()
     await localDb.drafts.where('userId').equals(userId).delete()
+    await localDb.attachmentBlobs.where('userId').equals(userId).delete()
   })
   await indexedDbPersister.removeClient()
 }

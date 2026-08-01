@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Copy,
   Pencil,
+  Paperclip,
   RefreshCw,
   Trash2,
 } from 'lucide-react'
@@ -20,6 +21,8 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { downloadAttachment } from '@/lib/local-first/attachment-cache'
+import { useAuth } from '@/stores/auth'
 
 function ActionButton({
   label,
@@ -160,6 +163,24 @@ export const MessageItem = memo(function MessageItem({
           </div>
         ) : (
           <div className="max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[15px] leading-7">
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mb-2 flex flex-wrap justify-end gap-1.5">
+                {message.attachments.map((attachment) => (
+                  <button
+                    key={attachment.id}
+                    type="button"
+                    className="flex max-w-64 items-center gap-1.5 rounded-md border bg-background/50 px-2 py-1 text-xs leading-5 hover:bg-background"
+                    onClick={() => {
+                      const userId = useAuth.getState().user?.id
+                      if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
+                    }}
+                  >
+                    <Paperclip className="size-3 shrink-0" />
+                    <span className="truncate">{attachment.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="whitespace-pre-wrap">{message.content}</div>
           </div>
         )}
