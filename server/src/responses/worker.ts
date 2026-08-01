@@ -28,7 +28,8 @@ import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { redis } from '../redis.js'
-import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
+import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings, parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
+import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -91,15 +92,6 @@ async function persistItems(responseId: string, output: unknown[]): Promise<void
       }
     }
   })
-}
-
-function previewFromOutput(output: unknown[]): string {
-  for (const item of output) {
-    const content = (item as { content?: Array<{ type?: string; text?: string }> }).content
-    const text = content?.find((part) => part.type === 'output_text')?.text
-    if (text) return text.slice(0, 160)
-  }
-  return 'Response completed'
 }
 
 async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof models.$inferSelect, requestLogId: string): Promise<unknown[]> {
@@ -213,17 +205,21 @@ async function contextualInput(client: OpenAI, record: { response: typeof respon
 
 async function runPostResponseTasks(client: OpenAI, record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }, output: unknown[]): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
-  const task = (setting?.value ?? {}) as { title?: boolean; titlePrompt?: string; followUp?: boolean }
+  const task = parseInterfaceSettings(setting?.value)
   const inputText = JSON.stringify(record.response.input).slice(0, 8_000)
-  const answer = previewFromOutput(output)
   if (task.title !== false && !record.response.parentResponseId) {
+    const history = selectTitleHistory(
+      JSON.stringify([...(record.response.input as unknown[]), ...output]),
+      task.titleIncludeFirstCharacters,
+      task.titleIncludeLastCharacters,
+    )
     const titleResult = await client.responses.create({
       model: record.model.upstreamModelId,
-      input: [{ role: 'user', content: `${task.titlePrompt ?? 'Create a concise 3-5 word title for this chat. Return only the title.'}\n\nUser: ${inputText}\nAssistant: ${answer}` }],
+      input: [{ role: 'user', content: `${task.titlePrompt || DEFAULT_TITLE_PROMPT}\n\nChat history:\n${history}` }],
       store: false,
       max_output_tokens: Math.min(256, record.model.maxOutputTokens),
     })
-    const title = titleResult.output_text.trim().replace(/^['"]|['"]$/g, '').slice(0, 200)
+    const title = parseGeneratedTitle(titleResult.output_text)
     if (title) await db.update(chats).set({ title, updatedAt: new Date() }).where(eq(chats.id, record.response.chatId))
   }
   const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)

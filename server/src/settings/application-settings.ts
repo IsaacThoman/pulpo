@@ -36,6 +36,24 @@ export const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
 ] as const
 
+export const DEFAULT_TITLE_PROMPT = `### Task:
+Generate a concise, 3-5 word title with an emoji summarizing the chat history.
+### Guidelines:
+- The title should clearly represent the main theme or subject of the conversation.
+- Use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+- Use an emoji as the first character of the title
+- Write the title in the chat's primary language; default to English if multilingual.
+- Prioritize accuracy over excessive creativity; keep it clear and simple.
+### Output:
+JSON format: { "title": "your concise title here" }
+### Examples:
+- { "title": "📉 Stock Market Trends" },
+- { "title": "🍪 Perfect Chocolate Chip Recipe" },
+- { "title": "🎶 Evolution of Music Streaming" },
+- { "title": "💻 Remote Work Productivity Tips" },
+- { "title": "👀 Artificial Intelligence in Healthcare" },
+- { "title": "🎮 Video Game Development Insights" }`
+
 export const suggestedPromptItemSchema = z.object({
   id: z.string().min(1).max(64),
   label: z.string().trim().min(1).max(200),
@@ -47,7 +65,9 @@ export const interfaceSettingsSchema = z.object({
   compaction: z.boolean().default(true),
   compactionTokens: z.number().int().min(2_000).max(1_000_000).default(12_000),
   title: z.boolean().default(true),
-  titlePrompt: z.string().max(10_000).default('Create a concise 3-5 word title for this chat.'),
+  titlePrompt: z.string().max(10_000).default(DEFAULT_TITLE_PROMPT),
+  titleIncludeFirstCharacters: z.number().int().min(0).max(1_000_000).default(8_000),
+  titleIncludeLastCharacters: z.number().int().min(0).max(1_000_000).default(8_000),
   followUp: z.boolean().default(true),
   suggestedPromptsEnabled: z.boolean().default(true),
   suggestedPromptsCount: z.number().int().min(0).max(12).default(4),

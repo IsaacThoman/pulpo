@@ -22,6 +22,24 @@ const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
 ]
 
+const DEFAULT_TITLE_PROMPT = `### Task:
+Generate a concise, 3-5 word title with an emoji summarizing the chat history.
+### Guidelines:
+- The title should clearly represent the main theme or subject of the conversation.
+- Use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+- Use an emoji as the first character of the title
+- Write the title in the chat's primary language; default to English if multilingual.
+- Prioritize accuracy over excessive creativity; keep it clear and simple.
+### Output:
+JSON format: { "title": "your concise title here" }
+### Examples:
+- { "title": "📉 Stock Market Trends" },
+- { "title": "🍪 Perfect Chocolate Chip Recipe" },
+- { "title": "🎶 Evolution of Music Streaming" },
+- { "title": "💻 Remote Work Productivity Tips" },
+- { "title": "👀 Artificial Intelligence in Healthcare" },
+- { "title": "🎮 Video Game Development Insights" }`
+
 interface AdminSettings { values: Record<string, unknown> }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -133,7 +151,9 @@ export function InterfaceSection() {
     compaction: true,
     compactionTokens: 12000,
     title: true,
-    titlePrompt: 'Create a concise 3-5 word title for this chat.',
+    titlePrompt: DEFAULT_TITLE_PROMPT,
+    titleIncludeFirstCharacters: 8000,
+    titleIncludeLastCharacters: 8000,
     followUp: true,
     suggestedPromptsEnabled: true,
     suggestedPromptsCount: 4,
@@ -174,8 +194,22 @@ export function InterfaceSection() {
         )}
         <Toggle label="Title generation" checked={t.title} onChange={(v) => s('title', v)} />
         {t.title && (
-          <div className="pl-4">
+          <div className="space-y-3 pl-4">
             <TextAreaField label="Title prompt" value={t.titlePrompt} onChange={(v) => s('titlePrompt', v)} />
+            <NumField
+              label="Include first characters"
+              hint="Characters included from the beginning of the chat history."
+              value={t.titleIncludeFirstCharacters}
+              onChange={(v) => s('titleIncludeFirstCharacters', Math.max(0, Math.round(v)))}
+              min={0}
+            />
+            <NumField
+              label="Include last characters"
+              hint="Characters included from the end. Overlapping ranges are included only once."
+              value={t.titleIncludeLastCharacters}
+              onChange={(v) => s('titleIncludeLastCharacters', Math.max(0, Math.round(v)))}
+              min={0}
+            />
           </div>
         )}
         <Toggle label="Follow-up generation" checked={t.followUp} onChange={(v) => s('followUp', v)} />

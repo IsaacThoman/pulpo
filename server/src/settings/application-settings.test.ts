@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_SUGGESTED_PROMPTS, parseAuthSettings, parseInterfaceSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAuthSettings, parseInterfaceSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -17,6 +17,9 @@ describe('interface application settings', () => {
     expect(settings.suggestedPromptsEnabled).toBe(true)
     expect(settings.suggestedPromptsCount).toBe(4)
     expect(settings.suggestedPrompts).toEqual([...DEFAULT_SUGGESTED_PROMPTS])
+    expect(settings.titlePrompt).toBe(DEFAULT_TITLE_PROMPT)
+    expect(settings.titleIncludeFirstCharacters).toBe(8_000)
+    expect(settings.titleIncludeLastCharacters).toBe(8_000)
   })
 
   it('fills suggested prompt defaults for settings saved by older Pulpo versions', () => {
@@ -24,5 +27,7 @@ describe('interface application settings', () => {
     expect(settings.compaction).toBe(false)
     expect(settings.suggestedPromptsEnabled).toBe(true)
     expect(settings.suggestedPrompts).toEqual([...DEFAULT_SUGGESTED_PROMPTS])
+    expect(settings.titleIncludeFirstCharacters).toBe(8_000)
+    expect(settings.titleIncludeLastCharacters).toBe(8_000)
   })
 })
