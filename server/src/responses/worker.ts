@@ -1,7 +1,7 @@
 import OpenAI, { toFile } from 'openai'
 import { createHash } from 'node:crypto'
 import { and, asc, eq, gt, isNull, ne, sql } from 'drizzle-orm'
-import type { ResponseEvent, ResponseUsage } from '@pulpo/contracts'
+import { applyResponseEventToSnapshot, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   chats,
@@ -31,6 +31,18 @@ import { redis } from '../redis.js'
 import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
+
+function accumulateEventOutput(output: unknown[], event: ResponseEvent): unknown[] {
+  return applyResponseEventToSnapshot({
+    responseId: event.responseId,
+    status: 'in_progress',
+    sequence: event.sequence - 1,
+    output,
+    usage: null,
+    error: null,
+    updatedAt: event.emittedAt,
+  }, event).output
+}
 
 function normalizeUsage(usage: unknown): ResponseUsage {
   const value = (usage ?? {}) as {
@@ -280,15 +292,19 @@ async function processGenerationAttempt(
           starting_after: record.response.upstreamSequence,
         })
         let localSequence = record.response.lastSequence
+        let recoveredOutput = record.response.output as unknown[]
+        let recoveredUsage = record.response.usage
         for await (const rawEvent of resumed) {
           const upstream = rawEvent as unknown as UpstreamEvent
           localSequence += 1
           const event: ResponseEvent = { responseId, sequence: localSequence, type: upstream.type, payload: upstream, emittedAt: new Date().toISOString() }
           await publishResponseEvent(event)
           const upstreamResponse = upstream.response as { output?: unknown[]; usage?: unknown } | undefined
+          recoveredOutput = upstreamResponse?.output ?? accumulateEventOutput(recoveredOutput, event)
+          recoveredUsage = upstreamResponse?.usage ? normalizeUsage(upstreamResponse.usage) : recoveredUsage
           await db.update(responses).set({
-            output: upstreamResponse?.output ?? record.response.output,
-            usage: upstreamResponse?.usage ? normalizeUsage(upstreamResponse.usage) : record.response.usage,
+            output: recoveredOutput,
+            usage: recoveredUsage,
             lastSequence: localSequence,
             upstreamSequence: Number(upstream.sequence_number ?? record.response.upstreamSequence),
             updatedAt: new Date(),
@@ -405,7 +421,7 @@ async function processGenerationAttempt(
         upstreamResponseId = upstreamResponse.id
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }
-      if (upstreamResponse?.output) output = upstreamResponse.output
+      output = upstreamResponse?.output ?? accumulateEventOutput(output, event)
       if (upstreamResponse?.usage) usage = normalizeUsage(upstreamResponse.usage)
       await publishResponseEvent(event)
       await db.update(requestLogs).set({ eventCount: sql`${requestLogs.eventCount} + 1`, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))

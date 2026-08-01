@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ResponseEvent, ResponseSnapshot } from '@pulpo/contracts'
+import { mergeResponseSnapshots, type ResponseEvent, type ResponseSnapshot } from '@pulpo/contracts'
 import type { Attachment, Chat, Folder, Message } from '@/lib/types'
 import { apiRequest, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
@@ -164,13 +164,18 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
   })
 }
 
-function toChat(row: ServerChat, current?: Chat): Chat {
+function toChat(row: ServerChat, current?: Chat, responseSequences: Record<string, number> = {}): Chat {
   const selectedResponses = row.responses
     ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
     : undefined
+  const selectedById = new Map(selectedResponses?.map((response) => [response.id, response]) ?? [])
   const serverMessages = selectedResponses ? messagesFromResponses(selectedResponses, row.attachments ?? []) : current?.messages ?? []
   const messages = serverMessages.map((message) => {
     const local = current?.messages.find((candidate) => candidate.id === message.id)
+    const response = selectedById.get(message.id)
+    if (local && response && !message.done && (responseSequences[response.id] ?? 0) > response.snapshot.sequence) {
+      return { ...message, content: local.content, reasoning: local.reasoning, outputItems: local.outputItems }
+    }
     if (!local || message.content || message.done) return message
     return { ...message, content: local.content, reasoning: local.reasoning }
   })
@@ -279,6 +284,14 @@ const pendingResponseEvents = new Map<string, {
   events: ResponseEvent[]
   timer: number
 }>()
+const accumulatedResponseSnapshots = new Map<string, ResponseSnapshot>()
+
+function rememberResponseSnapshot(snapshot: ResponseSnapshot): ResponseSnapshot {
+  const current = accumulatedResponseSnapshots.get(snapshot.responseId)
+  const merged = current ? mergeResponseSnapshots(current, snapshot) : snapshot
+  accumulatedResponseSnapshots.set(snapshot.responseId, merged)
+  return merged
+}
 
 function flushResponseEvents(responseId: string): void {
   const pending = pendingResponseEvents.get(responseId)
@@ -290,7 +303,8 @@ function flushResponseEvents(responseId: string): void {
       ...chat,
       responses: chat.responses.map((response) => {
         if (response.id !== responseId) return response
-        const snapshot = pending.events.reduce(applyEventToSnapshot, response.snapshot)
+        const base = accumulatedResponseSnapshots.get(responseId) ?? response.snapshot
+        const snapshot = rememberResponseSnapshot(pending.events.reduce(applyEventToSnapshot, base))
         return { ...response, status: snapshot.status, output: snapshot.output, usage: snapshot.usage, error: snapshot.error as ServerResponse['error'], snapshot }
       }),
     }
@@ -317,9 +331,11 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
     if (!chat?.responses) return chat
     return {
       ...chat,
-      responses: chat.responses.map((response) => response.id === snapshot.responseId
-        ? { ...response, status: snapshot.status, output: snapshot.output, usage: snapshot.usage, error: snapshot.error as ServerResponse['error'], snapshot }
-        : response),
+      responses: chat.responses.map((response) => {
+        if (response.id !== snapshot.responseId) return response
+        const merged = rememberResponseSnapshot(mergeResponseSnapshots(response.snapshot, snapshot))
+        return { ...response, status: merged.status, output: merged.output, usage: merged.usage, error: merged.error as ServerResponse['error'], snapshot: merged }
+      }),
     }
   })
 }
@@ -358,16 +374,17 @@ export const useChat = create<ChatState>()((set, get) => ({
     })),
   })),
   setDetailedChat: (row) => set((state) => {
-    const chat = toChat(row, state.chats.find((item) => item.id === row.id))
-    const exists = state.chats.some((item) => item.id === row.id)
-    const streaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
     const responseSequences = { ...state.responseSequences }
     for (const response of row.responses ?? []) {
+      rememberResponseSnapshot(response.snapshot)
       responseSequences[response.id] = Math.max(
         responseSequences[response.id] ?? 0,
         response.snapshot.sequence,
       )
     }
+    const chat = toChat(row, state.chats.find((item) => item.id === row.id), state.responseSequences)
+    const exists = state.chats.some((item) => item.id === row.id)
+    const streaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
     return {
       chats: exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats],
       streamingId: streaming,

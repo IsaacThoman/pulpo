@@ -1,5 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { chatPresetsSchema, responseEventSchema, syncRequestSchema } from './index.js'
+import {
+  applyResponseEventToSnapshot,
+  chatPresetsSchema,
+  mergeResponseSnapshots,
+  responseEventSchema,
+  syncRequestSchema,
+  type ResponseEvent,
+  type ResponseSnapshot,
+} from './index.js'
+
+const streamingSnapshot: ResponseSnapshot = {
+  responseId: '00000000-0000-4000-8000-000000000001',
+  status: 'in_progress',
+  sequence: 0,
+  output: [],
+  usage: null,
+  error: null,
+  updatedAt: '2026-07-31T00:00:00.000Z',
+}
+
+function delta(type: string, text: string, sequence: number): ResponseEvent {
+  return {
+    responseId: streamingSnapshot.responseId,
+    sequence,
+    type,
+    payload: { delta: text },
+    emittedAt: `2026-07-31T00:00:0${sequence}.000Z`,
+  }
+}
 
 describe('shared contracts', () => {
   it('rejects response events without a positive sequence', () => {
@@ -46,5 +74,49 @@ describe('shared contracts', () => {
     { name: 'too many choices', value: [{ id: 'style', name: 'Style', icon: 'sparkles', choices: Array.from({ length: 21 }, (_, index) => ({ id: `choice-${index}`, displayName: `Choice ${index}`, action: { type: 'none' } })) }] },
   ])('rejects $name', ({ value }) => {
     expect(chatPresetsSchema.safeParse(value).success).toBe(false)
+  })
+})
+
+describe('response snapshot accumulation', () => {
+  it('does not lose text across active snapshots without output', () => {
+    const first = applyResponseEventToSnapshot(streamingSnapshot, delta('response.output_text.delta', 'chunk A', 1))
+    const checkpoint = mergeResponseSnapshots(first, { ...streamingSnapshot, sequence: 2 })
+    const second = applyResponseEventToSnapshot(checkpoint, delta('response.output_text.delta', ' chunk B', 3))
+    const nextCheckpoint = mergeResponseSnapshots(second, { ...streamingSnapshot, sequence: 4 })
+    const third = applyResponseEventToSnapshot(nextCheckpoint, delta('response.output_text.delta', ' chunk C', 5))
+
+    expect(third.output).toMatchObject([{ content: [{ text: 'chunk A chunk B chunk C' }] }])
+  })
+
+  it('keeps snapshots and events monotonic by sequence', () => {
+    const current = applyResponseEventToSnapshot(streamingSnapshot, delta('response.output_text.delta', 'current', 3))
+    const duplicate = applyResponseEventToSnapshot(current, delta('response.output_text.delta', ' duplicate', 3))
+    const older = mergeResponseSnapshots(current, { ...streamingSnapshot, sequence: 2 })
+
+    expect(duplicate).toBe(current)
+    expect(older).toBe(current)
+  })
+
+  it('keeps reasoning separate from assistant output', () => {
+    const reasoned = applyResponseEventToSnapshot(streamingSnapshot, delta('response.reasoning_summary_text.delta', 'Think', 1))
+    const answered = applyResponseEventToSnapshot(reasoned, delta('response.output_text.delta', 'Answer', 2))
+
+    expect(answered.output).toMatchObject([
+      { type: 'reasoning', summary: [{ text: 'Think' }] },
+      { type: 'message', content: [{ text: 'Answer' }] },
+    ])
+  })
+
+  it('accepts terminal output as authoritative', () => {
+    const provisional = applyResponseEventToSnapshot(streamingSnapshot, delta('response.output_text.delta', 'partial', 1))
+    const terminal = mergeResponseSnapshots(provisional, {
+      ...streamingSnapshot,
+      status: 'completed',
+      sequence: 2,
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'final answer' }] }],
+    })
+
+    expect(terminal.status).toBe('completed')
+    expect(terminal.output).toMatchObject([{ content: [{ text: 'final answer' }] }])
   })
 })
