@@ -83,6 +83,7 @@ export function ChatPage() {
   const streamingId = useChat((s) => s.streamingId)
   const chatWidth = useSettings((s) => s.chatWidth)
   const models = useCatalog((state) => state.models)
+  const routeModelId = params.get('model')
   const [temporary, setTemporary] = useState(params.get('temporary') === '1')
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
@@ -92,7 +93,7 @@ export function ChatPage() {
 
   const chat = chats.find((c) => c.id === chatId) ?? null
   const [modelId, setModelId] = useState(
-    () => params.get('model') ?? chat?.modelId ?? models[0]?.id ?? ''
+    () => routeModelId ?? chat?.modelId ?? models[0]?.id ?? ''
   )
   useEffect(() => {
     if (chat || models.length === 0 || models.some((model) => model.id === modelId)) return
@@ -100,12 +101,8 @@ export function ChatPage() {
   }, [chat, modelId, models])
   useEffect(() => {
     if (chat) setModelId(chat.modelId)
-    else {
-      const m = params.get('model')
-      if (m) setModelId(m)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId])
+    else if (routeModelId) setModelId(routeModelId)
+  }, [chatId, chat?.modelId, routeModelId])
 
   useEffect(() => {
     void apiRequest<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>('/api/interface/suggested-prompts')
