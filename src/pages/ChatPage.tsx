@@ -54,7 +54,9 @@ function Placeholder({
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        {model.provider} · {model.inferenceProvider}
+        {model.provider === model.inferenceProvider
+          ? model.provider
+          : `${model.provider} · ${model.inferenceProvider}`}
       </p>
       {suggestions.length > 0 && (
         <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
