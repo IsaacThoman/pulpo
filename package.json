@@ -15,7 +15,7 @@
     "build:web": "npm run build -w @pulpo/contracts && tsc -b && vite build",
     "db:generate": "npm run db:generate -w @pulpo/server",
     "db:migrate": "npm run db:migrate -w @pulpo/server",
-    "test": "npm run test -w @pulpo/contracts && npm run test -w @pulpo/server",
+    "test": "npm run build -w @pulpo/contracts && npm run test -w @pulpo/contracts && npm run test -w @pulpo/server",
     "lint": "oxlint",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
