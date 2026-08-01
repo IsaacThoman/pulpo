@@ -1,7 +1,7 @@
+import { useEffect, useRef, type UIEvent } from 'react'
 import { BarChart3, MoreHorizontal, Zap } from 'lucide-react'
 import { getCatalogModel } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
-import { Button } from '@/components/ui/button'
 import { formatDuration, formatUsd } from '@/lib/format'
 
 export interface PublicUsageRecord {
@@ -41,13 +41,32 @@ export function PublicRecentUsagePanel({
   error?: string | null
   onLoadMore: () => void
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const onLoadMoreRef = useRef(onLoadMore)
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
+
+  const maybeLoadMore = (el: HTMLDivElement) => {
+    if (!nextCursor || loadingMore) return
+    const { clientHeight, scrollHeight, scrollTop } = el
+    if (scrollHeight - scrollTop - clientHeight < 160) onLoadMoreRef.current()
+  }
+
+  const onScroll = (e: UIEvent<HTMLDivElement>) => maybeLoadMore(e.currentTarget)
+
+  // if content doesn't fill the scroll area, keep loading until it does or we run out
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !nextCursor || loadingMore || error) return
+    if (el.scrollHeight <= el.clientHeight + 160) onLoadMoreRef.current()
+  }, [records, nextCursor, loadingMore, error])
+
   return <div className="rounded-lg border">
     <div className="flex items-center justify-between border-b px-3 py-2">
       <div className="flex items-center gap-2"><Zap className="size-3" /><h3 className="text-xs font-medium">Recent usage</h3></div>
       <span className="text-xs text-muted-foreground">{records.length.toLocaleString()} settled calls</span>
     </div>
     {records.length === 0 ? <div className="p-6 text-center text-xs text-muted-foreground">No settled usage in this period</div> : <>
-      <div className="max-h-96 overflow-auto">
+      <div ref={scrollRef} className="max-h-96 overflow-auto" onScroll={onScroll}>
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-background"><tr className="border-b text-left text-muted-foreground">
             <th className="bg-background px-3 py-2 font-normal">Time</th><th className="bg-background px-3 py-2 font-normal">User</th><th className="bg-background px-3 py-2 font-normal">Model</th><th className="bg-background px-3 py-2 text-right font-normal">Tokens</th><th className="bg-background px-3 py-2 text-right font-normal">Latency</th><th className="bg-background px-3 py-2 text-right font-normal">Cost</th>
@@ -61,11 +80,10 @@ export function PublicRecentUsagePanel({
             <td className="px-3 py-2 text-right tabular-nums">{formatUsd(record.costMicros / 1_000_000)}</td>
           </tr>)}</tbody>
         </table>
+        {(loadingMore || error) && <div className="border-t p-2 text-center text-xs text-muted-foreground">
+          {error ? <button type="button" className="text-destructive hover:underline" onClick={() => onLoadMore()}>{error} — Retry</button> : 'Loading…'}
+        </div>}
       </div>
-      {(nextCursor || error) && <div className="flex items-center justify-center gap-3 border-t p-2">
-        {error && <span className="text-xs text-destructive">{error}</span>}
-        {nextCursor && <Button size="sm" variant="ghost" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? 'Loading…' : error ? 'Retry' : 'Load more'}</Button>}
-      </div>}
     </>}
   </div>
 }
