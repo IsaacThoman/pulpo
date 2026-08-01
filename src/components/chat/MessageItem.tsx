@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Copy,
   Pencil,
-  Paperclip,
   RefreshCw,
   Trash2,
 } from 'lucide-react'
@@ -16,13 +15,12 @@ import { formatCost, formatDuration, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from './Markdown'
+import { MessageAttachmentList } from './AttachmentImage'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-import { downloadAttachment } from '@/lib/local-first/attachment-cache'
-import { useAuth } from '@/stores/auth'
 
 function ActionButton({
   label,
@@ -123,12 +121,22 @@ export const MessageItem = memo(function MessageItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [reasoningOpen, setReasoningOpen] = useState(false)
+  const hasAttachments = Boolean(message.attachments?.length)
   const submitEdit = () => {
     const content = draft.trim()
-    if (!content || (message.role === 'assistant' && content === message.content)) return
+    if (message.role === 'user') {
+      if (!content && !hasAttachments) return
+      if (content === message.content) {
+        setEditing(false)
+        return
+      }
+      setEditing(false)
+      editUserMessage(chat.id, message.id, content, activeModelId)
+      return
+    }
+    if (!content || content === message.content) return
     setEditing(false)
-    if (message.role === 'user') editUserMessage(chat.id, message.id, content, activeModelId)
-    else editAssistantMessage(chat.id, message.id, content)
+    editAssistantMessage(chat.id, message.id, content)
   }
   const handleEditKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.nativeEvent.isComposing) {
@@ -141,56 +149,58 @@ export const MessageItem = memo(function MessageItem({
     return (
       <div className="group flex flex-col items-end gap-1">
         {editing ? (
-          <div className="w-full rounded-2xl border bg-card p-3">
+          <div className="w-full max-w-xl rounded-2xl border bg-card p-3">
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mb-3">
+                <MessageAttachmentList attachments={message.attachments} align="start" />
+                <p className="mt-1.5 text-[11px] text-muted-foreground">
+                  Attachments stay with this message when you edit.
+                </p>
+              </div>
+            )}
             <textarea
               className="w-full resize-none bg-transparent text-sm outline-none"
-              rows={Math.min(10, draft.split('\n').length + 1)}
+              rows={Math.min(10, Math.max(2, draft.split('\n').length + 1))}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleEditKeyDown}
+              placeholder={hasAttachments ? 'Add a caption…' : 'Message…'}
               autoFocus
             />
             <div className="mt-2 flex justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+              <Button size="sm" variant="ghost" onClick={() => {
+                setDraft(message.content)
+                setEditing(false)
+              }}>
                 Cancel
               </Button>
               <Button
                 size="sm"
                 onClick={submitEdit}
-                disabled={!draft.trim()}
+                disabled={(!draft.trim() && !hasAttachments) || draft.trim() === message.content}
               >
                 Save & resend
               </Button>
             </div>
           </div>
         ) : (
-          <div className="max-w-[85%] rounded-2xl rounded-br-md bg-secondary px-4 py-2.5 text-[15px] leading-7">
+          <div className={cn(
+            'max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7',
+            message.content ? 'px-4 py-2.5' : 'p-2',
+          )}>
             {message.attachments && message.attachments.length > 0 && (
-              <div className="mb-2 flex flex-wrap justify-end gap-1.5">
-                {message.attachments.map((attachment) => (
-                  <button
-                    key={attachment.id}
-                    type="button"
-                    className="flex max-w-64 items-center gap-1.5 rounded-md border bg-background/50 px-2 py-1 text-xs leading-5 hover:bg-background"
-                    onClick={() => {
-                      const userId = useAuth.getState().user?.id
-                      if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
-                    }}
-                  >
-                    <Paperclip className="size-3 shrink-0" />
-                    <span className="truncate">{attachment.name}</span>
-                  </button>
-                ))}
+              <div className={cn(message.content ? 'mb-2' : undefined)}>
+                <MessageAttachmentList attachments={message.attachments} />
               </div>
             )}
-            <Markdown content={message.content} />
+            {message.content ? <Markdown content={message.content} /> : null}
           </div>
         )}
         {!editing && (
           <div className="flex items-center gap-1">
             <BranchControls chatId={chat.id} branch={message.branch} />
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              <CopyButton text={message.content} />
+              {message.content ? <CopyButton text={message.content} /> : null}
               <ActionButton
                 label="Edit"
                 onClick={() => {

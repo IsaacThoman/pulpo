@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, Check, ChevronDown, Loader2, Mic, Paperclip, Plus, Square, X } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, ImagePlus, Loader2, Mic, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -16,16 +16,22 @@ import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
 import { getCatalogModel } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
+import { PendingImageChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
+import { collectImageFiles } from '@/lib/attachments'
 import { useAuth } from '@/stores/auth'
 
 interface PendingAttachment {
-  id: string
+  localId: string
+  id?: string
   name: string
   size: number
   mimeType: string
+  previewUrl: string
+  status: 'uploading' | 'ready' | 'error'
+  error?: string
 }
 
 export function Composer({
@@ -42,9 +48,13 @@ export function Composer({
   const navigate = useNavigate()
   const [value, setValue] = useState('')
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
-  const [uploading, setUploading] = useState(false)
+  const [dragging, setDragging] = useState(false)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const dragDepth = useRef(0)
+  const attachmentsRef = useRef(attachments)
+  attachmentsRef.current = attachments
+
   const sendMessage = useChat((s) => s.sendMessage)
   const streamingResponseId = useChat((s) => {
     if (!chatId) return null
@@ -65,9 +75,20 @@ export function Composer({
   const selections = resolveSelections(options, generation[modelId])
   const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
+  const uploading = attachments.some((a) => a.status === 'uploading')
+  const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
+  const canSend = Boolean(modelId) && !uploading && !streamingResponseId
+    && (value.trim().length > 0 || readyAttachments.length > 0)
+
   useEffect(() => {
     ref.current?.focus()
   }, [chatId])
+
+  useEffect(() => () => {
+    for (const attachment of attachmentsRef.current) {
+      URL.revokeObjectURL(attachment.previewUrl)
+    }
+  }, [])
 
   const autosize = () => {
     const el = ref.current
@@ -76,39 +97,47 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }
 
-  const submit = () => {
-    const text = value.trim()
-    if (!text || !modelId || streamingResponseId) return
-    const targetChatId = sendMessage(chatId, text, modelId, attachments.map((attachment) => ({
-      id: attachment.id,
-      name: attachment.name,
-      type: attachment.mimeType.startsWith('image/') ? 'image' : 'file',
-      size: attachment.size,
-    })), temporary)
-    if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
-    setValue('')
-    setAttachments([])
-    requestAnimationFrame(() => {
-      if (ref.current) ref.current.style.height = 'auto'
+  const removeAttachment = useCallback((localId: string) => {
+    setAttachments((current) => {
+      const target = current.find((item) => item.localId === localId)
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      return current.filter((item) => item.localId !== localId)
     })
-  }
+  }, [])
 
-  const uploadFiles = async (files: FileList | null) => {
-    if (!files?.length) return
-    setUploading(true)
-    try {
-      for (const file of Array.from(files)) {
+  const uploadFiles = useCallback(async (incoming: File[]) => {
+    if (!incoming.length) return
+    const staged: PendingAttachment[] = incoming.map((file) => ({
+      localId: crypto.randomUUID(),
+      name: file.name,
+      size: file.size,
+      mimeType: file.type || 'image/png',
+      previewUrl: URL.createObjectURL(file),
+      status: 'uploading' as const,
+    }))
+    setAttachments((current) => [...current, ...staged])
+
+    await Promise.all(staged.map(async (pending, index) => {
+      const file = incoming[index]!
+      try {
         const created = await apiRequest<{ attachment: { id: string }; uploadUrl: string; uploadHeaders: Record<string, string> }>('/api/attachments', {
           method: 'POST',
-          body: { chatId, originalName: file.name, mimeType: file.type || 'application/octet-stream', sizeBytes: file.size },
+          body: {
+            chatId,
+            originalName: file.name,
+            mimeType: file.type || 'image/png',
+            sizeBytes: file.size,
+          },
         })
         const upload = await fetch(created.uploadUrl, {
-          method: 'PUT', body: file, headers: created.uploadHeaders,
+          method: 'PUT',
+          body: file,
+          headers: created.uploadHeaders,
           credentials: created.uploadUrl.startsWith('/api/') ? 'include' : 'omit',
         })
         if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
         await apiRequest(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
-        const mimeType = file.type || 'application/octet-stream'
+        const mimeType = file.type || 'image/png'
         const userId = useAuth.getState().user?.id
         if (userId) {
           await cacheAttachmentBlob(userId, {
@@ -118,30 +147,125 @@ export function Composer({
             sizeBytes: file.size,
           }, file, useSettings.getState().localAttachmentCacheMb).catch(() => false)
         }
-        setAttachments((current) => [...current, { id: created.attachment.id, name: file.name, size: file.size, mimeType }])
+        setAttachments((current) => current.map((item) => (
+          item.localId === pending.localId
+            ? { ...item, id: created.attachment.id, status: 'ready' as const }
+            : item
+        )))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Upload failed'
+        setAttachments((current) => current.map((item) => (
+          item.localId === pending.localId
+            ? { ...item, status: 'error' as const, error: message }
+            : item
+        )))
       }
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
+    }))
+
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }, [chatId])
+
+  const addImageFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
+    const images = collectImageFiles(list)
+    if (!images.length) return
+    void uploadFiles(images)
+  }, [uploadFiles])
+
+  const submit = () => {
+    const text = value.trim()
+    if (!canSend) return
+    if (!text && readyAttachments.length === 0) return
+    const payload = readyAttachments.map((attachment) => ({
+      id: attachment.id!,
+      name: attachment.name,
+      type: 'image' as const,
+      size: attachment.size,
+    }))
+    const targetChatId = sendMessage(chatId, text, modelId, payload, temporary)
+    if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
+    setValue('')
+    for (const attachment of attachments) URL.revokeObjectURL(attachment.previewUrl)
+    setAttachments([])
+    requestAnimationFrame(() => {
+      if (ref.current) ref.current.style.height = 'auto'
+    })
+  }
+
+  const onDragEnter = (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    dragDepth.current += 1
+    setDragging(true)
+  }
+
+  const onDragLeave = (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    dragDepth.current = Math.max(0, dragDepth.current - 1)
+    if (dragDepth.current === 0) setDragging(false)
+  }
+
+  const onDragOver = (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }
+
+  const onDrop = (event: React.DragEvent) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    dragDepth.current = 0
+    setDragging(false)
+    addImageFiles(event.dataTransfer.files)
+  }
+
+  const onPaste = (event: React.ClipboardEvent) => {
+    let files = collectImageFiles(event.clipboardData?.items)
+    if (!files.length) files = collectImageFiles(event.clipboardData?.files)
+    if (!files.length) return
+    // Keep normal text paste when the clipboard also has plain text.
+    const text = event.clipboardData?.getData('text/plain') ?? ''
+    if (!text.trim()) event.preventDefault()
+    void uploadFiles(files)
   }
 
   return (
     <div className={cn('w-full', centered && 'px-2')}>
-      <div className="rounded-2xl border bg-card shadow-sm transition-shadow focus-within:shadow-md">
+      <div
+        className={cn(
+          'relative rounded-2xl border bg-card shadow-sm transition-[box-shadow,border-color] focus-within:shadow-md',
+          dragging && 'border-primary ring-2 ring-primary/25',
+        )}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+      >
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary/5 backdrop-blur-[1px]">
+            <div className="flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm">
+              <ImagePlus className="size-4 text-primary" />
+              Drop images to attach
+            </div>
+          </div>
+        )}
+
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
             {attachments.map((attachment) => (
-              <div key={attachment.id} className="flex items-center gap-1.5 rounded-lg border bg-muted/40 px-2 py-1 text-xs">
-                <Paperclip className="size-3" />
-                <span className="max-w-40 truncate">{attachment.name}</span>
-                <button type="button" aria-label={`Remove ${attachment.name}`} onClick={() => setAttachments((items) => items.filter((item) => item.id !== attachment.id))}>
-                  <X className="size-3" />
-                </button>
-              </div>
+              <PendingImageChip
+                key={attachment.localId}
+                name={attachment.name}
+                size={attachment.size}
+                previewUrl={attachment.previewUrl}
+                uploading={attachment.status === 'uploading'}
+                error={attachment.status === 'error' ? attachment.error : null}
+                onRemove={() => removeAttachment(attachment.localId)}
+              />
             ))}
           </div>
         )}
+
         <textarea
           ref={ref}
           value={value}
@@ -155,20 +279,33 @@ export function Composer({
               submit()
             }
           }}
+          onPaste={onPaste}
           rows={1}
-          placeholder="Message…"
+          placeholder={attachments.length ? 'Add a caption…' : 'Message…'}
           className="max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-1 px-2.5 pb-2.5">
-          <input ref={fileInputRef} type="file" multiple className="hidden" onChange={(event) => void uploadFiles(event.target.files)} />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Attach files"
-          >
-            {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4.5" />}
-          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+            multiple
+            className="hidden"
+            onChange={(event) => addImageFiles(event.target.files)}
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label="Attach images"
+              >
+                {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4.5" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Attach images</TooltipContent>
+          </Tooltip>
 
           {activePresets.length > 0 && (
             <DropdownMenu>
@@ -247,7 +384,7 @@ export function Composer({
               size="icon-sm"
               className="rounded-full"
               onClick={submit}
-              disabled={!value.trim() || !modelId || uploading}
+              disabled={!canSend}
               aria-label="Send message"
             >
               <ArrowUp className="size-4" />

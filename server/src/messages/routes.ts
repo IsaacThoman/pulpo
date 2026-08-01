@@ -80,12 +80,15 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
     const { content, modelId: selectedModelId, presetSelections } = generationSelectionSchema.extend({
-      content: z.string().trim().min(1).max(1_000_000),
+      content: z.string().trim().max(1_000_000),
     }).parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (id.endsWith(':input')) {
       const modelId = selectedModelId ?? await requestedModelId(original.id, original.modelId)
       const attachmentIds = responseAttachmentIds(original.input)
+      if (!content && attachmentIds.length === 0) {
+        throw new AppError(400, 'empty_message', 'Message must include text or attachments')
+      }
       const created = await createResponse({
         userId: user.id,
         chatId: original.chatId,
@@ -105,6 +108,9 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       await bumpRevision(user.id, original.chatId)
       reply.code(202)
       return { response: toSnapshot(created) }
+    }
+    if (!content) {
+      throw new AppError(400, 'empty_message', 'Message must include text')
     }
     if (idempotencyKey) {
       const [existing] = await db.select().from(responses).where(and(

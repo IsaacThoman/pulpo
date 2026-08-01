@@ -586,14 +586,22 @@ export const useChat = create<ChatState>()((set, get) => ({
       useSettings.getState().generation[modelId],
       modelId,
     )
-    const userMessage: Message = { id: `${responseId}:input`, role: 'user', content, timestamp, done: true }
+    const userMessage: Message = {
+      id: `${responseId}:input`,
+      role: 'user',
+      content,
+      timestamp,
+      done: true,
+      attachments: attachments.length ? attachments : undefined,
+    }
     const assistantMessage: Message = {
       id: responseId, role: 'assistant', content: '', modelId,
       timestamp: timestamp + 1, done: false, presetSelections: generation.selections,
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
-      const title = content.length > 42 ? `${content.slice(0, 42)}…` : content
+      const titleSource = content || (attachments[0]?.name ?? 'Image')
+      const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
         ? { ...existing, updatedAt: timestamp, messages: [...existing.messages, userMessage, assistantMessage] }
         : { id, title, modelId, messages: [userMessage, assistantMessage], createdAt: timestamp, updatedAt: timestamp, pinned: false, folderId: null, tags: [] }
@@ -609,7 +617,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       content,
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
-      title: content.slice(0, 200),
+      title: (content || attachments[0]?.name || 'Image').slice(0, 200),
       temporary,
       attachments,
       presetSelections: generation.selections,
@@ -617,7 +625,14 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
 
     void (async () => {
-      if (!chatId) await optimisticRequest('POST', '/api/chats', { clientId: id, modelId, title: content.slice(0, 200), temporary })
+      if (!chatId) {
+        await optimisticRequest('POST', '/api/chats', {
+          clientId: id,
+          modelId,
+          title: (content || attachments[0]?.name || 'Image').slice(0, 200),
+          temporary,
+        })
+      }
       const result = await optimisticRequest('POST', `/api/chats/${id}/responses`, {
         clientId: responseId,
         input: content,

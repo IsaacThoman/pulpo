@@ -345,12 +345,15 @@ export const createChatSchema = z.object({
 
 export const createChatResponseSchema = z.object({
   clientId: idSchema.optional(),
-  input: z.string().trim().min(1).max(1_000_000),
+  input: z.string().trim().max(1_000_000).default(''),
   modelId: z.string().min(1),
   executionMode: executionModeSchema.optional(),
   maxOutputTokens: z.number().int().positive().optional(),
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: z.array(idSchema).default([]),
+}).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
+  message: 'Message must include text or attachments',
+  path: ['input'],
 })
 export type CreateChatResponseInput = z.infer<typeof createChatResponseSchema>
 
