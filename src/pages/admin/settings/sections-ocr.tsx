@@ -11,6 +11,7 @@ import {
   Toggle,
 } from '@/components/admin/kit'
 import { apiRequest } from '@/lib/api'
+import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 
 const CUSTOM = 'custom'
 
@@ -92,13 +93,25 @@ export function OcrSection() {
             />
           </>
         )}
-        <TextField
-          label="Vision model"
-          value={model}
-          onChange={setModel}
-          placeholder="gpt-4.1-mini"
-          mono
-        />
+        {isCustom ? (
+          <TextField
+            label="Vision model"
+            value={model}
+            onChange={setModel}
+            placeholder="gpt-4.1-mini"
+            mono
+          />
+        ) : (
+          <Field label="Vision model">
+            <div className="w-64">
+              <UpstreamModelField
+                providerConnectionId={providerId}
+                value={model}
+                onChange={setModel}
+              />
+            </div>
+          </Field>
+        )}
       </Section>
 
       <Section title="Prompt">

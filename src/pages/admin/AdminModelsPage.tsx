@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
-import { Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
+import { Check, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -16,7 +16,6 @@ import { Separator } from '@/components/ui/separator'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +25,7 @@ import { useCatalog } from '@/stores/catalog'
 import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
 import { AiLogo } from '@/components/ProviderLogo'
 import { PRESET_ICON_OPTIONS, PresetIcon } from '@/components/chat/PresetIcon'
+import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 
 interface AdminModel {
   id: string
@@ -679,175 +679,6 @@ function LabPickerTile({
   )
 }
 
-function UpstreamModelField({
-  providerConnectionId,
-  value,
-  onChange,
-}: {
-  providerConnectionId: string
-  value: string
-  onChange: (value: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [options, setOptions] = useState<string[]>([])
-  const [loading, setLoading] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [query, setQuery] = useState(value)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const skipNextLoad = useRef(false)
-
-  useEffect(() => {
-    setQuery(value)
-  }, [value])
-
-  useEffect(() => {
-    if (!providerConnectionId) {
-      setOptions([])
-      setError(null)
-      return
-    }
-    if (skipNextLoad.current) {
-      skipNextLoad.current = false
-      return
-    }
-    let cancelled = false
-    setLoading(true)
-    setError(null)
-    void apiRequest<{ data: string[] }>(`/api/admin/providers/${providerConnectionId}/models`)
-      .then((result) => {
-        if (!cancelled) setOptions(result.data)
-      })
-      .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Failed to load models')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => { cancelled = true }
-  }, [providerConnectionId])
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return options
-    return options.filter((modelId) => modelId.toLowerCase().includes(needle))
-  }, [options, query])
-
-  const refresh = async () => {
-    if (!providerConnectionId || refreshing) return
-    setRefreshing(true)
-    setError(null)
-    try {
-      const result = await apiRequest<{ data: string[] }>(`/api/admin/providers/${providerConnectionId}/models/refresh`, {
-        method: 'POST',
-      })
-      skipNextLoad.current = true
-      setOptions(result.data)
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Failed to refresh models')
-    } finally {
-      setRefreshing(false)
-    }
-  }
-
-  const select = (modelId: string) => {
-    onChange(modelId)
-    setQuery(modelId)
-    setOpen(false)
-  }
-
-  return (
-    <div className="space-y-1.5">
-      <div className="flex gap-2">
-        <Popover open={open} onOpenChange={setOpen} modal={false}>
-          <PopoverAnchor asChild>
-            <div className="relative min-w-0 flex-1">
-              <Input
-                ref={inputRef}
-                className="pr-8 font-mono text-xs"
-                value={query}
-                disabled={!providerConnectionId}
-                placeholder={providerConnectionId ? 'Select or type model name' : 'Select a provider first'}
-                onChange={(e) => {
-                  setQuery(e.target.value)
-                  onChange(e.target.value)
-                  if (!open) setOpen(true)
-                }}
-                onFocus={() => setOpen(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') setOpen(false)
-                  if (e.key === 'ArrowDown') setOpen(true)
-                  if (e.key === 'Enter' && filtered.length === 1) {
-                    e.preventDefault()
-                    select(filtered[0]!)
-                  }
-                }}
-              />
-              <button
-                type="button"
-                tabIndex={-1}
-                className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-                disabled={!providerConnectionId}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => setOpen((current) => !current)}
-              >
-                <ChevronDown className="size-3.5" />
-              </button>
-            </div>
-          </PopoverAnchor>
-          <PopoverContent
-            className="w-[var(--radix-popper-anchor-width)] p-0"
-            align="start"
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onCloseAutoFocus={(e) => e.preventDefault()}
-          >
-            <div className="border-b px-2 py-1.5 text-[11px] text-muted-foreground">
-              {loading ? 'Loading…' : options.length ? `${filtered.length} of ${options.length} models` : 'No cached models — refresh to load'}
-            </div>
-            <ScrollArea className="h-52">
-              <div className="p-1">
-                {filtered.map((modelId) => {
-                  const selected = modelId === value
-                  return (
-                    <button
-                      key={modelId}
-                      type="button"
-                      className={cn(
-                        'flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left font-mono text-xs hover:bg-accent',
-                        selected && 'bg-accent',
-                      )}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => select(modelId)}
-                    >
-                      <Check className={cn('size-3.5 shrink-0', selected ? 'opacity-100' : 'opacity-0')} />
-                      <span className="truncate">{modelId}</span>
-                    </button>
-                  )
-                })}
-                {!loading && !filtered.length && (
-                  <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-                    {options.length ? 'No matches' : 'Refresh to fetch upstream models'}
-                  </div>
-                )}
-              </div>
-            </ScrollArea>
-          </PopoverContent>
-        </Popover>
-        <Button
-          type="button"
-          size="icon"
-          variant="outline"
-          title="Refresh upstream models"
-          disabled={!providerConnectionId || refreshing}
-          onClick={() => void refresh()}
-        >
-          {refreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-        </Button>
-      </div>
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
-  )
-}
 
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
   return (
