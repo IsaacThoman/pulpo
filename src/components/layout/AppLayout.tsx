@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Sidebar } from './Sidebar'
 import { SearchModal } from './SearchModal'
@@ -9,7 +10,7 @@ import { SettingsBridge } from '@/features/settings/SettingsBridge'
 import { BannerBar } from './BannerBar'
 
 export function AppLayout() {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -20,7 +21,8 @@ export function AppLayout() {
     const query = window.matchMedia('(width < 750px)')
     const update = () => {
       setMobile(query.matches)
-      if (!query.matches) setMobileOpen(false)
+      if (query.matches) setCollapsed(true)
+      else setMobileOpen(false)
     }
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
@@ -71,7 +73,7 @@ export function AppLayout() {
           aria-label="Open sidebar"
           aria-expanded={mobileOpen}
         >
-          <img src="/pulpo-smiley.png" alt="" className="size-6" />
+          <PanelLeftOpen className="size-5" />
         </button>
         {mobile && (
           <button
