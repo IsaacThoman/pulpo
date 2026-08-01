@@ -148,7 +148,7 @@ body {
 
 /* Streaming caret */
 .stream-caret::after {
-  content: '▍';
+  content: '0';
   margin-left: 1px;
   animation: blink 1s steps(2) infinite;
   color: var(--muted-foreground);
@@ -157,4 +157,19 @@ body {
   50% {
     opacity: 0;
   }
+}
+
+/* KaTeX */
+.katex {
+  font-size: 1.1em;
+  color: inherit;
+}
+.katex-display {
+  margin: 0.75em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15em 0;
+}
+.katex-error {
+  color: var(--muted-foreground) !important;
 }

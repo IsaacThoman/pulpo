@@ -1,7 +1,10 @@
 import { memo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
 import { Check, Copy } from 'lucide-react'
+import 'katex/dist/katex.min.css'
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
@@ -31,7 +34,8 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 export const Markdown = memo(function Markdown({ content }: { content: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
+      rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }]]}
       components={{
         code({ className, children, ...props }) {
           const match = /language-(\w+)/.exec(className || '')
