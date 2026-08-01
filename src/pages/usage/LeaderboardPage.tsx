@@ -12,6 +12,16 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { apiRequest } from '@/lib/api'
+import { periodDays } from '@/lib/time-range'
+import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
+import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
+import {
+  PublicRecentUsagePanel,
+  PublicTopModelsPanel,
+  type PublicTopModel,
+  type PublicUsageRecord,
+} from '@/components/usage/PublicUsagePanels'
 
 type LBMetric = Metric | 'balance' | 'water'
 
@@ -28,6 +38,11 @@ const METRICS: { id: LBMetric; label: string }[] = [
   { id: 'calls', label: 'Calls' },
   { id: 'balance', label: 'Balance' },
   { id: 'water', label: 'Estimated water' },
+]
+const USAGE_METRICS: { id: Metric; label: string }[] = [
+  { id: 'cost', label: 'USD' },
+  { id: 'tokens', label: 'Tokens' },
+  { id: 'calls', label: 'Calls' },
 ]
 
 const BAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
@@ -91,6 +106,22 @@ interface TipPayloadItem {
   payload?: { name?: string; rank?: number }
 }
 
+interface LeaderboardActivity {
+  summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; firstUsedAt: string | null }
+  daily: SettledDailyRow[]
+  contribution: SettledDailyRow[]
+  topModels: PublicTopModel[]
+}
+
+interface LeaderboardRecords {
+  data: PublicUsageRecord[]
+  nextCursor: string | null
+}
+
+function rangeDays(range: TimeRange): string {
+  return range === '24h' ? '1' : range === '7d' ? '7' : range === '30d' ? '30' : range === '90d' ? '90' : 'all'
+}
+
 function LeaderboardTip({
   active,
   payload,
@@ -121,7 +152,16 @@ export function LeaderboardPage() {
   const setLeaderboardPref = useUsage((s) => s.setLeaderboardPref)
   const loadLeaderboard = useUsage((s) => s.loadLeaderboard)
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<LBMetric>('cost')
+  const [rankingMetric, setRankingMetric] = useState<LBMetric>('cost')
+  const [usageMetric, setUsageMetric] = useState<Metric>('cost')
+  const [activity, setActivity] = useState<LeaderboardActivity | null>(null)
+  const [records, setRecords] = useState<PublicUsageRecord[]>([])
+  const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [reload, setReload] = useState(0)
 
   const authUser = useAuth((state) => state.user)
   const savedNickname = useSettings((state) => state.nickname)
@@ -137,6 +177,28 @@ export function LeaderboardPage() {
   }
 
   useEffect(() => { void loadLeaderboard(range) }, [loadLeaderboard, range])
+  useEffect(() => {
+    let active = true
+    const days = rangeDays(range)
+    setLoading(true)
+    setError(null)
+    setActivity(null)
+    setRecords([])
+    setNextCursor(null)
+    setLoadMoreError(null)
+    void Promise.all([
+      apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?days=${days}`),
+      apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${days}&limit=50`),
+    ]).then(([activityResult, recordResult]) => {
+      if (!active) return
+      setActivity(activityResult)
+      setRecords(recordResult.data)
+      setNextCursor(recordResult.nextCursor)
+    }).catch((cause) => {
+      if (active) setError(cause instanceof Error ? cause.message : 'Unable to load leaderboard usage')
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [range, reload])
 
   // preference editor state (saved explicitly)
   const [show, setShow] = useState(me.showOnLeaderboard)
@@ -155,14 +217,13 @@ export function LeaderboardPage() {
     setLeaderboardPref(me.id, { showOnLeaderboard: show, nickname: normalizedNick, barColor: color })
   }
 
-  const totals = useMemo(
-    () => ({
-      calls: users.reduce((sum, user) => sum + (user.usageCalls ?? 0), 0),
-      tokens: users.reduce((sum, user) => sum + (user.usageTokens ?? 0), 0),
-      cost: users.reduce((sum, user) => sum + (user.usageCost ?? 0), 0),
-    }),
-    [users]
-  )
+  const totals = {
+    calls: activity?.summary.calls ?? 0,
+    tokens: (activity?.summary.inputTokens ?? 0) + (activity?.summary.outputTokens ?? 0),
+    cost: (activity?.summary.costMicros ?? 0) / 1_000_000,
+  }
+  const dailyUsage = useMemo(() => toDailyModelUsage(activity?.daily ?? []), [activity?.daily])
+  const contributionUsage = useMemo(() => toDailyModelUsage(activity?.contribution ?? []), [activity?.contribution])
 
   const rows = useMemo<Row[]>(() => {
     return users
@@ -175,22 +236,37 @@ export function LeaderboardPage() {
       }))
       .sort(
         (a, b) =>
-          rowValue(b, metric) - rowValue(a, metric) ||
+          rowValue(b, rankingMetric) - rowValue(a, rankingMetric) ||
           b.cost - a.cost ||
           displayName(a.user).localeCompare(displayName(b.user))
       )
-  }, [users, metric])
+  }, [users, rankingMetric])
 
   const chartData = useMemo(
     () =>
       rows.map((r, i) => ({
         name: displayName(r.user),
-        value: rowValue(r, metric),
+        value: rowValue(r, rankingMetric),
         fill: barColor(r.user),
         rank: i + 1,
       })),
-    [rows, metric]
+    [rows, rankingMetric]
   )
+
+  const loadMore = async () => {
+    if (!nextCursor || loadingMore) return
+    setLoadingMore(true)
+    setLoadMoreError(null)
+    try {
+      const result = await apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${rangeDays(range)}&limit=50&cursor=${encodeURIComponent(nextCursor)}`)
+      setRecords((current) => [...current, ...result.data])
+      setNextCursor(result.nextCursor)
+    } catch (cause) {
+      setLoadMoreError(cause instanceof Error ? cause.message : 'Unable to load more usage records')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -203,7 +279,7 @@ export function LeaderboardPage() {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <label className="flex cursor-pointer items-center gap-2 text-sm">
           <Switch checked={show} onCheckedChange={setShow} />
-          Show me on the leaderboard
+          Show my name on the leaderboard
         </label>
         <Input
           className="w-[200px]"
@@ -246,16 +322,42 @@ export function LeaderboardPage() {
             Usage overview
           </span>
           <div className="h-4 w-px bg-border" />
-          <ToggleGroup options={METRICS} value={metric} onChange={setMetric} />
+          <ToggleGroup options={USAGE_METRICS} value={usageMetric} onChange={setUsageMetric} />
         </div>
         <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />
       </section>
 
+      {loading ? (
+        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
+      ) : error ? (
+        <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
+          <span>{error}</span>
+          <Button size="sm" variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button>
+        </div>
+      ) : (
+        <>
+          <DailyUsageChart
+            data={dailyUsage}
+            contributionData={contributionUsage}
+            metric={usageMetric}
+            periodDayCount={periodDays(range, activity?.summary.firstUsedAt ? Date.parse(activity.summary.firstUsedAt) : null)}
+            modelNames={{ other: 'Other' }}
+          />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <PublicRecentUsagePanel records={records} nextCursor={nextCursor} loadingMore={loadingMore} error={loadMoreError} onLoadMore={() => void loadMore()} />
+            </div>
+            <PublicTopModelsPanel models={activity?.topModels ?? []} />
+          </div>
+        </>
+      )}
+
       {/* leaderboard chart */}
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-medium">Leaderboard</h3>
-          <span className="text-xs text-muted-foreground">{rows.length} users</span>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <h3 className="text-sm font-medium">User ranking</h3>
+          <ToggleGroup options={METRICS} value={rankingMetric} onChange={setRankingMetric} />
+          <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
         </div>
         {chartData.length === 0 ? (
           <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">
@@ -282,11 +384,11 @@ export function LeaderboardPage() {
                   axisLine={{ stroke: 'var(--border)' }}
                   width={48}
                   tickFormatter={(v: number) =>
-                    metric === 'balance'
+                    rankingMetric === 'balance'
                       ? formatBalance(v)
-                      : metric === 'cost'
+                      : rankingMetric === 'cost'
                         ? axisMoney(v)
-                      : metric === 'water'
+                      : rankingMetric === 'water'
                         ? v < 0.1
                           ? v.toFixed(3)
                           : v.toFixed(2)
@@ -295,7 +397,7 @@ export function LeaderboardPage() {
                           : String(Math.round(v))
                   }
                 />
-                <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
+                <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={rankingMetric} />} />
                 <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48}>
                   {chartData.map((d) => (
                     <Cell key={d.rank} fill={d.fill} />

@@ -114,12 +114,14 @@ export function DailyUsageChart({
   contributionData,
   metric,
   periodDayCount,
+  modelNames,
 }: {
   data: DailyModelUsage[]
   contributionData?: DailyModelUsage[]
   metric: Metric
   /** number of days in the selected period, for per-day averages */
   periodDayCount: number
+  modelNames?: Record<string, string>
 }) {
   const { rows, series } = useMemo(() => {
     // rank models by total metric value across the whole period
@@ -155,12 +157,12 @@ export function DailyUsageChart({
         .reverse()
         .map((id) => ({
           key: id,
-          name: getCatalogModel(id).name,
+          name: modelNames?.[id] ?? getCatalogModel(id).name,
           color: CHART_COLORS[top.indexOf(id) % CHART_COLORS.length],
         })),
     ]
     return { rows, series }
-  }, [data, metric])
+  }, [data, metric, modelNames])
 
   const averages = useMemo(() => {
     const days = Math.max(1, periodDayCount)

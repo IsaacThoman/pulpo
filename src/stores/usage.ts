@@ -57,13 +57,13 @@ export const useUsage = create<UsageState>()((set, get) => ({
   loadLeaderboard: async (range = '30d') => {
     const days = range === '24h' ? '1' : range === '7d' ? '7' : range === '30d' ? '30' : range === '90d' ? '90' : 'all'
     const result = await apiRequest<{ data: Array<{
-      userId: string; name: string; color: string; balanceMicros: number
+      userId: string; name: string; color: string | null; anonymous: boolean; balanceMicros: number
       calls: number; tokens: number; costMicros: number
     }> }>(`/api/usage/leaderboard?days=${days}`)
     set((state) => ({ users: result.data.map((row) => ({
       id: row.userId, name: row.name, nickname: null, email: '', role: 'user',
       balance: row.balanceMicros / 1_000_000, joinedAt: 0, blocked: false,
-      showOnLeaderboard: true, barColor: row.color,
+      showOnLeaderboard: !row.anonymous, barColor: row.color ?? '#71717a',
       usageCalls: row.calls, usageTokens: row.tokens, usageCost: row.costMicros / 1_000_000,
     })), currentUserId: useAuth.getState().user?.id ?? state.currentUserId }))
   },
