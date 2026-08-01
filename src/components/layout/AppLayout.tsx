@@ -13,6 +13,7 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobile, setMobile] = useState(() => window.matchMedia('(width < 750px)').matches)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [sidebarTransitions, setSidebarTransitions] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const location = useLocation()
@@ -20,6 +21,7 @@ export function AppLayout() {
   useEffect(() => {
     const query = window.matchMedia('(width < 750px)')
     const update = () => {
+      setSidebarTransitions(false)
       setMobile(query.matches)
       if (query.matches) setCollapsed(true)
       else setMobileOpen(false)
@@ -27,6 +29,18 @@ export function AppLayout() {
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
   }, [])
+
+  useEffect(() => {
+    if (sidebarTransitions) return
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setSidebarTransitions(true))
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [sidebarTransitions])
 
   useEffect(() => {
     setMobileOpen(false)
@@ -90,6 +104,7 @@ export function AppLayout() {
           collapsed={mobile ? false : collapsed}
           mobile={mobile}
           mobileOpen={mobileOpen}
+          transitions={sidebarTransitions}
           onToggle={() => mobile ? setMobileOpen(false) : setCollapsed((v) => !v)}
           onNavigate={() => setMobileOpen(false)}
           onOpenSearch={() => {

@@ -204,6 +204,7 @@ export function Sidebar({
   collapsed,
   mobile,
   mobileOpen,
+  transitions = true,
   onToggle,
   onNavigate,
   onOpenSearch,
@@ -212,6 +213,7 @@ export function Sidebar({
   collapsed: boolean
   mobile: boolean
   mobileOpen: boolean
+  transitions?: boolean
   onToggle: () => void
   onNavigate: () => void
   onOpenSearch: () => void
@@ -257,9 +259,13 @@ export function Sidebar({
     groups.get(g)!.push(c)
   }
 
-  const sidebarContentTransition = collapsed
-    ? 'pointer-events-none opacity-0 duration-100'
-    : 'opacity-100 delay-100 duration-150'
+  const sidebarContentTransition = !transitions
+    ? collapsed
+      ? 'pointer-events-none opacity-0 duration-0'
+      : 'opacity-100 duration-0'
+    : collapsed
+      ? 'pointer-events-none opacity-0 duration-100'
+      : 'opacity-100 delay-100 duration-150'
   const sidebarTextTransition = cn(
     sidebarContentTransition,
     collapsed ? '-translate-x-1' : 'translate-x-0'
@@ -303,8 +309,15 @@ export function Sidebar({
       className={cn(
         'flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
         mobile
-          ? 'fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl transition-transform duration-200 ease-out'
-          : 'relative transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)] will-change-[width]',
+          ? cn(
+              'fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl',
+              transitions && 'transition-transform duration-200 ease-out'
+            )
+          : cn(
+              'relative will-change-[width]',
+              transitions &&
+                'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]'
+            ),
         mobile && !mobileOpen && '-translate-x-full',
         !mobile && (collapsed ? 'w-[52px]' : 'w-[264px]')
       )}
