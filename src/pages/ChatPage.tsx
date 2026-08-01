@@ -175,7 +175,12 @@ export function ChatPage() {
           <div className="min-h-0 flex-1">
             <Placeholder modelId={modelId} suggestions={suggestions} onPick={sendSuggestion} />
           </div>
-          <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+          <div
+            className={cn(
+              'mx-auto w-full shrink-0 px-4 pb-4',
+              chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
+            )}
+          >
             <Composer chatId={null} modelId={modelId} temporary={temporary} />
           </div>
         </>
@@ -185,7 +190,7 @@ export function ChatPage() {
             <div
               className={cn(
                 'mx-auto flex flex-col gap-7 px-4 py-6',
-                chatWidth === 'narrow' ? 'max-w-3xl' : 'max-w-5xl'
+                chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >
               {chat.messages.map((m) => (
@@ -194,7 +199,12 @@ export function ChatPage() {
               <div ref={bottomRef} className="h-px" />
             </div>
           </ScrollArea>
-          <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
+          <div
+            className={cn(
+              'mx-auto w-full shrink-0 px-4 pb-4',
+              chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
+            )}
+          >
             <Composer chatId={chat.id} modelId={modelId} />
           </div>
         </>
