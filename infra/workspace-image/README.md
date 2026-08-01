@@ -57,8 +57,10 @@ this image directly to untrusted networks before that protocol exists.
 Pull requests build and smoke-test both supported architectures without
 publishing. Relevant pushes to `main` publish the `main` tag. A Pulpo semantic
 version tag such as `v0.1.0` publishes image tags `0.1.0` and `0.1`. The
-workflow also emits provenance, SBOMs, an attestation, and the immutable
-manifest digest.
+workflow also emits registry-hosted provenance, SBOMs, and the immutable
+manifest digest. GitHub's additional artifact attestation runs when the source
+repository is public; GitHub does not offer that feature for user-owned private
+repositories.
 
 Do not configure Pulpo with a mutable tag. Copy the digest reference from the
 GitHub Actions job summary:
