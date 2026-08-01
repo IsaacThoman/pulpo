@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Model } from '@/lib/types'
 import { apiRequest } from '@/lib/api'
+import { findCatalogModel } from '@/lib/catalog-model'
 
 const EMPTY_MODEL: Model = {
   id: '', name: 'Configure a model', provider: 'OpenAI', inferenceProvider: 'Not configured',
@@ -66,5 +67,13 @@ export const useCatalog = create<CatalogState>()(persist((set) => ({
 
 export function getCatalogModel(id: string): Model {
   const models = useCatalog.getState().models
-  return models.find((model) => model.id === id) ?? models[0] ?? EMPTY_MODEL
+  const model = findCatalogModel(models, id)
+  if (model) return model
+  if (!id) return models[0] ?? EMPTY_MODEL
+  return {
+    ...EMPTY_MODEL,
+    id,
+    name: id,
+    description: 'This model is not available in the current catalog.',
+  }
 }

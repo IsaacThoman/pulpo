@@ -92,7 +92,6 @@ export type ResponseEvent = z.infer<typeof responseEventSchema>
 
 export const responseSnapshotSchema = z.object({
   responseId: idSchema,
-  modelId: z.string().min(1).optional(),
   status: responseStatusSchema,
   sequence: z.number().int().nonnegative(),
   output: z.array(z.unknown()),
@@ -156,12 +155,11 @@ export function applyResponseEventToSnapshot(snapshot: ResponseSnapshot, event: 
 
 export function mergeResponseSnapshots(current: ResponseSnapshot, incoming: ResponseSnapshot): ResponseSnapshot {
   if (incoming.sequence < current.sequence) return current
-  const modelId = incoming.modelId ?? current.modelId
   const incomingIsActive = incoming.status === 'queued' || incoming.status === 'in_progress'
   if (incomingIsActive && incoming.output.length === 0 && current.output.length > 0) {
-    return { ...incoming, modelId, output: current.output }
+    return { ...incoming, output: current.output }
   }
-  return { ...incoming, modelId }
+  return incoming
 }
 
 export const modelSchema = z.object({
