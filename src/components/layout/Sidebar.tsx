@@ -96,17 +96,44 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   )
 }
 
+function useShiftHeld() {
+  const [shiftHeld, setShiftHeld] = useState(false)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftHeld(true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') setShiftHeld(false)
+    }
+    const reset = () => setShiftHeld(false)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', reset)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', reset)
+    }
+  }, [])
+  return shiftHeld
+}
+
 function ChatRow({
   chat,
   active,
+  shiftHeld,
 }: {
   chat: Chat
   active: boolean
+  shiftHeld: boolean
 }) {
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
   const [title, setTitle] = useState(chat.title)
-  const { renameChat } = useChat()
+  const { renameChat, deleteChat } = useChat()
+
+  const actionClassName =
+    'invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible'
 
   const row = (
     <div
@@ -119,18 +146,31 @@ function ChatRow({
       onClick={() => navigate(`/c/${chat.id}`)}
     >
       <span className="flex-1 truncate">{chat.title}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className="invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
-            onClick={(e) => e.stopPropagation()}
-            aria-label="Chat options"
-          >
-            <MoreHorizontal className="size-4" />
-          </button>
-        </DropdownMenuTrigger>
-        <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
-      </DropdownMenu>
+      {shiftHeld ? (
+        <button
+          className={cn(actionClassName, 'hover:text-destructive')}
+          onClick={(e) => {
+            e.stopPropagation()
+            deleteChat(chat.id)
+          }}
+          aria-label="Delete chat"
+        >
+          <Trash2 className="size-4" />
+        </button>
+      ) : (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={cn(actionClassName, 'data-[state=open]:visible')}
+              onClick={(e) => e.stopPropagation()}
+              aria-label="Chat options"
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
+        </DropdownMenu>
+      )}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
@@ -178,6 +218,7 @@ export function Sidebar({
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
+  const shiftHeld = useShiftHeld()
 
   useEffect(() => {
     setActiveTooltip(null)
@@ -321,7 +362,7 @@ export function Sidebar({
                 </div>
                 <div className="space-y-0.5">
                   {pinned.map((c) => (
-                    <ChatRow key={c.id} chat={c} active={c.id === chatId} />
+                    <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} />
                   ))}
                 </div>
               </div>
@@ -344,7 +385,7 @@ export function Sidebar({
                       <div className="px-2 py-1 text-xs text-muted-foreground">Empty</div>
                     )}
                     {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} />
+                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} />
                     ))}
                   </CollapsibleContent>
                 </Collapsible>
@@ -368,7 +409,7 @@ export function Sidebar({
                   </div>
                   <div className="space-y-0.5">
                     {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} />
+                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} />
                     ))}
                   </div>
                 </div>
