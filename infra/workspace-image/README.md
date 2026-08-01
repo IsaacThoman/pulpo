@@ -55,10 +55,13 @@ this image directly to untrusted networks before that protocol exists.
 ## Publishing
 
 Pull requests build and smoke-test both supported architectures without
-publishing. Relevant pushes to `main` publish the `main` tag. A Pulpo semantic
-version tag such as `v0.1.0` publishes image tags `0.1.0` and `0.1`. The
-workflow also emits registry-hosted provenance, SBOMs, the immutable manifest
-digest, and a GitHub build-provenance attestation for the published manifest.
+publishing. Relevant pushes to `main` publish the `main` tag. Semantic Release
+creates Pulpo version tags from Conventional Commits and dispatches this
+workflow for the exact release tag; `v0.1.1`, for example, publishes image tags
+`0.1.1` and `0.1`. The workflow also emits registry-hosted provenance, SBOMs,
+the immutable manifest digest, and a GitHub build-provenance attestation for the
+published manifest. A validated manual dispatch is available for release
+recovery and republishes only the supplied semantic version.
 
 Do not configure Pulpo with a mutable tag. Copy the digest reference from the
 GitHub Actions job summary:

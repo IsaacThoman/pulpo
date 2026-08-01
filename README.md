@@ -46,6 +46,18 @@ and mount a persistent volume at that path. Any supported S3-compatible service 
 
 `S3_ENDPOINT` is the worker/API address and may use the Compose service name. `S3_PUBLIC_ENDPOINT` is embedded in presigned browser URLs; set it to an HTTPS object-storage origin reachable by users. The localhost default exposes SeaweedFS on port 8333 for single-host development. Configure that origin's S3 CORS policy to allow `PUT`, `GET`, and `HEAD` from `PUBLIC_URL` in production.
 
+## Releases
+
+Merges to `main` run the test, build, and lint suites before Semantic Release
+examines commits since the previous `vX.Y.Z` tag. Conventional Commit types
+determine the next version: `fix:` and `perf:` create a patch, `feat:` creates a
+minor, and a breaking change creates a major release. Other commit types do not
+publish a release.
+
+Semantic Release creates the Git tag and GitHub Release, then dispatches the
+agent workspace workflow for that exact tag. The existing `v0.1.0` tag is the
+release baseline. Pulpo is not published as an npm package.
+
 ## Coolify deployment
 
 Use `/compose.yaml` as the Docker Compose location. It exposes services only to

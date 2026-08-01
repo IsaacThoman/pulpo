@@ -17,6 +17,8 @@
     "db:migrate": "npm run db:migrate -w @pulpo/server",
     "test": "npm run test -w @pulpo/contracts && npm run test -w @pulpo/server",
     "lint": "oxlint",
+    "release": "semantic-release",
+    "release:dry-run": "semantic-release --dry-run --no-ci",
     "workspace-image:build": "docker build --tag pulpo-agent-workspace:test infra/workspace-image",
     "workspace-image:test": "docker run --rm pulpo-agent-workspace:test pulpo-workspace-smoke-test",
     "preview": "vite preview"
@@ -60,12 +62,18 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/exec": "^7.1.0",
+    "@semantic-release/github": "^12.0.9",
+    "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/katex": "^0.16.8",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "conventional-changelog-conventionalcommits": "^10.2.1",
     "oxlint": "^1.71.0",
+    "semantic-release": "^25.0.8",
     "typescript": "~6.0.2",
     "vite": "^8.1.1"
   }
