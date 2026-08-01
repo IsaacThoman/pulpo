@@ -8,6 +8,10 @@ import {
   Pencil,
   RefreshCw,
   Trash2,
+  Terminal,
+  Loader2,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
@@ -294,10 +298,39 @@ export const MessageItem = memo(function MessageItem({
         </div>
         )}
 
+        {message.agentMode && (
+          <p className="mt-2 text-[11px] text-muted-foreground">Agent workspace is shared by every branch in this chat and is not rewound.</p>
+        )}
+
         {message.outputItems
           ?.filter((item) => !['message', 'reasoning'].includes((item as { type?: string }).type ?? ''))
           .map((item, index) => {
-            const type = (item as { type?: string }).type ?? 'unknown'
+            const typed = item as { type?: string; tool?: string; status?: string; state?: string; arguments?: unknown; output?: string; isError?: boolean; error?: string }
+            const type = typed.type ?? 'unknown'
+            if (type === 'pulpo_workspace') {
+              const active = typed.state === 'provisioning'
+              const failed = typed.state === 'expired' || typed.state === 'unavailable'
+              return (
+                <div key={`${type}:${index}`} role="status" className="mt-3 flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+                  {active ? <Loader2 className="size-3.5 animate-spin" /> : failed ? <XCircle className="size-3.5 text-destructive" /> : <CheckCircle2 className="size-3.5 text-emerald-600" />}
+                  <span>Workspace {typed.state}</span>
+                  {typed.error && <span className="ml-auto text-destructive">{typed.error}</span>}
+                </div>
+              )
+            }
+            if (type === 'pulpo_tool') return (
+              <details key={`${type}:${index}`} open={typed.status === 'running'} className="mt-3 overflow-hidden rounded-lg border bg-muted/20 text-xs">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 font-medium">
+                  <Terminal className="size-3.5" />
+                  <span className="font-mono">{typed.tool}</span>
+                  <span className="ml-auto text-muted-foreground">{typed.status === 'running' ? <Loader2 className="size-3.5 animate-spin" /> : typed.status === 'failed' || typed.isError ? <XCircle className="size-3.5 text-destructive" /> : <CheckCircle2 className="size-3.5 text-emerald-600" />}</span>
+                </summary>
+                <div className="border-t px-3 py-2">
+                  <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">{JSON.stringify(typed.arguments, null, 2)}</pre>
+                  {typed.output && <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded bg-background/60 p-2 text-[11px]">{typed.output}</pre>}
+                </div>
+              </details>
+            )
             return (
               <details
                 key={`${type}:${index}`}

@@ -152,6 +152,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
         maxOutputTokens: input.max_output_tokens,
         presetSelections: {},
         attachmentIds: [],
+        agentMode: false,
       },
       rawInput: input.input,
       parameters: Object.fromEntries(Object.entries({

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, Check, ChevronDown, ImagePlus, Loader2, Mic, Plus, Square } from 'lucide-react'
+import { ArrowUp, Bot, Check, ChevronDown, ImagePlus, Loader2, Mic, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -14,13 +14,13 @@ import {
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
-import { getCatalogModel } from '@/stores/catalog'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
 import { PendingImageChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
-import { collectImageFiles } from '@/lib/attachments'
+import { collectImageFiles, collectSupportedFiles } from '@/lib/attachments'
 import { useAuth } from '@/stores/auth'
 
 interface PendingAttachment {
@@ -29,7 +29,7 @@ interface PendingAttachment {
   name: string
   size: number
   mimeType: string
-  previewUrl: string
+  previewUrl: string | null
   status: 'uploading' | 'ready' | 'error'
   error?: string
 }
@@ -70,6 +70,11 @@ export function Composer({
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const setPresetChoice = useSettings((s) => s.setPresetChoice)
+  const agentModeEnabled = useSettings((s) => s.agentModeEnabled)
+  const setSetting = useSettings((s) => s.set)
+  const agentAvailable = useCatalog((s) => s.agentAvailable)
+  const agentCapable = getCatalogModel(modelId).agentEnabled
+  const canUseAgent = agentAvailable && agentCapable
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
   const selections = resolveSelections(options, generation[modelId])
@@ -86,7 +91,7 @@ export function Composer({
 
   useEffect(() => () => {
     for (const attachment of attachmentsRef.current) {
-      URL.revokeObjectURL(attachment.previewUrl)
+      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
     }
   }, [])
 
@@ -100,7 +105,7 @@ export function Composer({
   const removeAttachment = useCallback((localId: string) => {
     setAttachments((current) => {
       const target = current.find((item) => item.localId === localId)
-      if (target) URL.revokeObjectURL(target.previewUrl)
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
       return current.filter((item) => item.localId !== localId)
     })
   }, [])
@@ -112,7 +117,7 @@ export function Composer({
       name: file.name,
       size: file.size,
       mimeType: file.type || 'image/png',
-      previewUrl: URL.createObjectURL(file),
+      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
       status: 'uploading' as const,
     }))
     setAttachments((current) => [...current, ...staged])
@@ -125,7 +130,7 @@ export function Composer({
           body: {
             chatId,
             originalName: file.name,
-            mimeType: file.type || 'image/png',
+            mimeType: file.type || 'application/octet-stream',
             sizeBytes: file.size,
           },
         })
@@ -137,7 +142,7 @@ export function Composer({
         })
         if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
         await apiRequest(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
-        const mimeType = file.type || 'image/png'
+        const mimeType = file.type || 'application/octet-stream'
         const userId = useAuth.getState().user?.id
         if (userId) {
           await cacheAttachmentBlob(userId, {
@@ -165,10 +170,8 @@ export function Composer({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [chatId])
 
-  const addImageFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
-    const images = collectImageFiles(list)
-    if (!images.length) return
-    void uploadFiles(images)
+  const addSupportedFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
+    void uploadFiles(collectSupportedFiles(list))
   }, [uploadFiles])
 
   const submit = () => {
@@ -178,13 +181,13 @@ export function Composer({
     const payload = readyAttachments.map((attachment) => ({
       id: attachment.id!,
       name: attachment.name,
-      type: 'image' as const,
+      type: (attachment.mimeType.startsWith('image/') ? 'image' : 'file') as 'image' | 'file',
       size: attachment.size,
     }))
     const targetChatId = sendMessage(chatId, text, modelId, payload, temporary)
     if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
     setValue('')
-    for (const attachment of attachments) URL.revokeObjectURL(attachment.previewUrl)
+    for (const attachment of attachments) if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
     setAttachments([])
     requestAnimationFrame(() => {
       if (ref.current) ref.current.style.height = 'auto'
@@ -216,7 +219,7 @@ export function Composer({
     event.preventDefault()
     dragDepth.current = 0
     setDragging(false)
-    addImageFiles(event.dataTransfer.files)
+    addSupportedFiles(event.dataTransfer.files)
   }
 
   const onPaste = (event: React.ClipboardEvent) => {
@@ -245,7 +248,7 @@ export function Composer({
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary/5 backdrop-blur-[1px]">
             <div className="flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm">
               <ImagePlus className="size-4 text-primary" />
-              Drop images to attach
+              Drop files to attach
             </div>
           </div>
         )}
@@ -288,10 +291,10 @@ export function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif"
+            accept=".pdf,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
             multiple
             className="hidden"
-            onChange={(event) => addImageFiles(event.target.files)}
+            onChange={(event) => addSupportedFiles(event.target.files)}
           />
           <Tooltip>
             <TooltipTrigger asChild>
@@ -299,12 +302,29 @@ export function Composer({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Attach images"
+                aria-label="Attach files"
               >
                 {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4.5" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">Attach images</TooltipContent>
+            <TooltipContent side="top">Attach files</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled={!canUseAgent}
+                onClick={() => canUseAgent && setSetting('agentModeEnabled', !agentModeEnabled)}
+                aria-label={agentModeEnabled && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
+                aria-pressed={agentModeEnabled && canUseAgent}
+                className={cn('flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', agentModeEnabled && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
+              >
+                <Bot className="size-4" />
+                <span>Agent</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">{!agentAvailable ? 'Agent infrastructure is unavailable' : !agentCapable ? 'This model is not agent-enabled' : 'Uses a shared disposable workspace for this chat'}</TooltipContent>
           </Tooltip>
 
           {activePresets.length > 0 && (

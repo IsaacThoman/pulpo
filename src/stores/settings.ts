@@ -18,6 +18,7 @@ interface SettingsState {
   customInstructions: string
   nickname: string
   memoryEnabled: boolean
+  agentModeEnabled: boolean
   leaderboardVisible: boolean
   leaderboardColor: string
   localChatLimit: number
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS = {
   customInstructions: '',
   nickname: '',
   memoryEnabled: false,
+  agentModeEnabled: true,
   leaderboardVisible: true,
   leaderboardColor: '#10b981',
   localChatLimit: 50,

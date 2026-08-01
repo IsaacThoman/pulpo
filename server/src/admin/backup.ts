@@ -13,6 +13,7 @@ const TABLES = [
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories', 'api_keys',
   'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
+  'workspace_leases', 'agent_runs', 'tool_executions',
 ] as const
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)

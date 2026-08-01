@@ -1,4 +1,11 @@
 # syntax=docker/dockerfile:1.18
+FROM node:24.18.1-bookworm-slim AS daemon-build
+WORKDIR /src
+COPY packages/workspace-daemon/package.json packages/workspace-daemon/tsconfig.json ./
+RUN npm install --include=dev
+COPY packages/workspace-daemon/src ./src
+RUN npm run build
+
 FROM ubuntu:24.04
 
 ARG TARGETARCH
@@ -57,12 +64,14 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --chmod=0755 scripts/smoke-test.sh /usr/local/bin/pulpo-workspace-smoke-test
+COPY --chmod=0755 infra/workspace-image/scripts/smoke-test.sh /usr/local/bin/pulpo-workspace-smoke-test
+COPY --from=daemon-build /src/dist /opt/pulpo-workspace-daemon
 
 ENV DEBIAN_FRONTEND=
 USER agent
 WORKDIR /workspace
 
-# Temporary development entrypoint. The authenticated Pulpo workspace daemon
-# will replace this once its protocol and lifecycle are implemented.
-CMD ["sleep", "infinity"]
+ENV PORT=8787 \
+    PULPO_WORKSPACE_ROOT=/workspace
+EXPOSE 8787
+CMD ["node", "/opt/pulpo-workspace-daemon/index.js"]

@@ -10,6 +10,7 @@ on:
   pull_request:
     paths:
       - infra/workspace-image/**
+      - packages/workspace-daemon/**
       - .github/workflows/workspace-image.yml
       - package.json
       - package-lock.json
@@ -18,6 +19,7 @@ on:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
     paths:
       - infra/workspace-image/**
+      - packages/workspace-daemon/**
       - .github/workflows/workspace-image.yml
       - package.json
       - package-lock.json
@@ -74,7 +76,8 @@ jobs:
       - name: Build local test image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: infra/workspace-image
+          context: .
+          file: infra/workspace-image/Dockerfile
           load: true
           platforms: ${{ matrix.platform }}
           tags: pulpo-agent-workspace:test
@@ -100,7 +103,8 @@ jobs:
         id: publish
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: infra/workspace-image
+          context: .
+          file: infra/workspace-image/Dockerfile
           platforms: ${{ matrix.platform }}
           labels: ${{ steps.metadata.outputs.labels }}
           cache-from: type=gha,scope=workspace-${{ matrix.suffix }}

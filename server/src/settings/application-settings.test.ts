@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAuthSettings, parseInterfaceSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -8,6 +8,16 @@ describe('authentication application settings', () => {
 
   it('fills the balance default for settings saved by older Pulpo versions', () => {
     expect(parseAuthSettings({ signupEnabled: false }).defaultBalanceMicros).toBe(DEFAULT_BALANCE_MICROS)
+  })
+})
+
+describe('agent application settings', () => {
+  it('is disabled by default with bounded execution limits', () => {
+    const settings = parseAgentSettings(undefined)
+    expect(settings.enabled).toBe(false)
+    expect(settings.warmCapacity).toBe(1)
+    expect(settings.maxModelTurns).toBe(30)
+    expect(settings.commandTimeoutSeconds).toBe(600)
   })
 })
 

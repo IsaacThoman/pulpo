@@ -102,6 +102,8 @@ export async function settleBudget(input: {
   responseId: string
   usage: ResponseUsage
   latencyMs: number
+  requestCount?: number
+  costMicrosOverride?: number
 }): Promise<number> {
   return db.transaction(async (tx) => {
     const [reservation] = await tx
@@ -116,7 +118,7 @@ export async function settleBudget(input: {
       ? await tx.select().from(modelPricingVersions).where(eq(modelPricingVersions.id, response.pricingVersionId)).limit(1)
       : []
     if (!response || !pricing) throw new AppError(409, 'pricing_snapshot_missing', 'Pricing snapshot is missing')
-    const cost = calculateCostMicros(input.usage, pricing)
+    const cost = input.costMicrosOverride ?? (calculateCostMicros(input.usage, pricing) + Math.max(0, (input.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
     const [user] = await tx
       .select()
       .from(users)
@@ -154,6 +156,23 @@ export async function settleBudget(input: {
       latencyMs: input.latencyMs,
     }).onConflictDoNothing()
     return cost
+  })
+}
+
+export async function extendBudgetReservation(input: {
+  responseId: string
+  requestInput: unknown
+  maxOutputTokens: number
+  pricing: ActivePricing
+}): Promise<void> {
+  const additional = calculateReservationMicros(input.requestInput, input.maxOutputTokens, input.pricing)
+  await db.transaction(async (tx) => {
+    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, input.responseId)).for('update')
+    if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
+    const [user] = await tx.select().from(users).where(eq(users.id, reservation.userId)).for('update')
+    const [reserved] = await tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` }).from(budgetReservations).where(and(eq(budgetReservations.userId, reservation.userId), eq(budgetReservations.status, 'pending')))
+    if (!user || user.balanceMicros - Number(reserved?.total ?? 0) < additional) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the next agent turn')
+    await tx.update(budgetReservations).set({ amountMicros: reservation.amountMicros + additional }).where(eq(budgetReservations.id, reservation.id))
   })
 }
 

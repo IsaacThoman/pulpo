@@ -6,7 +6,7 @@ import { getActivePricing, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { generationQueue } from '../jobs.js'
-import { parseLoggingSettings } from '../settings/application-settings.js'
+import { parseAgentSettings, parseLoggingSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { PresetResolutionError, resolvePresetActions, type PresetResolutionModel } from './presets.js'
 
@@ -70,6 +70,12 @@ export async function createResponse(options: CreateResponseOptions) {
   }
   const [model] = await db.select().from(models).where(and(eq(models.id, resolved.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
+  if (options.input.agentMode) {
+    if (options.apiKeyId) throw new AppError(400, 'agent_web_only', 'Agent mode is only available in Pulpo web chat')
+    const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
+    if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
+    if (!model.agentEnabled) throw new AppError(400, 'model_not_agent_capable', 'The selected model is not enabled for agent mode')
+  }
   const maxOutputTokens = Math.min(options.input.maxOutputTokens ?? model.maxOutputTokens, model.maxOutputTokens)
   let pricing = await getActivePricing(model.id)
   let fallbackId = model.fallbackModelId
@@ -125,6 +131,7 @@ export async function createResponse(options: CreateResponseOptions) {
     userMessageId: options.userMessageId ?? newId(),
     branchReason: options.branchReason ?? 'message',
     executionMode,
+    agentMode: options.input.agentMode,
     input: storedInput,
     presetSelections: resolved.selections,
     parameters: { ...(options.parameters ?? {}), ...resolved.parameters },

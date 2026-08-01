@@ -19,8 +19,11 @@
     "lint": "oxlint",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
-    "workspace-image:build": "docker build --tag pulpo-agent-workspace:test infra/workspace-image",
+    "workspace-image:build": "docker build --file infra/workspace-image/Dockerfile --tag pulpo-agent-workspace:test .",
     "workspace-image:test": "docker run --rm pulpo-agent-workspace:test pulpo-workspace-smoke-test",
+    "workspace-daemon:build": "npm run build -w @pulpo/workspace-daemon",
+    "workspace-controller:build": "npm run build -w @pulpo/workspace-controller",
+    "workspace-controller:image": "docker build --file infra/workspace-controller/Dockerfile --tag pulpo-workspace-controller:test .",
     "preview": "vite preview"
   },
   "dependencies": {

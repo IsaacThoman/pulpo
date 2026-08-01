@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pulpo-workspaces
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pulpo-workspace-controller
+  namespace: pulpo-workspaces
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pulpo-workspace-controller
+  namespace: pulpo-workspaces
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "create", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pulpo-workspace-controller
+  namespace: pulpo-workspaces
+subjects:
+  - kind: ServiceAccount
+    name: pulpo-workspace-controller
+    namespace: pulpo-workspaces
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pulpo-workspace-controller
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pulpo-workspace-controller
+  namespace: pulpo-workspaces
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pulpo-workspace-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pulpo-workspace-controller
+    spec:
+      serviceAccountName: pulpo-workspace-controller
+      containers:
+        - name: controller
+          image: ghcr.io/isaacthoman/pulpo-workspace-controller@sha256:REPLACE_WITH_CONTROLLER_DIGEST
+          ports:
+            - name: http
+              containerPort: 8786
+          env:
+            - name: PULPO_WORKSPACE_NAMESPACE
+              value: pulpo-workspaces
+            - name: PULPO_RUNTIME_CLASS
+              value: kata
+            - name: PULPO_WARM_CAPACITY
+              value: "1"
+            - name: PULPO_WORKSPACE_IMAGE
+              value: ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:REPLACE_WITH_WORKSPACE_DIGEST
+            - name: PULPO_CONTROLLER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: pulpo-workspace-controller-auth
+                  key: token
+            - name: PULPO_CONTROLLER_TLS_CERT
+              valueFrom:
+                secretKeyRef:
+                  name: pulpo-workspace-controller-tls
+                  key: tls.crt
+            - name: PULPO_CONTROLLER_TLS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: pulpo-workspace-controller-tls
+                  key: tls.key
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+              scheme: HTTPS
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pulpo-workspace-controller
+  namespace: pulpo-workspaces
+spec:
+  selector:
+    app.kubernetes.io/name: pulpo-workspace-controller
+  ports:
+    - name: https-internal
+      port: 8786
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pulpo-workspace-public-egress
+  namespace: pulpo-workspaces
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pulpo-workspace
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: pulpo-workspace-controller
+      ports:
+        - protocol: TCP
+          port: 8787
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443

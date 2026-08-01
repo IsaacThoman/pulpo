@@ -177,6 +177,7 @@ export const modelSchema = z.object({
   cachedInputPriceMicros: z.number().int().nonnegative(),
   outputPriceMicros: z.number().int().nonnegative(),
   tags: z.array(z.string()),
+  agentEnabled: z.boolean().default(false),
 })
 export type Model = z.infer<typeof modelSchema>
 
@@ -259,6 +260,8 @@ export const createModelSchema = z.object({
   visible: z.boolean().default(true),
   logo: z.string().max(120).nullable().default(null),
   systemPrompt: z.string().max(100_000).default(''),
+  agentEnabled: z.boolean().default(false),
+  agentInstructions: z.string().max(100_000).default(''),
   defaultParameters: z.record(z.string(), z.unknown()).default({}),
   interceptImagesWithOcr: z.boolean().default(false),
   contextWindow: z.number().int().positive(),
@@ -297,6 +300,24 @@ export const ocrSettingsSchema = z.object({
   model: z.string().min(1).max(200).default('gpt-4.1-mini'),
   systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
 })
+
+export const agentSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  imageDigest: z.string().regex(/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/).default('ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:0000000000000000000000000000000000000000000000000000000000000000'),
+  warmCapacity: z.number().int().min(0).max(100).default(1),
+  maxActiveWorkspaces: z.number().int().min(1).max(1_000).default(10),
+  cpu: z.string().min(1).max(32).default('2'),
+  memory: z.string().min(1).max(32).default('4Gi'),
+  ephemeralStorage: z.string().min(1).max(32).default('20Gi'),
+  idleTimeoutSeconds: z.number().int().min(60).max(604_800).default(3_600),
+  hardTimeoutSeconds: z.number().int().min(300).max(2_592_000).default(28_800),
+  maxModelTurns: z.number().int().min(1).max(100).default(30),
+  maxToolCalls: z.number().int().min(1).max(1_000).default(100),
+  responseTimeoutSeconds: z.number().int().min(60).max(86_400).default(1_800),
+  commandTimeoutSeconds: z.number().int().min(1).max(3_600).default(600),
+  maxToolOutputBytes: z.number().int().min(1_024).max(10_000_000).default(100_000),
+})
+export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
 export const adminUsageStatusSchema = z.enum(['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'])
 export const adminUsageEventSchema = z.object({
@@ -351,6 +372,7 @@ export const createChatResponseSchema = z.object({
   maxOutputTokens: z.number().int().positive().optional(),
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: z.array(idSchema).default([]),
+  agentMode: z.boolean().default(false),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],

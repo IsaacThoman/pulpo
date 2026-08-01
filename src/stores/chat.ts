@@ -26,6 +26,7 @@ interface ServerResponse {
   error: { message?: string } | null
   createdAt: string
   completedAt: string | null
+  agentMode?: boolean
   snapshot: ResponseSnapshot
   branches: {
     user: { ids: string[]; index: number }
@@ -193,6 +194,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
           ? Math.max(0, Date.parse(response.completedAt) - timestamp)
           : undefined,
         error: response.error?.message,
+        agentMode: response.agentMode,
         outputItems: response.output,
         branch: response.branches.assistant,
       },
@@ -597,6 +599,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     const assistantMessage: Message = {
       id: responseId, role: 'assistant', content: '', modelId,
       timestamp: timestamp + 1, done: false, presetSelections: generation.selections,
+      agentMode: useSettings.getState().agentModeEnabled && getCatalogModel(modelId).agentEnabled && useCatalog.getState().agentAvailable,
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
@@ -639,6 +642,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         modelId,
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
+        agentMode: useSettings.getState().agentModeEnabled && getCatalogModel(modelId).agentEnabled && useCatalog.getState().agentAvailable,
       }) as { response?: ResponseSnapshot } | undefined
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {

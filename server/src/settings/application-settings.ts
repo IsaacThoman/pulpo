@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { agentSettingsSchema } from '@pulpo/contracts'
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 
@@ -91,6 +92,11 @@ export function parseLoggingSettings(value: unknown): z.infer<typeof loggingSett
 export function parseOcrSettings(value: unknown): z.infer<typeof ocrSettingsSchema> {
   const parsed = ocrSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : ocrSettingsSchema.parse({})
+}
+
+export function parseAgentSettings(value: unknown): z.infer<typeof agentSettingsSchema> {
+  const parsed = agentSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : agentSettingsSchema.parse({})
 }
 
 export function parseInterfaceSettings(value: unknown): InterfaceSettings {

@@ -1,0 +1,16 @@
+{
+  "name": "@pulpo/workspace-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "typescript": "~6.0.2",
+    "vitest": "^3.2.4"
+  }
+}

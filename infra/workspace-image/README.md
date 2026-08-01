@@ -6,7 +6,7 @@ pod, giving each Pulpo session a separate lightweight virtual machine.
 
 The image deliberately does **not** include the Pi harness. Pi remains in the
 Pulpo worker, where it owns the model loop and Pulpo's provider accounting. The
-workspace contains only the operating system, coding tools, and—eventually—the
+workspace contains only the operating system, coding tools, and the
 authenticated Pulpo workspace daemon that executes requested tools.
 
 ## Contents
@@ -34,23 +34,22 @@ npm run workspace-image:test
 Build a specific architecture directly:
 
 ```bash
-docker build --platform linux/amd64 \
+docker build --platform linux/amd64 -f infra/workspace-image/Dockerfile \
   --tag pulpo-agent-workspace:test \
-  infra/workspace-image
+  .
 ```
 
 Inspect the interactive environment:
 
 ```bash
-docker run --rm -it pulpo-agent-workspace:test bash
+docker run --rm -it --entrypoint bash pulpo-agent-workspace:test
 ```
 
 The expected user is `agent`, `sudo whoami` returns `root`, and the working
 directory is `/workspace`.
 
-The current `sleep infinity` command is a temporary development entrypoint. It
-will be replaced by the authenticated Pulpo workspace daemon. Do not expose
-this image directly to untrusted networks before that protocol exists.
+The daemon requires a per-workspace `PULPO_WORKSPACE_TOKEN` and is intended to
+be reachable only through the private workspace controller.
 
 ## Publishing
 
@@ -141,9 +140,9 @@ fresh no-cache build regularly, review the resulting SBOM, execute both
 architecture tests, and publish a new Pulpo semantic version:
 
 ```bash
-docker build --pull --no-cache \
+docker build --pull --no-cache -f infra/workspace-image/Dockerfile \
   --tag pulpo-agent-workspace:test \
-  infra/workspace-image
+  .
 docker run --rm pulpo-agent-workspace:test pulpo-workspace-smoke-test
 ```
 

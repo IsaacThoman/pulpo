@@ -68,6 +68,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
           ? selection.presetSelections ?? {}
           : original.presetSelections as Record<string, string>,
         attachmentIds,
+        agentMode: original.agentMode,
       },
     })
     await bumpRevision(user.id, original.chatId)
@@ -103,6 +104,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
             ? presetSelections ?? {}
             : original.presetSelections as Record<string, string>,
           attachmentIds,
+          agentMode: original.agentMode,
         },
       })
       await bumpRevision(user.id, original.chatId)

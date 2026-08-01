@@ -21,6 +21,7 @@ export interface Model {
   outputPrice: number
   perMessagePrice: number
   enabled: boolean
+  agentEnabled?: boolean
   pinned?: boolean
   /** Composer presets (admin-configured; empty = no extra controls). */
   presets: ChatPreset[]
@@ -50,6 +51,7 @@ export interface Message {
   branch?: { ids: string[]; index: number }
   error?: string
   outputItems?: unknown[]
+  agentMode?: boolean
   done: boolean
 }
 

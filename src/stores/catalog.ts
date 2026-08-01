@@ -8,7 +8,7 @@ const EMPTY_MODEL: Model = {
   id: '', name: 'Configure a model', provider: 'OpenAI', inferenceProvider: 'Not configured',
   labLogo: 'openai', modelLogo: 'openai', description: 'An administrator needs to configure an OpenAI model.',
   contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
-  outputPrice: 0, perMessagePrice: 0, enabled: false, presets: [],
+  outputPrice: 0, perMessagePrice: 0, enabled: false, agentEnabled: false, presets: [],
 }
 
 interface ServerModel {
@@ -28,6 +28,7 @@ interface ServerModel {
   provider: { name: string }
   lab: { name: string; logo: string } | null
   presets: Model['presets']
+  agentEnabled: boolean
 }
 
 function fromServer(model: ServerModel): Model {
@@ -41,23 +42,25 @@ function fromServer(model: ServerModel): Model {
     inputPrice: model.inputPriceMicros / 1_000_000,
     outputPrice: model.outputPriceMicros / 1_000_000,
     perMessagePrice: model.perRequestPriceMicros / 1_000_000,
-    enabled: model.enabled, presets: model.presets,
+    enabled: model.enabled, agentEnabled: model.agentEnabled, presets: model.presets,
   }
 }
 
 interface CatalogState {
   models: Model[]
   loaded: boolean
+  agentAvailable: boolean
   load: () => Promise<void>
 }
 
 export const useCatalog = create<CatalogState>()(persist((set) => ({
   models: [],
   loaded: false,
+  agentAvailable: false,
   load: async () => {
     try {
-      const response = await apiRequest<{ data: ServerModel[] }>('/api/models')
-      if (response.data.length) set({ models: response.data.map(fromServer), loaded: true })
+      const response = await apiRequest<{ data: ServerModel[]; agentAvailable?: boolean }>('/api/models')
+      if (response.data.length) set({ models: response.data.map(fromServer), agentAvailable: response.agentAvailable ?? false, loaded: true })
       else set({ loaded: true })
     } catch {
       // Persisted catalog remains available while offline.

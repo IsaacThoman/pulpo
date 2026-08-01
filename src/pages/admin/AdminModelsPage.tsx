@@ -38,6 +38,8 @@ interface AdminModel {
   visible: boolean
   logo: string | null
   systemPrompt: string
+  agentEnabled: boolean
+  agentInstructions: string
   defaultParameters: Record<string, unknown>
   interceptImagesWithOcr: boolean
   contextWindow: number
@@ -64,7 +66,7 @@ interface Provider { id: string; name: string; baseUrl?: string }
 interface Lab { id: string; name: string; logo?: string }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: 'openai', systemPrompt: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: 'openai', systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   inputPriceMicros: 0, cachedInputPriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
@@ -304,6 +306,16 @@ function ModelEditorBody({
       <div className="space-y-1.5">
         <Label className="text-xs">Description</Label>
         <Textarea rows={2} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
+      </div>
+
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+        <ToggleRow label="Enable Pi agent mode" checked={draft.agentEnabled} onChange={(agentEnabled) => setDraft({ ...draft, agentEnabled })} />
+        {draft.agentEnabled && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Agent instructions</Label>
+            <Textarea rows={3} placeholder="Additional instructions appended to Pulpo's Pi coding prompt." value={draft.agentInstructions} onChange={(e) => setDraft({ ...draft, agentInstructions: e.target.value })} />
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">

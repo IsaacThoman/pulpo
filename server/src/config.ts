@@ -38,6 +38,8 @@ const configSchema = z.object({
   RESPONSE_EVENT_RETENTION_SECONDS: z.coerce.number().int().positive().default(86_400),
   RESPONSE_SNAPSHOT_INTERVAL_MS: z.coerce.number().int().positive().default(1_500),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  WORKSPACE_CONTROLLER_URL: z.url().optional(),
+  WORKSPACE_CONTROLLER_TOKEN: z.string().min(32).optional(),
 })
 
 export type Config = z.infer<typeof configSchema>

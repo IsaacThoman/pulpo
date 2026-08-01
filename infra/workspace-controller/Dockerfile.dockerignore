@@ -1,0 +1,17 @@
+.git
+node_modules
+dist
+server/*
+!server/package.json
+src
+public
+deploy
+infra/workspace-image
+packages/*
+!packages/workspace-controller
+!packages/workspace-daemon
+packages/workspace-daemon/*
+!packages/workspace-daemon/package.json
+!packages/contracts
+packages/contracts/*
+!packages/contracts/package.json

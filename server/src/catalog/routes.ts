@@ -13,6 +13,7 @@ import {
   providerConnections,
   providerHealthChecks,
   providerUpstreamModels,
+  applicationSettings,
 } from '../database/schema.js'
 import { getConfig } from '../config.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
@@ -21,6 +22,7 @@ import { requireAdmin, requireUser } from '../auth/service.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID } from './defaults.js'
+import { parseAgentSettings } from '../settings/application-settings.js'
 
 type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
@@ -122,7 +124,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       .leftJoin(labs, eq(models.labId, labs.id))
       .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
       .where(and(eq(models.enabled, true), eq(models.visible, true)))
-    return { data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
+    const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
+    const agentAvailable = parseAgentSettings(agentRow?.value).enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
+    return { agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
       upstreamModelId: model.upstreamModelId,
       name: model.name,
@@ -138,6 +142,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       outputPriceMicros: pricing?.outputPriceMicros ?? 0,
       perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
       tags: model.tags,
+      agentEnabled: model.agentEnabled,
       provider: { id: provider.id, name: provider.name },
       lab: lab ? { id: lab.id, name: lab.name, logo: lab.logo } : null,
       iconLight: model.iconLight,
@@ -388,6 +393,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         visible: input.visible,
         logo: input.logo,
         systemPrompt: input.systemPrompt,
+        agentEnabled: input.agentEnabled,
+        agentInstructions: input.agentInstructions,
         defaultParameters: input.defaultParameters,
         interceptImagesWithOcr: input.interceptImagesWithOcr,
         contextWindow: input.contextWindow,
@@ -444,6 +451,8 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       visible: typeof body.visible === 'boolean' ? body.visible : undefined,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
       systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
+      agentEnabled: typeof body.agentEnabled === 'boolean' ? body.agentEnabled : undefined,
+      agentInstructions: typeof body.agentInstructions === 'string' ? body.agentInstructions : undefined,
       defaultParameters: body.defaultParameters && typeof body.defaultParameters === 'object' ? body.defaultParameters : undefined,
       interceptImagesWithOcr: typeof body.interceptImagesWithOcr === 'boolean' ? body.interceptImagesWithOcr : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,

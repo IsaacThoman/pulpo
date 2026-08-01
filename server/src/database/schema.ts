@@ -28,6 +28,9 @@ export const executionModeEnum = pgEnum('execution_mode', ['stream', 'background
 export const attachmentStatusEnum = pgEnum('attachment_status', ['pending', 'ready', 'failed', 'deleted'])
 export const apiKeyStatusEnum = pgEnum('api_key_status', ['active', 'revoked'])
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'settled', 'released'])
+export const workspaceLeaseStatusEnum = pgEnum('workspace_lease_status', ['provisioning', 'ready', 'expired', 'failed', 'released'])
+export const agentRunStatusEnum = pgEnum('agent_run_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
+export const toolExecutionStatusEnum = pgEnum('tool_execution_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey(),
@@ -128,6 +131,8 @@ export const models = pgTable('models', {
   visible: boolean('visible').notNull().default(true),
   logo: text('logo'),
   systemPrompt: text('system_prompt').notNull().default(''),
+  agentEnabled: boolean('agent_enabled').notNull().default(false),
+  agentInstructions: text('agent_instructions').notNull().default(''),
   defaultParameters: jsonb('default_parameters').notNull().default({}),
   interceptImagesWithOcr: boolean('intercept_images_with_ocr').notNull().default(false),
   contextWindow: integer('context_window').notNull(),
@@ -229,6 +234,7 @@ export const responses = pgTable('responses', {
   branchReason: text('branch_reason').notNull().default('message'),
   status: responseStatusEnum('status').notNull().default('queued'),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
+  agentMode: boolean('agent_mode').notNull().default(false),
   input: jsonb('input').notNull(),
   instructions: text('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
@@ -291,6 +297,52 @@ export const attachments = pgTable('attachments', {
   error: text('error'),
   ...timestamps,
 })
+
+export const workspaceLeases = pgTable('workspace_leases', {
+  id: uuid('id').primaryKey(),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  controllerLeaseId: text('controller_lease_id'),
+  status: workspaceLeaseStatusEnum('status').notNull().default('provisioning'),
+  imageDigest: text('image_digest').notNull(),
+  error: text('error'),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  hardExpiresAt: timestamp('hard_expires_at', { withTimezone: true }),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [uniqueIndex('workspace_leases_chat_active_unique').on(table.chatId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt)])
+
+export const agentRuns = pgTable('agent_runs', {
+  id: uuid('id').primaryKey(),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  workspaceLeaseId: uuid('workspace_lease_id').references(() => workspaceLeases.id, { onDelete: 'set null' }),
+  status: agentRunStatusEnum('status').notNull().default('queued'),
+  context: jsonb('context').notNull().default({}),
+  modelTurns: integer('model_turns').notNull().default(0),
+  toolCalls: integer('tool_calls').notNull().default(0),
+  error: text('error'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [uniqueIndex('agent_runs_response_unique').on(table.responseId)])
+
+export const toolExecutions = pgTable('tool_executions', {
+  id: uuid('id').primaryKey(),
+  agentRunId: uuid('agent_run_id').notNull().references(() => agentRuns.id, { onDelete: 'cascade' }),
+  workspaceLeaseId: uuid('workspace_lease_id').references(() => workspaceLeases.id, { onDelete: 'set null' }),
+  operationId: text('operation_id').notNull(),
+  toolName: text('tool_name').notNull(),
+  arguments: jsonb('arguments').notNull().default({}),
+  status: toolExecutionStatusEnum('status').notNull().default('queued'),
+  output: text('output'),
+  exitCode: integer('exit_code'),
+  error: text('error'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [uniqueIndex('tool_executions_operation_unique').on(table.operationId), index('tool_executions_run_idx').on(table.agentRunId, table.createdAt)])
 
 export const requestLogs = pgTable('request_logs', {
   id: uuid('id').primaryKey(),

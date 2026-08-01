@@ -7,6 +7,7 @@ const IMAGE_MIME_TYPES = new Set([
 ])
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
+const SUPPORTED_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'])
 
 const MIME_TO_EXTENSION: Record<string, string> = {
   'image/png': '.png',
@@ -77,6 +78,17 @@ export function collectImageFiles(list: FileList | File[] | DataTransferItemList
     if (normalized) files.push(normalized)
   }
   return files
+}
+
+export function collectSupportedFiles(list: FileList | File[] | DataTransferItemList | null | undefined): File[] {
+  if (!list) return []
+  const values = typeof DataTransferItemList !== 'undefined' && list instanceof DataTransferItemList
+    ? Array.from(list).flatMap((item) => item.kind === 'file' && item.getAsFile() ? [item.getAsFile()!] : [])
+    : Array.from(list as FileList | File[])
+  return values.filter((file) => {
+    const dot = file.name.lastIndexOf('.')
+    return dot >= 0 && SUPPORTED_EXTENSIONS.has(file.name.slice(dot).toLowerCase()) && file.type !== 'text/html' && file.type !== 'image/svg+xml'
+  })
 }
 
 export function formatBytes(bytes: number): string {

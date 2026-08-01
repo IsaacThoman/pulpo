@@ -11,6 +11,7 @@ import { metadataForTurn } from '../messages/branching.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
+import { releaseWorkspaceForChat } from '../agent/controller.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string) => {
@@ -224,6 +225,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const result = await db.update(chats).set({ deletedAt: new Date() }).where(and(eq(chats.id, id), eq(chats.userId, user.id))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
+    await releaseWorkspaceForChat(id)
     await bumpRevision(user.id, id)
     reply.code(204).send()
   })

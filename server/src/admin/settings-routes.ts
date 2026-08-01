@@ -1,6 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { agentSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, backupJobs, banners, exportJobs } from '../database/schema.js'
@@ -49,6 +50,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     if (values.auth !== undefined) values.auth = authSettingsSchema.parse(values.auth)
     if (values.logging !== undefined) values.logging = loggingSettingsSchema.parse(values.logging)
     if (values.interface !== undefined) values.interface = interfaceSettingsSchema.parse(values.interface)
+    if (values.agent !== undefined) values.agent = agentSettingsSchema.parse(values.agent)
     // OCR credentials use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     await db.transaction(async (tx) => {
@@ -59,6 +61,18 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'settings.update', targetType: 'application', metadata: { keys: Object.keys(values) } })
     })
     return { values }
+  })
+
+  app.get('/api/admin/settings/agent/status', async (request) => {
+    requireAdmin(request)
+    const config = getConfig()
+    if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) return { configured: false, healthy: false }
+    try {
+      const response = await fetch(`${config.WORKSPACE_CONTROLLER_URL.replace(/\/$/, '')}/healthz`, { signal: AbortSignal.timeout(5_000) })
+      return { configured: true, healthy: response.ok, detail: response.ok ? undefined : `Controller returned ${response.status}` }
+    } catch (error) {
+      return { configured: true, healthy: false, detail: error instanceof Error ? error.message : String(error) }
+    }
   })
 
   app.get('/api/admin/settings/ocr', async (request) => {

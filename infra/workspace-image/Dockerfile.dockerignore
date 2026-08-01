@@ -1,0 +1,15 @@
+.git
+node_modules
+dist
+server
+src
+public
+deploy
+.codex
+packages/*
+!packages/workspace-daemon
+!packages/workspace-daemon/package.json
+!packages/workspace-daemon/tsconfig.json
+!packages/workspace-daemon/src
+infra/*
+!infra/workspace-image
