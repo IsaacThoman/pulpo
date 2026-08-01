@@ -8,6 +8,7 @@ import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/mode
 import { useSettings } from '@/stores/settings'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { lineageFromLeaf, newestDescendantId } from '@/lib/chat-tree'
+import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
 import { useAuth } from './auth'
 
 interface ServerResponse {
@@ -225,6 +226,56 @@ function cacheOptimisticTurn(input: {
   })
 }
 
+const pendingResponseEvents = new Map<string, {
+  chatId: string
+  events: ResponseEvent[]
+  timer: number
+}>()
+
+function flushResponseEvents(responseId: string): void {
+  const pending = pendingResponseEvents.get(responseId)
+  if (!pending) return
+  pendingResponseEvents.delete(responseId)
+  queryClient.setQueryData<ServerChat>(chatKey(pending.chatId), (chat) => {
+    if (!chat?.responses) return chat
+    return {
+      ...chat,
+      responses: chat.responses.map((response) => {
+        if (response.id !== responseId) return response
+        const snapshot = pending.events.reduce(applyEventToSnapshot, response.snapshot)
+        return { ...response, status: snapshot.status, output: snapshot.output, usage: snapshot.usage, error: snapshot.error as ServerResponse['error'], snapshot }
+      }),
+    }
+  })
+}
+
+function persistResponseEvent(chatId: string, event: ResponseEvent): void {
+  const pending = pendingResponseEvents.get(event.responseId)
+  if (pending) {
+    pending.events.push(event)
+    return
+  }
+  const timer = window.setTimeout(() => flushResponseEvents(event.responseId), 1_000)
+  pendingResponseEvents.set(event.responseId, { chatId, events: [event], timer })
+}
+
+function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): void {
+  const pending = pendingResponseEvents.get(snapshot.responseId)
+  if (pending) {
+    window.clearTimeout(pending.timer)
+    flushResponseEvents(snapshot.responseId)
+  }
+  queryClient.setQueryData<ServerChat>(chatKey(chatId), (chat) => {
+    if (!chat?.responses) return chat
+    return {
+      ...chat,
+      responses: chat.responses.map((response) => response.id === snapshot.responseId
+        ? { ...response, status: snapshot.status, output: snapshot.output, usage: snapshot.usage, error: snapshot.error as ServerResponse['error'], snapshot }
+        : response),
+    }
+  })
+}
+
 async function optimisticRequest(
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown,
 ): Promise<unknown> {
@@ -278,8 +329,8 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   applyResponseEvent: (event) => {
     if ((get().responseSequences[event.responseId] ?? 0) >= event.sequence) return true
-    const hasMessage = get().chats.some((chat) => chat.messages.some((message) => message.id === event.responseId))
-    if (!hasMessage) return false
+    const affectedChat = get().chats.find((chat) => chat.messages.some((message) => message.id === event.responseId))
+    if (!affectedChat) return false
     const payload = event.payload as { delta?: string; type?: string }
     const textDelta = typeof payload.delta === 'string' ? payload.delta : ''
     const reasoningDelta = event.type === 'response.reasoning_summary_text.delta' ? textDelta : ''
@@ -294,6 +345,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         }),
       })),
     }))
+    persistResponseEvent(affectedChat.id, event)
     return true
   },
 
@@ -302,6 +354,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     const affectedChatId = get().chats.find((chat) =>
       chat.messages.some((message) => message.id === snapshot.responseId)
     )?.id
+    if (affectedChatId) persistResponseSnapshot(affectedChatId, snapshot)
     set((state) => ({
       responseSequences: { ...state.responseSequences, [snapshot.responseId]: snapshot.sequence },
       streamingId: ['queued', 'in_progress'].includes(snapshot.status) ? snapshot.responseId : state.streamingId === snapshot.responseId ? null : state.streamingId,
