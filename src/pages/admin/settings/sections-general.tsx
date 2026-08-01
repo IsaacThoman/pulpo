@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Plus, Trash2 } from 'lucide-react'
 import {
   Field,
   NumField,
@@ -10,8 +11,16 @@ import {
   Toggle,
 } from '@/components/admin/kit'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
+
+const DEFAULT_SUGGESTED_PROMPTS = [
+  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
+  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
+]
 
 interface AdminSettings { values: Record<string, unknown> }
 
@@ -126,8 +135,14 @@ export function InterfaceSection() {
     title: true,
     titlePrompt: 'Create a concise 3-5 word title for this chat.',
     followUp: true,
+    suggestedPromptsEnabled: true,
+    suggestedPromptsCount: 4,
+    suggestedPrompts: DEFAULT_SUGGESTED_PROMPTS,
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
+  const prompts = Array.isArray(t.suggestedPrompts) ? t.suggestedPrompts : DEFAULT_SUGGESTED_PROMPTS
+  const updatePrompt = (index: number, patch: Partial<(typeof DEFAULT_SUGGESTED_PROMPTS)[number]>) =>
+    s('suggestedPrompts', prompts.map((item, i) => (i === index ? { ...item, ...patch } : item)))
 
   return (
     <div>
@@ -164,6 +179,84 @@ export function InterfaceSection() {
           </div>
         )}
         <Toggle label="Follow-up generation" checked={t.followUp} onChange={(v) => s('followUp', v)} />
+      </Section>
+
+      <Section
+        title="Suggested prompts"
+        hint="Starter buttons shown on empty chats. A random subset is picked each time."
+      >
+        <Toggle
+          label="Show suggested prompts"
+          checked={t.suggestedPromptsEnabled}
+          onChange={(v) => s('suggestedPromptsEnabled', v)}
+        />
+        {t.suggestedPromptsEnabled && (
+          <>
+            <NumField
+              label="Prompts shown"
+              hint="How many buttons to show on new chats."
+              value={t.suggestedPromptsCount}
+              onChange={(v) => s('suggestedPromptsCount', Math.max(0, Math.min(12, Math.round(v))))}
+              min={0}
+              max={12}
+              indent
+            />
+            <div className="space-y-3 pt-1">
+              {prompts.map((prompt, index) => (
+                <div key={prompt.id} className="space-y-2 rounded-lg border p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="grid min-w-0 flex-1 gap-2">
+                      <div>
+                        <div className="mb-1 text-xs text-muted-foreground">Button label</div>
+                        <Input
+                          className="h-8"
+                          value={prompt.label}
+                          onChange={(e) => updatePrompt(index, { label: e.target.value })}
+                          placeholder="Shown on the button"
+                        />
+                      </div>
+                      <div>
+                        <div className="mb-1 text-xs text-muted-foreground">Message</div>
+                        <Input
+                          className="h-8"
+                          value={prompt.message}
+                          onChange={(e) => updatePrompt(index, { message: e.target.value })}
+                          placeholder="Submitted when clicked"
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="mt-5"
+                      aria-label="Remove prompt"
+                      onClick={() => s('suggestedPrompts', prompts.filter((_, i) => i !== index))}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {prompts.length < 50 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    s('suggestedPrompts', [
+                      ...prompts,
+                      { id: crypto.randomUUID(), label: 'New prompt', message: 'New prompt' },
+                    ])
+                  }
+                >
+                  <Plus className="size-3.5" />
+                  Add prompt
+                </Button>
+              )}
+            </div>
+          </>
+        )}
       </Section>
 
       <SaveBar onSave={save} />

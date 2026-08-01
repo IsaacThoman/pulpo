@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Share2 } from 'lucide-react'
 import { useChat } from '@/stores/chat'
-import { REPLY_SUGGESTIONS } from '@/lib/mock'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer } from '@/components/chat/Composer'
@@ -12,8 +11,41 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { apiRequest } from '@/lib/api'
 
-function Placeholder({ modelId, onPick }: { modelId: string; onPick: (s: string) => void }) {
+const DEFAULT_SUGGESTED_PROMPTS = [
+  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
+  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
+]
+
+type SuggestedPrompt = { id: string; label: string; message: string }
+
+function pickSuggestedPrompts(items: SuggestedPrompt[], count: number): SuggestedPrompt[] {
+  if (count <= 0 || items.length === 0) return []
+  const pool = [...items]
+  const out: SuggestedPrompt[] = []
+  const unique = Math.min(count, pool.length)
+  for (let i = 0; i < unique; i++) {
+    const j = Math.floor(Math.random() * pool.length)
+    out.push(pool.splice(j, 1)[0]!)
+  }
+  while (out.length < count) {
+    out.push(items[Math.floor(Math.random() * items.length)]!)
+  }
+  return out
+}
+
+function Placeholder({
+  modelId,
+  suggestions,
+  onPick,
+}: {
+  modelId: string
+  suggestions: SuggestedPrompt[]
+  onPick: (message: string) => void
+}) {
   const model = getCatalogModel(modelId)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
@@ -24,17 +56,19 @@ function Placeholder({ modelId, onPick }: { modelId: string; onPick: (s: string)
       <p className="mt-1.5 text-sm text-muted-foreground">
         {model.provider} · {model.inferenceProvider}
       </p>
-      <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
-        {REPLY_SUGGESTIONS.map((s) => (
-          <button
-            key={s}
-            onClick={() => onPick(s)}
-            className="cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent"
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      {suggestions.length > 0 && (
+        <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
+          {suggestions.map((s, i) => (
+            <button
+              key={`${s.id}-${i}`}
+              onClick={() => onPick(s.message)}
+              className="cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent"
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -48,6 +82,11 @@ export function ChatPage() {
   const chatWidth = useSettings((s) => s.chatWidth)
   const models = useCatalog((state) => state.models)
   const [temporary, setTemporary] = useState(params.get('temporary') === '1')
+  const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
+    enabled: true,
+    count: 4,
+    prompts: DEFAULT_SUGGESTED_PROMPTS,
+  })
 
   const chat = chats.find((c) => c.id === chatId) ?? null
   const [modelId, setModelId] = useState(
@@ -66,13 +105,24 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId])
 
+  useEffect(() => {
+    void apiRequest<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>('/api/interface/suggested-prompts')
+      .then(setPromptConfig)
+      .catch(() => {})
+  }, [])
+
   const bottomRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [chat?.messages.length, streamingId, chatId])
 
   const isEmpty = !chat
-  const suggestions = useMemo(() => REPLY_SUGGESTIONS, [])
+  const suggestions = useMemo(
+    () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : []),
+    // Re-roll when opening a new empty chat
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chatId, isEmpty, promptConfig],
+  )
 
   const sendSuggestion = (s: string) => {
     const id = useChat.getState().sendMessage(null, s, modelId, [], temporary)
@@ -119,7 +169,7 @@ export function ChatPage() {
       {isEmpty ? (
         <>
           <div className="min-h-0 flex-1">
-            <Placeholder modelId={modelId} onPick={sendSuggestion} key={suggestions[0]} />
+            <Placeholder modelId={modelId} suggestions={suggestions} onPick={sendSuggestion} />
           </div>
           <div className="mx-auto w-full max-w-3xl shrink-0 px-4 pb-4">
             <Composer chatId={null} modelId={modelId} temporary={temporary} />

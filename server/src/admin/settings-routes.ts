@@ -8,7 +8,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { authSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseOcrSettings } from '../settings/application-settings.js'
+import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings } from '../settings/application-settings.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 
@@ -20,6 +20,23 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       or(isNull(banners.endsAt), gt(banners.endsAt, now)),
     )).orderBy(desc(banners.createdAt)) }
   })
+
+  app.get('/api/interface/suggested-prompts', async () => {
+    const [setting] = await db.select({ value: applicationSettings.value })
+      .from(applicationSettings)
+      .where(eq(applicationSettings.key, 'interface'))
+      .limit(1)
+    const iface = parseInterfaceSettings(setting?.value)
+    if (!iface.suggestedPromptsEnabled || iface.suggestedPromptsCount <= 0 || iface.suggestedPrompts.length === 0) {
+      return { enabled: false, count: 0, prompts: [] as Array<{ id: string; label: string; message: string }> }
+    }
+    return {
+      enabled: true,
+      count: iface.suggestedPromptsCount,
+      prompts: iface.suggestedPrompts.map(({ id, label, message }) => ({ id, label, message })),
+    }
+  })
+
   app.get('/api/admin/settings', async (request) => {
     requireAdmin(request)
     const rows = await db.select().from(applicationSettings)
@@ -31,6 +48,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
     if (values.auth !== undefined) values.auth = authSettingsSchema.parse(values.auth)
     if (values.logging !== undefined) values.logging = loggingSettingsSchema.parse(values.logging)
+    if (values.interface !== undefined) values.interface = interfaceSettingsSchema.parse(values.interface)
     // OCR credentials use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     await db.transaction(async (tx) => {

@@ -29,7 +29,34 @@ export const ocrSettingsSchema = z.object({
   systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
 })
 
+export const DEFAULT_SUGGESTED_PROMPTS = [
+  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
+  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
+] as const
+
+export const suggestedPromptItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().trim().min(1).max(200),
+  message: z.string().trim().min(1).max(4_000),
+})
+
+export const interfaceSettingsSchema = z.object({
+  localTask: z.string().default('current'),
+  compaction: z.boolean().default(true),
+  compactionTokens: z.number().int().min(2_000).max(1_000_000).default(12_000),
+  title: z.boolean().default(true),
+  titlePrompt: z.string().max(10_000).default('Create a concise 3-5 word title for this chat.'),
+  followUp: z.boolean().default(true),
+  suggestedPromptsEnabled: z.boolean().default(true),
+  suggestedPromptsCount: z.number().int().min(0).max(12).default(4),
+  suggestedPrompts: z.array(suggestedPromptItemSchema).max(50).default([...DEFAULT_SUGGESTED_PROMPTS]),
+})
+
 export type AuthSettings = z.infer<typeof authSettingsSchema>
+export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>
+export type SuggestedPromptItem = z.infer<typeof suggestedPromptItemSchema>
 
 export function parseAuthSettings(value: unknown): AuthSettings {
   const parsed = authSettingsSchema.safeParse(value)
@@ -44,4 +71,9 @@ export function parseLoggingSettings(value: unknown): z.infer<typeof loggingSett
 export function parseOcrSettings(value: unknown): z.infer<typeof ocrSettingsSchema> {
   const parsed = ocrSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : ocrSettingsSchema.parse({})
+}
+
+export function parseInterfaceSettings(value: unknown): InterfaceSettings {
+  const parsed = interfaceSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : interfaceSettingsSchema.parse({})
 }

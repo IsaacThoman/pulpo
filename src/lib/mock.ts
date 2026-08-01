@@ -495,9 +495,3 @@ export function makeDailyModelUsage(records: UsageRecord[], userId?: string): Da
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
 
-export const REPLY_SUGGESTIONS = [
-  'What can you help me build today?',
-  'Explain how KV caching speeds up decoding',
-  'Draft a terse commit message for a sidebar refactor',
-  'Compare mixture-of-experts vs dense models',
-]
