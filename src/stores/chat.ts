@@ -161,6 +161,70 @@ function currentUserId(): string | null { return useAuth.getState().user?.id ?? 
 function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
 function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
+function cacheOptimisticTurn(input: {
+  chatId: string
+  responseId: string
+  content: string
+  modelId: string
+  title: string
+  temporary: boolean
+  presetSelections: Record<string, string>
+  createdAt: number
+}): void {
+  const createdAt = new Date(input.createdAt).toISOString()
+  const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
+  const parentResponseId = existing?.activeBranchLeafId ?? existing?.activeResponseId ?? null
+  const response: ServerResponse = {
+    id: input.responseId,
+    parentResponseId,
+    userMessageId: crypto.randomUUID(),
+    modelId: input.modelId,
+    status: 'queued',
+    input: [{ role: 'user', content: input.content }],
+    output: [],
+    presetSelections: input.presetSelections,
+    usage: null,
+    error: null,
+    createdAt,
+    completedAt: null,
+    snapshot: {
+      responseId: input.responseId,
+      status: 'queued',
+      sequence: 0,
+      output: [],
+      usage: null,
+      error: null,
+      updatedAt: createdAt,
+    },
+    branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
+  }
+  const detail: ServerChat = existing
+    ? {
+        ...existing,
+        updatedAt: createdAt,
+        activeResponseId: input.responseId,
+        activeBranchLeafId: input.responseId,
+        responses: [...(existing.responses ?? []), response],
+      }
+    : {
+        id: input.chatId,
+        title: input.title,
+        modelId: input.modelId,
+        pinned: false,
+        folderId: null,
+        createdAt,
+        updatedAt: createdAt,
+        activeResponseId: input.responseId,
+        activeBranchLeafId: input.responseId,
+        responses: [response],
+      }
+  queryClient.setQueryData(chatKey(input.chatId), detail)
+  queryClient.setQueryData<ServerChat[]>(chatsKey(), (rows = []) => {
+    const summary = { ...detail, responses: undefined }
+    return [summary, ...rows.filter((row) => row.id !== input.chatId)]
+  })
+}
+
 async function optimisticRequest(
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown,
 ): Promise<unknown> {
@@ -337,6 +401,16 @@ export const useChat = create<ChatState>()((set, get) => ({
         activeChatId: id,
         streamingId: responseId,
       }
+    })
+    cacheOptimisticTurn({
+      chatId: id,
+      responseId,
+      content,
+      modelId: generation.effectiveModelId || modelId,
+      title: content.slice(0, 200),
+      temporary,
+      presetSelections: generation.selections,
+      createdAt: timestamp,
     })
 
     void (async () => {
