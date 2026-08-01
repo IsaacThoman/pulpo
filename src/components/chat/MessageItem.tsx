@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatCost, formatDuration, formatNumber, timeAgo } from '@/lib/format'
+import { formatCost, formatDuration, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from './Markdown'
@@ -319,7 +319,11 @@ export const MessageItem = memo(function MessageItem({
               {(message.tokensIn !== undefined || message.cost !== undefined) && (
                 <span className="ml-1 text-[11px] text-muted-foreground">
                   {message.tokensIn !== undefined &&
-                    `${formatNumber(message.tokensIn)}→${formatNumber(message.tokensOut ?? 0)} tok`}
+                    `${message.tokensIn.toLocaleString()}→${(message.tokensOut ?? 0).toLocaleString()} tok`}
+                  {message.tokensOut !== undefined &&
+                    message.latencyMs !== undefined &&
+                    message.latencyMs > 0 &&
+                    ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
                   {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
                   {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
                 </span>
