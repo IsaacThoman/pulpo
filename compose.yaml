@@ -28,7 +28,9 @@ x-server: &server
 services:
   object-storage-init:
     image: alpine:3.22
-    command: ["chown", "1000:1000", "/data"]
+    # Existing volumes may contain directories created by an older root-running
+    # container, so repair the entire tree before the node user starts writing.
+    command: ["chown", "-R", "1000:1000", "/data"]
     volumes:
       - object_data:/data
     restart: "no"
