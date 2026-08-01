@@ -157,6 +157,9 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
         modelId: response.modelId, timestamp: timestamp + 1, done,
         reasoning: reasoningText(response.output), presetSelections: response.presetSelections,
         tokensIn: response.usage?.inputTokens, tokensOut: response.usage?.outputTokens,
+        latencyMs: response.completedAt
+          ? Math.max(0, Date.parse(response.completedAt) - timestamp)
+          : undefined,
         error: response.error?.message,
         outputItems: response.output,
         branch: response.branches.assistant,
@@ -344,7 +347,16 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
       responses: chat.responses.map((response) => {
         if (response.id !== snapshot.responseId) return response
         const merged = rememberResponseSnapshot(mergeResponseSnapshots(response.snapshot, snapshot))
-        return { ...response, status: merged.status, output: merged.output, usage: merged.usage, error: merged.error as ServerResponse['error'], snapshot: merged }
+        const done = !['queued', 'in_progress'].includes(merged.status)
+        return {
+          ...response,
+          status: merged.status,
+          output: merged.output,
+          usage: merged.usage,
+          error: merged.error as ServerResponse['error'],
+          completedAt: done ? (response.completedAt ?? merged.updatedAt) : response.completedAt,
+          snapshot: merged,
+        }
       }),
     }
   })
@@ -444,15 +456,22 @@ export const useChat = create<ChatState>()((set, get) => ({
       streamingId: ['queued', 'in_progress'].includes(snapshot.status) ? snapshot.responseId : state.streamingId === snapshot.responseId ? null : state.streamingId,
       chats: state.chats.map((chat) => ({
         ...chat,
-        messages: chat.messages.map((message) => message.id !== snapshot.responseId ? message : {
-          ...message,
-          content: snapshot.output.length ? outputText(snapshot.output) : message.content,
-          reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
-          done: !['queued', 'in_progress'].includes(snapshot.status),
-          tokensIn: snapshot.usage?.inputTokens,
-          tokensOut: snapshot.usage?.outputTokens,
-          error: (snapshot.error as { message?: string } | null)?.message,
-          outputItems: snapshot.output,
+        messages: chat.messages.map((message) => {
+          if (message.id !== snapshot.responseId) return message
+          const done = !['queued', 'in_progress'].includes(snapshot.status)
+          return {
+            ...message,
+            content: snapshot.output.length ? outputText(snapshot.output) : message.content,
+            reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
+            done,
+            tokensIn: snapshot.usage?.inputTokens,
+            tokensOut: snapshot.usage?.outputTokens,
+            latencyMs: done
+              ? Math.max(0, Date.parse(snapshot.updatedAt) - message.timestamp)
+              : message.latencyMs,
+            error: (snapshot.error as { message?: string } | null)?.message,
+            outputItems: snapshot.output,
+          }
         }),
       })),
     }))
