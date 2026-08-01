@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { chatPresetsSchema, createModelSchema, createProviderSchema, type ChatPreset } from '@pulpo/contracts'
@@ -12,6 +12,7 @@ import {
   models,
   providerConnections,
   providerHealthChecks,
+  providerUpstreamModels,
 } from '../database/schema.js'
 import { getConfig } from '../config.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
@@ -229,6 +230,67 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       await tx.update(providerConnections).set({ lastHealthStatus: success ? 'healthy' : 'unhealthy', lastHealthAt: new Date() }).where(eq(providerConnections.id, id))
     })
     return { success, latencyMs, error }
+  })
+
+  app.get('/api/admin/providers/:id/models', async (request) => {
+    requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const [provider] = await db.select({
+      id: providerConnections.id,
+      upstreamModelsSyncedAt: providerConnections.upstreamModelsSyncedAt,
+    }).from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
+    if (!provider) throw notFound('Provider')
+    const rows = await db.select({ modelId: providerUpstreamModels.modelId })
+      .from(providerUpstreamModels)
+      .where(eq(providerUpstreamModels.providerConnectionId, id))
+      .orderBy(asc(providerUpstreamModels.modelId))
+    return {
+      data: rows.map((row) => row.modelId),
+      syncedAt: provider.upstreamModelsSyncedAt,
+    }
+  })
+
+  app.post('/api/admin/providers/:id/models/refresh', async (request) => {
+    requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
+    if (!provider) throw notFound('Provider')
+    await assertSafeProviderUrl(provider.baseUrl)
+    let response: Response
+    try {
+      response = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
+        headers: { authorization: `Bearer ${decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY)}` },
+        signal: AbortSignal.timeout(provider.requestTimeoutMs),
+      })
+    } catch (cause) {
+      throw new AppError(502, 'upstream_unreachable', cause instanceof Error ? cause.message : 'Failed to reach provider /models')
+    }
+    if (!response.ok) {
+      throw new AppError(502, 'upstream_error', `Provider /models returned ${response.status}`)
+    }
+    const payload = await response.json() as { data?: Array<{ id?: unknown }> }
+    if (!Array.isArray(payload?.data)) {
+      throw new AppError(502, 'upstream_invalid', 'Provider /models response missing data array')
+    }
+    const modelIds = [...new Set(
+      payload.data
+        .map((item) => (typeof item?.id === 'string' ? item.id.trim() : ''))
+        .filter(Boolean),
+    )].sort((a, b) => a.localeCompare(b))
+    const syncedAt = new Date()
+    await db.transaction(async (tx) => {
+      await tx.delete(providerUpstreamModels).where(eq(providerUpstreamModels.providerConnectionId, id))
+      if (modelIds.length) {
+        await tx.insert(providerUpstreamModels).values(
+          modelIds.map((modelId) => ({ providerConnectionId: id, modelId })),
+        )
+      }
+      await tx.update(providerConnections).set({
+        upstreamModelsSyncedAt: syncedAt,
+        updatedAt: syncedAt,
+      }).where(eq(providerConnections.id, id))
+    })
+    return { data: modelIds, syncedAt }
   })
 
   app.delete('/api/admin/providers/:id', async (request, reply) => {

@@ -43,6 +43,13 @@
       "when": 1785541560246,
       "tag": "0005_mighty_joshua_kane",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785566773875,
+      "tag": "0006_wet_doctor_octopus",
+      "breakpoints": true
     }
   ]
 }

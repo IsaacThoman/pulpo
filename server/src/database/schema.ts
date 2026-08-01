@@ -97,8 +97,18 @@ export const providerConnections = pgTable('provider_connections', {
   enabled: boolean('enabled').notNull().default(true),
   lastHealthStatus: text('last_health_status'),
   lastHealthAt: timestamp('last_health_at', { withTimezone: true }),
+  upstreamModelsSyncedAt: timestamp('upstream_models_synced_at', { withTimezone: true }),
   ...timestamps,
 })
+
+export const providerUpstreamModels = pgTable('provider_upstream_models', {
+  providerConnectionId: uuid('provider_connection_id').notNull().references(() => providerConnections.id, { onDelete: 'cascade' }),
+  modelId: text('model_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.providerConnectionId, table.modelId] }),
+  index('provider_upstream_models_provider_idx').on(table.providerConnectionId),
+])
 
 export const labs = pgTable('labs', {
   id: uuid('id').primaryKey(),
