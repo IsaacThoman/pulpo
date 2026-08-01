@@ -128,6 +128,65 @@ export const createProviderSchema = z.object({
   requestTimeoutMs: z.number().int().min(1_000).max(900_000).default(120_000),
 })
 
+export const chatPresetIconSchema = z.enum([
+  'brain',
+  'zap',
+  'zap-off',
+  'gauge',
+  'sparkles',
+  'rocket',
+  'circle',
+  'flame',
+  'timer',
+])
+
+const chatPresetPublicIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/)
+
+export const chatPresetChoiceSchema = z.object({
+  id: chatPresetPublicIdSchema,
+  displayName: z.string().trim().min(1).max(80),
+  icon: chatPresetIconSchema.nullable().optional(),
+  action: z.discriminatedUnion('type', [
+    z.object({ type: z.literal('none') }),
+    z.object({ type: z.literal('redirect'), modelId: z.string().min(1).max(120) }),
+    z.object({ type: z.literal('params'), params: z.record(z.string(), z.unknown()) }),
+  ]),
+})
+
+export const chatPresetSchema = z.object({
+  id: chatPresetPublicIdSchema,
+  name: z.string().trim().min(1).max(80),
+  icon: chatPresetIconSchema,
+  defaultChoiceId: chatPresetPublicIdSchema.nullable().optional(),
+  choices: z.array(chatPresetChoiceSchema).min(1).max(20),
+}).superRefine((preset, context) => {
+  const ids = new Set<string>()
+  for (const [index, choice] of preset.choices.entries()) {
+    if (ids.has(choice.id)) {
+      context.addIssue({ code: 'custom', path: ['choices', index, 'id'], message: 'Choice IDs must be unique within a preset' })
+    }
+    ids.add(choice.id)
+  }
+  if (preset.defaultChoiceId && !ids.has(preset.defaultChoiceId)) {
+    context.addIssue({ code: 'custom', path: ['defaultChoiceId'], message: 'Default choice must reference an existing choice' })
+  }
+})
+
+export const chatPresetsSchema = z.array(chatPresetSchema).max(10).superRefine((presets, context) => {
+  const ids = new Set<string>()
+  for (const [index, preset] of presets.entries()) {
+    if (ids.has(preset.id)) {
+      context.addIssue({ code: 'custom', path: [index, 'id'], message: 'Preset IDs must be unique for a model' })
+    }
+    ids.add(preset.id)
+  }
+})
+
+export type ChatPresetIcon = z.infer<typeof chatPresetIconSchema>
+export type ChatPresetAction = z.infer<typeof chatPresetChoiceSchema>['action']
+export type ChatPresetChoice = z.infer<typeof chatPresetChoiceSchema>
+export type ChatPreset = z.infer<typeof chatPresetSchema>
+
 export const createModelSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
   providerConnectionId: idSchema,

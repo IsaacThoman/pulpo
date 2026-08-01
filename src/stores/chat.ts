@@ -519,7 +519,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (!chatId) await optimisticRequest('POST', '/api/chats', { clientId: id, modelId, title: content.slice(0, 200), temporary })
       const result = await optimisticRequest('POST', `/api/chats/${id}/responses`, {
         input: content,
-        modelId: generation.effectiveModelId || modelId,
+        modelId,
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
       }) as { response?: ResponseSnapshot } | undefined

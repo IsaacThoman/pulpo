@@ -1,7 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { createModelSchema, createProviderSchema } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -21,24 +21,7 @@ import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID } from './defaults.js'
 
-const presetSchema = z.array(z.object({
-  id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
-  name: z.string().trim().min(1).max(80),
-  icon: z.string().min(1).max(80),
-  defaultChoiceId: z.string().nullable().optional(),
-  choices: z.array(z.object({
-    id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/),
-    displayName: z.string().trim().min(1).max(80),
-    icon: z.string().max(80).nullable().optional(),
-    action: z.discriminatedUnion('type', [
-      z.object({ type: z.literal('none') }),
-      z.object({ type: z.literal('redirect'), modelId: z.string().min(1).max(120) }),
-      z.object({ type: z.literal('params'), params: z.record(z.string(), z.unknown()) }),
-    ]),
-  })).min(1).max(20),
-})).max(10)
-
-type PresetInput = z.infer<typeof presetSchema>
+type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
 
 function validateDefaultParameters(value: Record<string, unknown>, allowedParameters: string[]): void {
@@ -325,7 +308,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.post('/api/admin/models', async (request, reply) => {
     const admin = requireAdmin(request)
-    const raw = z.object({ presets: presetSchema.default([]) }).passthrough().parse(request.body)
+    const raw = z.object({ presets: chatPresetsSchema.default([]) }).passthrough().parse(request.body)
     const input = createModelSchema.parse(raw)
     validateDefaultParameters(input.defaultParameters, input.allowedParameters)
     await validateFallback(input.id, input.fallbackModelId)
@@ -383,7 +366,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const body = request.body as Record<string, unknown>
     const [current] = await db.select().from(models).where(eq(models.id, id)).limit(1)
     if (!current) throw notFound('Model')
-    const parsedPresets = body.presets === undefined ? undefined : presetSchema.parse(body.presets)
+    const parsedPresets = body.presets === undefined ? undefined : chatPresetsSchema.parse(body.presets)
     const effectiveAllowed = Array.isArray(body.allowedParameters) ? body.allowedParameters.filter((value): value is string => typeof value === 'string') : current.allowedParameters as string[]
     const effectiveDefaults = body.defaultParameters && typeof body.defaultParameters === 'object' && !Array.isArray(body.defaultParameters) ? body.defaultParameters as Record<string, unknown> : current.defaultParameters as Record<string, unknown>
     validateDefaultParameters(effectiveDefaults, effectiveAllowed)

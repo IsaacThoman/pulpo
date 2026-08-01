@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
-import type { CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
+import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses } from '../database/schema.js'
 import { getActivePricing, reserveBudget } from '../accounting/service.js'
@@ -8,6 +8,7 @@ import { newId } from '../lib/ids.js'
 import { generationQueue } from '../jobs.js'
 import { parseLoggingSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
+import { PresetResolutionError, resolvePresetActions, type PresetResolutionModel } from './presets.js'
 
 export interface CreateResponseOptions {
   userId: string
@@ -22,31 +23,25 @@ export interface CreateResponseOptions {
   branchReason?: 'message' | 'regenerate' | 'user_edit'
 }
 
-async function resolveModel(modelId: string, selections: Record<string, string>): Promise<typeof models.$inferSelect | undefined> {
-  const visited = new Set<string>()
-  let currentId = modelId
-  while (!visited.has(currentId)) {
-    visited.add(currentId)
-    const [current] = await db.select().from(models).where(and(eq(models.id, currentId), eq(models.enabled, true))).limit(1)
-    if (!current) return undefined
-    const presets = await db.select().from(modelPresets).where(eq(modelPresets.modelId, current.id))
-    const redirects = new Set<string>()
-    for (const preset of presets) {
-      const selected = selections[preset.publicId]
-      if (!selected) continue
-      const [choice] = await db.select().from(modelPresetChoices).where(and(
-        eq(modelPresetChoices.presetId, preset.id), eq(modelPresetChoices.publicId, selected),
-      )).limit(1)
-      if (choice?.actionType === 'redirect') {
-        const target = (choice.action as { modelId?: string }).modelId
-        if (target) redirects.add(target)
-      }
-    }
-    if (redirects.size === 0) return current
-    if (redirects.size > 1) throw new AppError(400, 'conflicting_model_redirects', 'Preset choices redirect to different models')
-    currentId = [...redirects][0]!
-  }
-  throw new AppError(409, 'preset_redirect_cycle', 'Preset redirects contain a cycle')
+async function loadPresetModel(modelId: string): Promise<PresetResolutionModel | undefined> {
+  const [model] = await db.select().from(models).where(eq(models.id, modelId)).limit(1)
+  if (!model) return undefined
+  const presetRows = await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)
+  const presets: ChatPreset[] = await Promise.all(presetRows.map(async (preset) => ({
+    id: preset.publicId,
+    name: preset.name,
+    icon: preset.icon as ChatPreset['icon'],
+    defaultChoiceId: preset.defaultChoiceId
+      ? (await db.select({ publicId: modelPresetChoices.publicId }).from(modelPresetChoices).where(eq(modelPresetChoices.id, preset.defaultChoiceId)).limit(1))[0]?.publicId ?? null
+      : null,
+    choices: (await db.select().from(modelPresetChoices).where(eq(modelPresetChoices.presetId, preset.id)).orderBy(modelPresetChoices.sortOrder)).map((choice) => ({
+      id: choice.publicId,
+      displayName: choice.displayName,
+      icon: choice.icon as ChatPreset['icon'] | null,
+      action: { type: choice.actionType, ...(choice.action as Record<string, unknown>) } as ChatPreset['choices'][number]['action'],
+    })),
+  })))
+  return { id: model.id, enabled: model.enabled, allowedParameters: model.allowedParameters as string[], presets }
 }
 
 export async function createResponse(options: CreateResponseOptions) {
@@ -64,7 +59,16 @@ export async function createResponse(options: CreateResponseOptions) {
     .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.userId), isNull(chats.deletedAt)))
     .limit(1)
   if (!chat) throw notFound('Chat')
-  const model = await resolveModel(options.input.modelId, options.input.presetSelections)
+  let resolved
+  try {
+    resolved = await resolvePresetActions(options.input.modelId, options.input.presetSelections, loadPresetModel)
+  } catch (error) {
+    if (!(error instanceof PresetResolutionError)) throw error
+    if (error.code === 'conflicting_redirects') throw new AppError(400, 'conflicting_model_redirects', error.message)
+    if (error.code === 'redirect_cycle') throw new AppError(409, 'preset_redirect_cycle', error.message)
+    throw new AppError(400, 'model_not_found', error.message, 'invalid_request_error', 'model')
+  }
+  const [model] = await db.select().from(models).where(and(eq(models.id, resolved.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
   const maxOutputTokens = Math.min(options.input.maxOutputTokens ?? model.maxOutputTokens, model.maxOutputTokens)
   let pricing = await getActivePricing(model.id)
@@ -112,8 +116,8 @@ export async function createResponse(options: CreateResponseOptions) {
     branchReason: options.branchReason ?? 'message',
     executionMode,
     input: storedInput,
-    presetSelections: options.input.presetSelections,
-    parameters: options.parameters ?? {},
+    presetSelections: resolved.selections,
+    parameters: { ...(options.parameters ?? {}), ...resolved.parameters },
     idempotencyKey: options.idempotencyKey,
     origin: options.apiKeyId ? 'api' : 'web',
   })
@@ -124,8 +128,8 @@ export async function createResponse(options: CreateResponseOptions) {
   const ttl = retentionMs[logging.payloadRetention] ?? 604_800_000
   await db.insert(requestLogs).values({
     id: requestLogId, responseId: id, userId: options.userId, apiKeyId: options.apiKeyId,
-    origin: options.apiKeyId ? 'api' : 'web', requestedModelId: model.id, currentModelId: model.id,
-    requestPayload: logging.logDetailedPayloads ? { input: storedInput, parameters: options.parameters ?? {}, presetSelections: options.input.presetSelections } : null,
+    origin: options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
+    requestPayload: logging.logDetailedPayloads ? { input: storedInput, parameters: { ...(options.parameters ?? {}), ...resolved.parameters }, presetSelections: resolved.selections } : null,
     payloadExpiresAt: logging.logDetailedPayloads && ttl !== null ? new Date(Date.now() + ttl) : null,
   })
   await publishAdminUsage(requestLogId, true)

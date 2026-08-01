@@ -1,39 +1,6 @@
-/** Lucide icon id used for preset / choice marks in the composer. */
-export type ChatPresetIcon =
-  | 'brain'
-  | 'zap'
-  | 'zap-off'
-  | 'gauge'
-  | 'sparkles'
-  | 'rocket'
-  | 'circle'
-  | 'flame'
-  | 'timer'
+import type { ChatPreset } from '@pulpo/contracts'
 
-/** What happens when a preset choice is selected. */
-export type ChatPresetAction =
-  | { type: 'none' }
-  | { type: 'redirect'; modelId: string }
-  | { type: 'params'; params: Record<string, unknown> }
-
-export interface ChatPresetChoice {
-  id: string
-  displayName: string
-  /** Optional icon when this choice is the active selection. */
-  icon?: ChatPresetIcon
-  action: ChatPresetAction
-}
-
-/** A named group of composer choices (e.g. Reasoning, Speed). */
-export interface ChatPreset {
-  id: string
-  name: string
-  /** Default icon for the group when no choice-specific icon applies. */
-  icon: ChatPresetIcon
-  choices: ChatPresetChoice[]
-  /** Choice selected by default when the user has no saved preference. */
-  defaultChoiceId?: string
-}
+export type { ChatPreset, ChatPresetAction, ChatPresetChoice, ChatPresetIcon } from '@pulpo/contracts'
 
 export interface Model {
   id: string

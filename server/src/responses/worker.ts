@@ -14,8 +14,6 @@ import {
   userPreferences,
   memories,
   applicationSettings,
-  modelPresets,
-  modelPresetChoices,
   requestLogs,
   generationAttempts,
   ocrAttempts,
@@ -243,16 +241,6 @@ async function resolvedParameters(record: { response: typeof responses.$inferSel
   const reserved = new Set(['model', 'input', 'stream', 'store', 'metadata'])
   const result = Object.fromEntries(Object.entries(record.model.defaultParameters as Record<string, unknown>).filter(([key]) => allowed.has(key) && !reserved.has(key)))
   for (const [key, value] of Object.entries(record.response.parameters as Record<string, unknown>)) if (allowed.has(key) && !reserved.has(key)) result[key] = value
-  const selections = record.response.presetSelections as Record<string, string>
-  const presets = await db.select().from(modelPresets).where(eq(modelPresets.modelId, record.model.id))
-  for (const preset of presets) {
-    const selected = selections[preset.publicId]
-    if (!selected) continue
-    const [choice] = await db.select().from(modelPresetChoices).where(and(eq(modelPresetChoices.presetId, preset.id), eq(modelPresetChoices.publicId, selected))).limit(1)
-    if (!choice || choice.actionType !== 'params') continue
-    const action = choice.action as { params?: Record<string, unknown> }
-    for (const [key, value] of Object.entries(action.params ?? {})) if (allowed.has(key)) result[key] = value
-  }
   return result
 }
 
