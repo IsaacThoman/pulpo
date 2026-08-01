@@ -1,0 +1,196 @@
+name: Build and publish agent workspace image
+
+on:
+  pull_request:
+    paths:
+      - infra/workspace-image/**
+      - .github/workflows/workspace-image.yml
+      - package.json
+      - package-lock.json
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+    paths:
+      - infra/workspace-image/**
+      - .github/workflows/workspace-image.yml
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/isaacthoman/pulpo-agent-workspace
+
+jobs:
+  build:
+    name: Build and test ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            suffix: arm64
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Generate image metadata
+        id: metadata
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.title=Pulpo Agent Workspace
+            org.opencontainers.image.description=Disposable Ubuntu workspace for Pulpo agent sandboxes
+
+      - name: Build local test image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: infra/workspace-image
+          load: true
+          platforms: ${{ matrix.platform }}
+          tags: pulpo-agent-workspace:test
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=workspace-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=workspace-${{ matrix.suffix }}
+          provenance: false
+          sbom: false
+
+      - name: Run smoke test
+        run: docker run --rm pulpo-agent-workspace:test pulpo-workspace-smoke-test
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish platform image by digest
+        if: github.event_name == 'push'
+        id: publish
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: infra/workspace-image
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha,scope=workspace-${{ matrix.suffix }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+
+      - name: Export platform digest
+        if: github.event_name == 'push'
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${DIGEST#sha256:}"
+
+      - name: Upload platform digest
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: workspace-digest-${{ matrix.suffix }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Publish multi-platform manifest
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download platform digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: workspace-digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate manifest metadata
+        id: metadata
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Create multi-platform manifest
+        id: manifest
+        env:
+          TAGS: ${{ steps.metadata.outputs.tags }}
+          DIGEST_DIRECTORY: ${{ runner.temp }}/digests
+        run: |
+          tag_arguments=()
+          while IFS= read -r tag; do
+            tag_arguments+=("-t" "${tag}")
+          done <<< "${TAGS}"
+
+          sources=()
+          for digest_file in "${DIGEST_DIRECTORY}"/*; do
+            sources+=("${IMAGE_NAME}@sha256:$(basename "${digest_file}")")
+          done
+
+          docker buildx imagetools create "${tag_arguments[@]}" "${sources[@]}"
+
+          primary_tag="${TAGS%%$'\n'*}"
+          manifest_digest=$(docker buildx imagetools inspect "${primary_tag}" \
+            | sed -n 's/^Digest:[[:space:]]*//p' \
+            | head -n 1)
+          test -n "${manifest_digest}"
+          echo "digest=${manifest_digest}" >> "${GITHUB_OUTPUT}"
+
+      - name: Attest published manifest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.manifest.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record immutable image reference
+        env:
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+          TAGS: ${{ steps.metadata.outputs.tags }}
+        run: |
+          {
+            echo '## Published Pulpo agent workspace'
+            echo
+            echo '```text'
+            echo "${IMAGE_NAME}@${DIGEST}"
+            echo '```'
+            echo
+            echo 'Tags:'
+            while IFS= read -r tag; do echo "- \`${tag}\`"; done <<< "${TAGS}"
+          } >> "${GITHUB_STEP_SUMMARY}"

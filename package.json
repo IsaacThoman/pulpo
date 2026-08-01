@@ -1,7 +1,7 @@
 {
   "name": "pulpo",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "workspaces": [
     "packages/*",
@@ -17,6 +17,8 @@
     "db:migrate": "npm run db:migrate -w @pulpo/server",
     "test": "npm run test -w @pulpo/contracts && npm run test -w @pulpo/server",
     "lint": "oxlint",
+    "workspace-image:build": "docker build --tag pulpo-agent-workspace:test infra/workspace-image",
+    "workspace-image:test": "docker run --rm pulpo-agent-workspace:test pulpo-workspace-smoke-test",
     "preview": "vite preview"
   },
   "dependencies": {
