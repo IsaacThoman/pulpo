@@ -182,7 +182,7 @@ export function ModelSelector({
                         if (dragKindRef.current !== 'provider') return
                         const from = dragIdRef.current ?? e.dataTransfer.getData('text/plain')
                         const edge = drop?.id === p ? drop.edge : 'before'
-                        if (from) reorderProviders(from, p, edge)
+                        if (from) reorderProviders(from, p, edge, availableProviders)
                         clearDrag()
                       }}
                       onDragEnd={clearDrag}

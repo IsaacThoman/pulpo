@@ -1,31 +1,11 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { reorderList, resolveOrder } from '@/lib/model-order'
 export const CATALOG_PROVIDERS: string[] = []
-
-function reorderList(
-  list: string[],
-  fromId: string,
-  toId: string,
-  edge: 'before' | 'after'
-) {
-  if (fromId === toId) return list
-  const next = [...list]
-  const from = next.indexOf(fromId)
-  if (from < 0 || next.indexOf(toId) < 0) return list
-  next.splice(from, 1)
-  const to = next.indexOf(toId)
-  next.splice(edge === 'before' ? to : to + 1, 0, fromId)
-  return next
-}
 
 /** Merge persisted order with catalog so new providers still appear. */
 export function resolveProviderOrder(order: string[], available = CATALOG_PROVIDERS) {
-  const known = new Set(available)
-  const ordered = order.filter((p) => known.has(p))
-  for (const p of available) {
-    if (!ordered.includes(p)) ordered.push(p)
-  }
-  return ordered
+  return resolveOrder(order, available)
 }
 
 interface ModelsState {
@@ -33,7 +13,7 @@ interface ModelsState {
   providers: string[]
   toggleFavorite: (id: string) => void
   reorderFavorites: (fromId: string, toId: string, edge: 'before' | 'after') => void
-  reorderProviders: (fromId: string, toId: string, edge: 'before' | 'after') => void
+  reorderProviders: (fromId: string, toId: string, edge: 'before' | 'after', available: string[]) => void
 }
 
 export const useModels = create<ModelsState>()(
@@ -49,9 +29,9 @@ export const useModels = create<ModelsState>()(
         }),
       reorderFavorites: (fromId, toId, edge) =>
         set({ favorites: reorderList(get().favorites, fromId, toId, edge) }),
-      reorderProviders: (fromId, toId, edge) =>
+      reorderProviders: (fromId, toId, edge, available) =>
         set({
-          providers: reorderList(resolveProviderOrder(get().providers), fromId, toId, edge),
+          providers: reorderList(resolveProviderOrder(get().providers, available), fromId, toId, edge),
         }),
     }),
     { name: 'pulpo-models' }
