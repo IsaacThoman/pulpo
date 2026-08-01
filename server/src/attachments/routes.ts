@@ -13,6 +13,10 @@ import { getBlobStore } from '../storage/index.js'
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'])
 
+export function attachmentUploadContentType(storageDriver: 'local' | 's3', mimeType: string): string {
+  return storageDriver === 'local' ? 'application/octet-stream' : mimeType
+}
+
 function extensionOf(name: string): string {
   const index = name.lastIndexOf('.')
   return index < 0 ? '' : name.slice(index).toLowerCase()
@@ -38,9 +42,10 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const id = newId()
     const objectKey = `users/${user.id}/attachments/${id}`
     const [created] = await db.insert(attachments).values({ id, userId: user.id, objectKey, ...input }).returning()
+    const storageDriver = getConfig().STORAGE_DRIVER
     const uploadUrl = await getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
     reply.code(201)
-    return { attachment: created, uploadUrl, uploadHeaders: { 'content-type': input.mimeType } }
+    return { attachment: created, uploadUrl, uploadHeaders: { 'content-type': attachmentUploadContentType(storageDriver, input.mimeType) } }
   })
 
   app.put('/api/attachments/local-upload/:key', async (request, reply) => {
