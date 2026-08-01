@@ -146,9 +146,9 @@ body {
   animation: fade-in-up 0.25s ease-out both;
 }
 
-/* Streaming caret */
-.stream-caret::after {
-  content: '0';
+/* Streaming caret — attach to last markdown block so it sits inline at stream end */
+.stream-caret > *:last-child::after {
+  content: '▋';
   margin-left: 1px;
   animation: blink 1s steps(2) infinite;
   color: var(--muted-foreground);
