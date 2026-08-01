@@ -1,5 +1,4 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
 const TABS = [
@@ -32,11 +31,11 @@ export function UsageLayout() {
           ))}
         </nav>
       </header>
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto max-w-5xl px-5 py-6">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto w-full min-w-0 max-w-5xl px-5 py-6">
           <Outlet />
         </div>
-      </ScrollArea>
+      </div>
     </div>
   )
 }
