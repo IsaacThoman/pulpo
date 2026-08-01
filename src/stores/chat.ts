@@ -7,10 +7,13 @@ import { queryClient } from '@/lib/query-client'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
 import { useSettings } from '@/stores/settings'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
+import { lineageFromLeaf, newestDescendantId } from '@/lib/chat-tree'
 import { useAuth } from './auth'
 
 interface ServerResponse {
   id: string
+  parentResponseId: string | null
+  userMessageId: string | null
   modelId: string
   status: ResponseSnapshot['status']
   input: unknown[]
@@ -35,6 +38,8 @@ export interface ServerChat {
   folderId: string | null
   createdAt: string
   updatedAt: string
+  activeResponseId: string | null
+  activeBranchLeafId: string | null
   responses?: ServerResponse[]
 }
 
@@ -130,7 +135,10 @@ function messagesFromResponses(responses: ServerResponse[]): Message[] {
 }
 
 function toChat(row: ServerChat, current?: Chat): Chat {
-  const serverMessages = row.responses ? messagesFromResponses(row.responses) : current?.messages ?? []
+  const selectedResponses = row.responses
+    ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
+    : undefined
+  const serverMessages = selectedResponses ? messagesFromResponses(selectedResponses) : current?.messages ?? []
   const messages = serverMessages.map((message) => {
     const local = current?.messages.find((candidate) => candidate.id === message.id)
     if (!local || message.content || message.done) return message
@@ -371,7 +379,22 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
   },
   activateBranch: (chatId, responseId) => {
-    void optimisticRequest('POST', `/api/messages/${responseId}/activate`).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+    const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    if (cached?.responses?.some((response) => response.id === responseId)) {
+      const activeBranchLeafId = newestDescendantId(cached.responses, responseId)
+      const updated = { ...cached, activeResponseId: activeBranchLeafId, activeBranchLeafId }
+      queryClient.setQueryData(chatKey(chatId), updated)
+      get().setDetailedChat(updated)
+    }
+    void optimisticRequest('POST', `/api/messages/${responseId}/activate`).then((result) => {
+      const activeBranchLeafId = (result as { activeBranchLeafId?: string } | undefined)?.activeBranchLeafId
+      if (!activeBranchLeafId) return
+      const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+      if (!current) return
+      const updated = { ...current, activeResponseId: activeBranchLeafId, activeBranchLeafId }
+      queryClient.setQueryData(chatKey(chatId), updated)
+      get().setDetailedChat(updated)
+    })
   },
   stopStreaming: () => {
     const responseId = get().streamingId

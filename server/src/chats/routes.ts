@@ -7,7 +7,7 @@ import { chatImportSources, chats, folders, models, requestLogs, responses, user
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
+import { metadataForTurn } from '../messages/branching.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
@@ -183,11 +183,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
     const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, id), isNull(responses.deletedAt))).orderBy(responses.createdAt)
-    const turns = lineageFromLeaf(
-      allTurns,
-      chat.activeBranchLeafId ?? chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,
-    )
-    return { ...chat, responses: turns.map((response) => ({
+    return { ...chat, responses: allTurns.map((response) => ({
       ...response,
       snapshot: toSnapshot(response),
       branches: metadataForTurn(allTurns, response),
