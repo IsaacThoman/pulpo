@@ -92,17 +92,18 @@ export function ChatPage() {
   })
 
   const chat = chats.find((c) => c.id === chatId) ?? null
+  const chatModelId = chat?.modelId
   const [modelId, setModelId] = useState(
-    () => routeModelId ?? chat?.modelId ?? models[0]?.id ?? ''
+    () => routeModelId ?? chatModelId ?? models[0]?.id ?? ''
   )
   useEffect(() => {
     if (chat || models.length === 0 || models.some((model) => model.id === modelId)) return
     setModelId(models.find((model) => model.enabled)?.id ?? models[0]!.id)
   }, [chat, modelId, models])
   useEffect(() => {
-    if (chat) setModelId(chat.modelId)
+    if (chatModelId) setModelId(chatModelId)
     else if (routeModelId) setModelId(routeModelId)
-  }, [chatId, chat?.modelId, routeModelId])
+  }, [chatId, chatModelId, routeModelId])
 
   useEffect(() => {
     void apiRequest<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>('/api/interface/suggested-prompts')
