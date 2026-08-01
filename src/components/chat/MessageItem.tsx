@@ -120,7 +120,7 @@ export const MessageItem = memo(function MessageItem({
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
-  const [reasoningOpen, setReasoningOpen] = useState(true)
+  const [reasoningOpen, setReasoningOpen] = useState(false)
   const submitEdit = () => {
     const content = draft.trim()
     if (!content || (message.role === 'assistant' && content === message.content)) return
