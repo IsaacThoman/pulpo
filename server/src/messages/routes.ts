@@ -3,23 +3,13 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { chats, responses, users } from '../database/schema.js'
+import { chats, requestLogs, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { newestDescendantId } from './branching.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
-
-function inputText(input: unknown): string {
-  if (!Array.isArray(input)) return ''
-  for (let index = input.length - 1; index >= 0; index -= 1) {
-    const item = input[index] as { role?: string; content?: unknown }
-    if (item.role !== 'user') continue
-    if (typeof item.content === 'string') return item.content
-    if (Array.isArray(item.content)) return item.content.map((part) => (part as { text?: string }).text ?? '').join('')
-  }
-  return ''
-}
+import { replaceResponseInputText, responseAttachmentIds, responseInputText } from './input.js'
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
@@ -32,6 +22,12 @@ async function bumpRevision(userId: string, chatId: string): Promise<void> {
   const [updated] = await db.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
     .where(eq(users.id, userId)).returning({ revision: users.stateRevision })
   if (updated) await publishStateChange({ userId, chatId, revision: updated.revision })
+}
+
+async function requestedModelId(responseId: string, fallbackModelId: string): Promise<string> {
+  const [log] = await db.select({ modelId: requestLogs.requestedModelId })
+    .from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+  return log?.modelId ?? fallbackModelId
 }
 
 function editedOutput(content: string): unknown[] {
@@ -49,16 +45,19 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
+    const modelId = await requestedModelId(original.id, original.modelId)
+    const attachmentIds = responseAttachmentIds(original.input)
     const created = await createResponse({
       userId: user.id,
       chatId: original.chatId,
+      rawInput: original.input,
       parentResponseId: original.parentResponseId,
       userMessageId: original.userMessageId ?? undefined,
       branchReason: 'regenerate',
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
-        input: inputText(original.input), modelId: original.modelId,
-        executionMode: original.executionMode, presetSelections: original.presetSelections as Record<string, string>, attachmentIds: [],
+        input: responseInputText(original.input), modelId,
+        executionMode: original.executionMode, presetSelections: original.presetSelections as Record<string, string>, attachmentIds,
       },
     })
     await bumpRevision(user.id, original.chatId)
@@ -73,15 +72,18 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const { content } = z.object({ content: z.string().trim().min(1).max(1_000_000) }).parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (id.endsWith(':input')) {
+      const modelId = await requestedModelId(original.id, original.modelId)
+      const attachmentIds = responseAttachmentIds(original.input)
       const created = await createResponse({
         userId: user.id,
         chatId: original.chatId,
+        rawInput: replaceResponseInputText(original.input, content),
         parentResponseId: original.parentResponseId,
         branchReason: 'user_edit',
         idempotencyKey,
         input: {
-          input: content, modelId: original.modelId, executionMode: original.executionMode,
-          presetSelections: original.presetSelections as Record<string, string>, attachmentIds: [],
+          input: content, modelId, executionMode: original.executionMode,
+          presetSelections: original.presetSelections as Record<string, string>, attachmentIds,
         },
       })
       await bumpRevision(user.id, original.chatId)
