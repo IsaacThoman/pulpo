@@ -83,7 +83,17 @@ export async function createResponse(options: CreateResponseOptions) {
     if (score(candidate) > score(pricing)) pricing = candidate
     fallbackId = fallback.fallbackModelId
   }
-  const id = newId()
+  const requestedId = options.input.clientId
+  if (requestedId) {
+    const [existingById] = await db.select().from(responses).where(eq(responses.id, requestedId)).limit(1)
+    if (existingById) {
+      if (existingById.userId !== options.userId || existingById.chatId !== options.chatId) {
+        throw new AppError(409, 'response_id_conflict', 'Response id is already in use')
+      }
+      return existingById
+    }
+  }
+  const id = requestedId ?? newId()
   const [previous] = chat.activeResponseId
     ? await db.select({ id: responses.id }).from(responses).where(eq(responses.id, chat.activeResponseId)).limit(1)
     : []

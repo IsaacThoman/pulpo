@@ -8,6 +8,7 @@ import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/mode
 import { useSettings } from '@/stores/settings'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { lineageFromLeaf, newestDescendantId } from '@/lib/chat-tree'
+import { mergePendingLocalMessages } from '@/lib/merge-pending-local-messages'
 import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
 import { useAuth } from './auth'
 
@@ -164,21 +165,30 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
   })
 }
 
-function toChat(row: ServerChat, current?: Chat, responseSequences: Record<string, number> = {}): Chat {
+function toChat(
+  row: ServerChat,
+  current?: Chat,
+  responseSequences: Record<string, number> = {},
+  streamingId: string | null = null,
+): Chat {
   const selectedResponses = row.responses
     ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
     : undefined
   const selectedById = new Map(selectedResponses?.map((response) => [response.id, response]) ?? [])
   const serverMessages = selectedResponses ? messagesFromResponses(selectedResponses, row.attachments ?? []) : current?.messages ?? []
-  const messages = serverMessages.map((message) => {
-    const local = current?.messages.find((candidate) => candidate.id === message.id)
-    const response = selectedById.get(message.id)
-    if (local && response && !message.done && (responseSequences[response.id] ?? 0) > response.snapshot.sequence) {
-      return { ...message, content: local.content, reasoning: local.reasoning, outputItems: local.outputItems }
-    }
-    if (!local || message.content || message.done) return message
-    return { ...message, content: local.content, reasoning: local.reasoning }
-  })
+  const messages = mergePendingLocalMessages(
+    serverMessages.map((message) => {
+      const local = current?.messages.find((candidate) => candidate.id === message.id)
+      const response = selectedById.get(message.id)
+      if (local && response && !message.done && (responseSequences[response.id] ?? 0) > response.snapshot.sequence) {
+        return { ...message, content: local.content, reasoning: local.reasoning, outputItems: local.outputItems }
+      }
+      if (!local || message.content || message.done) return message
+      return { ...message, content: local.content, reasoning: local.reasoning }
+    }),
+    selectedResponses ? current?.messages : undefined,
+    streamingId,
+  )
   return {
     id: row.id,
     title: row.title,
@@ -382,12 +392,21 @@ export const useChat = create<ChatState>()((set, get) => ({
         response.snapshot.sequence,
       )
     }
-    const chat = toChat(row, state.chats.find((item) => item.id === row.id), state.responseSequences)
+    const chat = toChat(row, state.chats.find((item) => item.id === row.id), responseSequences, state.streamingId)
     const exists = state.chats.some((item) => item.id === row.id)
-    const streaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
+    const derivedStreaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
+    const streamingStillLocal = state.streamingId
+      && chat.messages.some((message) => message.id === state.streamingId && !message.done)
+      ? state.streamingId
+      : null
+    const streamingOnOtherChat = state.streamingId
+      && !state.chats.some((item) => item.id === row.id && item.messages.some((message) => message.id === state.streamingId))
+      && !chat.messages.some((message) => message.id === state.streamingId)
+      ? state.streamingId
+      : null
     return {
       chats: exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats],
-      streamingId: streaming,
+      streamingId: derivedStreaming ?? streamingStillLocal ?? streamingOnOtherChat,
       responseSequences,
     }
   }),
@@ -535,6 +554,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     void (async () => {
       if (!chatId) await optimisticRequest('POST', '/api/chats', { clientId: id, modelId, title: content.slice(0, 200), temporary })
       const result = await optimisticRequest('POST', `/api/chats/${id}/responses`, {
+        clientId: responseId,
         input: content,
         modelId,
         presetSelections: generation.selections,
@@ -542,13 +562,40 @@ export const useChat = create<ChatState>()((set, get) => ({
       }) as { response?: ResponseSnapshot } | undefined
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {
-        set((state) => ({
-          streamingId: state.streamingId === responseId ? serverId : state.streamingId,
-          chats: state.chats.map((chat) => chat.id !== id ? chat : {
+        const clientUserId = `${responseId}:input`
+        const serverUserId = `${serverId}:input`
+        set((state) => {
+          const responseSequences = { ...state.responseSequences }
+          if (responseSequences[responseId] != null) {
+            responseSequences[serverId] = Math.max(responseSequences[serverId] ?? 0, responseSequences[responseId] ?? 0)
+            delete responseSequences[responseId]
+          }
+          return {
+            streamingId: state.streamingId === responseId ? serverId : state.streamingId,
+            responseSequences,
+            chats: state.chats.map((chat) => chat.id !== id ? chat : {
+              ...chat,
+              messages: chat.messages.map((message) => {
+                if (message.id === responseId) return { ...message, id: serverId }
+                if (message.id === clientUserId) return { ...message, id: serverUserId }
+                return message
+              }),
+            }),
+          }
+        })
+        queryClient.setQueryData<ServerChat>(chatKey(id), (chat) => {
+          if (!chat?.responses) return chat
+          return {
             ...chat,
-            messages: chat.messages.map((message) => message.id === responseId ? { ...message, id: serverId } : message),
-          }),
-        }))
+            activeResponseId: chat.activeResponseId === responseId ? serverId : chat.activeResponseId,
+            activeBranchLeafId: chat.activeBranchLeafId === responseId ? serverId : chat.activeBranchLeafId,
+            responses: chat.responses.map((response) => response.id !== responseId ? response : {
+              ...response,
+              id: serverId,
+              snapshot: { ...response.snapshot, responseId: serverId },
+            }),
+          }
+        })
       }
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
       await queryClient.invalidateQueries({ queryKey: chatKey(id) })
