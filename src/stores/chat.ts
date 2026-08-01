@@ -8,6 +8,7 @@ import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/mode
 import { useSettings } from '@/stores/settings'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { lineageFromLeaf, newestDescendantId } from '@/lib/chat-tree'
+import { mergePendingLocalMessages } from '@/lib/merge-pending-local-messages'
 import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
 import { useAuth } from './auth'
 
@@ -164,37 +165,12 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
   })
 }
 
-/** Keep local turns that a stale/empty server detail would otherwise wipe. */
-function mergePendingLocalMessages(serverMessages: Message[], localMessages: Message[] | undefined): Message[] {
-  if (!localMessages?.length) return serverMessages
-  // Empty server detail (e.g. new chat before first response exists) must not blank the UI.
-  if (!serverMessages.length) return localMessages
-
-  const serverIds = new Set(serverMessages.map((message) => message.id))
-  const pending: Message[] = []
-  for (let index = localMessages.length - 1; index >= 0; index -= 1) {
-    const message = localMessages[index]!
-    if (serverIds.has(message.id)) break
-    if (message.role === 'user' && message.id.endsWith(':input')) {
-      const responseId = message.id.slice(0, -':input'.length)
-      if (serverIds.has(responseId)) break
-    }
-    pending.unshift(message)
-  }
-  if (!pending.length) return serverMessages
-
-  const hasInFlight = pending.some((message) => message.role === 'assistant' && !message.done)
-  const lastServerId = serverMessages.at(-1)?.id
-  const lastServerLocalIndex = lastServerId ? localMessages.findIndex((message) => message.id === lastServerId) : -1
-  const serverIsLocalPrefix = lastServerLocalIndex >= 0
-    && serverMessages.every((message) => localMessages.some((local) => local.id === message.id))
-    && lastServerLocalIndex === serverMessages.length - 1
-
-  if (hasInFlight || serverIsLocalPrefix) return [...serverMessages, ...pending]
-  return serverMessages
-}
-
-function toChat(row: ServerChat, current?: Chat, responseSequences: Record<string, number> = {}): Chat {
+function toChat(
+  row: ServerChat,
+  current?: Chat,
+  responseSequences: Record<string, number> = {},
+  streamingId: string | null = null,
+): Chat {
   const selectedResponses = row.responses
     ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
     : undefined
@@ -211,6 +187,7 @@ function toChat(row: ServerChat, current?: Chat, responseSequences: Record<strin
       return { ...message, content: local.content, reasoning: local.reasoning }
     }),
     selectedResponses ? current?.messages : undefined,
+    streamingId,
   )
   return {
     id: row.id,
@@ -415,7 +392,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         response.snapshot.sequence,
       )
     }
-    const chat = toChat(row, state.chats.find((item) => item.id === row.id), responseSequences)
+    const chat = toChat(row, state.chats.find((item) => item.id === row.id), responseSequences, state.streamingId)
     const exists = state.chats.some((item) => item.id === row.id)
     const derivedStreaming = chat.messages.find((message) => message.role === 'assistant' && !message.done)?.id ?? null
     const streamingStillLocal = state.streamingId
