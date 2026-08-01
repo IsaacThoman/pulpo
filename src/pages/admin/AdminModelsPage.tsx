@@ -196,7 +196,7 @@ export function AdminModelsPage() {
           {draft && (
             <ScrollArea className="min-h-0 flex-1">
               <ModelEditorBody
-                key={creating ? `new-${draft.id}` : draft.id}
+                key={creating ? 'new' : draft.id}
                 draft={draft}
                 setDraft={setDraft}
                 creating={creating}
