@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema } from '@pulpo/contracts'
@@ -182,12 +182,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
-    const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, id), isNull(responses.deletedAt))).orderBy(responses.createdAt)
-    const responseLogs = allTurns.length
-      ? await db.select({ responseId: requestLogs.responseId, requestedModelId: requestLogs.requestedModelId })
-        .from(requestLogs).where(inArray(requestLogs.responseId, allTurns.map((turn) => turn.id)))
-      : []
-    const requestedModelByResponse = new Map(responseLogs.map((log) => [log.responseId, log.requestedModelId]))
+    const turnRows = await db.select({ response: responses, requestedModelId: requestLogs.requestedModelId })
+      .from(responses)
+      .leftJoin(requestLogs, eq(requestLogs.responseId, responses.id))
+      .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
+      .orderBy(responses.createdAt)
+    const allTurns = turnRows.map((row) => row.response)
+    const requestedModelByResponse = new Map(turnRows.map((row) => [row.response.id, row.requestedModelId]))
     const attachmentRows = await db.select({
       id: attachments.id,
       originalName: attachments.originalName,

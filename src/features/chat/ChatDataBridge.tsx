@@ -44,6 +44,8 @@ export function ChatDataBridge() {
   const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const revisionRef = useRef(user?.stateRevision ?? 0)
   const currentTabId = useMemo(tabId, [])
+  const activeChatIdRef = useRef(chatId)
+  activeChatIdRef.current = chatId
 
   const chatsQuery = useQuery({
     queryKey: ['chats', userId],
@@ -59,6 +61,8 @@ export function ChatDataBridge() {
     queryKey: ['chat', userId, chatId],
     queryFn: () => apiRequest<ServerChat>(`/api/chats/${chatId}`),
     enabled: Boolean(userId && chatId),
+    retry: false,
+    refetchOnWindowFocus: false,
   })
 
   useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
@@ -94,9 +98,10 @@ export function ChatDataBridge() {
       socket.emit('client.sync', {
         tabId: currentTabId,
         accountRevision: revisionRef.current,
-        activeChatId: chatId,
+        activeChatId: activeChatIdRef.current,
         responseCursors: Object.fromEntries(cursors.map((cursor) => [cursor.responseId, cursor.sequence])),
       }, applySync)
+      if (activeChatIdRef.current) socket.emit('chat.subscribe', { chatId: activeChatIdRef.current })
       void flushOutbox(userId).then(() => queryClient.invalidateQueries({ queryKey: ['chats', userId] }))
     }
 
@@ -105,7 +110,7 @@ export function ChatDataBridge() {
     socket.on('response.snapshot', applyResponseSnapshot)
     socket.on('response.completed', (completion) => {
       if (!useSettings.getState().notifications) return
-      if (completion.chatId === chatId && document.visibilityState === 'visible') return
+      if (completion.chatId === activeChatIdRef.current && document.visibilityState === 'visible') return
       setCompletionToasts((current) => current.some((toast) => toast.responseId === completion.responseId)
         ? current
         : [...current, completion].slice(-3))
@@ -133,7 +138,7 @@ export function ChatDataBridge() {
       socket.disconnect()
       socketRef.current = null
     }
-  }, [userId, userRole, currentTabId, applyResponseEvent, applyResponseSnapshot, chatId])
+  }, [userId, userRole, currentTabId, applyResponseEvent, applyResponseSnapshot])
 
   useEffect(() => {
     const socket = socketRef.current
