@@ -8,8 +8,8 @@ import { SaveBar, Section, Toggle } from '@/components/admin/kit'
 const defaults: AgentSettings = {
   enabled: false,
   imageDigest: 'ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:' + '0'.repeat(64),
-  warmCapacity: 1, maxActiveWorkspaces: 10, cpu: '2', memory: '4Gi', ephemeralStorage: '20Gi',
-  idleTimeoutSeconds: 3600, hardTimeoutSeconds: 28800, maxModelTurns: 30, maxToolCalls: 100,
+  warmCapacity: 1, maxActiveWorkspaces: 3, cpu: '2', memory: '2Gi', ephemeralStorage: '20Gi',
+  idleTimeoutSeconds: 1800, hardTimeoutSeconds: 14400, workspaceWaitTimeoutSeconds: 900, maxModelTurns: 30, maxToolCalls: 100,
   responseTimeoutSeconds: 1800, commandTimeoutSeconds: 600, maxToolOutputBytes: 100000,
 }
 
@@ -33,6 +33,7 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>Ephemeral disk</span><Input value={value.ephemeralStorage} onChange={(event) => setValue({ ...value, ephemeralStorage: event.target.value })} /></label>
         <label className="space-y-1 text-xs"><span>Idle timeout (seconds)</span>{number('idleTimeoutSeconds', 60)}</label>
         <label className="space-y-1 text-xs"><span>Hard timeout (seconds)</span>{number('hardTimeoutSeconds', 300)}</label>
+        <label className="space-y-1 text-xs"><span>Capacity wait timeout (seconds)</span>{number('workspaceWaitTimeoutSeconds', 30)}</label>
         <label className="space-y-1 text-xs"><span>Maximum model turns</span>{number('maxModelTurns', 1)}</label>
         <label className="space-y-1 text-xs"><span>Maximum tool calls</span>{number('maxToolCalls', 1)}</label>
         <label className="space-y-1 text-xs"><span>Response timeout (seconds)</span>{number('responseTimeoutSeconds', 60)}</label>

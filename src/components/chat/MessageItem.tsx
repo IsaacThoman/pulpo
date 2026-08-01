@@ -120,11 +120,12 @@ export const MessageItem = memo(function MessageItem({
   streaming: boolean
   activeModelId: string
 }) {
-  const { regenerate, editUserMessage, editAssistantMessage, deleteUserMessage } = useChat()
+  const { regenerate, editUserMessage, editAssistantMessage, deleteUserMessage, stopStreaming, continueWithoutAgent } = useChat()
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [reasoningOpen, setReasoningOpen] = useState(false)
+  const [capacityActionPending, setCapacityActionPending] = useState(false)
   const hasAttachments = Boolean(message.attachments?.length)
   const submitEdit = () => {
     const content = draft.trim()
@@ -305,16 +306,30 @@ export const MessageItem = memo(function MessageItem({
         {message.outputItems
           ?.filter((item) => !['message', 'reasoning'].includes((item as { type?: string }).type ?? ''))
           .map((item, index) => {
-            const typed = item as { type?: string; tool?: string; status?: string; state?: string; arguments?: unknown; output?: string; isError?: boolean; error?: string }
+            const typed = item as { type?: string; tool?: string; status?: string; state?: string; position?: number; arguments?: unknown; output?: string; isError?: boolean; error?: string }
             const type = typed.type ?? 'unknown'
             if (type === 'pulpo_workspace') {
-              const active = typed.state === 'provisioning'
+              const active = typed.state === 'waiting' || typed.state === 'provisioning'
               const failed = typed.state === 'expired' || typed.state === 'unavailable'
+              const label = typed.state === 'waiting'
+                ? `Waiting for workspace${typeof typed.position === 'number' ? ` (queue position ${typed.position})` : ''}`
+                : typed.state === 'continuing_without_agent' ? 'Continuing without agent tools' : `Workspace ${typed.state}`
               return (
-                <div key={`${type}:${index}`} role="status" className="mt-3 flex items-center gap-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-                  {active ? <Loader2 className="size-3.5 animate-spin" /> : failed ? <XCircle className="size-3.5 text-destructive" /> : <CheckCircle2 className="size-3.5 text-emerald-600" />}
-                  <span>Workspace {typed.state}</span>
-                  {typed.error && <span className="ml-auto text-destructive">{typed.error}</span>}
+                <div key={`${type}:${index}`} role="status" className="mt-3 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    {active ? <Loader2 className="size-3.5 animate-spin" /> : failed ? <XCircle className="size-3.5 text-destructive" /> : <CheckCircle2 className="size-3.5 text-emerald-600" />}
+                    <span>{label}</span>
+                    {typed.error && <span className="ml-auto text-destructive">{typed.error}</span>}
+                  </div>
+                  {typed.state === 'waiting' && (
+                    <div className="mt-2 flex flex-wrap gap-2 border-t pt-2">
+                      <Button size="sm" variant="outline" onClick={() => stopStreaming(message.id)}>Cancel generation</Button>
+                      <Button size="sm" disabled={capacityActionPending} onClick={() => {
+                        setCapacityActionPending(true)
+                        void continueWithoutAgent(message.id).catch(() => setCapacityActionPending(false))
+                      }}>{capacityActionPending ? 'Continuing…' : 'Continue without agent'}</Button>
+                    </div>
+                  )}
                 </div>
               )
             }

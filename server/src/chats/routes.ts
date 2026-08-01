@@ -1,9 +1,9 @@
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chatImportSources, chats, folders, models, requestLogs, responses, users } from '../database/schema.js'
+import { attachments, chatImportSources, chats, folders, models, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -261,10 +261,24 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (!['queued', 'in_progress'].includes(response.status)) return toSnapshot(response)
     await requestCancellation(id)
     await db.update(responses).set({ status: 'cancelled', completedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, id))
+    await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), error: 'Generation cancelled while waiting for capacity', updatedAt: new Date() }).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning')))
     const [log] = await db.update(requestLogs).set({ status: 'cancelled', errorCategory: 'cancellation', completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.responseId, id)).returning({ id: requestLogs.id })
     if (log) await publishAdminUsage(log.id, true)
     const [cancelled] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
     return toSnapshot(cancelled!)
+  })
+
+  app.post('/api/responses/:id/continue-without-agent', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [response] = await db.select().from(responses).where(and(eq(responses.id, id), eq(responses.userId, user.id), isNull(responses.deletedAt))).limit(1)
+    if (!response) throw notFound('Response')
+    if (!response.agentMode || !['queued', 'in_progress'].includes(response.status)) throw new AppError(409, 'agent_not_waiting', 'This response cannot continue without agent tools')
+    const [waitingLease] = await db.select({ id: workspaceLeases.id }).from(workspaceLeases).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning'), inArray(workspaceLeases.capacityState, ['waiting', 'claiming']))).limit(1)
+    if (!waitingLease) throw new AppError(409, 'agent_not_waiting', 'This response is not waiting for workspace capacity')
+    await db.update(responses).set({ agentCapacityAction: 'continue_without_agent', updatedAt: new Date() }).where(eq(responses.id, id))
+    const [updated] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
+    return toSnapshot(updated!)
   })
 
   app.get('/api/folders', async (request) => {

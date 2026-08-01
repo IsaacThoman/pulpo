@@ -118,7 +118,10 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     },
     streamFn: (model, context, options) => streams.streamSimple(model as Model<'openai-responses'>, context, { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries }),
     toolExecution: 'sequential',
-    beforeToolCall: async () => toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined,
+    beforeToolCall: async () => {
+      if (manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
+      return toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
+    },
   })
   agent.subscribe(async (event) => {
     if (event.type === 'turn_start') {
@@ -159,6 +162,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       const item = toolItems.get(event.toolCallId); if (item) Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError })
       await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: event.isError ? 'failed' : 'completed', output, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError })
+      if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshot()
     }
     await db.update(agentRuns).set({ workspaceLeaseId: manager.leaseId, context: { messages: agent.state.messages, billingTurns }, modelTurns, toolCalls, updatedAt: new Date() }).where(eq(agentRuns.id, runId))

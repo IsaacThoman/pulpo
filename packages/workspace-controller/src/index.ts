@@ -19,7 +19,7 @@ const kc = new k8s.KubeConfig(); kc.loadFromDefault()
 const core = kc.makeApiClient(k8s.CoreV1Api)
 type Lease = { id: string; podName: string; podIp: string; daemonToken: string; createdAt: number; lastUsedAt: number; idleMs: number; hardMs: number }
 type WorkspaceSpec = { imageDigest: string; cpu: string; memory: string; ephemeralStorage: string }
-let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '4Gi', ephemeralStorage: '20Gi' }
+let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2Gi', ephemeralStorage: '20Gi' }
 const leases = new Map<string, Lease>()
 
 function json(response: ServerResponse, status: number, value: unknown): void { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)) }
@@ -67,7 +67,7 @@ async function claim(input: { imageDigest?: string; resources?: Partial<Omit<Wor
   desiredSpec = { imageDigest: input.imageDigest, cpu: input.resources?.cpu || desiredSpec.cpu, memory: input.resources?.memory || desiredSpec.memory, ephemeralStorage: input.resources?.ephemeralStorage || desiredSpec.ephemeralStorage }
   if (Number.isInteger(input.warmCapacity)) warmCapacity = Math.max(0, Math.min(100, input.warmCapacity!))
   await reconcile()
-  if (leases.size >= Math.max(1, input.maxActiveWorkspaces ?? 10)) throw new Error('Maximum active workspace capacity reached')
+  if (leases.size >= Math.max(1, input.maxActiveWorkspaces ?? 3)) throw new Error('Maximum active workspace capacity reached')
   let pod: k8s.V1Pod | undefined
   const deadline = Date.now() + 90_000
   while (!pod && Date.now() < deadline) {
@@ -77,7 +77,7 @@ async function claim(input: { imageDigest?: string; resources?: Partial<Omit<Wor
   }
   if (!pod?.metadata?.name || !pod.status?.podIP) throw new Error('No warm workspace is ready')
   const id = randomUUID()
-  const createdAt = Date.now(); const idleMs = (input.idleTimeoutSeconds ?? 3600) * 1000; const hardMs = (input.hardTimeoutSeconds ?? 28800) * 1000
+  const createdAt = Date.now(); const idleMs = (input.idleTimeoutSeconds ?? 1800) * 1000; const hardMs = (input.hardTimeoutSeconds ?? 14400) * 1000
   await core.patchNamespacedPod({ namespace, name: pod.metadata.name, body: { metadata: { labels: { 'pulpo.dev/state': 'claimed', 'pulpo.dev/lease-id': id }, annotations: { 'pulpo.dev/created-at': String(createdAt), 'pulpo.dev/last-used-at': String(createdAt), 'pulpo.dev/idle-ms': String(idleMs), 'pulpo.dev/hard-ms': String(hardMs) } } } }, k8s.setHeaderOptions('content-type', k8s.PatchStrategy.MergePatch))
   const lease: Lease = { id, podName: pod.metadata.name, podIp: pod.status.podIP, daemonToken: pod.metadata.annotations?.['pulpo.dev/daemon-token'] ?? '', createdAt, lastUsedAt: createdAt, idleMs, hardMs }
   leases.set(id, lease); void reconcile(); return lease

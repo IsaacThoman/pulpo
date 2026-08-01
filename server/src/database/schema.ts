@@ -235,6 +235,7 @@ export const responses = pgTable('responses', {
   status: responseStatusEnum('status').notNull().default('queued'),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   agentMode: boolean('agent_mode').notNull().default(false),
+  agentCapacityAction: text('agent_capacity_action'),
   input: jsonb('input').notNull(),
   instructions: text('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
@@ -301,9 +302,11 @@ export const attachments = pgTable('attachments', {
 export const workspaceLeases = pgTable('workspace_leases', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   controllerLeaseId: text('controller_lease_id'),
   status: workspaceLeaseStatusEnum('status').notNull().default('provisioning'),
+  capacityState: text('capacity_state'),
   imageDigest: text('image_digest').notNull(),
   error: text('error'),
   claimedAt: timestamp('claimed_at', { withTimezone: true }),
@@ -312,7 +315,7 @@ export const workspaceLeases = pgTable('workspace_leases', {
   hardExpiresAt: timestamp('hard_expires_at', { withTimezone: true }),
   releasedAt: timestamp('released_at', { withTimezone: true }),
   ...timestamps,
-}, (table) => [uniqueIndex('workspace_leases_chat_active_unique').on(table.chatId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt)])
+}, (table) => [uniqueIndex('workspace_leases_chat_active_unique').on(table.chatId).where(sql`${table.status} in ('provisioning', 'ready')`), index('workspace_leases_expiry_idx').on(table.expiresAt), index('workspace_leases_queue_idx').on(table.capacityState, table.createdAt)])
 
 export const agentRuns = pgTable('agent_runs', {
   id: uuid('id').primaryKey(),
