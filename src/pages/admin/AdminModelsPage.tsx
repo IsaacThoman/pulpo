@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { chatPresetsSchema, type ChatPreset, type ChatPresetAction, type ChatPresetChoice, type ChatPresetIcon } from '@pulpo/contracts'
-import { Check, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, ChevronRight, Copy, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -797,6 +797,14 @@ function newPresetId(prefix: 'preset' | 'choice', used: Iterable<string>): strin
   return id
 }
 
+function moveItem<T>(items: T[], from: number, to: number): T[] {
+  if (from === to || from < 0 || to < 0 || from >= items.length || to >= items.length) return items
+  const next = [...items]
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item)
+  return next
+}
+
 function validatePresetDrafts(presets: ChatPreset[], modelId: string, allowedParameters: string[], models: AdminModel[]): string[] {
   const errors = chatPresetsSchema.safeParse(presets).error?.issues.map((issue) => issue.message) ?? []
   const allowed = new Set(allowedParameters)
@@ -874,6 +882,7 @@ function PresetsEditor({
     return next
   })
   const update = (index: number, patch: Partial<ChatPreset>) => onChange(presets.map((preset, i) => i === index ? { ...preset, ...patch } : preset))
+  const movePreset = (index: number, offset: -1 | 1) => onChange(moveItem(presets, index, index + offset))
 
   return (
     <div className="space-y-3">
@@ -907,16 +916,37 @@ function PresetsEditor({
                   <IconSelect value={preset.icon} onChange={(icon) => update(index, { icon: icon ?? 'circle' })} />
                 </Field>
               </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="mt-6"
-                aria-label={`Remove ${preset.name || 'preset'}`}
-                onClick={() => onChange(presets.filter((_, i) => i !== index))}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+              <div className="mt-6 flex items-center">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={index === 0}
+                  aria-label={`Move ${preset.name || 'preset'} up`}
+                  onClick={() => movePreset(index, -1)}
+                >
+                  <ArrowUp className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={index === presets.length - 1}
+                  aria-label={`Move ${preset.name || 'preset'} down`}
+                  onClick={() => movePreset(index, 1)}
+                >
+                  <ArrowDown className="size-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Remove ${preset.name || 'preset'}`}
+                  onClick={() => onChange(presets.filter((_, i) => i !== index))}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -936,7 +966,7 @@ function PresetsEditor({
                 }
                 return (
                   <div key={choice.id} className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2.5">
-                    <div className="grid grid-cols-[1fr_120px_32px] gap-2">
+                    <div className="grid grid-cols-[1fr_120px_auto] gap-2">
                       <Input
                         className="h-8"
                         placeholder="Display name"
@@ -944,21 +974,43 @@ function PresetsEditor({
                         onChange={(e) => patchChoice({ displayName: e.target.value })}
                       />
                       <IconSelect value={choice.icon} allowDefault onChange={(icon) => patchChoice({ icon })} />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Remove ${choice.displayName || 'choice'}`}
-                        onClick={() => {
-                          setParameterEditorValidity(parameterEditorId, true)
-                          update(index, {
-                            choices: preset.choices.filter((_, i) => i !== choiceIndex),
-                            defaultChoiceId: preset.defaultChoiceId === choice.id ? null : preset.defaultChoiceId,
-                          })
-                        }}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
+                      <div className="flex items-center">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={choiceIndex === 0}
+                          aria-label={`Move ${choice.displayName || 'choice'} up`}
+                          onClick={() => update(index, { choices: moveItem(preset.choices, choiceIndex, choiceIndex - 1) })}
+                        >
+                          <ArrowUp className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={choiceIndex === preset.choices.length - 1}
+                          aria-label={`Move ${choice.displayName || 'choice'} down`}
+                          onClick={() => update(index, { choices: moveItem(preset.choices, choiceIndex, choiceIndex + 1) })}
+                        >
+                          <ArrowDown className="size-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove ${choice.displayName || 'choice'}`}
+                          onClick={() => {
+                            setParameterEditorValidity(parameterEditorId, true)
+                            update(index, {
+                              choices: preset.choices.filter((_, i) => i !== choiceIndex),
+                              defaultChoiceId: preset.defaultChoiceId === choice.id ? null : preset.defaultChoiceId,
+                            })
+                          }}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
                     </div>
                     <div className="grid grid-cols-[140px_1fr] gap-2">
                       <Select value={choice.action.type} onValueChange={(type: ChatPresetAction['type']) => setAction(type)}>
