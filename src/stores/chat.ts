@@ -81,8 +81,8 @@ interface ChatState {
   toggleFolder: (id: string) => void
   deleteFolder: (id: string) => void
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean) => string
-  regenerate: (chatId: string, messageId: string) => void
-  editUserMessage: (chatId: string, messageId: string, content: string) => void
+  regenerate: (chatId: string, messageId: string, modelId: string) => void
+  editUserMessage: (chatId: string, messageId: string, content: string, modelId: string) => void
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
   deleteUserMessage: (chatId: string, messageId: string) => void
   activateBranch: (chatId: string, responseId: string) => void
@@ -700,11 +700,28 @@ export const useChat = create<ChatState>()((set, get) => ({
     return id
   },
 
-  regenerate: (chatId, messageId) => {
-    void optimisticRequest('POST', `/api/messages/${messageId}/regenerate`).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  regenerate: (chatId, messageId, modelId) => {
+    const generation = resolveGeneration(
+      chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
+      useSettings.getState().generation[modelId],
+      modelId,
+    )
+    void optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
+      modelId,
+      presetSelections: generation.selections,
+    }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
-  editUserMessage: (chatId, messageId, content) => {
-    void optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
+  editUserMessage: (chatId, messageId, content, modelId) => {
+    const generation = resolveGeneration(
+      chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
+      useSettings.getState().generation[modelId],
+      modelId,
+    )
+    void optimisticRequest('PATCH', `/api/messages/${messageId}`, {
+      content,
+      modelId,
+      presetSelections: generation.selections,
+    }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
   editAssistantMessage: (chatId, messageId, content) => {
     void optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }).then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))

@@ -194,7 +194,13 @@ export function ChatPage() {
               )}
             >
               {chat.messages.map((m) => (
-                <MessageItem key={m.id} chat={chat} message={m} streaming={m.role === 'assistant' && !m.done} />
+                <MessageItem
+                  key={m.id}
+                  chat={chat}
+                  message={m}
+                  streaming={m.role === 'assistant' && !m.done}
+                  activeModelId={modelId}
+                />
               ))}
               <div ref={bottomRef} className="h-px" />
             </div>

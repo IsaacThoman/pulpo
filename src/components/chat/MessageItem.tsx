@@ -111,10 +111,12 @@ export const MessageItem = memo(function MessageItem({
   chat,
   message,
   streaming,
+  activeModelId,
 }: {
   chat: Chat
   message: Message
   streaming: boolean
+  activeModelId: string
 }) {
   const { regenerate, editUserMessage, editAssistantMessage, deleteUserMessage } = useChat()
   const showReasoning = useSettings((s) => s.showReasoning)
@@ -125,7 +127,7 @@ export const MessageItem = memo(function MessageItem({
     const content = draft.trim()
     if (!content || (message.role === 'assistant' && content === message.content)) return
     setEditing(false)
-    if (message.role === 'user') editUserMessage(chat.id, message.id, content)
+    if (message.role === 'user') editUserMessage(chat.id, message.id, content, activeModelId)
     else editAssistantMessage(chat.id, message.id, content)
   }
   const handleEditKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -313,7 +315,7 @@ export const MessageItem = memo(function MessageItem({
               >
                 <Pencil className="size-3.5" />
               </ActionButton>
-              <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id)}>
+              <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
                 <RefreshCw className="size-3.5" />
               </ActionButton>
               {(message.tokensIn !== undefined || message.cost !== undefined) && (

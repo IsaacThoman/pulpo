@@ -40,12 +40,18 @@ function editedOutput(content: string): unknown[] {
   }]
 }
 
+const generationSelectionSchema = z.object({
+  modelId: z.string().trim().min(1).optional(),
+  presetSelections: z.record(z.string(), z.string()).optional(),
+})
+
 export async function registerMessageRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/messages/:id/regenerate', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
-    const modelId = await requestedModelId(original.id, original.modelId)
+    const selection = generationSelectionSchema.parse(request.body ?? {})
+    const modelId = selection.modelId ?? await requestedModelId(original.id, original.modelId)
     const attachmentIds = responseAttachmentIds(original.input)
     const created = await createResponse({
       userId: user.id,
@@ -57,7 +63,11 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
         input: responseInputText(original.input), modelId,
-        executionMode: original.executionMode, presetSelections: original.presetSelections as Record<string, string>, attachmentIds,
+        executionMode: selection.modelId ? undefined : original.executionMode,
+        presetSelections: selection.modelId
+          ? selection.presetSelections ?? {}
+          : original.presetSelections as Record<string, string>,
+        attachmentIds,
       },
     })
     await bumpRevision(user.id, original.chatId)
@@ -69,10 +79,12 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
-    const { content } = z.object({ content: z.string().trim().min(1).max(1_000_000) }).parse(request.body)
+    const { content, modelId: selectedModelId, presetSelections } = generationSelectionSchema.extend({
+      content: z.string().trim().min(1).max(1_000_000),
+    }).parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (id.endsWith(':input')) {
-      const modelId = await requestedModelId(original.id, original.modelId)
+      const modelId = selectedModelId ?? await requestedModelId(original.id, original.modelId)
       const attachmentIds = responseAttachmentIds(original.input)
       const created = await createResponse({
         userId: user.id,
@@ -82,8 +94,12 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         branchReason: 'user_edit',
         idempotencyKey,
         input: {
-          input: content, modelId, executionMode: original.executionMode,
-          presetSelections: original.presetSelections as Record<string, string>, attachmentIds,
+          input: content, modelId,
+          executionMode: selectedModelId ? undefined : original.executionMode,
+          presetSelections: selectedModelId
+            ? presetSelections ?? {}
+            : original.presetSelections as Record<string, string>,
+          attachmentIds,
         },
       })
       await bumpRevision(user.id, original.chatId)
