@@ -165,6 +165,7 @@ export async function createResponse(options: CreateResponseOptions) {
 export function toSnapshot(response: typeof responses.$inferSelect): ResponseSnapshot {
   return {
     responseId: response.id,
+    modelId: response.actualModelId ?? response.modelId,
     status: response.status,
     sequence: response.lastSequence,
     output: response.output as unknown[],

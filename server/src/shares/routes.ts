@@ -73,7 +73,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       id: row.share.id,
       chat: { id: row.chat.id, title: row.chat.title, modelId: row.chat.modelId, createdAt: row.chat.createdAt },
       responses: turns.map((turn) => ({
-        id: turn.id, modelId: turn.modelId, status: turn.status, input: turn.input,
+        id: turn.id, modelId: turn.actualModelId ?? turn.modelId, status: turn.status, input: turn.input,
         output: publicOutput(turn.output as unknown[]), createdAt: turn.createdAt, completedAt: turn.completedAt,
       })),
     }

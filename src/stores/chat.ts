@@ -17,6 +17,7 @@ interface ServerResponse {
   parentResponseId: string | null
   userMessageId: string | null
   modelId: string
+  actualModelId?: string | null
   status: ResponseSnapshot['status']
   input: unknown[]
   output: unknown[]
@@ -154,7 +155,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
       },
       {
         id: response.id, role: 'assistant' as const, content: outputText(response.output),
-        modelId: response.modelId, timestamp: timestamp + 1, done,
+        modelId: response.actualModelId ?? response.modelId, timestamp: timestamp + 1, done,
         reasoning: reasoningText(response.output), presetSelections: response.presetSelections,
         tokensIn: response.usage?.inputTokens, tokensOut: response.usage?.outputTokens,
         latencyMs: response.completedAt
@@ -318,7 +319,15 @@ function flushResponseEvents(responseId: string): void {
         if (response.id !== responseId) return response
         const base = accumulatedResponseSnapshots.get(responseId) ?? response.snapshot
         const snapshot = rememberResponseSnapshot(pending.events.reduce(applyEventToSnapshot, base))
-        return { ...response, status: snapshot.status, output: snapshot.output, usage: snapshot.usage, error: snapshot.error as ServerResponse['error'], snapshot }
+        return {
+          ...response,
+          actualModelId: snapshot.modelId ?? response.actualModelId,
+          status: snapshot.status,
+          output: snapshot.output,
+          usage: snapshot.usage,
+          error: snapshot.error as ServerResponse['error'],
+          snapshot,
+        }
       }),
     }
   })
@@ -350,6 +359,7 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
         const done = !['queued', 'in_progress'].includes(merged.status)
         return {
           ...response,
+          actualModelId: merged.modelId ?? response.actualModelId,
           status: merged.status,
           output: merged.output,
           usage: merged.usage,
@@ -461,6 +471,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           const done = !['queued', 'in_progress'].includes(snapshot.status)
           return {
             ...message,
+            modelId: snapshot.modelId ?? message.modelId,
             content: snapshot.output.length ? outputText(snapshot.output) : message.content,
             reasoning: snapshot.output.length ? reasoningText(snapshot.output) : message.reasoning,
             done,

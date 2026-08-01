@@ -119,4 +119,19 @@ describe('response snapshot accumulation', () => {
     expect(terminal.status).toBe('completed')
     expect(terminal.output).toMatchObject([{ content: [{ text: 'final answer' }] }])
   })
+
+  it('updates and preserves the model that actually handled a response', () => {
+    const fallback = mergeResponseSnapshots(streamingSnapshot, {
+      ...streamingSnapshot,
+      modelId: 'fallback-model',
+      sequence: 1,
+    })
+    const legacyCheckpoint = mergeResponseSnapshots(fallback, {
+      ...streamingSnapshot,
+      sequence: 2,
+    })
+
+    expect(fallback.modelId).toBe('fallback-model')
+    expect(legacyCheckpoint.modelId).toBe('fallback-model')
+  })
 })
