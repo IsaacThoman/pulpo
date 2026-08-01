@@ -17,6 +17,13 @@ export function attachmentUploadContentType(storageDriver: 'local' | 's3', mimeT
   return storageDriver === 'local' ? 'application/octet-stream' : mimeType
 }
 
+export function attachmentStorageErrorCode(cause: unknown): string {
+  if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') {
+    return `attachment_storage_${cause.code.toLowerCase()}`
+  }
+  return 'attachment_storage_error'
+}
+
 function extensionOf(name: string): string {
   const index = name.lastIndexOf('.')
   return index < 0 ? '' : name.slice(index).toLowerCase()
@@ -56,7 +63,12 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     if (!attachment) throw notFound('Attachment')
     const body = request.body as Buffer
     if (!Buffer.isBuffer(body) || body.byteLength !== attachment.sizeBytes) throw new AppError(400, 'attachment_size_mismatch', 'Uploaded size does not match the declared size')
-    await getBlobStore().put(key, body, { contentType: attachment.mimeType, contentLength: body.byteLength })
+    try {
+      await getBlobStore().put(key, body, { contentType: attachment.mimeType, contentLength: body.byteLength })
+    } catch (cause) {
+      request.log.error({ err: cause }, 'Attachment storage write failed')
+      throw new AppError(500, attachmentStorageErrorCode(cause), 'Attachment storage write failed', 'server_error')
+    }
     reply.code(204).send()
   })
 
