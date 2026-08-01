@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BarChart3, Save } from 'lucide-react'
+import { BarChart3, Clock, Save } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
-import { formatBalance, formatUsd } from '@/lib/format'
+import { formatBalance, formatDate, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
@@ -39,12 +39,6 @@ const METRICS: { id: LBMetric; label: string }[] = [
   { id: 'balance', label: 'Balance' },
   { id: 'water', label: 'Estimated water' },
 ]
-const USAGE_METRICS: { id: Metric; label: string }[] = [
-  { id: 'cost', label: 'USD' },
-  { id: 'tokens', label: 'Tokens' },
-  { id: 'calls', label: 'Calls' },
-]
-
 const BAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
 
 function metricLabel(m: LBMetric): string {
@@ -152,8 +146,7 @@ export function LeaderboardPage() {
   const setLeaderboardPref = useUsage((s) => s.setLeaderboardPref)
   const loadLeaderboard = useUsage((s) => s.loadLeaderboard)
   const [range, setRange] = useState<TimeRange>('30d')
-  const [rankingMetric, setRankingMetric] = useState<LBMetric>('cost')
-  const [usageMetric, setUsageMetric] = useState<Metric>('cost')
+  const [metric, setMetric] = useState<LBMetric>('cost')
   const [activity, setActivity] = useState<LeaderboardActivity | null>(null)
   const [records, setRecords] = useState<PublicUsageRecord[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -236,22 +229,26 @@ export function LeaderboardPage() {
       }))
       .sort(
         (a, b) =>
-          rowValue(b, rankingMetric) - rowValue(a, rankingMetric) ||
+          rowValue(b, metric) - rowValue(a, metric) ||
           b.cost - a.cost ||
           displayName(a.user).localeCompare(displayName(b.user))
       )
-  }, [users, rankingMetric])
+  }, [users, metric])
 
   const chartData = useMemo(
     () =>
       rows.map((r, i) => ({
         name: displayName(r.user),
-        value: rowValue(r, rankingMetric),
+        value: rowValue(r, metric),
         fill: barColor(r.user),
         rank: i + 1,
       })),
-    [rows, rankingMetric]
+    [rows, metric]
   )
+
+  // Balance is a point-in-time ranking and water is a spend-derived estimate;
+  // OpenWebUI Monitor uses the spend series for both in the daily activity view.
+  const dailyMetric: Metric = metric === 'tokens' || metric === 'calls' ? metric : 'cost'
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return
@@ -270,9 +267,11 @@ export function LeaderboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-medium">Leaderboard</h2>
-        <ToggleGroup options={RANGES} value={range} onChange={setRange} />
+      <div>
+        <div className="text-lg font-medium">{me.name}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {me.email} · Joined {formatDate(me.joinedAt)}
+        </div>
       </div>
 
       {/* your leaderboard preferences */}
@@ -316,47 +315,27 @@ export function LeaderboardPage() {
 
       {/* usage overview (all users) */}
       <section>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="flex items-center gap-2 text-xs font-medium">
-            <BarChart3 className="size-3" />
-            Usage overview
-          </span>
-          <div className="h-4 w-px bg-border" />
-          <ToggleGroup options={USAGE_METRICS} value={usageMetric} onChange={setUsageMetric} />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex items-center gap-2 text-xs font-medium">
+              <Clock className="size-3" />
+              Usage overview
+            </span>
+            <div className="h-4 w-px bg-border" />
+            <ToggleGroup options={METRICS} value={metric} onChange={setMetric} />
+          </div>
+          <ToggleGroup options={RANGES} value={range} onChange={setRange} />
         </div>
         <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />
       </section>
 
-      {loading ? (
-        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
-      ) : error ? (
-        <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
-          <span>{error}</span>
-          <Button size="sm" variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button>
-        </div>
-      ) : (
-        <>
-          <DailyUsageChart
-            data={dailyUsage}
-            contributionData={contributionUsage}
-            metric={usageMetric}
-            periodDayCount={periodDays(range, activity?.summary.firstUsedAt ? Date.parse(activity.summary.firstUsedAt) : null)}
-            modelNames={{ other: 'Other' }}
-          />
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <PublicRecentUsagePanel records={records} nextCursor={nextCursor} loadingMore={loadingMore} error={loadMoreError} onLoadMore={() => void loadMore()} />
-            </div>
-            <PublicTopModelsPanel models={activity?.topModels ?? []} />
-          </div>
-        </>
-      )}
-
-      {/* leaderboard chart */}
+      {/* user ranking — shares the overview metric picker, matching OpenWebUI Monitor */}
       <section>
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <h3 className="text-sm font-medium">User ranking</h3>
-          <ToggleGroup options={METRICS} value={rankingMetric} onChange={setRankingMetric} />
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <BarChart3 className="size-4" />
+            User ranking
+          </span>
           <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
         </div>
         {chartData.length === 0 ? (
@@ -384,11 +363,11 @@ export function LeaderboardPage() {
                   axisLine={{ stroke: 'var(--border)' }}
                   width={48}
                   tickFormatter={(v: number) =>
-                    rankingMetric === 'balance'
+                    metric === 'balance'
                       ? formatBalance(v)
-                      : rankingMetric === 'cost'
+                      : metric === 'cost'
                         ? axisMoney(v)
-                      : rankingMetric === 'water'
+                      : metric === 'water'
                         ? v < 0.1
                           ? v.toFixed(3)
                           : v.toFixed(2)
@@ -397,7 +376,7 @@ export function LeaderboardPage() {
                           : String(Math.round(v))
                   }
                 />
-                <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={rankingMetric} />} />
+                <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
                 <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48}>
                   {chartData.map((d) => (
                     <Cell key={d.rank} fill={d.fill} />
@@ -408,6 +387,31 @@ export function LeaderboardPage() {
           </div>
         )}
       </section>
+
+      {loading ? (
+        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
+      ) : error ? (
+        <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
+          <span>{error}</span>
+          <Button size="sm" variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button>
+        </div>
+      ) : (
+        <>
+          <DailyUsageChart
+            data={dailyUsage}
+            contributionData={contributionUsage}
+            metric={dailyMetric}
+            periodDayCount={periodDays(range, activity?.summary.firstUsedAt ? Date.parse(activity.summary.firstUsedAt) : null)}
+            modelNames={{ other: 'Other' }}
+          />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <PublicRecentUsagePanel records={records} nextCursor={nextCursor} loadingMore={loadingMore} error={loadMoreError} onLoadMore={() => void loadMore()} />
+            </div>
+            <PublicTopModelsPanel models={activity?.topModels ?? []} />
+          </div>
+        </>
+      )}
 
     </div>
   )
