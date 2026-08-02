@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Download, ImageIcon, Loader2, Paperclip, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Attachment } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -104,31 +105,82 @@ export function MessageAttachmentList({
 function MessageImagePreview({ attachment }: { attachment: Attachment }) {
   const { url, loading } = useAttachmentPreviewUrl(attachment.id)
   const userId = useAuth((s) => s.user?.id)
+  const [previewOpen, setPreviewOpen] = useState(false)
+
+  const handleDownload = () => {
+    if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
+  }
 
   return (
-    <div
-      title={attachment.name}
-      className="group/img relative overflow-hidden rounded-xl border bg-background/40 shadow-sm"
-    >
-      <AttachmentDownloadButton
-        name={attachment.name}
-        onDownload={() => {
-          if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
-        }}
-      />
-      {url ? (
-        <img
-          src={url}
-          alt={attachment.name}
-          className="max-h-64 max-w-[min(100%,18rem)] object-contain"
-          draggable={false}
-        />
-      ) : (
-        <div className="flex h-32 w-40 items-center justify-center bg-muted/50 text-muted-foreground">
-          {loading ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-5" />}
+    <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <div
+        title={attachment.name}
+        className="group/img relative overflow-hidden rounded-xl border bg-background/40 shadow-sm"
+      >
+        <AttachmentDownloadButton name={attachment.name} onDownload={handleDownload} />
+        {url ? (
+          <button
+            type="button"
+            aria-label={`Preview ${attachment.name}`}
+            onClick={() => setPreviewOpen(true)}
+            className="block cursor-zoom-in"
+          >
+            <img
+              src={url}
+              alt={attachment.name}
+              className="max-h-64 max-w-[min(100%,18rem)] object-contain"
+              draggable={false}
+            />
+          </button>
+        ) : (
+          <div className="flex h-32 w-40 items-center justify-center bg-muted/50 text-muted-foreground">
+            {loading ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-5" />}
+          </div>
+        )}
+      </div>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[calc(100dvh-4rem)] w-[calc(100vw-4rem)] max-w-none items-center justify-center border-0 bg-transparent p-0 shadow-none"
+      >
+        <DialogTitle className="sr-only">Preview of {attachment.name}</DialogTitle>
+        <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label={`Download ${attachment.name}`}
+                onClick={handleDownload}
+                className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
+              >
+                <Download className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Download</TooltipContent>
+          </Tooltip>
+          <DialogClose asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              aria-label="Close preview"
+              className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
+            >
+              <X className="size-4" />
+            </Button>
+          </DialogClose>
         </div>
-      )}
-    </div>
+        {url && (
+          <img
+            src={url}
+            alt={attachment.name}
+            className="max-h-full max-w-full object-contain"
+            draggable={false}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
