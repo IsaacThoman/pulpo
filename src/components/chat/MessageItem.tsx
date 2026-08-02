@@ -420,6 +420,37 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
   return segments
 }
 
+function appendLiveDeltas(segments: TimelineSegment[], content: string, reasoning?: string): TimelineSegment[] {
+  const renderedText = segments.flatMap((segment) => segment.kind === 'text' ? [segment.text] : []).join('')
+  if (content.startsWith(renderedText) && content.length > renderedText.length) {
+    const suffix = content.slice(renderedText.length)
+    const lastTextIndex = segments.reduce(
+      (last, segment, index) => segment.kind === 'text' ? index : last,
+      -1,
+    )
+    if (lastTextIndex >= 0) {
+      const segment = segments[lastTextIndex] as TextSegment
+      segments[lastTextIndex] = { ...segment, text: segment.text + suffix }
+    } else {
+      segments.push({ kind: 'text', text: suffix })
+    }
+  }
+
+  if (reasoning) {
+    const reasoningSteps = segments.flatMap((segment) =>
+      segment.kind === 'activity'
+        ? segment.steps.filter((step): step is ReasoningStep => step.kind === 'reasoning')
+        : [],
+    )
+    const renderedReasoning = reasoningSteps.map((step) => step.text).join('')
+    if (reasoning.startsWith(renderedReasoning) && reasoning.length > renderedReasoning.length) {
+      const last = reasoningSteps.at(-1)
+      if (last) last.text += reasoning.slice(renderedReasoning.length)
+    }
+  }
+  return segments
+}
+
 const WORKSPACE_ACTIONS_DELAY_MS = 15_000
 
 function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
@@ -597,7 +628,12 @@ export const MessageItem = memo(function MessageItem({
   streaming: boolean
   activeModelId: string
 }) {
-  const { regenerate, editUserMessage, editAssistantMessage, deleteUserMessage, stopStreaming, continueWithoutAgent } = useChat()
+  const regenerate = useChat((state) => state.regenerate)
+  const editUserMessage = useChat((state) => state.editUserMessage)
+  const editAssistantMessage = useChat((state) => state.editAssistantMessage)
+  const deleteUserMessage = useChat((state) => state.deleteUserMessage)
+  const stopStreaming = useChat((state) => state.stopStreaming)
+  const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
@@ -606,7 +642,11 @@ export const MessageItem = memo(function MessageItem({
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
-    if (items.length > 0) return buildTimeline(items, showReasoning)
+    if (items.length > 0) return appendLiveDeltas(
+      buildTimeline(items, showReasoning),
+      message.content,
+      showReasoning ? message.reasoning : undefined,
+    )
     const segments: TimelineSegment[] = []
     if (showReasoning && message.reasoning !== undefined && (message.reasoning || streaming)) {
       segments.push({
@@ -827,7 +867,7 @@ export const MessageItem = memo(function MessageItem({
                     key={`text:${index}`}
                     className={cn('text-[15px]', streaming && isLastText && 'stream-caret')}
                   >
-                    <Markdown content={segment.text} />
+                    <Markdown content={segment.text} streaming={streaming && isLastText} />
                   </div>
                 )
               })}
@@ -892,7 +932,13 @@ export const MessageItem = memo(function MessageItem({
       </div>
     </div>
   )
-})
+}, (previous, next) => (
+  previous.message === next.message
+  && previous.streaming === next.streaming
+  && previous.activeModelId === next.activeModelId
+  && previous.chat.id === next.chat.id
+  && previous.chat.modelId === next.chat.modelId
+))
 
 export function UserAvatar() {
   return (

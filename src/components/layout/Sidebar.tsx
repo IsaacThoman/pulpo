@@ -52,7 +52,11 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
 function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
-  const { togglePin, shareChat, deleteChat, moveToFolder, folders } = useChat()
+  const togglePin = useChat((state) => state.togglePin)
+  const shareChat = useChat((state) => state.shareChat)
+  const deleteChat = useChat((state) => state.deleteChat)
+  const moveToFolder = useChat((state) => state.moveToFolder)
+  const folders = useChat((state) => state.folders)
   return (
     <DropdownMenuContent side="right" align="start" className="w-48">
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
@@ -132,7 +136,8 @@ function ChatRow({
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
   const [title, setTitle] = useState(chat.title)
-  const { renameChat, deleteChat } = useChat()
+  const renameChat = useChat((state) => state.renameChat)
+  const deleteChat = useChat((state) => state.deleteChat)
 
   const actionClassName =
     'invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible'
@@ -221,7 +226,11 @@ export function Sidebar({
 }) {
   const navigate = useNavigate()
   const { chatId } = useParams()
-  const chats = useChat((s) => s.chats)
+  const chatListRevision = useChat((state) => state.chats.map((chat) => (
+    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}`
+  )).join('|'))
+  void chatListRevision
+  const chats = useChat.getState().chats
   const folders = useChat((s) => s.folders)
   const toggleFolder = useChat((s) => s.toggleFolder)
   const addFolder = useChat((s) => s.addFolder)

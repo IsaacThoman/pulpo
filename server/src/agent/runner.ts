@@ -49,6 +49,7 @@ function initialMessages(context: unknown): AgentMessage[] {
 
 export async function processAgentGeneration(responseId: string): Promise<void> {
   const startedAt = Date.now()
+  const config = getConfig()
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
@@ -68,7 +69,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   type RuntimeModel = { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect; apiKey: string; piModel: Model<'openai-responses'> }
   const runtime = (model: typeof models.$inferSelect, provider: typeof providerConnections.$inferSelect): RuntimeModel => ({
     model, provider,
-    apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY),
+    apiKey: decryptSecret(provider.encryptedApiKey, config.ENCRYPTION_KEY),
     piModel: { id: model.upstreamModelId, name: model.name, api: 'openai-responses', provider: 'openai', baseUrl: provider.baseUrl, reasoning: true, input: ['text', 'image'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: model.contextWindow, maxTokens: model.maxOutputTokens },
   })
   const runtimes = [runtime(record.model, record.provider)]
@@ -89,6 +90,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   const skipMessageCount = initialMessages(parentRun?.context).length
+  let lastSnapshotAt = 0
   const emit = async (type: string, payload: Record<string, unknown>) => {
     sequence += 1
     await publishResponseEvent({ responseId, sequence, type, payload, emittedAt: new Date().toISOString() })
@@ -114,6 +116,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await db.update(responses).set({ status: terminal ?? 'in_progress', output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
+    lastSnapshotAt = Date.now()
   }
   const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
@@ -176,7 +179,10 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       const update = event.assistantMessageEvent
       if (update.type === 'text_delta') await emit('response.output_text.delta', { delta: update.delta })
       if (update.type === 'thinking_delta') await emit('response.reasoning_summary_text.delta', { delta: update.delta })
-      if (update.type === 'text_delta' || update.type === 'thinking_delta') await snapshot()
+      if (
+        (update.type === 'text_delta' || update.type === 'thinking_delta')
+        && Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS
+      ) await snapshot()
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message as AssistantMessage
       const turnUsage = { inputTokens: message.usage.input, cachedInputTokens: message.usage.cacheRead, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }

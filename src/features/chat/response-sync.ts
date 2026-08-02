@@ -1,4 +1,9 @@
-import type { ResponseSnapshot, SyncResult } from '@pulpo/contracts'
+import type { ResponseEvent, ResponseSnapshot, SyncResult } from '@pulpo/contracts'
+
+const DELTA_EVENT_TYPES = new Set([
+  'response.output_text.delta',
+  'response.reasoning_summary_text.delta',
+])
 
 export function isTerminalSnapshot(snapshot: ResponseSnapshot): boolean {
   return snapshot.status !== 'queued' && snapshot.status !== 'in_progress'
@@ -8,4 +13,43 @@ export function syncInvalidationScopes(result: SyncResult): SyncResult['invalida
   const scopes = new Set(result.invalidate)
   if (result.snapshots.some(isTerminalSnapshot)) scopes.add('chats')
   return [...scopes]
+}
+
+export function groupResponseEvents(events: ResponseEvent[]): ResponseEvent[][] {
+  const grouped = new Map<string, ResponseEvent[]>()
+  for (const event of events) {
+    const batch = grouped.get(event.responseId)
+    if (batch) batch.push(event)
+    else grouped.set(event.responseId, [event])
+  }
+  return [...grouped.values()]
+}
+
+/**
+ * Collapse adjacent text deltas before projecting them into durable local state.
+ * The last sequence is retained so replay cursors still advance atomically.
+ */
+export function coalesceResponseEvents(events: ResponseEvent[]): ResponseEvent[] {
+  const compacted: ResponseEvent[] = []
+  for (const event of events) {
+    const previous = compacted.at(-1)
+    const delta = (event.payload as { delta?: unknown }).delta
+    const previousDelta = (previous?.payload as { delta?: unknown } | undefined)?.delta
+    if (
+      previous
+      && previous.responseId === event.responseId
+      && previous.type === event.type
+      && DELTA_EVENT_TYPES.has(event.type)
+      && typeof previousDelta === 'string'
+      && typeof delta === 'string'
+    ) {
+      compacted[compacted.length - 1] = {
+        ...event,
+        payload: { ...(event.payload as Record<string, unknown>), delta: previousDelta + delta },
+      }
+    } else {
+      compacted.push(event)
+    }
+  }
+  return compacted
 }

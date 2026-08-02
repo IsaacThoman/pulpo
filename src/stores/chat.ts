@@ -10,6 +10,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { lineageFromLeaf, newestDescendantId } from '@/lib/chat-tree'
 import { mergePendingLocalMessages } from '@/lib/merge-pending-local-messages'
 import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
+import { coalesceResponseEvents } from '@/features/chat/response-sync'
 import { useAuth } from './auth'
 
 interface ServerResponse {
@@ -69,7 +70,7 @@ interface ChatState {
   replaceSummaries: (chats: ServerChat[]) => void
   replaceFolders: (folders: ServerFolder[]) => void
   setDetailedChat: (chat: ServerChat) => void
-  applyResponseEvent: (event: ResponseEvent) => boolean
+  applyResponseEvents: (events: ResponseEvent[]) => boolean
   applyResponseSnapshot: (snapshot: ResponseSnapshot, options?: { invalidate?: boolean }) => void
   newChat: (modelId?: string) => string
   setActive: (id: string | null) => void
@@ -354,7 +355,7 @@ function flushResponseEvents(responseId: string): void {
       responses: chat.responses.map((response) => {
         if (response.id !== responseId) return response
         const base = accumulatedResponseSnapshots.get(responseId) ?? response.snapshot
-        const snapshot = rememberResponseSnapshot(pending.events.reduce(applyEventToSnapshot, base))
+        const snapshot = rememberResponseSnapshot(coalesceResponseEvents(pending.events).reduce(applyEventToSnapshot, base))
         return {
           ...response,
           status: snapshot.status,
@@ -458,25 +459,38 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
   }),
 
-  applyResponseEvent: (event) => {
-    if ((get().responseSequences[event.responseId] ?? 0) >= event.sequence) return true
-    const affectedChat = get().chats.find((chat) => chat.messages.some((message) => message.id === event.responseId))
+  applyResponseEvents: (events) => {
+    const responseId = events[0]?.responseId
+    if (!responseId) return false
+    const currentSequence = get().responseSequences[responseId] ?? 0
+    const freshEvents = events.filter((event) => event.responseId === responseId && event.sequence > currentSequence)
+    if (freshEvents.length === 0) return false
+    const affectedChat = get().chats.find((chat) => chat.messages.some((message) => message.id === responseId))
     if (!affectedChat) return false
-    const payload = event.payload as { delta?: string; type?: string }
-    const textDelta = typeof payload.delta === 'string' ? payload.delta : ''
-    const reasoningDelta = event.type === 'response.reasoning_summary_text.delta' ? textDelta : ''
+    let contentDelta = ''
+    let reasoningDelta = ''
+    let nextSequence = currentSequence
+    for (const event of freshEvents) {
+      nextSequence = Math.max(nextSequence, event.sequence)
+      const delta = (event.payload as { delta?: unknown }).delta
+      if (typeof delta !== 'string') continue
+      if (event.type === 'response.output_text.delta') contentDelta += delta
+      if (event.type === 'response.reasoning_summary_text.delta') reasoningDelta += delta
+    }
     set((state) => ({
-      responseSequences: { ...state.responseSequences, [event.responseId]: event.sequence },
-      chats: state.chats.map((chat) => ({
-        ...chat,
-        messages: chat.messages.map((message) => message.id !== event.responseId ? message : {
-          ...message,
-          content: event.type === 'response.output_text.delta' ? message.content + textDelta : message.content,
-          reasoning: reasoningDelta ? (message.reasoning ?? '') + reasoningDelta : message.reasoning,
-        }),
-      })),
+      responseSequences: { ...state.responseSequences, [responseId]: nextSequence },
+      chats: contentDelta || reasoningDelta
+        ? state.chats.map((chat) => chat.id !== affectedChat.id ? chat : {
+            ...chat,
+            messages: chat.messages.map((message) => message.id !== responseId ? message : {
+              ...message,
+              content: contentDelta ? message.content + contentDelta : message.content,
+              reasoning: reasoningDelta ? (message.reasoning ?? '') + reasoningDelta : message.reasoning,
+            }),
+          })
+        : state.chats,
     }))
-    persistResponseEvent(affectedChat.id, event)
+    for (const event of freshEvents) persistResponseEvent(affectedChat.id, event)
     return true
   },
 
@@ -493,7 +507,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         streamingIds: inFlight
           ? addStreamingId(state.streamingIds, snapshot.responseId)
           : removeStreamingId(state.streamingIds, snapshot.responseId),
-        chats: state.chats.map((chat) => ({
+        chats: state.chats.map((chat) => chat.id !== affectedChatId ? chat : ({
           ...chat,
           messages: chat.messages.map((message) => {
             if (message.id !== snapshot.responseId) return message

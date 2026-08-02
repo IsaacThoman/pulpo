@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -44,8 +44,29 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
   )
 }
 
-export const Markdown = memo(function Markdown({ content }: { content: string }) {
-  const normalized = useMemo(() => normalizeMathDelimiters(content), [content])
+function useRenderedContent(content: string, streaming: boolean): string {
+  const latest = useRef(content)
+  latest.current = content
+  const [rendered, setRendered] = useState(content)
+
+  useEffect(() => {
+    if (!streaming) setRendered(content)
+  }, [content, streaming])
+
+  useEffect(() => {
+    if (!streaming) return
+    const timer = window.setInterval(() => {
+      setRendered((current) => current === latest.current ? current : latest.current)
+    }, 100)
+    return () => window.clearInterval(timer)
+  }, [streaming])
+
+  return rendered
+}
+
+export const Markdown = memo(function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
+  const rendered = useRenderedContent(content, streaming)
+  const normalized = useMemo(() => normalizeMathDelimiters(rendered), [rendered])
 
   return (
     <ReactMarkdown

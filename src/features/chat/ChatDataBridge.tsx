@@ -13,7 +13,7 @@ import { useAuth } from '@/stores/auth'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { useSettings } from '@/stores/settings'
-import { isTerminalSnapshot, syncInvalidationScopes } from './response-sync'
+import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes } from './response-sync'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 type CompletionToast = { responseId: string; chatId: string; preview: string }
@@ -38,7 +38,7 @@ export function ChatDataBridge() {
   const replaceSummaries = useChat((state) => state.replaceSummaries)
   const replaceFolders = useChat((state) => state.replaceFolders)
   const setDetailedChat = useChat((state) => state.setDetailedChat)
-  const applyResponseEvent = useChat((state) => state.applyResponseEvent)
+  const applyResponseEvents = useChat((state) => state.applyResponseEvents)
   const applyResponseSnapshot = useChat((state) => state.applyResponseSnapshot)
   const socketRef = useRef<PulpoSocket | null>(null)
   const loadCatalog = useCatalog((state) => state.load)
@@ -81,20 +81,64 @@ export function ChatDataBridge() {
     const socket: PulpoSocket = io({ path: '/socket.io', withCredentials: true })
     socketRef.current = socket
 
-    const persistEvent = (event: ResponseEvent) => {
-      if (!applyResponseEvent(event)) return
-      void localDb.responseCursors.put({
-        id: `${currentTabId}:${event.responseId}`, tabId: currentTabId,
-        responseId: event.responseId, sequence: event.sequence, updatedAt: Date.now(),
-      })
+    let eventFrame: number | undefined
+    let cursorTimer: number | undefined
+    const pendingEvents = new Map<string, ResponseEvent[]>()
+    const pendingCursors = new Map<string, number>()
+
+    const flushCursors = async () => {
+      if (cursorTimer !== undefined) window.clearTimeout(cursorTimer)
+      cursorTimer = undefined
+      if (pendingCursors.size === 0) return
+      const updatedAt = Date.now()
+      const rows = [...pendingCursors].map(([responseId, sequence]) => ({
+        id: `${currentTabId}:${responseId}`, tabId: currentTabId, responseId, sequence, updatedAt,
+      }))
+      pendingCursors.clear()
+      await localDb.responseCursors.bulkPut(rows)
+    }
+    const rememberCursor = (responseId: string, sequence: number) => {
+      pendingCursors.set(responseId, Math.max(pendingCursors.get(responseId) ?? 0, sequence))
+      if (cursorTimer === undefined) {
+        cursorTimer = window.setTimeout(() => { void flushCursors() }, 250)
+      }
+    }
+    const applyEventBatch = (events: ResponseEvent[]) => {
+      const compacted = coalesceResponseEvents(events)
+      if (!applyResponseEvents(compacted)) return
+      const latest = compacted.at(-1)
+      if (latest) rememberCursor(latest.responseId, latest.sequence)
+    }
+    const flushEventBatches = (responseId?: string) => {
+      if (responseId) {
+        const events = pendingEvents.get(responseId)
+        pendingEvents.delete(responseId)
+        if (events) applyEventBatch(events)
+        return
+      }
+      eventFrame = undefined
+      const batches = [...pendingEvents.values()]
+      pendingEvents.clear()
+      for (const events of batches) applyEventBatch(events)
+    }
+    const queueEvent = (event: ResponseEvent) => {
+      const events = pendingEvents.get(event.responseId)
+      if (events) events.push(event)
+      else pendingEvents.set(event.responseId, [event])
+      if (eventFrame === undefined) {
+        eventFrame = window.requestAnimationFrame(() => flushEventBatches())
+      }
     }
     const applySync = (result: SyncResult) => {
       revisionRef.current = result.accountRevision
-      for (const event of result.events) persistEvent(event)
+      for (const events of groupResponseEvents(result.events)) applyEventBatch(events)
       for (const snapshot of result.snapshots) {
         applyResponseSnapshot(snapshot, { invalidate: false })
         if (isTerminalSnapshot(snapshot)) {
-          void localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`)
+          pendingCursors.delete(snapshot.responseId)
+          void flushCursors().finally(() => localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`))
+        } else {
+          rememberCursor(snapshot.responseId, snapshot.sequence)
         }
       }
       const scopes = syncInvalidationScopes(result)
@@ -104,9 +148,13 @@ export function ChatDataBridge() {
       }
     }
     const applyLiveSnapshot = (snapshot: Parameters<typeof applyResponseSnapshot>[0]) => {
+      flushEventBatches(snapshot.responseId)
       applyResponseSnapshot(snapshot)
       if (isTerminalSnapshot(snapshot)) {
-        void localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`)
+        pendingCursors.delete(snapshot.responseId)
+        void flushCursors().finally(() => localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`))
+      } else {
+        rememberCursor(snapshot.responseId, snapshot.sequence)
       }
     }
     const sync = async () => {
@@ -122,7 +170,7 @@ export function ChatDataBridge() {
     }
 
     socket.on('connect', sync)
-    socket.on('response.event', persistEvent)
+    socket.on('response.event', queueEvent)
     socket.on('response.snapshot', applyLiveSnapshot)
     socket.on('response.completed', (completion) => {
       if (!useSettings.getState().notifications) return
@@ -151,10 +199,13 @@ export function ChatDataBridge() {
       document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('focus', wake)
       window.removeEventListener('online', online)
+      if (eventFrame !== undefined) window.cancelAnimationFrame(eventFrame)
+      flushEventBatches()
+      void flushCursors()
       socket.disconnect()
       socketRef.current = null
     }
-  }, [userId, userRole, currentTabId, applyResponseEvent, applyResponseSnapshot])
+  }, [userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
 
   useEffect(() => {
     const socket = socketRef.current

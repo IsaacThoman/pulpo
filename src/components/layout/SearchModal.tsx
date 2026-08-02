@@ -10,10 +10,12 @@ import { timeAgo } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
 import { cn } from '@/lib/utils'
 
+const EMPTY_CHATS = [] as const
+
 export function SearchModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
-  const chats = useChat((s) => s.chats)
+  const chats = useChat((state) => open ? state.chats : EMPTY_CHATS)
   const navigate = useNavigate()
   const [remote, setRemote] = useState<ServerChat[]>([])
 
