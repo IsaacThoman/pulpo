@@ -73,6 +73,7 @@ export function AdminUsersPage() {
                 <th className="py-2.5 font-medium">Name</th>
                 <th className="py-2.5 font-medium">Email</th>
                 <th className="px-4 py-2.5 text-right font-medium">Balance</th>
+                <th className="px-4 py-2.5 text-right font-medium">File storage</th>
                 <th className="px-4 py-2.5 font-medium">Last active</th>
                 <th className="py-2.5 font-medium">Created</th>
                 <th className="px-5 py-2.5 text-right font-medium">Actions</th>
@@ -106,6 +107,9 @@ export function AdminUsersPage() {
                   <td className="py-2.5 text-muted-foreground">{u.email}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">
                     <BalanceCell user={u} />
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">
+                    <StorageCell user={u} />
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
                     {u.lastActiveAt ? timeAgo(u.lastActiveAt) : 'Never'}
@@ -272,6 +276,49 @@ function BalanceCell({ user }: { user: MonitorUser }) {
         if (e.key === 'Escape') setEditing(false)
       }}
       className="ml-auto h-7 w-24 px-1.5 text-right tabular-nums"
+    />
+  )
+}
+
+function StorageCell({ user }: { user: MonitorUser }) {
+  const updateStorageLimit = useUsage((s) => s.updateStorageLimit)
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const limitMiB = (user.storageLimitBytes ?? 0) / (1024 * 1024)
+  const usedMiB = (user.storageBytes ?? 0) / (1024 * 1024)
+
+  const save = () => {
+    const amount = Number(value)
+    if (Number.isFinite(amount) && amount >= 0) updateStorageLimit(user.id, Math.round(amount * 1024 * 1024))
+    setEditing(false)
+  }
+
+  if (!editing) return (
+    <button
+      type="button"
+      title="Edit file storage allowance"
+      onClick={() => { setValue(String(Math.round(limitMiB))); setEditing(true) }}
+      className="-mr-1.5 cursor-pointer rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent"
+    >
+      {usedMiB.toLocaleString(undefined, { maximumFractionDigits: 1 })} / {limitMiB.toLocaleString(undefined, { maximumFractionDigits: 0 })} MiB
+    </button>
+  )
+
+  return (
+    <Input
+      type="number"
+      step="100"
+      min="0"
+      autoFocus
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onFocus={(event) => event.target.select()}
+      onBlur={save}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') save()
+        if (event.key === 'Escape') setEditing(false)
+      }}
+      className="ml-auto h-7 w-28 px-1.5 text-right tabular-nums"
     />
   )
 }

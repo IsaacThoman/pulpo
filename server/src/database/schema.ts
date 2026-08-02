@@ -38,6 +38,7 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   role: roleEnum('role').notNull().default('pending'),
   balanceMicros: bigint('balance_micros', { mode: 'number' }).notNull().default(0),
+  storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_242_880_000),
   blocked: boolean('blocked').notNull().default(false),
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
   leaderboardVisible: boolean('leaderboard_visible').notNull().default(true),
@@ -297,7 +298,7 @@ export const attachments = pgTable('attachments', {
   openaiFileId: text('openai_file_id'),
   error: text('error'),
   ...timestamps,
-})
+}, (table) => [index('attachments_user_status_idx').on(table.userId, table.status)])
 
 export const workspaceLeases = pgTable('workspace_leases', {
   id: uuid('id').primaryKey(),

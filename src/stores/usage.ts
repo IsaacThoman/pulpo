@@ -7,9 +7,11 @@ interface AdminUserRow {
   user: {
     id: string; name: string; nickname: string | null; email: string
     role: 'pending' | 'user' | 'admin'; balanceMicros: number; createdAt: string
+    storageLimitBytes: number
     blocked: boolean; leaderboardVisible: boolean; leaderboardColor: string
   }
   lastActiveAt: string | null
+  storageBytes: number
 }
 
 interface UsageState {
@@ -21,6 +23,7 @@ interface UsageState {
   loadLeaderboard: (range?: TimeRange) => Promise<void>
   loadAdmin: () => Promise<void>
   updateBalance: (userId: string, balance: number) => void
+  updateStorageLimit: (userId: string, storageLimitBytes: number) => void
   toggleBlocked: (userId: string) => void
   setLeaderboardPref: (userId: string, patch: Partial<MonitorUser>) => void
 }
@@ -29,6 +32,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
   return {
     id: row.user.id, name: row.user.name, nickname: row.user.nickname, email: row.user.email,
     role: row.user.role, balance: row.user.balanceMicros / 1_000_000,
+    storageLimitBytes: row.user.storageLimitBytes, storageBytes: row.storageBytes,
     joinedAt: Date.parse(row.user.createdAt), blocked: row.user.blocked,
     showOnLeaderboard: row.user.leaderboardVisible, barColor: row.user.leaderboardColor,
     lastActiveAt: row.lastActiveAt ? Date.parse(row.lastActiveAt) : null,
@@ -77,6 +81,11 @@ export const useUsage = create<UsageState>()((set, get) => ({
   updateBalance: (userId, balance) => {
     set((state) => ({ users: state.users.map((user) => user.id === userId ? { ...user, balance } : user) }))
     void apiRequest(`/api/admin/users/${userId}`, { method: 'PATCH', body: { balanceMicros: Math.round(balance * 1_000_000) } })
+      .catch(() => get().loadAdmin())
+  },
+  updateStorageLimit: (userId, storageLimitBytes) => {
+    set((state) => ({ users: state.users.map((user) => user.id === userId ? { ...user, storageLimitBytes } : user) }))
+    void apiRequest(`/api/admin/users/${userId}`, { method: 'PATCH', body: { storageLimitBytes } })
       .catch(() => get().loadAdmin())
   },
   toggleBlocked: (userId) => {

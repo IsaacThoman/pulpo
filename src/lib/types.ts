@@ -108,6 +108,8 @@ export interface MonitorUser {
   email: string
   role: 'pending' | 'admin' | 'user'
   balance: number
+  storageLimitBytes?: number
+  storageBytes?: number
   joinedAt: number
   blocked: boolean
   showOnLeaderboard: boolean

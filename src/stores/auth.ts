@@ -12,6 +12,7 @@ export interface AuthUser {
   role: AuthRole
   initials: string
   balanceMicros: number
+  storageLimitBytes: number
   blocked: boolean
   stateRevision: number
   createdAt: string

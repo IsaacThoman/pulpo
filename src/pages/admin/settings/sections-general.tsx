@@ -89,6 +89,7 @@ export function AuthenticationSection() {
   const [t, setT, save] = useAdminSetting('auth', {
     signupEnabled: auth.signupEnabled,
     defaultBalanceMicros: 5_000_000,
+    defaultStorageLimitBytes: 5_000 * 1024 * 1024,
     pendingDetails: auth.pendingDetails,
     adminEmail: auth.adminEmail,
     pendingMessage: auth.pendingMessage,
@@ -114,6 +115,15 @@ export function AuthenticationSection() {
           step={0.01}
           decimals={2}
           suffix="USD"
+        />
+        <NumField
+          label="Default file storage"
+          hint="Storage allowance assigned to each newly created user."
+          value={t.defaultStorageLimitBytes / (1024 * 1024)}
+          onChange={(value) => s('defaultStorageLimitBytes', Math.round(Math.max(0, value) * 1024 * 1024))}
+          min={0}
+          step={100}
+          suffix="MiB"
         />
         <SelectField label="Default user role" hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: 'Pending approval' }, { value: 'user', label: 'User' }]} />
         <Toggle label="Enable API keys" hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />

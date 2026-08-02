@@ -78,6 +78,13 @@
       "when": 1785642646936,
       "tag": "0010_fine_absorbing_man",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785709516547,
+      "tag": "0011_far_red_skull",
+      "breakpoints": true
     }
   ]
 }

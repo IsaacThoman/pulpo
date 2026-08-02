@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "storage_limit_bytes" bigint DEFAULT 5242880000 NOT NULL;--> statement-breakpoint
+CREATE INDEX "attachments_user_status_idx" ON "attachments" USING btree ("user_id","status");

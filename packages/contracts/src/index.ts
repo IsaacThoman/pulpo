@@ -12,6 +12,7 @@ export const userSchema = z.object({
   name: z.string().min(1).max(120),
   role: roleSchema,
   balanceMicros: z.number().int(),
+  storageLimitBytes: z.number().int().nonnegative(),
   blocked: z.boolean(),
   stateRevision: z.number().int().nonnegative(),
   createdAt: isoDateSchema,

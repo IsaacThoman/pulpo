@@ -35,6 +35,7 @@ import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
+import { formatBytes } from '@/lib/attachments'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -51,6 +52,12 @@ type SectionId = (typeof SECTIONS)[number]['id']
 interface Memory {
   id: string
   content: string
+}
+
+interface StorageUsage {
+  usedBytes: number
+  limitBytes: number
+  remainingBytes: number
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -103,6 +110,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const models = useCatalog((state) => state.models)
   const [importFallback, setImportFallback] = useState('')
   const [importResult, setImportResult] = useState('')
+  const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
 
   const chooseImport = (source: 'pulpo' | 'openwebui') => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
@@ -116,6 +124,11 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     void apiRequest<{ data: Memory[] }>('/api/memories')
       .then((result) => setMemories(result.data))
       .finally(() => setMemoriesLoading(false))
+  }, [open, section])
+
+  useEffect(() => {
+    if (!open || section !== 'data') return
+    void apiRequest<StorageUsage>('/api/attachments/usage').then(setStorageUsage)
   }, [open, section])
 
   const forgetMemory = async (id: string) => {
@@ -365,6 +378,21 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Data controls</h2>
                   <Separator className="my-3" />
+                  <div className="mb-3 rounded-lg border bg-muted/20 p-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">File storage</span>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {storageUsage ? `${formatBytes(storageUsage.usedBytes)} of ${formatBytes(storageUsage.limitBytes)}` : 'Loading…'}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary transition-[width]"
+                        style={{ width: `${storageUsage?.limitBytes ? Math.min(100, storageUsage.usedBytes / storageUsage.limitBytes * 100) : 0}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">Uploaded files and files created by models count toward this allowance.</p>
+                  </div>
                   <Row label="Export chats" hint="Download all conversations as JSON.">
                     <Button variant="outline" size="sm" onClick={() => location.assign('/api/chats/export')}>
                       Export

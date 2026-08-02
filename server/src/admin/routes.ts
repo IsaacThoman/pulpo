@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, auditEvents, creditLedger, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, creditLedger, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -17,6 +17,7 @@ const patchUserSchema = z.object({
   role: z.enum(['pending', 'user', 'admin']).optional(),
   blocked: z.boolean().optional(),
   balanceMicros: z.number().int().nonnegative().optional(),
+  storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   nickname: z.string().trim().max(80).nullable().optional(),
   leaderboardVisible: z.boolean().optional(),
   leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -28,12 +29,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const input = z.object({
       name: z.string().trim().min(1).max(120), email: z.email(), password: z.string().min(8).max(1_000),
       role: z.enum(['pending', 'user', 'admin']).default('user'), balanceMicros: z.number().int().nonnegative().optional(),
+      storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     }).parse(request.body)
     const id = newId()
     await db.transaction(async (tx) => {
       const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
       const balanceMicros = input.balanceMicros ?? parseAuthSettings(setting?.value).defaultBalanceMicros
-      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros })
+      const storageLimitBytes = input.storageLimitBytes ?? parseAuthSettings(setting?.value).defaultStorageLimitBytes
+      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
     })
@@ -53,8 +56,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         from ${sessions}
         where ${sessions.userId} = ${users.id}
       )`,
+      storageBytes: sql<number>`(
+        select coalesce(sum(${attachments.sizeBytes}), 0)::bigint
+        from ${attachments}
+        where ${attachments.userId} = ${users.id}
+          and ${attachments.status} in ('pending', 'ready')
+      )`,
     }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
-    return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros) })) }
+    return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros), storageBytes: Number(row.storageBytes) })) }
   })
 
   app.patch('/api/admin/users/:id', async (request) => {

@@ -9,6 +9,7 @@ import { attachments, chats } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
+import { getStorageUsage, reserveAttachment } from './storage-quota.js'
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'])
@@ -32,6 +33,11 @@ function extensionOf(name: string): string {
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
 
+  app.get('/api/attachments/usage', async (request) => {
+    const user = requireUser(request)
+    return getStorageUsage(user.id)
+  })
+
   app.post('/api/attachments', async (request, reply) => {
     const user = requireUser(request)
     const input = z.object({
@@ -48,7 +54,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     }
     const id = newId()
     const objectKey = `users/${user.id}/attachments/${id}`
-    const [created] = await db.insert(attachments).values({ id, userId: user.id, objectKey, ...input }).returning()
+    const created = await reserveAttachment({ id, userId: user.id, objectKey, ...input })
     const storageDriver = getConfig().STORAGE_DRIVER
     const uploadUrl = await getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
     reply.code(201)

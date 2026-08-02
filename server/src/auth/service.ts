@@ -25,6 +25,7 @@ function serializeUser(row: typeof users.$inferSelect): AuthenticatedUser {
     name: row.name,
     role: row.role,
     balanceMicros: row.balanceMicros,
+    storageLimitBytes: row.storageLimitBytes,
     blocked: row.blocked,
     stateRevision: row.stateRevision,
     createdAt: row.createdAt.toISOString(),

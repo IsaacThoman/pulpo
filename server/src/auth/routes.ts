@@ -46,6 +46,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         name: input.name,
         role: 'admin',
         balanceMicros: 100_000_000,
+        storageLimitBytes: 5_000 * 1024 * 1024,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
     })
@@ -88,6 +89,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         name: input.name,
         role: authSettings.defaultSignupRole,
         balanceMicros: authSettings.defaultBalanceMicros,
+        storageLimitBytes: authSettings.defaultStorageLimitBytes,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
     })
