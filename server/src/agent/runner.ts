@@ -1,9 +1,9 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -15,22 +15,12 @@ import { extendBudgetReservation, getActivePricing, releaseBudget, settleBudget 
 import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { buildAgentSystemPrompt } from './policy.js'
+import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
 import OpenAI from 'openai'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
-
-function inputText(input: unknown): string {
-  if (!Array.isArray(input)) return ''
-  return input.flatMap((item) => {
-    const content = (item as { role?: string; content?: unknown }).content
-    if (typeof content === 'string') return [content]
-    if (!Array.isArray(content)) return []
-    return content.flatMap((part) => typeof (part as { text?: unknown }).text === 'string' ? [(part as { text: string }).text] : [])
-  }).join('\n')
-}
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -66,6 +56,22 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
+  const attachmentIds = (Array.isArray(record.response.input) ? record.response.input : []).flatMap((item) => {
+    const content = (item as { content?: unknown }).content
+    return Array.isArray(content) ? content.flatMap((part) => {
+      const id = (part as { attachment_id?: unknown }).attachment_id
+      return typeof id === 'string' ? [id] : []
+    }) : []
+  })
+  const attachmentRows = attachmentIds.length
+    ? await db.select({ id: attachments.id, originalName: attachments.originalName, mimeType: attachments.mimeType, sizeBytes: attachments.sizeBytes })
+      .from(attachments).where(and(eq(attachments.userId, record.response.userId), inArray(attachments.id, attachmentIds), eq(attachments.status, 'ready')))
+    : []
+  const attachmentsById = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
+  const attachedFiles = attachmentIds.flatMap((id) => {
+    const attachment = attachmentsById.get(id)
+    return attachment ? [attachment] : []
+  })
   type RuntimeModel = { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect; apiKey: string; piModel: Model<'openai-responses'> }
   const runtime = (model: typeof models.$inferSelect, provider: typeof providerConnections.$inferSelect): RuntimeModel => ({
     model, provider,
@@ -236,7 +242,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   try {
     await emit('pulpo.agent.started', { runId })
     if (existingRun && resumedMessages.length > initialMessages(parentRun?.context).length) await agent.continue()
-    else await agent.prompt(inputText(record.response.input) || 'Inspect the attached files and help me with them.')
+    else await agent.prompt(buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?')
     let last = agent.state.messages.at(-1)
     while (last?.role === 'assistant' && last.stopReason === 'error' && !assistantText(last) && activeIndex + 1 < runtimes.length) {
       agent.state.messages = agent.state.messages.slice(0, -1)
