@@ -2,6 +2,7 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { createServer as createHttpsServer } from 'node:https'
 import { randomBytes, randomUUID } from 'node:crypto'
 import * as k8s from '@kubernetes/client-node'
+import { podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 
 const namespace = process.env.PULPO_WORKSPACE_NAMESPACE ?? 'pulpo-workspaces'
 const image = process.env.PULPO_WORKSPACE_IMAGE
@@ -18,7 +19,6 @@ if ((!tlsCert || !tlsKey) && process.env.PULPO_ALLOW_INSECURE_HTTP !== 'true') t
 const kc = new k8s.KubeConfig(); kc.loadFromDefault()
 const core = kc.makeApiClient(k8s.CoreV1Api)
 type Lease = { id: string; podName: string; podIp: string; daemonToken: string; createdAt: number; lastUsedAt: number; idleMs: number; hardMs: number }
-type WorkspaceSpec = { imageDigest: string; cpu: string; memory: string; ephemeralStorage: string }
 let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi' }
 const leases = new Map<string, Lease>()
 const activeOperations = new Map<string, Set<string>>()
@@ -28,12 +28,6 @@ function json(response: ServerResponse, status: number, value: unknown): void { 
 async function body(request: IncomingMessage): Promise<Buffer> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks) }
 function podName(): string { return `pulpo-workspace-${randomUUID().slice(0, 8)}` }
 
-function podMatches(pod: k8s.V1Pod, spec: WorkspaceSpec): boolean {
-  const container = pod.spec?.containers[0]
-  const requests = container?.resources?.requests
-  return container?.image === spec.imageDigest && requests?.cpu === spec.cpu && requests?.memory === spec.memory && requests?.['ephemeral-storage'] === spec.ephemeralStorage
-}
-
 async function createWorkspacePod(state: 'warm' | 'starting', spec = desiredSpec, chatId?: string): Promise<{ name: string; daemonToken: string }> {
   const name = podName()
   const daemonToken = randomBytes(32).toString('hex')
@@ -41,7 +35,7 @@ async function createWorkspacePod(state: 'warm' | 'starting', spec = desiredSpec
     metadata: {
       name,
       labels: { 'app.kubernetes.io/name': 'pulpo-workspace', 'pulpo.dev/state': state },
-      annotations: { 'pulpo.dev/daemon-token': daemonToken, ...(chatId ? { 'pulpo.dev/chat-id': chatId } : {}) },
+      annotations: { 'pulpo.dev/daemon-token': daemonToken, [WORKSPACE_SPEC_HASH_ANNOTATION]: workspaceSpecHash(spec), ...(chatId ? { 'pulpo.dev/chat-id': chatId } : {}) },
     },
     spec: {
       runtimeClassName, automountServiceAccountToken: false, restartPolicy: 'Never', enableServiceLinks: false,
@@ -62,7 +56,7 @@ function isPodReady(pod: k8s.V1Pod | undefined): pod is k8s.V1Pod & { metadata: 
 
 async function findReadyWarmPod(spec = desiredSpec): Promise<k8s.V1Pod | undefined> {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace,pulpo.dev/state=warm' })).items
-  return pods.find((candidate) => podMatches(candidate, spec) && isPodReady(candidate))
+  return pods.find((candidate) => podMatchesSpec(candidate, spec) && isPodReady(candidate))
 }
 
 async function waitForPodReady(name: string, deadline: number): Promise<k8s.V1Pod> {
@@ -91,9 +85,9 @@ async function reconcileOnce(): Promise<void> {
     await core.deleteNamespacedPod({ namespace, name: lease.podName }).catch(() => undefined); leases.delete(lease.id); activeOperations.delete(lease.id)
   }
   const allWarm = pods.filter((pod) => pod.metadata?.labels?.['pulpo.dev/state'] === 'warm')
-  const incompatible = allWarm.filter((pod) => !podMatches(pod, desiredSpec))
+  const incompatible = allWarm.filter((pod) => !podMatchesSpec(pod, desiredSpec))
   await Promise.all(incompatible.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
-  const warm = allWarm.filter((pod) => podMatches(pod, desiredSpec))
+  const warm = allWarm.filter((pod) => podMatchesSpec(pod, desiredSpec))
   const excess = warm.slice(warmCapacity)
   await Promise.all(excess.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
   for (let count = warm.length - excess.length; count < warmCapacity; count += 1) await createWorkspacePod('warm')
