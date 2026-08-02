@@ -19,6 +19,7 @@ import { buildAgentSystemPrompt } from './policy.js'
 import OpenAI from 'openai'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros } from '../accounting/pricing.js'
+import { truncateUtf8 } from './output.js'
 
 function inputText(input: unknown): string {
   if (!Array.isArray(input)) return ''
@@ -153,12 +154,12 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await emit('pulpo.agent.tool.started', item)
       await snapshot()
     } else if (event.type === 'tool_execution_update') {
-      const item = toolItems.get(event.toolCallId); const delta = toolResultText(event.partialResult).slice(0, settings.maxToolOutputBytes)
+      const item = toolItems.get(event.toolCallId); const delta = truncateUtf8(toolResultText(event.partialResult), settings.maxToolOutputBytes)
       if (item) item.output = delta
       await emit('pulpo.agent.tool.delta', { id: event.toolCallId, delta })
       await snapshot()
     } else if (event.type === 'tool_execution_end') {
-      const output = toolResultText(event.result).slice(0, settings.maxToolOutputBytes)
+      const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const item = toolItems.get(event.toolCallId); if (item) Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError })
       await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: event.isError ? 'failed' : 'completed', output, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError })

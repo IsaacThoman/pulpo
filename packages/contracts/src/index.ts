@@ -301,13 +301,19 @@ export const ocrSettingsSchema = z.object({
   systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
 })
 
+const agentMemorySchema = z.preprocess((value) => {
+  if (typeof value !== 'string') return value
+  const legacyGi = value.trim().match(/^([1-9]\d*)Gi$/)
+  return legacyGi ? `${Number(legacyGi[1]) * 1024}Mi` : value.trim()
+}, z.string().regex(/^[1-9]\d*Mi$/, 'Memory must be an integer number of MiB, for example 2048Mi').default('2048Mi'))
+
 export const agentSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   imageDigest: z.string().regex(/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/).default('ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:0000000000000000000000000000000000000000000000000000000000000000'),
   warmCapacity: z.number().int().min(0).max(100).default(1),
   maxActiveWorkspaces: z.number().int().min(1).max(1_000).default(3),
   cpu: z.string().min(1).max(32).default('2'),
-  memory: z.string().min(1).max(32).default('2Gi'),
+  memory: agentMemorySchema,
   ephemeralStorage: z.string().min(1).max(32).default('20Gi'),
   idleTimeoutSeconds: z.number().int().min(60).max(604_800).default(1_800),
   hardTimeoutSeconds: z.number().int().min(300).max(2_592_000).default(14_400),

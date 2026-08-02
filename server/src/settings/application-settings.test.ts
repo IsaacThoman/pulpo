@@ -17,12 +17,17 @@ describe('agent application settings', () => {
     expect(settings.enabled).toBe(false)
     expect(settings.warmCapacity).toBe(1)
     expect(settings.maxActiveWorkspaces).toBe(3)
-    expect(settings.memory).toBe('2Gi')
+    expect(settings.memory).toBe('2048Mi')
     expect(settings.idleTimeoutSeconds).toBe(1_800)
     expect(settings.hardTimeoutSeconds).toBe(14_400)
     expect(settings.workspaceWaitTimeoutSeconds).toBe(900)
     expect(settings.maxModelTurns).toBe(30)
     expect(settings.commandTimeoutSeconds).toBe(600)
+  })
+
+  it('normalizes legacy Gi agent memory values to MiB', () => {
+    expect(parseAgentSettings({ memory: '2Gi' }).memory).toBe('2048Mi')
+    expect(parseAgentSettings({ memory: '3072Mi' }).memory).toBe('3072Mi')
   })
 })
 

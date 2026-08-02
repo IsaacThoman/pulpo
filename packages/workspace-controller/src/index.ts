@@ -19,7 +19,7 @@ const kc = new k8s.KubeConfig(); kc.loadFromDefault()
 const core = kc.makeApiClient(k8s.CoreV1Api)
 type Lease = { id: string; podName: string; podIp: string; daemonToken: string; createdAt: number; lastUsedAt: number; idleMs: number; hardMs: number }
 type WorkspaceSpec = { imageDigest: string; cpu: string; memory: string; ephemeralStorage: string }
-let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2Gi', ephemeralStorage: '20Gi' }
+let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi' }
 const leases = new Map<string, Lease>()
 let reconcileInFlight: Promise<void> | undefined
 

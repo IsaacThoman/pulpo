@@ -8,9 +8,15 @@ import { SaveBar, Section, Toggle } from '@/components/admin/kit'
 const defaults: AgentSettings = {
   enabled: false,
   imageDigest: 'ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:' + '0'.repeat(64),
-  warmCapacity: 1, maxActiveWorkspaces: 3, cpu: '2', memory: '2Gi', ephemeralStorage: '20Gi',
+  warmCapacity: 1, maxActiveWorkspaces: 3, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi',
   idleTimeoutSeconds: 1800, hardTimeoutSeconds: 14400, workspaceWaitTimeoutSeconds: 900, maxModelTurns: 30, maxToolCalls: 100,
   responseTimeoutSeconds: 1800, commandTimeoutSeconds: 600, maxToolOutputBytes: 100000,
+}
+
+function memoryMiB(quantity: string): number {
+  const match = quantity.trim().match(/^([1-9]\d*)(Mi|Gi)$/)
+  if (!match) return 2048
+  return Number(match[1]) * (match[2] === 'Gi' ? 1024 : 1)
 }
 
 export function AgentSection() {
@@ -19,7 +25,11 @@ export function AgentSection() {
   useEffect(() => { void Promise.all([
     apiRequest<{ values: { agent?: Partial<AgentSettings> } }>('/api/admin/settings'),
     apiRequest<{ configured: boolean; healthy: boolean; detail?: string }>('/api/admin/settings/agent/status'),
-  ]).then(([settings, status]) => { setValue({ ...defaults, ...settings.values.agent }); setHealth(status) }) }, [])
+  ]).then(([settings, status]) => {
+    const loaded = { ...defaults, ...settings.values.agent }
+    setValue({ ...loaded, memory: `${memoryMiB(loaded.memory)}Mi` })
+    setHealth(status)
+  }) }, [])
   const number = (key: keyof AgentSettings, min = 0) => <Input type="number" min={min} value={String(value[key])} onChange={(event) => setValue({ ...value, [key]: Number(event.target.value) })} />
   return <div>
     <Section title="Pi agent mode" hint="The Pulpo worker runs Pi; an external Kubernetes controller owns Kata workspaces and credentials.">
@@ -29,7 +39,9 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>Warm workspaces</span>{number('warmCapacity')}</label>
         <label className="space-y-1 text-xs"><span>Maximum active</span>{number('maxActiveWorkspaces', 1)}</label>
         <label className="space-y-1 text-xs"><span>CPU</span><Input value={value.cpu} onChange={(event) => setValue({ ...value, cpu: event.target.value })} /></label>
-        <label className="space-y-1 text-xs"><span>Memory</span><Input value={value.memory} onChange={(event) => setValue({ ...value, memory: event.target.value })} /></label>
+        <label className="space-y-1 text-xs"><span>Memory (MiB)</span><Input type="number" min={1} step={128} value={memoryMiB(value.memory)} onChange={(event) => {
+          if (Number.isInteger(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, memory: `${event.target.valueAsNumber}Mi` })
+        }} /></label>
         <label className="space-y-1 text-xs"><span>Ephemeral disk</span><Input value={value.ephemeralStorage} onChange={(event) => setValue({ ...value, ephemeralStorage: event.target.value })} /></label>
         <label className="space-y-1 text-xs"><span>Idle timeout (seconds)</span>{number('idleTimeoutSeconds', 60)}</label>
         <label className="space-y-1 text-xs"><span>Hard timeout (seconds)</span>{number('hardTimeoutSeconds', 300)}</label>
