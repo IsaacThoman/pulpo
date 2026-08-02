@@ -64,6 +64,13 @@
       "when": 1785628341154,
       "tag": "0008_next_jack_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785638949691,
+      "tag": "0009_gigantic_warhawk",
+      "breakpoints": true
     }
   ]
 }

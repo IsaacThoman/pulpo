@@ -83,6 +83,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   let sequence = record.response.lastSequence; let modelTurns = 0; let toolCalls = 0
   let usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }; let accruedCostMicros = 0
   const billingTurns: Array<Record<string, unknown>> = []
+  const modelTurnStartedAt = new Map<number, number>()
   const toolItems = new Map<string, ToolTimelineItem>()
   let workspaceItem: Record<string, unknown> | undefined
   const skipMessageCount = initialMessages(parentRun?.context).length
@@ -139,7 +140,8 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       if (modelTurns > settings.maxModelTurns) agent.abort()
       if (modelTurns > 1) await extendBudgetReservation({ responseId, requestInput: agent.state.messages, maxOutputTokens: active.model.maxOutputTokens, pricing: await getActivePricing(active.model.id) })
     } else if (event.type === 'message_start' && event.message.role === 'assistant') {
-      await db.insert(generationAttempts).values({ id: newId(), requestLogId: requestLog.id, modelId: active.model.id, fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, attempt: modelTurns, status: 'in_progress' })
+      modelTurnStartedAt.set(modelTurns, Date.now())
+      await db.insert(generationAttempts).values({ id: newId(), requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, attempt: modelTurns, status: 'in_progress' })
       await db.update(responses).set({ actualModelId: active.model.id }).where(eq(responses.id, responseId))
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentAttempt: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
@@ -153,7 +155,12 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
       const pricing = await getActivePricing(active.model.id); const turnCost = calculateCostMicros(turnUsage, pricing)
       accruedCostMicros += turnCost; billingTurns.push({ modelId: active.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
-      await db.update(generationAttempts).set({ status: message.stopReason === 'error' ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorMessage: message.errorMessage, completedAt: new Date() }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.attempt, modelTurns)))
+      await db.update(generationAttempts).set({
+        status: message.stopReason === 'error' ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorMessage: message.errorMessage,
+        inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, outputTokens: turnUsage.outputTokens,
+        reasoningTokens: turnUsage.reasoningTokens, costMicros: turnCost,
+        durationMs: Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now()), completedAt: new Date(),
+      }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.attempt, modelTurns), eq(generationAttempts.source, 'agent')))
       await db.update(requestLogs).set({ inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, eventCount: sql`${requestLogs.eventCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
       await snapshot()
     } else if (event.type === 'tool_execution_start') {
@@ -206,7 +213,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await db.update(requestLogs).set({ status: 'completed', actualModelId: active.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: Date.now() - startedAt, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
     const postTaskClient = new OpenAI({ apiKey: active.apiKey, baseURL: active.provider.baseUrl, timeout: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries })
-    await runPostResponseTasks(postTaskClient, record, completed?.output as unknown[] ?? []).catch((error) => {
+    await runPostResponseTasks(postTaskClient, record, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
     })
   } catch (error) {
