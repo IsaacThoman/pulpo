@@ -88,14 +88,14 @@ async function claim(input: { imageDigest?: string; resources?: Partial<Omit<Wor
   if (!pod?.metadata?.name || !pod.status?.podIP) throw new Error('No warm workspace is ready')
   const id = randomUUID()
   const createdAt = Date.now(); const idleMs = (input.idleTimeoutSeconds ?? 1800) * 1000; const hardMs = (input.hardTimeoutSeconds ?? 14400) * 1000
-  await core.patchNamespacedPod({ namespace, name: pod.metadata.name, body: { metadata: { labels: { 'pulpo.dev/state': 'claimed', 'pulpo.dev/lease-id': id }, annotations: { 'pulpo.dev/created-at': String(createdAt), 'pulpo.dev/last-used-at': String(createdAt), 'pulpo.dev/idle-ms': String(idleMs), 'pulpo.dev/hard-ms': String(hardMs) } } } }, k8s.setHeaderOptions('content-type', k8s.PatchStrategy.MergePatch))
+  await core.patchNamespacedPod({ namespace, name: pod.metadata.name, body: { metadata: { labels: { 'pulpo.dev/state': 'claimed', 'pulpo.dev/lease-id': id }, annotations: { 'pulpo.dev/created-at': String(createdAt), 'pulpo.dev/last-used-at': String(createdAt), 'pulpo.dev/idle-ms': String(idleMs), 'pulpo.dev/hard-ms': String(hardMs) } } } }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch))
   const lease: Lease = { id, podName: pod.metadata.name, podIp: pod.status.podIP, daemonToken: pod.metadata.annotations?.['pulpo.dev/daemon-token'] ?? '', createdAt, lastUsedAt: createdAt, idleMs, hardMs }
   leases.set(id, lease); void reconcile(); return lease
 }
 
 async function proxy(lease: Lease, request: IncomingMessage, pathname: string, search = ''): Promise<Response> {
   lease.lastUsedAt = Date.now()
-  void core.patchNamespacedPod({ namespace, name: lease.podName, body: { metadata: { annotations: { 'pulpo.dev/last-used-at': String(lease.lastUsedAt) } } } }, k8s.setHeaderOptions('content-type', k8s.PatchStrategy.MergePatch)).catch(() => undefined)
+  void core.patchNamespacedPod({ namespace, name: lease.podName, body: { metadata: { annotations: { 'pulpo.dev/last-used-at': String(lease.lastUsedAt) } } } }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch)).catch(() => undefined)
   const payload = ['GET', 'HEAD'].includes(request.method ?? 'GET') ? undefined : new Uint8Array(await body(request))
   return fetch(`http://${lease.podIp}:8787${pathname}${search}`, { method: request.method, headers: { authorization: `Bearer ${lease.daemonToken}`, 'content-type': request.headers['content-type'] ?? 'application/json' }, body: payload })
 }
