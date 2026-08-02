@@ -8,13 +8,20 @@ export type ToolTimelineItem = {
   status: string
   output: string
   isError?: boolean
+  startedAt?: string
+  durationMs?: number
 }
 
-function reasoningItem(text: string, status: 'in_progress' | 'completed' = 'completed') {
+function reasoningItem(
+  text: string,
+  status: 'in_progress' | 'completed' = 'completed',
+  durationMs?: number,
+) {
   return {
     type: 'reasoning',
     status,
     summary: [{ type: 'summary_text', text }],
+    ...(durationMs !== undefined ? { durationMs } : {}),
   }
 }
 
@@ -32,12 +39,17 @@ function pushAssistantParts(
   toolItems: Map<string, ToolTimelineItem>,
   output: unknown[],
   status: 'in_progress' | 'completed' = 'completed',
+  turnDurationMs?: number,
 ) {
   let thinking = ''
   let text = ''
+  let pendingReasoningDuration = turnDurationMs
   const flushThinking = () => {
     if (!thinking) return
-    output.push(reasoningItem(thinking, status))
+    // Attach model-turn duration to the first reasoning chunk in the turn.
+    const durationMs = pendingReasoningDuration
+    pendingReasoningDuration = undefined
+    output.push(reasoningItem(thinking, status, durationMs))
     thinking = ''
   }
   const flushText = () => {
@@ -81,6 +93,8 @@ export function buildAgentOutput(options: {
   skipMessageCount: number
   toolItems: Map<string, ToolTimelineItem>
   workspaceItem?: Record<string, unknown>
+  /** Model-turn durations keyed by 1-based assistant turn index in this run. */
+  turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
   streaming?: boolean
   terminal?: boolean
@@ -90,6 +104,7 @@ export function buildAgentOutput(options: {
     skipMessageCount,
     toolItems,
     workspaceItem,
+    turnDurationsMs,
     streaming = false,
     terminal = false,
   } = options
@@ -98,8 +113,10 @@ export function buildAgentOutput(options: {
 
   const relevant = messages.slice(Math.max(0, skipMessageCount))
   const seenToolIds = new Set<string>()
+  let assistantTurn = 0
   relevant.forEach((message, index) => {
     if (message.role !== 'assistant') return
+    assistantTurn += 1
     const content = Array.isArray(message.content) ? message.content : []
     const isStreamingTail = streaming && index === relevant.length - 1
     const status = terminal || !isStreamingTail ? 'completed' : 'in_progress'
@@ -108,6 +125,7 @@ export function buildAgentOutput(options: {
       toolItems,
       output,
       status,
+      turnDurationsMs?.get(assistantTurn),
     )
     for (const part of content) {
       if ((part as { type?: string }).type === 'toolCall' && typeof (part as { id?: string }).id === 'string') {

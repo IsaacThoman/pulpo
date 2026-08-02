@@ -84,8 +84,10 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   let usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }; let accruedCostMicros = 0
   const billingTurns: Array<Record<string, unknown>> = []
   const modelTurnStartedAt = new Map<number, number>()
+  const turnDurationsMs = new Map<number, number>()
   const toolItems = new Map<string, ToolTimelineItem>()
   let workspaceItem: Record<string, unknown> | undefined
+  let workspaceStartedAtMs: number | undefined
   const skipMessageCount = initialMessages(parentRun?.context).length
   const emit = async (type: string, payload: Record<string, unknown>) => {
     sequence += 1
@@ -105,6 +107,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       skipMessageCount,
       toolItems,
       workspaceItem,
+      turnDurationsMs,
       streaming: hasStreaming && !terminal,
       terminal: Boolean(terminal),
     })
@@ -113,7 +116,23 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     if (updated) await publishSnapshot(toSnapshot(updated))
   }
   const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
-    workspaceItem = { id: `workspace-${runId}`, type: 'pulpo_workspace', state, ...details }
+    if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
+      workspaceStartedAtMs = Date.now()
+    }
+    const durationMs = workspaceStartedAtMs !== undefined
+      && (state === 'ready' || state === 'expired' || state === 'unavailable' || state === 'continuing_without_agent')
+      ? Math.max(0, Date.now() - workspaceStartedAtMs)
+      : workspaceItem && typeof workspaceItem.durationMs === 'number'
+        ? workspaceItem.durationMs as number
+        : undefined
+    workspaceItem = {
+      id: `workspace-${runId}`,
+      type: 'pulpo_workspace',
+      state,
+      ...(workspaceStartedAtMs !== undefined ? { startedAt: new Date(workspaceStartedAtMs).toISOString() } : {}),
+      ...(durationMs !== undefined ? { durationMs } : {}),
+      ...details,
+    }
     await emit(`pulpo.agent.workspace.${state}`, workspaceItem)
     await snapshot()
   })
@@ -155,19 +174,30 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
       const pricing = await getActivePricing(active.model.id); const turnCost = calculateCostMicros(turnUsage, pricing)
       accruedCostMicros += turnCost; billingTurns.push({ modelId: active.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
+      const turnDurationMs = Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now())
+      turnDurationsMs.set(modelTurns, turnDurationMs)
       await db.update(generationAttempts).set({
         status: message.stopReason === 'error' ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorMessage: message.errorMessage,
         inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, outputTokens: turnUsage.outputTokens,
         reasoningTokens: turnUsage.reasoningTokens, costMicros: turnCost,
-        durationMs: Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now()), completedAt: new Date(),
+        durationMs: turnDurationMs, completedAt: new Date(),
       }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.attempt, modelTurns), eq(generationAttempts.source, 'agent')))
       await db.update(requestLogs).set({ inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, eventCount: sql`${requestLogs.eventCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
       await snapshot()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
-      const item: ToolTimelineItem = { id: event.toolCallId, type: 'pulpo_tool', tool: event.toolName, arguments: event.args, status: 'running', output: '' }
+      const startedAt = new Date()
+      const item: ToolTimelineItem = {
+        id: event.toolCallId,
+        type: 'pulpo_tool',
+        tool: event.toolName,
+        arguments: event.args,
+        status: 'running',
+        output: '',
+        startedAt: startedAt.toISOString(),
+      }
       toolItems.set(event.toolCallId, item)
-      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'running', startedAt: new Date() }).onConflictDoNothing()
+      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'running', startedAt }).onConflictDoNothing()
       await emit('pulpo.agent.tool.started', item)
       await snapshot()
     } else if (event.type === 'tool_execution_update') {
@@ -177,9 +207,13 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await snapshot()
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
-      const item = toolItems.get(event.toolCallId); if (item) Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError })
+      const item = toolItems.get(event.toolCallId)
+      if (item) {
+        const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
+        Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
+      }
       await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: event.isError ? 'failed' : 'completed', output, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
-      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError })
+      await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs })
       if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshot()
     }

@@ -40,6 +40,8 @@ type ToolItem = {
   arguments?: unknown
   output?: string
   isError?: boolean
+  startedAt?: string
+  durationMs?: number
 }
 
 type WorkspaceItem = {
@@ -47,7 +49,28 @@ type WorkspaceItem = {
   state?: string
   position?: number
   error?: string
+  startedAt?: string
+  durationMs?: number
 }
+
+type ReasoningStep = {
+  kind: 'reasoning'
+  text: string
+  active: boolean
+  durationMs?: number
+}
+
+type ToolStep = {
+  kind: 'tool'
+  tool: ToolItem
+}
+
+type WorkspaceStep = {
+  kind: 'workspace'
+  workspace: WorkspaceItem
+}
+
+type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep
 
 function ActionButton({
   label,
@@ -183,12 +206,33 @@ function useElapsedMs(startTs: number, active: boolean, finalMs?: number) {
   return Math.max(0, now - startTs)
 }
 
+function stepSecondsLabel(ms?: number): string | null {
+  if (ms === undefined || ms < 0) return null
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  return `${seconds}s`
+}
+
+function StepDuration({ ms, live }: { ms?: number; live?: boolean }) {
+  const label = stepSecondsLabel(ms)
+  if (!label && !live) return null
+  return (
+    <span className="shrink-0 tabular-nums text-[11px] text-muted-foreground/70">
+      {live && !label ? '…' : label}
+    </span>
+  )
+}
+
 function ActivityToolRow({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useState(false)
   const Icon = toolIcon(tool.tool)
   const running = tool.status === 'running'
   const failed = tool.status === 'failed' || tool.isError
   const hasBody = tool.arguments !== undefined || Boolean(tool.output)
+  const liveMs = useElapsedMs(
+    tool.startedAt ? Date.parse(tool.startedAt) : 0,
+    running && Boolean(tool.startedAt),
+    tool.durationMs,
+  )
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
@@ -202,6 +246,7 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
         )}
         <span className="shrink-0 font-medium text-foreground/80">{tool.tool ?? 'tool'}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] opacity-80">{toolSummary(tool)}</span>
+        <StepDuration ms={running ? liveMs : tool.durationMs} live={running} />
         {hasBody && (
           <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
         )}
@@ -230,9 +275,7 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
 
 type ActivitySegment = {
   kind: 'activity'
-  reasoning?: string
-  tools: ToolItem[]
-  workspace?: WorkspaceItem
+  steps: ActivityStep[]
   active: boolean
 }
 
@@ -262,12 +305,8 @@ function workspaceLabel(item: WorkspaceItem): string {
   if (item.state === 'provisioning') return 'Starting workspace…'
   if (item.state === 'continuing_without_agent') return 'Continuing without agent tools'
   if (workspaceIsFailed(item.state)) return `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
+  if (workspaceIsQuiet(item.state)) return 'Started workspace'
   return 'Workspace'
-}
-
-function visibleWorkspace(item?: WorkspaceItem): WorkspaceItem | undefined {
-  if (!item || workspaceIsQuiet(item.state)) return undefined
-  return item
 }
 
 function reasoningFromItem(item: unknown): string {
@@ -289,25 +328,38 @@ function messageTextFromItem(item: unknown): string {
   }).join('')
 }
 
+function activityHasContent(steps: ActivityStep[], showReasoning: boolean): boolean {
+  return steps.some((step) => {
+    if (step.kind === 'reasoning') return showReasoning && Boolean(step.text)
+    return true
+  })
+}
+
+function insertWorkspaceStep(steps: ActivityStep[], workspace: WorkspaceItem): ActivityStep[] {
+  if (steps.some((step) => step.kind === 'workspace')) return steps
+  const step: WorkspaceStep = { kind: 'workspace', workspace }
+  const firstTool = steps.findIndex((entry) => entry.kind === 'tool')
+  if (firstTool === -1) return [step, ...steps]
+  return [...steps.slice(0, firstTool), step, ...steps.slice(firstTool)]
+}
+
 /** Group consecutive reasoning/tools into activity blocks; messages become text segments.
- *  Workspace is lazy-started on the first tool call, so it attaches to the first tool activity
- *  (shown after reasoning, before tools) — not at the top of the response. */
+ *  Steps keep arrival order (think → tool → think → tool). Workspace is lazy-started on the
+ *  first tool call, so it is inserted immediately before the first tool step. */
 function buildTimeline(outputItems: unknown[], showReasoning: boolean): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let activity: ActivitySegment | null = null
-  const workspace = visibleWorkspace(
-    outputItems.find((item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace'),
+  const workspace = outputItems.find(
+    (item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace',
   )
 
   const flushActivity = () => {
     if (!activity) return
-    const hasReasoning = Boolean(activity.reasoning)
-    const hasTools = activity.tools.length > 0
-    if ((hasReasoning && showReasoning) || hasTools) {
-      segments.push({
-        ...activity,
-        reasoning: showReasoning ? activity.reasoning : undefined,
-      })
+    const steps = showReasoning
+      ? activity.steps
+      : activity.steps.filter((step) => step.kind !== 'reasoning')
+    if (activityHasContent(steps, true)) {
+      segments.push({ ...activity, steps })
     }
     activity = null
   }
@@ -316,16 +368,25 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
     const type = (item as { type?: string }).type
     if (type === 'pulpo_workspace') continue
     if (type === 'reasoning') {
-      if (!activity) activity = { kind: 'activity', tools: [], active: false }
+      if (!activity) activity = { kind: 'activity', steps: [], active: false }
       const text = reasoningFromItem(item)
-      activity.reasoning = activity.reasoning ? `${activity.reasoning}\n${text}` : text
+      if (text || (item as { status?: string }).status === 'in_progress') {
+        activity.steps.push({
+          kind: 'reasoning',
+          text,
+          active: (item as { status?: string }).status === 'in_progress',
+          durationMs: typeof (item as { durationMs?: unknown }).durationMs === 'number'
+            ? (item as { durationMs: number }).durationMs
+            : undefined,
+        })
+      }
       if ((item as { status?: string }).status === 'in_progress') activity.active = true
       continue
     }
     if (type === 'pulpo_tool') {
-      if (!activity) activity = { kind: 'activity', tools: [], active: false }
+      if (!activity) activity = { kind: 'activity', steps: [], active: false }
       const tool = item as ToolItem
-      activity.tools.push(tool)
+      activity.steps.push({ kind: 'tool', tool })
       if (tool.status === 'running') activity.active = true
       continue
     }
@@ -339,18 +400,18 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
 
   if (workspace) {
     const toolActivity = segments.find(
-      (segment): segment is ActivitySegment => segment.kind === 'activity' && segment.tools.length > 0,
+      (segment): segment is ActivitySegment =>
+        segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'tool'),
     )
     const target = toolActivity
       ?? segments.find((segment): segment is ActivitySegment => segment.kind === 'activity')
     if (target) {
-      target.workspace = workspace
+      target.steps = insertWorkspaceStep(target.steps, workspace)
       if (workspaceIsActive(workspace.state)) target.active = true
     } else {
       segments.unshift({
         kind: 'activity',
-        tools: [],
-        workspace,
+        steps: [{ kind: 'workspace', workspace }],
         active: workspaceIsActive(workspace.state),
       })
     }
@@ -361,10 +422,52 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
 
 const WORKSPACE_ACTIONS_DELAY_MS = 15_000
 
+function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
+  const busy = workspaceIsActive(workspace.state)
+  const failed = workspaceIsFailed(workspace.state)
+  const liveMs = useElapsedMs(
+    workspace.startedAt ? Date.parse(workspace.startedAt) : 0,
+    busy && Boolean(workspace.startedAt),
+    workspace.durationMs,
+  )
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+        {busy ? (
+          <Loader2 className="size-3 shrink-0 animate-spin" />
+        ) : failed ? (
+          <XCircle className="size-3 shrink-0 text-destructive" />
+        ) : (
+          <Server className="size-3 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1">{workspaceLabel(workspace)}</span>
+        <StepDuration ms={busy ? liveMs : workspace.durationMs} live={busy} />
+      </div>
+      {workspace.error && (
+        <div className="text-[12px] leading-5 text-destructive">{workspace.error}</div>
+      )}
+    </div>
+  )
+}
+
+function ReasoningStepRow({ step }: { step: ReasoningStep }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-start gap-1.5">
+        <div className="min-w-0 flex-1 whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
+          {step.text || (step.active ? 'Thinking…' : '')}
+        </div>
+        {!step.active && step.durationMs !== undefined ? (
+          <StepDuration ms={step.durationMs} />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 function ActivityBlock({
-  reasoning,
-  tools,
-  workspace,
+  steps,
   active,
   showDuration,
   durationMs,
@@ -373,9 +476,7 @@ function ActivityBlock({
   onContinue,
   capacityPending,
 }: {
-  reasoning?: string
-  tools: ToolItem[]
-  workspace?: WorkspaceItem
+  steps: ActivityStep[]
   active: boolean
   showDuration: boolean
   durationMs?: number
@@ -384,6 +485,9 @@ function ActivityBlock({
   onContinue: (id: string) => void
   capacityPending: boolean
 }) {
+  const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
+  const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
+  const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
   const isWaiting = workspace?.state === 'waiting'
@@ -401,7 +505,6 @@ function ActivityBlock({
 
   const needsWorkspaceActions = isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0
-  const hasReasoning = Boolean(reasoning)
   const hasWorkspace = Boolean(workspace)
   const runningTool = tools.find((tool) => tool.status === 'running')
 
@@ -437,7 +540,7 @@ function ActivityBlock({
     return <Brain className="size-3.5 shrink-0" />
   })()
 
-  if (!hasReasoning && !hasTools && !hasWorkspace) return null
+  if (steps.length === 0) return null
 
   return (
     <div className="space-y-1.5">
@@ -453,39 +556,24 @@ function ActivityBlock({
           <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-1 space-y-1 border-l-2 border-muted py-0.5 pl-2.5">
-            {hasReasoning ? (
-              <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
-                {reasoning}
-              </div>
-            ) : null}
-            {active && !hasReasoning && !hasTools && !hasWorkspace ? (
+          <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
+            {steps.map((step, index) => {
+              if (step.kind === 'reasoning') {
+                return <ReasoningStepRow key={`reasoning:${index}`} step={step} />
+              }
+              if (step.kind === 'workspace') {
+                return <WorkspaceStepRow key={`workspace:${index}`} workspace={step.workspace} />
+              }
+              return (
+                <ActivityToolRow
+                  key={step.tool.id ?? `tool:${index}`}
+                  tool={step.tool}
+                />
+              )
+            })}
+            {active && steps.length === 0 ? (
               <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
             ) : null}
-            {workspace && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                  {workspaceBusy ? (
-                    <Loader2 className="size-3 shrink-0 animate-spin" />
-                  ) : workspaceFailed ? (
-                    <XCircle className="size-3 shrink-0 text-destructive" />
-                  ) : (
-                    <Server className="size-3 shrink-0" />
-                  )}
-                  <span>{workspaceLabel(workspace)}</span>
-                </div>
-                {workspace.error && (
-                  <div className="text-[12px] leading-5 text-destructive">{workspace.error}</div>
-                )}
-              </div>
-            )}
-            {hasTools && (
-              <div className="space-y-0">
-                {tools.map((tool, index) => (
-                  <ActivityToolRow key={tool.id ?? `${tool.tool}:${index}`} tool={tool} />
-                ))}
-              </div>
-            )}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -527,8 +615,13 @@ export const MessageItem = memo(function MessageItem({
     if (showReasoning && message.reasoning !== undefined && (message.reasoning || streaming)) {
       segments.push({
         kind: 'activity',
-        reasoning: message.reasoning || undefined,
-        tools: [],
+        steps: message.reasoning || streaming
+          ? [{
+              kind: 'reasoning',
+              text: message.reasoning || '',
+              active: streaming && !message.content,
+            }]
+          : [],
         active: streaming && !message.content,
       })
     }
@@ -692,9 +785,7 @@ export const MessageItem = memo(function MessageItem({
                   return (
                     <ActivityBlock
                       key={`activity:${index}`}
-                      reasoning={segment.reasoning}
-                      tools={segment.tools}
-                      workspace={segment.workspace}
+                      steps={segment.steps}
                       active={segment.active || (streaming && isLastActivity && !timeline.slice(index + 1).some((entry) => entry.kind === 'text'))}
                       showDuration={!streaming && isLastActivity}
                       durationMs={elapsedMs}
