@@ -8,10 +8,10 @@ export function mergePendingLocalMessages(
 ): Message[] {
   if (!localMessages?.length) return serverMessages
   if (!serverMessages.length) {
-    if (!streamingIds.length) return serverMessages
     const streaming = new Set(streamingIds)
     const assistants = localMessages.filter((message) =>
-      message.role === 'assistant' && !message.done && streaming.has(message.id),
+      message.role === 'assistant'
+      && ((!message.done && streaming.has(message.id)) || Boolean(message.error)),
     )
     if (!assistants.length) return serverMessages
     return assistants.flatMap((assistant) => {
@@ -33,13 +33,15 @@ export function mergePendingLocalMessages(
   }
   if (!pending.length) return serverMessages
 
-  const hasInFlight = pending.some((message) => message.role === 'assistant' && !message.done)
+  const hasLocalOnlyTurn = pending.some((message) =>
+    message.role === 'assistant' && (!message.done || Boolean(message.error)),
+  )
   const lastServerId = serverMessages.at(-1)?.id
   const lastServerLocalIndex = lastServerId ? localMessages.findIndex((message) => message.id === lastServerId) : -1
   const serverIsLocalPrefix = lastServerLocalIndex >= 0
     && serverMessages.every((message) => localMessages.some((local) => local.id === message.id))
     && lastServerLocalIndex === serverMessages.length - 1
 
-  if (hasInFlight || serverIsLocalPrefix) return [...serverMessages, ...pending]
+  if (hasLocalOnlyTurn || serverIsLocalPrefix) return [...serverMessages, ...pending]
   return serverMessages
 }

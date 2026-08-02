@@ -19,6 +19,14 @@ describe('mergePendingLocalMessages', () => {
     expect(mergePendingLocalMessages([], deleted, [])).toEqual([])
   })
 
+  it('preserves a failed optimistic turn when the server rejected it before persistence', () => {
+    const failed = message('failed', 'assistant')
+    failed.error = 'The fallback model is not enabled for agent mode'
+    const local = [message('failed:input', 'user'), failed]
+
+    expect(mergePendingLocalMessages([], local, [])).toEqual(local)
+  })
+
   it('does not resurrect a completed turn from a stale streaming id', () => {
     const deleted = [message('deleted:input', 'user'), message('deleted', 'assistant')]
 
@@ -30,6 +38,15 @@ describe('mergePendingLocalMessages', () => {
     const pending = [message('pending:input', 'user'), message('pending', 'assistant', false)]
 
     expect(mergePendingLocalMessages(server, [...server, ...pending], ['pending'])).toEqual([...server, ...pending])
+  })
+
+  it('appends a failed optimistic turn to a non-empty server prefix', () => {
+    const server = [message('saved:input', 'user'), message('saved', 'assistant')]
+    const failed = message('failed', 'assistant')
+    failed.error = 'The fallback model is not enabled for agent mode'
+    const pending = [message('failed:input', 'user'), failed]
+
+    expect(mergePendingLocalMessages(server, [...server, ...pending], [])).toEqual([...server, ...pending])
   })
 
   it('preserves multiple concurrent optimistic turns on empty detail', () => {
