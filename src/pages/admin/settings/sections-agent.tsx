@@ -19,6 +19,19 @@ function memoryMiB(quantity: string): number {
   return Number(match[1]) * (match[2] === 'Gi' ? 1024 : 1)
 }
 
+function cpuCores(quantity: string): number {
+  const millicores = quantity.trim().match(/^([1-9]\d*)m$/)
+  if (millicores) return Number(millicores[1]) / 1000
+  const cores = Number(quantity)
+  return Number.isFinite(cores) && cores > 0 ? cores : 2
+}
+
+function diskGiB(quantity: string): number {
+  const match = quantity.trim().match(/^([1-9]\d*)(Mi|Gi)$/)
+  if (!match) return 20
+  return match[2] === 'Mi' ? Math.ceil(Number(match[1]) / 1024) : Number(match[1])
+}
+
 export function AgentSection() {
   const [value, setValue] = useState(defaults)
   const [health, setHealth] = useState<{ configured: boolean; healthy: boolean; detail?: string }>({ configured: false, healthy: false })
@@ -27,7 +40,12 @@ export function AgentSection() {
     apiRequest<{ configured: boolean; healthy: boolean; detail?: string }>('/api/admin/settings/agent/status'),
   ]).then(([settings, status]) => {
     const loaded = { ...defaults, ...settings.values.agent }
-    setValue({ ...loaded, memory: `${memoryMiB(loaded.memory)}Mi` })
+    setValue({
+      ...loaded,
+      cpu: String(cpuCores(loaded.cpu)),
+      memory: `${memoryMiB(loaded.memory)}Mi`,
+      ephemeralStorage: `${diskGiB(loaded.ephemeralStorage)}Gi`,
+    })
     setHealth(status)
   }) }, [])
   const number = (key: keyof AgentSettings, min = 0) => <Input type="number" min={min} value={String(value[key])} onChange={(event) => setValue({ ...value, [key]: Number(event.target.value) })} />
@@ -37,12 +55,16 @@ export function AgentSection() {
       <label className="block space-y-1 text-xs"><span>Immutable workspace image</span><Input className="font-mono text-xs" value={value.imageDigest} onChange={(event) => setValue({ ...value, imageDigest: event.target.value })} /></label>
       <div className="grid grid-cols-2 gap-3">
         <label className="space-y-1 text-xs"><span>Warm workspaces</span>{number('warmCapacity')}</label>
-        <label className="space-y-1 text-xs"><span>Maximum active</span>{number('maxActiveWorkspaces', 1)}</label>
-        <label className="space-y-1 text-xs"><span>CPU</span><Input value={value.cpu} onChange={(event) => setValue({ ...value, cpu: event.target.value })} /></label>
+        <label className="space-y-1 text-xs"><span>Maximum active workspaces</span>{number('maxActiveWorkspaces', 1)}</label>
+        <label className="space-y-1 text-xs"><span>CPU (cores)</span><Input type="number" min={0.001} step={0.1} value={cpuCores(value.cpu)} onChange={(event) => {
+          if (Number.isFinite(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, cpu: String(event.target.valueAsNumber) })
+        }} /></label>
         <label className="space-y-1 text-xs"><span>Memory (MiB)</span><Input type="number" min={1} step={128} value={memoryMiB(value.memory)} onChange={(event) => {
           if (Number.isInteger(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, memory: `${event.target.valueAsNumber}Mi` })
         }} /></label>
-        <label className="space-y-1 text-xs"><span>Ephemeral disk</span><Input value={value.ephemeralStorage} onChange={(event) => setValue({ ...value, ephemeralStorage: event.target.value })} /></label>
+        <label className="space-y-1 text-xs"><span>Ephemeral disk (GiB)</span><Input type="number" min={1} step={1} value={diskGiB(value.ephemeralStorage)} onChange={(event) => {
+          if (Number.isInteger(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, ephemeralStorage: `${event.target.valueAsNumber}Gi` })
+        }} /></label>
         <label className="space-y-1 text-xs"><span>Idle timeout (seconds)</span>{number('idleTimeoutSeconds', 60)}</label>
         <label className="space-y-1 text-xs"><span>Hard timeout (seconds)</span>{number('hardTimeoutSeconds', 300)}</label>
         <label className="space-y-1 text-xs"><span>Capacity wait timeout (seconds)</span>{number('workspaceWaitTimeoutSeconds', 30)}</label>
@@ -50,7 +72,7 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>Maximum tool calls</span>{number('maxToolCalls', 1)}</label>
         <label className="space-y-1 text-xs"><span>Response timeout (seconds)</span>{number('responseTimeoutSeconds', 60)}</label>
         <label className="space-y-1 text-xs"><span>Command timeout (seconds)</span>{number('commandTimeoutSeconds', 1)}</label>
-        <label className="space-y-1 text-xs"><span>Retained tool output bytes</span>{number('maxToolOutputBytes', 1024)}</label>
+        <label className="space-y-1 text-xs"><span>Retained tool output (bytes)</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
     </Section>
     <div className="mb-4 flex items-center gap-2 rounded-lg border p-3 text-sm">
