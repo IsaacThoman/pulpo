@@ -41,6 +41,8 @@ metadata:
   namespace: pulpo-workspaces
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: pulpo-workspace-controller

@@ -47,6 +47,8 @@ async function createWarmPod(spec = desiredSpec): Promise<void> {
 
 async function reconcileOnce(): Promise<void> {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace' })).items
+  const podNames = new Set(pods.flatMap((pod) => pod.metadata?.name ? [pod.metadata.name] : []))
+  for (const [leaseId, lease] of leases) if (!podNames.has(lease.podName)) leases.delete(leaseId)
   for (const pod of pods) {
     const leaseId = pod.metadata?.labels?.['pulpo.dev/lease-id']; const annotations = pod.metadata?.annotations
     if (!leaseId || leases.has(leaseId) || !pod.metadata?.name || !pod.status?.podIP) continue
