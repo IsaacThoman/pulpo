@@ -21,6 +21,7 @@ type Lease = { id: string; podName: string; podIp: string; daemonToken: string; 
 type WorkspaceSpec = { imageDigest: string; cpu: string; memory: string; ephemeralStorage: string }
 let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2Gi', ephemeralStorage: '20Gi' }
 const leases = new Map<string, Lease>()
+let reconcileInFlight: Promise<void> | undefined
 
 function json(response: ServerResponse, status: number, value: unknown): void { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)) }
 async function body(request: IncomingMessage): Promise<Buffer> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks) }
@@ -44,7 +45,7 @@ async function createWarmPod(spec = desiredSpec): Promise<void> {
   } })
 }
 
-async function reconcile(): Promise<void> {
+async function reconcileOnce(): Promise<void> {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace' })).items
   for (const pod of pods) {
     const leaseId = pod.metadata?.labels?.['pulpo.dev/lease-id']; const annotations = pod.metadata?.annotations
@@ -59,7 +60,16 @@ async function reconcile(): Promise<void> {
   const incompatible = allWarm.filter((pod) => !podMatches(pod, desiredSpec))
   await Promise.all(incompatible.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
   const warm = allWarm.filter((pod) => podMatches(pod, desiredSpec))
-  for (let count = warm.length; count < warmCapacity; count += 1) await createWarmPod()
+  const excess = warm.slice(warmCapacity)
+  await Promise.all(excess.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
+  for (let count = warm.length - excess.length; count < warmCapacity; count += 1) await createWarmPod()
+}
+
+async function reconcile(): Promise<void> {
+  if (reconcileInFlight) return reconcileInFlight
+  const run = reconcileOnce()
+  reconcileInFlight = run
+  try { await run } finally { if (reconcileInFlight === run) reconcileInFlight = undefined }
 }
 
 async function claim(input: { imageDigest?: string; resources?: Partial<Omit<WorkspaceSpec, 'imageDigest'>>; warmCapacity?: number; idleTimeoutSeconds?: number; hardTimeoutSeconds?: number; maxActiveWorkspaces?: number }): Promise<Lease> {
