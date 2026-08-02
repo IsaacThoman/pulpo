@@ -17,7 +17,6 @@ import {
   Trash2,
   Wrench,
   Loader2,
-  CheckCircle2,
   XCircle,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
@@ -237,6 +236,7 @@ type ActivitySegment = {
   kind: 'activity'
   reasoning?: string
   tools: ToolItem[]
+  workspace?: WorkspaceItem
   active: boolean
 }
 
@@ -246,6 +246,33 @@ type TextSegment = {
 }
 
 type TimelineSegment = ActivitySegment | TextSegment
+
+function workspaceIsQuiet(state?: string) {
+  return state === 'ready' || state === 'running'
+}
+
+function workspaceIsActive(state?: string) {
+  return state === 'waiting' || state === 'provisioning'
+}
+
+function workspaceIsFailed(state?: string) {
+  return state === 'expired' || state === 'unavailable'
+}
+
+function workspaceLabel(item: WorkspaceItem): string {
+  if (item.state === 'waiting') {
+    return `Waiting for workspace${typeof item.position === 'number' ? ` · queue #${item.position}` : ''}`
+  }
+  if (item.state === 'provisioning') return 'Starting workspace…'
+  if (item.state === 'continuing_without_agent') return 'Continuing without agent tools'
+  if (workspaceIsFailed(item.state)) return `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
+  return 'Workspace'
+}
+
+function visibleWorkspace(item?: WorkspaceItem): WorkspaceItem | undefined {
+  if (!item || workspaceIsQuiet(item.state)) return undefined
+  return item
+}
 
 function reasoningFromItem(item: unknown): string {
   const typed = item as { summary?: unknown[] }
@@ -270,18 +297,31 @@ function messageTextFromItem(item: unknown): string {
 function buildTimeline(outputItems: unknown[], showReasoning: boolean): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let activity: ActivitySegment | null = null
+  const workspace = visibleWorkspace(
+    outputItems.find((item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace'),
+  )
 
   const flushActivity = () => {
     if (!activity) return
     const hasReasoning = Boolean(activity.reasoning)
     const hasTools = activity.tools.length > 0
-    if ((hasReasoning && showReasoning) || hasTools) {
+    const hasWorkspace = Boolean(activity.workspace)
+    if ((hasReasoning && showReasoning) || hasTools || hasWorkspace) {
       segments.push({
         ...activity,
         reasoning: showReasoning ? activity.reasoning : undefined,
       })
     }
     activity = null
+  }
+
+  if (workspace) {
+    activity = {
+      kind: 'activity',
+      tools: [],
+      workspace,
+      active: workspaceIsActive(workspace.state),
+    }
   }
 
   for (const item of outputItems) {
@@ -314,33 +354,60 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
 function ActivityBlock({
   reasoning,
   tools,
+  workspace,
   active,
   showDuration,
   durationMs,
+  messageId,
+  onStop,
+  onContinue,
+  capacityPending,
 }: {
   reasoning?: string
   tools: ToolItem[]
+  workspace?: WorkspaceItem
   active: boolean
   showDuration: boolean
   durationMs?: number
+  messageId: string
+  onStop: (id: string) => void
+  onContinue: (id: string) => void
+  capacityPending: boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const workspaceBusy = workspaceIsActive(workspace?.state)
+  const workspaceFailed = workspaceIsFailed(workspace?.state)
+  const needsWorkspaceActions = workspace?.state === 'waiting'
+  const [open, setOpen] = useState(needsWorkspaceActions || workspaceFailed)
   const hasTools = tools.length > 0
   const hasReasoning = Boolean(reasoning)
+  const hasWorkspace = Boolean(workspace)
   const runningTool = tools.find((tool) => tool.status === 'running')
 
+  useEffect(() => {
+    if (needsWorkspaceActions || workspaceFailed) setOpen(true)
+  }, [needsWorkspaceActions, workspaceFailed])
+
   const label = useMemo(() => {
+    if (workspace && workspaceBusy) return workspaceLabel(workspace)
+    if (workspaceFailed && workspace) return workspaceLabel(workspace)
+    if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
+      return workspaceLabel(workspace)
+    }
     if (runningTool) return `Running ${runningTool.tool ?? 'tool'}…`
     if (active && hasTools) return 'Working…'
     if (active) return 'Thinking…'
     if (showDuration && durationMs !== undefined) {
       const duration = formatSecondsLabel(durationMs)
-      return hasTools ? `Worked for ${duration}` : `Thought for ${duration}`
+      return hasTools || hasWorkspace ? `Worked for ${duration}` : `Thought for ${duration}`
     }
-    return hasTools ? 'Worked' : 'Thought'
-  }, [runningTool, active, hasTools, showDuration, durationMs])
+    return hasTools || hasWorkspace ? 'Worked' : 'Thought'
+  }, [workspace, workspaceBusy, workspaceFailed, runningTool, active, hasTools, hasReasoning, hasWorkspace, showDuration, durationMs])
 
   const triggerIcon = (() => {
+    if (workspace && workspaceBusy) {
+      return <Server className="size-3.5 shrink-0 animate-pulse" />
+    }
+    if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (runningTool) {
       const Icon = toolIcon(runningTool.tool)
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
@@ -348,17 +415,18 @@ function ActivityBlock({
     if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
     if (active) return <Brain className="size-3.5 shrink-0 animate-pulse" />
     if (hasTools) return <Wrench className="size-3.5 shrink-0" />
+    if (hasWorkspace && !hasReasoning) return <Server className="size-3.5 shrink-0" />
     return <Brain className="size-3.5 shrink-0" />
   })()
 
-  if (!hasReasoning && !hasTools) return null
+  if (!hasReasoning && !hasTools && !hasWorkspace) return null
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
         {triggerIcon}
         <span>{label}</span>
-        {hasTools && !active && (
+        {hasTools && !active && !workspaceBusy && (
           <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-normal tabular-nums text-muted-foreground">
             {tools.length}
           </span>
@@ -367,12 +435,39 @@ function ActivityBlock({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-1 space-y-1 border-l-2 border-muted py-0.5 pl-2.5">
+          {workspace && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                {workspaceBusy ? (
+                  <Loader2 className="size-3 shrink-0 animate-spin" />
+                ) : workspaceFailed ? (
+                  <XCircle className="size-3 shrink-0 text-destructive" />
+                ) : (
+                  <Server className="size-3 shrink-0" />
+                )}
+                <span>{workspaceLabel(workspace)}</span>
+              </div>
+              {workspace.error && (
+                <div className="text-[12px] leading-5 text-destructive">{workspace.error}</div>
+              )}
+              {needsWorkspaceActions && (
+                <div className="flex flex-wrap gap-2 pt-0.5">
+                  <Button size="sm" variant="outline" onClick={() => onStop(messageId)}>
+                    Cancel generation
+                  </Button>
+                  <Button size="sm" disabled={capacityPending} onClick={() => onContinue(messageId)}>
+                    {capacityPending ? 'Continuing…' : 'Continue without agent'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
           {hasReasoning ? (
             <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
               {reasoning}
             </div>
           ) : null}
-          {active && !hasReasoning && !hasTools ? (
+          {active && !hasReasoning && !hasTools && !hasWorkspace ? (
             <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
           ) : null}
           {hasTools && (
@@ -385,62 +480,6 @@ function ActivityBlock({
         </div>
       </CollapsibleContent>
     </Collapsible>
-  )
-}
-
-function WorkspaceStatus({
-  item,
-  messageId,
-  onStop,
-  onContinue,
-  pending,
-}: {
-  item: WorkspaceItem
-  messageId: string
-  onStop: (id: string) => void
-  onContinue: (id: string) => void
-  pending: boolean
-}) {
-  const active = item.state === 'waiting' || item.state === 'provisioning'
-  const failed = item.state === 'expired' || item.state === 'unavailable'
-  const quiet = item.state === 'ready' || item.state === 'running'
-  if (quiet) return null
-
-  const label =
-    item.state === 'waiting'
-      ? `Waiting for workspace${typeof item.position === 'number' ? ` · queue #${item.position}` : ''}`
-      : item.state === 'provisioning'
-        ? 'Starting workspace…'
-        : item.state === 'continuing_without_agent'
-          ? 'Continuing without agent tools'
-          : `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
-
-  return (
-    <div role="status" className="rounded-lg border bg-muted/20 px-3 py-2 text-xs">
-      <div className="flex items-center gap-2">
-        {active ? (
-          <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-        ) : failed ? (
-          <XCircle className="size-3.5 shrink-0 text-destructive" />
-        ) : item.state === 'continuing_without_agent' ? (
-          <Server className="size-3.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <CheckCircle2 className="size-3.5 shrink-0 text-emerald-600" />
-        )}
-        <span className="font-medium text-foreground/90">{label}</span>
-        {item.error && <span className="ml-auto text-destructive">{item.error}</span>}
-      </div>
-      {item.state === 'waiting' && (
-        <div className="mt-2 flex flex-wrap gap-2 border-t pt-2">
-          <Button size="sm" variant="outline" onClick={() => onStop(messageId)}>
-            Cancel generation
-          </Button>
-          <Button size="sm" disabled={pending} onClick={() => onContinue(messageId)}>
-            {pending ? 'Continuing…' : 'Continue without agent'}
-          </Button>
-        </div>
-      )}
-    </div>
   )
 }
 
@@ -578,7 +617,6 @@ export const MessageItem = memo(function MessageItem({
 
   const model = getCatalogModel(message.modelId ?? chat.modelId)
   const outputItems = message.outputItems ?? []
-  const workspace = outputItems.find((item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace')
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
     return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace'].includes(type)
@@ -586,9 +624,6 @@ export const MessageItem = memo(function MessageItem({
   const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
-  const isActivityPending = streaming && !hasVisibleBody && Boolean(
-    workspace && (workspace.state === 'waiting' || workspace.state === 'provisioning'),
-  )
   let activityOrdinal = -1
 
   return (
@@ -601,19 +636,6 @@ export const MessageItem = memo(function MessageItem({
         </div>
 
         <div className="mt-1 flex flex-col gap-1.5">
-          {workspace && (
-            <WorkspaceStatus
-              item={workspace}
-              messageId={message.id}
-              onStop={stopStreaming}
-              onContinue={(id) => {
-                setCapacityActionPending(true)
-                void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
-              }}
-              pending={capacityActionPending}
-            />
-          )}
-
           {editing ? (
             <div className="rounded-2xl border bg-card p-3">
               <textarea
@@ -652,9 +674,17 @@ export const MessageItem = memo(function MessageItem({
                       key={`activity:${index}`}
                       reasoning={segment.reasoning}
                       tools={segment.tools}
+                      workspace={segment.workspace}
                       active={segment.active || (streaming && isLastActivity && !timeline.slice(index + 1).some((entry) => entry.kind === 'text'))}
                       showDuration={!streaming && isLastActivity}
                       durationMs={elapsedMs}
+                      messageId={message.id}
+                      onStop={stopStreaming}
+                      onContinue={(id) => {
+                        setCapacityActionPending(true)
+                        void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
+                      }}
+                      capacityPending={capacityActionPending}
                     />
                   )
                 }
@@ -668,7 +698,7 @@ export const MessageItem = memo(function MessageItem({
                   </div>
                 )
               })}
-              {!hasVisibleBody && !isActivityPending && streaming && (
+              {!hasVisibleBody && streaming && (
                 <span className="inline-flex gap-1 py-1">
                   <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
                   <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
