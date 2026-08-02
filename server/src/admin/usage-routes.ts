@@ -5,6 +5,7 @@ import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { notFound } from '../lib/errors.js'
+import { reconcileWorkspaceLeases } from '../agent/controller.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { getConfig } from '../config.js'
@@ -41,6 +42,7 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/admin/usage/workspaces', async (request) => {
     requireAdmin(request)
+    await reconcileWorkspaceLeases()
     const rows = await db.select({
       lease: workspaceLeases,
       user: { id: users.id, name: users.name, email: users.email },

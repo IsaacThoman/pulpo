@@ -145,6 +145,10 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     if (request.headers.authorization !== `Bearer ${authToken}`) return json(response, 401, { error: 'unauthorized' })
     const url = new URL(request.url ?? '/', 'http://controller')
     if (request.method === 'POST' && url.pathname === '/v1/leases') return json(response, 201, await claim(JSON.parse((await body(request)).toString('utf8') || '{}')))
+    if (request.method === 'GET' && url.pathname === '/v1/leases') {
+      await reconcile()
+      return json(response, 200, { leases: [...leases.values()].map((lease) => ({ id: lease.id, createdAt: lease.createdAt, lastUsedAt: lease.lastUsedAt })) })
+    }
     const match = url.pathname.match(/^\/v1\/leases\/([^/]+)(\/.*)?$/); const lease = match ? leases.get(match[1]!) : undefined
     if (!lease) return json(response, 404, { error: 'lease_not_found' })
     if (request.method === 'DELETE' && !match?.[2]) { await core.deleteNamespacedPod({ namespace, name: lease.podName }); leases.delete(lease.id); return json(response, 200, { status: 'released' }) }

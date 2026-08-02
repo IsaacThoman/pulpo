@@ -1,4 +1,5 @@
 import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
 import {
   applicationSettings, attachments, chats, dailyUsageRollups, exportJobs, idempotencyRecords,
@@ -67,6 +68,7 @@ export async function runCleanup(): Promise<void> {
   const expiredExports = await db.select().from(exportJobs).where(lt(exportJobs.expiresAt, now))
   for (const job of expiredExports) if (job.objectKey) await getBlobStore().delete(job.objectKey).catch(() => undefined)
   if (expiredExports.length) await db.delete(exportJobs).where(inArray(exportJobs.id, expiredExports.map((row) => row.id)))
+  await reconcileWorkspaceLeases()
 }
 
 export async function rebuildDailyRollups(): Promise<void> {

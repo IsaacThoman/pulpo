@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNotNull, lte, or } from 'drizzle-orm'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { applicationSettings, attachments, responses, workspaceLeases } from '../database/schema.js'
 import { db } from '../database/client.js'
@@ -208,4 +208,36 @@ export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
     await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
   }
   await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(eq(workspaceLeases.id, lease.id))
+}
+
+/** Mark DB leases expired when timers elapsed or the controller no longer holds them. */
+export async function reconcileWorkspaceLeases(): Promise<void> {
+  const now = new Date()
+  await db.update(workspaceLeases).set({
+    status: 'expired', capacityState: null, error: 'Workspace lease expired', updatedAt: now,
+  }).where(and(
+    eq(workspaceLeases.status, 'ready'),
+    or(
+      and(isNotNull(workspaceLeases.expiresAt), lte(workspaceLeases.expiresAt, now)),
+      and(isNotNull(workspaceLeases.hardExpiresAt), lte(workspaceLeases.hardExpiresAt, now)),
+    ),
+  ))
+
+  const config = getConfig()
+  if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) return
+  try {
+    const response = await workspaceControllerRequest('/v1/leases', { signal: AbortSignal.timeout(5_000) })
+    if (!response.ok) return
+    const body = await response.json() as { leases?: Array<{ id: string }> }
+    const active = new Set((body.leases ?? []).map((lease) => lease.id))
+    const ready = await db.select({ id: workspaceLeases.id, controllerLeaseId: workspaceLeases.controllerLeaseId })
+      .from(workspaceLeases).where(eq(workspaceLeases.status, 'ready'))
+    const stale = ready.filter((row) => !row.controllerLeaseId || !active.has(row.controllerLeaseId)).map((row) => row.id)
+    if (!stale.length) return
+    await db.update(workspaceLeases).set({
+      status: 'expired', capacityState: null, error: 'Controller lease no longer active', updatedAt: now,
+    }).where(inArray(workspaceLeases.id, stale))
+  } catch {
+    // Controller unreachable: keep time-based expiry only so a blip does not wipe live rows.
+  }
 }
