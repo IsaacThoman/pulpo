@@ -1,4 +1,4 @@
-name: Build and deploy workspace controller
+name: Build and optionally deploy workspace controller
 
 on:
   workflow_dispatch:
@@ -6,12 +6,11 @@ on:
     branches: [main]
     paths:
       - packages/workspace-controller/**
-      - infra/workspace-controller/**
+      - infra/workspace-controller/Dockerfile
       - .github/workflows/workspace-controller.yml
 
 permissions:
   contents: read
-  actions: write
 
 concurrency:
   group: workspace-controller
@@ -42,12 +41,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=workspace-controller
 
       - name: Export image tarball
-        id: export
         run: |
           set -euo pipefail
-          digest="$(docker image inspect pulpo-workspace-controller:deploy --format '{{index .RepoDigests 0}}' 2>/dev/null || true)"
           id="$(docker image inspect pulpo-workspace-controller:deploy --format '{{.Id}}')"
-          echo "image_id=${id}" >> "${GITHUB_OUTPUT}"
           echo "${id}" > controller-image-id.txt
           docker save pulpo-workspace-controller:deploy | gzip > controller.tar.gz
           ls -lh controller.tar.gz
@@ -62,9 +58,17 @@ jobs:
           retention-days: 3
 
   deploy:
-    name: Deploy to pulpo-agents k3s
+    name: Deploy controller
     needs: build
-    runs-on: [self-hosted, pulpo-agents]
+    if: ${{ vars.WORKSPACE_CONTROLLER_RUNNER != '' }}
+    runs-on: ${{ vars.WORKSPACE_CONTROLLER_RUNNER }}
+    env:
+      CONTAINERD_COMMAND: ${{ vars.WORKSPACE_CONTROLLER_CONTAINERD_COMMAND || 'ctr' }}
+      CONTAINER_NAME: ${{ vars.WORKSPACE_CONTROLLER_CONTAINER_NAME || 'controller' }}
+      DEPLOYMENT_NAME: ${{ vars.WORKSPACE_CONTROLLER_DEPLOYMENT || 'pulpo-workspace-controller' }}
+      IMAGE_REPOSITORY: ${{ vars.WORKSPACE_CONTROLLER_IMAGE_REPOSITORY || 'docker.io/library/pulpo-workspace-controller' }}
+      KUBECTL_COMMAND: ${{ vars.WORKSPACE_CONTROLLER_KUBECTL_COMMAND || 'kubectl' }}
+      NAMESPACE: ${{ vars.WORKSPACE_CONTROLLER_NAMESPACE || 'pulpo-workspaces' }}
     steps:
       - name: Download image artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -73,33 +77,22 @@ jobs:
           path: deploy
 
       - name: Import image and roll out
+        shell: bash
         run: |
           set -euo pipefail
+          read -r -a containerd <<< "${CONTAINERD_COMMAND}"
+          read -r -a kubectl <<< "${KUBECTL_COMMAND}"
           IMAGE_ID="$(tr -d '[:space:]' < deploy/controller-image-id.txt)"
-          # Immutable-ish tag per commit keeps rollouts explicit without GHCR pull auth.
-          IMAGE_REF="docker.io/library/pulpo-workspace-controller:sha-${GITHUB_SHA}"
-          sudo k3s ctr images import deploy/controller.tar.gz
-          sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy "${IMAGE_REF}"
-          sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy docker.io/library/pulpo-workspace-controller:main
-          sudo k3s kubectl -n pulpo-workspaces set image \
-            deployment/pulpo-workspace-controller \
-            "controller=${IMAGE_REF}"
-          # Local imports should not attempt registry pulls.
-          sudo k3s kubectl -n pulpo-workspaces patch deployment pulpo-workspace-controller --type='json' \
-            -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}]'
-          sudo k3s kubectl -n pulpo-workspaces rollout status \
-            deployment/pulpo-workspace-controller \
+          IMAGE_REF="${IMAGE_REPOSITORY}:sha-${GITHUB_SHA}"
+          SOURCE_REF="docker.io/library/pulpo-workspace-controller:deploy"
+
+          "${containerd[@]}" images import deploy/controller.tar.gz
+          "${containerd[@]}" images tag "${SOURCE_REF}" "${IMAGE_REF}"
+          "${containerd[@]}" images tag "${SOURCE_REF}" "${IMAGE_REPOSITORY}:main"
+          "${kubectl[@]}" -n "${NAMESPACE}" set image \
+            "deployment/${DEPLOYMENT_NAME}" \
+            "${CONTAINER_NAME}=${IMAGE_REF}"
+          "${kubectl[@]}" -n "${NAMESPACE}" rollout status \
+            "deployment/${DEPLOYMENT_NAME}" \
             --timeout=180s
-          for attempt in $(seq 1 30); do
-            if curl -skf https://127.0.0.1:30443/healthz; then
-              echo
-              break
-            fi
-            if [[ "${attempt}" -eq 30 ]]; then
-              echo "Controller health check failed" >&2
-              sudo k3s kubectl -n pulpo-workspaces get pods -o wide >&2 || true
-              exit 1
-            fi
-            sleep 2
-          done
           echo "Deployed ${IMAGE_REF} (${IMAGE_ID})"

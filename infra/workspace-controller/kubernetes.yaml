@@ -54,7 +54,8 @@ spec:
       serviceAccountName: pulpo-workspace-controller
       containers:
         - name: controller
-          image: ghcr.io/isaacthoman/pulpo-workspace-controller@sha256:REPLACE_WITH_CONTROLLER_DIGEST
+          image: ghcr.io/your-org/pulpo-workspace-controller@sha256:REPLACE_WITH_CONTROLLER_DIGEST
+          imagePullPolicy: IfNotPresent
           ports:
             - name: http
               containerPort: 8786
@@ -66,7 +67,7 @@ spec:
             - name: PULPO_WARM_CAPACITY
               value: "1"
             - name: PULPO_WORKSPACE_IMAGE
-              value: ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:REPLACE_WITH_WORKSPACE_DIGEST
+              value: ghcr.io/your-org/pulpo-agent-workspace@sha256:REPLACE_WITH_WORKSPACE_DIGEST
             - name: PULPO_CONTROLLER_TOKEN
               valueFrom:
                 secretKeyRef:

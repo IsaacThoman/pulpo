@@ -4,19 +4,16 @@ This service is deployed inside the Kubernetes cluster and is the only Pulpo
 component with permission to create, claim, and delete workspace pods. The
 Pulpo worker calls it over a private authenticated endpoint.
 
-## Deployment topology
+## Deployment
 
-| Piece | Where | How it deploys |
-| --- | --- | --- |
-| Pulpo web/api/worker | Coolify on `bee` | Coolify watches `main` |
-| Workspace controller | k3s on `pulpo-agents` | GitHub Actions → self-hosted runner |
-| Workspace pods (Kata) | k3s on `pulpo-agents` | Created by the controller |
+The controller is designed to run inside the Kubernetes cluster that hosts the
+workspace pods. Running it elsewhere is possible, but requires network access
+to the Kubernetes API and credentials with the equivalent RBAC permissions.
+It should remain on a private network and should not have a public Ingress.
 
-The controller **cannot** run as a normal Coolify Docker app: it needs in-cluster
-Kubernetes RBAC to create Kata sandbox pods. Auto-deploy is handled by
-`.github/workflows/workspace-controller.yml`, which builds the image on GitHub
-hosted runners and rolls it out via the `pulpo-agents` self-hosted runner
-(`ctr import` + `kubectl set image`).
+The cluster needs a sandboxed `RuntimeClass`; the example manifest uses `kata`.
+Build and publish both the controller and workspace images, replace the image
+and digest placeholders in `kubernetes.yaml`, and then apply the manifest.
 
 `warmCapacity: 0` is supported: the controller cold-starts a workspace pod on
 demand when the warm pool is empty.
@@ -42,9 +39,27 @@ trusts the issuing CA. Plain HTTP is accepted only when the controller is
 started explicitly with `PULPO_ALLOW_INSECURE_HTTP=true` for local kind/k3d
 development.
 
-Replace both immutable digest placeholders in `kubernetes.yaml`, confirm the
-cluster has a `kata` RuntimeClass, and apply the manifest. Do not expose the
-controller or workspace daemon with a public Ingress.
+## Optional automatic deployment
+
+`.github/workflows/workspace-controller.yml` always builds the controller on
+relevant pushes. Its deploy job is opt-in: it runs only when the repository
+variable `WORKSPACE_CONTROLLER_RUNNER` names a self-hosted GitHub Actions
+runner. The runner must have access to the cluster and its container runtime.
+
+| Repository variable                       | Default                                        | Purpose                                     |
+| ----------------------------------------- | ---------------------------------------------- | ------------------------------------------- |
+| `WORKSPACE_CONTROLLER_RUNNER`             | none                                           | Runner label; setting it enables deployment |
+| `WORKSPACE_CONTROLLER_KUBECTL_COMMAND`    | `kubectl`                                      | Kubernetes command available to the runner  |
+| `WORKSPACE_CONTROLLER_CONTAINERD_COMMAND` | `ctr`                                          | Containerd command available to the runner  |
+| `WORKSPACE_CONTROLLER_NAMESPACE`          | `pulpo-workspaces`                             | Target namespace                            |
+| `WORKSPACE_CONTROLLER_DEPLOYMENT`         | `pulpo-workspace-controller`                   | Target Deployment                           |
+| `WORKSPACE_CONTROLLER_CONTAINER_NAME`     | `controller`                                   | Container updated in the Deployment         |
+| `WORKSPACE_CONTROLLER_IMAGE_REPOSITORY`   | `docker.io/library/pulpo-workspace-controller` | Local image name used for commit tags       |
+
+The workflow transfers an OCI image artifact to the runner and imports it
+directly into containerd, avoiding registry credentials. This is intended for a
+single-node cluster. In a multi-node cluster, publish the image to a registry or
+import it on every node where the controller can be scheduled.
 
 For local development, leave agent mode disabled and use the fake controller
 in server integration tests. A full local run requires a kind or k3d cluster
