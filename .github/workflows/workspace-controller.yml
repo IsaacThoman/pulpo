@@ -11,21 +11,16 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  actions: write
 
 concurrency:
   group: workspace-controller
   cancel-in-progress: true
 
-env:
-  IMAGE_NAME: ghcr.io/isaacthoman/pulpo-workspace-controller
-
 jobs:
   build:
     name: Build controller image
     runs-on: ubuntu-24.04
-    outputs:
-      digest: ${{ steps.publish.outputs.digest }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -33,38 +28,28 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        id: publish
+      - name: Build image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: infra/workspace-controller/Dockerfile
           platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:main
-            ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          load: true
+          tags: pulpo-workspace-controller:deploy
           provenance: false
           sbom: false
           cache-from: type=gha,scope=workspace-controller
           cache-to: type=gha,mode=max,scope=workspace-controller
 
-      - name: Export image tarball for k3s import
-        env:
-          DIGEST: ${{ steps.publish.outputs.digest }}
+      - name: Export image tarball
+        id: export
         run: |
           set -euo pipefail
-          docker pull --platform linux/amd64 "${IMAGE_NAME}@${DIGEST}"
-          docker tag "${IMAGE_NAME}@${DIGEST}" pulpo-workspace-controller:deploy
+          digest="$(docker image inspect pulpo-workspace-controller:deploy --format '{{index .RepoDigests 0}}' 2>/dev/null || true)"
+          id="$(docker image inspect pulpo-workspace-controller:deploy --format '{{.Id}}')"
+          echo "image_id=${id}" >> "${GITHUB_OUTPUT}"
+          echo "${id}" > controller-image-id.txt
           docker save pulpo-workspace-controller:deploy | gzip > controller.tar.gz
-          echo "${DIGEST}" > controller-digest.txt
           ls -lh controller.tar.gz
 
       - name: Upload deploy artifact
@@ -73,7 +58,7 @@ jobs:
           name: workspace-controller-image
           path: |
             controller.tar.gz
-            controller-digest.txt
+            controller-image-id.txt
           retention-days: 3
 
   deploy:
@@ -88,21 +73,23 @@ jobs:
           path: deploy
 
       - name: Import image and roll out
-        env:
-          DIGEST: ${{ needs.build.outputs.digest }}
         run: |
           set -euo pipefail
-          test -n "${DIGEST}"
-          IMAGE_REF="${IMAGE_NAME}@${DIGEST}"
+          IMAGE_ID="$(tr -d '[:space:]' < deploy/controller-image-id.txt)"
+          # Immutable-ish tag per commit keeps rollouts explicit without GHCR pull auth.
+          IMAGE_REF="docker.io/library/pulpo-workspace-controller:sha-${GITHUB_SHA}"
           sudo k3s ctr images import deploy/controller.tar.gz
           sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy "${IMAGE_REF}"
-          sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy "${IMAGE_NAME}:main"
+          sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy docker.io/library/pulpo-workspace-controller:main
           sudo k3s kubectl -n pulpo-workspaces set image \
             deployment/pulpo-workspace-controller \
             "controller=${IMAGE_REF}"
+          # Local imports should not attempt registry pulls.
+          sudo k3s kubectl -n pulpo-workspaces patch deployment pulpo-workspace-controller --type='json' \
+            -p='[{"op":"replace","path":"/spec/template/spec/containers/0/imagePullPolicy","value":"IfNotPresent"}]'
           sudo k3s kubectl -n pulpo-workspaces rollout status \
             deployment/pulpo-workspace-controller \
             --timeout=180s
           curl -skf https://127.0.0.1:30443/healthz
           echo
-          echo "Deployed ${IMAGE_REF}"
+          echo "Deployed ${IMAGE_REF} (${IMAGE_ID})"
