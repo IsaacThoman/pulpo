@@ -136,13 +136,22 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await emit(`pulpo.agent.workspace.${state}`, workspaceItem)
     await snapshot()
   })
+  const markToolStarted = async (operationId: string) => {
+    const item = toolItems.get(operationId)
+    if (!item || item.startedAt) return
+    const startedAt = new Date()
+    Object.assign(item, { status: 'running', startedAt: startedAt.toISOString() })
+    await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: 'running', startedAt, updatedAt: startedAt }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, operationId)))
+    await emit('pulpo.agent.tool.started', item)
+    await snapshot()
+  }
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
   agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(record.model.systemPrompt, record.model.agentInstructions),
       model: active.piModel,
-      tools: createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000),
+      tools: createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted),
       messages: resumedMessages,
       thinkingLevel: 'medium',
     },
@@ -186,19 +195,17 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await snapshot()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
-      const startedAt = new Date()
       const item: ToolTimelineItem = {
         id: event.toolCallId,
         type: 'pulpo_tool',
         tool: event.toolName,
         arguments: event.args,
-        status: 'running',
+        status: 'queued',
         output: '',
-        startedAt: startedAt.toISOString(),
       }
       toolItems.set(event.toolCallId, item)
-      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'running', startedAt }).onConflictDoNothing()
-      await emit('pulpo.agent.tool.started', item)
+      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'queued' }).onConflictDoNothing()
+      await emit('pulpo.agent.tool.queued', item)
       await snapshot()
     } else if (event.type === 'tool_execution_update') {
       const item = toolItems.get(event.toolCallId); const delta = truncateUtf8(toolResultText(event.partialResult), settings.maxToolOutputBytes)

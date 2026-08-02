@@ -164,7 +164,14 @@ export class WorkspaceManager {
     this.staged = true
   }
 
-  async execute(operationId: string, type: string, args: Record<string, unknown>, signal?: AbortSignal, onUpdate?: (output: string) => void): Promise<WorkspaceOperation> {
+  async execute(
+    operationId: string,
+    type: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+    onUpdate?: (output: string) => void,
+    onStarted?: () => void | Promise<void>,
+  ): Promise<WorkspaceOperation> {
     let leaseId = await this.ensureLease(signal)
     const init = { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: operationId, type, args }) }
     let response: Response
@@ -177,6 +184,7 @@ export class WorkspaceManager {
       leaseId = await this.ensureLease(signal)
       response = await this.request(`/v1/leases/${leaseId}/v1/operations`, init)
     }
+    await onStarted?.()
     let operation = await response.json() as WorkspaceOperation
     let previousOutput = ''
     while (operation.status === 'running') {
