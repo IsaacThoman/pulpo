@@ -31,7 +31,7 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
   if (input.origin) values.push(eq(generationAttempts.source, input.origin))
   if (input.model) values.push(sql`(${generationAttempts.modelId} = ${input.model} or ${generationAttempts.upstreamModelId} = ${input.model})`)
   if (input.identity) values.push(sql`(${requestLogs.userId}::text = ${input.identity} or ${requestLogs.apiKeyId}::text = ${input.identity})`)
-  if (input.retry) values.push(input.retry === 'true' ? gt(generationAttempts.attempt, 1) : eq(generationAttempts.attempt, 1))
+  if (input.retry) values.push(input.retry === 'true' ? gt(generationAttempts.retryAttempt, 1) : eq(generationAttempts.retryAttempt, 1))
   if (input.fallback) values.push(eq(requestLogs.fallbackUsed, input.fallback === 'true'))
   if (input.ocr) values.push(eq(requestLogs.ocrStatus, input.ocr))
   if (input.errorCategory) values.push(eq(generationAttempts.errorCategory, input.errorCategory))
@@ -132,7 +132,8 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     const page = rows.slice(0, input.limit).map(({ call, log, ...relations }) => ({
       id: call.id, requestLogId: log.id, responseId: log.responseId, origin: call.source, purpose: call.purpose,
       status: call.status, requestedModelId: call.upstreamModelId ?? call.modelId, actualModelId: call.modelId,
-      currentModelId: call.modelId, currentAttempt: call.attempt, retryCount: Math.max(0, call.attempt - 1),
+      currentModelId: call.modelId, retryAttempt: call.retryAttempt, turnNumber: call.turnNumber,
+      retryCount: Math.max(0, call.retryAttempt - 1),
       fallbackUsed: Boolean(call.fallbackFromModelId), stickyFallbackUsed: log.stickyFallbackUsed, ocrStatus: log.ocrStatus,
       errorCategory: call.errorCategory, errorMessage: call.errorMessage, inputTokens: call.inputTokens,
       cachedInputTokens: call.cachedInputTokens, outputTokens: call.outputTokens, reasoningTokens: call.reasoningTokens,

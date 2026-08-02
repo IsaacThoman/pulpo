@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
+  adminUsageEventSchema,
   chatPresetsSchema,
   mergeResponseSnapshots,
   responseEventSchema,
@@ -60,6 +61,27 @@ describe('shared contracts', () => {
       ],
     }])
     expect(presets[0]?.defaultChoiceId).toBe('medium')
+  })
+
+  it('tracks agent turns separately from retry attempts', () => {
+    const event = adminUsageEventSchema.parse({
+      requestId: crypto.randomUUID(),
+      responseId: crypto.randomUUID(),
+      status: 'in_progress',
+      elapsedMs: 1_000,
+      currentModelId: 'kimi-k3',
+      retryAttempt: 1,
+      turnNumber: 5,
+      retryCount: 0,
+      fallbackUsed: false,
+      ocrStatus: 'not_requested',
+      eventCount: 5,
+      inputTokens: 100,
+      outputTokens: 50,
+      updatedAt: new Date().toISOString(),
+    })
+
+    expect(event).toMatchObject({ retryAttempt: 1, turnNumber: 5, retryCount: 0 })
   })
 
   it.each([

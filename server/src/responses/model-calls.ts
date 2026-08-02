@@ -35,7 +35,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
     upstreamModelId: input.upstreamModelId,
     source: 'tool',
     purpose: input.purpose,
-    attempt: 1,
+    retryAttempt: 1,
   })
   try {
     const result = await input.invoke()

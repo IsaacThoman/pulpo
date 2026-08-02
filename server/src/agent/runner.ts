@@ -160,9 +160,9 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       if (modelTurns > 1) await extendBudgetReservation({ responseId, requestInput: agent.state.messages, maxOutputTokens: active.model.maxOutputTokens, pricing: await getActivePricing(active.model.id) })
     } else if (event.type === 'message_start' && event.message.role === 'assistant') {
       modelTurnStartedAt.set(modelTurns, Date.now())
-      await db.insert(generationAttempts).values({ id: newId(), requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, attempt: modelTurns, status: 'in_progress' })
+      await db.insert(generationAttempts).values({ id: newId(), requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: 1, turnNumber: modelTurns, status: 'in_progress' })
       await db.update(responses).set({ actualModelId: active.model.id }).where(eq(responses.id, responseId))
-      await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentAttempt: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+      await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
       if (update.type === 'text_delta') await emit('response.output_text.delta', { delta: update.delta })
@@ -181,7 +181,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
         inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, outputTokens: turnUsage.outputTokens,
         reasoningTokens: turnUsage.reasoningTokens, costMicros: turnCost,
         durationMs: turnDurationMs, completedAt: new Date(),
-      }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.attempt, modelTurns), eq(generationAttempts.source, 'agent')))
+      }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.turnNumber, modelTurns), eq(generationAttempts.source, 'agent')))
       await db.update(requestLogs).set({ inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, eventCount: sql`${requestLogs.eventCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
       await snapshot()
     } else if (event.type === 'tool_execution_start') {

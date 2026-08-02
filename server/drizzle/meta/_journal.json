@@ -71,6 +71,13 @@
       "when": 1785638949691,
       "tag": "0009_gigantic_warhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785642646936,
+      "tag": "0010_fine_absorbing_man",
+      "breakpoints": true
     }
   ]
 }
