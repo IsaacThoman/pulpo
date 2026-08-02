@@ -399,7 +399,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </Button>
                   </Row>
                   <Row label="Fallback model" hint="Used when an imported source model is unavailable."><Select value={importFallback} onValueChange={setImportFallback}><SelectTrigger className="w-44"><SelectValue placeholder="Select if needed" /></SelectTrigger><SelectContent>{models.filter((model) => model.enabled).map((model) => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}</SelectContent></Select></Row>
-                  <Row label="Import Pulpo chats" hint="Accepts portable v2 and legacy v1 exports."><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>Import</Button></Row>
+                  <Row label="Import Pulpo chats"><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>Import</Button></Row>
                   <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
                   <Row label="Delete all chats" hint="This cannot be undone.">
