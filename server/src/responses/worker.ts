@@ -458,10 +458,19 @@ function classifyError(error: unknown): string {
 }
 
 export async function processGeneration(responseId: string): Promise<void> {
-  const [base] = await db.select({ response: responses, model: models, log: requestLogs })
-    .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
+  const [base] = await db.select({ response: responses, model: models, log: requestLogs, chatDeletedAt: chats.deletedAt })
+    .from(responses)
+    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .innerJoin(models, eq(responses.modelId, models.id))
+    .innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!base || ['completed', 'cancelled'].includes(base.response.status)) return
+  if (base.chatDeletedAt) {
+    const now = new Date()
+    await db.update(responses).set({ status: 'cancelled', completedAt: now, updatedAt: now }).where(eq(responses.id, responseId))
+    await releaseBudget(responseId)
+    return
+  }
   if (base.response.agentMode) {
     await processAgentGeneration(responseId)
     return

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema } from '@pulpo/contracts'
@@ -11,7 +11,8 @@ import { metadataForTurn } from '../messages/branching.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { releaseWorkspaceForChat } from '../agent/controller.js'
+import { maintenanceQueue } from '../jobs.js'
+import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string) => {
@@ -30,6 +31,28 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .where(and(eq(chats.userId, user.id), isNull(chats.deletedAt), eq(chats.temporary, false)))
       .orderBy(desc(chats.updatedAt))
     return { data: rows }
+  })
+
+  app.get('/api/chats/deleted', async (request) => {
+    const user = requireUser(request)
+    const retention = await getTrashRetention(user.id)
+    const rows = await db.select({
+      id: chats.id,
+      title: chats.title,
+      modelId: chats.modelId,
+      deletedAt: chats.deletedAt,
+    }).from(chats).where(and(
+      eq(chats.userId, user.id),
+      isNotNull(chats.deletedAt),
+      isNull(chats.purgeStartedAt),
+      eq(chats.temporary, false),
+    )).orderBy(desc(chats.deletedAt))
+    return {
+      data: rows.map((row) => ({
+        ...row,
+        purgeAt: row.deletedAt ? purgeAtFor(row.deletedAt, retention) : null,
+      })),
+    }
   })
 
   app.get('/api/chats/search', async (request) => {
@@ -148,9 +171,39 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/api/chats', async (request, reply) => {
     const user = requireUser(request)
-    await db.update(chats).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(chats.userId, user.id))
+    const active = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    const ids = active.map((chat) => chat.id)
+    const now = new Date()
+    const retention = await getTrashRetention(user.id)
+    await db.update(chats).set({
+      deletedAt: now,
+      purgeStartedAt: retention === 'instant' ? now : null,
+      updatedAt: now,
+    }).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    await cancelChatWork(ids)
+    if (retention === 'instant' && ids.length) {
+      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
+        jobId: `purge-chats-delete-all-${user.id}-${Date.now()}`,
+      })
+    }
     await bumpRevision(user.id)
     reply.code(204).send()
+  })
+
+  app.delete('/api/chats/deleted', async (request, reply) => {
+    const user = requireUser(request)
+    const deleted = await db.select({ id: chats.id }).from(chats).where(and(
+      eq(chats.userId, user.id), isNotNull(chats.deletedAt), isNull(chats.purgeStartedAt),
+    ))
+    const deleting = await markChatsForPurge(deleted.map((chat) => chat.id), user.id)
+    if (deleting) {
+      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
+        jobId: `purge-chats-trash-all-${user.id}-${Date.now()}`,
+      })
+    }
+    await bumpRevision(user.id)
+    reply.code(202)
+    return { deleting }
   })
 
   app.post('/api/chats', async (request, reply) => {
@@ -223,11 +276,49 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.delete('/api/chats/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const result = await db.update(chats).set({ deletedAt: new Date() }).where(and(eq(chats.id, id), eq(chats.userId, user.id))).returning({ id: chats.id })
+    const now = new Date()
+    const retention = await getTrashRetention(user.id)
+    const result = await db.update(chats).set({
+      deletedAt: now,
+      purgeStartedAt: retention === 'instant' ? now : null,
+      updatedAt: now,
+    }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
-    await releaseWorkspaceForChat(id)
+    await cancelChatWork([id])
+    if (retention === 'instant') {
+      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
+        jobId: `purge-chat-${id}-${Date.now()}`,
+      })
+    }
     await bumpRevision(user.id, id)
     reply.code(204).send()
+  })
+
+  app.post('/api/chats/:id/recover', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [recovered] = await db.update(chats).set({ deletedAt: null, updatedAt: new Date() }).where(and(
+      eq(chats.id, id),
+      eq(chats.userId, user.id),
+      isNotNull(chats.deletedAt),
+      isNull(chats.purgeStartedAt),
+    )).returning()
+    if (!recovered) throw notFound('Deleted chat')
+    await bumpRevision(user.id, id)
+    return recovered
+  })
+
+  app.delete('/api/chats/:id/permanent', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const deleting = await markChatsForPurge([id], user.id)
+    if (!deleting) throw notFound('Deleted chat')
+    await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
+      jobId: `purge-chat-${id}-${Date.now()}`,
+    })
+    await bumpRevision(user.id, id)
+    reply.code(202)
+    return { deleting: 1 }
   })
 
   app.post('/api/chats/:id/responses', async (request, reply) => {

@@ -5,8 +5,10 @@ import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { memories, userPreferences, users } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
-import { notFound } from '../lib/errors.js'
+import { AppError, notFound } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
+import { maintenanceQueue } from '../jobs.js'
+import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -21,9 +23,11 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         leaderboardColor: users.leaderboardColor,
       }).from(users).where(eq(users.id, user.id)).limit(1),
     ])
+    const values = row?.values as Record<string, unknown> | undefined
     return {
       values: {
-        ...(row?.values as Record<string, unknown> | undefined),
+        ...values,
+        trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
         nickname: profile?.nickname ?? '',
         leaderboardVisible: profile?.leaderboardVisible ?? true,
         leaderboardColor: profile?.leaderboardColor ?? '#10b981',
@@ -35,7 +39,11 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
   app.patch('/api/settings', async (request) => {
     const user = requireUser(request)
     const patch = preferencesSchema.parse(request.body)
+    if ('trashRetention' in patch && !trashRetentionValues.includes(patch.trashRetention as typeof trashRetentionValues[number])) {
+      throw new AppError(400, 'invalid_trash_retention', 'Choose a valid trash retention period')
+    }
     const [existing] = await db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
+    const previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
     const values = { ...(existing?.values as Record<string, unknown> | undefined), ...patch }
     const [saved] = await db.insert(userPreferences).values({ userId: user.id, values })
       .onConflictDoUpdate({ target: userPreferences.userId, set: { values, updatedAt: new Date() } }).returning()
@@ -50,6 +58,11 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     })
       .where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
     if (revision) await publishStateChange({ userId: user.id, revision: revision.revision })
+    if ('trashRetention' in patch && parseTrashRetention(patch.trashRetention) !== previousTrashRetention) {
+      await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
+        jobId: `purge-chats-settings-${user.id}-${Date.now()}`,
+      })
+    }
     return { values: saved!.values, updatedAt: saved!.updatedAt.toISOString() }
   })
 

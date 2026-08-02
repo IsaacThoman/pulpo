@@ -11,6 +11,7 @@ const persistedKeys = [
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',
   'localAttachmentCacheMb',
+  'trashRetention',
 ] as const
 
 function settingsSnapshot() {

@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  ArrowLeft,
   Database,
   Info,
   KeyRound,
+  MoreHorizontal,
   Monitor,
   Moon,
+  RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Sun,
+  Trash2,
   User,
 } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -28,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useSettings, type Theme } from '@/stores/settings'
+import { useSettings, type Theme, type TrashRetention } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
@@ -36,6 +40,13 @@ import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -58,6 +69,23 @@ interface StorageUsage {
   usedBytes: number
   limitBytes: number
   remainingBytes: number
+}
+
+interface DeletedChat {
+  id: string
+  title: string
+  modelId: string
+  deletedAt: string
+  purgeAt: string | null
+}
+
+const TRASH_RETENTION_LABELS: Record<TrashRetention, string> = {
+  instant: 'Instantly',
+  '24h': '24 hours',
+  '7d': '7 days',
+  '30d': '30 days',
+  '90d': '90 days',
+  indefinite: 'Indefinitely',
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -101,6 +129,7 @@ function ThemePicker() {
 
 export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [section, setSection] = useState<SectionId>('general')
+  const [accountView, setAccountView] = useState<'main' | 'deleted'>('main')
   const s = useSettings()
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
@@ -111,6 +140,22 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [importFallback, setImportFallback] = useState('')
   const [importResult, setImportResult] = useState('')
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
+  const [deletedChats, setDeletedChats] = useState<DeletedChat[]>([])
+  const [deletedChatsLoading, setDeletedChatsLoading] = useState(false)
+  const [deletedChatsError, setDeletedChatsError] = useState('')
+
+  const loadDeletedChats = async () => {
+    setDeletedChatsLoading(true)
+    setDeletedChatsError('')
+    try {
+      const result = await apiRequest<{ data: DeletedChat[] }>('/api/chats/deleted')
+      setDeletedChats(result.data)
+    } catch (error) {
+      setDeletedChatsError(error instanceof Error ? error.message : 'Could not load deleted chats')
+    } finally {
+      setDeletedChatsLoading(false)
+    }
+  }
 
   const chooseImport = (source: 'pulpo' | 'openwebui') => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
@@ -127,6 +172,15 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   }, [open, section])
 
   useEffect(() => {
+    if (!open || section !== 'account' || accountView !== 'deleted') return
+    void loadDeletedChats()
+  }, [open, section, accountView])
+
+  useEffect(() => {
+    if (section !== 'account') setAccountView('main')
+  }, [section])
+
+  useEffect(() => {
     if (!open || section !== 'data') return
     void apiRequest<StorageUsage>('/api/attachments/usage').then(setStorageUsage)
   }, [open, section])
@@ -134,6 +188,24 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const forgetMemory = async (id: string) => {
     await apiRequest(`/api/memories/${id}`, { method: 'DELETE' })
     setMemories((items) => items.filter((memory) => memory.id !== id))
+  }
+
+  const recoverChat = async (id: string) => {
+    await apiRequest(`/api/chats/${id}/recover`, { method: 'POST' })
+    setDeletedChats((items) => items.filter((chat) => chat.id !== id))
+    await queryClient.invalidateQueries({ queryKey: ['chats'] })
+  }
+
+  const permanentlyDeleteChat = async (chat: DeletedChat) => {
+    if (!confirm(`Permanently delete “${chat.title}”? This cannot be undone.`)) return
+    await apiRequest(`/api/chats/${chat.id}/permanent`, { method: 'DELETE' })
+    setDeletedChats((items) => items.filter((item) => item.id !== chat.id))
+  }
+
+  const permanentlyDeleteAll = async () => {
+    if (!deletedChats.length || !confirm('Permanently delete every chat in trash? This cannot be undone.')) return
+    await apiRequest('/api/chats/deleted', { method: 'DELETE' })
+    setDeletedChats([])
   }
 
   return (
@@ -212,47 +284,115 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
               {section === 'account' && (
                 <div>
-                  <h2 className="text-base font-semibold">Account</h2>
-                  <Separator className="my-3" />
-                  <div className="flex items-center gap-4 py-3">
-                    <Avatar className="size-14">
-                      <AvatarFallback className="bg-zinc-700 text-lg font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                        {user?.initials ?? '?'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="font-medium">{user?.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {user?.email} · {user?.role}
+                  {accountView === 'main' ? (
+                    <>
+                      <h2 className="text-base font-semibold">Account</h2>
+                      <Separator className="my-3" />
+                      <div className="flex items-center gap-4 py-3">
+                        <Avatar className="size-14">
+                          <AvatarFallback className="bg-zinc-700 text-lg font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
+                            {user?.initials ?? '?'}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div>
+                          <div className="font-medium">{user?.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {user?.email} · {user?.role}
+                          </div>
+                        </div>
+                        <div className="flex-1" />
+                        <Button variant="outline" size="sm">
+                          Change avatar
+                        </Button>
                       </div>
-                    </div>
-                    <div className="flex-1" />
-                    <Button variant="outline" size="sm">
-                      Change avatar
-                    </Button>
-                  </div>
-                  <Row label="Display name">
-                    <Input defaultValue={user?.name ?? ''} className="w-52" />
-                  </Row>
-                  <Row label="Password">
-                    <Button variant="outline" size="sm">
-                      Change password
-                    </Button>
-                  </Row>
-                  <Separator className="my-3" />
-                  <Row label="Sign out" hint="End this session on this device.">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        onClose()
-                        logout()
-                        navigate('/login')
-                      }}
-                    >
-                      Sign out
-                    </Button>
-                  </Row>
+                      <Row label="Display name">
+                        <Input defaultValue={user?.name ?? ''} className="w-52" />
+                      </Row>
+                      <Row label="Password">
+                        <Button variant="outline" size="sm">
+                          Change password
+                        </Button>
+                      </Row>
+                      <Separator className="my-3" />
+                      <Row label="Trash retention period" hint="Deleted chats and their files are kept for this long.">
+                        <Select value={s.trashRetention} onValueChange={(value) => s.set('trashRetention', value as TrashRetention)}>
+                          <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {(Object.entries(TRASH_RETENTION_LABELS) as [TrashRetention, string][]).map(([value, label]) => (
+                              <SelectItem key={value} value={value}>{label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </Row>
+                      <Row label="Deleted chats" hint="Recover chats or permanently delete them.">
+                        <Button variant="outline" size="sm" onClick={() => setAccountView('deleted')}>
+                          View deleted chats
+                        </Button>
+                      </Row>
+                      <Separator className="my-3" />
+                      <Row label="Sign out" hint="End this session on this device.">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            onClose()
+                            logout()
+                            navigate('/login')
+                          }}
+                        >
+                          Sign out
+                        </Button>
+                      </Row>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => setAccountView('main')} aria-label="Back to account settings">
+                            <ArrowLeft className="size-4" />
+                          </Button>
+                          <h2 className="text-base font-semibold">Deleted chats</h2>
+                        </div>
+                        <Button variant="destructive" size="sm" disabled={!deletedChats.length} onClick={() => void permanentlyDeleteAll()}>
+                          Delete all
+                        </Button>
+                      </div>
+                      <Separator className="my-3" />
+                      {deletedChatsLoading && <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>}
+                      {!deletedChatsLoading && deletedChatsError && (
+                        <div className="py-8 text-center text-sm text-destructive">
+                          <p>{deletedChatsError}</p>
+                          <Button variant="outline" size="sm" className="mt-3" onClick={() => void loadDeletedChats()}>Try again</Button>
+                        </div>
+                      )}
+                      {!deletedChatsLoading && !deletedChatsError && !deletedChats.length && (
+                        <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
+                      )}
+                      <div className="divide-y">
+                        {deletedChats.map((chat) => (
+                          <div key={chat.id} className="flex items-center gap-3 py-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium">{chat.title}</div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                Deleted {new Date(chat.deletedAt).toLocaleString()}
+                                {chat.purgeAt ? ` · Permanently deletes ${new Date(chat.purgeAt).toLocaleString()}` : ' · Kept indefinitely'}
+                              </div>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" aria-label={`Actions for ${chat.title}`}><MoreHorizontal className="size-4" /></Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-44">
+                                <DropdownMenuItem onClick={() => void recoverChat(chat.id)}><RotateCcw className="size-4" />Recover</DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem variant="destructive" onClick={() => void permanentlyDeleteChat(chat)}><Trash2 className="size-4" />Permanently delete</DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -402,9 +542,12 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Import Pulpo chats"><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>Import</Button></Row>
                   <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
-                  <Row label="Delete all chats" hint="This cannot be undone.">
+                  <Row label="Delete all chats" hint={s.trashRetention === 'instant' ? 'Permanently deletes every chat.' : `Moves every chat to trash for ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()}.`}>
                     <Button variant="destructive" size="sm" onClick={() => {
-                      if (!confirm('Delete every chat in your Pulpo account?')) return
+                      const message = s.trashRetention === 'instant'
+                        ? 'Permanently delete every chat in your Pulpo account? This cannot be undone.'
+                        : 'Move every chat in your Pulpo account to trash?'
+                      if (!confirm(message)) return
                       void apiRequest('/api/chats', { method: 'DELETE' }).then(() => {
                         useChat.setState({ chats: [], activeChatId: null })
                         return queryClient.invalidateQueries({ queryKey: ['chats'] })

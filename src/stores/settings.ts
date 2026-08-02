@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type Theme = 'light' | 'dark' | 'system'
+export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 
 /** Per-model map of preset id → selected choice id. */
 export type GenerationPrefs = Record<string, string>
@@ -23,6 +24,7 @@ interface SettingsState {
   leaderboardColor: string
   localChatLimit: number
   localAttachmentCacheMb: number
+  trashRetention: TrashRetention
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -47,6 +49,7 @@ export const DEFAULT_SETTINGS = {
   leaderboardColor: '#10b981',
   localChatLimit: 50,
   localAttachmentCacheMb: 50,
+  trashRetention: '30d' as TrashRetention,
   generation: {},
 }
 

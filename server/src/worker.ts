@@ -1,12 +1,13 @@
 import { Worker } from 'bullmq'
-import { inArray } from 'drizzle-orm'
+import { and, inArray, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
-import { responses } from './database/schema.js'
+import { chats, responses } from './database/schema.js'
 import { generationQueue, maintenanceQueue, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
+import { markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 
 const config = getConfig()
 console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.started', environment: config.NODE_ENV }))
@@ -21,6 +22,11 @@ const generationWorker = new Worker<GenerationJob>('generation', async (job) => 
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'cleanup') await runCleanup()
+  if (job.data.type === 'purge-chats') {
+    const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
+    await markExpiredChatsForPurge(new Date(), userId)
+    await purgePendingChats(userId)
+  }
   if (job.data.type === 'rollup') await rebuildDailyRollups()
   if (job.data.type === 'backup') await createFullBackup(String(job.data.payload?.jobId))
   if (job.data.type === 'restore') await restoreFullBackup(String(job.data.payload?.jobId))
@@ -40,7 +46,8 @@ generationWorker.on('failed', (job, error) => {
 const recoverable = await db
   .select({ id: responses.id })
   .from(responses)
-  .where(inArray(responses.status, ['queued', 'in_progress']))
+  .innerJoin(chats, eq(chats.id, responses.chatId))
+  .where(and(inArray(responses.status, ['queued', 'in_progress']), isNull(chats.deletedAt)))
 for (const response of recoverable) {
   const existing = await generationQueue.getJob(response.id)
   if (!existing) await generationQueue.add('recover', { responseId: response.id }, { jobId: response.id })

@@ -7,6 +7,7 @@ import {
   requestLogs, ocrCacheEntries,
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
+import { markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 
 function csvCell(value: unknown): string {
   const text = value == null ? '' : String(value)
@@ -58,7 +59,7 @@ export async function runCleanup(): Promise<void> {
   const abandoned = await db.select().from(attachments).where(and(eq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
   for (const attachment of abandoned) await getBlobStore().delete(attachment.objectKey).catch(() => undefined)
   if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))
-  await db.delete(chats).where(and(eq(chats.temporary, true), lt(chats.expiresAt, now)))
+  await markExpiredChatsForPurge(now)
   await db.delete(sessions).where(lt(sessions.expiresAt, now))
   await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now))
   await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
@@ -69,6 +70,7 @@ export async function runCleanup(): Promise<void> {
   for (const job of expiredExports) if (job.objectKey) await getBlobStore().delete(job.objectKey).catch(() => undefined)
   if (expiredExports.length) await db.delete(exportJobs).where(inArray(exportJobs.id, expiredExports.map((row) => row.id)))
   await reconcileWorkspaceLeases()
+  await purgePendingChats()
 }
 
 export async function rebuildDailyRollups(): Promise<void> {

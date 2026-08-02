@@ -217,6 +217,7 @@ export const chats = pgTable('chats', {
   activeResponseId: uuid('active_response_id'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  purgeStartedAt: timestamp('purge_started_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [index('chats_user_updated_idx').on(table.userId, table.updatedAt)])
 
@@ -511,7 +512,7 @@ export const budgetReservations = pgTable('budget_reservations', {
 export const creditLedger = pgTable('credit_ledger', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id),
-  responseId: uuid('response_id').references(() => responses.id),
+  responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   type: text('type').notNull(),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
   balanceAfterMicros: bigint('balance_after_micros', { mode: 'number' }).notNull(),
@@ -523,7 +524,7 @@ export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id),
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
-  responseId: uuid('response_id').notNull().references(() => responses.id),
+  responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   modelId: text('model_id').notNull().references(() => models.id),
   pricingVersionId: uuid('pricing_version_id').references(() => modelPricingVersions.id),
   inputTokens: integer('input_tokens').notNull(),
