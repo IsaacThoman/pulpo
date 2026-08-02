@@ -33,16 +33,43 @@ function podMatches(pod: k8s.V1Pod, spec: WorkspaceSpec): boolean {
   return container?.image === spec.imageDigest && requests?.cpu === spec.cpu && requests?.memory === spec.memory && requests?.['ephemeral-storage'] === spec.ephemeralStorage
 }
 
-async function createWarmPod(spec = desiredSpec): Promise<void> {
-  const name = podName(); const daemonToken = randomBytes(32).toString('hex')
+async function createWorkspacePod(state: 'warm' | 'starting', spec = desiredSpec): Promise<{ name: string; daemonToken: string }> {
+  const name = podName()
+  const daemonToken = randomBytes(32).toString('hex')
   await core.createNamespacedPod({ namespace, body: {
-    metadata: { name, labels: { 'app.kubernetes.io/name': 'pulpo-workspace', 'pulpo.dev/state': 'warm' }, annotations: { 'pulpo.dev/daemon-token': daemonToken } },
+    metadata: { name, labels: { 'app.kubernetes.io/name': 'pulpo-workspace', 'pulpo.dev/state': state }, annotations: { 'pulpo.dev/daemon-token': daemonToken } },
     spec: {
       runtimeClassName, automountServiceAccountToken: false, restartPolicy: 'Never', enableServiceLinks: false,
       securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
       containers: [{ name: 'workspace', image: spec.imageDigest, imagePullPolicy: 'IfNotPresent', env: [{ name: 'PULPO_WORKSPACE_TOKEN', value: daemonToken }], ports: [{ name: 'daemon', containerPort: 8787 }], readinessProbe: { httpGet: { path: '/healthz', port: 8787 }, periodSeconds: 2 }, resources: { requests: { cpu: spec.cpu, memory: spec.memory, 'ephemeral-storage': spec.ephemeralStorage }, limits: { cpu: spec.cpu, memory: spec.memory, 'ephemeral-storage': spec.ephemeralStorage } }, securityContext: { allowPrivilegeEscalation: true } }],
     },
   } })
+  return { name, daemonToken }
+}
+
+function isPodReady(pod: k8s.V1Pod | undefined): pod is k8s.V1Pod & { metadata: { name: string }; status: { podIP: string } } {
+  return Boolean(
+    pod?.metadata?.name
+    && pod.status?.podIP
+    && pod.status.conditions?.some((condition) => condition.type === 'Ready' && condition.status === 'True'),
+  )
+}
+
+async function findReadyWarmPod(spec = desiredSpec): Promise<k8s.V1Pod | undefined> {
+  const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace,pulpo.dev/state=warm' })).items
+  return pods.find((candidate) => podMatches(candidate, spec) && isPodReady(candidate))
+}
+
+async function waitForPodReady(name: string, deadline: number): Promise<k8s.V1Pod> {
+  while (Date.now() < deadline) {
+    const pod = await core.readNamespacedPod({ namespace, name })
+    if (isPodReady(pod)) return pod
+    if (pod.status?.phase === 'Failed' || pod.status?.phase === 'Succeeded') {
+      throw new Error(`Workspace pod ${name} failed to start (${pod.status.phase})`)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error(`Workspace pod ${name} did not become ready in time`)
 }
 
 async function reconcileOnce(): Promise<void> {
@@ -64,7 +91,7 @@ async function reconcileOnce(): Promise<void> {
   const warm = allWarm.filter((pod) => podMatches(pod, desiredSpec))
   const excess = warm.slice(warmCapacity)
   await Promise.all(excess.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
-  for (let count = warm.length - excess.length; count < warmCapacity; count += 1) await createWarmPod()
+  for (let count = warm.length - excess.length; count < warmCapacity; count += 1) await createWorkspacePod('warm')
 }
 
 async function reconcile(): Promise<void> {
@@ -80,14 +107,24 @@ async function claim(input: { imageDigest?: string; resources?: Partial<Omit<Wor
   if (Number.isInteger(input.warmCapacity)) warmCapacity = Math.max(0, Math.min(100, input.warmCapacity!))
   await reconcile()
   if (leases.size >= Math.max(1, input.maxActiveWorkspaces ?? 3)) throw new Error('Maximum active workspace capacity reached')
-  let pod: k8s.V1Pod | undefined
-  const deadline = Date.now() + 90_000
-  while (!pod && Date.now() < deadline) {
-    const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace,pulpo.dev/state=warm' })).items
-    pod = pods.find((candidate) => podMatches(candidate, desiredSpec) && candidate.status?.conditions?.some((condition) => condition.type === 'Ready' && condition.status === 'True'))
-    if (!pod) await new Promise((resolve) => setTimeout(resolve, 500))
+
+  const deadline = Date.now() + 180_000
+  let pod = await findReadyWarmPod()
+  // Prefer a warm pod when the pool is configured; briefly wait for in-flight warm starts.
+  if (!pod && warmCapacity > 0) {
+    const warmDeadline = Math.min(deadline, Date.now() + 15_000)
+    while (!pod && Date.now() < warmDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      pod = await findReadyWarmPod()
+    }
   }
-  if (!pod?.metadata?.name || !pod.status?.podIP) throw new Error('No warm workspace is ready')
+  // Cold-start on demand when the warm pool is empty (including warmCapacity=0).
+  if (!pod) {
+    const created = await createWorkspacePod('starting')
+    pod = await waitForPodReady(created.name, deadline)
+  }
+  if (!isPodReady(pod)) throw new Error('Workspace failed to become ready')
+
   const id = randomUUID()
   const createdAt = Date.now(); const idleMs = (input.idleTimeoutSeconds ?? 1800) * 1000; const hardMs = (input.hardTimeoutSeconds ?? 14400) * 1000
   await core.patchNamespacedPod({ namespace, name: pod.metadata.name, body: { metadata: { labels: { 'pulpo.dev/state': 'claimed', 'pulpo.dev/lease-id': id }, annotations: { 'pulpo.dev/created-at': String(createdAt), 'pulpo.dev/last-used-at': String(createdAt), 'pulpo.dev/idle-ms': String(idleMs), 'pulpo.dev/hard-ms': String(hardMs) } } } }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch))

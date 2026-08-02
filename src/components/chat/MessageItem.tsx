@@ -293,7 +293,9 @@ function messageTextFromItem(item: unknown): string {
   }).join('')
 }
 
-/** Group consecutive reasoning/tools into activity blocks; messages become text segments. */
+/** Group consecutive reasoning/tools into activity blocks; messages become text segments.
+ *  Workspace is lazy-started on the first tool call, so it attaches to the first tool activity
+ *  (shown after reasoning, before tools) — not at the top of the response. */
 function buildTimeline(outputItems: unknown[], showReasoning: boolean): TimelineSegment[] {
   const segments: TimelineSegment[] = []
   let activity: ActivitySegment | null = null
@@ -305,23 +307,13 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
     if (!activity) return
     const hasReasoning = Boolean(activity.reasoning)
     const hasTools = activity.tools.length > 0
-    const hasWorkspace = Boolean(activity.workspace)
-    if ((hasReasoning && showReasoning) || hasTools || hasWorkspace) {
+    if ((hasReasoning && showReasoning) || hasTools) {
       segments.push({
         ...activity,
         reasoning: showReasoning ? activity.reasoning : undefined,
       })
     }
     activity = null
-  }
-
-  if (workspace) {
-    activity = {
-      kind: 'activity',
-      tools: [],
-      workspace,
-      active: workspaceIsActive(workspace.state),
-    }
   }
 
   for (const item of outputItems) {
@@ -348,6 +340,26 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
     }
   }
   flushActivity()
+
+  if (workspace) {
+    const toolActivity = segments.find(
+      (segment): segment is ActivitySegment => segment.kind === 'activity' && segment.tools.length > 0,
+    )
+    const target = toolActivity
+      ?? segments.find((segment): segment is ActivitySegment => segment.kind === 'activity')
+    if (target) {
+      target.workspace = workspace
+      if (workspaceIsActive(workspace.state)) target.active = true
+    } else {
+      segments.unshift({
+        kind: 'activity',
+        tools: [],
+        workspace,
+        active: workspaceIsActive(workspace.state),
+      })
+    }
+  }
+
   return segments
 }
 
@@ -435,6 +447,14 @@ function ActivityBlock({
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-1 space-y-1 border-l-2 border-muted py-0.5 pl-2.5">
+          {hasReasoning ? (
+            <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
+              {reasoning}
+            </div>
+          ) : null}
+          {active && !hasReasoning && !hasTools && !hasWorkspace ? (
+            <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
+          ) : null}
           {workspace && (
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
@@ -462,14 +482,6 @@ function ActivityBlock({
               )}
             </div>
           )}
-          {hasReasoning ? (
-            <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
-              {reasoning}
-            </div>
-          ) : null}
-          {active && !hasReasoning && !hasTools && !hasWorkspace ? (
-            <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
-          ) : null}
           {hasTools && (
             <div className="space-y-0">
               {tools.map((tool, index) => (
