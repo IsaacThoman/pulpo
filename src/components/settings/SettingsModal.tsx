@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
+  ChevronRight,
   Database,
   Info,
   KeyRound,
-  MoreHorizontal,
   Monitor,
   Moon,
   RotateCcw,
@@ -39,13 +40,6 @@ import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -54,11 +48,10 @@ const SECTIONS = [
   { id: 'interface', label: 'Interface', icon: Monitor },
   { id: 'api', label: 'API keys', icon: KeyRound },
   { id: 'data', label: 'Data controls', icon: Database },
-  { id: 'deleted', label: 'Deleted chats', icon: Trash2 },
   { id: 'about', label: 'About', icon: Info },
 ] as const
 
-type SectionId = (typeof SECTIONS)[number]['id']
+type SectionId = (typeof SECTIONS)[number]['id'] | 'trash'
 
 interface Memory {
   id: string
@@ -139,22 +132,19 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [importFallback, setImportFallback] = useState('')
   const [importResult, setImportResult] = useState('')
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
-  const [deletedChats, setDeletedChats] = useState<DeletedChat[]>([])
-  const [deletedChatsLoading, setDeletedChatsLoading] = useState(false)
-  const [deletedChatsError, setDeletedChatsError] = useState('')
-
-  const loadDeletedChats = async () => {
-    setDeletedChatsLoading(true)
-    setDeletedChatsError('')
-    try {
-      const result = await apiRequest<{ data: DeletedChat[] }>('/api/chats/deleted')
-      setDeletedChats(result.data)
-    } catch (error) {
-      setDeletedChatsError(error instanceof Error ? error.message : 'Could not load deleted chats')
-    } finally {
-      setDeletedChatsLoading(false)
-    }
-  }
+  const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
+  const [trashRetentionError, setTrashRetentionError] = useState('')
+  const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
+  const deletedChatsQuery = useQuery({
+    queryKey: deletedChatsQueryKey,
+    queryFn: () => apiRequest<{ data: DeletedChat[] }>('/api/chats/deleted').then((result) => result.data),
+    enabled: Boolean(open && section === 'trash' && user?.id && s.trashRetention !== 'instant'),
+    staleTime: 0,
+    refetchInterval: 15_000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: 'always',
+  })
+  const deletedChats = deletedChatsQuery.data ?? []
 
   const chooseImport = (source: 'pulpo' | 'openwebui') => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
@@ -171,9 +161,8 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   }, [open, section])
 
   useEffect(() => {
-    if (!open || section !== 'deleted') return
-    void loadDeletedChats()
-  }, [open, section])
+    if (section === 'trash' && s.trashRetention === 'instant') setSection('data')
+  }, [section, s.trashRetention])
 
   useEffect(() => {
     if (!open || section !== 'data') return
@@ -187,20 +176,38 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const recoverChat = async (id: string) => {
     await apiRequest(`/api/chats/${id}/recover`, { method: 'POST' })
-    setDeletedChats((items) => items.filter((chat) => chat.id !== id))
-    await queryClient.invalidateQueries({ queryKey: ['chats'] })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['chats'] }),
+      queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey }),
+    ])
   }
 
   const permanentlyDeleteChat = async (chat: DeletedChat) => {
     if (!confirm(`Permanently delete “${chat.title}”? This cannot be undone.`)) return
     await apiRequest(`/api/chats/${chat.id}/permanent`, { method: 'DELETE' })
-    setDeletedChats((items) => items.filter((item) => item.id !== chat.id))
+    await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
   }
 
   const permanentlyDeleteAll = async () => {
     if (!deletedChats.length || !confirm('Permanently delete every chat in trash? This cannot be undone.')) return
     await apiRequest('/api/chats/deleted', { method: 'DELETE' })
-    setDeletedChats([])
+    await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
+  }
+
+  const updateTrashRetention = async (value: TrashRetention) => {
+    const previous = s.trashRetention
+    s.set('trashRetention', value)
+    setTrashRetentionSaving(true)
+    setTrashRetentionError('')
+    try {
+      await apiRequest('/api/settings', { method: 'PATCH', body: { trashRetention: value } })
+      await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
+    } catch (error) {
+      s.set('trashRetention', previous)
+      setTrashRetentionError(error instanceof Error ? error.message : 'Could not save trash retention')
+    } finally {
+      setTrashRetentionSaving(false)
+    }
   }
 
   const deleteAllChats = async () => {
@@ -212,7 +219,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     useChat.setState({ chats: [], activeChatId: null })
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['chats'] }),
-      loadDeletedChats(),
+      queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey }),
     ])
   }
 
@@ -226,19 +233,34 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             <div className="px-2 pb-2 text-sm font-semibold">Settings</div>
             <div className="space-y-0.5">
               {SECTIONS.filter((sec) => sec.id !== 'api' || useAuth.getState().apiKeysEnabled).map((sec) => (
-                <button
-                  key={sec.id}
-                  onClick={() => setSection(sec.id)}
-                  className={cn(
-                    'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors',
-                    section === sec.id
-                      ? 'bg-accent font-medium'
-                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                <div key={sec.id}>
+                  <button
+                    onClick={() => setSection(sec.id)}
+                    className={cn(
+                      'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors',
+                      section === sec.id
+                        ? 'bg-accent font-medium'
+                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                    )}
+                  >
+                    <sec.icon className="size-4" />
+                    {sec.label}
+                  </button>
+                  {sec.id === 'data' && s.trashRetention !== 'instant' && (
+                    <button
+                      onClick={() => setSection('trash')}
+                      className={cn(
+                        'ml-4 flex w-[calc(100%-1rem)] cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors',
+                        section === 'trash'
+                          ? 'bg-accent font-medium'
+                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
+                      )}
+                    >
+                      <ChevronRight className="size-3.5" />
+                      View trash
+                    </button>
                   )}
-                >
-                  <sec.icon className="size-4" />
-                  {sec.label}
-                </button>
+                </div>
               ))}
             </div>
             {user?.role === 'admin' && (
@@ -462,15 +484,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Import Pulpo chats"><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>Import</Button></Row>
                   <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
-                </div>
-              )}
-
-              {section === 'deleted' && (
-                <div>
-                  <h2 className="text-base font-semibold">Deleted chats</h2>
                   <Separator className="my-3" />
-                  <Row label="Trash retention period" hint="Deleted chats and their files are kept for this long.">
-                    <Select value={s.trashRetention} onValueChange={(value) => s.set('trashRetention', value as TrashRetention)}>
+                  <Row label="Trash retention period" hint="Choose how long deleted chats and their files remain recoverable.">
+                    <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
                       <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {(Object.entries(TRASH_RETENTION_LABELS) as [TrashRetention, string][]).map(([value, label]) => (
@@ -479,27 +495,33 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       </SelectContent>
                     </Select>
                   </Row>
-                  <Row label="Delete all chats" hint={s.trashRetention === 'instant' ? 'Permanently deletes every chat.' : `Moves every chat to trash for ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()}.`}>
-                    <Button variant="destructive" size="sm" onClick={() => void deleteAllChats()}>Delete all chats</Button>
+                  {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
+                  <Row label="Trash all chats" hint={s.trashRetention === 'instant' ? 'Permanently deletes every chat.' : `Moves every chat to trash for ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()}.`}>
+                    <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>Trash all chats</Button>
                   </Row>
-                  <Separator className="my-3" />
+                </div>
+              )}
+
+              {section === 'trash' && s.trashRetention !== 'instant' && (
+                <div>
                   <div className="flex items-center justify-between gap-3 py-1">
                     <div>
-                      <div className="text-sm font-medium">Trash</div>
+                      <h2 className="text-base font-semibold">Trash</h2>
                       <div className="mt-0.5 text-xs text-muted-foreground">Recover chats or permanently delete them.</div>
                     </div>
                     <Button variant="destructive" size="sm" disabled={!deletedChats.length} onClick={() => void permanentlyDeleteAll()}>
                       Empty trash
                     </Button>
                   </div>
-                  {deletedChatsLoading && <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>}
-                  {!deletedChatsLoading && deletedChatsError && (
+                  <Separator className="my-3" />
+                  {deletedChatsQuery.isLoading && <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>}
+                  {!deletedChatsQuery.isLoading && deletedChatsQuery.error && (
                     <div className="py-8 text-center text-sm text-destructive">
-                      <p>{deletedChatsError}</p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => void loadDeletedChats()}>Try again</Button>
+                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load deleted chats'}</p>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>Try again</Button>
                     </div>
                   )}
-                  {!deletedChatsLoading && !deletedChatsError && !deletedChats.length && (
+                  {!deletedChatsQuery.isLoading && !deletedChatsQuery.error && !deletedChats.length && (
                     <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
                   )}
                   <div className="divide-y">
@@ -512,16 +534,10 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                             {chat.purgeAt ? ` · Permanently deletes ${new Date(chat.purgeAt).toLocaleString()}` : ' · Kept indefinitely'}
                           </div>
                         </div>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" aria-label={`Actions for ${chat.title}`}><MoreHorizontal className="size-4" /></Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-44">
-                            <DropdownMenuItem onClick={() => void recoverChat(chat.id)}><RotateCcw className="size-4" />Recover</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem variant="destructive" onClick={() => void permanentlyDeleteChat(chat)}><Trash2 className="size-4" />Permanently delete</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}><RotateCcw className="size-4" />Recover</Button>
+                          <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}><Trash2 className="size-4" />Delete</Button>
+                        </div>
                       </div>
                     ))}
                   </div>

@@ -143,6 +143,9 @@ export function ChatDataBridge() {
       }
       const scopes = syncInvalidationScopes(result)
       for (const scope of scopes) void queryClient.invalidateQueries({ queryKey: [scope, userId] })
+      if (scopes.includes('chats')) {
+        void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
+      }
       if (scopes.includes('chats') && activeChatIdRef.current) {
         void queryClient.invalidateQueries({ queryKey: ['chat', userId, activeChatIdRef.current] })
       }
@@ -184,11 +187,13 @@ export function ChatDataBridge() {
     })
     socket.on('chat.changed', ({ chatId: changedChatId }) => {
       void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
+      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
       void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
     })
     socket.on('account.revision', ({ revision }) => {
       revisionRef.current = revision
       void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
+      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
     })
     const wake = () => { if (document.visibilityState === 'visible') void sync() }
     const online = () => void sync()

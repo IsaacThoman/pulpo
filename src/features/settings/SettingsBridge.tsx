@@ -23,6 +23,7 @@ export function SettingsBridge() {
   const userId = useAuth((state) => state.user?.id)
   const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const hydrated = useRef(false)
+  const applyingRemote = useRef(false)
   const query = useQuery({
     queryKey: ['settings', userId],
     queryFn: () => apiRequest<{ values: Record<string, unknown> }>('/api/settings'),
@@ -40,7 +41,12 @@ export function SettingsBridge() {
 
   useEffect(() => {
     if (!query.data || !userId) return
-    useSettings.setState({ ...DEFAULT_SETTINGS, ...query.data.values, ownerUserId: userId })
+    applyingRemote.current = true
+    try {
+      useSettings.setState({ ...DEFAULT_SETTINGS, ...query.data.values, ownerUserId: userId })
+    } finally {
+      applyingRemote.current = false
+    }
     hydrated.current = true
   }, [query.data, userId])
 
@@ -48,7 +54,7 @@ export function SettingsBridge() {
     if (!userId) return
     let timer: number | undefined
     const unsubscribe = useSettings.subscribe(() => {
-      if (!hydrated.current) return
+      if (!hydrated.current || applyingRemote.current) return
       window.clearTimeout(timer)
       timer = window.setTimeout(() => {
         void apiRequest('/api/settings', { method: 'PATCH', body: settingsSnapshot() })
