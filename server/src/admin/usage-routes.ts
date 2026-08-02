@@ -62,11 +62,17 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     const config = getConfig()
     const configured = Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN)
     let controller: { configured: boolean; healthy: boolean; warmCapacity: number; active: number; detail?: string } = { configured, healthy: false, warmCapacity: settings.warmCapacity, active: 0 }
+    let controllerWorkspaces: Array<{
+      id: string; name: string; leaseId: string | null; chatId: string | null; lifecycleState: string; phase: string; ready: boolean; activeOperations: number
+      createdAt: string; lastUsedAt: string | null; idleExpiresAt: string | null; hardExpiresAt: string | null; deletionStartedAt: string | null
+      imageDigest: string | null; restartCount: number
+    }> = []
     try {
       if (!configured) throw new Error('Controller URL and token are not configured')
-      const response = await workspaceControllerRequest('/healthz', { signal: AbortSignal.timeout(3_000) }, false)
-      const health = response.ok ? await response.json() as { warmCapacity?: number; active?: number } : null
-      controller = { configured: true, healthy: response.ok, warmCapacity: health?.warmCapacity ?? settings.warmCapacity, active: health?.active ?? 0, detail: response.ok ? undefined : `Controller returned ${response.status}` }
+      const response = await workspaceControllerRequest('/v1/workspaces', { signal: AbortSignal.timeout(3_000) })
+      const inventory = response.ok ? await response.json() as { warmCapacity?: number; active?: number; workspaces?: typeof controllerWorkspaces } : null
+      controllerWorkspaces = inventory?.workspaces ?? []
+      controller = { configured: true, healthy: response.ok, warmCapacity: inventory?.warmCapacity ?? settings.warmCapacity, active: inventory?.active ?? 0, detail: response.ok ? undefined : `Controller returned ${response.status}` }
     } catch (error) {
       controller = { configured, healthy: false, warmCapacity: settings.warmCapacity, active: 0, detail: error instanceof Error ? error.message : String(error) }
     }
@@ -85,10 +91,24 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
       ...relations,
       response: relations.response ?? { id: null, modelId: null, status: null },
     }))
+    const leaseRows = new Map(data.flatMap((row) => row.controllerLeaseId ? [[row.controllerLeaseId, row] as const] : []))
+    const chatRows = new Map<string, (typeof data)[number]>()
+    for (const row of data) if (!chatRows.has(row.chat.id)) chatRows.set(row.chat.id, row)
+    const openWorkspaces = controllerWorkspaces.map((workspace) => {
+      const row = (workspace.leaseId ? leaseRows.get(workspace.leaseId) : undefined) ?? (workspace.chatId ? chatRows.get(workspace.chatId) : undefined)
+      return {
+        ...workspace,
+        user: row?.user ?? null,
+        chat: row?.chat ?? null,
+        response: row?.response ?? null,
+        run: row?.run ?? null,
+      }
+    })
     return {
       controller,
       policy: { warmCapacity: settings.warmCapacity, maxActiveWorkspaces: settings.maxActiveWorkspaces, cpu: settings.cpu, memory: settings.memory, ephemeralStorage: settings.ephemeralStorage },
       summary: { ready: rows.filter((row) => row.lease.status === 'ready').length, pending: pending.length, recent: rows.length },
+      openWorkspaces,
       data,
     }
   })
