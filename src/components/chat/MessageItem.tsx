@@ -184,15 +184,11 @@ function useElapsedMs(startTs: number, active: boolean, finalMs?: number) {
 }
 
 function ActivityToolRow({ tool }: { tool: ToolItem }) {
-  const [open, setOpen] = useState(tool.status === 'running')
+  const [open, setOpen] = useState(false)
   const Icon = toolIcon(tool.tool)
   const running = tool.status === 'running'
   const failed = tool.status === 'failed' || tool.isError
   const hasBody = tool.arguments !== undefined || Boolean(tool.output)
-
-  useEffect(() => {
-    if (running) setOpen(true)
-  }, [running])
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
@@ -389,15 +385,11 @@ function ActivityBlock({
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
   const needsWorkspaceActions = workspace?.state === 'waiting'
-  const [open, setOpen] = useState(needsWorkspaceActions || workspaceFailed)
+  const [open, setOpen] = useState(false)
   const hasTools = tools.length > 0
   const hasReasoning = Boolean(reasoning)
   const hasWorkspace = Boolean(workspace)
   const runningTool = tools.find((tool) => tool.status === 'running')
-
-  useEffect(() => {
-    if (needsWorkspaceActions || workspaceFailed) setOpen(true)
-  }, [needsWorkspaceActions, workspaceFailed])
 
   const label = useMemo(() => {
     if (workspace && workspaceBusy) return workspaceLabel(workspace)
@@ -434,64 +426,66 @@ function ActivityBlock({
   if (!hasReasoning && !hasTools && !hasWorkspace) return null
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
-        {triggerIcon}
-        <span>{label}</span>
-        {hasTools && !active && !workspaceBusy && (
-          <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-normal tabular-nums text-muted-foreground">
-            {tools.length}
-          </span>
-        )}
-        <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div className="mt-1 space-y-1 border-l-2 border-muted py-0.5 pl-2.5">
-          {hasReasoning ? (
-            <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
-              {reasoning}
-            </div>
-          ) : null}
-          {active && !hasReasoning && !hasTools && !hasWorkspace ? (
-            <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
-          ) : null}
-          {workspace && (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-                {workspaceBusy ? (
-                  <Loader2 className="size-3 shrink-0 animate-spin" />
-                ) : workspaceFailed ? (
-                  <XCircle className="size-3 shrink-0 text-destructive" />
-                ) : (
-                  <Server className="size-3 shrink-0" />
-                )}
-                <span>{workspaceLabel(workspace)}</span>
+    <div className="space-y-1.5">
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+          {triggerIcon}
+          <span>{label}</span>
+          {hasTools && !active && !workspaceBusy && (
+            <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-normal tabular-nums text-muted-foreground">
+              {tools.length}
+            </span>
+          )}
+          <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-1 space-y-1 border-l-2 border-muted py-0.5 pl-2.5">
+            {hasReasoning ? (
+              <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
+                {reasoning}
               </div>
-              {workspace.error && (
-                <div className="text-[12px] leading-5 text-destructive">{workspace.error}</div>
-              )}
-              {needsWorkspaceActions && (
-                <div className="flex flex-wrap gap-2 pt-0.5">
-                  <Button size="sm" variant="outline" onClick={() => onStop(messageId)}>
-                    Cancel generation
-                  </Button>
-                  <Button size="sm" disabled={capacityPending} onClick={() => onContinue(messageId)}>
-                    {capacityPending ? 'Continuing…' : 'Continue without agent'}
-                  </Button>
+            ) : null}
+            {active && !hasReasoning && !hasTools && !hasWorkspace ? (
+              <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
+            ) : null}
+            {workspace && (
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
+                  {workspaceBusy ? (
+                    <Loader2 className="size-3 shrink-0 animate-spin" />
+                  ) : workspaceFailed ? (
+                    <XCircle className="size-3 shrink-0 text-destructive" />
+                  ) : (
+                    <Server className="size-3 shrink-0" />
+                  )}
+                  <span>{workspaceLabel(workspace)}</span>
                 </div>
-              )}
-            </div>
-          )}
-          {hasTools && (
-            <div className="space-y-0">
-              {tools.map((tool, index) => (
-                <ActivityToolRow key={tool.id ?? `${tool.tool}:${index}`} tool={tool} />
-              ))}
-            </div>
-          )}
+                {workspace.error && (
+                  <div className="text-[12px] leading-5 text-destructive">{workspace.error}</div>
+                )}
+              </div>
+            )}
+            {hasTools && (
+              <div className="space-y-0">
+                {tools.map((tool, index) => (
+                  <ActivityToolRow key={tool.id ?? `${tool.tool}:${index}`} tool={tool} />
+                ))}
+              </div>
+            )}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+      {needsWorkspaceActions && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => onStop(messageId)}>
+            Cancel generation
+          </Button>
+          <Button size="sm" disabled={capacityPending} onClick={() => onContinue(messageId)}>
+            {capacityPending ? 'Continuing…' : 'Continue without agent'}
+          </Button>
         </div>
-      </CollapsibleContent>
-    </Collapsible>
+      )}
+    </div>
   )
 }
 
