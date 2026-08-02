@@ -548,11 +548,6 @@ function ActivityBlock({
         <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
           {triggerIcon}
           <span>{label}</span>
-          {hasTools && !active && !workspaceBusy && (
-            <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-normal tabular-nums text-muted-foreground">
-              {tools.length}
-            </span>
-          )}
           <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -607,6 +602,7 @@ export const MessageItem = memo(function MessageItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
+  const [streamingActivityDurationMs, setStreamingActivityDurationMs] = useState<number>()
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
@@ -629,6 +625,27 @@ export const MessageItem = memo(function MessageItem({
     return segments
   }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
   const elapsedMs = useElapsedMs(message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
+  const lastActivityTimelineIndex = timeline.reduce(
+    (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
+    -1,
+  )
+  const lastActivitySegment = timeline[lastActivityTimelineIndex]
+  const activityFinishedDuringStream = streaming
+    && lastActivitySegment?.kind === 'activity'
+    && !lastActivitySegment.active
+    && timeline.slice(lastActivityTimelineIndex + 1).some((segment) => segment.kind === 'text')
+
+  useEffect(() => {
+    if (!streaming) return
+    if (!activityFinishedDuringStream) {
+      setStreamingActivityDurationMs(undefined)
+      return
+    }
+    setStreamingActivityDurationMs((duration) => (
+      duration ?? Math.max(0, Date.now() - message.timestamp)
+    ))
+  }, [activityFinishedDuringStream, message.timestamp, streaming])
+
   const hasAttachments = Boolean(message.attachments?.length)
   const submitEdit = () => {
     const content = draft.trim()
@@ -787,8 +804,8 @@ export const MessageItem = memo(function MessageItem({
                       key={`activity:${index}`}
                       steps={segment.steps}
                       active={segment.active || (streaming && isLastActivity && !timeline.slice(index + 1).some((entry) => entry.kind === 'text'))}
-                      showDuration={!streaming && isLastActivity}
-                      durationMs={elapsedMs}
+                      showDuration={isLastActivity && (!streaming || activityFinishedDuringStream)}
+                      durationMs={streamingActivityDurationMs ?? elapsedMs}
                       messageId={message.id}
                       onStop={stopStreaming}
                       onContinue={(id) => {
