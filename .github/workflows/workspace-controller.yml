@@ -1,0 +1,108 @@
+name: Build and deploy workspace controller
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - packages/workspace-controller/**
+      - infra/workspace-controller/**
+      - .github/workflows/workspace-controller.yml
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: workspace-controller
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: ghcr.io/isaacthoman/pulpo-workspace-controller
+
+jobs:
+  build:
+    name: Build controller image
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.publish.outputs.digest }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: publish
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: infra/workspace-controller/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:main
+            ${{ env.IMAGE_NAME }}:sha-${{ github.sha }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=workspace-controller
+          cache-to: type=gha,mode=max,scope=workspace-controller
+
+      - name: Export image tarball for k3s import
+        env:
+          DIGEST: ${{ steps.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "${IMAGE_NAME}@${DIGEST}"
+          docker tag "${IMAGE_NAME}@${DIGEST}" pulpo-workspace-controller:deploy
+          docker save pulpo-workspace-controller:deploy | gzip > controller.tar.gz
+          echo "${DIGEST}" > controller-digest.txt
+          ls -lh controller.tar.gz
+
+      - name: Upload deploy artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workspace-controller-image
+          path: |
+            controller.tar.gz
+            controller-digest.txt
+          retention-days: 3
+
+  deploy:
+    name: Deploy to pulpo-agents k3s
+    needs: build
+    runs-on: [self-hosted, pulpo-agents]
+    steps:
+      - name: Download image artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: workspace-controller-image
+          path: deploy
+
+      - name: Import image and roll out
+        env:
+          DIGEST: ${{ needs.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "${DIGEST}"
+          IMAGE_REF="${IMAGE_NAME}@${DIGEST}"
+          sudo k3s ctr images import deploy/controller.tar.gz
+          sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy "${IMAGE_REF}"
+          sudo k3s ctr images tag docker.io/library/pulpo-workspace-controller:deploy "${IMAGE_NAME}:main"
+          sudo k3s kubectl -n pulpo-workspaces set image \
+            deployment/pulpo-workspace-controller \
+            "controller=${IMAGE_REF}"
+          sudo k3s kubectl -n pulpo-workspaces rollout status \
+            deployment/pulpo-workspace-controller \
+            --timeout=180s
+          curl -skf https://127.0.0.1:30443/healthz
+          echo
+          echo "Deployed ${IMAGE_REF}"

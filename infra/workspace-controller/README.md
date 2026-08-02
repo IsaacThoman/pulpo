@@ -4,6 +4,23 @@ This service is deployed inside the Kubernetes cluster and is the only Pulpo
 component with permission to create, claim, and delete workspace pods. The
 Pulpo worker calls it over a private authenticated endpoint.
 
+## Deployment topology
+
+| Piece | Where | How it deploys |
+| --- | --- | --- |
+| Pulpo web/api/worker | Coolify on `bee` | Coolify watches `main` |
+| Workspace controller | k3s on `pulpo-agents` | GitHub Actions → self-hosted runner |
+| Workspace pods (Kata) | k3s on `pulpo-agents` | Created by the controller |
+
+The controller **cannot** run as a normal Coolify Docker app: it needs in-cluster
+Kubernetes RBAC to create Kata sandbox pods. Auto-deploy is handled by
+`.github/workflows/workspace-controller.yml`, which builds the image on GitHub
+hosted runners and rolls it out via the `pulpo-agents` self-hosted runner
+(`ctr import` + `kubectl set image`).
+
+`warmCapacity: 0` is supported: the controller cold-starts a workspace pod on
+demand when the warm pool is empty.
+
 Create the authentication secret before applying the manifest:
 
 ```bash
