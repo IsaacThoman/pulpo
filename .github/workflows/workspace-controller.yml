@@ -90,6 +90,16 @@ jobs:
           sudo k3s kubectl -n pulpo-workspaces rollout status \
             deployment/pulpo-workspace-controller \
             --timeout=180s
-          curl -skf https://127.0.0.1:30443/healthz
-          echo
+          for attempt in $(seq 1 30); do
+            if curl -skf https://127.0.0.1:30443/healthz; then
+              echo
+              break
+            fi
+            if [[ "${attempt}" -eq 30 ]]; then
+              echo "Controller health check failed" >&2
+              sudo k3s kubectl -n pulpo-workspaces get pods -o wide >&2 || true
+              exit 1
+            fi
+            sleep 2
+          done
           echo "Deployed ${IMAGE_REF} (${IMAGE_ID})"
