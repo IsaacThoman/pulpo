@@ -630,10 +630,12 @@ export const MessageItem = memo(function MessageItem({
     -1,
   )
   const lastActivitySegment = timeline[lastActivityTimelineIndex]
+  const hasTextAfterLastActivity = timeline
+    .slice(lastActivityTimelineIndex + 1)
+    .some((segment) => segment.kind === 'text')
   const activityFinishedDuringStream = streaming
     && lastActivitySegment?.kind === 'activity'
-    && !lastActivitySegment.active
-    && timeline.slice(lastActivityTimelineIndex + 1).some((segment) => segment.kind === 'text')
+    && hasTextAfterLastActivity
 
   useEffect(() => {
     if (!streaming) return
@@ -799,11 +801,14 @@ export const MessageItem = memo(function MessageItem({
                 if (segment.kind === 'activity') {
                   activityOrdinal += 1
                   const isLastActivity = activityOrdinal === lastActivityIndex
+                  const hasFollowingText = timeline
+                    .slice(index + 1)
+                    .some((entry) => entry.kind === 'text')
                   return (
                     <ActivityBlock
                       key={`activity:${index}`}
                       steps={segment.steps}
-                      active={segment.active || (streaming && isLastActivity && !timeline.slice(index + 1).some((entry) => entry.kind === 'text'))}
+                      active={!hasFollowingText && (segment.active || (streaming && isLastActivity))}
                       showDuration={isLastActivity && (!streaming || activityFinishedDuringStream)}
                       durationMs={streamingActivityDurationMs ?? elapsedMs}
                       messageId={message.id}
