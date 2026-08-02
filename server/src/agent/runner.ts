@@ -21,6 +21,7 @@ import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
+import { messagesForPersistence } from './context.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -236,7 +237,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshot()
     }
-    await db.update(agentRuns).set({ workspaceLeaseId: manager.leaseId, context: { messages: agent.state.messages, billingTurns }, modelTurns, toolCalls, updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ workspaceLeaseId: manager.leaseId, context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, updatedAt: new Date() }).where(eq(agentRuns.id, runId))
   })
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
@@ -261,7 +262,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await snapshot('completed')
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
-    await db.update(agentRuns).set({ status: 'completed', context: { messages: agent.state.messages, billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status: 'completed', context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros }) : (await releaseBudget(responseId), 0)
     await db.update(requestLogs).set({ status: 'completed', actualModelId: active.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: Date.now() - startedAt, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
@@ -273,7 +274,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     const cancelled = await isCancellationRequested(responseId)
     const status = cancelled ? 'cancelled' : 'failed'
     await snapshot(status, error instanceof Error ? error.message : String(error))
-    await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { messages: agent.state.messages, billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros }) : (await releaseBudget(responseId), 0)
     await db.update(requestLogs).set({ status, actualModelId: active.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorMessage: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)

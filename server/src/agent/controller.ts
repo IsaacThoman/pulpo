@@ -9,6 +9,9 @@ import { attachmentWorkspacePath } from './policy.js'
 import { isWorkspaceCapacityResponse, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
+import { detectImageMime } from './images.js'
+
+const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
 
 export interface WorkspaceOperation {
   id: string
@@ -16,6 +19,12 @@ export interface WorkspaceOperation {
   output: string
   exitCode: number | null
   error?: string
+}
+
+export interface WorkspaceImage {
+  data: string
+  mimeType: string
+  sizeBytes: number
 }
 
 class ControllerRequestError extends Error {
@@ -197,6 +206,32 @@ export class WorkspaceManager {
     if (this.localLeaseId) { const now = new Date(); await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId)) }
     if (operation.status === 'failed') throw new Error(operation.error ?? `${type} failed`)
     return operation
+  }
+
+  async viewImage(path: string, signal?: AbortSignal, onStarted?: () => void | Promise<void>): Promise<WorkspaceImage> {
+    if (!path.startsWith('/')) throw new Error('Image path must be absolute')
+    let leaseId = await this.ensureLease(signal)
+    let response: Response
+    try {
+      response = await this.request(`/v1/leases/${leaseId}/v1/images?path=${encodeURIComponent(path)}`, { signal })
+    } catch (error) {
+      if (signal?.aborted || !(error instanceof ControllerRequestError) || error.status !== 404) throw error
+      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
+      await this.onLeaseEvent?.('expired')
+      this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false
+      leaseId = await this.ensureLease(signal)
+      response = await this.request(`/v1/leases/${leaseId}/v1/images?path=${encodeURIComponent(path)}`, { signal })
+    }
+    await onStarted?.()
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (bytes.byteLength > MAX_VIEW_IMAGE_BYTES) throw new Error(`Image exceeds the ${MAX_VIEW_IMAGE_BYTES} byte limit`)
+    const mimeType = detectImageMime(bytes)
+    if (!mimeType) throw new Error('File is not a supported PNG, JPEG, GIF, or WebP image')
+    if (this.localLeaseId) {
+      const now = new Date()
+      await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
+    }
+    return { data: Buffer.from(bytes).toString('base64'), mimeType, sizeBytes: bytes.byteLength }
   }
 
   async cancel(operationId: string): Promise<void> {

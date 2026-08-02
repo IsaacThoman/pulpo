@@ -5,6 +5,7 @@ describe('agent policy', () => {
   it('keeps the Pulpo harness first and appends configured instructions', () => {
     const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy')
     expect(prompt).toContain('/workspace')
+    expect(prompt).toContain('Use view_image')
     expect(prompt.indexOf('Model policy')).toBeLessThan(prompt.indexOf('Agent policy'))
   })
 

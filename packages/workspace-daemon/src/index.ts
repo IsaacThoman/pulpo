@@ -1,13 +1,14 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
-import { dirname, resolve, relative } from 'node:path'
+import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 
 const port = Number(process.env.PORT ?? 8787)
 const token = process.env.PULPO_WORKSPACE_TOKEN
 const root = resolve(process.env.PULPO_WORKSPACE_ROOT ?? '/workspace')
 const maxBody = Number(process.env.PULPO_WORKSPACE_MAX_BODY ?? 20 * 1024 * 1024)
+const maxImageBytes = Number(process.env.PULPO_WORKSPACE_MAX_IMAGE_BYTES ?? 20 * 1024 * 1024)
 if (!token || token.length < 32) throw new Error('PULPO_WORKSPACE_TOKEN must contain at least 32 characters')
 
 type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; startedAt: string; completedAt?: string }
@@ -45,6 +46,12 @@ function workspacePath(value: unknown): string {
   const path = resolve(root, String(value ?? '.'))
   if (path !== root && relative(root, path).startsWith('..')) throw new Error('Path escapes /workspace')
   return path
+}
+
+function vmPath(value: unknown): string {
+  const requested = String(value ?? '')
+  if (!isAbsolute(requested)) throw new Error('Path must be absolute')
+  return resolve(requested)
 }
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -122,6 +129,12 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://workspace')
     if (request.method === 'PUT' && url.pathname === '/v1/files') {
       const path = workspacePath(url.searchParams.get('path')); await mkdir(dirname(path), { recursive: true }); await writeFile(path, await body(request)); return json(response, 201, { path })
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/images') {
+      const path = vmPath(url.searchParams.get('path')); const metadata = await stat(path)
+      if (!metadata.isFile()) throw new Error('Image path must be a regular file')
+      if (metadata.size > maxImageBytes) throw new Error(`Image exceeds the ${maxImageBytes} byte limit`)
+      response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': metadata.size }); response.end(await readFile(path)); return
     }
     const match = url.pathname.match(/^\/v1\/operations\/([^/]+)(?:\/(cancel))?$/)
     if (request.method === 'GET' && match) {

@@ -14,6 +14,17 @@ export function createWorkspaceTools(
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
   return [
     tool('read', 'Read a UTF-8 file from the Linux workspace.', Type.Object({ path: Type.String() }), async (id, args, signal) => textResult((await manager.execute(id, 'read', record(args), signal, undefined, started(id))).output)),
+    tool('view_image', 'View a PNG, JPEG, GIF, or WebP image using the model\'s vision capability. Absolute paths anywhere in the disposable VM are allowed.', Type.Object({ path: Type.String() }), async (id, args, signal) => {
+      const path = String(record(args).path ?? '')
+      const viewed = await manager.viewImage(path, signal, started(id))
+      return {
+        content: [
+          { type: 'text' as const, text: `Viewed ${path} (${viewed.mimeType}, ${viewed.sizeBytes} bytes)` },
+          { type: 'image' as const, data: viewed.data, mimeType: viewed.mimeType },
+        ],
+        details: { path, mimeType: viewed.mimeType, sizeBytes: viewed.sizeBytes },
+      }
+    }),
     tool('bash', 'Run a bash command in the disposable Linux workspace. Passwordless sudo is available.', Type.Object({ command: Type.String(), cwd: Type.Optional(Type.String()), timeoutMs: Type.Optional(Type.Number()) }), async (id, args, signal, onUpdate) => {
       const values = record(args)
       const result = await manager.execute(id, 'bash', { ...values, timeoutMs: Math.min(Number(values.timeoutMs ?? commandTimeoutMs), commandTimeoutMs) }, signal, (output) => onUpdate?.(textResult(output)), async () => {
