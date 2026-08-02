@@ -398,10 +398,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       <span className="font-mono">0.1.0</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Stack</span>
-                      <span>React · Fastify · PostgreSQL · Redis</span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-muted-foreground">API endpoint</span>
                       <span className="font-mono text-xs">{location.origin}/v1</span>
                     </div>
