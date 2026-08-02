@@ -486,8 +486,14 @@ function ReasoningStepRow({ step }: { step: ReasoningStep }) {
   return (
     <div className="space-y-0.5">
       <div className="flex items-start gap-1.5">
-        <div className="min-w-0 flex-1 whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
-          {step.text || (step.active ? 'Thinking…' : '')}
+        <div className="min-w-0 flex-1 text-[13px] leading-5 text-muted-foreground [&_p]:my-1 [&_p]:leading-5">
+          {step.text ? (
+            <Markdown content={step.text} streaming={step.active} />
+          ) : step.active ? (
+            'Thinking…'
+          ) : (
+            ''
+          )}
         </div>
         {!step.active && step.durationMs !== undefined ? (
           <StepDuration ms={step.durationMs} />
