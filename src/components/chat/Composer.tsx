@@ -32,6 +32,16 @@ interface PendingAttachment {
   previewUrl: string | null
   status: 'uploading' | 'ready' | 'error'
   error?: string
+  file: File
+}
+
+function downloadLocalFile(file: File): void {
+  const url = URL.createObjectURL(file)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = file.name
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 export function Composer({
@@ -119,6 +129,7 @@ export function Composer({
       mimeType: file.type || 'image/png',
       previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
       status: 'uploading' as const,
+      file,
     }))
     setAttachments((current) => [...current, ...staged])
 
@@ -263,6 +274,7 @@ export function Composer({
                 previewUrl={attachment.previewUrl}
                 uploading={attachment.status === 'uploading'}
                 error={attachment.status === 'error' ? attachment.error : null}
+                onDownload={() => downloadLocalFile(attachment.file)}
                 onRemove={() => removeAttachment(attachment.localId)}
               />
             ))}

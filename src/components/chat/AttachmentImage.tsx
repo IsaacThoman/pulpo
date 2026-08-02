@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ImageIcon, Loader2, Paperclip, X } from 'lucide-react'
+import { Download, ImageIcon, Loader2, Paperclip, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Attachment } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { downloadAttachment, getCachedAttachment } from '@/lib/local-first/attachment-cache'
@@ -77,18 +79,21 @@ export function MessageAttachmentList({
       {files.length > 0 && (
         <div className={cn('flex flex-wrap gap-1.5', align === 'end' && 'justify-end')}>
           {files.map((attachment) => (
-            <button
+            <div
               key={attachment.id}
-              type="button"
-              className="flex max-w-64 items-center gap-1.5 rounded-md border bg-background/50 px-2 py-1 text-xs leading-5 hover:bg-background"
-              onClick={() => {
-                const userId = useAuth.getState().user?.id
-                if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
-              }}
+              className="relative flex max-w-64 items-center gap-1.5 rounded-md border bg-background/50 py-1 pr-2 pl-9 text-xs leading-5"
             >
+              <AttachmentDownloadButton
+                name={attachment.name}
+                className="top-0.5 left-1 size-6"
+                onDownload={() => {
+                  const userId = useAuth.getState().user?.id
+                  if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
+                }}
+              />
               <Paperclip className="size-3 shrink-0" />
               <span className="truncate">{attachment.name}</span>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -101,15 +106,16 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
   const userId = useAuth((s) => s.user?.id)
 
   return (
-    <button
-      type="button"
+    <div
       title={attachment.name}
-      aria-label={`Open ${attachment.name}`}
-      className="group/img relative overflow-hidden rounded-xl border bg-background/40 shadow-sm transition-opacity hover:opacity-95"
-      onClick={() => {
-        if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
-      }}
+      className="group/img relative overflow-hidden rounded-xl border bg-background/40 shadow-sm"
     >
+      <AttachmentDownloadButton
+        name={attachment.name}
+        onDownload={() => {
+          if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
+        }}
+      />
       {url ? (
         <img
           src={url}
@@ -122,7 +128,38 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
           {loading ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-5" />}
         </div>
       )}
-    </button>
+    </div>
+  )
+}
+
+function AttachmentDownloadButton({
+  name,
+  onDownload,
+  className,
+}: {
+  name: string
+  onDownload: () => void
+  className?: string
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          aria-label={`Download ${name}`}
+          onClick={onDownload}
+          className={cn(
+            'absolute top-1 left-1 z-10 size-7 rounded-full bg-background/90 shadow-sm backdrop-blur-sm',
+            className,
+          )}
+        >
+          <Download className="size-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="top">Download</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -132,6 +169,7 @@ export function PendingImageChip({
   previewUrl,
   uploading,
   error,
+  onDownload,
   onRemove,
 }: {
   name: string
@@ -139,6 +177,7 @@ export function PendingImageChip({
   previewUrl?: string | null
   uploading?: boolean
   error?: string | null
+  onDownload: () => void
   onRemove: () => void
 }) {
   return (
@@ -165,6 +204,7 @@ export function PendingImageChip({
           )}
         </div>
       )}
+      <AttachmentDownloadButton name={name} onDownload={onDownload} />
       <button
         type="button"
         aria-label={`Remove ${name}`}
@@ -182,4 +222,3 @@ export function PendingImageChip({
     </div>
   )
 }
-
