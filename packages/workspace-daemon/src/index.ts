@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 
@@ -9,6 +10,7 @@ const token = process.env.PULPO_WORKSPACE_TOKEN
 const root = resolve(process.env.PULPO_WORKSPACE_ROOT ?? '/workspace')
 const maxBody = Number(process.env.PULPO_WORKSPACE_MAX_BODY ?? 20 * 1024 * 1024)
 const maxImageBytes = Number(process.env.PULPO_WORKSPACE_MAX_IMAGE_BYTES ?? 20 * 1024 * 1024)
+const maxExportBytes = Number(process.env.PULPO_WORKSPACE_MAX_EXPORT_BYTES ?? 25 * 1024 * 1024)
 if (!token || token.length < 32) throw new Error('PULPO_WORKSPACE_TOKEN must contain at least 32 characters')
 
 type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; startedAt: string; completedAt?: string }
@@ -52,6 +54,17 @@ function vmPath(value: unknown): string {
   const requested = String(value ?? '')
   if (!isAbsolute(requested)) throw new Error('Path must be absolute')
   return resolve(requested)
+}
+
+async function exportPath(value: unknown): Promise<string> {
+  const requested = workspacePath(value)
+  const resolved = await realpath(requested)
+  const fromRoot = relative(root, resolved)
+  if (resolved !== root && (fromRoot.startsWith('..') || isAbsolute(fromRoot))) throw new Error('Path escapes /workspace')
+  const metadata = await stat(resolved)
+  if (!metadata.isFile()) throw new Error('Path must be a regular file')
+  if (metadata.size > maxExportBytes) throw new Error(`File exceeds the ${maxExportBytes} byte limit`)
+  return resolved
 }
 
 function killProcessGroup(child: ChildProcess, signal: NodeJS.Signals): void {
@@ -129,6 +142,21 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://workspace')
     if (request.method === 'PUT' && url.pathname === '/v1/files') {
       const path = workspacePath(url.searchParams.get('path')); await mkdir(dirname(path), { recursive: true }); await writeFile(path, await body(request)); return json(response, 201, { path })
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/files') {
+      const file = await exportPath(url.searchParams.get('path'))
+      const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const metadata = await handle.stat()
+        if (!metadata.isFile() || metadata.size > maxExportBytes) throw new Error('File is unavailable for export')
+        const contents = await handle.readFile()
+        if (contents.byteLength > maxExportBytes) throw new Error(`File exceeds the ${maxExportBytes} byte limit`)
+        response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': contents.byteLength })
+        response.end(contents)
+        return
+      } finally {
+        await handle.close()
+      }
     }
     if (request.method === 'GET' && url.pathname === '/v1/images') {
       const path = vmPath(url.searchParams.get('path')); const metadata = await stat(path)

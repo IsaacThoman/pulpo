@@ -797,7 +797,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment'].includes(type)
   })
   const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityIndex = activitySegments.length - 1
@@ -885,6 +885,10 @@ export const MessageItem = memo(function MessageItem({
                 </span>
               )}
             </>
+          )}
+
+          {!editing && message.attachments && message.attachments.length > 0 && (
+            <MessageAttachmentList attachments={message.attachments} align="start" />
           )}
 
           {otherItems.map((item, index) => {

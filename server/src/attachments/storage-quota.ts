@@ -32,6 +32,9 @@ export async function reserveAttachment(input: {
   originalName: string
   mimeType: string
   sizeBytes: number
+  origin?: string
+  sourceResponseId?: string
+  sourceToolCallId?: string
 }): Promise<typeof attachments.$inferSelect> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-storage:${input.userId}`}))`)

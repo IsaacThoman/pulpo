@@ -85,6 +85,13 @@
       "when": 1785709516547,
       "tag": "0011_far_red_skull",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1785709691855,
+      "tag": "0012_dazzling_vector",
+      "breakpoints": true
     }
   ]
 }

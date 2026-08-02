@@ -12,6 +12,7 @@ import type { RequestInit } from 'undici'
 import { detectImageMime } from './images.js'
 
 const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
+const MAX_EXPORT_FILE_BYTES = 25 * 1024 * 1024
 
 export interface WorkspaceOperation {
   id: string
@@ -24,6 +25,11 @@ export interface WorkspaceOperation {
 export interface WorkspaceImage {
   data: string
   mimeType: string
+  sizeBytes: number
+}
+
+export interface WorkspaceFile {
+  data: Uint8Array
   sizeBytes: number
 }
 
@@ -232,6 +238,30 @@ export class WorkspaceManager {
       await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
     }
     return { data: Buffer.from(bytes).toString('base64'), mimeType, sizeBytes: bytes.byteLength }
+  }
+
+  async exportFile(path: string, signal?: AbortSignal, onStarted?: () => void | Promise<void>): Promise<WorkspaceFile> {
+    if (!path.startsWith('/workspace/')) throw new Error('Attached files must be inside /workspace')
+    let leaseId = await this.ensureLease(signal)
+    let response: Response
+    try {
+      response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(path)}`, { signal })
+    } catch (error) {
+      if (signal?.aborted || !(error instanceof ControllerRequestError) || error.status !== 404) throw error
+      if (this.localLeaseId) await db.update(workspaceLeases).set({ status: 'expired', error: 'Controller lease expired', updatedAt: new Date() }).where(eq(workspaceLeases.id, this.localLeaseId))
+      await this.onLeaseEvent?.('expired')
+      this.localLeaseId = undefined; this.controllerLeaseId = undefined; this.staged = false
+      leaseId = await this.ensureLease(signal)
+      response = await this.request(`/v1/leases/${leaseId}/v1/files?path=${encodeURIComponent(path)}`, { signal })
+    }
+    await onStarted?.()
+    const data = new Uint8Array(await response.arrayBuffer())
+    if (data.byteLength > MAX_EXPORT_FILE_BYTES) throw new Error(`File exceeds the ${MAX_EXPORT_FILE_BYTES} byte limit`)
+    if (this.localLeaseId) {
+      const now = new Date()
+      await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
+    }
+    return { data, sizeBytes: data.byteLength }
   }
 
   async cancel(operationId: string): Promise<void> {

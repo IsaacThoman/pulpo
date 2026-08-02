@@ -296,9 +296,15 @@ export const attachments = pgTable('attachments', {
   sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
   checksum: text('checksum'),
   openaiFileId: text('openai_file_id'),
+  origin: text('origin').notNull().default('user'),
+  sourceResponseId: uuid('source_response_id').references(() => responses.id, { onDelete: 'set null' }),
+  sourceToolCallId: text('source_tool_call_id'),
   error: text('error'),
   ...timestamps,
-}, (table) => [index('attachments_user_status_idx').on(table.userId, table.status)])
+}, (table) => [
+  index('attachments_user_status_idx').on(table.userId, table.status),
+  uniqueIndex('attachments_response_tool_unique').on(table.sourceResponseId, table.sourceToolCallId),
+])
 
 export const workspaceLeases = pgTable('workspace_leases', {
   id: uuid('id').primaryKey(),

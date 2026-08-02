@@ -22,6 +22,9 @@ import { calculateCostMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
+import { basename } from 'node:path'
+import { storeGeneratedAttachment } from '../attachments/generated.js'
+import type { AttachmentTimelineItem } from './timeline.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -94,6 +97,15 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   const modelTurnStartedAt = new Map<number, number>()
   const turnDurationsMs = new Map<number, number>()
   const toolItems = new Map<string, ToolTimelineItem>()
+  const generatedAttachmentRows = await db.select().from(attachments).where(and(
+    eq(attachments.sourceResponseId, responseId), eq(attachments.origin, 'assistant'), eq(attachments.status, 'ready'),
+  ))
+  const attachmentItems = new Map<string, AttachmentTimelineItem>(generatedAttachmentRows.flatMap((attachment) => (
+    attachment.sourceToolCallId ? [[attachment.sourceToolCallId, {
+      type: 'pulpo_attachment' as const, attachment_id: attachment.id, name: attachment.originalName,
+      mime_type: attachment.mimeType, size_bytes: attachment.sizeBytes, status: 'completed' as const,
+    }] as const] : []
+  )))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   const skipMessageCount = initialMessages(parentRun?.context).length
@@ -115,6 +127,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       messages,
       skipMessageCount,
       toolItems,
+      attachmentItems,
       workspaceItem,
       turnDurationsMs,
       streaming: hasStreaming && !terminal,
@@ -155,13 +168,32 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await emit('pulpo.agent.tool.started', item)
     await snapshot()
   }
+  const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
+    const [existing] = await db.select().from(attachments).where(and(
+      eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
+    )).limit(1)
+    const stored = existing
+      ? { id: existing.id, name: existing.originalName, mimeType: existing.mimeType, sizeBytes: existing.sizeBytes }
+      : await manager.exportFile(path, signal, () => markToolStarted(operationId)).then((file) => storeGeneratedAttachment({
+        responseId, toolCallId: operationId, userId: record.response.userId, chatId: record.response.chatId,
+        path, requestedName: name ?? basename(path), data: file.data,
+      }))
+    const item: AttachmentTimelineItem = {
+      type: 'pulpo_attachment', attachment_id: stored.id, name: stored.name,
+      mime_type: stored.mimeType, size_bytes: stored.sizeBytes, status: 'completed',
+    }
+    attachmentItems.set(operationId, item)
+    await emit('pulpo.agent.attachment.created', item)
+    await snapshot()
+    return stored
+  }
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
   agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(record.model.systemPrompt, record.model.agentInstructions),
       model: active.piModel,
-      tools: createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted),
+      tools: createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
       messages: resumedMessages,
       thinkingLevel: 'medium',
     },

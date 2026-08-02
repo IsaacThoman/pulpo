@@ -168,6 +168,21 @@ function attachmentIdsFromInput(input: unknown[]): string[] {
   })
 }
 
+function attachmentsFromOutput(output: unknown[], metadata: Map<string, ServerAttachment>): Attachment[] {
+  return output.flatMap((item): Attachment[] => {
+    const value = item as { type?: string; attachment_id?: string; name?: string; mime_type?: string; size_bytes?: number }
+    if (value.type !== 'pulpo_attachment' || !value.attachment_id) return []
+    const stored = metadata.get(value.attachment_id)
+    const mimeType = stored?.mimeType ?? value.mime_type ?? 'application/octet-stream'
+    return [{
+      id: value.attachment_id,
+      name: stored?.originalName ?? value.name ?? 'attachment',
+      type: mimeType.startsWith('image/') ? 'image' : 'file',
+      size: stored?.sizeBytes ?? value.size_bytes ?? 0,
+    }]
+  })
+}
+
 function messagesFromResponses(responses: ServerResponse[], attachmentRows: ServerAttachment[]): Message[] {
   const attachments = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
   return responses.flatMap((response) => {
@@ -198,6 +213,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
         error: response.error?.message,
         agentMode: response.agentMode,
         outputItems: response.output,
+        attachments: attachmentsFromOutput(response.output, attachments),
         branch: response.branches.assistant,
       },
     ]
@@ -523,6 +539,7 @@ export const useChat = create<ChatState>()((set, get) => ({
                 : message.latencyMs,
               error: (snapshot.error as { message?: string } | null)?.message,
               outputItems: snapshot.output,
+              attachments: attachmentsFromOutput(snapshot.output, new Map()),
             }
           }),
         })),

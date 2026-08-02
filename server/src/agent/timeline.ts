@@ -12,6 +12,15 @@ export type ToolTimelineItem = {
   durationMs?: number
 }
 
+export type AttachmentTimelineItem = {
+  type: 'pulpo_attachment'
+  attachment_id: string
+  name: string
+  mime_type: string
+  size_bytes: number
+  status: 'completed'
+}
+
 function reasoningItem(
   text: string,
   status: 'in_progress' | 'completed' = 'completed',
@@ -37,6 +46,7 @@ function messageItem(text: string, status: 'in_progress' | 'completed' = 'comple
 function pushAssistantParts(
   content: Array<{ type?: string; thinking?: string; text?: string; id?: string; name?: string; arguments?: unknown }>,
   toolItems: Map<string, ToolTimelineItem>,
+  attachmentItems: Map<string, AttachmentTimelineItem>,
   output: unknown[],
   status: 'in_progress' | 'completed' = 'completed',
   turnDurationMs?: number,
@@ -81,6 +91,8 @@ function pushAssistantParts(
         status: 'running',
         output: '',
       })
+      const attachment = attachmentItems.get(part.id)
+      if (attachment) output.push(attachment)
     }
   }
   flushThinking()
@@ -92,6 +104,7 @@ export function buildAgentOutput(options: {
   messages: AgentMessage[]
   skipMessageCount: number
   toolItems: Map<string, ToolTimelineItem>
+  attachmentItems?: Map<string, AttachmentTimelineItem>
   workspaceItem?: Record<string, unknown>
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
@@ -103,6 +116,7 @@ export function buildAgentOutput(options: {
     messages,
     skipMessageCount,
     toolItems,
+    attachmentItems = new Map(),
     workspaceItem,
     turnDurationsMs,
     streaming = false,
@@ -123,6 +137,7 @@ export function buildAgentOutput(options: {
     pushAssistantParts(
       content as Array<{ type?: string; thinking?: string; text?: string; id?: string; name?: string; arguments?: unknown }>,
       toolItems,
+      attachmentItems,
       output,
       status,
       turnDurationsMs?.get(assistantTurn),
@@ -139,6 +154,8 @@ export function buildAgentOutput(options: {
     if (seenToolIds.has(id)) continue
     if (output.some((entry) => (entry as { id?: string }).id === id)) continue
     output.push(item)
+    const attachment = attachmentItems.get(id)
+    if (attachment) output.push(attachment)
   }
 
   if (terminal) {

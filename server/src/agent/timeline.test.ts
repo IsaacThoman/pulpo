@@ -81,4 +81,15 @@ describe('buildAgentOutput', () => {
     expect((output[0] as { status?: string }).status).toBe('in_progress')
     expect((output[1] as { status?: string }).status).toBe('in_progress')
   })
+
+  it('places an attached file immediately after its tool call', () => {
+    const output = buildAgentOutput({
+      skipMessageCount: 0,
+      toolItems: new Map([['attach-1', { id: 'attach-1', type: 'pulpo_tool', tool: 'attach_file', arguments: { path: '/workspace/a.pdf' }, status: 'completed', output: 'Attached a.pdf' }]]),
+      attachmentItems: new Map([['attach-1', { type: 'pulpo_attachment', attachment_id: 'file-1', name: 'a.pdf', mime_type: 'application/pdf', size_bytes: 12, status: 'completed' }]]),
+      messages: [{ role: 'assistant', content: [{ type: 'toolCall', id: 'attach-1', name: 'attach_file', arguments: { path: '/workspace/a.pdf' } }] } as never],
+      terminal: true,
+    })
+    expect(output.map((item) => (item as { type?: string }).type)).toEqual(['pulpo_tool', 'pulpo_attachment'])
+  })
 })

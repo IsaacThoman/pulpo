@@ -9,6 +9,7 @@ export function createWorkspaceTools(
   manager: WorkspaceManager,
   commandTimeoutMs: number,
   onOperationStarted?: (operationId: string) => void | Promise<void>,
+  onAttachFile?: (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => Promise<{ id: string; name: string; mimeType: string; sizeBytes: number }>,
 ): AgentTool[] {
   const tool = (name: string, description: string, parameters: ReturnType<typeof Type.Object>, execute: AgentTool['execute']): AgentTool => ({ name, label: name, description, parameters, executionMode: 'sequential', execute })
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
@@ -38,5 +39,11 @@ export function createWorkspaceTools(
     tool('ls', 'List files in a workspace directory.', Type.Object({ path: Type.Optional(Type.String()) }), async (id, args, signal) => textResult((await manager.execute(id, 'list', record(args), signal, undefined, started(id))).output)),
     tool('find', 'Find files in the workspace.', Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()) }), async (id, args, signal) => textResult((await manager.execute(id, 'find', record(args), signal, undefined, started(id))).output)),
     tool('grep', 'Search workspace files with ripgrep.', Type.Object({ pattern: Type.String(), path: Type.Optional(Type.String()) }), async (id, args, signal) => textResult((await manager.execute(id, 'grep', record(args), signal, undefined, started(id))).output)),
+    tool('attach_file', 'Attach a completed workspace file to your response so the user can download it. Use this for files you created for the user, not for intermediate files.', Type.Object({ path: Type.String(), name: Type.Optional(Type.String()) }), async (id, args, signal) => {
+      if (!onAttachFile) throw new Error('File attachments are unavailable')
+      const values = record(args)
+      const attachment = await onAttachFile(id, String(values.path ?? ''), typeof values.name === 'string' ? values.name : undefined, signal)
+      return textResult(`Attached ${attachment.name} (${attachment.sizeBytes} bytes)`, { attachment })
+    }),
   ]
 }

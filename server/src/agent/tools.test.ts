@@ -19,4 +19,16 @@ describe('agent workspace tools', () => {
     expect(result.details).toEqual({ path: '/tmp/chart.png', mimeType: 'image/png', sizeBytes: 123 })
     expect(JSON.stringify(result.details)).not.toContain('base64-pixels')
   })
+
+  it('attaches a workspace file without returning its bytes to the model', async () => {
+    const attach = vi.fn().mockResolvedValue({ id: 'file-1', name: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 456 })
+    const tools = createWorkspaceTools({} as WorkspaceManager, 1_000, undefined, attach)
+    const tool = tools.find((candidate) => candidate.name === 'attach_file')
+
+    const result = await tool!.execute('call-2', { path: '/workspace/report.pdf' })
+
+    expect(attach).toHaveBeenCalledWith('call-2', '/workspace/report.pdf', undefined, undefined)
+    expect(result.content).toEqual([{ type: 'text', text: 'Attached report.pdf (456 bytes)' }])
+    expect(result.details).toEqual({ attachment: { id: 'file-1', name: 'report.pdf', mimeType: 'application/pdf', sizeBytes: 456 } })
+  })
 })
