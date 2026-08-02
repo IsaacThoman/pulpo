@@ -378,7 +378,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Data controls</h2>
                   <Separator className="my-3" />
-                  <div className="mb-3 rounded-lg border bg-muted/20 p-3">
+                  <div className="py-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">File storage</span>
                       <span className="text-xs tabular-nums text-muted-foreground">
