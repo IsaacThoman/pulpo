@@ -328,7 +328,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Stream responses" hint="Render tokens as they arrive.">
                     <Switch checked={s.streamResponses} onCheckedChange={(v) => s.set('streamResponses', v)} />
                   </Row>
-                  <Row label="Show reasoning" hint="Expandable thinking blocks for reasoning models.">
+                  <Row label="Show reasoning" hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>
                   <Row label="Chats kept on this device" hint="Recent chats remain available instantly and while offline (0–500).">

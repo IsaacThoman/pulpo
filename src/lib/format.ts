@@ -72,6 +72,12 @@ export function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
+/** Whole seconds for activity labels ("1 second", "12 seconds"). */
+export function formatSecondsLabel(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000))
+  return seconds === 1 ? '1 second' : `${seconds} seconds`
+}
+
 export type ChatTimeGroup = 'Pinned' | 'Today' | 'Yesterday' | 'Previous 7 Days' | 'Previous 30 Days' | 'Older'
 
 export function chatTimeGroup(ts: number): Exclude<ChatTimeGroup, 'Pinned'> {
