@@ -12,6 +12,7 @@ import { getBlobStore } from '../storage/index.js'
 import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings } from '../settings/application-settings.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
+import { workspaceControllerRequest } from '../agent/controller-http.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -68,7 +69,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const config = getConfig()
     if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) return { configured: false, healthy: false }
     try {
-      const response = await fetch(`${config.WORKSPACE_CONTROLLER_URL.replace(/\/$/, '')}/healthz`, { signal: AbortSignal.timeout(5_000) })
+      const response = await workspaceControllerRequest('/healthz', { signal: AbortSignal.timeout(5_000) }, false)
       return { configured: true, healthy: response.ok, detail: response.ok ? undefined : `Controller returned ${response.status}` }
     } catch (error) {
       return { configured: true, healthy: false, detail: error instanceof Error ? error.message : String(error) }

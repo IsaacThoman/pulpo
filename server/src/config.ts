@@ -40,6 +40,7 @@ const configSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   WORKSPACE_CONTROLLER_URL: z.url().optional(),
   WORKSPACE_CONTROLLER_TOKEN: z.string().min(32).optional(),
+  WORKSPACE_CONTROLLER_CA_CERT_BASE64: z.string().min(1).optional(),
 })
 
 export type Config = z.infer<typeof configSchema>

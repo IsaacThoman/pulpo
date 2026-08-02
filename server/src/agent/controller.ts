@@ -7,6 +7,8 @@ import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
 import { attachmentWorkspacePath } from './policy.js'
 import { isWorkspaceCapacityResponse, workspaceQueuePosition } from './capacity.js'
+import { workspaceControllerRequest } from './controller-http.js'
+import type { RequestInit } from 'undici'
 
 export interface WorkspaceOperation {
   id: string
@@ -45,9 +47,9 @@ export class WorkspaceManager {
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
     const config = getConfig()
     if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) throw new Error('Workspace controller is not configured')
-    const response = await fetch(`${config.WORKSPACE_CONTROLLER_URL.replace(/\/$/, '')}${path}`, {
+    const response = await workspaceControllerRequest(path, {
       ...init,
-      headers: { authorization: `Bearer ${config.WORKSPACE_CONTROLLER_TOKEN}`, ...(init.headers ?? {}) },
+      headers: init.headers,
     })
     if (!response.ok) throw new ControllerRequestError(response.status, await response.text())
     return response
@@ -203,7 +205,7 @@ export async function releaseWorkspaceForChat(chatId: string): Promise<void> {
   if (!lease) return
   const config = getConfig()
   if (lease.controllerLeaseId && config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN) {
-    await fetch(`${config.WORKSPACE_CONTROLLER_URL.replace(/\/$/, '')}/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', headers: { authorization: `Bearer ${config.WORKSPACE_CONTROLLER_TOKEN}` }, signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
+    await workspaceControllerRequest(`/v1/leases/${lease.controllerLeaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) }).catch(() => undefined)
   }
   await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: new Date(), updatedAt: new Date() }).where(eq(workspaceLeases.id, lease.id))
 }
