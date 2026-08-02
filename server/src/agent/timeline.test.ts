@@ -1,0 +1,80 @@
+import { describe, expect, it } from 'vitest'
+import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
+
+describe('buildAgentOutput', () => {
+  it('interleaves reasoning, text, and tools across turns', () => {
+    const tools = new Map<string, ToolTimelineItem>([
+      ['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: { command: 'ping' }, status: 'completed', output: 'ok' }],
+      ['t2', { id: 't2', type: 'pulpo_tool', tool: 'bash', arguments: { command: 'curl' }, status: 'completed', output: '200' }],
+    ])
+    const output = buildAgentOutput({
+      skipMessageCount: 0,
+      toolItems: tools,
+      messages: [
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'Need bash.' },
+            { type: 'text', text: 'Trying ping.' },
+            { type: 'toolCall', id: 't1', name: 'bash', arguments: { command: 'ping' } },
+          ],
+        } as never,
+        {
+          role: 'toolResult',
+          toolCallId: 't1',
+          toolName: 'bash',
+          content: [{ type: 'text', text: 'ok' }],
+          isError: false,
+          timestamp: 0,
+        } as never,
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'Use curl.' },
+            { type: 'toolCall', id: 't2', name: 'bash', arguments: { command: 'curl' } },
+          ],
+        } as never,
+        {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Done.' }],
+        } as never,
+      ],
+      terminal: true,
+    })
+
+    expect(output.map((item) => (item as { type?: string }).type)).toEqual([
+      'reasoning',
+      'message',
+      'pulpo_tool',
+      'reasoning',
+      'pulpo_tool',
+      'message',
+    ])
+    expect((output[1] as { content: Array<{ text: string }> }).content[0]?.text).toBe('Trying ping.')
+    expect((output[5] as { content: Array<{ text: string }> }).content[0]?.text).toBe('Done.')
+  })
+
+  it('skips inherited parent messages and marks the streaming tail', () => {
+    const output = buildAgentOutput({
+      skipMessageCount: 1,
+      toolItems: new Map(),
+      streaming: true,
+      messages: [
+        { role: 'user', content: 'old', timestamp: 0 } as never,
+        {
+          role: 'assistant',
+          content: [
+            { type: 'thinking', thinking: 'hmm' },
+            { type: 'text', text: 'new' },
+          ],
+        } as never,
+      ],
+    })
+    expect(output.map((item) => (item as { type?: string }).type)).toEqual([
+      'reasoning',
+      'message',
+    ])
+    expect((output[0] as { status?: string }).status).toBe('in_progress')
+    expect((output[1] as { status?: string }).status).toBe('in_progress')
+  })
+})

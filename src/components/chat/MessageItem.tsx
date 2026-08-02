@@ -233,57 +233,132 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   )
 }
 
+type ActivitySegment = {
+  kind: 'activity'
+  reasoning?: string
+  tools: ToolItem[]
+  active: boolean
+}
+
+type TextSegment = {
+  kind: 'text'
+  text: string
+}
+
+type TimelineSegment = ActivitySegment | TextSegment
+
+function reasoningFromItem(item: unknown): string {
+  const typed = item as { summary?: unknown[] }
+  if (!Array.isArray(typed.summary)) return ''
+  return typed.summary.map((part) => {
+    const entry = part as { text?: string; content?: string }
+    return entry.text ?? entry.content ?? ''
+  }).join('')
+}
+
+function messageTextFromItem(item: unknown): string {
+  const typed = item as { content?: unknown }
+  if (typeof typed.content === 'string') return typed.content
+  if (!Array.isArray(typed.content)) return ''
+  return typed.content.map((part) => {
+    const entry = part as { text?: string; content?: string }
+    return entry.text ?? entry.content ?? ''
+  }).join('')
+}
+
+/** Group consecutive reasoning/tools into activity blocks; messages become text segments. */
+function buildTimeline(outputItems: unknown[], showReasoning: boolean): TimelineSegment[] {
+  const segments: TimelineSegment[] = []
+  let activity: ActivitySegment | null = null
+
+  const flushActivity = () => {
+    if (!activity) return
+    const hasReasoning = Boolean(activity.reasoning)
+    const hasTools = activity.tools.length > 0
+    if ((hasReasoning && showReasoning) || hasTools) {
+      segments.push({
+        ...activity,
+        reasoning: showReasoning ? activity.reasoning : undefined,
+      })
+    }
+    activity = null
+  }
+
+  for (const item of outputItems) {
+    const type = (item as { type?: string }).type
+    if (type === 'pulpo_workspace') continue
+    if (type === 'reasoning') {
+      if (!activity) activity = { kind: 'activity', tools: [], active: false }
+      const text = reasoningFromItem(item)
+      activity.reasoning = activity.reasoning ? `${activity.reasoning}\n${text}` : text
+      if ((item as { status?: string }).status === 'in_progress') activity.active = true
+      continue
+    }
+    if (type === 'pulpo_tool') {
+      if (!activity) activity = { kind: 'activity', tools: [], active: false }
+      const tool = item as ToolItem
+      activity.tools.push(tool)
+      if (tool.status === 'running') activity.active = true
+      continue
+    }
+    if (type === 'message') {
+      flushActivity()
+      const text = messageTextFromItem(item)
+      if (text) segments.push({ kind: 'text', text })
+    }
+  }
+  flushActivity()
+  return segments
+}
+
 function ActivityBlock({
   reasoning,
   tools,
-  streaming,
-  startedAt,
-  latencyMs,
-  showReasoning,
+  active,
+  showDuration,
+  durationMs,
 }: {
   reasoning?: string
   tools: ToolItem[]
-  streaming: boolean
-  startedAt: number
-  latencyMs?: number
-  showReasoning: boolean
+  active: boolean
+  showDuration: boolean
+  durationMs?: number
 }) {
   const [open, setOpen] = useState(false)
   const hasTools = tools.length > 0
-  const visibleReasoning = showReasoning && reasoning !== undefined && (Boolean(reasoning) || streaming)
-  const show = visibleReasoning || hasTools
+  const hasReasoning = Boolean(reasoning)
   const runningTool = tools.find((tool) => tool.status === 'running')
-  const elapsedMs = useElapsedMs(startedAt, streaming, latencyMs)
 
   const label = useMemo(() => {
     if (runningTool) return `Running ${runningTool.tool ?? 'tool'}…`
-    if (streaming && hasTools) return 'Working…'
-    if (streaming && visibleReasoning) return 'Thinking…'
-    if (streaming) return 'Working…'
-    const duration = formatSecondsLabel(elapsedMs)
-    if (hasTools) return `Worked for ${duration}`
-    return `Thought for ${duration}`
-  }, [runningTool, streaming, hasTools, visibleReasoning, elapsedMs])
+    if (active && hasTools) return 'Working…'
+    if (active) return 'Thinking…'
+    if (showDuration && durationMs !== undefined) {
+      const duration = formatSecondsLabel(durationMs)
+      return hasTools ? `Worked for ${duration}` : `Thought for ${duration}`
+    }
+    return hasTools ? 'Worked' : 'Thought'
+  }, [runningTool, active, hasTools, showDuration, durationMs])
 
   const triggerIcon = (() => {
     if (runningTool) {
       const Icon = toolIcon(runningTool.tool)
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
     }
-    if (streaming && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
-    if (streaming) return <Brain className="size-3.5 shrink-0 animate-pulse" />
+    if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
+    if (active) return <Brain className="size-3.5 shrink-0 animate-pulse" />
     if (hasTools) return <Wrench className="size-3.5 shrink-0" />
     return <Brain className="size-3.5 shrink-0" />
   })()
 
-  if (!show) return null
+  if (!hasReasoning && !hasTools) return null
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="mt-1.5">
+    <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
         {triggerIcon}
         <span>{label}</span>
-        {hasTools && !streaming && (
+        {hasTools && !active && (
           <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-normal tabular-nums text-muted-foreground">
             {tools.length}
           </span>
@@ -291,17 +366,17 @@ function ActivityBlock({
         <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-1.5 space-y-2 border-l-2 border-muted pl-3">
-          {visibleReasoning && reasoning ? (
-            <div className="whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">
+        <div className="mt-1 space-y-1 border-l-2 border-muted py-0.5 pl-2.5">
+          {hasReasoning ? (
+            <div className="whitespace-pre-wrap text-[13px] leading-5 text-muted-foreground">
               {reasoning}
             </div>
           ) : null}
-          {visibleReasoning && !reasoning && streaming && !hasTools ? (
-            <div className="text-[13px] leading-6 text-muted-foreground/70">Thinking…</div>
+          {active && !hasReasoning && !hasTools ? (
+            <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
           ) : null}
           {hasTools && (
-            <div className="space-y-0.5">
+            <div className="space-y-0">
               {tools.map((tool, index) => (
                 <ActivityToolRow key={tool.id ?? `${tool.tool}:${index}`} tool={tool} />
               ))}
@@ -341,7 +416,7 @@ function WorkspaceStatus({
           : `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
 
   return (
-    <div role="status" className="mt-1.5 rounded-lg border bg-muted/20 px-3 py-2 text-xs">
+    <div role="status" className="rounded-lg border bg-muted/20 px-3 py-2 text-xs">
       <div className="flex items-center gap-2">
         {active ? (
           <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -385,6 +460,23 @@ export const MessageItem = memo(function MessageItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
+  const timeline = useMemo(() => {
+    if (message.role !== 'assistant') return [] as TimelineSegment[]
+    const items = message.outputItems ?? []
+    if (items.length > 0) return buildTimeline(items, showReasoning)
+    const segments: TimelineSegment[] = []
+    if (showReasoning && message.reasoning !== undefined && (message.reasoning || streaming)) {
+      segments.push({
+        kind: 'activity',
+        reasoning: message.reasoning || undefined,
+        tools: [],
+        active: streaming && !message.content,
+      })
+    }
+    if (message.content) segments.push({ kind: 'text', text: message.content })
+    return segments
+  }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
+  const elapsedMs = useElapsedMs(message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
   const hasAttachments = Boolean(message.attachments?.length)
   const submitEdit = () => {
     const content = draft.trim()
@@ -486,16 +578,18 @@ export const MessageItem = memo(function MessageItem({
 
   const model = getCatalogModel(message.modelId ?? chat.modelId)
   const outputItems = message.outputItems ?? []
-  const tools = outputItems.filter((item): item is ToolItem => (item as { type?: string }).type === 'pulpo_tool')
   const workspace = outputItems.find((item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace')
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
     return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace'].includes(type)
   })
-  const showActivity =
-    (showReasoning && message.reasoning !== undefined && (Boolean(message.reasoning) || streaming)) ||
-    tools.length > 0
-  const isActivityPending = streaming && !message.content && (showActivity || Boolean(workspace && (workspace.state === 'waiting' || workspace.state === 'provisioning')))
+  const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
+  const lastActivityIndex = activitySegments.length - 1
+  const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
+  const isActivityPending = streaming && !hasVisibleBody && Boolean(
+    workspace && (workspace.state === 'waiting' || workspace.state === 'provisioning'),
+  )
+  let activityOrdinal = -1
 
   return (
     <div className="group flex gap-3">
@@ -506,87 +600,99 @@ export const MessageItem = memo(function MessageItem({
           <span className="text-xs text-muted-foreground">{timeAgo(message.timestamp)}</span>
         </div>
 
-        {workspace && (
-          <WorkspaceStatus
-            item={workspace}
-            messageId={message.id}
-            onStop={stopStreaming}
-            onContinue={(id) => {
-              setCapacityActionPending(true)
-              void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
-            }}
-            pending={capacityActionPending}
-          />
-        )}
-
-        {showActivity && (
-          <ActivityBlock
-            reasoning={message.reasoning}
-            tools={tools}
-            streaming={streaming}
-            startedAt={message.timestamp}
-            latencyMs={message.latencyMs}
-            showReasoning={showReasoning}
-          />
-        )}
-
-        {editing ? (
-          <div className="mt-2 rounded-2xl border bg-card p-3">
-            <textarea
-              className="w-full resize-none bg-transparent text-sm leading-6 outline-none"
-              rows={Math.min(16, Math.max(3, draft.split('\n').length + 1))}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={handleEditKeyDown}
-              autoFocus
+        <div className="mt-1 flex flex-col gap-1.5">
+          {workspace && (
+            <WorkspaceStatus
+              item={workspace}
+              messageId={message.id}
+              onStop={stopStreaming}
+              onContinue={(id) => {
+                setCapacityActionPending(true)
+                void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
+              }}
+              pending={capacityActionPending}
             />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={submitEdit}
-                disabled={!draft.trim() || draft.trim() === message.content}
-              >
-                Save as branch
-              </Button>
+          )}
+
+          {editing ? (
+            <div className="rounded-2xl border bg-card p-3">
+              <textarea
+                className="w-full resize-none bg-transparent text-sm leading-6 outline-none"
+                rows={Math.min(16, Math.max(3, draft.split('\n').length + 1))}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={handleEditKeyDown}
+                autoFocus
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={submitEdit}
+                  disabled={!draft.trim() || draft.trim() === message.content}
+                >
+                  Save as branch
+                </Button>
+              </div>
             </div>
-          </div>
-        ) : (
-        <div className={cn('mt-1 text-[15px]', streaming && message.content && 'stream-caret')}>
-          {message.error ? (
+          ) : message.error ? (
             <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {message.error}
             </div>
-          ) : message.content ? (
-            <Markdown content={message.content} />
           ) : (
-            !isActivityPending && (
-              <span className="inline-flex gap-1 py-2">
-                <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
-                <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
-                <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
-              </span>
-            )
+            <>
+              {timeline.map((segment, index) => {
+                if (segment.kind === 'activity') {
+                  activityOrdinal += 1
+                  const isLastActivity = activityOrdinal === lastActivityIndex
+                  return (
+                    <ActivityBlock
+                      key={`activity:${index}`}
+                      reasoning={segment.reasoning}
+                      tools={segment.tools}
+                      active={segment.active || (streaming && isLastActivity && !timeline.slice(index + 1).some((entry) => entry.kind === 'text'))}
+                      showDuration={!streaming && isLastActivity}
+                      durationMs={elapsedMs}
+                    />
+                  )
+                }
+                const isLastText = !timeline.slice(index + 1).some((entry) => entry.kind === 'text')
+                return (
+                  <div
+                    key={`text:${index}`}
+                    className={cn('text-[15px]', streaming && isLastText && 'stream-caret')}
+                  >
+                    <Markdown content={segment.text} />
+                  </div>
+                )
+              })}
+              {!hasVisibleBody && !isActivityPending && streaming && (
+                <span className="inline-flex gap-1 py-1">
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+                </span>
+              )}
+            </>
           )}
-        </div>
-        )}
 
-        {otherItems.map((item, index) => {
-          const type = (item as { type?: string }).type ?? 'unknown'
-          return (
-            <details
-              key={`${type}:${index}`}
-              className="mt-2 rounded-lg border bg-muted/20 px-3 py-2 text-xs"
-            >
-              <summary className="cursor-pointer font-medium">{type.replaceAll('_', ' ')}</summary>
-              <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
-                {JSON.stringify(item, null, 2)}
-              </pre>
-            </details>
-          )
-        })}
+          {otherItems.map((item, index) => {
+            const type = (item as { type?: string }).type ?? 'unknown'
+            return (
+              <details
+                key={`${type}:${index}`}
+                className="rounded-lg border bg-muted/20 px-3 py-2 text-xs"
+              >
+                <summary className="cursor-pointer font-medium">{type.replaceAll('_', ' ')}</summary>
+                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
+                  {JSON.stringify(item, null, 2)}
+                </pre>
+              </details>
+            )
+          })}
+        </div>
 
         {message.done && (
           <div className="mt-1.5 flex items-center gap-1">

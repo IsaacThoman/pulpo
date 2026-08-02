@@ -136,7 +136,7 @@ function outputText(output: unknown[]): string {
   return output.map((item) => {
     const typed = item as { type?: string; content?: unknown }
     return typed.type === 'message' ? textFromContent(typed.content) : ''
-  }).join('\n')
+  }).filter(Boolean).join('')
 }
 
 function reasoningText(output: unknown[]): string | undefined {

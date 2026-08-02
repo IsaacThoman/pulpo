@@ -20,6 +20,7 @@ import OpenAI from 'openai'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
+import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 
 function inputText(input: unknown): string {
   if (!Array.isArray(input)) return ''
@@ -29,13 +30,6 @@ function inputText(input: unknown): string {
     if (!Array.isArray(content)) return []
     return content.flatMap((part) => typeof (part as { text?: unknown }).text === 'string' ? [(part as { text: string }).text] : [])
   }).join('\n')
-}
-
-function outputMessage(text: string, reasoning = ''): unknown[] {
-  return [
-    ...(reasoning ? [{ type: 'reasoning', status: 'completed', summary: [{ type: 'summary_text', text: reasoning }] }] : []),
-    { type: 'message', role: 'assistant', status: 'in_progress', content: [{ type: 'output_text', text }] },
-  ]
 }
 
 function assistantText(message: AssistantMessage): string {
@@ -86,21 +80,36 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   }
   let activeIndex = 0; let active = runtimes[0]!
   const streams = openAIResponsesApi()
-  let text = ''; let reasoning = ''; let sequence = record.response.lastSequence; let modelTurns = 0; let toolCalls = 0
+  let sequence = record.response.lastSequence; let modelTurns = 0; let toolCalls = 0
   let usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }; let accruedCostMicros = 0
   const billingTurns: Array<Record<string, unknown>> = []
-  const toolItems = new Map<string, Record<string, unknown>>()
+  const toolItems = new Map<string, ToolTimelineItem>()
   let workspaceItem: Record<string, unknown> | undefined
-  const snapshot = async (terminal?: 'completed' | 'failed' | 'cancelled', errorMessage?: string) => {
-    const output = [...(workspaceItem ? [workspaceItem] : []), ...toolItems.values(), ...outputMessage(text, reasoning)]
-    if (terminal === 'completed') (output.at(-1) as Record<string, unknown>).status = 'completed'
-    await db.update(responses).set({ status: terminal ?? 'in_progress', output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
-    const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
-    if (updated) await publishSnapshot(toSnapshot(updated))
-  }
+  const skipMessageCount = initialMessages(parentRun?.context).length
   const emit = async (type: string, payload: Record<string, unknown>) => {
     sequence += 1
     await publishResponseEvent({ responseId, sequence, type, payload, emittedAt: new Date().toISOString() })
+  }
+  let agent!: Agent
+  const snapshot = async (terminal?: 'completed' | 'failed' | 'cancelled', errorMessage?: string) => {
+    const state = agent?.state
+    const streamingMessage = state?.streamingMessage
+    const hasStreaming = Boolean(streamingMessage && streamingMessage.role === 'assistant')
+    const messages = [
+      ...(state?.messages ?? resumedMessages),
+      ...(hasStreaming ? [streamingMessage as AgentMessage] : []),
+    ]
+    const output = buildAgentOutput({
+      messages,
+      skipMessageCount,
+      toolItems,
+      workspaceItem,
+      streaming: hasStreaming && !terminal,
+      terminal: Boolean(terminal),
+    })
+    await db.update(responses).set({ status: terminal ?? 'in_progress', output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
+    const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    if (updated) await publishSnapshot(toSnapshot(updated))
   }
   const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
     workspaceItem = { id: `workspace-${runId}`, type: 'pulpo_workspace', state, ...details }
@@ -109,7 +118,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   })
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
-  const agent = new Agent({
+  agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(record.model.systemPrompt, record.model.agentInstructions),
       model: active.piModel,
@@ -135,20 +144,21 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentAttempt: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
-      if (update.type === 'text_delta') { text += update.delta; await emit('response.output_text.delta', { delta: update.delta }) }
-      if (update.type === 'thinking_delta') { reasoning += update.delta; await emit('response.reasoning_summary_text.delta', { delta: update.delta }) }
+      if (update.type === 'text_delta') await emit('response.output_text.delta', { delta: update.delta })
+      if (update.type === 'thinking_delta') await emit('response.reasoning_summary_text.delta', { delta: update.delta })
+      if (update.type === 'text_delta' || update.type === 'thinking_delta') await snapshot()
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message as AssistantMessage
       const turnUsage = { inputTokens: message.usage.input, cachedInputTokens: message.usage.cacheRead, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
       const pricing = await getActivePricing(active.model.id); const turnCost = calculateCostMicros(turnUsage, pricing)
       accruedCostMicros += turnCost; billingTurns.push({ modelId: active.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
-      if (!text) text = assistantText(message)
       await db.update(generationAttempts).set({ status: message.stopReason === 'error' ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorMessage: message.errorMessage, completedAt: new Date() }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.attempt, modelTurns)))
       await db.update(requestLogs).set({ inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, eventCount: sql`${requestLogs.eventCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+      await snapshot()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
-      const item = { id: event.toolCallId, type: 'pulpo_tool', tool: event.toolName, arguments: event.args, status: 'running', output: '' }
+      const item: ToolTimelineItem = { id: event.toolCallId, type: 'pulpo_tool', tool: event.toolName, arguments: event.args, status: 'running', output: '' }
       toolItems.set(event.toolCallId, item)
       await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'running', startedAt: new Date() }).onConflictDoNothing()
       await emit('pulpo.agent.tool.started', item)
