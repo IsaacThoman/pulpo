@@ -359,6 +359,8 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
   return segments
 }
 
+const WORKSPACE_ACTIONS_DELAY_MS = 15_000
+
 function ActivityBlock({
   reasoning,
   tools,
@@ -384,8 +386,20 @@ function ActivityBlock({
 }) {
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
-  const needsWorkspaceActions = workspace?.state === 'waiting'
+  const isWaiting = workspace?.state === 'waiting'
+  const [showWorkspaceActions, setShowWorkspaceActions] = useState(false)
   const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isWaiting) {
+      setShowWorkspaceActions(false)
+      return
+    }
+    const timer = setTimeout(() => setShowWorkspaceActions(true), WORKSPACE_ACTIONS_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [isWaiting])
+
+  const needsWorkspaceActions = isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0
   const hasReasoning = Boolean(reasoning)
   const hasWorkspace = Boolean(workspace)
