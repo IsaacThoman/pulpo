@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Download, ImageIcon, Loader2, Paperclip, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Attachment } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { downloadAttachment, getCachedAttachment } from '@/lib/local-first/attachment-cache'
@@ -82,7 +81,7 @@ export function MessageAttachmentList({
           {files.map((attachment) => (
             <div
               key={attachment.id}
-              className="relative flex max-w-64 items-center gap-1.5 rounded-md border bg-background/50 py-1 pr-2 pl-9 text-xs leading-5"
+              className="group/attachment relative flex max-w-64 items-center gap-1.5 rounded-md border bg-background/50 py-1 pr-2 pl-9 text-xs leading-5"
             >
               <AttachmentDownloadButton
                 name={attachment.name}
@@ -115,7 +114,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
       <div
         title={attachment.name}
-        className="group/img relative overflow-hidden rounded-xl border bg-background/40 shadow-sm"
+        className="group/attachment relative overflow-hidden rounded-xl border bg-background/40 shadow-sm"
       >
         <AttachmentDownloadButton name={attachment.name} onDownload={handleDownload} />
         {url ? (
@@ -143,42 +142,39 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
         className="flex h-[calc(100dvh-4rem)] w-[calc(100vw-4rem)] max-w-none items-center justify-center border-0 bg-transparent p-0 shadow-none"
       >
         <DialogTitle className="sr-only">Preview of {attachment.name}</DialogTitle>
-        <div className="absolute top-0 right-0 z-10 flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label={`Download ${attachment.name}`}
-                onClick={handleDownload}
-                className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
-              >
-                <Download className="size-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Download</TooltipContent>
-          </Tooltip>
-          <DialogClose asChild>
+        <div className="flex max-h-full max-w-full flex-col items-end gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button
               type="button"
               variant="outline"
               size="icon-sm"
-              aria-label="Close preview"
+              aria-label={`Download ${attachment.name}`}
+              onClick={handleDownload}
               className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
             >
-              <X className="size-4" />
+              <Download className="size-4" />
             </Button>
-          </DialogClose>
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon-sm"
+                aria-label="Close preview"
+                className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
+              >
+                <X className="size-4" />
+              </Button>
+            </DialogClose>
+          </div>
+          {url && (
+            <img
+              src={url}
+              alt={attachment.name}
+              className="min-h-0 max-h-[calc(100dvh-7rem)] max-w-full object-contain"
+              draggable={false}
+            />
+          )}
         </div>
-        {url && (
-          <img
-            src={url}
-            alt={attachment.name}
-            className="max-h-full max-w-full object-contain"
-            draggable={false}
-          />
-        )}
       </DialogContent>
     </Dialog>
   )
@@ -194,24 +190,19 @@ function AttachmentDownloadButton({
   className?: string
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-sm"
-          aria-label={`Download ${name}`}
-          onClick={onDownload}
-          className={cn(
-            'absolute top-1 left-1 z-10 size-7 rounded-full bg-background/90 shadow-sm backdrop-blur-sm',
-            className,
-          )}
-        >
-          <Download className="size-3.5" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="top">Download</TooltipContent>
-    </Tooltip>
+    <Button
+      type="button"
+      variant="outline"
+      size="icon-sm"
+      aria-label={`Download ${name}`}
+      onClick={onDownload}
+      className={cn(
+        'absolute top-1 left-1 z-10 size-7 rounded-full bg-background/90 opacity-0 shadow-sm backdrop-blur-sm transition-opacity group-hover/attachment:opacity-100 focus-visible:opacity-100',
+        className,
+      )}
+    >
+      <Download className="size-3.5" />
+    </Button>
   )
 }
 
@@ -235,7 +226,7 @@ export function PendingImageChip({
   return (
     <div
       className={cn(
-        'group relative size-20 overflow-hidden rounded-xl border bg-muted/30 shadow-sm',
+        'group group/attachment relative size-20 overflow-hidden rounded-xl border bg-muted/30 shadow-sm',
         error && 'border-destructive/50',
       )}
     >
