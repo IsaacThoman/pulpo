@@ -39,7 +39,7 @@ import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
-import { formatDate, formatDateTime, timeAgo } from '@/lib/format'
+import { formatDateTime, timeAgo } from '@/lib/format'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -82,18 +82,20 @@ const TRASH_RETENTION_LABELS: Record<TrashRetention, string> = {
   indefinite: 'Indefinitely',
 }
 
-function trashDeletedLabel(iso: string): string {
-  return `Deleted ${timeAgo(new Date(iso).getTime())}`
+function trashTrashedLabel(iso: string): string {
+  return `Trashed ${timeAgo(new Date(iso).getTime())}`
 }
 
-function trashPurgeLabel(iso: string | null): string {
+function trashDeletesLabel(iso: string | null, now = Date.now()): string {
   if (!iso) return 'Kept indefinitely'
-  const ts = new Date(iso).getTime()
-  const days = Math.ceil((ts - Date.now()) / 86_400_000)
-  if (days <= 0) return 'Deleting soon'
-  if (days === 1) return 'Purges tomorrow'
-  if (days < 30) return `Purges in ${days} days`
-  return `Purges ${formatDate(ts)}`
+  const ms = new Date(iso).getTime() - now
+  if (ms <= 0) return 'Deletes now'
+  const minutes = Math.max(1, Math.ceil(ms / 60_000))
+  if (minutes < 60) return `Deletes in ${minutes}m`
+  const hours = Math.ceil(ms / 3_600_000)
+  if (hours < 24) return `Deletes in ${hours}h`
+  const days = Math.ceil(ms / 86_400_000)
+  return `Deletes in ${days}d`
 }
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -149,6 +151,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
   const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
   const [trashRetentionError, setTrashRetentionError] = useState('')
+  const [trashNow, setTrashNow] = useState(() => Date.now())
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
     queryKey: deletedChatsQueryKey,
@@ -160,6 +163,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     refetchOnWindowFocus: 'always',
   })
   const deletedChats = deletedChatsQuery.data ?? []
+
+  useEffect(() => {
+    if (!open || section !== 'trash' || s.trashRetention === 'instant') return
+    setTrashNow(Date.now())
+    const id = window.setInterval(() => setTrashNow(Date.now()), 30_000)
+    return () => window.clearInterval(id)
+  }, [open, section, s.trashRetention])
 
   const chooseImport = (source: 'pulpo' | 'openwebui') => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
@@ -277,13 +287,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
           {/* content */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <ScrollArea className="min-h-0 flex-1">
-            <div className="p-6">
+            <ScrollArea className="min-h-0 min-w-0 flex-1">
+            <div className="min-w-0 p-6">
               {section === 'trash' && (
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-base font-semibold">Trash</h2>
                   <Separator className="my-3" />
-                  <Row label="Trash retention period" hint="Choose how long deleted chats and their files remain recoverable.">
+                  <Row label="Trash retention period" hint="How long trashed chats stay recoverable before permanent deletion.">
                     <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
                       <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -295,9 +305,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </Row>
                   {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
                   <Separator className="my-3" />
-                  <div className="flex items-center justify-between gap-3 py-1">
-                    <div>
-                      <div className="text-sm font-medium">Deleted chats</div>
+                  <div className="flex min-w-0 items-center justify-between gap-3 py-1">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium">Trashed chats</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {s.trashRetention === 'instant'
                           ? 'Chats are permanently deleted immediately.'
@@ -311,6 +321,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     <Button
                       variant="destructive"
                       size="sm"
+                      className="shrink-0"
                       disabled={!deletedChats.length || s.trashRetention === 'instant'}
                       onClick={() => void permanentlyDeleteAll()}
                     >
@@ -318,32 +329,32 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </Button>
                   </div>
                   {s.trashRetention === 'instant' ? null : deletedChatsQuery.isLoading ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>
+                    <p className="py-8 text-center text-sm text-muted-foreground">Loading trashed chats…</p>
                   ) : deletedChatsQuery.error ? (
                     <div className="py-8 text-center text-sm text-destructive">
-                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load deleted chats'}</p>
+                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load trashed chats'}</p>
                       <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>Try again</Button>
                     </div>
                   ) : !deletedChats.length ? (
                     <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
                   ) : (
-                    <div className="divide-y">
+                    <div className="min-w-0 divide-y">
                       {deletedChats.map((chat) => {
                         const deletedTs = new Date(chat.deletedAt).getTime()
                         const purgeTs = chat.purgeAt ? new Date(chat.purgeAt).getTime() : null
                         return (
-                          <div key={chat.id} className="flex items-center gap-3 py-3">
+                          <div key={chat.id} className="flex min-w-0 items-center gap-2.5 py-2.5">
                             <ModelIcon
                               model={getCatalogModel(chat.modelId)}
                               className="size-4 shrink-0 rounded-[2px]"
                             />
-                            <div className="min-w-0 flex-1">
+                            <div className="min-w-0 flex-1 overflow-hidden">
                               <div className="truncate text-sm font-medium">{chat.title}</div>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                                <span title={formatDateTime(deletedTs)}>{trashDeletedLabel(chat.deletedAt)}</span>
-                                <span aria-hidden className="text-muted-foreground/50">·</span>
+                              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                                <span title={formatDateTime(deletedTs)}>{trashTrashedLabel(chat.deletedAt)}</span>
+                                <span aria-hidden className="text-muted-foreground/50"> · </span>
                                 <span title={purgeTs ? formatDateTime(purgeTs) : undefined}>
-                                  {trashPurgeLabel(chat.purgeAt)}
+                                  {trashDeletesLabel(chat.purgeAt, trashNow)}
                                 </span>
                               </div>
                             </div>
