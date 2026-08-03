@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema } from '@pulpo/contracts'
@@ -240,7 +240,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .from(responses)
       .leftJoin(requestLogs, eq(requestLogs.responseId, responses.id))
       .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
-      .orderBy(responses.createdAt)
+      .orderBy(asc(responses.createdAt), asc(responses.id))
     const allTurns = turnRows.map((row) => row.response)
     const requestedModelByResponse = new Map(turnRows.map((row) => [row.response.id, row.requestedModelId]))
     const attachmentRows = await db.select({
@@ -325,10 +325,20 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const input = createChatResponseSchema.parse(request.body)
+    if (input.parentResponseId) {
+      const [parent] = await db.select({ id: responses.id }).from(responses).where(and(
+        eq(responses.id, input.parentResponseId),
+        eq(responses.chatId, id),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+      )).limit(1)
+      if (!parent) throw new AppError(400, 'invalid_parent_response', 'The selected parent response is unavailable')
+    }
     const response = await createResponse({
       userId: user.id,
       chatId: id,
       input,
+      parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
     })
     await bumpRevision(user.id, id)

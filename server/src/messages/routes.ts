@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { idSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, users } from '../database/schema.js'
@@ -41,6 +42,7 @@ function editedOutput(content: string): unknown[] {
 }
 
 const generationSelectionSchema = z.object({
+  clientId: idSchema.optional(),
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
 })
@@ -62,6 +64,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       branchReason: 'regenerate',
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       input: {
+        clientId: selection.clientId,
         input: responseInputText(original.input), modelId,
         executionMode: selection.modelId ? undefined : original.executionMode,
         presetSelections: selection.modelId
@@ -80,7 +83,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
-    const { content, modelId: selectedModelId, presetSelections } = generationSelectionSchema.extend({
+    const { clientId, content, modelId: selectedModelId, presetSelections } = generationSelectionSchema.extend({
       content: z.string().trim().max(1_000_000),
     }).parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
@@ -98,6 +101,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         branchReason: 'user_edit',
         idempotencyKey,
         input: {
+          clientId,
           input: content, modelId,
           executionMode: selectedModelId ? undefined : original.executionMode,
           presetSelections: selectedModelId
@@ -171,7 +175,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       eq(responses.chatId, selected.chatId),
       eq(responses.userId, user.id),
       isNull(responses.deletedAt),
-    )).orderBy(asc(responses.createdAt))
+    )).orderBy(asc(responses.createdAt), asc(responses.id))
     const leafId = newestDescendantId(turns, selected.id)
     await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: new Date() })
       .where(and(eq(chats.id, selected.chatId), eq(chats.userId, user.id)))
@@ -185,7 +189,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     if (!id.endsWith(':input')) throw new AppError(400, 'user_message_required', 'Only user messages can be deleted from this control')
     const original = await ownedResponse(user.id, id)
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).limit(1)
-    const turns = await db.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt))
+    const turns = await db.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
     const sameVariant = (turn: typeof responses.$inferSelect) => turn.parentResponseId === original.parentResponseId && (original.userMessageId ? turn.userMessageId === original.userMessageId : JSON.stringify(turn.input) === JSON.stringify(original.input))
     const deleting = new Set(turns.filter(sameVariant).map((turn) => turn.id))
     let changed = true

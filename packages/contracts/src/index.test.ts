@@ -3,6 +3,7 @@ import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
   chatPresetsSchema,
+  createChatResponseSchema,
   mergeResponseSnapshots,
   responseEventSchema,
   syncRequestSchema,
@@ -176,6 +177,17 @@ describe('response snapshot accumulation', () => {
       { id: 'tool-1' },
       { id: 'agent:2:0:message', content: [{ text: 'Second turn' }] },
     ])
+  })
+
+  it('accepts an explicit branch parent for follow-up generation', () => {
+    const parentResponseId = '00000000-0000-4000-8000-000000000002'
+    const parsed = createChatResponseSchema.parse({
+      parentResponseId,
+      input: 'Follow this branch',
+      modelId: 'model',
+    })
+
+    expect(parsed.parentResponseId).toBe(parentResponseId)
   })
 
 })

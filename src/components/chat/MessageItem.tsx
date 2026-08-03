@@ -20,6 +20,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import type { Chat, Message } from '@/lib/types'
+import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
@@ -879,36 +880,38 @@ export const MessageItem = memo(function MessageItem({
           })}
         </div>
 
-        {message.done && (
+        {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex items-center gap-1">
             <BranchControls chatId={chat.id} branch={message.branch} />
-            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-              <CopyButton text={message.content} />
-              <ActionButton
-                label="Edit response"
-                onClick={() => {
-                  setDraft(message.content)
-                  setEditing(true)
-                }}
-              >
-                <Pencil className="size-3.5" />
-              </ActionButton>
-              <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
-                <RefreshCw className="size-3.5" />
-              </ActionButton>
-              {(message.tokensIn !== undefined || message.cost !== undefined) && (
-                <span className="ml-1 text-[11px] text-muted-foreground">
-                  {message.tokensIn !== undefined &&
-                    `${message.tokensIn.toLocaleString()}→${(message.tokensOut ?? 0).toLocaleString()} tok`}
-                  {message.tokensOut !== undefined &&
-                    message.latencyMs !== undefined &&
-                    message.latencyMs > 0 &&
-                    ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
-                  {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
-                  {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
-                </span>
-              )}
-            </div>
+            {message.done && (
+              <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <CopyButton text={message.content} />
+                <ActionButton
+                  label="Edit response"
+                  onClick={() => {
+                    setDraft(message.content)
+                    setEditing(true)
+                  }}
+                >
+                  <Pencil className="size-3.5" />
+                </ActionButton>
+                <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
+                  <RefreshCw className="size-3.5" />
+                </ActionButton>
+                {(message.tokensIn !== undefined || message.cost !== undefined) && (
+                  <span className="ml-1 text-[11px] text-muted-foreground">
+                    {message.tokensIn !== undefined &&
+                      `${message.tokensIn.toLocaleString()}→${(message.tokensOut ?? 0).toLocaleString()} tok`}
+                    {message.tokensOut !== undefined &&
+                      message.latencyMs !== undefined &&
+                      message.latencyMs > 0 &&
+                      ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
+                    {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
+                    {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

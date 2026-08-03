@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses } from '../database/schema.js'
-import { getActivePricing, reserveBudget } from '../accounting/service.js'
+import { getActivePricing, releaseBudget, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { generationQueue } from '../jobs.js'
@@ -104,6 +104,7 @@ export async function createResponse(options: CreateResponseOptions) {
     ? await db.select({ id: responses.id }).from(responses).where(eq(responses.id, chat.activeResponseId)).limit(1)
     : []
   const parentResponseId = options.parentResponseId === undefined ? previous?.id ?? null : options.parentResponseId
+  const previousActiveResponseId = previous?.id ?? null
   const executionMode = options.input.executionMode ?? model.executionMode
   if (options.input.attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
@@ -162,7 +163,13 @@ export async function createResponse(options: CreateResponseOptions) {
     await db.update(chats).set({ activeResponseId: id, activeBranchLeafId: id, updatedAt: new Date() }).where(eq(chats.id, chat.id))
     await generationQueue.add('generate', { responseId: id }, { jobId: id })
   } catch (error) {
+    await releaseBudget(id)
     await db.delete(responses).where(eq(responses.id, id))
+    await db.update(chats).set({
+      activeResponseId: previousActiveResponseId,
+      activeBranchLeafId: previousActiveResponseId,
+      updatedAt: new Date(),
+    }).where(and(eq(chats.id, chat.id), eq(chats.activeResponseId, id)))
     throw error
   }
   const [created] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)

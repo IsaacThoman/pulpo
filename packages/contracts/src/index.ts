@@ -462,6 +462,7 @@ export const createChatSchema = z.object({
 
 export const createChatResponseSchema = z.object({
   clientId: idSchema.optional(),
+  parentResponseId: idSchema.nullable().optional(),
   input: z.string().trim().max(1_000_000).default(''),
   modelId: z.string().min(1),
   executionMode: executionModeSchema.optional(),

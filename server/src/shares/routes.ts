@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
@@ -64,7 +64,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       .where(and(eq(chatShares.tokenHash, hashToken(token)), isNull(chatShares.revokedAt), or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now))))
       .limit(1)
     if (!row) throw new AppError(404, 'share_not_found', 'This share does not exist or has expired')
-    const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, row.chat.id), isNull(responses.deletedAt))).orderBy(responses.createdAt)
+    const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, row.chat.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
     const turns = lineageFromLeaf(
       allTurns,
       row.chat.activeBranchLeafId ?? row.chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,

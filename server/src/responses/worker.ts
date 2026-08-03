@@ -331,7 +331,7 @@ async function processGenerationAttempt(
     .select()
     .from(responses)
     .where(and(eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt)))
-    .orderBy(asc(responses.createdAt))
+    .orderBy(asc(responses.createdAt), asc(responses.id))
   const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
   const history: typeof allHistory = []
   let parentId = record.response.parentResponseId
