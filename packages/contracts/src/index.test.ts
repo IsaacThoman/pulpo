@@ -179,6 +179,59 @@ describe('response snapshot accumulation', () => {
     ])
   })
 
+  it('starts a distinct message when the first delta for a new agent turn precedes its snapshot', () => {
+    const snapshot = {
+      ...streamingSnapshot,
+      sequence: 4,
+      output: [
+        {
+          id: 'agent:1:0:message',
+          type: 'message',
+          status: 'in_progress',
+          content: [{ type: 'output_text', text: 'First turn' }],
+        },
+        { id: 'tool-1', type: 'pulpo_tool', status: 'completed' },
+      ],
+    }
+
+    const started = applyResponseEventToSnapshot(
+      snapshot,
+      targetedDelta('response.output_text.delta', 'Second', 5, 'agent:2:0:message'),
+    )
+    const continued = applyResponseEventToSnapshot(
+      started,
+      targetedDelta('response.output_text.delta', ' turn', 6, 'agent:2:0:message'),
+    )
+
+    expect(continued.output).toMatchObject([
+      { id: 'agent:1:0:message', content: [{ text: 'First turn' }] },
+      { id: 'tool-1' },
+      { id: 'agent:2:0:message', content: [{ text: 'Second turn' }] },
+    ])
+  })
+
+  it('starts distinct reasoning when a targeted reasoning item has not been checkpointed yet', () => {
+    const snapshot = {
+      ...streamingSnapshot,
+      sequence: 7,
+      output: [{
+        id: 'agent:1:0:reasoning',
+        type: 'reasoning',
+        status: 'in_progress',
+        summary: [{ type: 'summary_text', text: 'First thought' }],
+      }],
+    }
+    const result = applyResponseEventToSnapshot(
+      snapshot,
+      targetedDelta('response.reasoning_summary_text.delta', 'Next thought', 8, 'agent:2:0:reasoning'),
+    )
+
+    expect(result.output).toMatchObject([
+      { id: 'agent:1:0:reasoning', summary: [{ text: 'First thought' }] },
+      { id: 'agent:2:0:reasoning', summary: [{ text: 'Next thought' }] },
+    ])
+  })
+
   it('accepts an explicit branch parent for follow-up generation', () => {
     const parentResponseId = '00000000-0000-4000-8000-000000000002'
     const parsed = createChatResponseSchema.parse({

@@ -117,7 +117,10 @@ function targetItemIndex(output: Array<Record<string, unknown>>, payload: DeltaT
     : typeof payload.itemId === 'string' ? payload.itemId : undefined
   if (itemId) {
     const byId = output.findIndex((item) => item.id === itemId)
-    if (byId >= 0) return byId
+    // A targeted delta for an unseen item starts a new item. Falling through to
+    // the active-tail heuristic would temporarily append a new agent turn to
+    // the preceding turn until the next authoritative snapshot arrives.
+    return byId
   }
   const outputIndex = typeof payload.output_index === 'number' ? payload.output_index
     : typeof payload.outputIndex === 'number' ? payload.outputIndex : undefined
@@ -145,7 +148,8 @@ function appendOutputText(output: unknown[], delta: string, payload: DeltaTarget
   const index = targetItemIndex(copy, payload, 'message')
   let message = index >= 0 ? { ...copy[index] } : undefined
   if (!message) {
-    const itemId = typeof payload.item_id === 'string' ? payload.item_id : undefined
+    const itemId = typeof payload.item_id === 'string' ? payload.item_id
+      : typeof payload.itemId === 'string' ? payload.itemId : undefined
     message = { ...(itemId ? { id: itemId } : {}), type: 'message', role: 'assistant', status: 'in_progress', content: [] }
     copy.push(message)
   } else {
@@ -174,7 +178,8 @@ function appendReasoning(output: unknown[], delta: string, payload: DeltaTarget)
   const index = targetItemIndex(copy, payload, 'reasoning')
   let reasoning = index >= 0 ? { ...copy[index] } : undefined
   if (!reasoning) {
-    const itemId = typeof payload.item_id === 'string' ? payload.item_id : undefined
+    const itemId = typeof payload.item_id === 'string' ? payload.item_id
+      : typeof payload.itemId === 'string' ? payload.itemId : undefined
     reasoning = { ...(itemId ? { id: itemId } : {}), type: 'reasoning', status: 'in_progress', summary: [] }
     copy.push(reasoning)
   } else {
