@@ -10,6 +10,7 @@ import {
   FolderSearch,
   List,
   Pencil,
+  RefreshCw,
   Search,
   Server,
   Terminal,
@@ -604,6 +605,7 @@ export const MessageItem = memo(function MessageItem({
   streaming: boolean
   activeModelId: string
 }) {
+  const regenerate = useChat((state) => state.regenerate)
   const editUserMessage = useChat((state) => state.editUserMessage)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
@@ -883,6 +885,7 @@ export const MessageItem = memo(function MessageItem({
             <BranchControls chatId={chat.id} branch={message.branch} />
             {message.done && (
               <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <CopyButton text={message.content} />
                 <ActionButton
                   label="Edit response"
                   onClick={() => {
@@ -891,6 +894,9 @@ export const MessageItem = memo(function MessageItem({
                   }}
                 >
                   <Pencil className="size-3.5" />
+                </ActionButton>
+                <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
+                  <RefreshCw className="size-3.5" />
                 </ActionButton>
                 {(message.tokensIn !== undefined || message.cost !== undefined) && (
                   <span className="ml-1 text-[11px] text-muted-foreground">
