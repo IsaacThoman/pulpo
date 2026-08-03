@@ -69,6 +69,42 @@ export async function createSession(
   })
 }
 
+export interface NativeSessionResult {
+  token: string
+  expiresAt: string
+}
+
+export async function createNativeSession(
+  userId: string,
+  deviceLabel: string,
+  request: FastifyRequest,
+): Promise<NativeSessionResult> {
+  const config = getConfig()
+  const token = randomToken()
+  const expiresAt = new Date(Date.now() + config.SESSION_TTL_DAYS * 86_400_000)
+  await db.insert(sessions).values({
+    id: newId(),
+    userId,
+    tokenHash: hashToken(token),
+    expiresAt,
+    deviceLabel,
+    userAgent: request.headers['user-agent'],
+    ipAddress: request.ip,
+  })
+  return { token, expiresAt: expiresAt.toISOString() }
+}
+
+export function bearerSessionToken(authorization: string | undefined): string | undefined {
+  if (!authorization) return undefined
+  const match = /^Bearer ([A-Za-z0-9_-]{32,})$/.exec(authorization)
+  return match?.[1]
+}
+
+export function requestSessionToken(request: Pick<FastifyRequest, 'cookies' | 'headers'>): string | undefined {
+  const cookieToken = request.cookies[getConfig().SESSION_COOKIE_NAME]
+  return cookieToken ?? bearerSessionToken(request.headers.authorization)
+}
+
 export async function destroySession(request: FastifyRequest, reply: FastifyReply): Promise<void> {
   const config = getConfig()
   const token = request.cookies[config.SESSION_COOKIE_NAME]
@@ -76,9 +112,13 @@ export async function destroySession(request: FastifyRequest, reply: FastifyRepl
   reply.clearCookie(config.SESSION_COOKIE_NAME, { path: '/' })
 }
 
+export async function destroyNativeSession(request: FastifyRequest): Promise<void> {
+  const token = bearerSessionToken(request.headers.authorization)
+  if (token) await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)))
+}
+
 export async function authenticateSession(request: FastifyRequest): Promise<AuthenticatedUser | null> {
-  const token = request.cookies[getConfig().SESSION_COOKIE_NAME]
-  return authenticateSessionToken(token)
+  return authenticateSessionToken(requestSessionToken(request))
 }
 
 export async function authenticateSessionToken(token: string | undefined): Promise<AuthenticatedUser | null> {

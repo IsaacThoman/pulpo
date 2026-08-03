@@ -16,13 +16,24 @@ interface SocketData {
   user: AuthenticatedUser
 }
 
-function cookieValue(header: string | undefined, name: string): string | undefined {
+export function cookieValue(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined
   for (const pair of header.split(';')) {
     const [key, ...value] = pair.trim().split('=')
     if (key === name) return decodeURIComponent(value.join('='))
   }
   return undefined
+}
+
+export function socketSessionToken(
+  auth: Record<string, unknown>,
+  cookieHeader: string | undefined,
+  cookieName: string,
+): string | undefined {
+  const authToken = auth.sessionToken
+  return typeof authToken === 'string' && authToken.length >= 32
+    ? authToken
+    : cookieValue(cookieHeader, cookieName)
 }
 
 function snapshotPreview(snapshot: ResponseSnapshot): string {
@@ -51,7 +62,11 @@ export async function createSocketServer(httpServer: HttpServer) {
 
   io.use(async (socket, next) => {
     try {
-      const token = cookieValue(socket.handshake.headers.cookie, config.SESSION_COOKIE_NAME)
+      const token = socketSessionToken(
+        socket.handshake.auth,
+        socket.handshake.headers.cookie,
+        config.SESSION_COOKIE_NAME,
+      )
       const user = await authenticateSessionToken(token)
       if (!user || user.role === 'pending') return next(new Error('unauthorized'))
       socket.data.user = user

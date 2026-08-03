@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY apps/server/package.json apps/server/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
+COPY packages/client-core/package.json packages/client-core/package.json
 COPY packages/workspace-controller/package.json packages/workspace-controller/package.json
 COPY packages/workspace-daemon/package.json packages/workspace-daemon/package.json
 # Build tooling is a dev dependency. Install it even when a platform injects

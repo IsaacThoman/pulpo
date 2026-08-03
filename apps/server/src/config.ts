@@ -10,6 +10,8 @@ const configSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
   PUBLIC_URL: z.url().default('http://localhost:5173'),
+  INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
+  PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),
   DATABASE_URL: z.string().min(1).optional(),
   POSTGRES_HOST: z.string().min(1).default('localhost'),
   POSTGRES_PORT: z.coerce.number().int().positive().default(5432),

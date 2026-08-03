@@ -25,6 +25,7 @@
     "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^10.3.0",
     "@pulpo/contracts": "0.1.0",
+    "@pulpo/client-core": "0.1.0",
     "@socket.io/redis-streams-adapter": "^0.3.0",
     "argon2": "^0.44.0",
     "bullmq": "^5.58.5",

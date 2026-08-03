@@ -13,6 +13,8 @@ import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
+import { planDuplicateTree } from './duplicate.js'
+import { responseAttachmentIds } from '../messages/input.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string) => {
@@ -231,6 +233,61 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return created
   })
 
+  app.post('/api/chats/:id/duplicate', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const [source] = await db.select().from(chats).where(and(
+      eq(chats.id, id),
+      eq(chats.userId, user.id),
+      isNull(chats.deletedAt),
+    )).limit(1)
+    if (!source) throw notFound('Chat')
+    const sourceResponses = await db.select().from(responses).where(and(
+      eq(responses.chatId, id),
+      eq(responses.userId, user.id),
+      isNull(responses.deletedAt),
+    )).orderBy(asc(responses.createdAt), asc(responses.id))
+    const chatId = newId()
+    const plan = planDuplicateTree(sourceResponses, newId)
+    const now = new Date()
+    const title = source.title.endsWith(' copy') ? source.title : `${source.title} copy`
+    const activeResponseId = source.activeResponseId ? plan.responseIds.get(source.activeResponseId) ?? null : null
+    const activeBranchLeafId = source.activeBranchLeafId ? plan.responseIds.get(source.activeBranchLeafId) ?? null : null
+    await db.transaction(async (tx) => {
+      await tx.insert(chats).values({
+        ...source,
+        id: chatId,
+        userId: user.id,
+        title: title.slice(0, 200),
+        pinned: false,
+        temporary: false,
+        activeResponseId,
+        activeBranchLeafId,
+        expiresAt: null,
+        deletedAt: null,
+        purgeStartedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      for (const response of sourceResponses) {
+        const mapped = plan.remap(response)
+        await tx.insert(responses).values({
+          ...response,
+          ...mapped,
+          chatId,
+          userId: user.id,
+          openaiResponseId: null,
+          idempotencyKey: null,
+          createdAt: response.createdAt,
+          updatedAt: now,
+        })
+      }
+    })
+    await bumpRevision(user.id, chatId)
+    reply.code(201)
+    return { ...source, id: chatId, title: title.slice(0, 200), pinned: false, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
+  })
+
   app.put('/api/chats/order', async (request) => {
     const user = requireUser(request)
     const body = request.body as { chatIds?: string[] }
@@ -270,12 +327,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .orderBy(asc(responses.createdAt), asc(responses.id))
     const allTurns = turnRows.map((row) => row.response)
     const requestedModelByResponse = new Map(turnRows.map((row) => [row.response.id, row.requestedModelId]))
-    const attachmentRows = await db.select({
+    const referencedAttachmentIds = [...new Set(allTurns.flatMap((response) => responseAttachmentIds(response.input)))]
+    const attachmentRows = referencedAttachmentIds.length ? await db.select({
       id: attachments.id,
       originalName: attachments.originalName,
       mimeType: attachments.mimeType,
       sizeBytes: attachments.sizeBytes,
-    }).from(attachments).where(and(eq(attachments.chatId, id), eq(attachments.userId, user.id), eq(attachments.status, 'ready')))
+    }).from(attachments).where(and(
+      eq(attachments.userId, user.id),
+      eq(attachments.status, 'ready'),
+      inArray(attachments.id, referencedAttachmentIds),
+    )) : []
     return { ...chat, attachments: attachmentRows, responses: allTurns.map((response) => ({
       ...response,
       displayModelId: requestedModelByResponse.get(response.id) ?? response.modelId,

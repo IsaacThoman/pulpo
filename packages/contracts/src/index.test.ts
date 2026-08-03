@@ -5,6 +5,8 @@ import {
   chatPresetsSchema,
   createChatResponseSchema,
   mergeResponseSnapshots,
+  mobileConfigSchema,
+  nativeLoginInputSchema,
   responseEventSchema,
   syncRequestSchema,
   type ResponseEvent,
@@ -66,6 +68,22 @@ describe('shared contracts', () => {
       ],
     }])
     expect(presets[0]?.defaultChoiceId).toBe('medium')
+  })
+
+  it('validates native sessions and instance discovery', () => {
+    expect(nativeLoginInputSchema.parse({
+      email: 'member@example.com', password: 'password', deviceLabel: 'Isaac’s iPhone',
+    }).deviceLabel).toBe('Isaac’s iPhone')
+    expect(mobileConfigSchema.safeParse({
+      mobileApiVersion: 1,
+      instance: { name: 'Pulpo', version: '1.0.0', publicUrl: 'https://pulpo.baby' },
+      setupRequired: false,
+      auth: { signupEnabled: true, pendingDetails: true, adminEmail: '', pendingMessage: 'Pending' },
+      capabilities: {
+        bearerSessions: true, realtime: true, chatDuplication: true,
+        publicSharing: true, attachments: true, folders: true,
+      },
+    }).success).toBe(true)
   })
 
   it('tracks agent turns separately from retry attempts', () => {

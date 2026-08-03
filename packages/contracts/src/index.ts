@@ -32,6 +32,62 @@ export const signupInputSchema = z.object({
 
 export const setupInputSchema = signupInputSchema
 
+export const nativeDeviceSchema = z.object({
+  deviceLabel: z.string().trim().min(1).max(120),
+})
+
+export const nativeLoginInputSchema = loginInputSchema.and(nativeDeviceSchema)
+export const nativeSignupInputSchema = signupInputSchema.and(nativeDeviceSchema)
+
+export const nativeSessionSchema = z.object({
+  token: z.string().min(32),
+  expiresAt: isoDateSchema,
+})
+export type NativeSession = z.infer<typeof nativeSessionSchema>
+
+export const nativeAuthResponseSchema = z.object({
+  user: userSchema,
+  session: nativeSessionSchema,
+})
+export type NativeAuthResponse = z.infer<typeof nativeAuthResponseSchema>
+
+export const mobileConfigSchema = z.object({
+  mobileApiVersion: z.literal(1),
+  instance: z.object({
+    name: z.string().min(1),
+    version: z.string().min(1),
+    publicUrl: z.url(),
+  }),
+  setupRequired: z.boolean(),
+  auth: z.object({
+    signupEnabled: z.boolean(),
+    pendingDetails: z.boolean(),
+    adminEmail: z.string(),
+    pendingMessage: z.string(),
+  }),
+  capabilities: z.object({
+    bearerSessions: z.literal(true),
+    realtime: z.literal(true),
+    chatDuplication: z.literal(true),
+    publicSharing: z.literal(true),
+    attachments: z.literal(true),
+    folders: z.literal(true),
+  }),
+})
+export type MobileConfig = z.infer<typeof mobileConfigSchema>
+
+export const updateProfileInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+})
+
+export const changePasswordInputSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  newPassword: z.string().min(8).max(1024),
+}).refine((value) => value.currentPassword !== value.newPassword, {
+  message: 'New password must be different from the current password',
+  path: ['newPassword'],
+})
+
 export const apiErrorSchema = z.object({
   error: z.object({
     message: z.string(),

@@ -1,6 +1,12 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { loginInputSchema, setupInputSchema, signupInputSchema } from '@pulpo/contracts'
+import {
+  changePasswordInputSchema,
+  loginInputSchema,
+  setupInputSchema,
+  signupInputSchema,
+  updateProfileInputSchema,
+} from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
@@ -9,6 +15,7 @@ import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { publishStateChange } from '../responses/events.js'
 import {
   createPasswordHash,
   createSession,
@@ -135,4 +142,32 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/me', async (request) => ({ user: requireUser(request) }))
+
+  app.patch('/api/me', async (request) => {
+    const user = requireUser(request)
+    const input = updateProfileInputSchema.parse(request.body)
+    const [updated] = await db.update(users).set({
+      name: input.name,
+      stateRevision: sql`${users.stateRevision} + 1`,
+      updatedAt: new Date(),
+    }).where(eq(users.id, user.id)).returning()
+    if (!updated) throw unauthorized()
+    await publishStateChange({ userId: user.id, revision: updated.stateRevision })
+    return { user: serializeUser(updated) }
+  })
+
+  app.post('/api/me/password', async (request, reply) => {
+    const user = requireUser(request)
+    const input = changePasswordInputSchema.parse(request.body)
+    const [credential] = await db.select().from(passwordCredentials)
+      .where(eq(passwordCredentials.userId, user.id)).limit(1)
+    if (!credential || !(await verifyPassword(credential.passwordHash, input.currentPassword))) {
+      throw unauthorized('Current password is incorrect')
+    }
+    await db.update(passwordCredentials).set({
+      passwordHash: await createPasswordHash(input.newPassword),
+      changedAt: new Date(),
+    }).where(eq(passwordCredentials.userId, user.id))
+    reply.code(204).send()
+  })
 }

@@ -134,6 +134,13 @@
       "when": 1785789059888,
       "tag": "0018_safe_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785797122925,
+      "tag": "0019_native_session_devices",
+      "breakpoints": true
     }
   ]
 }
