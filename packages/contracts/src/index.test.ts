@@ -123,6 +123,16 @@ describe('response snapshot accumulation', () => {
     expect(older).toBe(current)
   })
 
+  it('uses snapshot time and terminal status to order equal event sequences', () => {
+    const current = { ...streamingSnapshot, sequence: 3, updatedAt: '2026-07-31T00:00:03.000Z' }
+    const stale = { ...current, updatedAt: '2026-07-31T00:00:02.000Z', output: [{ stale: true }] }
+    const terminal = { ...stale, status: 'completed' as const }
+
+    expect(mergeResponseSnapshots(current, stale)).toBe(current)
+    expect(mergeResponseSnapshots(current, terminal)).toBe(terminal)
+    expect(mergeResponseSnapshots(terminal, current)).toBe(terminal)
+  })
+
   it('keeps reasoning separate from assistant output', () => {
     const reasoned = applyResponseEventToSnapshot(streamingSnapshot, delta('response.reasoning_summary_text.delta', 'Think', 1))
     const answered = applyResponseEventToSnapshot(reasoned, delta('response.output_text.delta', 'Answer', 2))

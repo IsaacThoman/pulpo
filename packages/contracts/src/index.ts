@@ -212,6 +212,13 @@ export function applyResponseEventToSnapshot(snapshot: ResponseSnapshot, event: 
 
 export function mergeResponseSnapshots(current: ResponseSnapshot, incoming: ResponseSnapshot): ResponseSnapshot {
   if (incoming.sequence < current.sequence) return current
+  if (incoming.sequence === current.sequence) {
+    const currentTerminal = current.status !== 'queued' && current.status !== 'in_progress'
+    const incomingTerminal = incoming.status !== 'queued' && incoming.status !== 'in_progress'
+    if (currentTerminal && !incomingTerminal) return current
+    if (incomingTerminal && !currentTerminal) return incoming
+    if (incoming.updatedAt <= current.updatedAt) return current
+  }
   const incomingIsActive = incoming.status === 'queued' || incoming.status === 'in_progress'
   if (incomingIsActive && incoming.output.length === 0 && current.output.length > 0) {
     return { ...incoming, output: current.output }

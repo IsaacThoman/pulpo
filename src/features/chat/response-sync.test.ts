@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResponseEvent, ResponseSnapshot, SyncResult } from '@pulpo/contracts'
-import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes } from './response-sync'
+import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 
 function snapshot(status: ResponseSnapshot['status'], responseId: string): ResponseSnapshot {
   return {
@@ -55,6 +55,25 @@ describe('response sync planning', () => {
       event('a', 3, ' world'),
     ]
     expect(coalesceResponseEvents(events)).toHaveLength(3)
+  })
+
+  it('sorts events but waits for sequence gaps before applying incremental deltas', () => {
+    const result = takeContiguousResponseEvents([
+      event('a', 4, ' fourth'),
+      event('a', 2, ' second'),
+      event('a', 3, ' third'),
+    ], 1)
+    expect(result.ready.map((item) => item.sequence)).toEqual([2, 3, 4])
+
+    const gap = takeContiguousResponseEvents([event('a', 4, ' fourth')], 2)
+    expect(gap.ready).toEqual([])
+    expect(gap.pending.map((item) => item.sequence)).toEqual([4])
+  })
+
+  it('never coalesces deltas for different output items', () => {
+    const first = { ...event('a', 1, 'A'), payload: { delta: 'A', item_id: 'turn-1' } }
+    const second = { ...event('a', 2, 'B'), payload: { delta: 'B', item_id: 'turn-2' } }
+    expect(coalesceResponseEvents([first, second])).toEqual([first, second])
   })
 })
 

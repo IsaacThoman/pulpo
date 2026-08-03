@@ -95,13 +95,18 @@ export async function createSocketServer(httpServer: HttpServer) {
     socket.on('response.subscribe', async ({ responseId, afterSequence }) => {
       const [owned] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, user.id))).limit(1)
       if (!owned) return
-      await socket.join(`response:${responseId}`)
       const events = await readResponseEvents(responseId, afterSequence)
+      let replayedThrough = afterSequence
       if (events.length > 0 && events.length <= 2_000) {
         for (const event of events) socket.emit('response.event', event)
+        replayedThrough = events.at(-1)?.sequence ?? afterSequence
       } else if (afterSequence < owned.lastSequence) {
         socket.emit('response.snapshot', toSnapshot(owned))
+        replayedThrough = owned.lastSequence
       }
+      await socket.join(`response:${responseId}`)
+      const racedEvents = await readResponseEvents(responseId, replayedThrough)
+      for (const event of racedEvents) socket.emit('response.event', event)
     })
     socket.on('response.unsubscribe', ({ responseId }) => void socket.leave(`response:${responseId}`))
     socket.on('admin.usage.subscribe', () => {
@@ -110,14 +115,19 @@ export async function createSocketServer(httpServer: HttpServer) {
     socket.on('admin.usage.unsubscribe', () => void socket.leave('admin:usage'))
   })
 
-  const responseOwners = new Map<string, { userId: string; chatId: string }>()
+  const responseOwners = new Map<string, Promise<{ userId: string; chatId: string } | undefined>>()
   const ownerFor = async (responseId: string) => {
     const cached = responseOwners.get(responseId)
     if (cached) return cached
-    const [row] = await db.select({ userId: responses.userId, chatId: responses.chatId })
+    const pending = db.select({ userId: responses.userId, chatId: responses.chatId })
       .from(responses).where(eq(responses.id, responseId)).limit(1)
-    if (row) responseOwners.set(responseId, row)
-    return row
+      .then((rows) => rows[0])
+      .catch((error) => {
+        responseOwners.delete(responseId)
+        throw error
+      })
+    responseOwners.set(responseId, pending)
+    return pending
   }
 
   await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:admin-usage')

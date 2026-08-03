@@ -25,6 +25,38 @@ export function groupResponseEvents(events: ResponseEvent[]): ResponseEvent[][] 
   return [...grouped.values()]
 }
 
+export function takeContiguousResponseEvents(
+  events: ResponseEvent[],
+  afterSequence: number,
+): { ready: ResponseEvent[]; pending: ResponseEvent[] } {
+  const sorted = [...events]
+    .filter((event) => event.sequence > afterSequence)
+    .sort((left, right) => left.sequence - right.sequence)
+  const ready: ResponseEvent[] = []
+  const pending: ResponseEvent[] = []
+  let expected = afterSequence + 1
+  for (const event of sorted) {
+    if (event.sequence < expected) continue
+    if (event.sequence === expected) {
+      ready.push(event)
+      expected += 1
+    } else {
+      pending.push(event)
+    }
+  }
+  return { ready, pending }
+}
+
+function deltaTargetKey(event: ResponseEvent): string {
+  const payload = event.payload as Record<string, unknown>
+  return JSON.stringify([
+    payload.item_id ?? payload.itemId,
+    payload.output_index ?? payload.outputIndex,
+    payload.content_index ?? payload.contentIndex,
+    payload.agent_turn,
+  ])
+}
+
 /**
  * Collapse adjacent text deltas before projecting them into durable local state.
  * The last sequence is retained so replay cursors still advance atomically.
@@ -39,6 +71,7 @@ export function coalesceResponseEvents(events: ResponseEvent[]): ResponseEvent[]
       previous
       && previous.responseId === event.responseId
       && previous.type === event.type
+      && deltaTargetKey(previous) === deltaTargetKey(event)
       && DELTA_EVENT_TYPES.has(event.type)
       && typeof previousDelta === 'string'
       && typeof delta === 'string'

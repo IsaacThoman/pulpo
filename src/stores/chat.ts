@@ -516,7 +516,11 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
 
   applyResponseSnapshot: (snapshot, options) => {
-    if ((get().responseSequences[snapshot.responseId] ?? 0) > snapshot.sequence) return
+    const currentSnapshot = accumulatedResponseSnapshots.get(snapshot.responseId)
+    const acceptedSnapshot = currentSnapshot ? mergeResponseSnapshots(currentSnapshot, snapshot) : snapshot
+    if (currentSnapshot && acceptedSnapshot === currentSnapshot) return
+    accumulatedResponseSnapshots.set(snapshot.responseId, acceptedSnapshot)
+    snapshot = acceptedSnapshot
     const affectedChatId = get().chats.find((chat) =>
       chat.messages.some((message) => message.id === snapshot.responseId)
     )?.id

@@ -13,7 +13,7 @@ import { useAuth } from '@/stores/auth'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { useSettings } from '@/stores/settings'
-import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes } from './response-sync'
+import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 type CompletionToast = { responseId: string; chatId: string; preview: string }
@@ -41,6 +41,7 @@ export function ChatDataBridge() {
   const applyResponseEvents = useChat((state) => state.applyResponseEvents)
   const applyResponseSnapshot = useChat((state) => state.applyResponseSnapshot)
   const socketRef = useRef<PulpoSocket | null>(null)
+  const subscribedResponseIdsRef = useRef(new Set<string>())
   const loadCatalog = useCatalog((state) => state.load)
   const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const revisionRef = useRef(user?.stateRevision ?? 0)
@@ -106,20 +107,22 @@ export function ChatDataBridge() {
     const applyEventBatch = (events: ResponseEvent[]) => {
       const compacted = coalesceResponseEvents(events)
       if (!applyResponseEvents(compacted)) return
-      const latest = compacted.at(-1)
+      const latest = compacted.reduce((current, event) =>
+        !current || event.sequence > current.sequence ? event : current, undefined as ResponseEvent | undefined)
       if (latest) rememberCursor(latest.responseId, latest.sequence)
     }
     const flushEventBatches = (responseId?: string) => {
-      if (responseId) {
-        const events = pendingEvents.get(responseId)
-        pendingEvents.delete(responseId)
-        if (events) applyEventBatch(events)
-        return
+      if (!responseId) eventFrame = undefined
+      const responseIds = responseId ? [responseId] : [...pendingEvents.keys()]
+      for (const id of responseIds) {
+        const events = pendingEvents.get(id)
+        if (!events) continue
+        const currentSequence = useChat.getState().responseSequences[id] ?? 0
+        const { ready, pending } = takeContiguousResponseEvents(events, currentSequence)
+        if (pending.length) pendingEvents.set(id, pending)
+        else pendingEvents.delete(id)
+        if (ready.length) applyEventBatch(ready)
       }
-      eventFrame = undefined
-      const batches = [...pendingEvents.values()]
-      pendingEvents.clear()
-      for (const events of batches) applyEventBatch(events)
     }
     const queueEvent = (event: ResponseEvent) => {
       const events = pendingEvents.get(event.responseId)
@@ -131,9 +134,13 @@ export function ChatDataBridge() {
     }
     const applySync = (result: SyncResult) => {
       revisionRef.current = result.accountRevision
-      for (const events of groupResponseEvents(result.events)) applyEventBatch(events)
+      for (const events of groupResponseEvents(result.events)) {
+        for (const event of events) queueEvent(event)
+        flushEventBatches(events[0]?.responseId)
+      }
       for (const snapshot of result.snapshots) {
         applyResponseSnapshot(snapshot, { invalidate: false })
+        flushEventBatches(snapshot.responseId)
         if (isTerminalSnapshot(snapshot)) {
           pendingCursors.delete(snapshot.responseId)
           void flushCursors().finally(() => localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`))
@@ -153,6 +160,7 @@ export function ChatDataBridge() {
     const applyLiveSnapshot = (snapshot: Parameters<typeof applyResponseSnapshot>[0]) => {
       flushEventBatches(snapshot.responseId)
       applyResponseSnapshot(snapshot)
+      flushEventBatches(snapshot.responseId)
       if (isTerminalSnapshot(snapshot)) {
         pendingCursors.delete(snapshot.responseId)
         void flushCursors().finally(() => localDb.responseCursors.delete(`${currentTabId}:${snapshot.responseId}`))
@@ -169,6 +177,12 @@ export function ChatDataBridge() {
         responseCursors: Object.fromEntries(cursors.map((cursor) => [cursor.responseId, cursor.sequence])),
       }, applySync)
       if (activeChatIdRef.current) socket.emit('chat.subscribe', { chatId: activeChatIdRef.current })
+      subscribedResponseIdsRef.current.clear()
+      for (const responseId of useChat.getState().streamingIds) {
+        const cursor = await localDb.responseCursors.get(`${currentTabId}:${responseId}`)
+        socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
+        subscribedResponseIdsRef.current.add(responseId)
+      }
       void flushOutbox(userId).then(() => queryClient.invalidateQueries({ queryKey: ['chats', userId] }))
     }
 
@@ -209,25 +223,29 @@ export function ChatDataBridge() {
       void flushCursors()
       socket.disconnect()
       socketRef.current = null
+      subscribedResponseIdsRef.current.clear()
     }
   }, [userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
 
   useEffect(() => {
     const socket = socketRef.current
-    if (!socket || streamingIds.length === 0) return
+    if (!socket) return
     let cancelled = false
+    const next = new Set(streamingIds)
+    for (const responseId of subscribedResponseIdsRef.current) {
+      if (next.has(responseId)) continue
+      socket.emit('response.unsubscribe', { responseId })
+      subscribedResponseIdsRef.current.delete(responseId)
+    }
     for (const responseId of streamingIds) {
+      if (subscribedResponseIdsRef.current.has(responseId)) continue
       void localDb.responseCursors.get(`${currentTabId}:${responseId}`).then((cursor) => {
         if (cancelled) return
         socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
+        subscribedResponseIdsRef.current.add(responseId)
       })
     }
-    return () => {
-      cancelled = true
-      for (const responseId of streamingIds) {
-        socket.emit('response.unsubscribe', { responseId })
-      }
-    }
+    return () => { cancelled = true }
   }, [streamingIds, currentTabId])
 
   useEffect(() => {
