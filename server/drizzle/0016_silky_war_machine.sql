@@ -1,0 +1,2 @@
+ALTER TABLE "tool_executions" ADD COLUMN "provider_cost_micros" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "tool_executions" ADD COLUMN "billed_cost_micros" bigint DEFAULT 0 NOT NULL;

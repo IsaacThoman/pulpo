@@ -176,6 +176,19 @@ export async function extendBudgetReservation(input: {
   })
 }
 
+export async function extendBudgetReservationFixedCost(responseId: string, additionalMicros: number): Promise<void> {
+  if (!Number.isSafeInteger(additionalMicros) || additionalMicros < 0) throw new AppError(400, 'invalid_reservation_amount', 'Additional reservation must be a non-negative integer')
+  if (additionalMicros === 0) return
+  await db.transaction(async (tx) => {
+    const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
+    if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
+    const [user] = await tx.select().from(users).where(eq(users.id, reservation.userId)).for('update')
+    const [reserved] = await tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` }).from(budgetReservations).where(and(eq(budgetReservations.userId, reservation.userId), eq(budgetReservations.status, 'pending')))
+    if (!user || user.balanceMicros - Number(reserved?.total ?? 0) < additionalMicros) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the requested web tool')
+    await tx.update(budgetReservations).set({ amountMicros: reservation.amountMicros + additionalMicros }).where(eq(budgetReservations.id, reservation.id))
+  })
+}
+
 export async function releaseBudget(responseId: string): Promise<void> {
   await db
     .update(budgetReservations)
