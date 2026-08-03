@@ -1,8 +1,9 @@
-name: Semantic release
+name: CI and semantic release
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -44,6 +45,7 @@ jobs:
         run: npm run lint
 
       - name: Release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}

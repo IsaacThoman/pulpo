@@ -51,6 +51,13 @@ async function validateFallback(modelId: string, fallbackModelId: string | null)
   }
 }
 
+async function nextModelSortOrder(labId: string): Promise<number> {
+  const [row] = await db.select({
+    nextSortOrder: sql<number>`coalesce(max(${models.sortOrder}), -1)::int + 1`,
+  }).from(models).where(eq(models.labId, labId))
+  return row?.nextSortOrder ?? 0
+}
+
 async function validatePresets(modelId: string, presets: PresetInput, allowedParameters: string[]): Promise<void> {
   const reserved = allowedParameters.find((key) => RESERVED_PARAMETERS.has(key))
   if (reserved) throw new AppError(400, 'reserved_parameter', `${reserved} is reserved and cannot be configured`)
@@ -421,9 +428,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     await validatePresets(input.id, raw.presets, input.allowedParameters)
     const pricingId = newId()
     const labId = input.labId ?? INTERNAL_LAB_ID
-    const [{ nextSortOrder }] = await db.select({
-      nextSortOrder: sql<number>`coalesce(max(${models.sortOrder}), -1)::int + 1`,
-    }).from(models).where(eq(models.labId, labId))
+    const sortOrder = await nextModelSortOrder(labId)
     await db.transaction(async (tx) => {
       await tx.insert(models).values({
         id: input.id,
@@ -432,7 +437,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         upstreamModelId: input.upstreamModelId,
         name: input.name,
         description: input.description,
-        sortOrder: nextSortOrder,
+        sortOrder,
         enabled: input.enabled,
         visible: input.visible,
         logo: input.logo,
@@ -486,18 +491,17 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     validateDefaultParameters(effectiveDefaults, effectiveAllowed)
     if (parsedPresets) await validatePresets(id, parsedPresets, effectiveAllowed)
     if (body.fallbackModelId !== undefined) await validateFallback(id, typeof body.fallbackModelId === 'string' ? body.fallbackModelId : null)
-    const requestedLabId = typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : current.labId
-    const labChanged = requestedLabId !== current.labId
-    const [{ nextSortOrder }] = labChanged
-      ? await db.select({ nextSortOrder: sql<number>`coalesce(max(${models.sortOrder}), -1)::int + 1` }).from(models).where(eq(models.labId, requestedLabId))
-      : [{ nextSortOrder: current.sortOrder }]
+    const currentLabId = current.labId ?? INTERNAL_LAB_ID
+    const requestedLabId = typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : currentLabId
+    const labChanged = requestedLabId !== currentLabId
+    const sortOrder = labChanged ? await nextModelSortOrder(requestedLabId) : current.sortOrder
     const [updated] = await db.update(models).set({
       name: typeof body.name === 'string' ? body.name : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
       upstreamModelId: typeof body.upstreamModelId === 'string' ? body.upstreamModelId : undefined,
       providerConnectionId: typeof body.providerConnectionId === 'string' ? body.providerConnectionId : undefined,
       labId: labChanged ? requestedLabId : undefined,
-      sortOrder: labChanged ? nextSortOrder : undefined,
+      sortOrder: labChanged ? sortOrder : undefined,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       visible: typeof body.visible === 'boolean' ? body.visible : undefined,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
