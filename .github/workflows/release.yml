@@ -10,21 +10,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: semantic-release
+  group: ci-release-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Test and release
+  checks:
+    name: Checks
     runs-on: ubuntu-24.04
-    permissions:
-      actions: write
-      contents: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -44,8 +39,30 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  release:
+    name: Semantic release
+    if: github.event_name != 'pull_request'
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm clean-install
+
       - name: Release
-        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
