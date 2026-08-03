@@ -128,6 +128,7 @@ export const models = pgTable('models', {
   upstreamModelId: text('upstream_model_id').notNull(),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
+  sortOrder: integer('sort_order').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   visible: boolean('visible').notNull().default(true),
   logo: text('logo'),

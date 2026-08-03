@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, Pencil, Plus, Trash2 } from 'lucide-react'
 import { AI_ICONS, isAiIconAvailable } from '@/lib/ai-icons'
 import { apiRequest } from '@/lib/api'
 import { AiLogo } from '@/components/ProviderLogo'
@@ -35,6 +35,14 @@ interface AdminLab {
   logo: string
   modelCount: number
   builtin: boolean
+  models: Array<{
+    id: string
+    name: string
+    logo: string | null
+    enabled: boolean
+    visible: boolean
+    sortOrder: number
+  }>
 }
 
 const emptyDraft = (): Draft => ({
@@ -76,6 +84,24 @@ export function AdminLabsPage() {
     await Promise.all([load(), useCatalog.getState().load()])
   }
 
+  const moveModel = async (lab: AdminLab, index: number, direction: -1 | 1) => {
+    const target = index + direction
+    if (target < 0 || target >= lab.models.length) return
+    const reordered = [...lab.models]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    setLabs((current) => current.map((item) => item.id === lab.id ? { ...item, models: reordered } : item))
+    try {
+      await apiRequest(`/api/admin/labs/${lab.id}/models/order`, {
+        method: 'PUT',
+        body: { modelIds: reordered.map((model) => model.id) },
+      })
+      await useCatalog.getState().load()
+    } catch (error) {
+      await load()
+      throw error
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
@@ -88,7 +114,7 @@ export function AdminLabsPage() {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        Company marks shown in the model picker and associated with models.
+        Company marks shown in the model picker. Use the arrows to set the order of models within each lab.
       </p>
 
       <Card className="shadow-none">
@@ -98,7 +124,7 @@ export function AdminLabsPage() {
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-5 py-2.5 font-medium">Lab</th>
                 <th className="px-4 py-2.5 font-medium">Logo</th>
-                <th className="px-4 py-2.5 font-medium">Linked models</th>
+                <th className="px-4 py-2.5 font-medium">Models</th>
                 <th className="px-5 py-2.5 text-right font-medium">Actions</th>
               </tr>
             </thead>
@@ -116,8 +142,44 @@ export function AdminLabsPage() {
                       {lab.logo}
                     </code>
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-muted-foreground">
-                    {lab.modelCount}
+                  <td className="px-4 py-3">
+                    {lab.models.length ? (
+                      <div className="min-w-64 space-y-1">
+                        {lab.models.map((model, index) => (
+                          <div key={model.id} className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1.5">
+                            <AiLogo icon={model.logo ?? lab.logo} className="size-4" />
+                            <span className="min-w-0 flex-1 truncate font-medium">{model.name}</span>
+                            {(!model.enabled || !model.visible) && (
+                              <Badge variant="outline" className="text-[10px] font-normal">
+                                {!model.enabled ? 'Disabled' : 'Hidden'}
+                              </Badge>
+                            )}
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              title={`Move ${model.name} up`}
+                              aria-label={`Move ${model.name} up`}
+                              disabled={index === 0}
+                              onClick={() => void moveModel(lab, index, -1)}
+                            >
+                              <ArrowUp className="size-3.5" />
+                            </Button>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              title={`Move ${model.name} down`}
+                              aria-label={`Move ${model.name} down`}
+                              disabled={index === lab.models.length - 1}
+                              onClick={() => void moveModel(lab, index, 1)}
+                            >
+                              <ArrowDown className="size-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">No linked models</span>
+                    )}
                   </td>
                   <td className="px-5 py-3">
                     {lab.builtin ? <div className="flex justify-end"><Badge variant="outline">Built-in</Badge></div> : <div className="flex justify-end gap-1">

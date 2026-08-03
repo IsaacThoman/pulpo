@@ -124,6 +124,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       .leftJoin(labs, eq(models.labId, labs.id))
       .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
       .where(and(eq(models.enabled, true), eq(models.visible, true)))
+      .orderBy(asc(models.sortOrder), asc(models.createdAt))
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
     const agentAvailable = parseAgentSettings(agentRow?.value).enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
     return { agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
@@ -310,15 +311,27 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/admin/labs', async (request) => {
     requireAdmin(request)
-    const rows = await db.select({
-      lab: labs,
-      modelCount: sql<number>`count(${models.id})::int`,
-    }).from(labs).leftJoin(models, eq(models.labId, labs.id)).groupBy(labs.id).orderBy(labs.createdAt)
-    return { data: rows.map(({ lab, modelCount }) => ({
+    const [labRows, modelRows] = await Promise.all([
+      db.select().from(labs).orderBy(labs.createdAt),
+      db.select({
+        id: models.id,
+        labId: models.labId,
+        name: models.name,
+        logo: models.logo,
+        enabled: models.enabled,
+        visible: models.visible,
+        sortOrder: models.sortOrder,
+      }).from(models).orderBy(asc(models.sortOrder), asc(models.createdAt)),
+    ])
+    return { data: labRows.map((lab) => {
+      const labModels = modelRows.filter((model) => model.labId === lab.id)
+      return {
       ...lab,
-      modelCount: Number(modelCount),
+      models: labModels,
+      modelCount: labModels.length,
       builtin: lab.id === INTERNAL_LAB_ID,
-    })) }
+      }
+    }) }
   })
 
   app.post('/api/admin/labs', async (request, reply) => {
@@ -340,6 +353,31 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     return updated
   })
 
+  app.put('/api/admin/labs/:id/models/order', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const { modelIds } = z.object({ modelIds: z.array(z.string()).max(1_000) }).parse(request.body)
+    if (new Set(modelIds).size !== modelIds.length) {
+      throw new AppError(400, 'validation_error', 'Model order cannot contain duplicates')
+    }
+    const existing = await db.select({ id: models.id }).from(models).where(eq(models.labId, id))
+    const existingIds = new Set(existing.map((model) => model.id))
+    if (modelIds.length !== existingIds.size || modelIds.some((modelId) => !existingIds.has(modelId))) {
+      throw new AppError(400, 'validation_error', 'Model order must contain every model in the lab exactly once')
+    }
+    await db.transaction(async (tx) => {
+      for (const [sortOrder, modelId] of modelIds.entries()) {
+        await tx.update(models)
+          .set({ sortOrder, updatedAt: new Date() })
+          .where(and(eq(models.id, modelId), eq(models.labId, id)))
+      }
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'lab.models.reorder', targetType: 'lab', targetId: id,
+      })
+    })
+    return { data: modelIds }
+  })
+
   app.delete('/api/admin/labs/:id', async (request, reply) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
@@ -356,6 +394,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     requireAdmin(request)
     const rows = await db.select({ model: models, pricing: modelPricingVersions }).from(models)
       .leftJoin(modelPricingVersions, and(eq(models.id, modelPricingVersions.modelId), isNull(modelPricingVersions.effectiveTo)))
+      .orderBy(asc(models.sortOrder), asc(models.createdAt))
     return { data: await Promise.all(rows.map(async ({ model, pricing }) => ({
       ...model,
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
@@ -381,14 +420,19 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     await validateFallback(input.id, input.fallbackModelId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
     const pricingId = newId()
+    const labId = input.labId ?? INTERNAL_LAB_ID
+    const [{ nextSortOrder }] = await db.select({
+      nextSortOrder: sql<number>`coalesce(max(${models.sortOrder}), -1)::int + 1`,
+    }).from(models).where(eq(models.labId, labId))
     await db.transaction(async (tx) => {
       await tx.insert(models).values({
         id: input.id,
         providerConnectionId: input.providerConnectionId,
-        labId: input.labId ?? INTERNAL_LAB_ID,
+        labId,
         upstreamModelId: input.upstreamModelId,
         name: input.name,
         description: input.description,
+        sortOrder: nextSortOrder,
         enabled: input.enabled,
         visible: input.visible,
         logo: input.logo,
@@ -442,12 +486,18 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     validateDefaultParameters(effectiveDefaults, effectiveAllowed)
     if (parsedPresets) await validatePresets(id, parsedPresets, effectiveAllowed)
     if (body.fallbackModelId !== undefined) await validateFallback(id, typeof body.fallbackModelId === 'string' ? body.fallbackModelId : null)
+    const requestedLabId = typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : current.labId
+    const labChanged = requestedLabId !== current.labId
+    const [{ nextSortOrder }] = labChanged
+      ? await db.select({ nextSortOrder: sql<number>`coalesce(max(${models.sortOrder}), -1)::int + 1` }).from(models).where(eq(models.labId, requestedLabId))
+      : [{ nextSortOrder: current.sortOrder }]
     const [updated] = await db.update(models).set({
       name: typeof body.name === 'string' ? body.name : undefined,
       description: typeof body.description === 'string' ? body.description : undefined,
       upstreamModelId: typeof body.upstreamModelId === 'string' ? body.upstreamModelId : undefined,
       providerConnectionId: typeof body.providerConnectionId === 'string' ? body.providerConnectionId : undefined,
-      labId: typeof body.labId === 'string' ? body.labId : body.labId === null ? INTERNAL_LAB_ID : undefined,
+      labId: labChanged ? requestedLabId : undefined,
+      sortOrder: labChanged ? nextSortOrder : undefined,
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       visible: typeof body.visible === 'boolean' ? body.visible : undefined,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
