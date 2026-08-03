@@ -5,6 +5,7 @@ export function mergePendingLocalMessages(
   serverMessages: Message[],
   localMessages: Message[] | undefined,
   streamingIds: readonly string[] = [],
+  knownResponseIds: ReadonlySet<string> = new Set(),
 ): Message[] {
   if (!localMessages?.length) return serverMessages
   if (!serverMessages.length) {
@@ -21,9 +22,20 @@ export function mergePendingLocalMessages(
   }
 
   const serverIds = new Set(serverMessages.map((message) => message.id))
+  const selectedResponseIds = new Set(serverMessages.map((message) => (
+    message.role === 'user' && message.id.endsWith(':input')
+      ? message.id.slice(0, -':input'.length)
+      : message.id
+  )))
+  const relevantLocalMessages = localMessages.filter((message) => {
+    const responseId = message.role === 'user' && message.id.endsWith(':input')
+      ? message.id.slice(0, -':input'.length)
+      : message.id
+    return selectedResponseIds.has(responseId) || !knownResponseIds.has(responseId)
+  })
   const pending: Message[] = []
-  for (let index = localMessages.length - 1; index >= 0; index -= 1) {
-    const message = localMessages[index]!
+  for (let index = relevantLocalMessages.length - 1; index >= 0; index -= 1) {
+    const message = relevantLocalMessages[index]!
     if (serverIds.has(message.id)) break
     if (message.role === 'user' && message.id.endsWith(':input')) {
       const responseId = message.id.slice(0, -':input'.length)
@@ -37,9 +49,9 @@ export function mergePendingLocalMessages(
     message.role === 'assistant' && (!message.done || Boolean(message.error)),
   )
   const lastServerId = serverMessages.at(-1)?.id
-  const lastServerLocalIndex = lastServerId ? localMessages.findIndex((message) => message.id === lastServerId) : -1
+  const lastServerLocalIndex = lastServerId ? relevantLocalMessages.findIndex((message) => message.id === lastServerId) : -1
   const serverIsLocalPrefix = lastServerLocalIndex >= 0
-    && serverMessages.every((message) => localMessages.some((local) => local.id === message.id))
+    && serverMessages.every((message) => relevantLocalMessages.some((local) => local.id === message.id))
     && lastServerLocalIndex === serverMessages.length - 1
 
   if (hasLocalOnlyTurn || serverIsLocalPrefix) return [...serverMessages, ...pending]

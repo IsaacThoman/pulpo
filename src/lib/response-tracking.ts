@@ -35,7 +35,7 @@ export function reindexDetailedChatResponses(
   chat: Chat,
   detail?: ResponseDetail,
 ): Record<string, string> {
-  const next = Object.fromEntries(Object.entries(index).filter(([, chatId]) => chatId !== chat.id))
+  const next = { ...index }
   for (const response of detail?.responses ?? []) next[response.id] = chat.id
   for (const message of chat.messages) {
     if (message.role === 'assistant') next[message.id] = chat.id

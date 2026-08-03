@@ -12,7 +12,15 @@ import { cn } from '@/lib/utils'
 
 const EMPTY_CHATS = [] as const
 
-export function SearchModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SearchModal({
+  open,
+  onClose,
+  onQueryPresenceChange,
+}: {
+  open: boolean
+  onClose: () => void
+  onQueryPresenceChange?: (hasQuery: boolean) => void
+}) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
   const chats = useChat((state) => open ? state.chats : EMPTY_CHATS)
@@ -25,6 +33,10 @@ export function SearchModal({ open, onClose }: { open: boolean; onClose: () => v
       setCursor(0)
     }
   }, [open])
+
+  useEffect(() => {
+    onQueryPresenceChange?.(open && query.trim().length > 0)
+  }, [onQueryPresenceChange, open, query])
 
   useEffect(() => {
     const q = query.trim()

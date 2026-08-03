@@ -15,6 +15,7 @@ export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [sidebarTransitions, setSidebarTransitions] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const location = useLocation()
 
@@ -101,7 +102,7 @@ export function AppLayout() {
           />
         )}
         <Sidebar
-          collapsed={mobile ? false : collapsed}
+          collapsed={mobile ? false : collapsed || searchHasQuery}
           mobile={mobile}
           mobileOpen={mobileOpen}
           transitions={sidebarTransitions}
@@ -120,7 +121,14 @@ export function AppLayout() {
           <Outlet />
         </main>
       </div>
-      <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <SearchModal
+        open={searchOpen}
+        onClose={() => {
+          setSearchOpen(false)
+          setSearchHasQuery(false)
+        }}
+        onQueryPresenceChange={setSearchHasQuery}
+      />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </TooltipProvider>
   )

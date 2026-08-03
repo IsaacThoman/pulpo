@@ -37,7 +37,12 @@ describe('mergePendingLocalMessages', () => {
     const server = [message('saved:input', 'user'), message('saved', 'assistant')]
     const pending = [message('pending:input', 'user'), message('pending', 'assistant', false)]
 
-    expect(mergePendingLocalMessages(server, [...server, ...pending], ['pending'])).toEqual([...server, ...pending])
+    expect(mergePendingLocalMessages(
+      server,
+      [...server, ...pending],
+      ['pending'],
+      new Set(['saved']),
+    )).toEqual([...server, ...pending])
   })
 
   it('appends a failed optimistic turn to a non-empty server prefix', () => {
@@ -46,7 +51,12 @@ describe('mergePendingLocalMessages', () => {
     failed.error = 'The fallback model is not enabled for agent mode'
     const pending = [message('failed:input', 'user'), failed]
 
-    expect(mergePendingLocalMessages(server, [...server, ...pending], [])).toEqual([...server, ...pending])
+    expect(mergePendingLocalMessages(
+      server,
+      [...server, ...pending],
+      [],
+      new Set(['saved']),
+    )).toEqual([...server, ...pending])
   })
 
   it('preserves multiple concurrent optimistic turns on empty detail', () => {
@@ -56,5 +66,27 @@ describe('mergePendingLocalMessages', () => {
     ]
 
     expect(mergePendingLocalMessages([], local, ['a', 'b'])).toEqual(local)
+  })
+
+  it('does not append an in-flight sibling outside the selected lineage', () => {
+    const selected = [message('a:input', 'user'), message('a', 'assistant')]
+    const sibling = [message('b:input', 'user'), message('b', 'assistant', false)]
+
+    expect(mergePendingLocalMessages(
+      selected,
+      sibling,
+      ['b'],
+      new Set(['a', 'b']),
+    )).toEqual(selected)
+  })
+
+  it('switches between known sibling lineages without retaining the previous branch', () => {
+    const branchA = [message('a:input', 'user'), message('a', 'assistant')]
+    const branchB = [message('b:input', 'user'), message('b', 'assistant', false)]
+    const known = new Set(['a', 'b'])
+    const whileBack = mergePendingLocalMessages(branchA, branchB, ['b'], known)
+
+    expect(whileBack).toEqual(branchA)
+    expect(mergePendingLocalMessages(branchB, whileBack, ['b'], known)).toEqual(branchB)
   })
 })

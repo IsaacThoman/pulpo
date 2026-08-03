@@ -14,6 +14,7 @@ import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { coalesceResponseEvents } from '@/features/chat/response-sync'
 import { withBranchMetadata } from '@/lib/message-branches'
 import { reconcileStreamingResponseIds, reindexDetailedChatResponses } from '@/lib/response-tracking'
+import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
 
@@ -45,7 +46,7 @@ function applySortOrders(ids: string[]): Map<string, number> {
   return new Map(ids.map((id, index) => [id, index]))
 }
 
-interface ServerResponse {
+export interface ServerResponse {
   id: string
   parentResponseId: string | null
   userMessageId: string | null
@@ -261,6 +262,7 @@ function toChat(
   current?: Chat,
   responseSequences: Record<string, number> = {},
   streamingIds: readonly string[] = [],
+  durableResponseIds: ReadonlySet<string> = new Set(),
 ): Chat {
   const selectedResponses = row.responses
     ? lineageFromLeaf(row.responses, row.activeBranchLeafId ?? row.activeResponseId ?? row.responses.at(-1)?.id ?? null)
@@ -279,6 +281,10 @@ function toChat(
     }),
     selectedResponses ? current?.messages : undefined,
     streamingIds,
+    new Set([
+      ...durableResponseIds,
+      ...(row.responses?.map((response) => response.id) ?? []),
+    ]),
   )
   return {
     id: row.id,
@@ -299,11 +305,7 @@ function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
 function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
 const pendingOptimisticResponses = new Map<string, { chatId: string; response: ServerResponse }>()
-const desiredBranchLeaves = new Map<string, string>()
-
-function clearDesiredBranchLeaf(chatId: string, responseId: string): void {
-  if (desiredBranchLeaves.get(chatId) === responseId) desiredBranchLeaves.delete(chatId)
-}
+const branchSelectionIntents = new BranchSelectionIntents()
 
 function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
   if (!row.responses) return row
@@ -313,13 +315,16 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
   for (const [responseId, pending] of pendingOptimisticResponses) {
     if (pending.chatId !== row.id) continue
     if (serverIds.has(responseId)) {
-      pendingOptimisticResponses.delete(responseId)
+      const serverResponse = responses.find((response) => response.id === responseId)
+      const pendingTerminal = !['queued', 'in_progress'].includes(pending.response.status)
+      const serverTerminal = serverResponse && !['queued', 'in_progress'].includes(serverResponse.status)
+      if (pendingTerminal && serverTerminal) pendingOptimisticResponses.delete(responseId)
       continue
     }
     responses.push(pending.response)
     changed = true
   }
-  const desiredLeaf = desiredBranchLeaves.get(row.id)
+  const desiredLeaf = branchSelectionIntents.current(row.id)?.leafId
   const activeLeaf = desiredLeaf && responses.some((response) => response.id === desiredLeaf)
     ? desiredLeaf
     : row.activeBranchLeafId
@@ -345,7 +350,7 @@ function cacheOptimisticTurn(input: {
   presetSelections: Record<string, string>
   createdAt: number
   parentResponseId: string | null
-}): void {
+}): number {
   const createdAt = new Date(input.createdAt).toISOString()
   const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
   const response: ServerResponse = {
@@ -377,7 +382,7 @@ function cacheOptimisticTurn(input: {
     branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
   }
   pendingOptimisticResponses.set(response.id, { chatId: input.chatId, response })
-  desiredBranchLeaves.set(input.chatId, response.id)
+  const selectionIntent = branchSelectionIntents.select(input.chatId, response.id)
   const detail: ServerChat = existing
     ? {
         ...existing,
@@ -419,6 +424,7 @@ function cacheOptimisticTurn(input: {
     const summary = { ...detail, responses: undefined }
     return [summary, ...rows.filter((row) => row.id !== input.chatId)]
   })
+  return selectionIntent.version
 }
 
 function replaceInputText(input: unknown[], content: string): unknown[] {
@@ -451,7 +457,7 @@ function cacheOptimisticBranch(input: {
   displayModelId: string
   presetSelections: Record<string, string>
   editedInput?: string
-}): ServerChat | undefined {
+}): { chat: ServerChat; selectionVersion: number } | undefined {
   const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
   const source = existing?.responses?.find((response) => response.id === input.sourceResponseId)
   if (!existing?.responses || !source) return undefined
@@ -482,7 +488,7 @@ function cacheOptimisticBranch(input: {
     userMessageId: input.editedInput === undefined ? source.userMessageId : crypto.randomUUID(),
   }
   pendingOptimisticResponses.set(response.id, { chatId: input.chatId, response })
-  desiredBranchLeaves.set(input.chatId, response.id)
+  const selectionIntent = branchSelectionIntents.select(input.chatId, response.id)
   const updated: ServerChat = {
     ...existing,
     updatedAt: createdAt,
@@ -491,7 +497,7 @@ function cacheOptimisticBranch(input: {
     responses: withBranchMetadata([...existing.responses, response]),
   }
   queryClient.setQueryData(chatKey(input.chatId), updated)
-  return updated
+  return { chat: updated, selectionVersion: selectionIntent.version }
 }
 
 const pendingResponseEvents = new Map<string, {
@@ -634,12 +640,14 @@ function failOptimisticResponse(
   chatId: string,
   responseId: string,
   fallbackResponseId: string,
+  selectionVersion: number,
   message: string,
 ): ServerChat | undefined {
   const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
   if (!current?.responses?.some((response) => response.id === responseId)) return current
   const failedAt = new Date().toISOString()
-  const restoreFallback = current.activeBranchLeafId === responseId
+  const restoreFallback = branchSelectionIntents.isCurrent(chatId, selectionVersion)
+    && current.activeBranchLeafId === responseId
   const updated: ServerChat = {
     ...current,
     activeResponseId: restoreFallback ? fallbackResponseId : current.activeResponseId,
@@ -654,7 +662,7 @@ function failOptimisticResponse(
   }
   const failedResponse = updated.responses?.find((response) => response.id === responseId)
   if (failedResponse) pendingOptimisticResponses.set(responseId, { chatId, response: failedResponse })
-  if (restoreFallback) desiredBranchLeaves.set(chatId, fallbackResponseId)
+  if (restoreFallback) branchSelectionIntents.select(chatId, fallbackResponseId)
   queryClient.setQueryData(chatKey(chatId), updated)
   return updated
 }
@@ -699,7 +707,18 @@ export const useChat = create<ChatState>()((set, get) => ({
           response.snapshot.sequence,
         )
       }
-      const chat = toChat(row, state.chats.find((item) => item.id === row.id), responseSequences, state.streamingIds)
+      const durableResponseIds = new Set(
+        Object.entries(state.responseChatIds)
+          .filter(([, chatId]) => chatId === row.id)
+          .map(([responseId]) => responseId),
+      )
+      const chat = toChat(
+        row,
+        state.chats.find((item) => item.id === row.id),
+        responseSequences,
+        state.streamingIds,
+        durableResponseIds,
+      )
       const exists = state.chats.some((item) => item.id === row.id)
       const chats = exists ? state.chats.map((item) => item.id === row.id ? chat : item) : [chat, ...state.chats]
       return {
@@ -758,6 +777,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     accumulatedResponseSnapshots.set(snapshot.responseId, acceptedSnapshot)
     snapshot = acceptedSnapshot
     const affectedChatId = get().responseChatIds[snapshot.responseId]
+    const terminal = !['queued', 'in_progress'].includes(snapshot.status)
     if (affectedChatId) persistResponseSnapshot(affectedChatId, snapshot)
     set((state) => {
       const inFlight = ['queued', 'in_progress'].includes(snapshot.status)
@@ -788,7 +808,11 @@ export const useChat = create<ChatState>()((set, get) => ({
         })),
       }
     })
-    if (!['queued', 'in_progress'].includes(snapshot.status) && options?.invalidate !== false) {
+    if (terminal && affectedChatId) {
+      const detail = queryClient.getQueryData<ServerChat>(chatKey(affectedChatId))
+      if (detail) get().setDetailedChat(detail)
+    }
+    if (terminal && options?.invalidate !== false) {
       void queryClient.invalidateQueries({ queryKey: chatsKey() })
       if (affectedChatId) void queryClient.invalidateQueries({ queryKey: chatKey(affectedChatId) })
     }
@@ -984,7 +1008,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         responseChatIds: { ...state.responseChatIds, [responseId]: id },
       }
     })
-    cacheOptimisticTurn({
+    const selectionVersion = cacheOptimisticTurn({
       chatId: id,
       responseId,
       content,
@@ -1057,7 +1081,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           }
         })
       }
-      if (result !== undefined) clearDesiredBranchLeaf(id, serverId ?? responseId)
+      if (result !== undefined) branchSelectionIntents.clear(id, selectionVersion)
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
       await queryClient.invalidateQueries({ queryKey: chatKey(id) })
     })().catch((error: unknown) => {
@@ -1103,7 +1127,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
     )
     const responseId = crypto.randomUUID()
-    const updated = cacheOptimisticBranch({
+    const optimistic = cacheOptimisticBranch({
       chatId,
       sourceResponseId: messageId,
       responseId,
@@ -1111,18 +1135,20 @@ export const useChat = create<ChatState>()((set, get) => ({
       displayModelId: modelId,
       presetSelections: generation.selections,
     })
-    if (updated) get().setDetailedChat(updated)
+    const selectionVersion = optimistic?.selectionVersion
+      ?? branchSelectionIntents.select(chatId, responseId).version
+    if (optimistic) get().setDetailedChat(optimistic.chat)
     void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${messageId}/regenerate`, {
       clientId: responseId,
       modelId,
       presetSelections: generation.selections,
     })).then((result) => {
       if (result === undefined) return
-      clearDesiredBranchLeaf(chatId, responseId)
+      branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Unable to regenerate the response'
-      const failed = failOptimisticResponse(chatId, responseId, messageId, message)
+      const failed = failOptimisticResponse(chatId, responseId, messageId, selectionVersion, message)
       if (failed) get().setDetailedChat(failed)
     })
   },
@@ -1134,7 +1160,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     )
     const sourceResponseId = messageId.endsWith(':input') ? messageId.slice(0, -6) : messageId
     const responseId = crypto.randomUUID()
-    const updated = cacheOptimisticBranch({
+    const optimistic = cacheOptimisticBranch({
       chatId,
       sourceResponseId,
       responseId,
@@ -1143,7 +1169,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       presetSelections: generation.selections,
       editedInput: content,
     })
-    if (updated) get().setDetailedChat(updated)
+    const selectionVersion = optimistic?.selectionVersion
+      ?? branchSelectionIntents.select(chatId, responseId).version
+    if (optimistic) get().setDetailedChat(optimistic.chat)
     void enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, {
       clientId: responseId,
       content,
@@ -1151,11 +1179,11 @@ export const useChat = create<ChatState>()((set, get) => ({
       presetSelections: generation.selections,
     })).then((result) => {
       if (result === undefined) return
-      clearDesiredBranchLeaf(chatId, responseId)
+      branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'Unable to save and resend the message'
-      const failed = failOptimisticResponse(chatId, responseId, sourceResponseId, message)
+      const failed = failOptimisticResponse(chatId, responseId, sourceResponseId, selectionVersion, message)
       if (failed) get().setDetailedChat(failed)
     })
   },
@@ -1171,26 +1199,27 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   activateBranch: (chatId, responseId) => {
     const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    const intendedLeafId = cached?.responses?.some((response) => response.id === responseId)
+      ? newestDescendantId(cached.responses, responseId)
+      : responseId
+    const selectionIntent = branchSelectionIntents.select(chatId, intendedLeafId)
     if (cached?.responses?.some((response) => response.id === responseId)) {
-      const activeBranchLeafId = newestDescendantId(cached.responses, responseId)
-      const updated = { ...cached, activeResponseId: activeBranchLeafId, activeBranchLeafId }
+      const updated = { ...cached, activeResponseId: intendedLeafId, activeBranchLeafId: intendedLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
-      desiredBranchLeaves.set(chatId, activeBranchLeafId)
     }
-    const intendedLeafId = queryClient.getQueryData<ServerChat>(chatKey(chatId))?.activeBranchLeafId
     void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate`)).then((result) => {
       const activeBranchLeafId = (result as { activeBranchLeafId?: string } | undefined)?.activeBranchLeafId
       if (!activeBranchLeafId) return
+      if (!branchSelectionIntents.isCurrent(chatId, selectionIntent.version)) return
       const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
       if (!current) return
-      if (current.activeBranchLeafId !== intendedLeafId) return
+      branchSelectionIntents.clear(chatId, selectionIntent.version)
       const updated = { ...current, activeResponseId: activeBranchLeafId, activeBranchLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
-      clearDesiredBranchLeaf(chatId, activeBranchLeafId)
     }).catch(() => {
-      if (intendedLeafId) clearDesiredBranchLeaf(chatId, intendedLeafId)
+      branchSelectionIntents.clear(chatId, selectionIntent.version)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     })
   },

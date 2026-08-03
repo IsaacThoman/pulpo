@@ -39,4 +39,15 @@ describe('response tracking', () => {
 
     expect(reconcileStreamingResponseIds([chat], ['hidden-stream'], detail)).toEqual([])
   })
+
+  it('keeps known hidden response ownership when a stale detail omits it', () => {
+    expect(reindexDetailedChatResponses(
+      { 'hidden-stream': 'chat-1' },
+      chat,
+      { responses: [{ id: 'visible', status: 'completed' }] },
+    )).toEqual({
+      visible: 'chat-1',
+      'hidden-stream': 'chat-1',
+    })
+  })
 })
