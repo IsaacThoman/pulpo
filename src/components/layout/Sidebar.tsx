@@ -236,12 +236,11 @@ function FolderGroup({
           />
           <FolderIcon className="size-4 text-muted-foreground" />
           <span className="flex-1 truncate text-left">{folder.name}</span>
-          <span className="text-xs text-muted-foreground">{chats.length}</span>
         </CollapsibleTrigger>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="invisible mr-1 rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
+              className="invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
               aria-label="Folder options"
             >
               <MoreHorizontal className="size-4" />
@@ -263,6 +262,7 @@ function FolderGroup({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        <span className="mr-2 min-w-3 text-right text-xs text-muted-foreground">{chats.length}</span>
       </div>
       <CollapsibleContent className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2">
         {chats.length === 0 && (
