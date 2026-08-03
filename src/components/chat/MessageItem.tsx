@@ -26,6 +26,7 @@ import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from './Markdown'
 import { MessageAttachmentList } from './AttachmentImage'
+import { activityDurationMs } from './activity-timing'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -644,7 +645,7 @@ export const MessageItem = memo(function MessageItem({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
-  const [streamingActivityDurationMs, setStreamingActivityDurationMs] = useState<number>()
+  const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
@@ -671,6 +672,7 @@ export const MessageItem = memo(function MessageItem({
     return segments
   }, [message.role, message.outputItems, showReasoning, message.reasoning, message.content, streaming])
   const elapsedMs = useElapsedMs(message.timestamp, streaming && message.role === 'assistant', message.latencyMs)
+  const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
     -1,
@@ -680,16 +682,17 @@ export const MessageItem = memo(function MessageItem({
     .slice(lastActivityTimelineIndex + 1)
     .some((segment) => segment.kind === 'text')
   const activityFinishedDuringStream = streaming
+    && activitySegments.length === 1
     && lastActivitySegment?.kind === 'activity'
     && hasTextAfterLastActivity
 
   useEffect(() => {
     if (!streaming) return
     if (!activityFinishedDuringStream) {
-      setStreamingActivityDurationMs(undefined)
+      setStreamingFallbackDurationMs(undefined)
       return
     }
-    setStreamingActivityDurationMs((duration) => (
+    setStreamingFallbackDurationMs((duration) => (
       duration ?? Math.max(0, Date.now() - message.timestamp)
     ))
   }, [activityFinishedDuringStream, message.timestamp, streaming])
@@ -799,7 +802,6 @@ export const MessageItem = memo(function MessageItem({
     const type = (item as { type?: string }).type
     return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment'].includes(type)
   })
-  const activitySegments = timeline.filter((segment): segment is ActivitySegment => segment.kind === 'activity')
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
   let activityOrdinal = -1
@@ -850,13 +852,18 @@ export const MessageItem = memo(function MessageItem({
                   const hasFollowingText = timeline
                     .slice(index + 1)
                     .some((entry) => entry.kind === 'text')
+                  const active = !hasFollowingText && (segment.active || (streaming && isLastActivity))
+                  const segmentDurationMs = activityDurationMs(segment.steps)
+                  const useResponseDurationFallback = activitySegments.length === 1
+                    && isLastActivity
+                    && (!streaming || activityFinishedDuringStream)
                   return (
                     <ActivityBlock
                       key={`activity:${index}`}
                       steps={segment.steps}
-                      active={!hasFollowingText && (segment.active || (streaming && isLastActivity))}
-                      showDuration={isLastActivity && (!streaming || activityFinishedDuringStream)}
-                      durationMs={streamingActivityDurationMs ?? elapsedMs}
+                      active={active}
+                      showDuration={!active && (segmentDurationMs !== undefined || useResponseDurationFallback)}
+                      durationMs={segmentDurationMs ?? streamingFallbackDurationMs ?? elapsedMs}
                       messageId={message.id}
                       onStop={stopStreaming}
                       onContinue={(id) => {
