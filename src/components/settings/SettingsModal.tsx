@@ -74,7 +74,7 @@ interface DeletedChat {
 }
 
 const TRASH_RETENTION_LABELS: Record<TrashRetention, string> = {
-  instant: 'Instantly',
+  instant: 'No retention',
   '24h': '24 hours',
   '7d': '7 days',
   '30d': '30 days',
@@ -307,9 +307,8 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </div>
                   </div>
                   <Button
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
-                    className="text-destructive hover:bg-destructive/10 hover:text-destructive"
                     disabled={!deletedChats.length || s.trashRetention === 'instant'}
                     onClick={() => void permanentlyDeleteAll()}
                   >
@@ -356,12 +355,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                                 <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}>
                                   Recover
                                 </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                  onClick={() => void permanentlyDeleteChat(chat)}
-                                >
+                                <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}>
                                   Delete
                                 </Button>
                               </div>
