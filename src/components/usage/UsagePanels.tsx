@@ -54,9 +54,8 @@ export function RecentUsagePanel({
       {records.length === 0 ? (
         <div className="p-6 text-center text-xs text-muted-foreground">No usage records yet</div>
       ) : (
-        <div className="relative">
-          <div className="max-h-96 overflow-auto" onScroll={onScroll}>
-            <table className="w-full text-xs">
+        <div className="usage-records-scroll max-h-96 overflow-auto" onScroll={onScroll}>
+          <table className="w-full text-xs">
             <thead className="sticky top-0 z-10 bg-background">
               <tr className="border-b text-left text-muted-foreground">
                 <th className="bg-background px-3 py-2 font-normal">Time</th>
@@ -103,9 +102,7 @@ export function RecentUsagePanel({
                 )
               })}
             </tbody>
-            </table>
-          </div>
-          <div aria-hidden className="pointer-events-none absolute right-0 top-0 z-20 h-[33px] w-2 bg-background" />
+          </table>
         </div>
       )}
     </div>

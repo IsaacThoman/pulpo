@@ -138,6 +138,9 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
+.usage-records-scroll::-webkit-scrollbar-track:vertical {
+  margin-top: 33px;
+}
 
 @keyframes shimmer {
   100% {
