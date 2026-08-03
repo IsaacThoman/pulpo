@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Activity, Clock3, RefreshCw, Server, Users } from 'lucide-react'
+import { Activity, Clock3, Loader2, Power, RefreshCw, Server, Users } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 interface WorkspaceRow {
   id: string; controllerLeaseId: string | null; status: string; capacityState: string | null; queuePosition: number | null
@@ -60,11 +61,27 @@ function activityLabel(workspace: OpenWorkspace): string {
 export function AdminWorkspacesPage() {
   const [result, setResult] = useState<WorkspaceResult | null>(null)
   const [now, setNow] = useState(Date.now())
+  const [terminateTarget, setTerminateTarget] = useState<OpenWorkspace | null>(null)
+  const [terminating, setTerminating] = useState(false)
+  const [terminateError, setTerminateError] = useState<string | null>(null)
   const load = useCallback(async () => setResult(await apiRequest<WorkspaceResult>('/api/admin/usage/workspaces')), [])
   useEffect(() => { void load(); const refresh = window.setInterval(() => void load(), 2_000); const clock = window.setInterval(() => setNow(Date.now()), 1_000); return () => { clearInterval(refresh); clearInterval(clock) } }, [load])
   const rows = useMemo(() => result?.data ?? [], [result])
   const openWorkspaces = useMemo(() => [...(result?.openWorkspaces ?? [])].sort((a, b) => (stateOrder[a.lifecycleState] ?? 99) - (stateOrder[b.lifecycleState] ?? 99) || a.createdAt.localeCompare(b.createdAt)), [result])
   const policy = result?.policy
+  const terminate = async () => {
+    if (!terminateTarget?.leaseId) return
+    setTerminating(true); setTerminateError(null)
+    try {
+      await apiRequest(`/api/admin/usage/workspaces/${encodeURIComponent(terminateTarget.leaseId)}`, { method: 'DELETE' })
+      setTerminateTarget(null)
+      await load()
+    } catch (error) {
+      setTerminateError(error instanceof Error ? error.message : 'Unable to terminate workspace VM')
+    } finally {
+      setTerminating(false)
+    }
+  }
   return <div className="space-y-4">
     <div className="flex items-center gap-3"><div><h2 className="text-lg font-semibold">Agent workspaces</h2><p className="text-xs text-muted-foreground">Live leases, owners, queue state, and forced cleanup deadlines.</p></div><div className="flex-1" /><Button variant="outline" size="icon-sm" onClick={() => void load()} aria-label="Refresh workspaces"><RefreshCw /></Button></div>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
@@ -80,7 +97,7 @@ export function AdminWorkspacesPage() {
       <h3 className="text-sm font-semibold">Open VMs</h3>
       <p className="mb-2 text-xs text-muted-foreground">Every workspace pod currently present in the cluster, including warm capacity and terminating VMs.</p>
       <Card><div className="overflow-x-auto"><table className="w-full min-w-[1120px] text-left text-xs">
-        <thead className="text-muted-foreground"><tr className="border-b"><th className="p-3">State</th><th>Owner</th><th>Chat / model</th><th>VM</th><th>Open for</th><th>Activity</th><th>Idle closes in</th><th>Forced close in</th><th>Health</th></tr></thead>
+        <thead className="text-muted-foreground"><tr className="border-b"><th className="p-3">State</th><th>Owner</th><th>Chat / model</th><th>VM</th><th>Open for</th><th>Activity</th><th>Idle closes in</th><th>Forced close in</th><th>Health</th><th className="pr-3 text-right">Actions</th></tr></thead>
         <tbody>{openWorkspaces.length ? openWorkspaces.map((workspace) => {
           const warmPool = ['warm', 'warming'].includes(workspace.lifecycleState)
           return <tr key={workspace.id} className="border-b align-top hover:bg-muted/30">
@@ -93,8 +110,9 @@ export function AdminWorkspacesPage() {
             <td className="tabular-nums">{remaining(workspace.idleExpiresAt, now)}</td>
             <td className="tabular-nums">{remaining(workspace.hardExpiresAt, now)}</td>
             <td><span className={workspace.ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>{workspace.ready ? 'Ready' : workspace.phase}</span>{workspace.restartCount > 0 && <div className="text-amber-600">{workspace.restartCount} restarts</div>}</td>
+            <td className="pr-3 text-right">{workspace.leaseId && ['active', 'idle', 'starting'].includes(workspace.lifecycleState) ? <Button size="icon-sm" variant="ghost" className="hover:text-destructive" title="Terminate VM" aria-label={`Terminate ${workspace.name}`} onClick={() => { setTerminateError(null); setTerminateTarget(workspace) }}><Power /></Button> : <span className="text-muted-foreground">—</span>}</td>
           </tr>
-        }) : <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">{result ? 'No open workspace VMs.' : 'Loading VM inventory…'}</td></tr>}</tbody>
+        }) : <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">{result ? 'No open workspace VMs.' : 'Loading VM inventory…'}</td></tr>}</tbody>
       </table></div></Card>
     </div>
     <div>
@@ -119,6 +137,20 @@ export function AdminWorkspacesPage() {
       }) : <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No workspace leases yet.</td></tr>}</tbody>
     </table></div></Card>
     </div>
+    <Dialog open={!!terminateTarget} onOpenChange={(open) => { if (!open && !terminating) { setTerminateTarget(null); setTerminateError(null) } }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Terminate workspace VM?</DialogTitle>
+          <DialogDescription>This immediately stops the VM and any running operation. The user can receive a new workspace if they use agent tools again.</DialogDescription>
+        </DialogHeader>
+        {terminateTarget && <div className="rounded-md border bg-muted/30 p-3 text-xs"><div className="font-medium">{terminateTarget.user?.name || terminateTarget.user?.email || 'Unassigned workspace'}</div><div className="mt-1 text-muted-foreground">{terminateTarget.chat?.title ?? 'No chat'} · <span className="font-mono">{terminateTarget.name}</span></div></div>}
+        {terminateError && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{terminateError}</div>}
+        <DialogFooter>
+          <Button variant="outline" disabled={terminating} onClick={() => { setTerminateTarget(null); setTerminateError(null) }}>Cancel</Button>
+          <Button variant="destructive" disabled={terminating} onClick={() => void terminate()}>{terminating ? <Loader2 className="animate-spin" /> : <Power />}{terminating ? 'Terminating…' : 'Terminate VM'}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 }
 

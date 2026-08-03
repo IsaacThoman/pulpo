@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
-import { notFound } from '../lib/errors.js'
+import { AppError, notFound } from '../lib/errors.js'
 import { reconcileWorkspaceLeases } from '../agent/controller.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
@@ -40,6 +40,33 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 }
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
+  app.delete('/api/admin/usage/workspaces/:leaseId', async (request) => {
+    requireAdmin(request)
+    const { leaseId } = z.object({ leaseId: z.string().uuid() }).parse(request.params)
+    const [lease] = await db.select().from(workspaceLeases)
+      .where(and(eq(workspaceLeases.controllerLeaseId, leaseId), inArray(workspaceLeases.status, ['provisioning', 'ready']))).limit(1)
+    if (!lease) throw notFound('Active workspace lease')
+
+    const config = getConfig()
+    if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) {
+      throw new AppError(503, 'workspace_controller_unavailable', 'Workspace controller is not configured')
+    }
+    let response: Response
+    try {
+      response = await workspaceControllerRequest(`/v1/leases/${leaseId}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) })
+    } catch (error) {
+      throw new AppError(502, 'workspace_termination_failed', `Workspace controller could not terminate the VM: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!response.ok) {
+      throw new AppError(502, 'workspace_termination_failed', `Workspace controller could not terminate the VM (${response.status})`)
+    }
+
+    const now = new Date()
+    await db.update(workspaceLeases).set({ status: 'released', capacityState: null, releasedAt: now, updatedAt: now })
+      .where(and(eq(workspaceLeases.id, lease.id), inArray(workspaceLeases.status, ['provisioning', 'ready'])))
+    return { status: 'released' }
+  })
+
   app.get('/api/admin/usage/workspaces', async (request) => {
     requireAdmin(request)
     await reconcileWorkspaceLeases()
