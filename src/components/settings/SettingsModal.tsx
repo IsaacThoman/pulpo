@@ -22,7 +22,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
   SelectContent,
@@ -100,8 +99,8 @@ function trashDeletesLabel(iso: string | null, now = Date.now()): string {
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 py-3">
-      <div className="min-w-0">
+    <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+      <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{label}</div>
         {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
       </div>
@@ -246,9 +245,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="h-[600px] max-h-[85vh] gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="flex h-[600px] max-h-[85vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <DialogTitle className="sr-only">Settings</DialogTitle>
-        <div className="flex h-full min-h-0">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
           {/* nav */}
           <div className="flex w-52 shrink-0 flex-col border-r bg-muted/30 p-3">
             <div className="px-2 pb-2 text-sm font-semibold">Settings</div>
@@ -286,9 +285,8 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
           </div>
 
           {/* content */}
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <ScrollArea className="min-h-0 min-w-0 flex-1">
-            <div className="min-w-0 p-6">
+          <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+            <div className="p-6">
               {section === 'trash' && (
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold">Trash</h2>
@@ -343,12 +341,12 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                         const deletedTs = new Date(chat.deletedAt).getTime()
                         const purgeTs = chat.purgeAt ? new Date(chat.purgeAt).getTime() : null
                         return (
-                          <div key={chat.id} className="flex min-w-0 items-center gap-2.5 py-2.5">
+                          <div key={chat.id} className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 py-2.5">
                             <ModelIcon
                               model={getCatalogModel(chat.modelId)}
                               className="size-4 shrink-0 rounded-[2px]"
                             />
-                            <div className="min-w-0 flex-1 overflow-hidden">
+                            <div className="min-w-0 overflow-hidden">
                               <div className="truncate text-sm font-medium">{chat.title}</div>
                               <div className="mt-0.5 truncate text-xs text-muted-foreground">
                                 <span title={formatDateTime(deletedTs)}>{trashTrashedLabel(chat.deletedAt)}</span>
@@ -358,7 +356,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                                 </span>
                               </div>
                             </div>
-                            <div className="flex shrink-0 items-center gap-1.5">
+                            <div className="flex items-center gap-1.5">
                               <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}>
                                 Recover
                               </Button>
@@ -600,7 +598,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 </div>
               )}
             </div>
-            </ScrollArea>
           </div>
         </div>
       </DialogContent>
