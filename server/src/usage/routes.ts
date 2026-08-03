@@ -2,8 +2,8 @@ import { and, asc, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { creditLedger, models, usageEvents, users } from '../database/schema.js'
-import { decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant } from './public.js'
+import { creditLedger, models, requestLogs, usageEvents, users } from '../database/schema.js'
+import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant } from './public.js'
 
 function sinceFromQuery(query: unknown): Date {
   const days = Math.min(365, Math.max(1, Number((query as { days?: string }).days ?? 30)))
@@ -46,15 +46,32 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/usage/records', async (request) => {
     const user = requireUser(request)
     const limit = Math.min(200, Math.max(1, Number((request.query as { limit?: string }).limit ?? 50)))
+    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const rows = await db.select({
       usage: usageEvents,
       balanceAfterMicros: creditLedger.balanceAfterMicros,
+      displayModelId: models.id,
+      displayModelName: models.name,
+      displayModelLogo: models.logo,
+      displayModelVisible: models.visible,
     }).from(usageEvents)
       .leftJoin(creditLedger, eq(creditLedger.responseId, usageEvents.responseId))
+      .leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId))
+      .innerJoin(models, eq(models.id, attributedModelId))
       .where(eq(usageEvents.userId, user.id))
       .orderBy(desc(usageEvents.createdAt))
       .limit(limit)
-    return { data: rows.map(({ usage, balanceAfterMicros }) => ({ ...usage, balanceAfterMicros })) }
+    const canonical = canonicalUsageModels(rows.map((row) => ({
+      modelId: row.displayModelId, modelName: row.displayModelName, modelLogo: row.displayModelLogo,
+      modelVisible: row.displayModelVisible, calls: 1, costMicros: Number(row.usage.costMicros),
+    })))
+    return { data: rows.map(({ usage, balanceAfterMicros, displayModelId }) => ({
+      ...usage,
+      // Presentation follows the user's selected model; cost and pricing fields
+      // remain those of the actual responder recorded on the usage event.
+      modelId: canonical.get(displayModelId)?.modelId ?? displayModelId,
+      balanceAfterMicros,
+    })) }
   })
 
   app.get('/api/usage/daily', async (request) => {
@@ -109,7 +126,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const since = leaderboardSince(request.query)
     const rangeWhere = and(...eligibleUsageFilters(since))
     const allWhere = and(...eligibleUsageFilters(null))
-    const modelKey = sql<string>`case when ${models.visible} then ${models.id} else 'other' end`
+    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [summary, daily, contribution, topModels] = await Promise.all([
       db.select({
         calls: sql<number>`count(*)::int`,
@@ -120,13 +137,16 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).where(rangeWhere),
       db.select({
         day: sql<string>`date_trunc('day', ${usageEvents.createdAt})::date`,
-        modelId: modelKey,
+        modelId: models.id,
+        modelName: models.name,
+        modelLogo: models.logo,
+        modelVisible: models.visible,
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
         outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-      }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(usageEvents.modelId, models.id))
-        .where(rangeWhere).groupBy(sql`date_trunc('day', ${usageEvents.createdAt})`, modelKey).orderBy(asc(sql`date_trunc('day', ${usageEvents.createdAt})`)),
+      }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
+        .where(rangeWhere).groupBy(sql`date_trunc('day', ${usageEvents.createdAt})`, models.id).orderBy(asc(sql`date_trunc('day', ${usageEvents.createdAt})`)),
       db.select({
         day: sql<string>`date_trunc('day', ${usageEvents.createdAt})::date`,
         calls: sql<number>`count(*)::int`,
@@ -136,24 +156,54 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).where(allWhere)
         .groupBy(sql`date_trunc('day', ${usageEvents.createdAt})`).orderBy(asc(sql`date_trunc('day', ${usageEvents.createdAt})`)),
       db.select({
-        modelId: modelKey,
+        modelId: models.id,
+        modelName: models.name,
+        modelLogo: models.logo,
+        modelVisible: models.visible,
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
         outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
-      }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(usageEvents.modelId, models.id))
-        .where(rangeWhere).groupBy(modelKey).orderBy(desc(sql`sum(${usageEvents.costMicros})`)).limit(10),
+      }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
+        .where(rangeWhere).groupBy(models.id).orderBy(desc(sql`sum(${usageEvents.costMicros})`)),
     ])
     const totals = summary[0]
+    const canonical = canonicalUsageModels(topModels.map((row) => ({
+      ...row, calls: Number(row.calls), costMicros: Number(row.costMicros),
+    })))
+    const publicCanonical = new Map([...canonical.entries()].map(([id, model]) => [id, publicModel({
+      visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo,
+    })]))
+    const dailyByModel = new Map<string, { day: string; modelId: string; calls: number; inputTokens: number; outputTokens: number; costMicros: number }>()
+    for (const row of daily) {
+      const modelId = publicCanonical.get(row.modelId)?.id ?? 'other'
+      const key = `${row.day}:${modelId}`
+      const current = dailyByModel.get(key) ?? { day: row.day, modelId, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
+      current.calls += Number(row.calls)
+      current.inputTokens += Number(row.inputTokens)
+      current.outputTokens += Number(row.outputTokens)
+      current.costMicros += Number(row.costMicros)
+      dailyByModel.set(key, current)
+    }
+    const topByModel = new Map<string, { modelId: string; calls: number; inputTokens: number; outputTokens: number; costMicros: number }>()
+    for (const row of topModels) {
+      const modelId = publicCanonical.get(row.modelId)?.id ?? 'other'
+      const current = topByModel.get(modelId) ?? { modelId, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
+      current.calls += Number(row.calls)
+      current.inputTokens += Number(row.inputTokens)
+      current.outputTokens += Number(row.outputTokens)
+      current.costMicros += Number(row.costMicros)
+      topByModel.set(modelId, current)
+    }
     return {
       summary: {
         calls: Number(totals?.calls ?? 0), inputTokens: Number(totals?.inputTokens ?? 0),
         outputTokens: Number(totals?.outputTokens ?? 0), costMicros: Number(totals?.costMicros ?? 0),
         firstUsedAt: totals?.firstUsedAt ?? null,
       },
-      daily: daily.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
+      daily: [...dailyByModel.values()],
       contribution: contribution.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
-      topModels: topModels.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
+      topModels: [...topByModel.values()].sort((a, b) => b.costMicros - a.costMicros).slice(0, 10),
     }
   })
 
@@ -167,6 +217,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       lt(usageEvents.createdAt, cursor.createdAt),
       and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
     ) : undefined
+    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const rows = await db.select({
       usage: usageEvents,
       userName: users.name,
@@ -177,7 +228,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       modelName: models.name,
       modelLogo: models.logo,
       modelVisible: models.visible,
-    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).innerJoin(models, eq(usageEvents.modelId, models.id))
+    }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
       .where(and(...eligibleUsageFilters(since), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(limit + 1)
     const page = rows.slice(0, limit)
     const last = page.at(-1)?.usage

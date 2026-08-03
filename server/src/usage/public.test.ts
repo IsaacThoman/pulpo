@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant } from './public.js'
+import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant } from './public.js'
 
 describe('public leaderboard usage', () => {
   it('round trips stable timestamp and id cursors', () => {
@@ -21,5 +21,14 @@ describe('public leaderboard usage', () => {
       .toEqual({ name: 'Nick', color: '#00ff00', anonymous: false })
     expect(publicModel({ visible: false, id: 'secret-model', name: 'Secret', logo: 'secret' }))
       .toEqual({ id: 'other', name: 'Other', logo: null })
+  })
+
+  it('combines duplicate display names into their most-used model', () => {
+    const canonical = canonicalUsageModels([
+      { modelId: 'kimi-fast', modelName: 'Kimi K3', modelLogo: null, modelVisible: false, calls: 10, costMicros: 196_700 },
+      { modelId: 'kimi', modelName: ' KIMI K3 ', modelLogo: 'kimi', modelVisible: true, calls: 27, costMicros: 502_800 },
+    ])
+    expect(canonical.get('kimi-fast')?.modelId).toBe('kimi')
+    expect(canonical.get('kimi')?.modelId).toBe('kimi')
   })
 })

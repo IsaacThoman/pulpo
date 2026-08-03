@@ -45,3 +45,43 @@ export function publicModel(input: {
     ? { id: input.id, name: input.name, logo: input.logo }
     : { id: 'other', name: 'Other', logo: null }
 }
+
+export interface UsageModelIdentity {
+  modelId: string
+  modelName: string
+  modelLogo: string | null
+  modelVisible: boolean
+  calls: number
+  costMicros: number
+}
+
+/**
+ * Models with the same display name represent the same user-facing choice.
+ * Attribute all of them to the most-used model so charts and rankings do not
+ * split one model across multiple internal routing targets.
+ */
+export function canonicalUsageModels(rows: UsageModelIdentity[]): Map<string, UsageModelIdentity> {
+  const totals = new Map<string, UsageModelIdentity>()
+  for (const row of rows) {
+    const current = totals.get(row.modelId)
+    totals.set(row.modelId, current
+      ? { ...current, calls: current.calls + Number(row.calls), costMicros: current.costMicros + Number(row.costMicros) }
+      : { ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) })
+  }
+
+  const winnerByName = new Map<string, UsageModelIdentity>()
+  for (const row of totals.values()) {
+    const name = row.modelName.trim().toLocaleLowerCase()
+    const winner = winnerByName.get(name)
+    if (!winner || row.calls > winner.calls ||
+      (row.calls === winner.calls && row.costMicros > winner.costMicros) ||
+      (row.calls === winner.calls && row.costMicros === winner.costMicros && row.modelId < winner.modelId)) {
+      winnerByName.set(name, row)
+    }
+  }
+
+  return new Map([...totals.values()].map((row) => [
+    row.modelId,
+    winnerByName.get(row.modelName.trim().toLocaleLowerCase()) ?? row,
+  ]))
+}
