@@ -19,6 +19,13 @@ export function modelCallUsage(usage: unknown): ResponseUsage {
   }
 }
 
+export function providerReportedCostMicros(usage: unknown): number | undefined {
+  const cost = (usage as { cost?: unknown } | null | undefined)?.cost
+  if (typeof cost !== 'number') return undefined
+  if (!Number.isFinite(cost) || cost < 0) return undefined
+  return Math.round(cost * 1_000_000)
+}
+
 export async function trackInternalModelCall<T extends { usage?: unknown; id?: string }>(input: {
   requestLogId: string
   modelId: string

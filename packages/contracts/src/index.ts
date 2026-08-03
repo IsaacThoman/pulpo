@@ -333,6 +333,7 @@ export const createModelSchema = z.object({
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),
   allowedParameters: z.array(z.string()).default([]),
+  useProviderCost: z.boolean().default(false),
   fallbackModelId: z.string().min(1).max(120).nullable().default(null),
   maxRetries: z.number().int().min(0).max(10).default(0),
   retryDelaySeconds: z.number().int().min(0).max(300).default(1),

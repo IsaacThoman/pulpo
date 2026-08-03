@@ -1,0 +1,1 @@
+ALTER TABLE "models" ADD COLUMN "use_provider_cost" boolean DEFAULT false NOT NULL;

@@ -47,6 +47,7 @@ interface AdminModel {
   executionMode: 'stream' | 'background'
   tags: string[]
   allowedParameters: string[]
+  useProviderCost: boolean
   inputPriceMicros: number
   cachedInputPriceMicros: number
   outputPriceMicros: number
@@ -68,6 +69,7 @@ interface Lab { id: string; name: string; logo?: string }
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
   id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: 'openai', systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
+  useProviderCost: false,
   inputPriceMicros: 0, cachedInputPriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
   fallbackModelId: null, maxRetries: 0, retryDelaySeconds: 1, stickyFallbackSeconds: 0,
@@ -383,6 +385,12 @@ function ModelEditorBody({
 
       <div className="space-y-3">
         <div className="text-sm font-medium">Pricing</div>
+        <ToggleRow
+          label="Use provider-reported cost"
+          description="Use the USD value in response usage.cost when the provider returns it; otherwise fall back to the prices below."
+          checked={draft.useProviderCost}
+          onChange={(useProviderCost) => setDraft({ ...draft, useProviderCost })}
+        />
         <div className="grid grid-cols-3 gap-3">
           <PriceField label="Input $/M tokens" valueMicros={draft.inputPriceMicros} onChange={(inputPriceMicros) => setDraft({ ...draft, inputPriceMicros })} />
           <PriceField label="Cached $/M tokens" valueMicros={draft.cachedInputPriceMicros} onChange={(cachedInputPriceMicros) => setDraft({ ...draft, cachedInputPriceMicros })} />
@@ -703,11 +711,13 @@ function Field({ label, children, className }: { label: string; children: ReactN
 
 function ToggleRow({
   label,
+  description,
   checked,
   onChange,
   disabled,
 }: {
   label: string
+  description?: string
   checked: boolean
   onChange: (v: boolean) => void
   disabled?: boolean
@@ -719,7 +729,10 @@ function ToggleRow({
         disabled && 'cursor-not-allowed opacity-50',
       )}
     >
-      <span>{label}</span>
+      <span className="min-w-0">
+        <span className="block">{label}</span>
+        {description && <span className="mt-0.5 block text-xs text-muted-foreground">{description}</span>}
+      </span>
       <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} />
     </label>
   )

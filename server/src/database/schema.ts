@@ -141,6 +141,7 @@ export const models = pgTable('models', {
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   tags: jsonb('tags').notNull().default([]),
   allowedParameters: jsonb('allowed_parameters').notNull().default([]),
+  useProviderCost: boolean('use_provider_cost').notNull().default(false),
   fallbackModelId: text('fallback_model_id'),
   maxRetries: integer('max_retries').notNull().default(0),
   retryDelaySeconds: integer('retry_delay_seconds').notNull().default(1),

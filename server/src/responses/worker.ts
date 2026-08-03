@@ -31,7 +31,7 @@ import { redis } from '../redis.js'
 import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
-import { trackInternalModelCall } from './model-calls.js'
+import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -296,6 +296,7 @@ async function processGenerationAttempt(
         }
         const output = recovered.output as unknown[]
         const usage = normalizeUsage(recovered.usage)
+        const providerCostMicros = record.model.useProviderCost ? providerReportedCostMicros(recovered.usage) : undefined
         const status = recovered.status === 'completed' ? 'completed'
           : recovered.status === 'cancelled' ? 'cancelled'
             : recovered.status === 'incomplete' ? 'incomplete' : 'failed'
@@ -305,7 +306,7 @@ async function processGenerationAttempt(
           status, output, usage, completedAt, updatedAt: completedAt,
           error: recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
         }).where(eq(responses.id, responseId))
-        if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
+        if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
         else await releaseBudget(responseId)
         if (status === 'completed') {
           const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
@@ -348,6 +349,7 @@ async function processGenerationAttempt(
   let sequence = record.response.lastSequence
   let output = record.response.output as unknown[]
   let usage: ResponseUsage | null = null
+  let providerCostMicros: number | undefined
   let upstreamResponseId = record.response.openaiResponseId
   let lastSnapshotAt = 0
   let lastTelemetryAt = 0
@@ -407,7 +409,10 @@ async function processGenerationAttempt(
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }
       output = upstreamResponse?.output ?? accumulateEventOutput(output, event)
-      if (upstreamResponse?.usage) usage = normalizeUsage(upstreamResponse.usage)
+      if (upstreamResponse?.usage) {
+        usage = normalizeUsage(upstreamResponse.usage)
+        if (record.model.useProviderCost) providerCostMicros = providerReportedCostMicros(upstreamResponse.usage)
+      }
       await publishResponseEvent(event)
       pendingEventCount += 1
       const snapshotDue = Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS
@@ -433,7 +438,7 @@ async function processGenerationAttempt(
     await db.update(responses).set({
       status: 'completed', output, usage, lastSequence: sequence, completedAt, updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
-    if (usage) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
+    if (usage) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
     else await releaseBudget(responseId)
     await runPostResponseTasks(client, record, output, requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
@@ -454,7 +459,7 @@ async function processGenerationAttempt(
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
     if (cancelled || !options.willRetry) {
-      if (usage && usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt })
+      if (usage && usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
       else await releaseBudget(responseId)
       const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
