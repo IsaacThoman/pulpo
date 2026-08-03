@@ -484,28 +484,32 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (freshEvents.length === 0) return false
     const affectedChat = get().chats.find((chat) => chat.messages.some((message) => message.id === responseId))
     if (!affectedChat) return false
-    let contentDelta = ''
-    let reasoningDelta = ''
     let nextSequence = currentSequence
-    for (const event of freshEvents) {
-      nextSequence = Math.max(nextSequence, event.sequence)
-      const delta = (event.payload as { delta?: unknown }).delta
-      if (typeof delta !== 'string') continue
-      if (event.type === 'response.output_text.delta') contentDelta += delta
-      if (event.type === 'response.reasoning_summary_text.delta') reasoningDelta += delta
-    }
+    for (const event of freshEvents) nextSequence = Math.max(nextSequence, event.sequence)
     set((state) => ({
       responseSequences: { ...state.responseSequences, [responseId]: nextSequence },
-      chats: contentDelta || reasoningDelta
-        ? state.chats.map((chat) => chat.id !== affectedChat.id ? chat : {
+      chats: state.chats.map((chat) => chat.id !== affectedChat.id ? chat : {
             ...chat,
-            messages: chat.messages.map((message) => message.id !== responseId ? message : {
-              ...message,
-              content: contentDelta ? message.content + contentDelta : message.content,
-              reasoning: reasoningDelta ? (message.reasoning ?? '') + reasoningDelta : message.reasoning,
+            messages: chat.messages.map((message) => {
+              if (message.id !== responseId) return message
+              const base: ResponseSnapshot = {
+                responseId,
+                status: message.done ? 'completed' : 'in_progress',
+                sequence: currentSequence,
+                output: message.outputItems ?? [],
+                usage: null,
+                error: null,
+                updatedAt: new Date(message.timestamp).toISOString(),
+              }
+              const projected = freshEvents.reduce(applyEventToSnapshot, base)
+              return {
+                ...message,
+                content: outputText(projected.output),
+                reasoning: reasoningText(projected.output),
+                outputItems: projected.output,
+              }
             }),
-          })
-        : state.chats,
+          }),
     }))
     for (const event of freshEvents) persistResponseEvent(affectedChat.id, event)
     return true

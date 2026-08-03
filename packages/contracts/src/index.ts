@@ -102,36 +102,92 @@ export const responseSnapshotSchema = z.object({
 })
 export type ResponseSnapshot = z.infer<typeof responseSnapshotSchema>
 
-function appendOutputText(output: unknown[], delta: string): unknown[] {
-  const copy = structuredClone(output) as Array<Record<string, unknown>>
-  let message = copy.find((item) => item.type === 'message')
-  if (!message) {
-    message = { type: 'message', role: 'assistant', status: 'in_progress', content: [] }
-    copy.push(message)
+type DeltaTarget = {
+  item_id?: unknown
+  itemId?: unknown
+  output_index?: unknown
+  outputIndex?: unknown
+  content_index?: unknown
+  contentIndex?: unknown
+  agent_turn?: unknown
+}
+
+function targetItemIndex(output: Array<Record<string, unknown>>, payload: DeltaTarget, type: string): number {
+  const itemId = typeof payload.item_id === 'string' ? payload.item_id
+    : typeof payload.itemId === 'string' ? payload.itemId : undefined
+  if (itemId) {
+    const byId = output.findIndex((item) => item.id === itemId)
+    if (byId >= 0) return byId
   }
-  const content = Array.isArray(message.content) ? message.content as Array<Record<string, unknown>> : []
-  let part = content.find((item) => item.type === 'output_text')
+  const outputIndex = typeof payload.output_index === 'number' ? payload.output_index
+    : typeof payload.outputIndex === 'number' ? payload.outputIndex : undefined
+  if (outputIndex !== undefined && output[outputIndex]?.type === type) return outputIndex
+  const agentTurn = typeof payload.agent_turn === 'number' ? payload.agent_turn : undefined
+  const contentIndex = typeof payload.content_index === 'number' ? payload.content_index
+    : typeof payload.contentIndex === 'number' ? payload.contentIndex : undefined
+  if (agentTurn !== undefined && contentIndex !== undefined) {
+    const byAgentPart = output.findIndex((item) =>
+      item.type === type && item.agent_turn === agentTurn && item.agent_content_index === contentIndex)
+    if (byAgentPart >= 0) return byAgentPart
+  }
+  // Untargeted legacy/non-agent events always belong to the currently active tail item.
+  for (let index = output.length - 1; index >= 0; index -= 1) {
+    if (output[index]?.type === type && output[index]?.status === 'in_progress') return index
+  }
+  for (let index = output.length - 1; index >= 0; index -= 1) {
+    if (output[index]?.type === type) return index
+  }
+  return -1
+}
+
+function appendOutputText(output: unknown[], delta: string, payload: DeltaTarget): unknown[] {
+  const copy = output.slice() as Array<Record<string, unknown>>
+  const index = targetItemIndex(copy, payload, 'message')
+  let message = index >= 0 ? { ...copy[index] } : undefined
+  if (!message) {
+    const itemId = typeof payload.item_id === 'string' ? payload.item_id : undefined
+    message = { ...(itemId ? { id: itemId } : {}), type: 'message', role: 'assistant', status: 'in_progress', content: [] }
+    copy.push(message)
+  } else {
+    copy[index] = message
+  }
+  const content = Array.isArray(message.content) ? message.content.slice() as Array<Record<string, unknown>> : []
+  const contentIndex = typeof payload.content_index === 'number' ? payload.content_index
+    : typeof payload.contentIndex === 'number' ? payload.contentIndex : undefined
+  const partIndex = contentIndex !== undefined && content[contentIndex]?.type === 'output_text'
+    ? contentIndex
+    : content.findIndex((item) => item.type === 'output_text')
+  let part = partIndex >= 0 ? { ...content[partIndex] } : undefined
   if (!part) {
     part = { type: 'output_text', text: '' }
     content.push(part)
+  } else {
+    content[partIndex] = part
   }
   part.text = `${typeof part.text === 'string' ? part.text : ''}${delta}`
   message.content = content
   return copy
 }
 
-function appendReasoning(output: unknown[], delta: string): unknown[] {
-  const copy = structuredClone(output) as Array<Record<string, unknown>>
-  let reasoning = copy.find((item) => item.type === 'reasoning')
+function appendReasoning(output: unknown[], delta: string, payload: DeltaTarget): unknown[] {
+  const copy = output.slice() as Array<Record<string, unknown>>
+  const index = targetItemIndex(copy, payload, 'reasoning')
+  let reasoning = index >= 0 ? { ...copy[index] } : undefined
   if (!reasoning) {
-    reasoning = { type: 'reasoning', status: 'in_progress', summary: [] }
+    const itemId = typeof payload.item_id === 'string' ? payload.item_id : undefined
+    reasoning = { ...(itemId ? { id: itemId } : {}), type: 'reasoning', status: 'in_progress', summary: [] }
     copy.push(reasoning)
+  } else {
+    copy[index] = reasoning
   }
-  const summary = Array.isArray(reasoning.summary) ? reasoning.summary as Array<Record<string, unknown>> : []
-  let part = summary.find((item) => item.type === 'summary_text')
+  const summary = Array.isArray(reasoning.summary) ? reasoning.summary.slice() as Array<Record<string, unknown>> : []
+  const partIndex = summary.findIndex((item) => item.type === 'summary_text')
+  let part = partIndex >= 0 ? { ...summary[partIndex] } : undefined
   if (!part) {
     part = { type: 'summary_text', text: '' }
     summary.push(part)
+  } else {
+    summary[partIndex] = part
   }
   part.text = `${typeof part.text === 'string' ? part.text : ''}${delta}`
   reasoning.summary = summary
@@ -140,11 +196,11 @@ function appendReasoning(output: unknown[], delta: string): unknown[] {
 
 export function applyResponseEventToSnapshot(snapshot: ResponseSnapshot, event: ResponseEvent): ResponseSnapshot {
   if (event.sequence <= snapshot.sequence) return snapshot
-  const payload = event.payload as { delta?: unknown }
+  const payload = event.payload as DeltaTarget & { delta?: unknown }
   const delta = typeof payload.delta === 'string' ? payload.delta : ''
   let output = snapshot.output
-  if (delta && event.type === 'response.output_text.delta') output = appendOutputText(output, delta)
-  if (delta && event.type === 'response.reasoning_summary_text.delta') output = appendReasoning(output, delta)
+  if (delta && event.type === 'response.output_text.delta') output = appendOutputText(output, delta, payload)
+  if (delta && event.type === 'response.reasoning_summary_text.delta') output = appendReasoning(output, delta, payload)
   return {
     ...snapshot,
     status: snapshot.status === 'queued' ? 'in_progress' : snapshot.status,

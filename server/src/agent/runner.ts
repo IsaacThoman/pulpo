@@ -216,8 +216,18 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
-      if (update.type === 'text_delta') await emit('response.output_text.delta', { delta: update.delta })
-      if (update.type === 'thinking_delta') await emit('response.reasoning_summary_text.delta', { delta: update.delta })
+      if (update.type === 'text_delta') await emit('response.output_text.delta', {
+        delta: update.delta,
+        item_id: `agent:${modelTurns}:${update.contentIndex}:message`,
+        agent_turn: modelTurns,
+        content_index: update.contentIndex,
+      })
+      if (update.type === 'thinking_delta') await emit('response.reasoning_summary_text.delta', {
+        delta: update.delta,
+        item_id: `agent:${modelTurns}:${update.contentIndex}:reasoning`,
+        agent_turn: modelTurns,
+        content_index: update.contentIndex,
+      })
       if (
         (update.type === 'text_delta' || update.type === 'thinking_delta')
         && Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS

@@ -25,21 +25,34 @@ function reasoningItem(
   text: string,
   status: 'in_progress' | 'completed' = 'completed',
   durationMs?: number,
+  turn?: number,
+  contentIndex?: number,
 ) {
   return {
+    id: turn !== undefined && contentIndex !== undefined ? `agent:${turn}:${contentIndex}:reasoning` : undefined,
     type: 'reasoning',
     status,
     summary: [{ type: 'summary_text', text }],
+    ...(turn !== undefined ? { agent_turn: turn } : {}),
+    ...(contentIndex !== undefined ? { agent_content_index: contentIndex } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
   }
 }
 
-function messageItem(text: string, status: 'in_progress' | 'completed' = 'completed') {
+function messageItem(
+  text: string,
+  status: 'in_progress' | 'completed' = 'completed',
+  turn?: number,
+  contentIndex?: number,
+) {
   return {
+    id: turn !== undefined && contentIndex !== undefined ? `agent:${turn}:${contentIndex}:message` : undefined,
     type: 'message',
     role: 'assistant',
     status,
     content: [{ type: 'output_text', text }],
+    ...(turn !== undefined ? { agent_turn: turn } : {}),
+    ...(contentIndex !== undefined ? { agent_content_index: contentIndex } : {}),
   }
 }
 
@@ -50,38 +63,22 @@ function pushAssistantParts(
   output: unknown[],
   status: 'in_progress' | 'completed' = 'completed',
   turnDurationMs?: number,
+  turn?: number,
 ) {
-  let thinking = ''
-  let text = ''
   let pendingReasoningDuration = turnDurationMs
-  const flushThinking = () => {
-    if (!thinking) return
-    // Attach model-turn duration to the first reasoning chunk in the turn.
-    const durationMs = pendingReasoningDuration
-    pendingReasoningDuration = undefined
-    output.push(reasoningItem(thinking, status, durationMs))
-    thinking = ''
-  }
-  const flushText = () => {
-    if (!text) return
-    output.push(messageItem(text, status))
-    text = ''
-  }
 
-  for (const part of content) {
+  for (const [contentIndex, part] of content.entries()) {
     if (part.type === 'thinking') {
-      flushText()
-      thinking += part.thinking ?? ''
+      const durationMs = pendingReasoningDuration
+      pendingReasoningDuration = undefined
+      output.push(reasoningItem(part.thinking ?? '', status, durationMs, turn, contentIndex))
       continue
     }
     if (part.type === 'text') {
-      flushThinking()
-      text += part.text ?? ''
+      output.push(messageItem(part.text ?? '', status, turn, contentIndex))
       continue
     }
     if (part.type === 'toolCall' && part.id) {
-      flushThinking()
-      flushText()
       const existing = toolItems.get(part.id)
       output.push(existing ?? {
         id: part.id,
@@ -95,8 +92,6 @@ function pushAssistantParts(
       if (attachment) output.push(attachment)
     }
   }
-  flushThinking()
-  flushText()
 }
 
 /** Ordered response.output: workspace → (reasoning|message|tool)* preserving turn order. */
@@ -141,6 +136,7 @@ export function buildAgentOutput(options: {
       output,
       status,
       turnDurationsMs?.get(assistantTurn),
+      assistantTurn,
     )
     for (const part of content) {
       if ((part as { type?: string }).type === 'toolCall' && typeof (part as { id?: string }).id === 'string') {

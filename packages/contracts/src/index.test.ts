@@ -30,6 +30,10 @@ function delta(type: string, text: string, sequence: number): ResponseEvent {
   }
 }
 
+function targetedDelta(type: string, text: string, sequence: number, itemId: string): ResponseEvent {
+  return { ...delta(type, text, sequence), payload: { delta: text, item_id: itemId } }
+}
+
 describe('shared contracts', () => {
   it('rejects response events without a positive sequence', () => {
     const result = responseEventSchema.safeParse({
@@ -140,6 +144,28 @@ describe('response snapshot accumulation', () => {
 
     expect(terminal.status).toBe('completed')
     expect(terminal.output).toMatchObject([{ content: [{ text: 'final answer' }] }])
+  })
+
+  it('applies agent deltas to the targeted turn instead of the first output item', () => {
+    const snapshot = {
+      ...streamingSnapshot,
+      sequence: 4,
+      output: [
+        { id: 'agent:1:0:message', type: 'message', status: 'completed', content: [{ type: 'output_text', text: 'First turn' }] },
+        { id: 'tool-1', type: 'pulpo_tool', status: 'completed' },
+        { id: 'agent:2:0:message', type: 'message', status: 'in_progress', content: [{ type: 'output_text', text: 'Second' }] },
+      ],
+    }
+    const result = applyResponseEventToSnapshot(
+      snapshot,
+      targetedDelta('response.output_text.delta', ' turn', 5, 'agent:2:0:message'),
+    )
+
+    expect(result.output).toMatchObject([
+      { id: 'agent:1:0:message', content: [{ text: 'First turn' }] },
+      { id: 'tool-1' },
+      { id: 'agent:2:0:message', content: [{ text: 'Second turn' }] },
+    ])
   })
 
 })

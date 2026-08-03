@@ -421,37 +421,6 @@ function buildTimeline(outputItems: unknown[], showReasoning: boolean): Timeline
   return segments
 }
 
-function appendLiveDeltas(segments: TimelineSegment[], content: string, reasoning?: string): TimelineSegment[] {
-  const renderedText = segments.flatMap((segment) => segment.kind === 'text' ? [segment.text] : []).join('')
-  if (content.startsWith(renderedText) && content.length > renderedText.length) {
-    const suffix = content.slice(renderedText.length)
-    const lastTextIndex = segments.reduce(
-      (last, segment, index) => segment.kind === 'text' ? index : last,
-      -1,
-    )
-    if (lastTextIndex >= 0) {
-      const segment = segments[lastTextIndex] as TextSegment
-      segments[lastTextIndex] = { ...segment, text: segment.text + suffix }
-    } else {
-      segments.push({ kind: 'text', text: suffix })
-    }
-  }
-
-  if (reasoning) {
-    const reasoningSteps = segments.flatMap((segment) =>
-      segment.kind === 'activity'
-        ? segment.steps.filter((step): step is ReasoningStep => step.kind === 'reasoning')
-        : [],
-    )
-    const renderedReasoning = reasoningSteps.map((step) => step.text).join('')
-    if (reasoning.startsWith(renderedReasoning) && reasoning.length > renderedReasoning.length) {
-      const last = reasoningSteps.at(-1)
-      if (last) last.text += reasoning.slice(renderedReasoning.length)
-    }
-  }
-  return segments
-}
-
 const WORKSPACE_ACTIONS_DELAY_MS = 15_000
 
 function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
@@ -649,11 +618,7 @@ export const MessageItem = memo(function MessageItem({
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
-    if (items.length > 0) return appendLiveDeltas(
-      buildTimeline(items, showReasoning),
-      message.content,
-      showReasoning ? message.reasoning : undefined,
-    )
+    if (items.length > 0) return buildTimeline(items, showReasoning)
     const segments: TimelineSegment[] = []
     if (showReasoning && message.reasoning !== undefined && (message.reasoning || streaming)) {
       segments.push({
