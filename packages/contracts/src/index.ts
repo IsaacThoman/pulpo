@@ -404,6 +404,16 @@ export const agentSettingsSchema = z.object({
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
+export const webToolsSettingsSchema = z.object({
+  searchEnabled: z.boolean().default(false),
+  extractEnabled: z.boolean().default(false),
+  billSearches: z.boolean().default(false),
+  billExtracts: z.boolean().default(false),
+  searchPriceMicros: z.number().int().min(0).max(1_000_000_000).default(12_000),
+  extractPriceMicros: z.number().int().min(0).max(1_000_000_000).default(4_000),
+})
+export type WebToolsSettings = z.infer<typeof webToolsSettingsSchema>
+
 export const adminUsageStatusSchema = z.enum(['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'])
 export const adminUsageEventSchema = z.object({
   requestId: idSchema,

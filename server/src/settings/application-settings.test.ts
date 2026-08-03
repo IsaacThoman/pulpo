@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseWebToolsSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -38,6 +38,20 @@ describe('agent application settings', () => {
     const settings = parseAgentSettings({ cpu: '500m', ephemeralStorage: '20480Mi' })
     expect(settings.cpu).toBe('0.5')
     expect(settings.ephemeralStorage).toBe('20Gi')
+  })
+})
+
+describe('web tool application settings', () => {
+  it('defaults tools and user billing to disabled', () => {
+    expect(parseWebToolsSettings(undefined)).toMatchObject({
+      searchEnabled: false,
+      extractEnabled: false,
+      billSearches: false,
+      billExtracts: false,
+      searchPriceMicros: 12_000,
+      extractPriceMicros: 4_000,
+      encryptedApiKey: null,
+    })
   })
 })
 

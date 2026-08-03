@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, backupJobs, banners, exportJobs } from '../database/schema.js'
@@ -9,7 +9,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings } from '../settings/application-settings.js'
+import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
@@ -42,7 +42,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.get('/api/admin/settings', async (request) => {
     requireAdmin(request)
     const rows = await db.select().from(applicationSettings)
-    return { values: Object.fromEntries(rows.map((row) => [row.key, row.value])) }
+    return { values: Object.fromEntries(rows.filter((row) => row.key !== 'ocr' && row.key !== 'webTools').map((row) => [row.key, row.value])) }
   })
 
   app.patch('/api/admin/settings', async (request) => {
@@ -54,6 +54,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     if (values.agent !== undefined) values.agent = agentSettingsSchema.parse(values.agent)
     // OCR credentials use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
+    if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
     await db.transaction(async (tx) => {
       for (const [key, value] of Object.entries(values)) {
         await tx.insert(applicationSettings).values({ key, value, updatedBy: admin.id })
@@ -74,6 +75,34 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     } catch (error) {
       return { configured: true, healthy: false, detail: error instanceof Error ? error.message : String(error) }
     }
+  })
+
+  app.get('/api/admin/settings/web-tools', async (request) => {
+    requireAdmin(request)
+    const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
+    const value = parseWebToolsSettings(row?.value)
+    const { encryptedApiKey, ...safe } = value
+    return { ...safe, hasApiKey: Boolean(encryptedApiKey) }
+  })
+
+  app.patch('/api/admin/settings/web-tools', async (request) => {
+    const admin = requireAdmin(request)
+    const input = webToolsSettingsSchema.extend({ apiKey: z.string().trim().min(1).optional() }).parse(request.body)
+    const [existing] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
+    const old = parseWebToolsSettings(existing?.value)
+    const value = storedWebToolsSettingsSchema.parse({
+      ...input,
+      encryptedApiKey: input.apiKey ? encryptSecret(input.apiKey, getConfig().ENCRYPTION_KEY) : old.encryptedApiKey,
+    })
+    await db.transaction(async (tx) => {
+      await tx.insert(applicationSettings).values({ key: 'webTools', value, updatedBy: admin.id })
+        .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'settings.web_tools.update', targetType: 'application',
+        metadata: { searchEnabled: value.searchEnabled, extractEnabled: value.extractEnabled, billSearches: value.billSearches, billExtracts: value.billExtracts },
+      })
+    })
+    return { ...input, apiKey: undefined, hasApiKey: Boolean(value.encryptedApiKey) }
   })
 
   app.get('/api/admin/settings/ocr', async (request) => {

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 export const DEFAULT_STORAGE_LIMIT_BYTES = 5_000 * 1024 * 1024
@@ -30,6 +30,10 @@ export const ocrSettingsSchema = z.object({
   encryptedCustomApiKey: z.string().nullable().default(null),
   model: z.string().min(1).max(200).default('gpt-4.1-mini'),
   systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
+})
+
+export const storedWebToolsSettingsSchema = webToolsSettingsSchema.extend({
+  encryptedApiKey: z.string().nullable().default(null),
 })
 
 export const DEFAULT_SUGGESTED_PROMPTS = [
@@ -99,6 +103,11 @@ export function parseOcrSettings(value: unknown): z.infer<typeof ocrSettingsSche
 export function parseAgentSettings(value: unknown): z.infer<typeof agentSettingsSchema> {
   const parsed = agentSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : agentSettingsSchema.parse({})
+}
+
+export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebToolsSettingsSchema> {
+  const parsed = storedWebToolsSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : storedWebToolsSettingsSchema.parse({})
 }
 
 export function parseInterfaceSettings(value: unknown): InterfaceSettings {
