@@ -3,7 +3,7 @@ name: pulpo
 x-server: &server
   build:
     context: .
-    dockerfile: server/Dockerfile
+    dockerfile: apps/server/Dockerfile
   env_file: ${PULPO_ENV_FILE:-.env.example}
   depends_on:
     object-storage-init:
@@ -48,7 +48,7 @@ services:
 
   api:
     <<: *server
-    command: ["sh", "-c", "node server/dist/database/migrate.js && npm run start:api -w @pulpo/server"]
+    command: ["sh", "-c", "node apps/server/dist/database/migrate.js && npm run start:api -w @pulpo/server"]
     expose:
       - "3000"
 

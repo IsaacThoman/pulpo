@@ -12,14 +12,15 @@ Pulpo is a self-hostable, local-first interface and OpenAI-compatible gateway fo
 - SeaweedFS through its S3 API, or local disk through the same `BlobStore` interface.
 - An nginx web gateway and Docker Compose for the supported self-hosted deployment.
 
-The source directories are:
+The repository is organized as an npm-workspaces monorepo:
 
 ```text
-src/                 React application
-server/src/          API, worker, storage, accounting, and realtime services
-server/drizzle/      ordered PostgreSQL migrations
-packages/contracts/  shared Zod and Socket.IO contracts
-deploy/              nginx gateway configuration
+apps/web/src/         React web application
+apps/server/src/      API, worker, storage, accounting, and realtime services
+apps/server/drizzle/  ordered PostgreSQL migrations
+packages/contracts/   shared Zod and Socket.IO contracts
+packages/*/           shared runtime and workspace packages
+deploy/               nginx gateway configuration
 ```
 
 ## Quick start with Docker Compose

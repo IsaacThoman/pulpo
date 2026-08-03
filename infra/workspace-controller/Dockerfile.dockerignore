@@ -1,8 +1,13 @@
 .git
 node_modules
 dist
-server/*
-!server/package.json
+apps/*
+!apps/server/
+apps/server/*
+!apps/server/package.json
+!apps/web/
+apps/web/*
+!apps/web/package.json
 src
 public
 deploy
