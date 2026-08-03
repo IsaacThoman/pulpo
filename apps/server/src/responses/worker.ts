@@ -1,6 +1,5 @@
 import OpenAI, { toFile } from 'openai'
-import { createHash } from 'node:crypto'
-import { and, asc, eq, gt, isNull, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import { applyResponseEventToSnapshot, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
@@ -16,8 +15,6 @@ import {
   applicationSettings,
   requestLogs,
   generationAttempts,
-  ocrAttempts,
-  ocrCacheEntries,
 } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
@@ -28,10 +25,11 @@ import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { redis } from '../redis.js'
-import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
+import { parseLoggingSettings } from '../settings/application-settings.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
+import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -96,13 +94,7 @@ async function persistItems(responseId: string, output: unknown[]): Promise<void
   })
 }
 
-async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof models.$inferSelect, requestLogId: string): Promise<unknown[]> {
-  const [ocrRow, loggingRow] = await Promise.all([
-    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1).then((rows) => rows[0]),
-    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
-  ])
-  const ocrSettings = parseOcrSettings(ocrRow?.value)
-  const logging = parseLoggingSettings(loggingRow?.value)
+async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor): Promise<unknown[]> {
   const prepared: unknown[] = []
   for (const item of input) {
     const typed = item as { content?: unknown[] }
@@ -122,48 +114,8 @@ async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof
       const bytes = await getBlobStore().get(attachment.objectKey)
       if (attachment.mimeType.startsWith('image/')) {
         const dataUrl = `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString('base64')}`
-        if (!ocrSettings.enabled || !model.interceptImagesWithOcr) {
-          content.push({ type: 'input_image', image_url: dataUrl })
-          continue
-        }
-        const attemptId = newId()
-        const started = Date.now()
-        const providerFingerprint = `${ocrSettings.providerMode}:${ocrSettings.providerConnectionId ?? ocrSettings.customBaseUrl}:${ocrSettings.model}`
-        const checksum = createHash('sha256').update(providerFingerprint).update(bytes).digest('hex')
-        try {
-          const [cached] = ocrSettings.cacheEnabled ? await db.select().from(ocrCacheEntries).where(and(eq(ocrCacheEntries.checksum, checksum), gt(ocrCacheEntries.expiresAt, new Date()))).limit(1) : []
-          let text = cached?.text
-          let rawResponse: unknown
-          if (!text) {
-            let ocrClient: OpenAI
-            if (ocrSettings.providerMode === 'existing' && ocrSettings.providerConnectionId) {
-              const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, ocrSettings.providerConnectionId)).limit(1)
-              if (!provider) throw new Error('OCR provider is unavailable')
-              ocrClient = new OpenAI({ apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), baseURL: provider.baseUrl, timeout: provider.requestTimeoutMs })
-            } else if (ocrSettings.customBaseUrl && ocrSettings.encryptedCustomApiKey) {
-              ocrClient = new OpenAI({ apiKey: decryptSecret(ocrSettings.encryptedCustomApiKey, getConfig().ENCRYPTION_KEY), baseURL: ocrSettings.customBaseUrl })
-            } else throw new Error('OCR provider is not configured')
-            rawResponse = await trackInternalModelCall({
-              requestLogId,
-              modelId: model.id,
-              upstreamModelId: ocrSettings.model,
-              purpose: 'ocr',
-              invoke: () => ocrClient.responses.create({ model: ocrSettings.model, instructions: ocrSettings.systemPrompt, input: [{ role: 'user', content: [{ type: 'input_image', image_url: dataUrl, detail: 'auto' }] }], store: false }),
-            })
-            text = (rawResponse as { output_text?: string }).output_text?.trim()
-            if (!text) throw new Error('OCR returned no text')
-            if (ocrSettings.cacheEnabled) await db.insert(ocrCacheEntries).values({ checksum, providerFingerprint, text, expiresAt: new Date(Date.now() + ocrSettings.cacheTtlSeconds * 1000) }).onConflictDoUpdate({ target: ocrCacheEntries.checksum, set: { text, expiresAt: new Date(Date.now() + ocrSettings.cacheTtlSeconds * 1000) } })
-          }
-          await db.insert(ocrAttempts).values({ id: attemptId, requestLogId, attachmentId: attachment.id, sourceChecksum: attachment.checksum, modelId: ocrSettings.model, status: 'completed', cached: Boolean(cached), requestPayload: logging.logDetailedPayloads ? { model: ocrSettings.model, input: dataUrl } : null, responsePayload: logging.logDetailedPayloads ? rawResponse : null, durationMs: Date.now() - started })
-          await db.update(requestLogs).set({ ocrStatus: 'completed', updatedAt: new Date() }).where(eq(requestLogs.id, requestLogId))
-          content.push({ type: 'input_text', text: `[OCR text from ${attachment.originalName}]\n${text}` })
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'OCR failed'
-          await db.insert(ocrAttempts).values({ id: attemptId, requestLogId, attachmentId: attachment.id, sourceChecksum: attachment.checksum, modelId: ocrSettings.model, status: 'failed', errorMessage: message, durationMs: Date.now() - started })
-          await db.update(requestLogs).set({ ocrStatus: 'failed', updatedAt: new Date() }).where(eq(requestLogs.id, requestLogId))
-          content.push({ type: 'input_text', text: `[OCR error for ${attachment.originalName}: ${message}]` })
-        }
-        await publishAdminUsage(requestLogId, true)
+        const text = await interceptor.intercept(model, { data: bytes, mimeType: attachment.mimeType, label: attachment.originalName, attachmentId: attachment.id, sourceChecksum: attachment.checksum })
+        content.push(text === null ? { type: 'input_image', image_url: dataUrl } : { type: 'input_text', text })
         continue
       }
       let fileId = attachment.openaiFileId
@@ -179,7 +131,7 @@ async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof
     }
     prepared.push({ ...typed, content })
   }
-  return prepared
+  return interceptOpenAIInputImages(prepared, model, interceptor)
 }
 
 async function contextualInput(client: OpenAI, record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }, history: Array<typeof responses.$inferSelect>, requestLogId: string): Promise<unknown[]> {
@@ -345,7 +297,8 @@ async function processGenerationAttempt(
   }
   const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
-  const input = await prepareInputFiles(client, await contextualInput(client, record, history, requestLog.id), record.model, requestLog.id)
+  const imageInterceptor = await createModelImageInterceptor(requestLog.id)
+  const input = await prepareInputFiles(client, await contextualInput(client, record, history, requestLog.id), record.model, imageInterceptor)
   let sequence = record.response.lastSequence
   let output = record.response.output as unknown[]
   let usage: ResponseUsage | null = null

@@ -27,6 +27,7 @@ import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
 import { KagiClient } from './kagi.js'
 import { createWebTools } from './web-tools.js'
+import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -76,6 +77,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
+  const imageInterceptor = await createModelImageInterceptor(requestLog.id)
   const attachmentIds = (Array.isArray(record.response.input) ? record.response.input : []).flatMap((item) => {
     const content = (item as { content?: unknown }).content
     return Array.isArray(content) ? content.flatMap((part) => {
@@ -225,7 +227,11 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       messages: resumedMessages,
       thinkingLevel: 'medium',
     },
-    streamFn: (model, context, options) => streams.streamSimple(model as Model<'openai-responses'>, context, { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries }),
+    streamFn: async (model, context, options) => streams.streamSimple(
+      model as Model<'openai-responses'>,
+      await interceptAgentContextImages(context, active.model, imageInterceptor),
+      { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries },
+    ),
     toolExecution: 'sequential',
     beforeToolCall: async () => {
       if (manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
