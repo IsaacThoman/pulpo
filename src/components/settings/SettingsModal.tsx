@@ -277,99 +277,92 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
           {/* content */}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {section === 'trash' ? (
-              <div className="flex min-h-0 flex-1 flex-col p-6">
-                <h2 className="text-base font-semibold">Trash</h2>
-                <Separator className="my-3" />
-                <Row label="Trash retention period" hint="Choose how long deleted chats and their files remain recoverable.">
-                  <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
-                    <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {(Object.entries(TRASH_RETENTION_LABELS) as [TrashRetention, string][]).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>{label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Row>
-                {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
-                <Separator className="my-3" />
-                <div className="flex items-center justify-between gap-3 pb-3">
-                  <div>
-                    <div className="text-sm font-medium">Deleted chats</div>
-                    <div className="mt-0.5 text-xs text-muted-foreground">
-                      {s.trashRetention === 'instant'
-                        ? 'Chats are permanently deleted immediately.'
-                        : deletedChatsQuery.isLoading
-                          ? 'Loading…'
-                          : deletedChats.length
-                            ? `${deletedChats.length} chat${deletedChats.length === 1 ? '' : 's'}`
-                            : 'Recover chats or permanently delete them.'}
+            <ScrollArea className="min-h-0 flex-1">
+            <div className="p-6">
+              {section === 'trash' && (
+                <div>
+                  <h2 className="text-base font-semibold">Trash</h2>
+                  <Separator className="my-3" />
+                  <Row label="Trash retention period" hint="Choose how long deleted chats and their files remain recoverable.">
+                    <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
+                      <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {(Object.entries(TRASH_RETENTION_LABELS) as [TrashRetention, string][]).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Row>
+                  {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
+                  <Separator className="my-3" />
+                  <div className="flex items-center justify-between gap-3 py-1">
+                    <div>
+                      <div className="text-sm font-medium">Deleted chats</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">
+                        {s.trashRetention === 'instant'
+                          ? 'Chats are permanently deleted immediately.'
+                          : deletedChatsQuery.isLoading
+                            ? 'Loading…'
+                            : deletedChats.length
+                              ? `${deletedChats.length} chat${deletedChats.length === 1 ? '' : 's'}`
+                              : 'Recover chats or permanently delete them.'}
+                      </div>
                     </div>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      disabled={!deletedChats.length || s.trashRetention === 'instant'}
+                      onClick={() => void permanentlyDeleteAll()}
+                    >
+                      Empty trash
+                    </Button>
                   </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={!deletedChats.length || s.trashRetention === 'instant'}
-                    onClick={() => void permanentlyDeleteAll()}
-                  >
-                    Empty trash
-                  </Button>
-                </div>
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card">
-                  {s.trashRetention === 'instant' ? (
-                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-                      Chats are permanently deleted immediately.
-                    </p>
-                  ) : deletedChatsQuery.isLoading ? (
-                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">Loading deleted chats…</p>
+                  {s.trashRetention === 'instant' ? null : deletedChatsQuery.isLoading ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>
                   ) : deletedChatsQuery.error ? (
-                    <div className="px-4 py-10 text-center text-sm text-destructive">
+                    <div className="py-8 text-center text-sm text-destructive">
                       <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load deleted chats'}</p>
                       <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>Try again</Button>
                     </div>
                   ) : !deletedChats.length ? (
-                    <p className="px-4 py-10 text-center text-sm text-muted-foreground">Trash is empty.</p>
+                    <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
                   ) : (
-                    <ScrollArea className="h-full">
-                      <div className="divide-y">
-                        {deletedChats.map((chat) => {
-                          const deletedTs = new Date(chat.deletedAt).getTime()
-                          const purgeTs = chat.purgeAt ? new Date(chat.purgeAt).getTime() : null
-                          return (
-                            <div key={chat.id} className="flex items-center gap-3 px-3 py-2.5">
-                              <ModelIcon
-                                model={getCatalogModel(chat.modelId)}
-                                className="size-4 shrink-0 rounded-[2px]"
-                              />
-                              <div className="min-w-0 flex-1">
-                                <div className="truncate text-sm font-medium">{chat.title}</div>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                                  <span title={formatDateTime(deletedTs)}>{trashDeletedLabel(chat.deletedAt)}</span>
-                                  <span aria-hidden className="text-muted-foreground/50">·</span>
-                                  <span title={purgeTs ? formatDateTime(purgeTs) : undefined}>
-                                    {trashPurgeLabel(chat.purgeAt)}
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="flex shrink-0 items-center gap-1.5">
-                                <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}>
-                                  Recover
-                                </Button>
-                                <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}>
-                                  Delete
-                                </Button>
+                    <div className="divide-y">
+                      {deletedChats.map((chat) => {
+                        const deletedTs = new Date(chat.deletedAt).getTime()
+                        const purgeTs = chat.purgeAt ? new Date(chat.purgeAt).getTime() : null
+                        return (
+                          <div key={chat.id} className="flex items-center gap-3 py-3">
+                            <ModelIcon
+                              model={getCatalogModel(chat.modelId)}
+                              className="size-4 shrink-0 rounded-[2px]"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium">{chat.title}</div>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                                <span title={formatDateTime(deletedTs)}>{trashDeletedLabel(chat.deletedAt)}</span>
+                                <span aria-hidden className="text-muted-foreground/50">·</span>
+                                <span title={purgeTs ? formatDateTime(purgeTs) : undefined}>
+                                  {trashPurgeLabel(chat.purgeAt)}
+                                </span>
                               </div>
                             </div>
-                          )
-                        })}
-                      </div>
-                    </ScrollArea>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}>
+                                Recover
+                              </Button>
+                              <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}>
+                                Delete
+                              </Button>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
-              </div>
-            ) : (
-            <ScrollArea className="min-h-0 flex-1">
-            <div className="p-6">
+              )}
+
               {section === 'general' && (
                 <div>
                   <h2 className="text-base font-semibold">General</h2>
@@ -597,7 +590,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
               )}
             </div>
             </ScrollArea>
-            )}
           </div>
         </div>
       </DialogContent>
