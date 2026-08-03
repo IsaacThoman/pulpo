@@ -389,9 +389,9 @@ const CHAT_TITLES = [
 export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
   const rand = mulberry32(1337)
   const folders: Folder[] = [
-    { id: 'f-work', name: 'work', pinned: true, expanded: true },
-    { id: 'f-research', name: 'research', pinned: false, expanded: true },
-    { id: 'f-shitposts', name: 'shitposts', pinned: false, expanded: false },
+    { id: 'f-work', name: 'work', pinned: true, expanded: true, sortOrder: 0 },
+    { id: 'f-research', name: 'research', pinned: false, expanded: true, sortOrder: 1 },
+    { id: 'f-shitposts', name: 'shitposts', pinned: false, expanded: false, sortOrder: 2 },
   ]
   const chats: Chat[] = []
   const now = Date.now()
@@ -408,6 +408,7 @@ export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
       updatedAt,
       pinned: i < 2,
       folderId: i % 5 === 1 ? folders[i % 3].id : null,
+      sortOrder: i,
       tags: i % 4 === 0 ? ['dev'] : i % 7 === 0 ? ['writing'] : [],
     })
   })

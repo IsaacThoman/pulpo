@@ -13,6 +13,7 @@ const chat: Chat = {
   updatedAt: 0,
   pinned: false,
   folderId: null,
+  sortOrder: 0,
   tags: [],
 }
 

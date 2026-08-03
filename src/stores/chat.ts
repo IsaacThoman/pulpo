@@ -14,7 +14,36 @@ import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { coalesceResponseEvents } from '@/features/chat/response-sync'
 import { withBranchMetadata } from '@/lib/message-branches'
 import { reconcileStreamingResponseIds, reindexDetailedChatResponses } from '@/lib/response-tracking'
+import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
+
+const FOLDER_EXPANDED_KEY = 'pulpo-folder-expanded'
+
+function loadFolderExpanded(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(FOLDER_EXPANDED_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object') return {}
+    return Object.fromEntries(
+      Object.entries(parsed as Record<string, unknown>).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+    )
+  } catch {
+    return {}
+  }
+}
+
+function saveFolderExpanded(map: Record<string, boolean>) {
+  try {
+    localStorage.setItem(FOLDER_EXPANDED_KEY, JSON.stringify(map))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function applySortOrders(ids: string[]): Map<string, number> {
+  return new Map(ids.map((id, index) => [id, index]))
+}
 
 interface ServerResponse {
   id: string
@@ -51,6 +80,7 @@ export interface ServerChat {
   modelId: string
   pinned: boolean
   folderId: string | null
+  sortOrder?: number
   createdAt: string
   updatedAt: string
   activeResponseId: string | null
@@ -63,6 +93,7 @@ export interface ServerFolder {
   id: string
   name: string
   pinned: boolean
+  sortOrder?: number
 }
 
 interface ChatState {
@@ -83,11 +114,14 @@ interface ChatState {
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
   moveToFolder: (id: string, folderId: string | null) => void
+  reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
+  reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
   shareChat: (id: string) => Promise<string>
   addFolder: (name: string) => void
   toggleFolder: (id: string) => void
   renameFolder: (id: string, name: string) => void
   toggleFolderPin: (id: string) => void
+  reorderFolders: (fromId: string, toId: string, edge: 'before' | 'after') => void
   deleteFolder: (id: string) => void
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean) => string
   regenerate: (chatId: string, messageId: string, modelId: string) => void
@@ -255,6 +289,7 @@ function toChat(
     updatedAt: Date.parse(row.updatedAt),
     pinned: row.pinned,
     folderId: row.folderId,
+    sortOrder: row.sortOrder ?? current?.sortOrder ?? 0,
     tags: current?.tags ?? [],
   }
 }
@@ -366,6 +401,7 @@ function cacheOptimisticTurn(input: {
         modelId: input.modelId,
         pinned: false,
         folderId: null,
+        sortOrder: 0,
         createdAt,
         updatedAt: createdAt,
         activeResponseId: input.responseId,
@@ -635,12 +671,22 @@ export const useChat = create<ChatState>()((set, get) => ({
     const chats = rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds))
     return { chats, responseChatIds: responseChatIndex(chats, state.responseChatIds) }
   }),
-  replaceFolders: (rows) => set((state) => ({
-    folders: rows.map((row) => ({
-      ...row,
-      expanded: state.folders.find((folder) => folder.id === row.id)?.expanded ?? true,
-    })),
-  })),
+  replaceFolders: (rows) => set((state) => {
+    const persisted = loadFolderExpanded()
+    return {
+      folders: rows.map((row) => {
+        const existing = state.folders.find((folder) => folder.id === row.id)
+        const expanded = existing?.expanded ?? persisted[row.id] ?? true
+        return {
+          id: row.id,
+          name: row.name,
+          pinned: row.pinned,
+          sortOrder: row.sortOrder ?? existing?.sortOrder ?? 0,
+          expanded,
+        }
+      }),
+    }
+  }),
   setDetailedChat: (incoming) => {
     const row = mergePendingOptimisticResponses(incoming)
     if (row !== incoming) queryClient.setQueryData(chatKey(row.id), row)
@@ -780,12 +826,59 @@ export const useChat = create<ChatState>()((set, get) => ({
   togglePin: (id) => {
     const chat = get().chats.find((item) => item.id === id)
     if (!chat) return
-    set((state) => ({ chats: state.chats.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item) }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: !chat.pinned })
+    const nextPinned = !chat.pinned
+    const maxPinnedOrder = get().chats
+      .filter((item) => item.pinned && item.id !== id)
+      .reduce((max, item) => Math.max(max, item.sortOrder), -1)
+    const sortOrder = nextPinned ? maxPinnedOrder + 1 : chat.sortOrder
+    set((state) => ({
+      chats: state.chats.map((item) => item.id === id ? { ...item, pinned: nextPinned, sortOrder } : item),
+    }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: nextPinned, sortOrder })
   },
   moveToFolder: (id, folderId) => {
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId } : chat) }))
-    void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId })
+    const maxOrder = folderId
+      ? get().chats
+        .filter((chat) => chat.folderId === folderId && !chat.pinned && chat.id !== id)
+        .reduce((max, chat) => Math.max(max, chat.sortOrder), -1)
+      : -1
+    const sortOrder = folderId ? maxOrder + 1 : 0
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId, sortOrder } : chat),
+    }))
+    void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId, sortOrder })
+  },
+  reorderPinnedChats: (fromId, toId, edge) => {
+    const pinnedIds = get().chats
+      .filter((chat) => chat.pinned)
+      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt - a.updatedAt)
+      .map((chat) => chat.id)
+    const nextIds = reorderList(pinnedIds, fromId, toId, edge)
+    if (nextIds === pinnedIds || nextIds.join() === pinnedIds.join()) return
+    const orders = applySortOrders(nextIds)
+    set((state) => ({
+      chats: state.chats.map((chat) => {
+        const sortOrder = orders.get(chat.id)
+        return sortOrder === undefined ? chat : { ...chat, sortOrder }
+      }),
+    }))
+    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
+  },
+  reorderFolderChats: (folderId, fromId, toId, edge) => {
+    const folderChatIds = get().chats
+      .filter((chat) => !chat.pinned && chat.folderId === folderId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt - a.updatedAt)
+      .map((chat) => chat.id)
+    const nextIds = reorderList(folderChatIds, fromId, toId, edge)
+    if (nextIds === folderChatIds || nextIds.join() === folderChatIds.join()) return
+    const orders = applySortOrders(nextIds)
+    set((state) => ({
+      chats: state.chats.map((chat) => {
+        const sortOrder = orders.get(chat.id)
+        return sortOrder === undefined ? chat : { ...chat, sortOrder }
+      }),
+    }))
+    void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
   },
   shareChat: async (id) => {
     const share = await apiRequest<{ token: string }>('/api/chat-shares', {
@@ -797,12 +890,24 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   addFolder: (name) => {
     const id = crypto.randomUUID()
-    set((state) => ({ folders: [...state.folders, { id, name, pinned: false, expanded: true }] }))
+    const sortOrder = get().folders.reduce((max, folder) => Math.max(max, folder.sortOrder), -1) + 1
+    set((state) => ({
+      folders: [...state.folders, { id, name, pinned: false, expanded: true, sortOrder }],
+    }))
+    const expanded = loadFolderExpanded()
+    expanded[id] = true
+    saveFolderExpanded(expanded)
     void optimisticRequest('POST', '/api/folders', { clientId: id, name })
   },
-  toggleFolder: (id) => set((state) => ({
-    folders: state.folders.map((folder) => folder.id === id ? { ...folder, expanded: !folder.expanded } : folder),
-  })),
+  toggleFolder: (id) => set((state) => {
+    const folders = state.folders.map((folder) => (
+      folder.id === id ? { ...folder, expanded: !folder.expanded } : folder
+    ))
+    const expanded = loadFolderExpanded()
+    for (const folder of folders) expanded[folder.id] = folder.expanded
+    saveFolderExpanded(expanded)
+    return { folders }
+  }),
   renameFolder: (id, name) => {
     set((state) => ({ folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) }))
     void optimisticRequest('PATCH', `/api/folders/${id}`, { name })
@@ -813,11 +918,29 @@ export const useChat = create<ChatState>()((set, get) => ({
     set((state) => ({ folders: state.folders.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item) }))
     void optimisticRequest('PATCH', `/api/folders/${id}`, { pinned: !folder.pinned })
   },
+  reorderFolders: (fromId, toId, edge) => {
+    const orderedIds = [...get().folders]
+      .sort((a, b) => a.sortOrder - b.sortOrder || Number(b.pinned) - Number(a.pinned))
+      .map((folder) => folder.id)
+    const nextIds = reorderList(orderedIds, fromId, toId, edge)
+    if (nextIds === orderedIds || nextIds.join() === orderedIds.join()) return
+    const orders = applySortOrders(nextIds)
+    set((state) => ({
+      folders: state.folders.map((folder) => {
+        const sortOrder = orders.get(folder.id)
+        return sortOrder === undefined ? folder : { ...folder, sortOrder }
+      }),
+    }))
+    void optimisticRequest('PUT', '/api/folders/order', { folderIds: nextIds })
+  },
   deleteFolder: (id) => {
     set((state) => ({
       folders: state.folders.filter((folder) => folder.id !== id),
       chats: state.chats.map((chat) => chat.folderId === id ? { ...chat, folderId: null } : chat),
     }))
+    const expanded = loadFolderExpanded()
+    delete expanded[id]
+    saveFolderExpanded(expanded)
     void optimisticRequest('DELETE', `/api/folders/${id}`)
   },
 
@@ -853,7 +976,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
         ? { ...existing, updatedAt: timestamp, messages: [...existing.messages, userMessage, assistantMessage] }
-        : { id, title, modelId, messages: [userMessage, assistantMessage], createdAt: timestamp, updatedAt: timestamp, pinned: false, folderId: null, tags: [] }
+        : { id, title, modelId, messages: [userMessage, assistantMessage], createdAt: timestamp, updatedAt: timestamp, pinned: false, folderId: null, sortOrder: 0, tags: [] }
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
         activeChatId: id,

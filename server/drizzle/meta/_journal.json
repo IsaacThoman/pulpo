@@ -127,6 +127,13 @@
       "when": 1785780838849,
       "tag": "0017_public_mother_askani",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785789059888,
+      "tag": "0018_safe_nitro",
+      "breakpoints": true
     }
   ]
 }

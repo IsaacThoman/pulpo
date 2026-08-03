@@ -231,6 +231,33 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return created
   })
 
+  app.put('/api/chats/order', async (request) => {
+    const user = requireUser(request)
+    const body = request.body as { chatIds?: string[] }
+    const chatIds = Array.isArray(body.chatIds) ? body.chatIds.filter((id) => typeof id === 'string') : []
+    if (chatIds.length === 0 || chatIds.length > 5_000) {
+      throw new AppError(400, 'validation_error', 'Chat order must include between 1 and 5,000 chat ids')
+    }
+    if (new Set(chatIds).size !== chatIds.length) {
+      throw new AppError(400, 'validation_error', 'Chat order cannot contain duplicates')
+    }
+    const existing = await db.select({ id: chats.id }).from(chats).where(and(
+      eq(chats.userId, user.id),
+      isNull(chats.deletedAt),
+      inArray(chats.id, chatIds),
+    ))
+    if (existing.length !== chatIds.length) throw notFound('Chat')
+    await db.transaction(async (tx) => {
+      for (const [sortOrder, chatId] of chatIds.entries()) {
+        await tx.update(chats)
+          .set({ sortOrder })
+          .where(and(eq(chats.id, chatId), eq(chats.userId, user.id)))
+      }
+    })
+    await bumpRevision(user.id)
+    return { data: chatIds }
+  })
+
   app.get('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -260,12 +287,19 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const patch = request.body as { title?: string; pinned?: boolean; folderId?: string | null; modelId?: string }
+    const patch = request.body as {
+      title?: string
+      pinned?: boolean
+      folderId?: string | null
+      modelId?: string
+      sortOrder?: number
+    }
     const [updated] = await db.update(chats).set({
       title: patch.title?.trim(),
       pinned: patch.pinned,
       folderId: patch.folderId,
       modelId: patch.modelId,
+      sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
       updatedAt: new Date(),
     }).where(and(eq(chats.id, id), eq(chats.userId, user.id))).returning()
     if (!updated) throw notFound('Chat')
@@ -384,7 +418,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/folders', async (request) => {
     const user = requireUser(request)
-    return { data: await db.select().from(folders).where(eq(folders.userId, user.id)) }
+    return {
+      data: await db.select().from(folders)
+        .where(eq(folders.userId, user.id))
+        .orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
+    }
   })
 
   app.post('/api/folders', async (request, reply) => {
@@ -393,7 +431,15 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const name = body.name?.trim()
     if (!name) throw new AppError(400, 'name_required', 'Folder name is required')
     const id = body.clientId ?? newId()
-    const [created] = await db.insert(folders).values({ id, userId: user.id, name }).onConflictDoNothing().returning()
+    const [sortRow] = await db.select({
+      nextSortOrder: sql<number>`coalesce(max(${folders.sortOrder}), -1)::int + 1`,
+    }).from(folders).where(eq(folders.userId, user.id))
+    const [created] = await db.insert(folders).values({
+      id,
+      userId: user.id,
+      name,
+      sortOrder: sortRow?.nextSortOrder ?? 0,
+    }).onConflictDoNothing().returning()
     if (!created) {
       const [existing] = await db.select().from(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).limit(1)
       if (!existing) throw new AppError(409, 'folder_id_conflict', 'Folder identifier is already in use')
@@ -404,15 +450,42 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return created
   })
 
+  app.put('/api/folders/order', async (request) => {
+    const user = requireUser(request)
+    const body = request.body as { folderIds?: string[] }
+    const folderIds = Array.isArray(body.folderIds) ? body.folderIds.filter((id) => typeof id === 'string') : []
+    if (folderIds.length === 0 || folderIds.length > 1_000) {
+      throw new AppError(400, 'validation_error', 'Folder order must include between 1 and 1,000 folder ids')
+    }
+    if (new Set(folderIds).size !== folderIds.length) {
+      throw new AppError(400, 'validation_error', 'Folder order cannot contain duplicates')
+    }
+    const existing = await db.select({ id: folders.id }).from(folders).where(eq(folders.userId, user.id))
+    const existingIds = new Set(existing.map((folder) => folder.id))
+    if (folderIds.length !== existingIds.size || folderIds.some((folderId) => !existingIds.has(folderId))) {
+      throw new AppError(400, 'validation_error', 'Folder order must contain every folder exactly once')
+    }
+    await db.transaction(async (tx) => {
+      for (const [sortOrder, folderId] of folderIds.entries()) {
+        await tx.update(folders)
+          .set({ sortOrder, updatedAt: new Date() })
+          .where(and(eq(folders.id, folderId), eq(folders.userId, user.id)))
+      }
+    })
+    await bumpRevision(user.id)
+    return { data: folderIds }
+  })
+
   app.patch('/api/folders/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const patch = request.body as { name?: string; pinned?: boolean }
+    const patch = request.body as { name?: string; pinned?: boolean; sortOrder?: number }
     const name = patch.name?.trim()
     if (patch.name !== undefined && !name) throw new AppError(400, 'name_required', 'Folder name is required')
     const [updated] = await db.update(folders).set({
       name,
       pinned: patch.pinned,
+      sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
       updatedAt: new Date(),
     }).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning()
     if (!updated) throw notFound('Folder')

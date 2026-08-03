@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   BarChart3,
@@ -50,6 +50,91 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
+
+type DragScope = 'folder' | 'pinned' | `folder-chat:${string}`
+
+function bySortOrder<T extends { sortOrder: number; updatedAt?: number; pinned?: boolean }>(a: T, b: T) {
+  if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder
+  if (a.updatedAt !== undefined && b.updatedAt !== undefined && a.updatedAt !== b.updatedAt) {
+    return b.updatedAt - a.updatedAt
+  }
+  return Number(b.pinned ?? false) - Number(a.pinned ?? false)
+}
+
+function useListReorder() {
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dragScope, setDragScope] = useState<DragScope | null>(null)
+  const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
+  const dragIdRef = useRef<string | null>(null)
+  const dragScopeRef = useRef<DragScope | null>(null)
+  const didDragRef = useRef(false)
+
+  const clearDrag = () => {
+    dragIdRef.current = null
+    dragScopeRef.current = null
+    setDragId(null)
+    setDragScope(null)
+    setDrop(null)
+  }
+
+  const startDrag = (scope: DragScope, id: string, e: DragEvent) => {
+    didDragRef.current = false
+    dragIdRef.current = id
+    dragScopeRef.current = scope
+    setDragId(id)
+    setDragScope(scope)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', id)
+  }
+
+  const onItemDragOver = (scope: DragScope, id: string, e: DragEvent<HTMLElement>) => {
+    if (dragScopeRef.current !== scope || !dragIdRef.current || dragIdRef.current === id) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    didDragRef.current = true
+    const rect = e.currentTarget.getBoundingClientRect()
+    const edge = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    if (drop?.id !== id || drop.edge !== edge) setDrop({ id, edge })
+  }
+
+  const dropOn = (scope: DragScope, id: string, e: DragEvent, reorder: (from: string, to: string, edge: 'before' | 'after') => void) => {
+    e.preventDefault()
+    if (dragScopeRef.current !== scope) return
+    const from = dragIdRef.current ?? e.dataTransfer.getData('text/plain')
+    const edge = drop?.id === id ? drop.edge : 'before'
+    if (from) reorder(from, id, edge)
+    clearDrag()
+  }
+
+  return {
+    dragId,
+    dragScope,
+    drop,
+    didDragRef,
+    clearDrag,
+    startDrag,
+    onItemDragOver,
+    dropOn,
+  }
+}
+
+function DropLines({
+  active,
+  before,
+  after,
+}: {
+  active: boolean
+  before: boolean
+  after: boolean
+}) {
+  if (!active) return null
+  return (
+    <>
+      {before && <div className="pointer-events-none absolute inset-x-2 -top-px z-10 h-0.5 rounded-full bg-foreground/35" />}
+      {after && <div className="pointer-events-none absolute inset-x-2 -bottom-px z-10 h-0.5 rounded-full bg-foreground/35" />}
+    </>
+  )
+}
 
 function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const togglePin = useChat((state) => state.togglePin)
@@ -127,11 +212,29 @@ function ChatRow({
   active,
   shiftHeld,
   onNavigate,
+  draggable: canDrag = false,
+  dragging = false,
+  showLineBefore = false,
+  showLineAfter = false,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd,
+  didDragRef,
 }: {
   chat: Chat
   active: boolean
   shiftHeld: boolean
   onNavigate?: () => void
+  draggable?: boolean
+  dragging?: boolean
+  showLineBefore?: boolean
+  showLineAfter?: boolean
+  onDragStart?: (e: DragEvent) => void
+  onDragOver?: (e: DragEvent<HTMLElement>) => void
+  onDrop?: (e: DragEvent) => void
+  onDragEnd?: () => void
+  didDragRef?: { current: boolean }
 }) {
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
@@ -142,19 +245,31 @@ function ChatRow({
   const actionClassName =
     'invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible'
 
-  const row = (
+  return (
     <div
+      draggable={canDrag}
+      onDragStart={canDrag ? onDragStart : undefined}
+      onDragOver={canDrag ? onDragOver : undefined}
+      onDrop={canDrag ? onDrop : undefined}
+      onDragEnd={canDrag ? onDragEnd : undefined}
       className={cn(
         'group relative flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors',
         active
           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60'
+          : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60',
+        canDrag && 'cursor-grab active:cursor-grabbing',
+        dragging && 'opacity-40',
       )}
       onClick={() => {
+        if (didDragRef?.current) {
+          didDragRef.current = false
+          return
+        }
         navigate(`/c/${chat.id}`)
         onNavigate?.()
       }}
     >
+      <DropLines active={canDrag} before={showLineBefore} after={showLineAfter} />
       <span className="flex-1 truncate">{chat.title}</span>
       {shiftHeld ? (
         <button
@@ -201,8 +316,6 @@ function ChatRow({
       </Dialog>
     </div>
   )
-
-  return row
 }
 
 function FolderGroup({
@@ -211,25 +324,76 @@ function FolderGroup({
   chatId,
   shiftHeld,
   onNavigate,
+  canReorderFolder,
+  folderDragging,
+  showFolderLineBefore,
+  showFolderLineAfter,
+  onFolderDragStart,
+  onFolderDragOver,
+  onFolderDrop,
+  onFolderDragEnd,
+  folderDidDragRef,
+  canReorderChats,
+  chatDrag,
 }: {
   folder: Folder
   chats: Chat[]
   chatId?: string
   shiftHeld: boolean
   onNavigate: () => void
+  canReorderFolder: boolean
+  folderDragging: boolean
+  showFolderLineBefore: boolean
+  showFolderLineAfter: boolean
+  onFolderDragStart: (e: DragEvent) => void
+  onFolderDragOver: (e: DragEvent<HTMLElement>) => void
+  onFolderDrop: (e: DragEvent) => void
+  onFolderDragEnd: () => void
+  folderDidDragRef: { current: boolean }
+  canReorderChats: boolean
+  chatDrag: {
+    dragId: string | null
+    dragScope: DragScope | null
+    drop: { id: string; edge: 'before' | 'after' } | null
+    didDragRef: { current: boolean }
+    startDrag: (scope: DragScope, id: string, e: DragEvent) => void
+    onItemDragOver: (scope: DragScope, id: string, e: DragEvent<HTMLElement>) => void
+    dropOn: (scope: DragScope, id: string, e: DragEvent, reorder: (from: string, to: string, edge: 'before' | 'after') => void) => void
+    clearDrag: () => void
+  }
 }) {
   const toggleFolder = useChat((state) => state.toggleFolder)
   const renameFolder = useChat((state) => state.renameFolder)
   const toggleFolderPin = useChat((state) => state.toggleFolderPin)
   const deleteFolder = useChat((state) => state.deleteFolder)
+  const reorderFolderChats = useChat((state) => state.reorderFolderChats)
   const [renameOpen, setRenameOpen] = useState(false)
   const [name, setName] = useState(folder.name)
+  const chatScope = `folder-chat:${folder.id}` as const
 
   useEffect(() => setName(folder.name), [folder.name])
 
   return (
-    <Collapsible open={folder.expanded} onOpenChange={() => toggleFolder(folder.id)}>
-      <div className="group flex items-center rounded-lg text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70">
+    <Collapsible open={folder.expanded} onOpenChange={() => {
+      if (folderDidDragRef.current) {
+        folderDidDragRef.current = false
+        return
+      }
+      toggleFolder(folder.id)
+    }}>
+      <div
+        draggable={canReorderFolder}
+        onDragStart={canReorderFolder ? onFolderDragStart : undefined}
+        onDragOver={canReorderFolder ? onFolderDragOver : undefined}
+        onDrop={canReorderFolder ? onFolderDrop : undefined}
+        onDragEnd={canReorderFolder ? onFolderDragEnd : undefined}
+        className={cn(
+          'group relative flex items-center rounded-lg text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70',
+          canReorderFolder && 'cursor-grab active:cursor-grabbing',
+          folderDragging && 'opacity-40',
+        )}
+      >
+        <DropLines active={canReorderFolder} before={showFolderLineBefore} after={showFolderLineAfter} />
         <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
           <ChevronRight
             className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
@@ -268,9 +432,31 @@ function FolderGroup({
         {chats.length === 0 && (
           <div className="px-2 py-1 text-xs text-muted-foreground">Empty</div>
         )}
-        {chats.map((chat) => (
-          <ChatRow key={chat.id} chat={chat} active={chat.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
-        ))}
+        {chats.map((chat) => {
+          const isDragging = chatDrag.dragScope === chatScope && chatDrag.dragId === chat.id
+          const showLineBefore =
+            chatDrag.dragScope === chatScope && chatDrag.drop?.id === chat.id && chatDrag.drop.edge === 'before' && !isDragging
+          const showLineAfter =
+            chatDrag.dragScope === chatScope && chatDrag.drop?.id === chat.id && chatDrag.drop.edge === 'after' && !isDragging
+          return (
+            <ChatRow
+              key={chat.id}
+              chat={chat}
+              active={chat.id === chatId}
+              shiftHeld={shiftHeld}
+              onNavigate={onNavigate}
+              draggable={canReorderChats}
+              dragging={isDragging}
+              showLineBefore={showLineBefore}
+              showLineAfter={showLineAfter}
+              didDragRef={chatDrag.didDragRef}
+              onDragStart={(e) => chatDrag.startDrag(chatScope, chat.id, e)}
+              onDragOver={(e) => chatDrag.onItemDragOver(chatScope, chat.id, e)}
+              onDrop={(e) => chatDrag.dropOn(chatScope, chat.id, e, (from, to, edge) => reorderFolderChats(folder.id, from, to, edge))}
+              onDragEnd={chatDrag.clearDrag}
+            />
+          )
+        })}
       </CollapsibleContent>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm">
@@ -316,12 +502,18 @@ export function Sidebar({
   const navigate = useNavigate()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}`
+    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}`
   )).join('|'))
   void chatListRevision
+  const folderListRevision = useChat((state) => state.folders.map((folder) => (
+    `${folder.id}:${folder.name}:${folder.pinned}:${folder.expanded}:${folder.sortOrder}`
+  )).join('|'))
+  void folderListRevision
   const chats = useChat.getState().chats
-  const folders = useChat((s) => s.folders)
+  const folders = useChat.getState().folders
   const addFolder = useChat((s) => s.addFolder)
+  const reorderFolders = useChat((s) => s.reorderFolders)
+  const reorderPinnedChats = useChat((s) => s.reorderPinnedChats)
   const user = useAuth((s) => s.user)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
   const logout = useAuth((s) => s.logout)
@@ -329,6 +521,7 @@ export function Sidebar({
   const [folderName, setFolderName] = useState('')
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const shiftHeld = useShiftHeld()
+  const reorder = useListReorder()
 
   const go = (path: string) => {
     navigate(path)
@@ -339,19 +532,21 @@ export function Sidebar({
     setActiveTooltip(null)
   }, [collapsed])
 
-  const visible = useMemo(() => [...chats].sort((a, b) => b.updatedAt - a.updatedAt), [chats])
-  const orderedFolders = useMemo(
-    () => [...folders].sort((a, b) => Number(b.pinned) - Number(a.pinned)),
-    [folders],
+  const orderedFolders = useMemo(() => [...folders].sort(bySortOrder), [folders])
+  const pinned = useMemo(() => chats.filter((c) => c.pinned).sort(bySortOrder), [chats])
+  const unpinned = useMemo(
+    () => [...chats].filter((c) => !c.pinned).sort((a, b) => b.updatedAt - a.updatedAt),
+    [chats],
   )
-  const pinned = visible.filter((c) => c.pinned)
-  const unpinned = visible.filter((c) => !c.pinned)
   const inFolders = new Map<string, Chat[]>()
   for (const f of folders) inFolders.set(f.id, [])
   const loose: Chat[] = []
   for (const c of unpinned) {
     if (c.folderId && inFolders.has(c.folderId)) inFolders.get(c.folderId)!.push(c)
     else loose.push(c)
+  }
+  for (const [folderId, items] of inFolders) {
+    inFolders.set(folderId, [...items].sort(bySortOrder))
   }
   const groups = new Map<string, Chat[]>()
   for (const c of loose) {
@@ -498,15 +693,44 @@ export function Sidebar({
                   Pinned
                 </div>
                 <div className="space-y-0.5">
-                  {pinned.map((c) => (
-                    <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
-                  ))}
+                  {pinned.map((c) => {
+                    const canReorder = pinned.length > 1
+                    const isDragging = reorder.dragScope === 'pinned' && reorder.dragId === c.id
+                    const showLineBefore =
+                      reorder.dragScope === 'pinned' && reorder.drop?.id === c.id && reorder.drop.edge === 'before' && !isDragging
+                    const showLineAfter =
+                      reorder.dragScope === 'pinned' && reorder.drop?.id === c.id && reorder.drop.edge === 'after' && !isDragging
+                    return (
+                      <ChatRow
+                        key={c.id}
+                        chat={c}
+                        active={c.id === chatId}
+                        shiftHeld={shiftHeld}
+                        onNavigate={onNavigate}
+                        draggable={canReorder}
+                        dragging={isDragging}
+                        showLineBefore={showLineBefore}
+                        showLineAfter={showLineAfter}
+                        didDragRef={reorder.didDragRef}
+                        onDragStart={(e) => reorder.startDrag('pinned', c.id, e)}
+                        onDragOver={(e) => reorder.onItemDragOver('pinned', c.id, e)}
+                        onDrop={(e) => reorder.dropOn('pinned', c.id, e, reorderPinnedChats)}
+                        onDragEnd={reorder.clearDrag}
+                      />
+                    )
+                  })}
                 </div>
               </div>
             )}
 
             {orderedFolders.map((f) => {
               const items = inFolders.get(f.id) ?? []
+              const canReorderFolder = orderedFolders.length > 1
+              const isDragging = reorder.dragScope === 'folder' && reorder.dragId === f.id
+              const showFolderLineBefore =
+                reorder.dragScope === 'folder' && reorder.drop?.id === f.id && reorder.drop.edge === 'before' && !isDragging
+              const showFolderLineAfter =
+                reorder.dragScope === 'folder' && reorder.drop?.id === f.id && reorder.drop.edge === 'after' && !isDragging
               return (
                 <FolderGroup
                   key={f.id}
@@ -515,6 +739,17 @@ export function Sidebar({
                   chatId={chatId}
                   shiftHeld={shiftHeld}
                   onNavigate={onNavigate}
+                  canReorderFolder={canReorderFolder}
+                  folderDragging={isDragging}
+                  showFolderLineBefore={showFolderLineBefore}
+                  showFolderLineAfter={showFolderLineAfter}
+                  onFolderDragStart={(e) => reorder.startDrag('folder', f.id, e)}
+                  onFolderDragOver={(e) => reorder.onItemDragOver('folder', f.id, e)}
+                  onFolderDrop={(e) => reorder.dropOn('folder', f.id, e, reorderFolders)}
+                  onFolderDragEnd={reorder.clearDrag}
+                  folderDidDragRef={reorder.didDragRef}
+                  canReorderChats={items.length > 1}
+                  chatDrag={reorder}
                 />
               )
             })}

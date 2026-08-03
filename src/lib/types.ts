@@ -64,6 +64,7 @@ export interface Chat {
   updatedAt: number
   pinned: boolean
   folderId: string | null
+  sortOrder: number
   tags: string[]
   shareId?: string
 }
@@ -73,6 +74,7 @@ export interface Folder {
   name: string
   pinned: boolean
   expanded: boolean
+  sortOrder: number
 }
 
 export interface ApiKey {

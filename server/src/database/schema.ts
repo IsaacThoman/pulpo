@@ -215,6 +215,7 @@ export const chats = pgTable('chats', {
   title: text('title').notNull().default('New chat'),
   modelId: text('model_id').notNull().references(() => models.id),
   pinned: boolean('pinned').notNull().default(false),
+  sortOrder: integer('sort_order').notNull().default(0),
   temporary: boolean('temporary').notNull().default(false),
   activeBranchLeafId: uuid('active_branch_leaf_id'),
   activeResponseId: uuid('active_response_id'),

@@ -447,6 +447,7 @@ export const chatSummarySchema = z.object({
   modelId: z.string(),
   pinned: z.boolean(),
   folderId: idSchema.nullable(),
+  sortOrder: z.number().int().optional(),
   temporary: z.boolean(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
