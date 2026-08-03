@@ -2,7 +2,7 @@ import { createServer as createHttpServer, type IncomingMessage, type ServerResp
 import { createServer as createHttpsServer } from 'node:https'
 import { randomBytes, randomUUID } from 'node:crypto'
 import * as k8s from '@kubernetes/client-node'
-import { podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
+import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 
 const namespace = process.env.PULPO_WORKSPACE_NAMESPACE ?? 'pulpo-workspaces'
 const image = process.env.PULPO_WORKSPACE_IMAGE
@@ -84,6 +84,8 @@ async function reconcileOnce(): Promise<void> {
   for (const lease of leases.values()) if (now - lease.lastUsedAt > lease.idleMs || now - lease.createdAt > lease.hardMs) {
     await core.deleteNamespacedPod({ namespace, name: lease.podName }).catch(() => undefined); leases.delete(lease.id); activeOperations.delete(lease.id)
   }
+  const staleStarting = pods.filter((pod) => isStaleStartingPod(pod, now))
+  await Promise.all(staleStarting.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
   const allWarm = pods.filter((pod) => pod.metadata?.labels?.['pulpo.dev/state'] === 'warm')
   const incompatible = allWarm.filter((pod) => !podMatchesSpec(pod, desiredSpec))
   await Promise.all(incompatible.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
@@ -205,6 +207,21 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
       return json(response, 200, { leases: [...leases.values()].map((lease) => ({ id: lease.id, createdAt: lease.createdAt, lastUsedAt: lease.lastUsedAt })) })
     }
     if (request.method === 'GET' && url.pathname === '/v1/workspaces') return json(response, 200, { warmCapacity, active: leases.size, workspaces: await workspaceInventory() })
+    const workspaceMatch = url.pathname.match(/^\/v1\/workspaces\/([^/]+)$/)
+    if (request.method === 'DELETE' && workspaceMatch) {
+      const name = decodeURIComponent(workspaceMatch[1]!)
+      let pod: k8s.V1Pod
+      try {
+        pod = await core.readNamespacedPod({ namespace, name })
+      } catch (error) {
+        const statusCode = (error as { statusCode?: number; code?: number }).statusCode ?? (error as { code?: number }).code
+        if (statusCode === 404) return json(response, 404, { error: 'workspace_not_found' })
+        throw error
+      }
+      if (!isUnleasedOrphanPod(pod)) return json(response, 409, { error: 'workspace_is_not_an_unleased_orphan' })
+      await core.deleteNamespacedPod({ namespace, name })
+      return json(response, 200, { status: 'deleted' })
+    }
     const match = url.pathname.match(/^\/v1\/leases\/([^/]+)(\/.*)?$/); const lease = match ? leases.get(match[1]!) : undefined
     if (!lease) return json(response, 404, { error: 'lease_not_found' })
     if (request.method === 'DELETE' && !match?.[2]) { await core.deleteNamespacedPod({ namespace, name: lease.podName }); leases.delete(lease.id); activeOperations.delete(lease.id); return json(response, 200, { status: 'released' }) }

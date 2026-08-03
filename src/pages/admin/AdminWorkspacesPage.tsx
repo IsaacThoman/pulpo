@@ -70,10 +70,13 @@ export function AdminWorkspacesPage() {
   const openWorkspaces = useMemo(() => [...(result?.openWorkspaces ?? [])].sort((a, b) => (stateOrder[a.lifecycleState] ?? 99) - (stateOrder[b.lifecycleState] ?? 99) || a.createdAt.localeCompare(b.createdAt)), [result])
   const policy = result?.policy
   const terminate = async () => {
-    if (!terminateTarget?.leaseId) return
+    if (!terminateTarget) return
     setTerminating(true); setTerminateError(null)
     try {
-      await apiRequest(`/api/admin/usage/workspaces/${encodeURIComponent(terminateTarget.leaseId)}`, { method: 'DELETE' })
+      const path = terminateTarget.leaseId
+        ? `/api/admin/usage/workspaces/${encodeURIComponent(terminateTarget.leaseId)}`
+        : `/api/admin/usage/workspaces/orphans/${encodeURIComponent(terminateTarget.name)}`
+      await apiRequest(path, { method: 'DELETE' })
       setTerminateTarget(null)
       await load()
     } catch (error) {
@@ -110,7 +113,7 @@ export function AdminWorkspacesPage() {
             <td className="tabular-nums">{remaining(workspace.idleExpiresAt, now)}</td>
             <td className="tabular-nums">{remaining(workspace.hardExpiresAt, now)}</td>
             <td><span className={workspace.ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>{workspace.ready ? 'Ready' : workspace.phase}</span>{workspace.restartCount > 0 && <div className="text-amber-600">{workspace.restartCount} restarts</div>}</td>
-            <td className="pr-3 text-right">{workspace.leaseId && ['active', 'idle', 'starting'].includes(workspace.lifecycleState) ? <Button size="icon-sm" variant="ghost" className="hover:text-destructive" title="Terminate VM" aria-label={`Terminate ${workspace.name}`} onClick={() => { setTerminateError(null); setTerminateTarget(workspace) }}><Power /></Button> : <span className="text-muted-foreground">—</span>}</td>
+            <td className="pr-3 text-right">{((workspace.leaseId && ['active', 'idle', 'starting'].includes(workspace.lifecycleState)) || (!workspace.leaseId && ['starting', 'unknown'].includes(workspace.lifecycleState))) ? <Button size="icon-sm" variant="ghost" className="hover:text-destructive" title={workspace.leaseId ? 'Terminate VM' : 'Delete orphan VM'} aria-label={`${workspace.leaseId ? 'Terminate' : 'Delete orphan'} ${workspace.name}`} onClick={() => { setTerminateError(null); setTerminateTarget(workspace) }}><Power /></Button> : <span className="text-muted-foreground">—</span>}</td>
           </tr>
         }) : <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">{result ? 'No open workspace VMs.' : 'Loading VM inventory…'}</td></tr>}</tbody>
       </table></div></Card>
@@ -140,14 +143,14 @@ export function AdminWorkspacesPage() {
     <Dialog open={!!terminateTarget} onOpenChange={(open) => { if (!open && !terminating) { setTerminateTarget(null); setTerminateError(null) } }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Terminate workspace VM?</DialogTitle>
-          <DialogDescription>This immediately stops the VM and any running operation. The user can receive a new workspace if they use agent tools again.</DialogDescription>
+          <DialogTitle>{terminateTarget?.leaseId ? 'Terminate workspace VM?' : 'Delete orphan workspace VM?'}</DialogTitle>
+          <DialogDescription>{terminateTarget?.leaseId ? 'This immediately stops the VM and any running operation. The user can receive a new workspace if they use agent tools again.' : 'This VM has no active lease or owner. Deleting it immediately removes the abandoned workspace pod.'}</DialogDescription>
         </DialogHeader>
         {terminateTarget && <div className="rounded-md border bg-muted/30 p-3 text-xs"><div className="font-medium">{terminateTarget.user?.name || terminateTarget.user?.email || 'Unassigned workspace'}</div><div className="mt-1 text-muted-foreground">{terminateTarget.chat?.title ?? 'No chat'} · <span className="font-mono">{terminateTarget.name}</span></div></div>}
         {terminateError && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{terminateError}</div>}
         <DialogFooter>
           <Button variant="outline" disabled={terminating} onClick={() => { setTerminateTarget(null); setTerminateError(null) }}>Cancel</Button>
-          <Button variant="destructive" disabled={terminating} onClick={() => void terminate()}>{terminating ? <Loader2 className="animate-spin" /> : <Power />}{terminating ? 'Terminating…' : 'Terminate VM'}</Button>
+          <Button variant="destructive" disabled={terminating} onClick={() => void terminate()}>{terminating ? <Loader2 className="animate-spin" /> : <Power />}{terminating ? (terminateTarget?.leaseId ? 'Terminating…' : 'Deleting…') : (terminateTarget?.leaseId ? 'Terminate VM' : 'Delete orphan VM')}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

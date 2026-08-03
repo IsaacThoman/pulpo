@@ -9,6 +9,7 @@ export type WorkspaceSpec = {
 }
 
 export const WORKSPACE_SPEC_HASH_ANNOTATION = 'pulpo.dev/spec-hash'
+export const ORPHAN_STARTING_MAX_AGE_MS = 10 * 60 * 1000
 
 export function workspaceSpecHash(spec: WorkspaceSpec): string {
   return createHash('sha256')
@@ -29,4 +30,17 @@ export function podMatchesSpec(pod: k8s.V1Pod, spec: WorkspaceSpec): boolean {
   return requests?.cpu === spec.cpu
     && requests?.memory === spec.memory
     && requests?.['ephemeral-storage'] === spec.ephemeralStorage
+}
+
+export function isUnleasedOrphanPod(pod: k8s.V1Pod): boolean {
+  const labels = pod.metadata?.labels ?? {}
+  if (labels['app.kubernetes.io/name'] !== 'pulpo-workspace' || labels['pulpo.dev/lease-id']) return false
+  const state = labels['pulpo.dev/state']
+  return state === 'starting' || state === 'unknown' || state === undefined
+}
+
+export function isStaleStartingPod(pod: k8s.V1Pod, now = Date.now(), maxAgeMs = ORPHAN_STARTING_MAX_AGE_MS): boolean {
+  if (!isUnleasedOrphanPod(pod) || pod.metadata?.labels?.['pulpo.dev/state'] !== 'starting') return false
+  const createdAt = pod.metadata?.creationTimestamp ? new Date(pod.metadata.creationTimestamp).getTime() : Number.NaN
+  return Number.isFinite(createdAt) && now - createdAt >= maxAgeMs
 }

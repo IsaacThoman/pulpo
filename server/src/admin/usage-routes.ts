@@ -40,6 +40,26 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 }
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
+  app.delete('/api/admin/usage/workspaces/orphans/:name', async (request) => {
+    requireAdmin(request)
+    const { name } = z.object({ name: z.string().min(1).max(253).regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/) }).parse(request.params)
+    const config = getConfig()
+    if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) {
+      throw new AppError(503, 'workspace_controller_unavailable', 'Workspace controller is not configured')
+    }
+    let response: Response
+    try {
+      response = await workspaceControllerRequest(`/v1/workspaces/${encodeURIComponent(name)}`, { method: 'DELETE', signal: AbortSignal.timeout(10_000) })
+    } catch (error) {
+      throw new AppError(502, 'workspace_deletion_failed', `Workspace controller could not delete the orphan VM: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!response.ok) {
+      const status = response.status === 404 || response.status === 409 ? response.status : 502
+      throw new AppError(status, 'workspace_deletion_failed', response.status === 409 ? 'Workspace is no longer an unleased orphan' : `Workspace controller could not delete the orphan VM (${response.status})`)
+    }
+    return { status: 'deleted' }
+  })
+
   app.delete('/api/admin/usage/workspaces/:leaseId', async (request) => {
     requireAdmin(request)
     const { leaseId } = z.object({ leaseId: z.string().uuid() }).parse(request.params)
