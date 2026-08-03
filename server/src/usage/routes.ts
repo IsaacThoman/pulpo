@@ -2,8 +2,8 @@ import { and, asc, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { creditLedger, models, requestLogs, usageEvents, users } from '../database/schema.js'
-import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant } from './public.js'
+import { creditLedger, modelPresetChoices, modelPresets, models, requestLogs, usageEvents, users } from '../database/schema.js'
+import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
 
 function sinceFromQuery(query: unknown): Date {
   const days = Math.min(365, Math.max(1, Number((query as { days?: string }).days ?? 30)))
@@ -19,6 +19,36 @@ function leaderboardSince(query: unknown): Date | null {
 
 function eligibleUsageFilters(since: Date | null): SQL[] {
   return [eq(users.blocked, false), ...(since ? [gte(usageEvents.createdAt, since)] : [])]
+}
+
+async function loadUsageModelAliases(): Promise<Map<string, UsageModelIdentity>> {
+  const [catalog, redirects] = await Promise.all([
+    db.select({
+      modelId: models.id,
+      modelName: models.name,
+      modelLogo: models.logo,
+      modelVisible: models.visible,
+    }).from(models),
+    db.select({
+      ownerModelId: modelPresets.modelId,
+      action: modelPresetChoices.action,
+    }).from(modelPresetChoices)
+      .innerJoin(modelPresets, eq(modelPresets.id, modelPresetChoices.presetId))
+      .where(eq(modelPresetChoices.actionType, 'redirect')),
+  ])
+  const catalogById = new Map(catalog.map((model) => [model.modelId, { ...model, calls: 0, costMicros: 0 }]))
+  const aliases = new Map<string, UsageModelIdentity>()
+  for (const redirect of redirects) {
+    const targetModelId = (redirect.action as { modelId?: unknown }).modelId
+    const owner = catalogById.get(redirect.ownerModelId)
+    if (typeof targetModelId !== 'string' || !owner) continue
+    const existing = aliases.get(targetModelId)
+    if (!existing || (owner.modelVisible && !existing.modelVisible) ||
+      (owner.modelVisible === existing.modelVisible && owner.modelId < existing.modelId)) {
+      aliases.set(targetModelId, owner)
+    }
+  }
+  return aliases
 }
 
 export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
@@ -47,7 +77,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const limit = Math.min(200, Math.max(1, Number((request.query as { limit?: string }).limit ?? 50)))
     const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
-    const rows = await db.select({
+    const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
       balanceAfterMicros: creditLedger.balanceAfterMicros,
       displayModelId: models.id,
@@ -60,16 +90,17 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       .innerJoin(models, eq(models.id, attributedModelId))
       .where(eq(usageEvents.userId, user.id))
       .orderBy(desc(usageEvents.createdAt))
-      .limit(limit)
-    const canonical = canonicalUsageModels(rows.map((row) => ({
+      .limit(limit), loadUsageModelAliases()])
+    const displayModels = rows.map((row) => resolveUsageModelAlias({
       modelId: row.displayModelId, modelName: row.displayModelName, modelLogo: row.displayModelLogo,
       modelVisible: row.displayModelVisible, calls: 1, costMicros: Number(row.usage.costMicros),
-    })))
-    return { data: rows.map(({ usage, balanceAfterMicros, displayModelId }) => ({
+    }, aliases))
+    const canonical = canonicalUsageModels(displayModels)
+    return { data: rows.map(({ usage, balanceAfterMicros }, index) => ({
       ...usage,
       // Presentation follows the user's selected model; cost and pricing fields
       // remain those of the actual responder recorded on the usage event.
-      modelId: canonical.get(displayModelId)?.modelId ?? displayModelId,
+      modelId: canonical.get(displayModels[index]!.modelId)?.modelId ?? displayModels[index]!.modelId,
       balanceAfterMicros,
     })) }
   })
@@ -127,7 +158,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const rangeWhere = and(...eligibleUsageFilters(since))
     const allWhere = and(...eligibleUsageFilters(null))
     const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
-    const [summary, daily, contribution, topModels] = await Promise.all([
+    const [summary, daily, contribution, topModels, aliases] = await Promise.all([
       db.select({
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
@@ -166,17 +197,20 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
       }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
         .where(rangeWhere).groupBy(models.id).orderBy(desc(sql`sum(${usageEvents.costMicros})`)),
+      loadUsageModelAliases(),
     ])
     const totals = summary[0]
-    const canonical = canonicalUsageModels(topModels.map((row) => ({
+    const resolvedTopModels = topModels.map((row) => resolveUsageModelAlias({
       ...row, calls: Number(row.calls), costMicros: Number(row.costMicros),
-    })))
+    }, aliases))
+    const canonical = canonicalUsageModels(resolvedTopModels)
     const publicCanonical = new Map([...canonical.entries()].map(([id, model]) => [id, publicModel({
       visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo,
     })]))
     const dailyByModel = new Map<string, { day: string; modelId: string; calls: number; inputTokens: number; outputTokens: number; costMicros: number }>()
     for (const row of daily) {
-      const modelId = publicCanonical.get(row.modelId)?.id ?? 'other'
+      const resolved = resolveUsageModelAlias({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) }, aliases)
+      const modelId = publicCanonical.get(resolved.modelId)?.id ?? 'other'
       const key = `${row.day}:${modelId}`
       const current = dailyByModel.get(key) ?? { day: row.day, modelId, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
       current.calls += Number(row.calls)
@@ -186,8 +220,9 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       dailyByModel.set(key, current)
     }
     const topByModel = new Map<string, { modelId: string; calls: number; inputTokens: number; outputTokens: number; costMicros: number }>()
-    for (const row of topModels) {
-      const modelId = publicCanonical.get(row.modelId)?.id ?? 'other'
+    for (let index = 0; index < topModels.length; index += 1) {
+      const row = topModels[index]!
+      const modelId = publicCanonical.get(resolvedTopModels[index]!.modelId)?.id ?? 'other'
       const current = topByModel.get(modelId) ?? { modelId, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
       current.calls += Number(row.calls)
       current.inputTokens += Number(row.inputTokens)
@@ -218,7 +253,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
     ) : undefined
     const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
-    const rows = await db.select({
+    const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
       userName: users.name,
       userNickname: users.nickname,
@@ -229,19 +264,24 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       modelLogo: models.logo,
       modelVisible: models.visible,
     }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
-      .where(and(...eligibleUsageFilters(since), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(limit + 1)
+      .where(and(...eligibleUsageFilters(since), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(limit + 1), loadUsageModelAliases()])
     const page = rows.slice(0, limit)
     const last = page.at(-1)?.usage
     return {
-      data: page.map((row) => ({
+      data: page.map((row) => {
+        const model = resolveUsageModelAlias({
+          modelId: row.modelId, modelName: row.modelName, modelLogo: row.modelLogo,
+          modelVisible: row.modelVisible, calls: 1, costMicros: Number(row.usage.costMicros),
+        }, aliases)
+        return {
         id: row.usage.id,
         createdAt: row.usage.createdAt.toISOString(),
         participant: publicParticipant({ visible: row.userVisible, name: row.userName, nickname: row.userNickname, color: row.userColor }),
-        model: publicModel({ visible: row.modelVisible, id: row.modelId, name: row.modelName, logo: row.modelLogo }),
+        model: publicModel({ visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo }),
         inputTokens: row.usage.inputTokens,
         outputTokens: row.usage.outputTokens,
         costMicros: Number(row.usage.costMicros),
-      })),
+      }}),
       nextCursor: rows.length > limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
     }
   })

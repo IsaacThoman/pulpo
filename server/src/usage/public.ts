@@ -55,6 +55,21 @@ export interface UsageModelIdentity {
   costMicros: number
 }
 
+export function resolveUsageModelAlias(
+  model: UsageModelIdentity,
+  aliases: ReadonlyMap<string, UsageModelIdentity>,
+): UsageModelIdentity {
+  let resolved = model
+  const visited = new Set<string>()
+  while (!visited.has(resolved.modelId)) {
+    visited.add(resolved.modelId)
+    const owner = aliases.get(resolved.modelId)
+    if (!owner) break
+    resolved = { ...owner, calls: model.calls, costMicros: model.costMicros }
+  }
+  return resolved
+}
+
 /**
  * Models with the same display name represent the same user-facing choice.
  * Attribute all of them to the most-used model so charts and rankings do not

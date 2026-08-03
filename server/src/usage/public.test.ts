@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant } from './public.js'
+import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant, resolveUsageModelAlias } from './public.js'
 
 describe('public leaderboard usage', () => {
   it('round trips stable timestamp and id cursors', () => {
@@ -30,5 +30,15 @@ describe('public leaderboard usage', () => {
     ])
     expect(canonical.get('kimi-fast')?.modelId).toBe('kimi')
     expect(canonical.get('kimi')?.modelId).toBe('kimi')
+  })
+
+  it('attributes a hidden redirect target to its visible preset owner', () => {
+    const usage = { modelId: 'kimi-fast', modelName: 'Kimi K3 Fast', modelLogo: null, modelVisible: false, calls: 1, costMicros: 20_100 }
+    const owner = { modelId: 'kimi', modelName: 'Kimi K3', modelLogo: 'kimi', modelVisible: true, calls: 0, costMicros: 0 }
+    expect(resolveUsageModelAlias(usage, new Map([['kimi-fast', owner]]))).toEqual({
+      ...owner,
+      calls: 1,
+      costMicros: 20_100,
+    })
   })
 })
