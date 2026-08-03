@@ -71,6 +71,7 @@ export interface Chat {
 export interface Folder {
   id: string
   name: string
+  pinned: boolean
   expanded: boolean
 }
 

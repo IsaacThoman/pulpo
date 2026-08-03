@@ -394,6 +394,22 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return created
   })
 
+  app.patch('/api/folders/:id', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const patch = request.body as { name?: string; pinned?: boolean }
+    const name = patch.name?.trim()
+    if (patch.name !== undefined && !name) throw new AppError(400, 'name_required', 'Folder name is required')
+    const [updated] = await db.update(folders).set({
+      name,
+      pinned: patch.pinned,
+      updatedAt: new Date(),
+    }).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning()
+    if (!updated) throw notFound('Folder')
+    await bumpRevision(user.id)
+    return updated
+  })
+
   app.delete('/api/folders/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }

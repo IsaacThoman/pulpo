@@ -389,9 +389,9 @@ const CHAT_TITLES = [
 export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
   const rand = mulberry32(1337)
   const folders: Folder[] = [
-    { id: 'f-work', name: 'work', expanded: true },
-    { id: 'f-research', name: 'research', expanded: true },
-    { id: 'f-shitposts', name: 'shitposts', expanded: false },
+    { id: 'f-work', name: 'work', pinned: true, expanded: true },
+    { id: 'f-research', name: 'research', pinned: false, expanded: true },
+    { id: 'f-shitposts', name: 'shitposts', pinned: false, expanded: false },
   ]
   const chats: Chat[] = []
   const now = Date.now()
@@ -494,4 +494,3 @@ export function makeDailyModelUsage(records: UsageRecord[], userId?: string): Da
   }
   return [...map.values()].sort((a, b) => a.date.localeCompare(b.date))
 }
-

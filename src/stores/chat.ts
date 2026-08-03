@@ -60,6 +60,7 @@ export interface ServerChat {
 export interface ServerFolder {
   id: string
   name: string
+  pinned: boolean
 }
 
 interface ChatState {
@@ -83,6 +84,8 @@ interface ChatState {
   shareChat: (id: string) => Promise<string>
   addFolder: (name: string) => void
   toggleFolder: (id: string) => void
+  renameFolder: (id: string, name: string) => void
+  toggleFolderPin: (id: string) => void
   deleteFolder: (id: string) => void
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean) => string
   regenerate: (chatId: string, messageId: string, modelId: string) => void
@@ -630,12 +633,22 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   addFolder: (name) => {
     const id = crypto.randomUUID()
-    set((state) => ({ folders: [...state.folders, { id, name, expanded: true }] }))
+    set((state) => ({ folders: [...state.folders, { id, name, pinned: false, expanded: true }] }))
     void optimisticRequest('POST', '/api/folders', { clientId: id, name })
   },
   toggleFolder: (id) => set((state) => ({
     folders: state.folders.map((folder) => folder.id === id ? { ...folder, expanded: !folder.expanded } : folder),
   })),
+  renameFolder: (id, name) => {
+    set((state) => ({ folders: state.folders.map((folder) => folder.id === id ? { ...folder, name } : folder) }))
+    void optimisticRequest('PATCH', `/api/folders/${id}`, { name })
+  },
+  toggleFolderPin: (id) => {
+    const folder = get().folders.find((item) => item.id === id)
+    if (!folder) return
+    set((state) => ({ folders: state.folders.map((item) => item.id === id ? { ...item, pinned: !item.pinned } : item) }))
+    void optimisticRequest('PATCH', `/api/folders/${id}`, { pinned: !folder.pinned })
+  },
   deleteFolder: (id) => {
     set((state) => ({
       folders: state.folders.filter((folder) => folder.id !== id),

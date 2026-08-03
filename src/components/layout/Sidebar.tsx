@@ -25,7 +25,7 @@ import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { chatTimeGroup } from '@/lib/format'
-import type { Chat } from '@/lib/types'
+import type { Chat, Folder } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -205,6 +205,95 @@ function ChatRow({
   return row
 }
 
+function FolderGroup({
+  folder,
+  chats,
+  chatId,
+  shiftHeld,
+  onNavigate,
+}: {
+  folder: Folder
+  chats: Chat[]
+  chatId?: string
+  shiftHeld: boolean
+  onNavigate: () => void
+}) {
+  const toggleFolder = useChat((state) => state.toggleFolder)
+  const renameFolder = useChat((state) => state.renameFolder)
+  const toggleFolderPin = useChat((state) => state.toggleFolderPin)
+  const deleteFolder = useChat((state) => state.deleteFolder)
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [name, setName] = useState(folder.name)
+
+  useEffect(() => setName(folder.name), [folder.name])
+
+  return (
+    <Collapsible open={folder.expanded} onOpenChange={() => toggleFolder(folder.id)}>
+      <div className="group flex items-center rounded-lg text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70">
+        <CollapsibleTrigger className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 px-2 py-1.5">
+          <ChevronRight
+            className={cn('size-3.5 text-muted-foreground transition-transform', folder.expanded && 'rotate-90')}
+          />
+          <FolderIcon className="size-4 text-muted-foreground" />
+          <span className="flex-1 truncate text-left">{folder.name}</span>
+          <span className="text-xs text-muted-foreground">{chats.length}</span>
+        </CollapsibleTrigger>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="invisible mr-1 rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
+              aria-label="Folder options"
+            >
+              <MoreHorizontal className="size-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="start" className="w-48">
+            <DropdownMenuItem onClick={() => toggleFolderPin(folder.id)}>
+              {folder.pinned ? <PinOff /> : <Pin />}
+              {folder.pinned ? 'Unpin' : 'Pin'}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+              <Pencil />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={() => deleteFolder(folder.id)}>
+              <Trash2 />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <CollapsibleContent className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2">
+        {chats.length === 0 && (
+          <div className="px-2 py-1 text-xs text-muted-foreground">Empty</div>
+        )}
+        {chats.map((chat) => (
+          <ChatRow key={chat.id} chat={chat} active={chat.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
+        ))}
+      </CollapsibleContent>
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename folder</DialogTitle>
+          </DialogHeader>
+          <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                renameFolder(folder.id, name.trim() || folder.name)
+                setRenameOpen(false)
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Collapsible>
+  )
+}
+
 export function Sidebar({
   collapsed,
   mobile,
@@ -232,7 +321,6 @@ export function Sidebar({
   void chatListRevision
   const chats = useChat.getState().chats
   const folders = useChat((s) => s.folders)
-  const toggleFolder = useChat((s) => s.toggleFolder)
   const addFolder = useChat((s) => s.addFolder)
   const user = useAuth((s) => s.user)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
@@ -252,6 +340,10 @@ export function Sidebar({
   }, [collapsed])
 
   const visible = useMemo(() => [...chats].sort((a, b) => b.updatedAt - a.updatedAt), [chats])
+  const orderedFolders = useMemo(
+    () => [...folders].sort((a, b) => Number(b.pinned) - Number(a.pinned)),
+    [folders],
+  )
   const pinned = visible.filter((c) => c.pinned)
   const unpinned = visible.filter((c) => !c.pinned)
   const inFolders = new Map<string, Chat[]>()
@@ -413,27 +505,17 @@ export function Sidebar({
               </div>
             )}
 
-            {folders.map((f) => {
+            {orderedFolders.map((f) => {
               const items = inFolders.get(f.id) ?? []
               return (
-                <Collapsible key={f.id} open={f.expanded} onOpenChange={() => toggleFolder(f.id)}>
-                  <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent/70">
-                    <ChevronRight
-                      className={cn('size-3.5 text-muted-foreground transition-transform', f.expanded && 'rotate-90')}
-                    />
-                    <FolderIcon className="size-4 text-muted-foreground" />
-                    <span className="flex-1 truncate text-left">{f.name}</span>
-                    <span className="text-xs text-muted-foreground">{items.length}</span>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent className="ml-4 space-y-0.5 border-l border-sidebar-border pl-2">
-                    {items.length === 0 && (
-                      <div className="px-2 py-1 text-xs text-muted-foreground">Empty</div>
-                    )}
-                    {items.map((c) => (
-                      <ChatRow key={c.id} chat={c} active={c.id === chatId} shiftHeld={shiftHeld} onNavigate={onNavigate} />
-                    ))}
-                  </CollapsibleContent>
-                </Collapsible>
+                <FolderGroup
+                  key={f.id}
+                  folder={f}
+                  chats={items}
+                  chatId={chatId}
+                  shiftHeld={shiftHeld}
+                  onNavigate={onNavigate}
+                />
               )
             })}
 

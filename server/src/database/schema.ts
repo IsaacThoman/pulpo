@@ -202,6 +202,7 @@ export const folders = pgTable('folders', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
+  pinned: boolean('pinned').notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
   ...timestamps,
 })
