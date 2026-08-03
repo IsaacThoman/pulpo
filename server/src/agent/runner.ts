@@ -204,6 +204,18 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       return toolCalls >= settings.maxToolCalls ? { block: true, reason: `Tool call limit (${settings.maxToolCalls}) reached` } : undefined
     },
   })
+  let lastRunPersistAt = 0
+  const persistRunContext = async (force = false) => {
+    if (!force && Date.now() - lastRunPersistAt < 500) return
+    lastRunPersistAt = Date.now()
+    await db.update(agentRuns).set({
+      workspaceLeaseId: manager.leaseId,
+      context: { messages: messagesForPersistence(agent.state.messages), billingTurns },
+      modelTurns,
+      toolCalls,
+      updatedAt: new Date(),
+    }).where(eq(agentRuns.id, runId))
+  }
   agent.subscribe(async (event) => {
     if (event.type === 'turn_start') {
       modelTurns += 1
@@ -279,7 +291,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshot()
     }
-    await db.update(agentRuns).set({ workspaceLeaseId: manager.leaseId, context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await persistRunContext(event.type !== 'message_update' && event.type !== 'tool_execution_update')
   })
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {

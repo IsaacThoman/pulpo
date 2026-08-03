@@ -350,6 +350,21 @@ async function processGenerationAttempt(
   let usage: ResponseUsage | null = null
   let upstreamResponseId = record.response.openaiResponseId
   let lastSnapshotAt = 0
+  let lastTelemetryAt = 0
+  let pendingEventCount = 0
+  const flushTelemetry = async (force = false) => {
+    if (pendingEventCount === 0 || (!force && Date.now() - lastTelemetryAt < 500)) return
+    const eventCount = pendingEventCount
+    await db.update(requestLogs).set({
+      eventCount: sql`${requestLogs.eventCount} + ${eventCount}`,
+      inputTokens: usage?.inputTokens,
+      outputTokens: usage?.outputTokens,
+      updatedAt: new Date(),
+    }).where(eq(requestLogs.id, requestLog.id))
+    pendingEventCount -= eventCount
+    lastTelemetryAt = Date.now()
+    await publishAdminUsage(requestLog.id)
+  }
   const controller = new AbortController()
   let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
   if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
@@ -394,10 +409,10 @@ async function processGenerationAttempt(
       output = upstreamResponse?.output ?? accumulateEventOutput(output, event)
       if (upstreamResponse?.usage) usage = normalizeUsage(upstreamResponse.usage)
       await publishResponseEvent(event)
-      await db.update(requestLogs).set({ eventCount: sql`${requestLogs.eventCount} + 1`, inputTokens: usage?.inputTokens, outputTokens: usage?.outputTokens, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-      await publishAdminUsage(requestLog.id)
+      pendingEventCount += 1
       const snapshotDue = Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS
       const itemBoundary = upstream.type.endsWith('.done') || upstream.type === 'response.completed'
+      await flushTelemetry(snapshotDue || itemBoundary)
       if (snapshotDue || itemBoundary) {
         lastSnapshotAt = Date.now()
         await db.update(responses).set({
@@ -411,6 +426,7 @@ async function processGenerationAttempt(
         if (updated) await publishSnapshot(toSnapshot(updated))
       }
     }
+    await flushTelemetry(true)
     if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
     await persistItems(responseId, output)
     const completedAt = new Date()
@@ -426,6 +442,7 @@ async function processGenerationAttempt(
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await publishSnapshot(toSnapshot(completed))
   } catch (error) {
+    await flushTelemetry(true).catch(() => undefined)
     if (firstTokenTimer) clearTimeout(firstTokenTimer)
     const cancelled = await isCancellationRequested(responseId)
     const completedAt = new Date()

@@ -81,6 +81,7 @@ export function ChatDataBridge() {
     if (!userId || userRole === 'pending') return
     const socket: PulpoSocket = io({ path: '/socket.io', withCredentials: true })
     socketRef.current = socket
+    const subscribedResponseIds = subscribedResponseIdsRef.current
 
     let eventFrame: number | undefined
     let cursorTimer: number | undefined
@@ -129,7 +130,7 @@ export function ChatDataBridge() {
       if (events) events.push(event)
       else pendingEvents.set(event.responseId, [event])
       if (eventFrame === undefined) {
-        eventFrame = window.requestAnimationFrame(() => flushEventBatches())
+        eventFrame = window.setTimeout(() => flushEventBatches(), 50)
       }
     }
     const applySync = (result: SyncResult) => {
@@ -177,11 +178,11 @@ export function ChatDataBridge() {
         responseCursors: Object.fromEntries(cursors.map((cursor) => [cursor.responseId, cursor.sequence])),
       }, applySync)
       if (activeChatIdRef.current) socket.emit('chat.subscribe', { chatId: activeChatIdRef.current })
-      subscribedResponseIdsRef.current.clear()
+      subscribedResponseIds.clear()
       for (const responseId of useChat.getState().streamingIds) {
         const cursor = await localDb.responseCursors.get(`${currentTabId}:${responseId}`)
         socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
-        subscribedResponseIdsRef.current.add(responseId)
+        subscribedResponseIds.add(responseId)
       }
       void flushOutbox(userId).then(() => queryClient.invalidateQueries({ queryKey: ['chats', userId] }))
     }
@@ -218,12 +219,12 @@ export function ChatDataBridge() {
       document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('focus', wake)
       window.removeEventListener('online', online)
-      if (eventFrame !== undefined) window.cancelAnimationFrame(eventFrame)
+      if (eventFrame !== undefined) window.clearTimeout(eventFrame)
       flushEventBatches()
       void flushCursors()
       socket.disconnect()
       socketRef.current = null
-      subscribedResponseIdsRef.current.clear()
+      subscribedResponseIds.clear()
     }
   }, [userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
 

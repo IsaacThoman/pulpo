@@ -79,12 +79,7 @@ export function ChatPage() {
   const { chatId } = useParams()
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const chats = useChat((s) => s.chats)
-  const streamingHere = useChat((s) => {
-    if (!chatId) return false
-    const current = s.chats.find((item) => item.id === chatId)
-    return current?.messages.some((message) => message.role === 'assistant' && !message.done) ?? false
-  })
+  const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
   const chatWidth = useSettings((s) => s.chatWidth)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
@@ -95,7 +90,6 @@ export function ChatPage() {
     prompts: DEFAULT_SUGGESTED_PROMPTS,
   })
 
-  const chat = chats.find((c) => c.id === chatId) ?? null
   const chatModelId = chat?.modelId
   const [modelId, setModelId] = useState(
     () => routeModelId ?? chatModelId ?? models[0]?.id ?? ''
@@ -115,10 +109,29 @@ export function ChatPage() {
       .catch(() => {})
   }, [])
 
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
-  }, [chat?.messages.length, streamingHere, chatId])
+    const viewport = viewportRef.current
+    const content = contentRef.current
+    if (!viewport || !content) return
+    stickToBottomRef.current = true
+    const updateStickiness = () => {
+      stickToBottomRef.current = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 96
+    }
+    const scrollToBottom = () => {
+      if (stickToBottomRef.current) viewport.scrollTop = viewport.scrollHeight
+    }
+    viewport.addEventListener('scroll', updateStickiness, { passive: true })
+    const observer = new ResizeObserver(() => window.requestAnimationFrame(scrollToBottom))
+    observer.observe(content)
+    window.requestAnimationFrame(scrollToBottom)
+    return () => {
+      viewport.removeEventListener('scroll', updateStickiness)
+      observer.disconnect()
+    }
+  }, [chatId, chat?.id])
 
   const isEmpty = !chat
   const suggestions = useMemo(
@@ -186,8 +199,9 @@ export function ChatPage() {
         </>
       ) : (
         <>
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
             <div
+              ref={contentRef}
               className={cn(
                 'mx-auto flex flex-col gap-7 px-4 py-6',
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
@@ -202,7 +216,7 @@ export function ChatPage() {
                   activeModelId={modelId}
                 />
               ))}
-              <div ref={bottomRef} className="h-px" />
+              <div className="h-px" />
             </div>
           </ScrollArea>
           <div

@@ -68,6 +68,7 @@ interface ChatState {
   activeChatId: string | null
   streamingIds: string[]
   responseSequences: Record<string, number>
+  responseChatIds: Record<string, string>
   replaceSummaries: (chats: ServerChat[]) => void
   replaceFolders: (folders: ServerFolder[]) => void
   setDetailedChat: (chat: ServerChat) => void
@@ -121,6 +122,24 @@ function reconcileStreamingIds(chats: Chat[], previous: string[]): string[] {
     ...previous.filter((id) => !known.has(id) && !unfinished.has(id)),
   ]
   if (next.length === previous.length && next.every((id, index) => id === previous[index])) return previous
+  return next
+}
+
+function responseChatIndex(chats: Chat[]): Record<string, string> {
+  const index: Record<string, string> = {}
+  for (const chat of chats) {
+    for (const message of chat.messages) {
+      if (message.role === 'assistant') index[message.id] = chat.id
+    }
+  }
+  return index
+}
+
+function reindexChat(index: Record<string, string>, chat: Chat): Record<string, string> {
+  const next = Object.fromEntries(Object.entries(index).filter(([, chatId]) => chatId !== chat.id))
+  for (const message of chat.messages) {
+    if (message.role === 'assistant') next[message.id] = chat.id
+  }
   return next
 }
 
@@ -447,10 +466,12 @@ export const useChat = create<ChatState>()((set, get) => ({
   activeChatId: null,
   streamingIds: [],
   responseSequences: {},
+  responseChatIds: {},
 
-  replaceSummaries: (rows) => set((state) => ({
-    chats: rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds)),
-  })),
+  replaceSummaries: (rows) => set((state) => {
+    const chats = rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds))
+    return { chats, responseChatIds: responseChatIndex(chats) }
+  }),
   replaceFolders: (rows) => set((state) => ({
     folders: rows.map((row) => ({
       ...row,
@@ -473,6 +494,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       chats,
       streamingIds: reconcileStreamingIds(chats, state.streamingIds),
       responseSequences,
+      responseChatIds: reindexChat(state.responseChatIds, chat),
     }
   }),
 
@@ -482,7 +504,8 @@ export const useChat = create<ChatState>()((set, get) => ({
     const currentSequence = get().responseSequences[responseId] ?? 0
     const freshEvents = events.filter((event) => event.responseId === responseId && event.sequence > currentSequence)
     if (freshEvents.length === 0) return false
-    const affectedChat = get().chats.find((chat) => chat.messages.some((message) => message.id === responseId))
+    const affectedChatId = get().responseChatIds[responseId]
+    const affectedChat = get().chats.find((chat) => chat.id === affectedChatId)
     if (!affectedChat) return false
     let nextSequence = currentSequence
     for (const event of freshEvents) nextSequence = Math.max(nextSequence, event.sequence)
@@ -521,9 +544,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     if (currentSnapshot && acceptedSnapshot === currentSnapshot) return
     accumulatedResponseSnapshots.set(snapshot.responseId, acceptedSnapshot)
     snapshot = acceptedSnapshot
-    const affectedChatId = get().chats.find((chat) =>
-      chat.messages.some((message) => message.id === snapshot.responseId)
-    )?.id
+    const affectedChatId = get().responseChatIds[snapshot.responseId]
     if (affectedChatId) persistResponseSnapshot(affectedChatId, snapshot)
     set((state) => {
       const inFlight = ['queued', 'in_progress'].includes(snapshot.status)
@@ -576,6 +597,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       return {
         chats: state.chats.filter((chat) => chat.id !== id),
         streamingIds: state.streamingIds.filter((responseId) => !removedIds.has(responseId)),
+        responseChatIds: Object.fromEntries(Object.entries(state.responseChatIds).filter(([, chatId]) => chatId !== id)),
       }
     })
     queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows?.filter((row) => row.id !== id))
@@ -657,6 +679,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
         activeChatId: id,
         streamingIds: addStreamingId(state.streamingIds, responseId),
+        responseChatIds: { ...state.responseChatIds, [responseId]: id },
       }
     })
     cacheOptimisticTurn({
@@ -702,6 +725,10 @@ export const useChat = create<ChatState>()((set, get) => ({
           return {
             streamingIds: replaceStreamingId(state.streamingIds, responseId, serverId),
             responseSequences,
+            responseChatIds: Object.fromEntries(Object.entries(state.responseChatIds).map(([id, chatId]) => [
+              id === responseId ? serverId : id,
+              chatId,
+            ])),
             chats: state.chats.map((chat) => chat.id !== id ? chat : {
               ...chat,
               messages: chat.messages.map((message) => {
@@ -816,16 +843,19 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
   stopStreaming: (responseId) => {
     if (!responseId) return
-    set((state) => ({
-      streamingIds: removeStreamingId(state.streamingIds, responseId),
-      chats: state.chats.map((chat) => ({
-        ...chat,
-        messages: chat.messages.map((message) => message.id !== responseId ? message : {
-          ...message,
-          done: true,
-        }),
-      })),
-    }))
+    set((state) => {
+      const affectedChatId = state.responseChatIds[responseId]
+      return {
+        streamingIds: removeStreamingId(state.streamingIds, responseId),
+        chats: state.chats.map((chat) => chat.id !== affectedChatId ? chat : ({
+          ...chat,
+          messages: chat.messages.map((message) => message.id !== responseId ? message : {
+            ...message,
+            done: true,
+          }),
+        })),
+      }
+    })
     void optimisticRequest('POST', `/api/responses/${responseId}/cancel`)
   },
   continueWithoutAgent: async (responseId) => {
