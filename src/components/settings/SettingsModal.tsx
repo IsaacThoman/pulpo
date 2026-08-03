@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
-  ChevronRight,
   Database,
   Info,
   KeyRound,
@@ -48,10 +47,11 @@ const SECTIONS = [
   { id: 'interface', label: 'Interface', icon: Monitor },
   { id: 'api', label: 'API keys', icon: KeyRound },
   { id: 'data', label: 'Data controls', icon: Database },
+  { id: 'trash', label: 'Trash', icon: Trash2 },
   { id: 'about', label: 'About', icon: Info },
 ] as const
 
-type SectionId = (typeof SECTIONS)[number]['id'] | 'trash'
+type SectionId = (typeof SECTIONS)[number]['id']
 
 interface Memory {
   id: string
@@ -161,10 +161,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   }, [open, section])
 
   useEffect(() => {
-    if (section === 'trash' && s.trashRetention === 'instant') setSection('data')
-  }, [section, s.trashRetention])
-
-  useEffect(() => {
     if (!open || section !== 'data') return
     void apiRequest<StorageUsage>('/api/attachments/usage').then(setStorageUsage)
   }, [open, section])
@@ -233,34 +229,19 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
             <div className="px-2 pb-2 text-sm font-semibold">Settings</div>
             <div className="space-y-0.5">
               {SECTIONS.filter((sec) => sec.id !== 'api' || useAuth.getState().apiKeysEnabled).map((sec) => (
-                <div key={sec.id}>
-                  <button
-                    onClick={() => setSection(sec.id)}
-                    className={cn(
-                      'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors',
-                      section === sec.id
-                        ? 'bg-accent font-medium'
-                        : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                    )}
-                  >
-                    <sec.icon className="size-4" />
-                    {sec.label}
-                  </button>
-                  {sec.id === 'data' && s.trashRetention !== 'instant' && (
-                    <button
-                      onClick={() => setSection('trash')}
-                      className={cn(
-                        'ml-4 flex w-[calc(100%-1rem)] cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs transition-colors',
-                        section === 'trash'
-                          ? 'bg-accent font-medium'
-                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                      )}
-                    >
-                      <ChevronRight className="size-3.5" />
-                      View trash
-                    </button>
+                <button
+                  key={sec.id}
+                  onClick={() => setSection(sec.id)}
+                  className={cn(
+                    'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors',
+                    section === sec.id
+                      ? 'bg-accent font-medium'
+                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
                   )}
-                </div>
+                >
+                  <sec.icon className="size-4" />
+                  {sec.label}
+                </button>
               ))}
             </div>
             {user?.role === 'admin' && (
@@ -485,6 +466,16 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
                   <Separator className="my-3" />
+                  <Row label="Trash all chats" hint={s.trashRetention === 'instant' ? 'Permanently deletes every chat.' : `Moves every chat to trash for ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()}.`}>
+                    <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>Trash all chats</Button>
+                  </Row>
+                </div>
+              )}
+
+              {section === 'trash' && (
+                <div>
+                  <h2 className="text-base font-semibold">Trash</h2>
+                  <Separator className="my-3" />
                   <Row label="Trash retention period" hint="Choose how long deleted chats and their files remain recoverable.">
                     <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
                       <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
@@ -496,51 +487,49 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </Select>
                   </Row>
                   {trashRetentionError && <p className="text-right text-xs text-destructive">{trashRetentionError}</p>}
-                  <Row label="Trash all chats" hint={s.trashRetention === 'instant' ? 'Permanently deletes every chat.' : `Moves every chat to trash for ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()}.`}>
-                    <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>Trash all chats</Button>
-                  </Row>
-                </div>
-              )}
-
-              {section === 'trash' && s.trashRetention !== 'instant' && (
-                <div>
+                  <Separator className="my-3" />
                   <div className="flex items-center justify-between gap-3 py-1">
                     <div>
-                      <h2 className="text-base font-semibold">Trash</h2>
+                      <div className="text-sm font-medium">Deleted chats</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">Recover chats or permanently delete them.</div>
                     </div>
                     <Button variant="destructive" size="sm" disabled={!deletedChats.length} onClick={() => void permanentlyDeleteAll()}>
                       Empty trash
                     </Button>
                   </div>
-                  <Separator className="my-3" />
-                  {deletedChatsQuery.isLoading && <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>}
-                  {!deletedChatsQuery.isLoading && deletedChatsQuery.error && (
-                    <div className="py-8 text-center text-sm text-destructive">
-                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load deleted chats'}</p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>Try again</Button>
-                    </div>
-                  )}
-                  {!deletedChatsQuery.isLoading && !deletedChatsQuery.error && !deletedChats.length && (
-                    <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
-                  )}
-                  <div className="divide-y">
-                    {deletedChats.map((chat) => (
-                      <div key={chat.id} className="flex items-center gap-3 py-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium">{chat.title}</div>
-                          <div className="mt-0.5 text-xs text-muted-foreground">
-                            Deleted {new Date(chat.deletedAt).toLocaleString()}
-                            {chat.purgeAt ? ` · Permanently deletes ${new Date(chat.purgeAt).toLocaleString()}` : ' · Kept indefinitely'}
+                  {s.trashRetention === 'instant' ? (
+                    <p className="py-8 text-center text-sm text-muted-foreground">Chats are permanently deleted immediately.</p>
+                  ) : (
+                    <>
+                      {deletedChatsQuery.isLoading && <p className="py-8 text-center text-sm text-muted-foreground">Loading deleted chats…</p>}
+                      {!deletedChatsQuery.isLoading && deletedChatsQuery.error && (
+                        <div className="py-8 text-center text-sm text-destructive">
+                          <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load deleted chats'}</p>
+                          <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>Try again</Button>
+                        </div>
+                      )}
+                      {!deletedChatsQuery.isLoading && !deletedChatsQuery.error && !deletedChats.length && (
+                        <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
+                      )}
+                      <div className="divide-y">
+                        {deletedChats.map((chat) => (
+                          <div key={chat.id} className="flex items-center gap-3 py-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium">{chat.title}</div>
+                              <div className="mt-0.5 text-xs text-muted-foreground">
+                                Deleted {new Date(chat.deletedAt).toLocaleString()}
+                                {chat.purgeAt ? ` · Permanently deletes ${new Date(chat.purgeAt).toLocaleString()}` : ' · Kept indefinitely'}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}><RotateCcw className="size-4" />Recover</Button>
+                              <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}><Trash2 className="size-4" />Delete</Button>
+                            </div>
                           </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}><RotateCcw className="size-4" />Recover</Button>
-                          <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}><Trash2 className="size-4" />Delete</Button>
-                        </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </>
+                  )}
                 </div>
               )}
 
