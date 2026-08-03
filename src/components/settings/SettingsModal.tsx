@@ -39,6 +39,7 @@ import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
+import { clearLocalChats } from '@/lib/local-first/chat-cache'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -221,7 +222,12 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     setTrashRetentionError('')
     try {
       await apiRequest('/api/settings', { method: 'PATCH', body: { trashRetention: value } })
-      await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
+      if (value === 'instant' && user?.id) {
+        void clearLocalChats(user.id, deletedChats.map((chat) => chat.id)).catch(() => undefined)
+        queryClient.removeQueries({ queryKey: deletedChatsQueryKey, exact: true })
+      } else {
+        await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
+      }
     } catch (error) {
       s.set('trashRetention', previous)
       setTrashRetentionError(error instanceof Error ? error.message : 'Could not save trash retention')
@@ -236,7 +242,11 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
       : 'Move every chat in your Pulpo account to trash?'
     if (!confirm(message)) return
     await apiRequest('/api/chats', { method: 'DELETE' })
+    const chatIds = useChat.getState().chats.map((chat) => chat.id)
     useChat.setState({ chats: [], activeChatId: null })
+    if (s.trashRetention === 'instant' && user?.id) {
+      void clearLocalChats(user.id, chatIds).catch(() => undefined)
+    }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['chats'] }),
       queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey }),

@@ -10,6 +10,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { lineageFromLeaf, newestDescendantId } from '@/lib/chat-tree'
 import { mergePendingLocalMessages } from '@/lib/merge-pending-local-messages'
 import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
+import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { coalesceResponseEvents } from '@/features/chat/response-sync'
 import { useAuth } from './auth'
 
@@ -558,6 +559,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   setActive: (activeChatId) => set({ activeChatId }),
 
   deleteChat: (id) => {
+    const userId = currentUserId()
     set((state) => {
       const removed = state.chats.find((chat) => chat.id === id)
       const removedIds = new Set(
@@ -569,6 +571,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       }
     })
     queryClient.setQueryData(chatsKey(), (rows: ServerChat[] | undefined) => rows?.filter((row) => row.id !== id))
+    if (userId && useSettings.getState().trashRetention === 'instant') {
+      void clearLocalChats(userId, [id]).catch(() => undefined)
+    }
     void optimisticRequest('DELETE', `/api/chats/${id}`).catch(() => void queryClient.invalidateQueries({ queryKey: chatsKey() }))
   },
   renameChat: (id, title) => {
