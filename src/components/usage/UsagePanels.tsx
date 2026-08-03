@@ -54,56 +54,78 @@ export function RecentUsagePanel({
       {records.length === 0 ? (
         <div className="p-6 text-center text-xs text-muted-foreground">No usage records yet</div>
       ) : (
-        <div className="usage-records-scroll max-h-96 overflow-auto" onScroll={onScroll}>
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-background">
-              <tr className="border-b text-left text-muted-foreground">
-                <th className="bg-background px-3 py-2 font-normal">Time</th>
-                <th className="bg-background px-3 py-2 font-normal">Model</th>
-                {showUser && <th className="bg-background px-3 py-2 font-normal">User</th>}
-                <th className="bg-background px-3 py-2 text-right font-normal">Tokens</th>
-                <th className="bg-background px-3 py-2 text-right font-normal">Cost</th>
-                {showBalance && (
-                  <th className="bg-background px-3 py-2 text-right font-normal">Balance after</th>
-                )}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {shown.map((r) => {
-                const model = getCatalogModel(r.modelId)
-                return (
-                  <tr key={r.id}>
-                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                      {formatUsageTime(r.timestamp)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span className="flex max-w-[160px] items-center gap-1.5">
-                        <ModelIcon model={model} className="size-3.5 shrink-0 rounded-[2px]" />
-                        <span className="truncate" title={model.name}>
-                          {model.name}
-                        </span>
-                      </span>
-                    </td>
-                    {showUser && (
+        <>
+          <div className="usage-records-head border-b">
+            <table className="w-full table-fixed text-xs">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col />
+                {showUser && <col className="w-[16%]" />}
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                {showBalance && <col className="w-[14%]" />}
+              </colgroup>
+              <thead>
+                <tr className="text-left text-muted-foreground">
+                  <th className="px-3 py-2 font-normal">Time</th>
+                  <th className="px-3 py-2 font-normal">Model</th>
+                  {showUser && <th className="px-3 py-2 font-normal">User</th>}
+                  <th className="px-3 py-2 text-right font-normal">Tokens</th>
+                  <th className="px-3 py-2 text-right font-normal">Cost</th>
+                  {showBalance && (
+                    <th className="px-3 py-2 text-right font-normal">Balance after</th>
+                  )}
+                </tr>
+              </thead>
+            </table>
+          </div>
+          <div className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
+            <table className="w-full table-fixed text-xs">
+              <colgroup>
+                <col className="w-[22%]" />
+                <col />
+                {showUser && <col className="w-[16%]" />}
+                <col className="w-[12%]" />
+                <col className="w-[12%]" />
+                {showBalance && <col className="w-[14%]" />}
+              </colgroup>
+              <tbody className="divide-y">
+                {shown.map((r) => {
+                  const model = getCatalogModel(r.modelId)
+                  return (
+                    <tr key={r.id}>
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                        {formatUsageTime(r.timestamp)}
+                      </td>
                       <td className="px-3 py-2">
-                        <span className="block max-w-[120px] truncate">{nameOf(r.userId)}</span>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <ModelIcon model={model} className="size-3.5 shrink-0 rounded-[2px]" />
+                          <span className="truncate" title={model.name}>
+                            {model.name}
+                          </span>
+                        </span>
                       </td>
-                    )}
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {(r.tokensIn + r.tokensOut).toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">{formatUsd(r.cost)}</td>
-                    {showBalance && (
-                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                        {formatBalance(r.balanceAfter)}
+                      {showUser && (
+                        <td className="px-3 py-2">
+                          <span className="block truncate">{nameOf(r.userId)}</span>
+                        </td>
+                      )}
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {(r.tokensIn + r.tokensOut).toLocaleString()}
                       </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
+                      <td className="px-3 py-2 text-right tabular-nums">{formatUsd(r.cost)}</td>
+                      {showBalance && (
+                        <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                          {formatBalance(r.balanceAfter)}
+                        </td>
+                      )}
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )

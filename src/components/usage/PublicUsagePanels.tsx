@@ -65,15 +65,39 @@ export function PublicRecentUsagePanel({
       <span className="text-xs text-muted-foreground">{records.length.toLocaleString()} settled calls</span>
     </div>
     {records.length === 0 ? <div className="p-6 text-center text-xs text-muted-foreground">No settled usage in this period</div> : <>
-      <div ref={scrollRef} className="usage-records-scroll max-h-96 overflow-auto" onScroll={onScroll}>
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 z-10 bg-background"><tr className="border-b text-left text-muted-foreground">
-            <th className="bg-background px-3 py-2 font-normal">Time</th><th className="bg-background px-3 py-2 font-normal">User</th><th className="bg-background px-3 py-2 font-normal">Model</th><th className="bg-background px-3 py-2 text-right font-normal">Tokens</th><th className="bg-background px-3 py-2 text-right font-normal">Cost</th>
-          </tr></thead>
+      <div className="usage-records-head border-b">
+        <table className="w-full table-fixed text-xs">
+          <colgroup>
+            <col className="w-[22%]" />
+            <col className="w-[18%]" />
+            <col />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+          </colgroup>
+          <thead>
+            <tr className="text-left text-muted-foreground">
+              <th className="px-3 py-2 font-normal">Time</th>
+              <th className="px-3 py-2 font-normal">User</th>
+              <th className="px-3 py-2 font-normal">Model</th>
+              <th className="px-3 py-2 text-right font-normal">Tokens</th>
+              <th className="px-3 py-2 text-right font-normal">Cost</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+      <div ref={scrollRef} className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
+        <table className="w-full table-fixed text-xs">
+          <colgroup>
+            <col className="w-[22%]" />
+            <col className="w-[18%]" />
+            <col />
+            <col className="w-[12%]" />
+            <col className="w-[12%]" />
+          </colgroup>
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString()}</td>
-            <td className="px-3 py-2"><span className="block max-w-28 truncate">{record.participant.name}</span></td>
-            <td className="px-3 py-2"><span className="flex max-w-40 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
+            <td className="px-3 py-2"><span className="block truncate">{record.participant.name}</span></td>
+            <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString()}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatUsd(record.costMicros / 1_000_000)}</td>
           </tr>)}</tbody>

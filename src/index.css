@@ -138,8 +138,14 @@ body {
 *::-webkit-scrollbar-track {
   background: transparent;
 }
-.usage-records-scroll::-webkit-scrollbar-track:vertical {
-  margin-top: 33px;
+/* Invisible scrollbar gutter on header so columns align with the scrollable body */
+.usage-records-head {
+  overflow-y: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.usage-records-head::-webkit-scrollbar-thumb {
+  background: transparent;
 }
 
 @keyframes shimmer {
