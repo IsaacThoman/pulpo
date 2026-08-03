@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
+import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, toolExecutions, users, workspaceLeases } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { reconcileWorkspaceLeases } from '../agent/controller.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
@@ -218,6 +218,8 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     if (!call) throw notFound('Model call')
     const [log] = await db.select().from(requestLogs).where(eq(requestLogs.id, call.requestLogId)).limit(1)
     const ocr = await db.select().from(ocrAttempts).where(eq(ocrAttempts.requestLogId, call.requestLogId)).orderBy(asc(ocrAttempts.createdAt))
-    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr }
+    const [agentRun] = log ? await db.select().from(agentRuns).where(eq(agentRuns.responseId, log.responseId)).limit(1) : []
+    const tools = agentRun ? await db.select().from(toolExecutions).where(eq(toolExecutions.agentRunId, agentRun.id)).orderBy(asc(toolExecutions.createdAt)) : []
+    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr, toolExecutions: tools }
   })
 }
