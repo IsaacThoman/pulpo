@@ -114,7 +114,11 @@ interface ChatState {
   deleteChat: (id: string) => void
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
-  moveToFolder: (id: string, folderId: string | null) => void
+  moveToFolder: (
+    id: string,
+    folderId: string | null,
+    position?: { targetId: string; edge: 'before' | 'after' },
+  ) => void
   reorderPinnedChats: (fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderFolderChats: (folderId: string, fromId: string, toId: string, edge: 'before' | 'after') => void
   shareChat: (id: string) => Promise<string>
@@ -860,17 +864,40 @@ export const useChat = create<ChatState>()((set, get) => ({
     }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { pinned: nextPinned, sortOrder })
   },
-  moveToFolder: (id, folderId) => {
-    const maxOrder = folderId
-      ? get().chats
-        .filter((chat) => chat.folderId === folderId && !chat.pinned && chat.id !== id)
-        .reduce((max, chat) => Math.max(max, chat.sortOrder), -1)
-      : -1
-    const sortOrder = folderId ? maxOrder + 1 : 0
+  moveToFolder: (id, folderId, position) => {
+    if (!folderId) {
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId: null, sortOrder: 0 } : chat),
+      }))
+      void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId: null, sortOrder: 0 })
+      return
+    }
+
+    const destIds = get().chats
+      .filter((chat) => !chat.pinned && chat.folderId === folderId && chat.id !== id)
+      .sort((a, b) => a.sortOrder - b.sortOrder || b.updatedAt - a.updatedAt)
+      .map((chat) => chat.id)
+
+    let nextIds: string[]
+    if (position && destIds.includes(position.targetId)) {
+      nextIds = reorderList([...destIds, id], id, position.targetId, position.edge)
+    } else {
+      nextIds = [...destIds, id]
+    }
+
+    const orders = applySortOrders(nextIds)
+    const sortOrder = orders.get(id) ?? nextIds.length - 1
     set((state) => ({
-      chats: state.chats.map((chat) => chat.id === id ? { ...chat, folderId, sortOrder } : chat),
+      chats: state.chats.map((chat) => {
+        if (chat.id === id) return { ...chat, folderId, sortOrder }
+        const nextOrder = orders.get(chat.id)
+        return nextOrder === undefined ? chat : { ...chat, sortOrder: nextOrder }
+      }),
     }))
     void optimisticRequest('PATCH', `/api/chats/${id}`, { folderId, sortOrder })
+    if (nextIds.length > 1) {
+      void optimisticRequest('PUT', '/api/chats/order', { chatIds: nextIds })
+    }
   },
   reorderPinnedChats: (fromId, toId, edge) => {
     const pinnedIds = get().chats
