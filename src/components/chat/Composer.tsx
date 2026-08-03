@@ -322,18 +322,6 @@ export function Composer({
             <TooltipContent side="top">Attach files</TooltipContent>
           </Tooltip>
 
-          <button
-            type="button"
-            disabled={!canUseAgent}
-            onClick={() => canUseAgent && setSetting('agentModeEnabled', !agentModeEnabled)}
-            aria-label={agentModeEnabled && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
-            aria-pressed={agentModeEnabled && canUseAgent}
-            className={cn('flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', agentModeEnabled && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
-          >
-            <Bot className="size-4" />
-            <span>Agent</span>
-          </button>
-
           {activePresets.length > 0 && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -382,6 +370,18 @@ export function Composer({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          <button
+            type="button"
+            disabled={!canUseAgent}
+            onClick={() => canUseAgent && setSetting('agentModeEnabled', !agentModeEnabled)}
+            aria-label={agentModeEnabled && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
+            aria-pressed={agentModeEnabled && canUseAgent}
+            className={cn('flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', agentModeEnabled && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
+          >
+            <Bot className="size-4" />
+            <span>Agent</span>
+          </button>
 
           <div className="flex-1" />
 
