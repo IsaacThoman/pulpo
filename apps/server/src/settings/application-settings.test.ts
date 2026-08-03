@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseWebToolsSettings } from './application-settings.js'
+import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -10,6 +11,12 @@ describe('authentication application settings', () => {
     const settings = parseAuthSettings({ signupEnabled: false })
     expect(settings.defaultBalanceMicros).toBe(DEFAULT_BALANCE_MICROS)
     expect(settings.defaultStorageLimitBytes).toBe(DEFAULT_STORAGE_LIMIT_BYTES)
+  })
+})
+
+describe('OCR application settings', () => {
+  it('uses the shared Pulpo Proxy prompt by default', () => {
+    expect(parseOcrSettings(undefined).systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
   })
 })
 

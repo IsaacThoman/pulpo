@@ -4,9 +4,11 @@ import {
   adminUsageEventSchema,
   chatPresetsSchema,
   createChatResponseSchema,
+  DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
   mobileConfigSchema,
   nativeLoginInputSchema,
+  ocrSettingsSchema,
   responseEventSchema,
   syncRequestSchema,
   type ResponseEvent,
@@ -38,6 +40,10 @@ function targetedDelta(type: string, text: string, sequence: number, itemId: str
 }
 
 describe('shared contracts', () => {
+  it('uses the Pulpo Proxy OCR prompt by default', () => {
+    expect(ocrSettingsSchema.parse({}).systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
+  })
+
   it('rejects response events without a positive sequence', () => {
     const result = responseEventSchema.safeParse({
       responseId: crypto.randomUUID(),

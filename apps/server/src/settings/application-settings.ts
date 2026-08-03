@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, DEFAULT_OCR_SYSTEM_PROMPT, webToolsSettingsSchema } from '@pulpo/contracts'
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 export const DEFAULT_STORAGE_LIMIT_BYTES = 5_000 * 1024 * 1024
@@ -29,7 +29,7 @@ export const ocrSettingsSchema = z.object({
   customBaseUrl: z.string().url().nullable().default(null),
   encryptedCustomApiKey: z.string().nullable().default(null),
   model: z.string().min(1).max(200).default('gpt-4.1-mini'),
-  systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
+  systemPrompt: z.string().max(100_000).default(DEFAULT_OCR_SYSTEM_PROMPT),
 })
 
 export const storedWebToolsSettingsSchema = webToolsSettingsSchema.extend({

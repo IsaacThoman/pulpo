@@ -12,11 +12,9 @@ import {
 } from '@/components/admin/kit'
 import { apiRequest } from '@/lib/api'
 import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
+import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
 
 const CUSTOM = 'custom'
-
-const DEFAULT_PROMPT =
-  'convert the image to markdown/latex if applicable, otherwise describe the non-text content part of the image in detail. if there is text present in the image, provide all of the text in the image, unabridged verbatim'
 
 export function OcrSection() {
   const [providers, setProviders] = useState<Array<{ id: string; name: string; baseUrl: string; hasApiKey: boolean }>>([])
@@ -27,7 +25,7 @@ export function OcrSection() {
   const [apiKey, setApiKey] = useState('')
   const [apiKeyConfigured, setApiKeyConfigured] = useState(false)
   const [model, setModel] = useState('gpt-4.1-mini')
-  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_PROMPT)
+  const [systemPrompt, setSystemPrompt] = useState(DEFAULT_OCR_SYSTEM_PROMPT)
   const [cacheTtl, setCacheTtl] = useState(3600)
   useEffect(() => { void Promise.all([apiRequest<{ data: Array<{ id: string; name: string; baseUrl: string; hasApiKey: boolean }> }>('/api/admin/providers'), apiRequest<{ enabled: boolean; cacheEnabled: boolean; cacheTtlSeconds: number; providerMode: 'existing' | 'custom'; providerConnectionId: string | null; customBaseUrl: string | null; model: string; systemPrompt: string; hasCustomApiKey: boolean }>('/api/admin/settings/ocr')]).then(([p, value]) => { setProviders(p.data); setEnabled(value.enabled); setCacheEnabled(value.cacheEnabled); setCacheTtl(value.cacheTtlSeconds); setProviderId(value.providerMode === 'custom' ? CUSTOM : value.providerConnectionId ?? CUSTOM); setBaseUrl(value.customBaseUrl ?? 'https://api.openai.com/v1'); setModel(value.model); setSystemPrompt(value.systemPrompt); setApiKeyConfigured(value.hasCustomApiKey) }) }, [])
 

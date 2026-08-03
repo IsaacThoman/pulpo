@@ -415,6 +415,7 @@ export const loggingSettingsSchema = z.object({
   logDetailedPayloads: z.boolean().default(false),
   payloadRetention: detailedPayloadRetentionSchema.default('7d'),
 })
+export const DEFAULT_OCR_SYSTEM_PROMPT = 'convert the image to markdown/latex if applicable, otherwise describe the non-text content part of the image in detail. if there is text present in the image, provide all of the text in the image, unabridged verbatim'
 export const ocrSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   cacheEnabled: z.boolean().default(true),
@@ -424,7 +425,7 @@ export const ocrSettingsSchema = z.object({
   customBaseUrl: z.url().nullable().default(null),
   customApiKey: z.string().min(1).optional(),
   model: z.string().min(1).max(200).default('gpt-4.1-mini'),
-  systemPrompt: z.string().max(100_000).default('Extract all readable text from this image. Preserve structure and return only the extracted text.'),
+  systemPrompt: z.string().max(100_000).default(DEFAULT_OCR_SYSTEM_PROMPT),
 })
 
 const agentMemorySchema = z.preprocess((value) => {
