@@ -2,22 +2,53 @@ import { Worker } from 'bullmq'
 import { and, inArray, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
-import { chats, responses } from './database/schema.js'
+import { applicationSettings, chats, responses } from './database/schema.js'
 import { generationQueue, maintenanceQueue, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
 import { markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
+import { parseAgentSettings } from './settings/application-settings.js'
 
 const config = getConfig()
-console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.started', environment: config.NODE_ENV }))
+const readGenerationConcurrency = async (): Promise<number> => {
+  const [row] = await db.select({ value: applicationSettings.value })
+    .from(applicationSettings)
+    .where(eq(applicationSettings.key, 'agent'))
+    .limit(1)
+  return parseAgentSettings(row?.value).generationConcurrency
+}
+
+const initialGenerationConcurrency = await readGenerationConcurrency()
+console.info(JSON.stringify({
+  level: 'info', service: 'pulpo-worker', event: 'worker.started',
+  environment: config.NODE_ENV, generationConcurrency: initialGenerationConcurrency,
+}))
 
 const generationWorker = new Worker<GenerationJob>('generation', async (job) => {
   await processGeneration(job.data.responseId)
 }, {
   connection: { url: config.REDIS_URL },
-  concurrency: 4,
+  concurrency: initialGenerationConcurrency,
 })
+
+const concurrencyRefreshInterval = setInterval(() => {
+  void readGenerationConcurrency().then((generationConcurrency) => {
+    if (generationConcurrency === generationWorker.concurrency) return
+    const previousGenerationConcurrency = generationWorker.concurrency
+    generationWorker.concurrency = generationConcurrency
+    console.info(JSON.stringify({
+      level: 'info', service: 'pulpo-worker', event: 'worker.concurrency_updated',
+      previousGenerationConcurrency, generationConcurrency,
+    }))
+  }).catch((error: unknown) => {
+    console.error(JSON.stringify({
+      level: 'error', service: 'pulpo-worker', event: 'worker.concurrency_refresh_failed',
+      error: error instanceof Error ? error.message : String(error),
+    }))
+  })
+}, 15_000)
+concurrencyRefreshInterval.unref()
 
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
@@ -55,6 +86,7 @@ for (const response of recoverable) {
 
 const shutdown = async (signal: string) => {
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
+  clearInterval(concurrencyRefreshInterval)
   await generationWorker.close()
   await maintenanceWorker.close()
   process.exit(0)

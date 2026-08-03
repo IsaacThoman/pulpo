@@ -17,6 +17,7 @@ describe('agent application settings', () => {
   it('is disabled by default with bounded execution limits', () => {
     const settings = parseAgentSettings(undefined)
     expect(settings.enabled).toBe(false)
+    expect(settings.generationConcurrency).toBe(8)
     expect(settings.warmCapacity).toBe(1)
     expect(settings.maxActiveWorkspaces).toBe(3)
     expect(settings.cpu).toBe('2')
@@ -38,6 +39,11 @@ describe('agent application settings', () => {
     const settings = parseAgentSettings({ cpu: '500m', ephemeralStorage: '20480Mi' })
     expect(settings.cpu).toBe('0.5')
     expect(settings.ephemeralStorage).toBe('20Gi')
+  })
+
+  it('accepts a bounded generation concurrency override', () => {
+    expect(parseAgentSettings({ generationConcurrency: 16 }).generationConcurrency).toBe(16)
+    expect(parseAgentSettings({ generationConcurrency: 101 }).generationConcurrency).toBe(8)
   })
 })
 

@@ -448,6 +448,7 @@ const agentDiskSchema = z.preprocess((value) => {
 
 export const agentSettingsSchema = z.object({
   enabled: z.boolean().default(false),
+  generationConcurrency: z.number().int().min(1).max(100).default(8),
   imageDigest: z.string().regex(/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/).default('ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:0000000000000000000000000000000000000000000000000000000000000000'),
   warmCapacity: z.number().int().min(0).max(100).default(1),
   maxActiveWorkspaces: z.number().int().min(1).max(1_000).default(3),

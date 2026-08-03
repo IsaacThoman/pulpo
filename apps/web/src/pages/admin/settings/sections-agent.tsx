@@ -7,6 +7,7 @@ import { NumField, SaveBar, SecretField, Section, Toggle } from '@/components/ad
 
 const defaults: AgentSettings = {
   enabled: false,
+  generationConcurrency: 8,
   imageDigest: 'ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:' + '0'.repeat(64),
   warmCapacity: 1, maxActiveWorkspaces: 3, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi',
   idleTimeoutSeconds: 1800, hardTimeoutSeconds: 14400, workspaceWaitTimeoutSeconds: 900, maxModelTurns: 30, maxToolCalls: 100,
@@ -64,6 +65,7 @@ export function AgentSection() {
       <Toggle label="Enable agent mode" hint="Models must also be opted in individually." checked={value.enabled} onChange={(enabled) => setValue({ ...value, enabled })} />
       <label className="block space-y-1 text-xs"><span>Immutable workspace image</span><Input className="font-mono text-xs" value={value.imageDigest} onChange={(event) => setValue({ ...value, imageDigest: event.target.value })} /></label>
       <div className="grid grid-cols-2 gap-3">
+        <label className="space-y-1 text-xs"><span>Concurrent responses</span>{number('generationConcurrency', 1)}</label>
         <label className="space-y-1 text-xs"><span>Warm workspaces</span>{number('warmCapacity')}</label>
         <label className="space-y-1 text-xs"><span>Maximum active workspaces</span>{number('maxActiveWorkspaces', 1)}</label>
         <label className="space-y-1 text-xs"><span>CPU (cores)</span><Input type="number" min={0.001} step={0.1} value={cpuCores(value.cpu)} onChange={(event) => {
