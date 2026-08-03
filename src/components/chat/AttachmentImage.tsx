@@ -114,7 +114,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
     <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
       <div
         title={attachment.name}
-        className="group/attachment relative overflow-hidden rounded-xl border bg-background/40 shadow-sm"
+        className="group/attachment relative max-w-full"
       >
         <AttachmentDownloadButton name={attachment.name} onDownload={handleDownload} />
         {url ? (
@@ -127,12 +127,12 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
             <img
               src={url}
               alt={attachment.name}
-              className="max-h-64 max-w-[min(100%,18rem)] object-contain"
+              className="block max-h-64 max-w-[min(100%,18rem)] rounded-xl border bg-background/40 object-contain shadow-sm"
               draggable={false}
             />
           </button>
         ) : (
-          <div className="flex h-32 w-40 items-center justify-center bg-muted/50 text-muted-foreground">
+          <div className="flex h-32 w-40 items-center justify-center rounded-xl border bg-muted/50 text-muted-foreground shadow-sm">
             {loading ? <Loader2 className="size-5 animate-spin" /> : <ImageIcon className="size-5" />}
           </div>
         )}
