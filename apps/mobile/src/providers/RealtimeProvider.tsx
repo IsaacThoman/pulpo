@@ -193,9 +193,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
     socket.on('connect', () => {
       useRealtimeStore.getState().setConnected(true)
+      useRealtimeStore.getState().setSyncError(null)
       void sync()
     })
     socket.on('disconnect', () => useRealtimeStore.getState().setConnected(false))
+    socket.on('connect_error', () => {
+      useRealtimeStore.getState().setConnected(false)
+      useRealtimeStore.getState().setSyncError('Realtime is temporarily unavailable. Retrying…')
+    })
     socket.on('response.event', queueEvent)
     socket.on('response.snapshot', applySnapshot)
     socket.on('response.completed', ({ chatId }) => {

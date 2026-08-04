@@ -1422,6 +1422,56 @@ function workLabel(steps: TimelineStep[], active: boolean): string {
   return `${worked ? 'Worked' : 'Thought'}${seconds === null ? '' : ` for ${seconds}s`}`;
 }
 
+function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']): string {
+  const args = step.arguments;
+  if (!args || typeof args !== 'object') return step.tool ?? 'tool';
+  const record = args as Record<string, unknown>;
+  const path = typeof record.path === 'string' ? record.path : undefined;
+  const command = typeof record.command === 'string' ? record.command : undefined;
+  const pattern = typeof record.pattern === 'string' ? record.pattern : undefined;
+  const query = typeof record.query === 'string' ? record.query : undefined;
+  if (step.tool === 'bash' && command) {
+    const oneLine = command.replace(/\s+/g, ' ').trim();
+    return oneLine.length > 72 ? `${oneLine.slice(0, 72)}…` : oneLine;
+  }
+  return path ?? pattern ?? query ?? step.tool ?? 'tool';
+}
+
+const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<TimelineStep, { kind: 'tool' }> }) {
+  const [open, setOpen] = useState(false);
+  const failed = step.tool.status === 'failed' || step.tool.isError;
+  const running = step.tool.status === 'running';
+  const hasBody = step.tool.arguments !== undefined || Boolean(step.tool.output);
+  const details = useMemo(() => [
+    step.tool.arguments === undefined ? '' : typeof step.tool.arguments === 'string' ? step.tool.arguments : JSON.stringify(step.tool.arguments, null, 2),
+    step.tool.output ?? '',
+  ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
+  const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
+  return (
+    <View style={styles.workStep}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: hasBody ? open : undefined }}
+        disabled={!hasBody}
+        onPress={() => setOpen((value) => !value)}
+        style={styles.workToolTrigger}
+      >
+        <Icon name={failed ? 'exclamationmark.triangle' : 'terminal'} size={13} color={failed ? '#FF6961' : COLORS.muted} />
+        <Text style={styles.workToolName}>{step.tool.tool ?? 'Tool'}</Text>
+        <Text numberOfLines={1} style={styles.workToolSummary}>{toolStepSummary(step.tool)}</Text>
+        {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
+        {hasBody && <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />}
+      </Pressable>
+      {open && details ? (
+        <ScrollView nestedScrollEnabled style={styles.workDetailScroller}>
+          <Text selectable style={styles.workDetail}>{details}</Text>
+        </ScrollView>
+      ) : null}
+      {running && !hasBody ? <Text style={styles.workRunning}>Running…</Text> : null}
+    </View>
+  );
+});
+
 function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
@@ -1448,14 +1498,7 @@ function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               return <View key={`workspace:${index}`} style={styles.workRow}><Icon name="shippingbox" size={13} color={COLORS.muted} /><Text style={styles.workRowText}>{detail}</Text></View>;
             }
-            const details = [
-              step.tool.arguments === undefined ? '' : typeof step.tool.arguments === 'string' ? step.tool.arguments : JSON.stringify(step.tool.arguments, null, 2),
-              step.tool.output ?? '',
-            ].filter(Boolean).join('\n');
-            return <View key={step.tool.id ?? `tool:${index}`} style={styles.workStep}>
-              <View style={styles.workRow}><Icon name={step.tool.status === 'failed' || step.tool.isError ? 'exclamationmark.triangle' : 'terminal'} size={13} color={step.tool.status === 'failed' || step.tool.isError ? '#FF6961' : COLORS.muted} /><Text style={styles.workRowTitle}>{step.tool.tool ?? 'Tool'}</Text></View>
-              {details ? <Text selectable style={styles.workDetail}>{details}</Text> : null}
-            </View>;
+            return <ToolStepRow key={step.tool.id ?? `tool:${index}`} step={step} />;
           })}
         </View>
       )}
@@ -2750,7 +2793,13 @@ const styles = StyleSheet.create({
   workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
   workStep: { gap: 5 },
-  workDetail: { color: COLORS.muted, fontSize: 11.5, lineHeight: 17, fontFamily: COLORS.mono, backgroundColor: COLORS.fill, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7 },
+  workToolTrigger: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  workToolName: { color: COLORS.textSoft, fontSize: 12, lineHeight: 17, fontWeight: '600' },
+  workToolSummary: { color: COLORS.muted, fontSize: 11, lineHeight: 16, fontFamily: COLORS.mono, flex: 1 },
+  workToolDuration: { color: COLORS.dim, fontSize: 10.5, fontVariant: ['tabular-nums'] },
+  workRunning: { color: COLORS.dim, fontSize: 11, marginLeft: 19 },
+  workDetailScroller: { maxHeight: 250, borderRadius: 9, backgroundColor: COLORS.fill },
+  workDetail: { color: COLORS.muted, fontSize: 11.5, lineHeight: 17, fontFamily: COLORS.mono, paddingHorizontal: 9, paddingVertical: 7 },
   reasoningText: { color: COLORS.muted, fontSize: 13, lineHeight: 19 },
   reasoningDuration: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
   reasoningContextPreview: { width: 320, minHeight: 180, maxHeight: 380, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
