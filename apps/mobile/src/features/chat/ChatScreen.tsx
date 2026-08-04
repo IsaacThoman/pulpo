@@ -267,6 +267,8 @@ export function ChatScreen({ chatId }: { chatId?: string }) {
     <FlatList
       ref={listRef}
       data={displayMessages}
+      alwaysBounceVertical={displayMessages.length > 0 || active}
+      bounces={displayMessages.length > 0 || active}
       keyExtractor={(message) => message.id}
       contentContainerStyle={[styles.messages, !displayMessages.length && styles.emptyMessages]}
       keyboardDismissMode="interactive"
@@ -279,6 +281,7 @@ export function ChatScreen({ chatId }: { chatId?: string }) {
       </View> : null}
       renderItem={({ item }) => <MessageItem message={item} model={models.find((model) => model.id === item.modelId)} onReply={(text) => setInput(`> ${text.split('\n')[0]}\n\n`)} onEdit={edit} onRegenerate={regenerate} onDelete={remove} onActivateBranch={activate} onOpenAttachment={openAttachment} onContinueWithoutAgent={(message) => { void continueWithoutAgent(message.responseId).then(() => invalidate()) }} />}
       ListFooterComponent={pendingText ? <View style={{ gap: 18 }}><View style={[styles.pendingUser, { backgroundColor: theme.elevated }]}><Text style={{ color: theme.text, fontSize: 16 }}>{pendingText}</Text></View><View style={styles.pendingAssistant}><Image source={require('../../../assets/pulpo-smiley.png')} style={styles.pendingLogo} /><Text style={{ color: theme.secondary }}>Working…</Text></View></View> : null}
+      scrollEnabled={displayMessages.length > 0 || active}
     />
     <Composer value={input} onChange={setInput} model={selectedModel} presets={presetSelections} attachments={attachments} agentMode={agentMode} canUseAgent={Boolean(modelResult?.agentAvailable && selectedModel?.agentEnabled)} active={active} onToggleAgent={() => { const next = !agentMode; setAgentMode(next); void setPreference('agentMode', next) }} onPickAttachment={chooseAttachment} onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.localId !== id))} onRetryAttachment={(attachment) => activeChatId && void uploadOne(attachment, activeChatId)} onOpenModels={() => setModelPicker(true)} onOpenPreset={openPreset} onSend={() => { void submit() }} onStop={() => { void stop() }} />
     <ModelPicker visible={modelPicker} models={models} selectedId={selectedModel?.id ?? null} onClose={() => setModelPicker(false)} onSelect={selectModel} />

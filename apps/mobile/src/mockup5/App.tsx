@@ -2091,6 +2091,8 @@ function ChatView({
 
         {/* Virtualized conversation that only follows new content while the reader is near the end. */}
         <FlatList
+          alwaysBounceVertical={!empty}
+          bounces={!empty}
           contentContainerStyle={[styles.conversation, empty && styles.emptyConversation]}
           data={messages}
           initialNumToRender={10}
@@ -2136,6 +2138,7 @@ function ChatView({
           onScroll={trackScrollPosition}
           ref={listRef}
           renderItem={renderMessage}
+          scrollEnabled={!empty}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           style={styles.flex}
