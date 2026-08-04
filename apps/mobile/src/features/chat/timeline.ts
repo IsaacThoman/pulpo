@@ -31,8 +31,45 @@ export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
   | { kind: 'text'; text: string }
 
+type LegacyMessageTimelineInput = {
+  reasoning: string | undefined
+  text: string
+  streaming: boolean
+  showReasoning: boolean
+  reasoningDurationMs?: number
+}
+
 export function workspaceIsActive(state?: string): boolean {
   return state === 'waiting' || state === 'provisioning'
+}
+
+/**
+ * Build the compatibility timeline used by cached messages that predate raw
+ * output items. `undefined` means the provider never emitted reasoning; an
+ * empty string means a reasoning item exists but has not emitted text yet.
+ */
+export function buildLegacyMessageTimeline({
+  reasoning,
+  text,
+  streaming,
+  showReasoning,
+  reasoningDurationMs,
+}: LegacyMessageTimelineInput): TimelineSegment[] {
+  const segments: TimelineSegment[] = []
+  if (showReasoning && reasoning !== undefined && (reasoning || streaming)) {
+    segments.push({
+      kind: 'activity',
+      active: streaming && !text,
+      steps: [{
+        kind: 'reasoning',
+        text: reasoning,
+        active: streaming && !text,
+        durationMs: reasoningDurationMs,
+      }],
+    })
+  }
+  if (text) segments.push({ kind: 'text', text })
+  return segments
 }
 
 function textFromParts(value: unknown): string {

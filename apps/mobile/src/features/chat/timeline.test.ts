@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMessageTimeline } from './timeline'
+import { buildLegacyMessageTimeline, buildMessageTimeline } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('preserves reasoning, tools, and assistant turns in server order', () => {
@@ -45,6 +45,43 @@ describe('buildMessageTimeline', () => {
         steps: [{ kind: 'compaction', compaction: { id: 'compact-1', summary: 'Earlier **summary**' } }],
       },
       { kind: 'text', text: 'After compaction' },
+    ])
+  })
+})
+
+describe('buildLegacyMessageTimeline', () => {
+  it('does not manufacture thinking activity for an ordinary stream', () => {
+    expect(buildLegacyMessageTimeline({
+      reasoning: undefined,
+      text: '',
+      streaming: true,
+      showReasoning: true,
+    })).toEqual([])
+  })
+
+  it('shows an active reasoning item only after reasoning actually starts', () => {
+    expect(buildLegacyMessageTimeline({
+      reasoning: '',
+      text: '',
+      streaming: true,
+      showReasoning: true,
+    })).toMatchObject([{
+      kind: 'activity',
+      active: true,
+      steps: [{ kind: 'reasoning', text: '', active: true }],
+    }])
+  })
+
+  it('keeps completed reasoning ahead of the response body', () => {
+    expect(buildLegacyMessageTimeline({
+      reasoning: 'Checked the constraints',
+      text: 'Final answer',
+      streaming: false,
+      showReasoning: true,
+      reasoningDurationMs: 900,
+    })).toMatchObject([
+      { kind: 'activity', active: false, steps: [{ kind: 'reasoning', text: 'Checked the constraints', durationMs: 900 }] },
+      { kind: 'text', text: 'Final answer' },
     ])
   })
 })

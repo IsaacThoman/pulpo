@@ -18,7 +18,6 @@ import {
   Animated,
   Appearance,
   type ColorValue,
-  Easing,
   FlatList,
   Image,
   Keyboard,
@@ -136,7 +135,7 @@ import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
-import { activityDurationMs, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
@@ -726,30 +725,16 @@ function ModelMark({ model, size = 28 }: { model: Model; size?: number }) {
   );
 }
 
-/** Pulsing dot used while the assistant is thinking. */
-function ThinkingLabel({ label }: { label: string }) {
-  const { reduceMotion } = useAccessibilityPreferences();
-  const pulse = useRef(new Animated.Value(0.35)).current;
-  useEffect(() => {
-    if (reduceMotion) {
-      pulse.setValue(1);
-      return undefined;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-        Animated.timing(pulse, { toValue: 0.35, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse, reduceMotion]);
+/** Neutral pending state; reasoning is rendered only from reasoning output. */
+function ResponsePendingIndicator() {
   return (
-    <View accessibilityLiveRegion="polite" accessibilityRole="text" style={styles.thinkingRow}>
-      <Animated.View style={{ opacity: pulse }}>
-        <Icon name="brain.head.profile" size={15} color={COLORS.muted} />
-      </Animated.View>
-      <Text style={styles.thinkingText}>{label}</Text>
+    <View
+      accessibilityLabel="Assistant is responding"
+      accessibilityLiveRegion="polite"
+      accessibilityRole="progressbar"
+      style={styles.responsePending}
+    >
+      <ActivityIndicator color={COLORS.muted} size="small" />
     </View>
   );
 }
@@ -1734,13 +1719,13 @@ const MessageRow = memo(function MessageRow({
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [];
     if (message.outputItems?.length) return buildMessageTimeline(message.outputItems, showReasoning);
-    const fallback: ReturnType<typeof buildMessageTimeline> = [];
-    if (showReasoning && (message.reasoning || streaming)) fallback.push({
-      kind: 'activity', active: streaming && !message.text,
-      steps: [{ kind: 'reasoning', text: message.reasoning ?? '', active: streaming && !message.text, durationMs: message.thinkSeconds === undefined ? undefined : message.thinkSeconds * 1000 }],
+    return buildLegacyMessageTimeline({
+      reasoning: message.reasoning,
+      text: message.text,
+      streaming,
+      showReasoning,
+      reasoningDurationMs: message.thinkSeconds === undefined ? undefined : message.thinkSeconds * 1000,
     });
-    if (message.text) fallback.push({ kind: 'text', text: message.text });
-    return fallback;
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
   return (
     <View style={message.role === 'user' ? styles.userRow : styles.assistantRow}>
@@ -1787,7 +1772,7 @@ const MessageRow = memo(function MessageRow({
             </MessageContextMenu>
           ) : message.error ? (
             <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text></View>
-          ) : streaming ? <ThinkingLabel label="Thinking…" /> : null}
+          ) : streaming ? <ResponsePendingIndicator /> : null}
           {extraOutput.map((item, index) => {
             const details = JSON.stringify(item, null, 2).slice(0, 4000);
             return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
@@ -1889,7 +1874,7 @@ const StreamingResponse = memo(function StreamingResponse({
         <Text style={styles.assistantName}>{model.name}</Text>
         <Text style={styles.messageTime}>now</Text>
       </View>
-      <ThinkingLabel label="Responding…" />
+      {!draft && <ResponsePendingIndicator />}
       <Text accessible={false} style={[styles.assistantText, styles.draftText]}>{draft}<BlinkingCaret /></Text>
     </View>
   );
@@ -2466,7 +2451,7 @@ function ChatView({
                   <Text style={styles.assistantName}>{model.name}</Text>
                   <Text style={styles.messageTime}>now</Text>
                 </View>
-                <ThinkingLabel label="Working…" />
+                <ResponsePendingIndicator />
               </View>
             ) : streamingSession ? (
               <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
@@ -3202,8 +3187,7 @@ const styles = StyleSheet.create({
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   draftText: { marginTop: 10 },
   caret: { color: COLORS.muted, fontSize: 15.5 },
-  thinkingRow: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingVertical: 6 },
-  thinkingText: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
+  responsePending: { alignItems: 'flex-start', minHeight: 28, justifyContent: 'center', paddingVertical: 4 },
   reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingVertical: 4 },
   reasoningContextHost: { width: '100%' },
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
