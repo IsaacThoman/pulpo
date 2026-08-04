@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { cacheNamespace, cachedChats, getValue, reconcileCachedChatScope } from '../../../data/database'
@@ -142,6 +142,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
   const enabled = status === 'authenticated' && Boolean(userId)
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
+  const serverHydrated = useRef(false)
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
@@ -151,11 +152,13 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     enabled: enabled && activeChatIsServerAddressable,
   })
 
+  useEffect(() => { serverHydrated.current = false }, [namespace])
+
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
     void Promise.all([cachedChats(namespace), getValue<ServerFolder[]>(namespace, 'folders')]).then(([localChats, localFolders]) => {
-      if (cancelled || (!localChats.length && !localFolders?.length)) return
+      if (cancelled || serverHydrated.current || (!localChats.length && !localFolders?.length)) return
       usePrototypeStore.setState((state) => {
         const existingMessages = new Map(state.chats.map((chat) => [chat.id, chat.messages]))
         const liveSnapshots = useRealtimeStore.getState().snapshots
@@ -222,6 +225,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
 
   useEffect(() => {
     if (!chats.data && !deleted.data && !folders.data) return
+    serverHydrated.current = true
     usePrototypeStore.setState((state) => {
       const oldMessages = new Map(state.chats.map((chat) => [chat.id, chat.messages]))
       const serverChats = [...(chats.data ?? []), ...(deleted.data ?? [])]

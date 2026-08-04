@@ -24,6 +24,7 @@ import {
   coalesceResponseEvents,
   groupResponseEvents,
   isTerminalSnapshot,
+  REALTIME_RENDER_INTERVAL_MS,
   syncInvalidationScopes,
   takeContiguousResponseEvents,
 } from './realtimeSync'
@@ -67,7 +68,13 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!token || !userId || !namespace) return
     const socket = io(apiOrigin(), {
-      path: '/socket.io', transports: ['websocket'], auth: { sessionToken: token }, reconnection: true,
+      path: '/socket.io',
+      transports: ['websocket'],
+      auth: { sessionToken: token },
+      autoConnect: false,
+      reconnection: true,
+      reconnectionDelayMax: 5_000,
+      timeout: 10_000,
     }) as PulpoSocket
     const unregisterSocket = registerRealtimeSocket(socket)
 
@@ -120,7 +127,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       const events = pendingEvents.get(event.responseId)
       if (events) events.push(event)
       else pendingEvents.set(event.responseId, [event])
-      eventTimer ??= setTimeout(() => flushEventBatches(), 50)
+      eventTimer ??= setTimeout(() => flushEventBatches(), REALTIME_RENDER_INTERVAL_MS)
     }
     const finishCursor = (responseId: string) => {
       pendingCursors.delete(responseId)
@@ -210,6 +217,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       if (socket.connected) void sync()
       else socket.connect()
     })
+    // Attach every listener before opening the transport so a fast cold-start connection cannot be missed.
+    socket.connect()
     return () => {
       disposed = true
       appState.remove()

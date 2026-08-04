@@ -13,6 +13,7 @@ import {
 } from 'react';
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   Alert,
   Animated,
   Appearance,
@@ -376,6 +377,7 @@ function prototypeSection(updatedAt: number) {
 }
 
 const legacyMessageCache = new WeakMap<PrototypeMessage, { chatId: string; chatModelId: string; value: Message }>();
+const legacyChatCache = new WeakMap<PrototypeChat, Chat>();
 
 function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, chatModelId: string): Message {
   const cached = legacyMessageCache.get(message);
@@ -415,7 +417,9 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
 }
 
 function prototypeChatToLegacy(chat: PrototypeChat): Chat {
-  return {
+  const cached = legacyChatCache.get(chat);
+  if (cached) return cached;
+  const value = {
     id: chat.id,
     title: chat.title,
     time: chat.updatedAt > Date.now() - 86_400_000
@@ -424,6 +428,8 @@ function prototypeChatToLegacy(chat: PrototypeChat): Chat {
     section: chat.pinned ? 'Pinned' : prototypeSection(chat.updatedAt),
     messages: chat.messages.map((message) => prototypeMessageToLegacy(message, chat.id, chat.modelId)),
   };
+  legacyChatCache.set(chat, value);
+  return value;
 }
 
 const SUGGESTIONS = [
@@ -813,6 +819,12 @@ function PrototypeRoot({ initialShareToken }: { initialShareToken?: string }) {
       },
     }));
   }, [productionConfig, productionInstanceUrl, productionStatus, productionUser]);
+  if (productionStatus === 'hydrating') {
+    return <View accessibilityLabel="Loading your chats" accessibilityRole="progressbar" style={styles.sessionLoading}>
+      <ActivityIndicator color={isDark ? '#FFFFFF' : '#111114'} size="large" />
+      <RNText style={[styles.sessionLoadingText, { color: isDark ? '#A1A1A8' : '#6E6E73' }]}>Loading your chats…</RNText>
+    </View>;
+  }
   if (status !== 'signed-in' && !incomingUrl?.includes('/share/') && !shareToken) return <AuthExperience />;
   return (
     <NavigationContainer
@@ -1002,6 +1014,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
   const messages = activeChat?.messages ?? [];
+  const remoteAssistantStatus = messages.some((message) => message.role === 'assistant' && message.status === 'streaming')
+    ? 'streaming'
+    : messages.some((message) => message.role === 'assistant' && message.status === 'queued')
+      ? 'thinking'
+      : 'idle';
+  const effectiveAssistantStatus = assistantStatus === 'idle' ? remoteAssistantStatus : assistantStatus;
 
   const selectChat = (chat: Chat) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
@@ -1222,7 +1240,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onChangeInput={setInput}
             onSend={sendMessage}
             onStop={stopGeneration}
-            assistantStatus={assistantStatus}
+            assistantStatus={effectiveAssistantStatus}
             streamingSession={streamingSession}
             onStreamingComplete={completeStreamingResponse}
             onOpenPanel={() => animatePanel(true)}
@@ -1797,6 +1815,7 @@ function ChatView({
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
+  const pendingFollowFrame = useRef<number | null>(null);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('Medium');
   const [agentEnabled, setAgentEnabled] = useState(true);
   const [temporary, setTemporary] = useState(false);
@@ -1892,9 +1911,16 @@ function ChatView({
   }, []);
 
   const followContentIfNeeded = useCallback(() => {
-    if (!isNearBottom.current) return;
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: assistantStatus === 'idle' }));
+    if (!isNearBottom.current || pendingFollowFrame.current !== null) return;
+    pendingFollowFrame.current = requestAnimationFrame(() => {
+      pendingFollowFrame.current = null;
+      listRef.current?.scrollToEnd({ animated: assistantStatus === 'idle' });
+    });
   }, [assistantStatus]);
+
+  useEffect(() => () => {
+    if (pendingFollowFrame.current !== null) cancelAnimationFrame(pendingFollowFrame.current);
+  }, []);
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
@@ -2646,6 +2672,8 @@ function NativeModelSheet({ visible, selected, models: availableModels, onClose,
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, backgroundColor: COLORS.panel },
+  sessionLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: COLORS.background },
+  sessionLoadingText: { fontSize: 14, fontWeight: '500' },
 
   // Main chat view
   mainView: {

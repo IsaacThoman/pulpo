@@ -1,5 +1,8 @@
 import type { ResponseEvent, ResponseSnapshot, SyncResult } from '@pulpo/contracts'
 
+/** Native Markdown/layout work is expensive; ten visual commits per second remains fluid without reparsing every token. */
+export const REALTIME_RENDER_INTERVAL_MS = 100
+
 const DELTA_EVENT_TYPES = new Set([
   'response.output_text.delta',
   'response.reasoning_summary_text.delta',

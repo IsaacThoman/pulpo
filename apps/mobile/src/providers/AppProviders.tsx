@@ -9,6 +9,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { usePreferencesStore } from '../store/preferences'
 import { useSessionStore } from '../store/session'
+import { isNetworkError } from '../api/client'
 import { useAppTheme } from '../theme'
 import { RealtimeProvider } from './RealtimeProvider'
 
@@ -64,7 +65,12 @@ function Bootstrap({ children }: { children: React.ReactNode }) {
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const queryClient = useMemo(() => new QueryClient({
     defaultOptions: {
-      queries: { staleTime: 20_000, gcTime: 24 * 60 * 60 * 1_000, retry: 2, networkMode: 'offlineFirst' },
+      queries: {
+        staleTime: 20_000,
+        gcTime: 24 * 60 * 60 * 1_000,
+        retry: (failureCount, error) => failureCount < 2 && isNetworkError(error),
+        networkMode: 'offlineFirst',
+      },
       mutations: { retry: 0, networkMode: 'online' },
     },
   }), [])

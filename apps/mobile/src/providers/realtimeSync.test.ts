@@ -4,6 +4,7 @@ import {
   coalesceResponseEvents,
   groupResponseEvents,
   isTerminalSnapshot,
+  REALTIME_RENDER_INTERVAL_MS,
   syncInvalidationScopes,
   takeContiguousResponseEvents,
 } from './realtimeSync'
@@ -19,6 +20,11 @@ function snapshot(status: ResponseSnapshot['status']): ResponseSnapshot {
 }
 
 describe('mobile realtime sync helpers', () => {
+  it('caps native rendering updates at a sustainable cadence', () => {
+    expect(REALTIME_RENDER_INTERVAL_MS).toBeGreaterThanOrEqual(80)
+    expect(REALTIME_RENDER_INTERVAL_MS).toBeLessThanOrEqual(150)
+  })
+
   it('only releases contiguous events and retains sequence gaps', () => {
     expect(takeContiguousResponseEvents([event(4), event(2), event(3), event(2)], 1)).toEqual({
       ready: [event(2), event(3), event(4)],
