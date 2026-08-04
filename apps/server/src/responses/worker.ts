@@ -262,7 +262,7 @@ async function processGenerationAttempt(
         else await releaseBudget(responseId)
         if (status === 'completed') {
           const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
-          if (requestLog) await runPostResponseTasks(client, record, output, requestLog.id).catch(() => undefined)
+          if (requestLog) await runPostResponseTasks(record, record, output, requestLog.id).catch(() => undefined)
         }
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
@@ -393,7 +393,7 @@ async function processGenerationAttempt(
     }).where(eq(responses.id, responseId))
     if (usage) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
     else await releaseBudget(responseId)
-    await runPostResponseTasks(client, record, output, requestLog.id).catch((error) => {
+    await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
     })
     await db.update(chats).set({ updatedAt: completedAt }).where(eq(chats.id, record.response.chatId))

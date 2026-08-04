@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { agentSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { applicationSettings, auditEvents, backupJobs, banners, exportJobs } from '../database/schema.js'
+import { applicationSettings, auditEvents, backupJobs, banners, exportJobs, models } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -13,6 +13,7 @@ import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocr
 import { encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
+import { resolveLegacyOcrCatalogModel } from '../responses/catalog-model-runtime.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -50,9 +51,18 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
     if (values.auth !== undefined) values.auth = authSettingsSchema.parse(values.auth)
     if (values.logging !== undefined) values.logging = loggingSettingsSchema.parse(values.logging)
-    if (values.interface !== undefined) values.interface = interfaceSettingsSchema.parse(values.interface)
+    if (values.interface !== undefined) {
+      const interfaceSettings = interfaceSettingsSchema.parse(values.interface)
+      values.interface = interfaceSettings
+      const selected = interfaceSettings.localTask
+      if (selected !== 'current') {
+        const [model] = await db.select({ id: models.id }).from(models)
+          .where(and(eq(models.id, selected), eq(models.enabled, true), eq(models.visible, true))).limit(1)
+        if (!model) throw new AppError(400, 'task_model_unavailable', 'The selected task model is unavailable')
+      }
+    }
     if (values.agent !== undefined) values.agent = agentSettingsSchema.parse(values.agent)
-    // OCR credentials use the dedicated endpoint and never pass through this generic settings API.
+    // OCR settings use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
     await db.transaction(async (tx) => {
@@ -109,28 +119,36 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     requireAdmin(request)
     const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1)
     const value = parseOcrSettings(row?.value)
-    const { encryptedCustomApiKey, ...safe } = value
-    return { ...safe, hasCustomApiKey: Boolean(encryptedCustomApiKey) }
+    const legacy = value.modelId ? null : await resolveLegacyOcrCatalogModel(value.providerConnectionId, value.model)
+    return {
+      enabled: value.enabled,
+      cacheEnabled: value.cacheEnabled,
+      cacheTtlSeconds: value.cacheTtlSeconds,
+      modelId: value.modelId ?? legacy?.model.id ?? null,
+      systemPrompt: value.systemPrompt,
+    }
   })
 
   app.patch('/api/admin/settings/ocr', async (request) => {
     const admin = requireAdmin(request)
     const input = z.object({
       enabled: z.boolean(), cacheEnabled: z.boolean(), cacheTtlSeconds: z.number().int().min(60).max(31_536_000),
-      providerMode: z.enum(['existing', 'custom']), providerConnectionId: z.uuid().nullable(), customBaseUrl: z.url().nullable(),
-      customApiKey: z.string().min(1).optional(), model: z.string().min(1).max(200), systemPrompt: z.string().max(100_000),
+      modelId: z.string().min(1).max(200).nullable(), systemPrompt: z.string().max(100_000),
     }).parse(request.body)
-    const [existing] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1)
-    const old = parseOcrSettings(existing?.value)
+    if (input.enabled && !input.modelId) throw new AppError(400, 'ocr_model_required', 'Select an OCR model before enabling OCR')
+    if (input.modelId) {
+      const [model] = await db.select({ id: models.id }).from(models)
+        .where(and(eq(models.id, input.modelId), eq(models.enabled, true), eq(models.visible, true))).limit(1)
+      if (!model) throw new AppError(400, 'ocr_model_unavailable', 'The selected OCR model is unavailable')
+    }
     const value = ocrSettingsSchema.parse({
       ...input,
-      encryptedCustomApiKey: input.customApiKey ? encryptSecret(input.customApiKey, getConfig().ENCRYPTION_KEY) : old.encryptedCustomApiKey,
     })
     await db.transaction(async (tx) => {
       await tx.insert(applicationSettings).values({ key: 'ocr', value, updatedBy: admin.id }).onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
-      await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'settings.ocr.update', targetType: 'application', metadata: { enabled: value.enabled, providerMode: value.providerMode } })
+      await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'settings.ocr.update', targetType: 'application', metadata: { enabled: value.enabled, modelId: value.modelId } })
     })
-    return { ...input, customApiKey: undefined, hasCustomApiKey: Boolean(value.encryptedCustomApiKey) }
+    return input
   })
 
   app.get('/api/admin/banners', async (request) => {

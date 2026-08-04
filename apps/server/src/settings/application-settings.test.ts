@@ -16,7 +16,19 @@ describe('authentication application settings', () => {
 
 describe('OCR application settings', () => {
   it('uses the shared Pulpo Proxy prompt by default', () => {
-    expect(parseOcrSettings(undefined).systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
+    const settings = parseOcrSettings(undefined)
+    expect(settings.systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
+    expect(settings.modelId).toBeNull()
+  })
+
+  it('adds a catalog model slot to legacy provider settings', () => {
+    const settings = parseOcrSettings({
+      providerMode: 'existing',
+      providerConnectionId: '123e4567-e89b-42d3-a456-426614174000',
+      model: 'legacy-vision-model',
+    })
+    expect(settings.modelId).toBeNull()
+    expect(settings.model).toBe('legacy-vision-model')
   })
 })
 
@@ -71,6 +83,7 @@ describe('web tool application settings', () => {
 describe('interface application settings', () => {
   it('defaults suggested prompts to the built-in starter set', () => {
     const settings = parseInterfaceSettings(undefined)
+    expect(settings.localTask).toBe('current')
     expect(settings.suggestedPromptsEnabled).toBe(true)
     expect(settings.suggestedPromptsCount).toBe(4)
     expect(settings.suggestedPrompts).toEqual([...DEFAULT_SUGGESTED_PROMPTS])

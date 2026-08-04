@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   Field,
@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
+import { modelOptionLabel, useAvailableModels } from './use-available-models'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
@@ -156,6 +157,7 @@ export function AuthenticationSection() {
 }
 
 export function InterfaceSection() {
+  const models = useAvailableModels()
   const [t, setT, save] = useAdminSetting('interface', {
     localTask: 'current',
     compaction: true,
@@ -171,6 +173,16 @@ export function InterfaceSection() {
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
   const prompts = Array.isArray(t.suggestedPrompts) ? t.suggestedPrompts : DEFAULT_SUGGESTED_PROMPTS
+  const taskModelOptions = useMemo(() => {
+    const options = [
+      { value: 'current', label: 'Current model' },
+      ...models.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
+    ]
+    if (t.localTask !== 'current' && !models.some((model) => model.id === t.localTask)) {
+      options.push({ value: t.localTask, label: `Unavailable (${t.localTask})` })
+    }
+    return options
+  }, [models, t.localTask])
   const updatePrompt = (index: number, patch: Partial<(typeof DEFAULT_SUGGESTED_PROMPTS)[number]>) =>
     s('suggestedPrompts', prompts.map((item, i) => (i === index ? { ...item, ...patch } : item)))
 
@@ -184,11 +196,7 @@ export function InterfaceSection() {
           label="Task model"
           value={t.localTask}
           onChange={(v) => s('localTask', v)}
-          options={[
-            { value: 'current', label: 'Current model' },
-            { value: 'gpt-4o-mini', label: 'GPT-4o mini' },
-            { value: 'llama-3.3-70b', label: 'Llama 3.3 70B' },
-          ]}
+          options={taskModelOptions}
         />
       </Section>
 

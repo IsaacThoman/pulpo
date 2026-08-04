@@ -16,7 +16,6 @@ import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
-import OpenAI from 'openai'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
 import { calculateCostMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
@@ -358,8 +357,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
     await db.update(requestLogs).set({ status: 'completed', actualModelId: active.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: Date.now() - startedAt, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
-    const postTaskClient = new OpenAI({ apiKey: active.apiKey, baseURL: active.provider.baseUrl, timeout: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries })
-    await runPostResponseTasks(postTaskClient, record, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
+    await runPostResponseTasks(record, active, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
     })
   } catch (error) {

@@ -24,6 +24,9 @@ export const ocrSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   cacheEnabled: z.boolean().default(true),
   cacheTtlSeconds: z.number().int().min(60).max(31_536_000).default(3600),
+  modelId: z.string().min(1).max(200).nullable().default(null),
+  // Retained only so provider-based settings from older releases can be mapped
+  // to a configured catalog model.
   providerMode: z.enum(['existing', 'custom']).default('existing'),
   providerConnectionId: z.string().uuid().nullable().default(null),
   customBaseUrl: z.string().url().nullable().default(null),
@@ -68,7 +71,7 @@ export const suggestedPromptItemSchema = z.object({
 })
 
 export const interfaceSettingsSchema = z.object({
-  localTask: z.string().default('current'),
+  localTask: z.string().min(1).max(200).default('current'),
   compaction: z.boolean().default(true),
   compactionTokens: z.number().int().min(2_000).max(1_000_000).default(12_000),
   title: z.boolean().default(true),

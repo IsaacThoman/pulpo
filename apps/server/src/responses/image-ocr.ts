@@ -1,14 +1,12 @@
-import OpenAI from 'openai'
 import { createHash } from 'node:crypto'
 import { and, eq, gt } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { applicationSettings, models, ocrAttempts, ocrCacheEntries, providerConnections, requestLogs } from '../database/schema.js'
-import { getConfig } from '../config.js'
-import { decryptSecret } from '../lib/crypto.js'
+import { applicationSettings, models, ocrAttempts, ocrCacheEntries, requestLogs } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { trackInternalModelCall } from './model-calls.js'
+import { createCatalogModelClient, resolveAvailableCatalogModel, resolveLegacyOcrCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
 
 export type OcrModel = Pick<typeof models.$inferSelect, 'id' | 'interceptImagesWithOcr'>
 
@@ -41,28 +39,19 @@ export async function createModelImageInterceptor(requestLogId: string): Promise
   const settings = parseOcrSettings(ocrRow?.value)
   const logging = parseLoggingSettings(loggingRow?.value)
   let status = requestLog?.ocrStatus ?? 'not_requested'
-  let clientPromise: Promise<{ client: OpenAI; providerId: string | null }> | undefined
+  let runtimePromise: Promise<CatalogModelRuntime> | undefined
+  let catalogClient: ReturnType<typeof createCatalogModelClient> | undefined
 
-  const ocrClient = async (): Promise<{ client: OpenAI; providerId: string | null }> => {
-    if (clientPromise) return clientPromise
-    clientPromise = (async () => {
-      if (settings.providerMode === 'existing' && settings.providerConnectionId) {
-        const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, settings.providerConnectionId)).limit(1)
-        if (!provider) throw new Error('OCR provider is unavailable')
-        return {
-          client: new OpenAI({ apiKey: decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY), baseURL: provider.baseUrl, timeout: provider.requestTimeoutMs }),
-          providerId: provider.id,
-        }
-      }
-      if (settings.customBaseUrl && settings.encryptedCustomApiKey) {
-        return {
-          client: new OpenAI({ apiKey: decryptSecret(settings.encryptedCustomApiKey, getConfig().ENCRYPTION_KEY), baseURL: settings.customBaseUrl }),
-          providerId: null,
-        }
-      }
-      throw new Error('OCR provider is not configured')
+  const ocrRuntime = async (): Promise<CatalogModelRuntime> => {
+    if (runtimePromise) return runtimePromise
+    runtimePromise = (async () => {
+      const runtime = settings.modelId
+        ? await resolveAvailableCatalogModel(settings.modelId)
+        : await resolveLegacyOcrCatalogModel(settings.providerConnectionId, settings.model)
+      if (!runtime) throw new Error('OCR model is unavailable or not configured')
+      return runtime
     })()
-    return clientPromise
+    return runtimePromise
   }
 
   const updateStatus = async (next: 'completed' | 'failed') => {
@@ -75,27 +64,32 @@ export async function createModelImageInterceptor(requestLogId: string): Promise
       if (!settings.enabled || !model.interceptImagesWithOcr) return null
       const attemptId = newId()
       const started = Date.now()
-      const providerFingerprint = `${settings.providerMode}:${settings.providerConnectionId ?? settings.customBaseUrl}:${settings.model}`
       const sourceChecksum = image.sourceChecksum ?? createHash('sha256').update(image.data).digest('hex')
-      const cacheChecksum = createHash('sha256').update(providerFingerprint).update(image.data).digest('hex')
-      let providerId = settings.providerMode === 'existing' ? settings.providerConnectionId : null
+      let providerFingerprint = `unconfigured:${settings.modelId ?? settings.model}`
+      let cacheChecksum = createHash('sha256').update(providerFingerprint).update(image.data).digest('hex')
+      let providerId: string | null = null
+      let attemptModelId = settings.modelId ?? settings.model
       try {
+        const runtime = await ocrRuntime()
+        const client = catalogClient ??= createCatalogModelClient(runtime)
+        providerId = runtime.provider.id
+        attemptModelId = runtime.model.id
+        providerFingerprint = `${runtime.model.id}:${runtime.provider.id}:${runtime.model.upstreamModelId}`
+        cacheChecksum = createHash('sha256').update(providerFingerprint).update(image.data).digest('hex')
         const [cached] = settings.cacheEnabled
           ? await db.select().from(ocrCacheEntries).where(and(eq(ocrCacheEntries.checksum, cacheChecksum), gt(ocrCacheEntries.expiresAt, new Date()))).limit(1)
           : []
         let text = cached?.text
         let rawResponse: unknown
         if (!text) {
-          const resolved = await ocrClient()
-          providerId = resolved.providerId
           const encoded = dataUrl(image)
           rawResponse = await trackInternalModelCall({
             requestLogId,
-            modelId: model.id,
-            upstreamModelId: settings.model,
+            modelId: runtime.model.id,
+            upstreamModelId: runtime.model.upstreamModelId,
             purpose: 'ocr',
-            invoke: () => resolved.client.responses.create({
-              model: settings.model,
+            invoke: () => client.responses.create({
+              model: runtime.model.upstreamModelId,
               instructions: settings.systemPrompt,
               input: [{ role: 'user', content: [{ type: 'input_image', image_url: encoded, detail: 'auto' }] }],
               store: false,
@@ -121,10 +115,10 @@ export async function createModelImageInterceptor(requestLogId: string): Promise
           attachmentId: image.attachmentId ?? null,
           sourceChecksum,
           providerId,
-          modelId: settings.model,
+          modelId: runtime.model.id,
           status: 'completed',
           cached: Boolean(cached),
-          requestPayload: logging.logDetailedPayloads ? { model: settings.model, input: dataUrl(image) } : null,
+          requestPayload: logging.logDetailedPayloads ? { model: runtime.model.upstreamModelId, input: dataUrl(image) } : null,
           responsePayload: logging.logDetailedPayloads ? rawResponse : null,
           durationMs: Date.now() - started,
         })
@@ -139,7 +133,7 @@ export async function createModelImageInterceptor(requestLogId: string): Promise
           attachmentId: image.attachmentId ?? null,
           sourceChecksum,
           providerId,
-          modelId: settings.model,
+          modelId: attemptModelId,
           status: 'failed',
           errorMessage: message,
           durationMs: Date.now() - started,

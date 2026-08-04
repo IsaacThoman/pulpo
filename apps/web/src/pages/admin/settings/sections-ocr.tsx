@@ -1,56 +1,66 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Field,
   NumField,
   SaveBar,
-  SecretField,
   Section,
   SelectField,
   TextAreaField,
-  TextField,
   Toggle,
 } from '@/components/admin/kit'
 import { apiRequest } from '@/lib/api'
-import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
+import { modelOptionLabel, useAvailableModels } from './use-available-models'
 
-const CUSTOM = 'custom'
+const UNCONFIGURED = '__unconfigured__'
+
+interface OcrSettingsResponse {
+  enabled: boolean
+  cacheEnabled: boolean
+  cacheTtlSeconds: number
+  modelId: string | null
+  systemPrompt: string
+}
 
 export function OcrSection() {
-  const [providers, setProviders] = useState<Array<{ id: string; name: string; baseUrl: string; hasApiKey: boolean }>>([])
+  const models = useAvailableModels()
   const [enabled, setEnabled] = useState(false)
   const [cacheEnabled, setCacheEnabled] = useState(true)
-  const [providerId, setProviderId] = useState(CUSTOM)
-  const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1')
-  const [apiKey, setApiKey] = useState('')
-  const [apiKeyConfigured, setApiKeyConfigured] = useState(false)
-  const [model, setModel] = useState('gpt-4.1-mini')
+  const [modelId, setModelId] = useState<string | null>(null)
   const [systemPrompt, setSystemPrompt] = useState(DEFAULT_OCR_SYSTEM_PROMPT)
   const [cacheTtl, setCacheTtl] = useState(3600)
-  useEffect(() => { void Promise.all([apiRequest<{ data: Array<{ id: string; name: string; baseUrl: string; hasApiKey: boolean }> }>('/api/admin/providers'), apiRequest<{ enabled: boolean; cacheEnabled: boolean; cacheTtlSeconds: number; providerMode: 'existing' | 'custom'; providerConnectionId: string | null; customBaseUrl: string | null; model: string; systemPrompt: string; hasCustomApiKey: boolean }>('/api/admin/settings/ocr')]).then(([p, value]) => { setProviders(p.data); setEnabled(value.enabled); setCacheEnabled(value.cacheEnabled); setCacheTtl(value.cacheTtlSeconds); setProviderId(value.providerMode === 'custom' ? CUSTOM : value.providerConnectionId ?? CUSTOM); setBaseUrl(value.customBaseUrl ?? 'https://api.openai.com/v1'); setModel(value.model); setSystemPrompt(value.systemPrompt); setApiKeyConfigured(value.hasCustomApiKey) }) }, [])
 
-  const isCustom = providerId === CUSTOM
-  const selected = useMemo(
-    () => (isCustom ? null : providers.find((p) => p.id === providerId) ?? null),
-    [isCustom, providerId, providers]
-  )
+  useEffect(() => {
+    void apiRequest<OcrSettingsResponse>('/api/admin/settings/ocr').then((value) => {
+      setEnabled(value.enabled)
+      setCacheEnabled(value.cacheEnabled)
+      setCacheTtl(value.cacheTtlSeconds)
+      setModelId(value.modelId)
+      setSystemPrompt(value.systemPrompt)
+    })
+  }, [])
 
-  const onProviderChange = (id: string) => {
-    setProviderId(id)
-    if (id === CUSTOM) return
-    const p = providers.find((x) => x.id === id)
-    if (p) setBaseUrl(p.baseUrl)
-    setApiKey('')
-  }
-
-  const providerOptions = [
-    { value: CUSTOM, label: 'Custom provider for OCR' },
-    ...providers.map((p) => ({ value: p.id, label: p.name })),
-  ]
+  const modelOptions = useMemo(() => {
+    const sorted = [...models].sort((a, b) => {
+      const aVision = a.tags.includes('vision') ? 0 : 1
+      const bVision = b.tags.includes('vision') ? 0 : 1
+      return aVision - bVision
+    })
+    const options = [
+      { value: UNCONFIGURED, label: 'Select a model' },
+      ...sorted.map((model) => ({
+        value: model.id,
+        label: `${model.tags.includes('vision') ? 'Vision · ' : ''}${modelOptionLabel(model)}`,
+      })),
+    ]
+    if (modelId && !models.some((model) => model.id === modelId)) {
+      options.push({ value: modelId, label: `Unavailable (${modelId})` })
+    }
+    return options
+  }, [modelId, models])
 
   return (
     <div>
-      <Section title="OCR pipeline" hint="Configure a vision model used to process images before they reach chat models.">
+      <Section title="OCR pipeline" hint="Configure a catalog model used to process images before they reach chat models.">
         <Toggle label="Enable OCR pipeline" checked={enabled} onChange={setEnabled} />
         <Toggle
           label="Cache results"
@@ -60,56 +70,14 @@ export function OcrSection() {
         />
       </Section>
 
-      <Section title="Provider">
+      <Section title="Model" hint="Vision-tagged models are listed first, but any available model can be selected.">
         <SelectField
-          label="Provider"
-          value={providerId}
-          onChange={onProviderChange}
-          options={providerOptions}
+          label="OCR model"
+          hint={enabled && !modelId ? 'A model is required while OCR is enabled.' : undefined}
+          value={modelId ?? UNCONFIGURED}
+          onChange={(value) => setModelId(value === UNCONFIGURED ? null : value)}
+          options={modelOptions}
         />
-        {selected && (
-          <Field label={selected.name} hint={selected.baseUrl}>
-            <span className="text-xs text-muted-foreground">
-              {selected.hasApiKey ? 'API key configured' : 'No API key'}
-            </span>
-          </Field>
-        )}
-        {isCustom && (
-          <>
-            <TextField
-              label="Base URL"
-              value={baseUrl}
-              onChange={setBaseUrl}
-              placeholder="https://api.openai.com/v1"
-              mono
-            />
-            <SecretField
-              label="API key"
-              hint={apiKeyConfigured ? 'Configured — leave blank to keep' : undefined}
-              value={apiKey}
-              onChange={setApiKey}
-            />
-          </>
-        )}
-        {isCustom ? (
-          <TextField
-            label="Vision model"
-            value={model}
-            onChange={setModel}
-            placeholder="gpt-4.1-mini"
-            mono
-          />
-        ) : (
-          <Field label="Vision model">
-            <div className="w-64">
-              <UpstreamModelField
-                providerConnectionId={providerId}
-                value={model}
-                onChange={setModel}
-              />
-            </div>
-          </Field>
-        )}
       </Section>
 
       <Section title="Prompt">
@@ -132,7 +100,13 @@ export function OcrSection() {
         />
       </Section>
 
-      <SaveBar onSave={async () => { await apiRequest('/api/admin/settings/ocr', { method: 'PATCH', body: { enabled, cacheEnabled, cacheTtlSeconds: cacheTtl, providerMode: isCustom ? 'custom' : 'existing', providerConnectionId: isCustom ? null : providerId, customBaseUrl: isCustom ? baseUrl : null, customApiKey: apiKey || undefined, model, systemPrompt } }); setApiKey(''); if (apiKey) setApiKeyConfigured(true) }} />
+      <SaveBar onSave={async () => {
+        if (enabled && !modelId) throw new Error('Select an OCR model before enabling OCR')
+        await apiRequest('/api/admin/settings/ocr', {
+          method: 'PATCH',
+          body: { enabled, cacheEnabled, cacheTtlSeconds: cacheTtl, modelId, systemPrompt },
+        })
+      }} />
     </div>
   )
 }
