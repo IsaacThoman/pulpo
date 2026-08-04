@@ -10,7 +10,7 @@ import {
   type OutboxRecord,
 } from './schema'
 import type { ServerChat } from '../types'
-import { cachedChatIdsToRemove, mergeCachedChat } from './cache'
+import { cachedChatIdsToRemove, mergeCachedChat, withoutCachedChatDetails } from './cache'
 import { createOperationQueue } from './operationQueue'
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | undefined
@@ -60,7 +60,7 @@ export async function clearNamespace(namespace: string): Promise<string[]> {
       'SELECT local_uri FROM attachment_cache WHERE namespace = ?', namespace,
     )
     await database.withTransactionAsync(async () => {
-      for (const table of ['kv', 'drafts', 'response_cursors', 'outbox', 'chat_cache', 'attachment_cache']) {
+      for (const table of ['kv', 'drafts', 'response_cursors', 'outbox', 'chat_cache', 'chat_access', 'attachment_cache']) {
         await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
       }
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
@@ -75,7 +75,7 @@ export async function clearDownloadedData(namespace: string): Promise<string[]> 
       'SELECT local_uri FROM attachment_cache WHERE namespace = ?', namespace,
     )
     await database.withTransactionAsync(async () => {
-      for (const table of ['chat_cache', 'attachment_cache']) {
+      for (const table of ['chat_cache', 'chat_access', 'attachment_cache']) {
         await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
       }
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
@@ -180,6 +180,77 @@ export async function cacheChats(namespace: string, chats: ServerChat[]): Promis
   await withDatabase((database) => cacheChatsInDatabase(database, namespace, chats))
 }
 
+async function trimOpenedChatDetailsInDatabase(
+  database: SQLite.SQLiteDatabase,
+  namespace: string,
+  limit: number,
+): Promise<void> {
+  const cacheRows = await database.getAllAsync<{ chat_id: string; payload: string; updated_at: number }>(
+    'SELECT chat_id, payload, updated_at FROM chat_cache WHERE namespace = ?', namespace,
+  )
+  const accessRows = await database.getAllAsync<{ chat_id: string; opened_at: number }>(
+    'SELECT chat_id, opened_at FROM chat_access WHERE namespace = ?', namespace,
+  )
+  const openedAt = new Map(accessRows.map((row) => [row.chat_id, row.opened_at]))
+  const detailed = cacheRows.flatMap((row) => {
+    const chat = JSON.parse(row.payload) as ServerChat
+    return Object.hasOwn(chat, 'responses')
+      ? [{ ...row, chat, openedAt: openedAt.get(row.chat_id) ?? row.updated_at }]
+      : []
+  }).sort((left, right) => right.openedAt - left.openedAt || left.chat_id.localeCompare(right.chat_id))
+  const keep = detailed.slice(0, Math.max(0, limit))
+  const evict = detailed.slice(Math.max(0, limit))
+  await database.withTransactionAsync(async () => {
+    for (const row of keep) {
+      await database.runAsync(
+        `INSERT INTO chat_access(namespace, chat_id, opened_at) VALUES (?, ?, ?)
+         ON CONFLICT(namespace, chat_id) DO UPDATE SET opened_at = excluded.opened_at`,
+        namespace, row.chat_id, row.openedAt,
+      )
+    }
+    for (const row of evict) {
+      const summary = withoutCachedChatDetails(row.chat)
+      await database.runAsync(
+        'UPDATE chat_cache SET payload = ? WHERE namespace = ? AND chat_id = ?',
+        JSON.stringify(summary), namespace, row.chat_id,
+      )
+      await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, row.chat_id)
+      await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, row.chat_id)
+      await database.runAsync(
+        'INSERT INTO chat_fts(namespace, chat_id, title, body) VALUES (?, ?, ?, ?)',
+        namespace, row.chat_id, summary.title, '',
+      )
+    }
+  })
+}
+
+export async function cacheOpenedChat(
+  namespace: string,
+  chat: ServerChat,
+  limit = 50,
+): Promise<void> {
+  await withDatabase(async (database) => {
+    await cacheChatsInDatabase(database, namespace, [chat])
+    await database.runAsync(
+      `INSERT INTO chat_access(namespace, chat_id, opened_at) VALUES (?, ?, ?)
+       ON CONFLICT(namespace, chat_id) DO UPDATE SET opened_at = excluded.opened_at`,
+      namespace, chat.id, Date.now(),
+    )
+    await trimOpenedChatDetailsInDatabase(database, namespace, limit)
+  })
+}
+
+export async function markCachedChatOpened(namespace: string, chatId: string, limit = 50): Promise<void> {
+  await withDatabase(async (database) => {
+    await database.runAsync(
+      `INSERT INTO chat_access(namespace, chat_id, opened_at) VALUES (?, ?, ?)
+       ON CONFLICT(namespace, chat_id) DO UPDATE SET opened_at = excluded.opened_at`,
+      namespace, chatId, Date.now(),
+    )
+    await trimOpenedChatDetailsInDatabase(database, namespace, limit)
+  })
+}
+
 export async function reconcileCachedChatScope(
   namespace: string,
   chats: ServerChat[],
@@ -195,32 +266,22 @@ export async function reconcileCachedChatScope(
       rows.map((row) => JSON.parse(row.payload) as ServerChat),
       new Set(chats.map((chat) => chat.id)),
       scope,
-      limit,
     )
-    if (!removedIds.length) return
-    await database.withTransactionAsync(async () => {
-      for (const chatId of removedIds) {
-        await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chatId)
-        await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chatId)
-      }
-    })
+    if (removedIds.length) {
+      await database.withTransactionAsync(async () => {
+        for (const chatId of removedIds) {
+          await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chatId)
+          await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chatId)
+          await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chatId)
+        }
+      })
+    }
+    await trimOpenedChatDetailsInDatabase(database, namespace, limit)
   })
 }
 
 export async function trimCachedChats(namespace: string, limit: number): Promise<void> {
-  await withDatabase(async (database) => {
-    const rows = await database.getAllAsync<{ chat_id: string }>(
-      'SELECT chat_id FROM chat_cache WHERE namespace = ? ORDER BY updated_at DESC', namespace,
-    )
-    const overflow = rows.slice(Math.max(0, limit))
-    if (!overflow.length) return
-    await database.withTransactionAsync(async () => {
-      for (const row of overflow) {
-        await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, row.chat_id)
-        await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, row.chat_id)
-      }
-    })
-  })
+  await withDatabase((database) => trimOpenedChatDetailsInDatabase(database, namespace, limit))
 }
 
 export async function cachedChats(namespace: string): Promise<ServerChat[]> {

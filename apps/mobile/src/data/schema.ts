@@ -1,4 +1,4 @@
-export const MOBILE_DATABASE_VERSION = 1
+export const MOBILE_DATABASE_VERSION = 2
 
 export const MOBILE_SCHEMA = `
 PRAGMA journal_mode = WAL;
@@ -49,6 +49,13 @@ CREATE TABLE IF NOT EXISTS chat_cache (
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (namespace, chat_id)
 );
+CREATE TABLE IF NOT EXISTS chat_access (
+  namespace TEXT NOT NULL,
+  chat_id TEXT NOT NULL,
+  opened_at INTEGER NOT NULL,
+  PRIMARY KEY (namespace, chat_id)
+);
+CREATE INDEX IF NOT EXISTS chat_access_lru ON chat_access(namespace, opened_at DESC);
 CREATE VIRTUAL TABLE IF NOT EXISTS chat_fts USING fts5(
   namespace UNINDEXED,
   chat_id UNINDEXED,

@@ -28,6 +28,18 @@ describe('mobile SQLite schema', () => {
     expect(cacheNamespace('https://other.example', 'user-1')).not.toBe(cacheNamespace('https://pulpo.baby', 'user-1'))
   })
 
+  it('tracks chat document access independently from history summaries', () => {
+    const database = new DatabaseSync(':memory:')
+    database.exec(MOBILE_SCHEMA)
+    const access = database.prepare(`INSERT INTO chat_access(namespace, chat_id, opened_at) VALUES (?, ?, ?)
+      ON CONFLICT(namespace, chat_id) DO UPDATE SET opened_at = excluded.opened_at`)
+    access.run('one|user', 'chat-1', 10)
+    access.run('one|user', 'chat-2', 20)
+    access.run('one|user', 'chat-1', 30)
+    expect(database.prepare('SELECT chat_id FROM chat_access WHERE namespace = ? ORDER BY opened_at DESC')
+      .all('one|user')).toEqual([{ chat_id: 'chat-1' }, { chat_id: 'chat-2' }])
+  })
+
   it('replays outbox records in causal creation order, regardless of retry time', () => {
     const record = (id: string, nextAttemptAt: number, createdAt: number): OutboxRecord => ({
       id, namespace: 'n', entityKey: id, method: 'PATCH', path: `/api/chats/${id}`,

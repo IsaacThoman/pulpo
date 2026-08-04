@@ -15,12 +15,15 @@ export function cachedChatIdsToRemove(
   ordered: ServerChat[],
   incomingIds: Set<string>,
   scope: 'active' | 'deleted' | 'all',
-  limit: number,
 ): string[] {
-  const obsolete = new Set(ordered.flatMap((chat) => {
+  return ordered.flatMap((chat) => {
     const inScope = scope === 'all' || (scope === 'deleted' ? Boolean(chat.deletedAt) : !chat.deletedAt)
     return inScope && !incomingIds.has(chat.id) ? [chat.id] : []
-  }))
-  const overflow = ordered.filter((chat) => !obsolete.has(chat.id)).slice(Math.max(0, limit)).map((chat) => chat.id)
-  return [...new Set([...obsolete, ...overflow])]
+  })
+}
+
+/** Keep the lightweight history record while evicting a conversation's offline document. */
+export function withoutCachedChatDetails(chat: ServerChat): ServerChat {
+  const { responses: _responses, attachments: _attachments, ...summary } = chat
+  return summary
 }

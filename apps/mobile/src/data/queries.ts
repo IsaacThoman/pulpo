@@ -1,6 +1,14 @@
 import { queryOptions } from '@tanstack/react-query'
 import { mobileApi } from '../api/client'
-import { cacheChats, cachedChats, getValue, setValue, trimCachedChats } from './database'
+import {
+  cacheChats,
+  cacheOpenedChat,
+  cachedChats,
+  getValue,
+  markCachedChatOpened,
+  setValue,
+  trimCachedChats,
+} from './database'
 import type { ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export const queryKeys = {
@@ -11,7 +19,7 @@ export const queryKeys = {
   models: (namespace: string) => ['models', namespace] as const,
 }
 
-export function chatsQuery(namespace: string, localChatLimit = 200) {
+export function chatsQuery(namespace: string, localChatLimit = 50) {
   return queryOptions({
     queryKey: queryKeys.chats(namespace),
     queryFn: async () => {
@@ -49,7 +57,7 @@ function normalizeDeletedChat(chat: ServerDeletedChat, existing?: ServerChat): S
   }
 }
 
-export function deletedChatsQuery(namespace: string, localChatLimit = 200) {
+export function deletedChatsQuery(namespace: string, localChatLimit = 50) {
   return queryOptions({
     queryKey: queryKeys.deletedChats(namespace),
     queryFn: async () => {
@@ -69,17 +77,20 @@ export function deletedChatsQuery(namespace: string, localChatLimit = 200) {
   })
 }
 
-export function chatQuery(namespace: string, id: string) {
+export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
   return queryOptions({
     queryKey: queryKeys.chat(namespace, id),
     queryFn: async () => {
       try {
         const chat = await mobileApi.chat(id)
-        await cacheChats(namespace, [chat])
+        await cacheOpenedChat(namespace, chat, localChatLimit)
         return chat
       } catch (error) {
         const chat = (await cachedChats(namespace)).find((candidate) => candidate.id === id)
-        if (chat?.responses) return chat
+        if (chat?.responses) {
+          await markCachedChatOpened(namespace, id, localChatLimit)
+          return chat
+        }
         throw error
       }
     },

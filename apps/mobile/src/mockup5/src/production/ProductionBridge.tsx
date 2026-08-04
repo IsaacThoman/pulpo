@@ -147,7 +147,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
   const models = useQuery({ queryKey: queryKeys.models(namespace), queryFn: mobileApi.models, enabled })
   const detail = useQuery({
-    ...chatQuery(namespace, activeChatId ?? ''),
+    ...chatQuery(namespace, activeChatId ?? '', preferences.localChatLimit),
     enabled: enabled && activeChatIsServerAddressable,
   })
 

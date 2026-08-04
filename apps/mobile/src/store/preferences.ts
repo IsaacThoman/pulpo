@@ -21,7 +21,7 @@ export interface Preferences {
 
 const defaults: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
-  haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 200,
+  haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   favoriteModelIds: [], defaultModelId: null, agentMode: false,
 }
 
@@ -37,7 +37,11 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   hydrate: async () => {
     try {
       const stored = await getValue<Partial<Preferences>>('global', 'preferences')
-      const preferences = { ...defaults, ...stored }
+      const preferences = {
+        ...defaults,
+        ...stored,
+        localChatLimit: Math.min(defaults.localChatLimit, stored?.localChatLimit ?? defaults.localChatLimit),
+      }
       Appearance.setColorScheme(preferences.theme === 'system' ? 'unspecified' : preferences.theme)
       set({ ...preferences, hydrated: true })
     } catch {

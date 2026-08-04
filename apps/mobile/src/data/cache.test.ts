@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ServerChat } from '../types'
-import { cachedChatIdsToRemove, mergeCachedChat } from './cache'
+import { cachedChatIdsToRemove, mergeCachedChat, withoutCachedChatDetails } from './cache'
 
 function chat(overrides: Partial<ServerChat> = {}): ServerChat {
   return {
@@ -32,11 +32,16 @@ describe('cachedChatIdsToRemove', () => {
     const active = chat({ id: 'active', title: 'Active' })
     const stale = chat({ id: 'stale', title: 'Stale' })
     const deleted = chat({ id: 'deleted', title: 'Deleted', deletedAt: new Date().toISOString() })
-    expect(cachedChatIdsToRemove([active, stale, deleted], new Set(['active']), 'active', 20)).toEqual(['stale'])
+    expect(cachedChatIdsToRemove([active, stale, deleted], new Set(['active']), 'active')).toEqual(['stale'])
   })
 
-  it('enforces the on-device history limit after reconciliation', () => {
-    const chats = ['one', 'two', 'three'].map((id) => chat({ id, title: id }))
-    expect(cachedChatIdsToRemove(chats, new Set(chats.map((item) => item.id)), 'active', 2)).toEqual(['three'])
+  it('keeps summaries while removing an evicted offline document', () => {
+    const summary = withoutCachedChatDetails(chat({
+      responses: [{ id: 'response-1' }] as ServerChat['responses'],
+      attachments: [{ id: 'file-1', originalName: 'a.txt', mimeType: 'text/plain', sizeBytes: 4 }],
+    }))
+    expect(summary.responses).toBeUndefined()
+    expect(summary.attachments).toBeUndefined()
+    expect(summary.title).toBe('Original')
   })
 })
