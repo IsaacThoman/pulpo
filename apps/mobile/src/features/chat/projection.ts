@@ -19,6 +19,13 @@ export interface ActivityItem {
   durationMs?: number
 }
 
+export interface DisplayBranch {
+  id: string
+  text: string
+  modelId: string
+  createdAt: string
+}
+
 export interface DisplayMessage {
   id: string
   responseId: string
@@ -30,7 +37,7 @@ export interface DisplayMessage {
   createdAt: string
   attachments: DisplayAttachment[]
   activity: ActivityItem[]
-  branch: { ids: string[]; index: number }
+  branch: { ids: string[]; index: number; variants: DisplayBranch[] }
   error?: string
   agentMode: boolean
   usage?: { inputTokens: number; outputTokens: number } | null
@@ -130,13 +137,37 @@ function generatedAttachments(output: unknown[]): DisplayAttachment[] {
   })
 }
 
+function responseOutput(response: ServerResponse, liveSnapshots: Record<string, ResponseSnapshot>): unknown[] {
+  const live = liveSnapshots[response.id]
+  return live && live.sequence >= response.snapshot.sequence ? live.output : response.output
+}
+
+function branchVariants(
+  responses: ServerResponse[],
+  ids: string[],
+  role: 'user' | 'assistant',
+  liveSnapshots: Record<string, ResponseSnapshot>,
+): DisplayBranch[] {
+  const byId = new Map(responses.map((response) => [response.id, response]))
+  return ids.flatMap((id) => {
+    const response = byId.get(id)
+    if (!response) return []
+    return [{
+      id,
+      text: role === 'user' ? inputText(response.input) : outputText(responseOutput(response, liveSnapshots)),
+      modelId: response.displayModelId ?? response.modelId,
+      createdAt: response.createdAt,
+    }]
+  })
+}
+
 export function projectChat(chat: ServerChat, liveSnapshots: Record<string, ResponseSnapshot>): DisplayMessage[] {
   const responses = chat.responses ?? []
   const selected = lineageFromLeaf(responses, chat.activeBranchLeafId ?? chat.activeResponseId ?? responses.at(-1)?.id ?? null)
   const attachmentById = new Map((chat.attachments ?? []).map((attachment) => [attachment.id, attachment]))
   return selected.flatMap((response): DisplayMessage[] => {
     const live = liveSnapshots[response.id]
-    const output = live && live.sequence >= response.snapshot.sequence ? live.output : response.output
+    const output = responseOutput(response, liveSnapshots)
     const status = live && live.sequence >= response.snapshot.sequence ? live.status : response.status
     const error = live && live.sequence >= response.snapshot.sequence ? live.error : response.error
     const inputAttachments = inputAttachmentIds(response.input).flatMap((id) => {
@@ -151,12 +182,18 @@ export function projectChat(chat: ServerChat, liveSnapshots: Record<string, Resp
     return [{
       id: `${response.id}:input`, responseId: response.id, role: 'user', text: inputText(response.input),
       modelId: response.displayModelId ?? response.modelId, status: 'completed', createdAt: response.createdAt,
-      attachments: inputAttachments, activity: [], branch: response.branches.user, agentMode: response.agentMode,
+      attachments: inputAttachments, activity: [], branch: {
+        ...response.branches.user,
+        variants: branchVariants(responses, response.branches.user.ids, 'user', liveSnapshots),
+      }, agentMode: response.agentMode,
       outputItems: [],
     }, {
       id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
       modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
-      attachments: generatedAttachments(output), activity: activities(output), branch: response.branches.assistant,
+      attachments: generatedAttachments(output), activity: activities(output), branch: {
+        ...response.branches.assistant,
+        variants: branchVariants(responses, response.branches.assistant.ids, 'assistant', liveSnapshots),
+      },
       error: errorMessage, agentMode: response.agentMode, usage: response.usage,
       outputItems: output,
     }]

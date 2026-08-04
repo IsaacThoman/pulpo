@@ -6,7 +6,6 @@ import { normalizeMathDelimiters } from './markdown'
 
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
-  streaming = false,
   compact = false,
 }: {
   children: string
@@ -53,7 +52,11 @@ export const SafeMarkdown = memo(function SafeMarkdown({
       if (/^https?:\/\//i.test(url)) void Linking.openURL(url)
     }}
     selectable
-    streamingAnimation={streaming}
-    streamingConfig={{ tableMode: 'progressive' }}
+    // Socket snapshots already stream the source markdown. The renderer's
+    // additional tail animation can report a stale intrinsic height on iOS,
+    // leaving later content underneath sibling controls and outside the list's
+    // scrollable extent. Render each snapshot directly so native layout stays
+    // authoritative throughout the response.
+    streamingAnimation={false}
   />
 })

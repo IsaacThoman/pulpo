@@ -95,7 +95,10 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     outputItems: message.outputItems,
     agentMode: message.agentMode,
     meta: message.usage ? `${message.usage.inputTokens.toLocaleString()}→${message.usage.outputTokens.toLocaleString()} tok` : undefined,
-    branches: message.branch.ids.length > 1 ? message.branch.ids.map((id) => ({ id, text: message.text, modelId: message.modelId, createdAt: Date.parse(message.createdAt) })) : undefined,
+    branches: message.branch.variants.length > 1 ? message.branch.variants.map((branch) => ({
+      ...branch,
+      createdAt: Date.parse(branch.createdAt),
+    })) : undefined,
     activeBranch: message.branch.index,
   }
 }

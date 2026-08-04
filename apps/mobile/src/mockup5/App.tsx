@@ -134,6 +134,7 @@ import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
 import { activityDurationMs, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
   if (Platform.OS === 'ios') return PlatformColor(ios);
@@ -683,14 +684,16 @@ function NativeChatActionsMenu({
   );
 }
 
-function IconAction({ icon, label, onPress }: { icon: SymbolName; label: string; onPress: () => void }) {
+function IconAction({ disabled = false, icon, label, onPress }: { disabled?: boolean; icon: SymbolName; label: string; onPress: () => void }) {
   return (
     <Pressable
       accessibilityLabel={label}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
       hitSlop={4}
       onPress={onPress}
-      style={({ pressed }) => [styles.iconAction, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.iconAction, disabled && styles.disabledIconAction, pressed && styles.pressed]}
     >
       <Icon name={icon} size={16} color={COLORS.muted} />
     </Pressable>
@@ -1703,13 +1706,13 @@ const MessageRow = memo(function MessageRow({
           {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
           {branches.length > 1 && chatId && (
             <View style={styles.branchControls}>
-              <IconAction icon="chevron.left" label="Previous branch" onPress={() => {
+              <IconAction disabled={branchIndex <= 0} icon="chevron.left" label="Previous branch" onPress={() => {
                 const next = Math.max(0, branchIndex - 1);
                 updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text });
                 void activateServerBranch(branches[next]!.id);
               }} />
               <Text style={styles.branchLabel}>{branchIndex + 1} / {branches.length}</Text>
-              <IconAction icon="chevron.right" label="Next branch" onPress={() => {
+              <IconAction disabled={branchIndex >= branches.length - 1} icon="chevron.right" label="Next branch" onPress={() => {
                 const next = Math.min(branches.length - 1, branchIndex + 1);
                 updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text });
                 void activateServerBranch(branches[next]!.id);
@@ -1923,7 +1926,12 @@ function ChatView({
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
+  const shouldAutoFollow = useRef(true);
+  const readerInteracting = useRef(false);
+  const chatTailPending = useRef(true);
   const pendingFollowFrame = useRef<number | null>(null);
+  const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const measuredContentHeight = useRef(0);
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('Medium');
   const [agentEnabled, setAgentEnabled] = useState(true);
   const [temporary, setTemporary] = useState(false);
@@ -2028,22 +2036,107 @@ function ChatView({
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = agentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
 
-  const trackScrollPosition = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+  const updateBottomProximity = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    isNearBottom.current = contentOffset.y + layoutMeasurement.height >= contentSize.height - 96;
+    const nearBottom = isNearChatBottom({
+      offsetY: contentOffset.y,
+      contentHeight: contentSize.height,
+      viewportHeight: layoutMeasurement.height,
+    });
+    isNearBottom.current = nearBottom;
+    // A newly selected chat initially reports offset zero before its rows have
+    // finished measuring. Do not interpret that transient position as the
+    // reader intentionally leaving the tail.
+    if (chatTailPending.current) {
+      return;
+    }
+    if (!readerInteracting.current) shouldAutoFollow.current = nearBottom;
   }, []);
+
+  const cancelPendingFollow = useCallback(() => {
+    if (pendingFollowFrame.current === null) return;
+    cancelAnimationFrame(pendingFollowFrame.current);
+    pendingFollowFrame.current = null;
+  }, []);
+
+  const cancelTailSettle = useCallback(() => {
+    if (tailSettleTimer.current === null) return;
+    clearTimeout(tailSettleTimer.current);
+    tailSettleTimer.current = null;
+  }, []);
+
+  const scrollToMeasuredTail = useCallback((animated: boolean) => {
+    // scrollToEnd relies on VirtualizedList's last-cell estimate, which can be
+    // stale for one very tall native Markdown row. The measured content height
+    // is clamped by the native scroll view and reliably reaches the real tail.
+    listRef.current?.scrollToOffset({ animated, offset: measuredContentHeight.current });
+  }, []);
+
+  const scheduleTailSettle = useCallback(() => {
+    cancelTailSettle();
+    // Static native Markdown can publish its final intrinsic height a frame or
+    // two after FlatList's first measurement. Wait for a short quiet window,
+    // then establish the true tail (including meta and branch controls).
+    tailSettleTimer.current = setTimeout(() => {
+      tailSettleTimer.current = null;
+      if (!chatTailPending.current || readerInteracting.current) return;
+      scrollToMeasuredTail(false);
+      chatTailPending.current = false;
+      isNearBottom.current = true;
+      shouldAutoFollow.current = true;
+    }, 180);
+  }, [cancelTailSettle, scrollToMeasuredTail]);
+
+  const beginReaderInteraction = useCallback(() => {
+    readerInteracting.current = true;
+    chatTailPending.current = false;
+    shouldAutoFollow.current = false;
+    cancelPendingFollow();
+    cancelTailSettle();
+  }, [cancelPendingFollow, cancelTailSettle]);
+
+  const endReaderInteraction = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    readerInteracting.current = false;
+    updateBottomProximity(event);
+    shouldAutoFollow.current = isNearBottom.current;
+  }, [updateBottomProximity]);
 
   const followContentIfNeeded = useCallback(() => {
-    if (!isNearBottom.current || pendingFollowFrame.current !== null) return;
+    const establishingChatTail = chatTailPending.current;
+    if ((!establishingChatTail
+      && !shouldFollowChatContent(shouldAutoFollow.current && isNearBottom.current, readerInteracting.current))
+      || readerInteracting.current
+      || pendingFollowFrame.current !== null) return;
     pendingFollowFrame.current = requestAnimationFrame(() => {
       pendingFollowFrame.current = null;
-      listRef.current?.scrollToEnd({ animated: assistantStatus === 'idle' });
+      if ((!chatTailPending.current
+        && !shouldFollowChatContent(shouldAutoFollow.current && isNearBottom.current, readerInteracting.current))
+        || readerInteracting.current) return;
+      scrollToMeasuredTail(chatTailPending.current ? false : assistantStatus === 'idle');
     });
-  }, [assistantStatus]);
+  }, [assistantStatus, scrollToMeasuredTail]);
+
+  const handleContentSizeChange = useCallback((_width: number, height: number) => {
+    measuredContentHeight.current = height;
+    followContentIfNeeded();
+    if (!chatTailPending.current) return;
+    scheduleTailSettle();
+  }, [followContentIfNeeded, scheduleTailSettle]);
+
+  useEffect(() => {
+    isNearBottom.current = true;
+    shouldAutoFollow.current = true;
+    readerInteracting.current = false;
+    chatTailPending.current = true;
+    measuredContentHeight.current = 0;
+    cancelPendingFollow();
+    scheduleTailSettle();
+  }, [cancelPendingFollow, chatId, scheduleTailSettle]);
 
   useEffect(() => () => {
-    if (pendingFollowFrame.current !== null) cancelAnimationFrame(pendingFollowFrame.current);
-  }, []);
+    cancelPendingFollow();
+    cancelTailSettle();
+  }, [cancelPendingFollow, cancelTailSettle]);
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
@@ -2104,17 +2197,11 @@ function ChatView({
           </View>
         )}
 
-        {/* Virtualized conversation that only follows new content while the reader is near the end. */}
-        <FlatList
-          alwaysBounceVertical={!empty}
-          bounces={!empty}
-          contentContainerStyle={[styles.conversation, empty && styles.emptyConversation]}
-          data={messages}
-          initialNumToRender={10}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          keyExtractor={(message) => message.id}
-          ListEmptyComponent={empty ? (
+        {empty ? (
+          // The landing surface is intentionally not a scroll view. Keeping it
+          // outside FlatList prevents iOS keyboard focus from retaining a stale
+          // content offset and clipping the identity above its resting position.
+          <View style={styles.emptyConversation}>
             <View style={styles.emptyState}>
               <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
                 <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
@@ -2144,29 +2231,44 @@ function ChatView({
                 </View>
               </Reanimated.View>
             </View>
-          ) : null}
-          ListFooterComponent={assistantStatus === 'thinking' ? (
-            <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
-              <View style={styles.assistantHeader}>
-                <ModelMark model={model} size={26} />
-                <Text style={styles.assistantName}>{model.name}</Text>
-                <Text style={styles.messageTime}>now</Text>
+          </View>
+        ) : (
+          /* Virtualized conversation that follows only while the reader remains at the end. */
+          <FlatList
+            alwaysBounceVertical
+            bounces
+            contentContainerStyle={styles.conversation}
+            data={messages}
+            initialNumToRender={10}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            key={chatId ?? 'unsaved-chat'}
+            keyExtractor={(message) => message.id}
+            ListFooterComponent={assistantStatus === 'thinking' ? (
+              <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
+                <View style={styles.assistantHeader}>
+                  <ModelMark model={model} size={26} />
+                  <Text style={styles.assistantName}>{model.name}</Text>
+                  <Text style={styles.messageTime}>now</Text>
+                </View>
+                <ThinkingLabel label="Working…" />
               </View>
-              <ThinkingLabel label="Working…" />
-            </View>
-          ) : streamingSession ? (
-            <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
-          ) : null}
-          maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-          onContentSizeChange={followContentIfNeeded}
-          onScroll={trackScrollPosition}
-          ref={listRef}
-          renderItem={renderMessage}
-          scrollEnabled={!empty}
-          scrollEventThrottle={16}
-          showsVerticalScrollIndicator={false}
-          style={styles.flex}
-        />
+            ) : streamingSession ? (
+              <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
+            ) : null}
+            onContentSizeChange={handleContentSizeChange}
+            onMomentumScrollBegin={beginReaderInteraction}
+            onMomentumScrollEnd={endReaderInteraction}
+            onScroll={updateBottomProximity}
+            onScrollBeginDrag={beginReaderInteraction}
+            onScrollEndDrag={endReaderInteraction}
+            ref={listRef}
+            renderItem={renderMessage}
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            style={styles.flex}
+          />
+        )}
 
         <KeyboardStickyView offset={keyboardOffset} style={styles.composerSticky}>
           <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
@@ -2838,7 +2940,7 @@ const styles = StyleSheet.create({
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   conversation: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 156 },
-  emptyConversation: { flexGrow: 1, justifyContent: 'center' },
+  emptyConversation: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 156 },
   emptyState: { alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
@@ -2915,6 +3017,7 @@ const styles = StyleSheet.create({
   branchControls: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 5 },
   branchLabel: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
   iconAction: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  disabledIconAction: { opacity: 0.35 },
 
   suggestionReveal: { width: '100%', overflow: 'hidden' },
   suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
