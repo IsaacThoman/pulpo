@@ -15,12 +15,15 @@ export interface Preferences {
   favoriteModelIds: string[]
   defaultModelId: string | null
   agentMode: boolean
+  /** Per-model map of generation preset id to selected choice id. */
+  generation: Record<string, Record<string, string>>
 }
 
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', favoriteModelIds: [], defaultModelId: null, agentMode: false,
+  generation: {},
 }
 
 const trashRetentionValues: TrashRetentionPreference[] = ['instant', '24h', '7d', '30d', '90d', 'indefinite']

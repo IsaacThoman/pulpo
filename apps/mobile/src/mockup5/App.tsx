@@ -130,9 +130,11 @@ import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
 import { useRealtimeStore } from '../providers/realtimeStore';
+import { usePreferencesStore } from '../store/preferences';
 import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
+import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { activityDurationMs, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
 
@@ -313,7 +315,7 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { name: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string };
+type Model = { id: string; name: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
 type ModelSection = 'Favorites' | Model['lab'];
 type Attachment = {
   id: string;
@@ -343,20 +345,21 @@ type Message = {
   activeBranch?: number;
   agentMode?: boolean;
 };
-type Chat = { id: string; title: string; time: string; section: string; messages: Message[] };
+type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
 type StreamingSession = {
   id: string;
   chatKey: string;
+  modelId: string;
   response: string;
   thinkSeconds: number;
 };
-type SendOptions = { reasoningEffort: ReasoningEffort; agentEnabled: boolean; temporary: boolean };
+type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean };
 
 const MODELS: Model[] = [
-  { name: 'Claude Sonnet 4', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed' },
-  { name: 'GPT-5', lab: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence' },
-  { name: 'Gemini 2.5 Pro', lab: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision' },
-  { name: 'DeepSeek R1', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces' },
+  { id: 'demo-claude', name: 'Claude Sonnet 4', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
+  { id: 'demo-gpt', name: 'GPT-5', lab: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence', agentEnabled: true },
+  { id: 'demo-gemini', name: 'Gemini 2.5 Pro', lab: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision', agentEnabled: true },
+  { id: 'demo-deepseek', name: 'DeepSeek R1', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces', agentEnabled: false },
 ];
 
 function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
@@ -364,7 +367,7 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
     ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
     ?? MODELS[1];
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark);
-  return { ...template, name: model.name, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined };
+  return { ...template, id: model.id, name: model.name, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined, agentEnabled: model.agentEnabled };
 }
 
 const REASONING_SAMPLE =
@@ -424,6 +427,7 @@ function prototypeChatToLegacy(chat: PrototypeChat): Chat {
   const value = {
     id: chat.id,
     title: chat.title,
+    modelId: chat.modelId,
     time: chat.updatedAt > Date.now() - 86_400_000
       ? new Date(chat.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : new Date(chat.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
@@ -440,9 +444,6 @@ const SUGGESTIONS = [
   'Draft a terse commit message for a sidebar refactor',
   'Compare mixture-of-experts vs dense models',
 ];
-
-const REASONING_EFFORTS = ['Low', 'Medium', 'High'] as const;
-type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 function Icon({ name, size = 20, color = COLORS.text, weight = 'regular' }: { name: SymbolName; size?: number; color?: ColorValue; weight?: ComponentProps<typeof SymbolView>['weight'] }) {
   return <SymbolView name={name} size={size} tintColor={color} weight={weight} />;
@@ -875,10 +876,23 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const appendStoredMessage = usePrototypeStore((state) => state.appendMessage);
+  const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
   const prototypeModels = usePrototypeStore((state) => state.models);
-  const defaultModelName = prototypeModels.find((model) => model.id === defaultModelId)?.name;
   const availableModels = useMemo(() => prototypeModels.map((model) => prototypeModelToLegacy(model, isDark)), [isDark, prototypeModels]);
-  const [selectedModel, setSelectedModel] = useState(() => availableModels.find((model) => model.name === defaultModelName) ?? availableModels[0] ?? MODELS[0]);
+  const [selectedModelId, setSelectedModelId] = useState(() => defaultModelId ?? prototypeModels[0]?.id ?? MODELS[0].id);
+  const selectedPrototypeModel = useMemo(
+    () => prototypeModels.find((model) => model.id === selectedModelId) ?? prototypeModels[0],
+    [prototypeModels, selectedModelId],
+  );
+  const selectedModel = useMemo(
+    () => availableModels.find((model) => model.id === selectedModelId) ?? availableModels[0] ?? MODELS[0],
+    [availableModels, selectedModelId],
+  );
+  const generationPreferences = usePreferencesStore((state) => state.generation);
+  const presetSelections = useMemo(
+    () => resolveGenerationSelections(selectedPrototypeModel, generationPreferences[selectedModel.id]),
+    [generationPreferences, selectedModel.id, selectedPrototypeModel],
+  );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [assistantStatus, setAssistantStatus] = useState<'idle' | 'thinking' | 'streaming'>('idle');
@@ -887,10 +901,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const activeResponseId = useRef<string | null>(null);
 
   useEffect(() => {
-    const defaultModel = prototypeModels.find((model) => model.id === defaultModelId);
-    if (!defaultModel) return;
-    setSelectedModel((current) => availableModels.find((model) => model.name === current.name) ?? prototypeModelToLegacy(defaultModel, isDark));
-  }, [availableModels, defaultModelId, isDark, prototypeModels]);
+    if (prototypeModels.some((model) => model.id === selectedModelId)) return;
+    setSelectedModelId(defaultModelId ?? prototypeModels[0]?.id ?? MODELS[0].id);
+  }, [defaultModelId, prototypeModels, selectedModelId]);
 
   useEffect(() => useRealtimeStore.subscribe((state) => {
     const responseId = activeResponseId.current;
@@ -913,6 +926,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const requestedChatId = route.params?.chatId;
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
     setActiveChatId(requestedChatId);
+    const requestedChat = storedChats.find((chat) => chat.id === requestedChatId);
+    if (requestedChat?.modelId) setSelectedModelId(requestedChat.modelId);
     setAssistantStatus('idle');
     setStreamingSession(null);
     navigation.setParams({ chatId: undefined });
@@ -1029,6 +1044,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     setActiveChatId(chat.id);
+    setSelectedModelId(chat.modelId);
     setAssistantStatus('idle');
     setStreamingSession(null);
     animatePanel(false);
@@ -1040,28 +1056,48 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setAssistantStatus('idle');
     setStreamingSession(null);
     setActiveChatId(null);
+    setSelectedModelId(defaultModelId ?? prototypeModels[0]?.id ?? MODELS[0].id);
     setInput('');
   };
 
+  const selectModel = useCallback((model: Model) => {
+    setSelectedModelId(model.id);
+    Haptics.selectionAsync();
+  }, []);
+
+  const selectPreset = useCallback((presetId: string, choiceId: string) => {
+    const store = usePreferencesStore.getState();
+    const generation = store.generation;
+    void store.setPreference('generation', {
+      ...generation,
+      [selectedModelId]: { ...generation[selectedModelId], [presetId]: choiceId },
+    });
+    Haptics.selectionAsync();
+  }, [selectedModelId]);
+
   const sendMessage = (value = input, attachments: Attachment[] = [], options?: SendOptions) => {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0) || assistantStatus !== 'idle') return false;
+    if ((!trimmed && attachments.length === 0) || effectiveAssistantStatus !== 'idle') return false;
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     setInput('');
     const timestamp = Date.now();
     const key = activeChat?.id ?? Crypto.randomUUID();
-    const selectedPrototypeModel = prototypeModels.find((model) => model.name === selectedModel.name);
+    const responseId = Crypto.randomUUID();
+    const modelId = selectedModel.id;
+    const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
+    const agentMode = Boolean(options?.agentEnabled && selectedPrototypeModel?.agentEnabled);
+    const selections = options?.presetSelections ?? presetSelections;
     if (!activeChat) {
       upsertChat({
         id: key,
         title: trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat',
-        modelId: selectedPrototypeModel?.id ?? defaultModelId,
+        modelId,
         createdAt: timestamp,
         updatedAt: timestamp,
         pinned: false,
         folderId: null,
-        temporary: false,
+        temporary: options?.temporary ?? false,
         deletedAt: null,
         purgeAt: null,
         messages: [],
@@ -1069,7 +1105,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       setActiveChatId(key);
     }
     appendStoredMessage(key, {
-      id: `u${timestamp}`,
+      id: `${responseId}:input`,
       role: 'user',
       text: trimmed,
       createdAt: timestamp,
@@ -1079,6 +1115,20 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         sizeBytes: attachment.size ?? 0, kind: attachment.kind, status: 'ready',
       })),
     });
+    // Create the final response row up front. Realtime projection reuses this
+    // id, so its authoritative model header never swaps from a footer into a
+    // different component when the server acknowledges the request.
+    appendStoredMessage(key, {
+      id: responseId,
+      role: 'assistant',
+      text: '',
+      createdAt: timestamp + 1,
+      modelId,
+      status: 'queued',
+      outputItems: [],
+      agentMode,
+    });
+    activeResponseId.current = responseId;
     setAssistantStatus('thinking');
     setStreamingSession(null);
     let serverChatCreated = Boolean(activeChat);
@@ -1087,7 +1137,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       if (!serverChatId) {
         const created = await createServerChat({
           clientId: key,
-          modelId: selectedPrototypeModel?.id ?? defaultModelId,
+          modelId,
           temporary: options?.temporary ?? false,
           title: trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat',
         });
@@ -1104,37 +1154,26 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         state: 'local',
       }, serverChatId)));
       const response = await sendServerMessage({
+        clientId: responseId,
         chatId: serverChatId,
         content: trimmed,
-        modelId: selectedPrototypeModel?.id ?? defaultModelId,
-        parentResponseId: activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null,
-        presetSelections: Object.fromEntries((selectedPrototypeModel?.presets ?? []).flatMap((preset) => {
-          const choice = preset.choices.find((item) => item.label.toLowerCase() === options?.reasoningEffort.toLowerCase());
-          return choice ? [[preset.id, choice.id]] : [];
-        })),
+        modelId,
+        parentResponseId,
+        presetSelections: selections,
         attachmentIds: uploaded.map((attachment) => attachment.id),
-        agentMode: options?.agentEnabled ?? false,
+        agentMode,
       });
-      const responseAlreadyProjected = usePrototypeStore.getState().chats
-        .find((chat) => chat.id === serverChatId)?.messages
-        .some((message) => message.id === response.responseId);
-      if (!responseAlreadyProjected) {
-        appendStoredMessage(serverChatId, {
-          id: response.responseId,
-          role: 'assistant',
-          text: '',
-          createdAt: Date.now(),
-          modelId: selectedPrototypeModel?.id ?? defaultModelId,
-          status: response.status === 'completed' ? 'complete'
-            : response.status === 'failed' ? 'failed'
-              : response.status === 'cancelled' || response.status === 'incomplete' ? 'stopped'
-                : response.status === 'queued' ? 'queued' : 'streaming',
-          outputItems: response.output,
-          error: response.error && typeof response.error === 'object' && 'message' in response.error
-            ? String((response.error as { message?: unknown }).message ?? '')
-            : undefined,
-        });
-      }
+      updateStoredMessage(serverChatId, response.responseId, {
+        modelId,
+        status: response.status === 'completed' ? 'complete'
+          : response.status === 'failed' ? 'failed'
+            : response.status === 'cancelled' || response.status === 'incomplete' ? 'stopped'
+              : response.status === 'queued' ? 'queued' : 'streaming',
+        outputItems: response.output,
+        error: response.error && typeof response.error === 'object' && 'message' in response.error
+          ? String((response.error as { message?: unknown }).message ?? '')
+          : undefined,
+      });
       const responseActive = response.status === 'queued' || response.status === 'in_progress';
       activeResponseId.current = responseActive ? response.responseId : null;
       setAssistantStatus(responseActive ? 'streaming' : 'idle');
@@ -1144,11 +1183,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         await queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, serverChatId) });
       }
     })().catch((error) => {
+      activeResponseId.current = null;
       setAssistantStatus('idle');
       if (!activeChat && !serverChatCreated) {
         usePrototypeStore.getState().discardChat(key);
         setActiveChatId((current) => current === key ? null : current);
         setInput((current) => current || value);
+      } else {
+        updateStoredMessage(key, responseId, {
+          status: 'failed',
+          error: error instanceof Error ? error.message : 'The message could not be sent.',
+        });
       }
       const message = error instanceof Error ? error.message : 'The message could not be sent.';
       Alert.alert('Couldn’t send message', message);
@@ -1162,7 +1207,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const tokensOut = words.length + 90;
     const seconds = (3 + Math.random() * 6).toFixed(1);
     const timestamp = Date.now();
-    const selectedPrototypeModel = usePrototypeStore.getState().models.find((model) => model.name === selectedModel.name);
+    const responseModel = usePrototypeStore.getState().models.find((model) => model.id === session.modelId);
     const scenario = usePrototypeStore.getState().demo.response;
     const activity: ActivityStep[] = scenario === 'tool-heavy' ? [
       { id: `reasoning-${timestamp}`, kind: 'reasoning', title: 'Planned the implementation', detail: REASONING_SAMPLE, durationMs: session.thinkSeconds * 1000, status: 'complete' },
@@ -1176,7 +1221,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     appendStoredMessage(session.chatKey, {
       id: `a${timestamp}`,
       role: 'assistant',
-      modelId: selectedPrototypeModel?.id ?? usePrototypeStore.getState().defaultModelId,
+      modelId: responseModel?.id ?? session.modelId,
       text: scenario === 'failure' ? '' : session.response,
       createdAt: timestamp,
       status: scenario === 'failure' ? 'failed' : 'complete',
@@ -1189,15 +1234,44 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setAssistantStatus('idle');
     AccessibilityInfo.announceForAccessibility('Response complete');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [appendStoredMessage, selectedModel.name]);
+  }, [appendStoredMessage]);
+
+  const regenerateMessage = useCallback((message: Message) => {
+    const chatId = message.chatId ?? activeChatId;
+    if (!chatId || effectiveAssistantStatus !== 'idle') return;
+    const modelId = selectedModel.id;
+    const selections = { ...presetSelections };
+    setAssistantStatus('thinking');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    void regenerateServerResponse(message.id, modelId, selections).then(async (response) => {
+      const responseActive = response.status === 'queued' || response.status === 'in_progress';
+      activeResponseId.current = responseActive ? response.responseId : null;
+      setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
+      if (productionUserId) {
+        const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+        await queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
+      }
+    }).catch((error) => {
+      activeResponseId.current = null;
+      setAssistantStatus('idle');
+      Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined);
+    });
+  }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id]);
 
   const stopGeneration = useCallback(() => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     setStreamingSession(null);
     setAssistantStatus('idle');
-    if (activeResponseId.current) {
-      void cancelResponse(activeResponseId.current).finally(() => { activeResponseId.current = null; });
+    const responseId = activeResponseId.current;
+    if (responseId) {
+      const store = usePrototypeStore.getState();
+      const chat = store.chats.find((candidate) => candidate.messages.some((message) => message.id === responseId));
+      if (chat) store.updateMessage(chat.id, responseId, { status: 'stopped' });
+      void cancelResponse(responseId).catch(() => undefined).finally(() => {
+        if (activeResponseId.current === responseId) activeResponseId.current = null;
+      });
     }
     AccessibilityInfo.announceForAccessibility('Response stopped');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1240,19 +1314,20 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             chatTitle={activeChat?.title ?? null}
             model={selectedModel}
             models={availableModels}
+            prototypeModel={selectedPrototypeModel}
+            presetSelections={presetSelections}
             input={input}
             onChangeInput={setInput}
+            onSelectPreset={selectPreset}
             onSend={sendMessage}
             onStop={stopGeneration}
             assistantStatus={effectiveAssistantStatus}
             streamingSession={streamingSession}
             onStreamingComplete={completeStreamingResponse}
+            onRegenerate={regenerateMessage}
             onOpenPanel={() => animatePanel(true)}
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
-            onSelectModel={(model) => {
-              setSelectedModel(model);
-              Haptics.selectionAsync();
-            }}
+            onSelectModel={selectModel}
             onNewChat={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); newChat(); }}
           />
           {/* Tap catcher while the panel is open */}
@@ -1265,19 +1340,30 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       <ModelSheet
         models={availableModels}
         visible={modelSheet}
-        selected={selectedModel.name}
+        selected={selectedModel.id}
         onClose={() => setModelSheet(false)}
         onSelect={(model) => {
-          setSelectedModel(model);
+          selectModel(model);
           setModelSheet(false);
-          Haptics.selectionAsync();
         }}
       />
     </View>
   );
 }
 
-function MessageContextMenu({ message, children }: { message: Message; children: ReactNode }) {
+function MessageContextMenu({
+  message,
+  generationModelId,
+  presetSelections,
+  onRegenerate,
+  children,
+}: {
+  message: Message;
+  generationModelId: string;
+  presetSelections: GenerationSelections;
+  onRegenerate: (message: Message) => void;
+  children: ReactNode;
+}) {
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
   const deleteStoredMessage = usePrototypeStore((state) => state.deleteMessageCascade);
   const runAction = (action: 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete') => {
@@ -1308,7 +1394,7 @@ function MessageContextMenu({ message, children }: { message: Message; children:
         Alert.prompt('Edit message', message.role === 'user' ? 'Saving resends from this point in the conversation.' : 'Saving creates a response branch.', (text) => {
           const trimmed = text.trim();
           if (!trimmed) return;
-          void editServerMessage(message.id, trimmed).catch((error) => Alert.alert('Couldn’t edit message', error instanceof Error ? error.message : undefined));
+          void editServerMessage(message.id, trimmed, generationModelId, presetSelections).catch((error) => Alert.alert('Couldn’t edit message', error instanceof Error ? error.message : undefined));
           if (message.role === 'assistant') {
             const branches = message.branches?.length ? [...message.branches] : [{ id: `${message.id}-original`, text: message.text, modelId: message.modelId ?? message.chatModelId ?? '', createdAt: message.createdAt ?? Date.now() }];
             branches.push({ id: `${message.id}-edit-${Date.now()}`, text: trimmed, modelId: message.modelId ?? message.chatModelId ?? '', createdAt: Date.now() });
@@ -1319,7 +1405,7 @@ function MessageContextMenu({ message, children }: { message: Message; children:
       return;
     }
     if (action === 'regenerate') {
-      void regenerateServerResponse(message.id).then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)).catch((error) => Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined));
+      onRegenerate(message);
       return;
     }
     if (action === 'reply') {
@@ -1587,12 +1673,35 @@ function outputItemTitle(item: Record<string, unknown>): string {
   return type.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function responseModel(message: Message, models: Model[], fallback: Model): Model {
+  const modelId = message.modelId ?? message.chatModelId;
+  if (!modelId) return fallback;
+  const known = models.find((candidate) => candidate.id === modelId);
+  if (known) return known;
+  // Do not silently relabel an older/forwarded response with the current
+  // composer selection when its catalogue entry is unavailable.
+  return {
+    ...MODELS[1],
+    id: modelId,
+    name: modelId,
+    lab: 'Model',
+    detail: 'No longer available in this instance',
+    agentEnabled: false,
+  };
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   model,
+  generationModelId,
+  presetSelections,
+  onRegenerate,
 }: {
   message: Message;
   model: Model;
+  generationModelId: string;
+  presetSelections: GenerationSelections;
+  onRegenerate: (message: Message) => void;
 }) {
   const { showReasoning } = useAppPreferences();
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
@@ -1638,7 +1747,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.text.length > 0 && (
-            <MessageContextMenu message={message}>
+            <MessageContextMenu generationModelId={generationModelId} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
               <View style={styles.userBubble}>
                 <SafeMarkdown>{message.text}</SafeMarkdown>
               </View>
@@ -1653,7 +1762,7 @@ const MessageRow = memo(function MessageRow({
             <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
           </View>
           {timeline.length ? (
-            <MessageContextMenu message={message}>
+            <MessageContextMenu generationModelId={generationModelId} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
               <View style={styles.assistantContent}>
                 {timeline.map((segment, index) => segment.kind === 'activity'
                   ? <WorkBlock active={segment.active || (streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text'))} key={`activity:${index}`} steps={segment.steps} />
@@ -1708,13 +1817,13 @@ const MessageRow = memo(function MessageRow({
             <View style={styles.branchControls}>
               <IconAction disabled={branchIndex <= 0} icon="chevron.left" label="Previous branch" onPress={() => {
                 const next = Math.max(0, branchIndex - 1);
-                updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text });
+                updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text, modelId: branches[next]!.modelId });
                 void activateServerBranch(branches[next]!.id);
               }} />
               <Text style={styles.branchLabel}>{branchIndex + 1} / {branches.length}</Text>
               <IconAction disabled={branchIndex >= branches.length - 1} icon="chevron.right" label="Next branch" onPress={() => {
                 const next = Math.min(branches.length - 1, branchIndex + 1);
-                updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text });
+                updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text, modelId: branches[next]!.modelId });
                 void activateServerBranch(branches[next]!.id);
               }} />
             </View>
@@ -1770,20 +1879,20 @@ const StreamingResponse = memo(function StreamingResponse({
   );
 });
 
-function NativeModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
+const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
   const [section, setSection] = useState<ModelSection>('Favorites');
   const prototypeModels = usePrototypeStore((state) => state.models);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
   const setDefaultModel = usePrototypeStore((state) => state.setDefaultModel);
   const toggleFavoriteModel = usePrototypeStore((state) => state.toggleFavoriteModel);
-  const currentPrototypeModel = prototypeModels.find((candidate) => candidate.name === model.name);
+  const currentPrototypeModel = prototypeModels.find((candidate) => candidate.id === model.id);
   const modelSections: ModelSection[] = ['Favorites', ...new Set(models.map((candidate) => candidate.lab))];
   const visibleModels = section === 'Favorites'
-    ? models.filter((candidate) => prototypeModels.find((prototype) => prototype.name === candidate.name)?.favorite)
+    ? models.filter((candidate) => prototypeModels.find((prototype) => prototype.id === candidate.id)?.favorite)
     : models.filter((candidate) => candidate.lab === section);
 
   return (
-    <SwiftUIHost key={model.name} matchContents style={styles.modelMenuHost}>
+    <SwiftUIHost matchContents style={styles.modelMenuHost}>
       <SwiftUIMenu
         label={(
           <SwiftUILabel
@@ -1807,13 +1916,13 @@ function NativeModelMenu({ model, models, onSelectModel }: { model: Model; model
         <SwiftUISection title={section}>
           {visibleModels.map((candidate) => (
             <SwiftUIButton
-              key={candidate.name}
+              key={candidate.id}
               onPress={() => onSelectModel(candidate)}
             >
               <NativeModelMenuRow
                 label={candidate.name}
                 model={candidate}
-                selected={candidate.name === model.name}
+                selected={candidate.id === model.id}
               />
             </SwiftUIButton>
           ))}
@@ -1868,7 +1977,7 @@ function NativeModelMenu({ model, models, onSelectModel }: { model: Model; model
       </SwiftUIMenu>
     </SwiftUIHost>
   );
-}
+});
 
 function NativeModelMenuRow({ label, model, selected = false }: { label: string; model: Model; selected?: boolean }) {
   return (
@@ -1899,25 +2008,62 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
   );
 }
 
+function SuggestedPromptButton({ label, accessible, onPress }: { label: string; accessible: boolean; onPress: () => void }) {
+  if (Platform.OS === 'ios') {
+    return (
+      <SwiftUIHost style={[styles.suggestionCard, accessible && styles.suggestionCardAccessible]}>
+        <SwiftUIButton
+          onPress={onPress}
+          modifiers={[
+            buttonStyle('plain'),
+            frame({ maxWidth: Infinity, minHeight: 68, alignment: 'leading' }),
+            padding({ horizontal: 13, vertical: 11 }),
+            swiftUIAccessibilityLabel(label),
+            swiftUIAccessibilityHint('Sends this suggestion'),
+          ]}
+        >
+          <SwiftUIRNHostView matchContents>
+            <Text pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
+          </SwiftUIRNHostView>
+        </SwiftUIButton>
+      </SwiftUIHost>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityHint="Sends this suggestion"
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.suggestionCard, accessible && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
+    >
+      <Text style={styles.suggestionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function ChatView({
-  messages, chatId, chatTitle, model, models, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onNewChat,
+  messages, chatId, chatTitle, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
+  onStreamingComplete, onRegenerate, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat,
 }: {
   messages: Message[];
   chatId: string | null;
   chatTitle: string | null;
   model: Model;
   models: Model[];
+  prototypeModel?: PrototypeModel;
+  presetSelections: GenerationSelections;
   input: string;
   onChangeInput: (value: string) => void;
   onSend: (value?: string, attachments?: Attachment[], options?: SendOptions) => boolean;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
   streamingSession: StreamingSession | null;
   onStreamingComplete: (session: StreamingSession) => void;
+  onRegenerate: (message: Message) => void;
   onStop: () => void;
   onOpenPanel: () => void;
   onOpenModelPicker: () => void;
   onSelectModel: (model: Model) => void;
+  onSelectPreset: (presetId: string, choiceId: string) => void;
   onNewChat: () => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -1932,11 +2078,11 @@ function ChatView({
   const pendingFollowFrame = useRef<number | null>(null);
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measuredContentHeight = useRef(0);
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('Medium');
-  const [agentEnabled, setAgentEnabled] = useState(true);
+  const preferredAgentMode = usePreferencesStore((state) => state.agentMode);
+  const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && model.agentEnabled);
   const [temporary, setTemporary] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [effortPickerOpen, setEffortPickerOpen] = useState(false);
+  const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
   const realtimeConnected = useRealtimeStore((state) => state.connected);
@@ -1951,7 +2097,9 @@ function ChatView({
   );
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
-      translateY: interpolate(keyboardProgress.value, [0, 1], [0, -Math.min(64, windowHeight * 0.065)]),
+      translateY: -keyboardProgress.value * (
+        Math.min(64, windowHeight * 0.065) + suggestionGridHeight.value * 0.5
+      ),
     }],
   }));
   const suggestionsAnimatedStyle = useAnimatedStyle(() => ({
@@ -1963,9 +2111,15 @@ function ChatView({
     transform: [{ translateY: interpolate(keyboardProgress.value, [0, 1], [0, -14]) }],
   }));
 
-  const openEffortPicker = useCallback(() => {
+  const presetLabel = generationSummary(prototypeModel, presetSelections);
+
+  useEffect(() => {
+    if (!model.agentEnabled) setAgentEnabled(false);
+  }, [model.agentEnabled]);
+
+  const openPresetPicker = useCallback(() => {
     Haptics.selectionAsync();
-    setEffortPickerOpen(true);
+    setPresetPickerOpen(true);
   }, []);
 
   const toggleAgent = useCallback(() => {
@@ -2025,9 +2179,9 @@ function ChatView({
   }, [addAttachments]);
 
   const submitMessage = useCallback(() => {
-    if (!onSend(input, attachments, { reasoningEffort, agentEnabled, temporary })) return;
+    if (!onSend(input, attachments, { presetSelections, agentEnabled, temporary })) return;
     setAttachments([]);
-  }, [agentEnabled, attachments, input, onSend, reasoningEffort, temporary]);
+  }, [agentEnabled, attachments, input, onSend, presetSelections, temporary]);
 
   const shareChat = useCallback(() => {
     if (!chatId) return;
@@ -2140,12 +2294,16 @@ function ChatView({
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
+      generationModelId={model.id}
       message={item}
-      model={model}
+      model={responseModel(item, models, model)}
+      onRegenerate={onRegenerate}
+      presetSelections={presetSelections}
     />
-  ), [model]);
+  ), [model, models, onRegenerate, presetSelections]);
 
   const empty = messages.length === 0 && assistantStatus === 'idle';
+  const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const canSend = (input.trim().length > 0 || attachments.length > 0) && assistantStatus === 'idle';
 
   return (
@@ -2201,7 +2359,7 @@ function ChatView({
           // The landing surface is intentionally not a scroll view. Keeping it
           // outside FlatList prevents iOS keyboard focus from retaining a stale
           // content offset and clipping the identity above its resting position.
-          <View style={styles.emptyConversation}>
+          <View onTouchStart={Keyboard.dismiss} style={styles.emptyConversation}>
             <View style={styles.emptyState}>
               <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
                 <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
@@ -2218,15 +2376,12 @@ function ChatView({
                   style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
                 >
                   {SUGGESTIONS.map((suggestion) => (
-                    <Pressable
-                      accessibilityHint="Sends this suggestion"
-                      accessibilityRole="button"
+                    <SuggestedPromptButton
+                      accessible={accessibilityLayout}
                       key={suggestion}
-                      onPress={() => onSend(suggestion, [], { reasoningEffort, agentEnabled, temporary })}
-                      style={({ pressed }) => [styles.suggestionCard, accessibilityLayout && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
-                    >
-                      <Text style={styles.suggestionLabel}>{suggestion}</Text>
-                    </Pressable>
+                      label={suggestion}
+                      onPress={() => onSend(suggestion, [], { presetSelections, agentEnabled, temporary })}
+                    />
                   ))}
                 </View>
               </Reanimated.View>
@@ -2244,7 +2399,7 @@ function ChatView({
             keyboardShouldPersistTaps="handled"
             key={chatId ?? 'unsaved-chat'}
             keyExtractor={(message) => message.id}
-            ListFooterComponent={assistantStatus === 'thinking' ? (
+            ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
               <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
                 <View style={styles.assistantHeader}>
                   <ModelMark model={model} size={26} />
@@ -2262,6 +2417,7 @@ function ChatView({
             onScroll={updateBottomProximity}
             onScrollBeginDrag={beginReaderInteraction}
             onScrollEndDrag={endReaderInteraction}
+            onTouchStart={Keyboard.dismiss}
             ref={listRef}
             renderItem={renderMessage}
             scrollEventThrottle={16}
@@ -2306,37 +2462,38 @@ function ChatView({
                 {Platform.OS === 'ios' ? (
                   <SwiftUIHost ignoreSafeArea="keyboard" matchContents style={styles.effortMenuHost}>
                     <SwiftUIMenu
-                      label={reasoningEffort}
+                      label={presetLabel}
                       modifiers={[
                         buttonStyle('glass'),
                         buttonBorderShape('capsule'),
                         controlSize('regular'),
-                        swiftUIAccessibilityLabel(`Reasoning effort, ${reasoningEffort}`),
-                        swiftUIAccessibilityHint('Opens reasoning effort choices'),
+                        swiftUIAccessibilityLabel(`Generation options, ${presetLabel}`),
+                        swiftUIAccessibilityHint('Opens chat preset choices'),
                       ]}
                     >
-                      {REASONING_EFFORTS.map((effort) => (
-                        <SwiftUIButton
-                          key={effort}
-                          label={effort}
-                          systemImage={effort === reasoningEffort ? 'checkmark' : undefined}
-                          onPress={() => {
-                            setReasoningEffort(effort);
-                            Haptics.selectionAsync();
-                          }}
-                        />
+                      {(prototypeModel?.presets ?? []).map((preset) => (
+                        <SwiftUISection key={preset.id} title={preset.name}>
+                          {preset.choices.map((choice) => (
+                            <SwiftUIButton
+                              key={choice.id}
+                              label={choice.label}
+                              systemImage={choice.id === presetSelections[preset.id] ? 'checkmark' : undefined}
+                              onPress={() => onSelectPreset(preset.id, choice.id)}
+                            />
+                          ))}
+                        </SwiftUISection>
                       ))}
                     </SwiftUIMenu>
                   </SwiftUIHost>
                 ) : (
                   <Pressable
-                    accessibilityHint="Opens reasoning effort choices"
-                    accessibilityLabel={`Reasoning effort, ${reasoningEffort}`}
+                    accessibilityHint="Opens chat preset choices"
+                    accessibilityLabel={`Generation options, ${presetLabel}`}
                     accessibilityRole="button"
-                    onPress={openEffortPicker}
+                    onPress={openPresetPicker}
                     style={({ pressed }) => [styles.effortPill, pressed && styles.pressed]}
                   >
-                    <Text maxFontSizeMultiplier={1.4} style={styles.effortText}>{reasoningEffort}</Text>
+                    <Text maxFontSizeMultiplier={1.4} style={styles.effortText}>{presetLabel}</Text>
                   </Pressable>
                 )}
                 <View style={styles.flex} />
@@ -2345,6 +2502,7 @@ function ChatView({
                     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeAgentHost}>
                       <SwiftUIButton
                         onPress={() => {
+                          if (!model.agentEnabled) return;
                           setAgentEnabled(!agentEnabled);
                           Haptics.selectionAsync();
                         }}
@@ -2353,8 +2511,9 @@ function ChatView({
                           buttonBorderShape('circle'),
                           controlSize('regular'),
                           tint(nativeAgentTint),
+                          swiftUIDisabled(!model.agentEnabled),
                           swiftUIAccessibilityLabel('Agent mode'),
-                          swiftUIAccessibilityHint(agentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
+                          swiftUIAccessibilityHint(!model.agentEnabled ? 'Unavailable for this model.' : agentEnabled ? 'On. Double tap to turn off.' : 'Off. Double tap to turn on.'),
                         ]}
                       >
                         <SwiftUIRNHostView matchContents>
@@ -2378,6 +2537,7 @@ function ChatView({
                       accessibilityLabel="Agent mode"
                       accessibilityRole="switch"
                       accessibilityState={{ checked: agentEnabled }}
+                      disabled={!model.agentEnabled}
                       onPress={toggleAgent}
                       style={({ pressed }) => [styles.agentCircle, agentEnabled && styles.agentCircleActive, pressed && styles.pressed]}
                     >
@@ -2404,50 +2564,54 @@ function ChatView({
             </Glass>
           </View>
         </KeyboardStickyView>
-        <ReasoningEffortSheet
-          selected={reasoningEffort}
-          visible={effortPickerOpen}
-          onClose={() => setEffortPickerOpen(false)}
-          onSelect={(effort) => {
-            setReasoningEffort(effort);
-            setEffortPickerOpen(false);
-            Haptics.selectionAsync();
-          }}
+        <GenerationPresetSheet
+          model={prototypeModel}
+          selections={presetSelections}
+          visible={presetPickerOpen}
+          onClose={() => setPresetPickerOpen(false)}
+          onSelect={onSelectPreset}
         />
       </SafeAreaView>
     </View>
   );
 }
 
-function ReasoningEffortSheet({
+function GenerationPresetSheet({
   visible,
-  selected,
+  model,
+  selections,
   onClose,
   onSelect,
 }: {
   visible: boolean;
-  selected: ReasoningEffort;
+  model?: PrototypeModel;
+  selections: GenerationSelections;
   onClose: () => void;
-  onSelect: (effort: ReasoningEffort) => void;
+  onSelect: (presetId: string, choiceId: string) => void;
 }) {
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View accessibilityViewIsModal style={styles.optionModal}>
-        <Pressable accessibilityLabel="Close reasoning effort picker" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
+        <Pressable accessibilityLabel="Close generation options" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} />
         <View style={styles.optionSheet}>
-          <Text accessibilityRole="header" style={styles.optionTitle}>Reasoning effort</Text>
-          <Text style={styles.optionSubtitle}>Choose how much time the model should spend reasoning.</Text>
-          {REASONING_EFFORTS.map((effort) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: effort === selected }}
-              key={effort}
-              onPress={() => onSelect(effort)}
-              style={({ pressed }) => [styles.optionRow, pressed && styles.navRowPressed]}
-            >
-              <Text style={styles.optionRowText}>{effort}</Text>
-              {effort === selected && <Icon name="checkmark" size={16} color={COLORS.accent} weight="semibold" />}
-            </Pressable>
+          <Text accessibilityRole="header" style={styles.optionTitle}>Generation options</Text>
+          <Text style={styles.optionSubtitle}>Choose this model’s chat presets.</Text>
+          {(model?.presets ?? []).map((preset) => (
+            <View key={preset.id}>
+              <Text style={styles.sheetSection}>{preset.name.toUpperCase()}</Text>
+              {preset.choices.map((choice) => (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: choice.id === selections[preset.id] }}
+                  key={choice.id}
+                  onPress={() => onSelect(preset.id, choice.id)}
+                  style={({ pressed }) => [styles.optionRow, pressed && styles.navRowPressed]}
+                >
+                  <Text style={styles.optionRowText}>{choice.label}</Text>
+                  {choice.id === selections[preset.id] && <Icon name="checkmark" size={16} color={COLORS.accent} weight="semibold" />}
+                </Pressable>
+              ))}
+            </View>
           ))}
         </View>
       </View>
@@ -2860,9 +3024,9 @@ function ModelSheet({ visible, selected, models, onClose, onSelect }: { visible:
             <Pressable
               accessibilityLabel={`${model.name}, ${model.lab}, ${model.detail}`}
               accessibilityRole="button"
-              accessibilityState={{ selected: selected === model.name }}
+              accessibilityState={{ selected: selected === model.id }}
               delayLongPress={350}
-              key={model.name}
+              key={model.id}
               onLongPress={() => Alert.alert(model.name, 'Set as default · Favorite · Model information')}
               onPress={() => onSelect(model)}
               style={({ pressed }) => [styles.modelRow, pressed && styles.navRowPressed]}
@@ -2872,7 +3036,7 @@ function ModelSheet({ visible, selected, models, onClose, onSelect }: { visible:
                 <Text style={styles.modelRowTitle}>{model.name}</Text>
                 <Text style={styles.modelRowDetail}>{model.lab} · {model.detail}</Text>
               </View>
-              {selected === model.name
+              {selected === model.id
                 ? <Icon name="checkmark.circle.fill" size={22} color={COLORS.textSoft} />
                 : <Icon name="star" size={17} color={COLORS.dim} />}
             </Pressable>
@@ -2899,7 +3063,7 @@ function NativeModelSheet({ visible, selected, models: availableModels, onClose,
           <SwiftUIHStack spacing={8}><SwiftUIImage systemName="magnifyingglass" size={15} modifiers={[foregroundStyle('secondary')]} /><SwiftUITextField placeholder="Search models" text={nativeQuery} onTextChange={setQuery} modifiers={[textFieldStyle('plain'), frame({ maxWidth: Infinity, minHeight: 44 }), swiftUIAccessibilityLabel('Search models')]} /></SwiftUIHStack>
         </SwiftUISection>
         <SwiftUISection title="Recommended" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Routing, fallbacks, and spend limits apply from your Pulpo workspace.</SwiftUIText>}>
-          {models.map((model) => <SwiftUIButton key={model.name} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => onSelect(model)}><SwiftUIHStack spacing={12}><SwiftUIRNHostView matchContents><View pointerEvents="none" style={styles.nativeModelAssetHost}><ModelMark model={model} size={38} /></View></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText>{model.name}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{`${model.lab} · ${model.detail}`}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName={selected === model.name ? 'checkmark.circle.fill' : 'star'} size={18} /></SwiftUIHStack></SwiftUIButton>)}
+          {models.map((model) => <SwiftUIButton key={model.id} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => onSelect(model)}><SwiftUIHStack spacing={12}><SwiftUIRNHostView matchContents><View pointerEvents="none" style={styles.nativeModelAssetHost}><ModelMark model={model} size={38} /></View></SwiftUIRNHostView><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText>{model.name}</SwiftUIText><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{`${model.lab} · ${model.detail}`}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName={selected === model.id ? 'checkmark.circle.fill' : 'star'} size={18} /></SwiftUIHStack></SwiftUIButton>)}
         </SwiftUISection>
       </SwiftUIForm>
     </SwiftUIGroup>

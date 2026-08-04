@@ -14,6 +14,7 @@ import { publishAdminUsage } from '../admin/usage-events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
+import { responseDisplayModelId } from './modelIdentity.js'
 import { responseAttachmentIds } from '../messages/input.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
@@ -320,13 +321,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
     if (!chat) throw notFound('Chat')
-    const turnRows = await db.select({ response: responses, requestedModelId: requestLogs.requestedModelId })
+    const allTurns = await db.select()
       .from(responses)
-      .leftJoin(requestLogs, eq(requestLogs.responseId, responses.id))
       .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
       .orderBy(asc(responses.createdAt), asc(responses.id))
-    const allTurns = turnRows.map((row) => row.response)
-    const requestedModelByResponse = new Map(turnRows.map((row) => [row.response.id, row.requestedModelId]))
     const referencedAttachmentIds = [...new Set(allTurns.flatMap((response) => responseAttachmentIds(response.input)))]
     const attachmentRows = referencedAttachmentIds.length ? await db.select({
       id: attachments.id,
@@ -340,7 +338,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     )) : []
     return { ...chat, attachments: attachmentRows, responses: allTurns.map((response) => ({
       ...response,
-      displayModelId: requestedModelByResponse.get(response.id) ?? response.modelId,
+      // The message header describes the model that actually produced the
+      // output, including fallback/forwarding, rather than today's picker or
+      // merely the originally requested route.
+      displayModelId: responseDisplayModelId(response),
       snapshot: toSnapshot(response),
       branches: metadataForTurn(allTurns, response),
     })) }

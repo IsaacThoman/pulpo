@@ -65,6 +65,7 @@ export async function deleteFolder(id: string): Promise<void> {
 }
 
 export async function sendMessage(input: {
+  clientId?: string
   chatId: string
   content: string
   modelId: string
@@ -73,7 +74,7 @@ export async function sendMessage(input: {
   attachmentIds?: string[]
   agentMode?: boolean
 }): Promise<ResponseSnapshot> {
-  const responseId = Crypto.randomUUID()
+  const responseId = input.clientId ?? Crypto.randomUUID()
   const path = `/api/chats/${input.chatId}/responses`
   const body = {
     clientId: responseId,

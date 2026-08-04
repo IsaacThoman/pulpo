@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
+import { useShallow } from 'zustand/react/shallow'
 import { cacheNamespace, cachedChats, getValue, reconcileCachedChatScope } from '../../../data/database'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, queryKeys } from '../../../data/queries'
 import { isNetworkError, mobileApi } from '../../../api/client'
@@ -45,9 +46,9 @@ function mapModel(model: MobileModel, favorites: string[]): PrototypeModel {
     presets: model.presets.map((preset) => ({
       id: preset.id,
       name: preset.name,
-      icon: preset.id.includes('reason') ? 'brain' : 'slider.horizontal.3',
+      icon: preset.icon,
       selectedId: preset.defaultChoiceId ?? preset.choices[0]?.id ?? '',
-      choices: preset.choices.map((option) => ({ id: option.id, label: option.displayName, icon: 'circle' })),
+      choices: preset.choices.map((option) => ({ id: option.id, label: option.displayName, icon: option.icon ?? preset.icon })),
     })),
   }
 }
@@ -140,7 +141,21 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const status = useSessionStore((state) => state.status)
   const instanceUrl = useSessionStore((state) => state.instanceUrl)
   const userId = useSessionStore((state) => state.user?.id)
-  const preferences = usePreferencesStore()
+  // Keep local-only composer changes (notably per-model preset selections) from
+  // rebuilding the model catalogue and every native model control.
+  const preferences = usePreferencesStore(useShallow((state) => ({
+    theme: state.theme,
+    textSize: state.textSize,
+    streamResponses: state.streamResponses,
+    showReasoning: state.showReasoning,
+    haptics: state.haptics,
+    sendWithEnter: state.sendWithEnter,
+    attachmentCacheMb: state.attachmentCacheMb,
+    localChatLimit: state.localChatLimit,
+    trashRetention: state.trashRetention,
+    favoriteModelIds: state.favoriteModelIds,
+    defaultModelId: state.defaultModelId,
+  })))
   const snapshots = useRealtimeStore((state) => state.snapshots)
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
   const enabled = status === 'authenticated' && Boolean(userId)
