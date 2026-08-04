@@ -353,6 +353,12 @@ export async function completeOutbox(id: string): Promise<void> {
   })
 }
 
+export async function completeOutboxEntity(namespace: string, entityKey: string): Promise<void> {
+  await withDatabase(async (database) => {
+    await database.runAsync('DELETE FROM outbox WHERE namespace = ? AND entity_key = ?', namespace, entityKey)
+  })
+}
+
 export async function failOutbox(id: string, attempts: number, message: string): Promise<void> {
   const delay = outboxRetryDelay(attempts)
   await withDatabase(async (database) => {

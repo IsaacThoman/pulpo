@@ -184,7 +184,10 @@ export function ChatDataBridge() {
         socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
         subscribedResponseIds.add(responseId)
       }
-      void flushOutbox(userId).then(() => queryClient.invalidateQueries({ queryKey: ['chats', userId] }))
+      void flushOutbox(userId).then(() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
+      ]))
     }
 
     socket.on('connect', sync)
@@ -209,6 +212,7 @@ export function ChatDataBridge() {
       revisionRef.current = revision
       void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
       void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
+      void queryClient.invalidateQueries({ queryKey: ['settings', userId] })
     })
     const wake = () => { if (document.visibilityState === 'visible') void sync() }
     const online = () => void sync()

@@ -5,7 +5,7 @@ import { apiRequest } from '@/lib/api'
 import { findCatalogModel } from '@/lib/catalog-model'
 
 const EMPTY_MODEL: Model = {
-  id: '', name: 'Configure a model', provider: 'OpenAI', inferenceProvider: 'Not configured',
+  id: '', name: 'Configure a model', providerGroupId: 'internal', provider: 'OpenAI', inferenceProvider: 'Not configured',
   labLogo: 'openai', modelLogo: 'openai', description: 'An administrator needs to configure an OpenAI model.',
   contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
   outputPrice: 0, perMessagePrice: 0, enabled: false, agentEnabled: false, presets: [],
@@ -25,8 +25,8 @@ interface ServerModel {
   logo: string | null
   iconLight: string | null
   iconDark: string | null
-  provider: { name: string }
-  lab: { name: string; logo: string } | null
+  provider: { id: string; name: string }
+  lab: { id: string; name: string; logo: string } | null
   presets: Model['presets']
   agentEnabled: boolean
 }
@@ -34,6 +34,7 @@ interface ServerModel {
 function fromServer(model: ServerModel): Model {
   return {
     id: model.id, name: model.name, description: model.description,
+    providerGroupId: model.lab?.id ?? 'internal',
     provider: model.lab?.name ?? 'Internal', inferenceProvider: model.provider.name,
     labLogo: model.lab?.logo ?? 'pulpo', modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
     contextWindow: model.contextWindow,

@@ -7,7 +7,7 @@ const day = 24 * hour;
 
 export const seedModels: PrototypeModel[] = [
   {
-    id: 'claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'Anthropic', lab: 'Anthropic',
+    id: 'claude-sonnet-4', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', provider: 'Anthropic', lab: 'Anthropic',
     description: 'Fast, thoughtful work across writing, analysis, and code.', contextWindow: '200K context',
     pricing: '$3.00 / $15.00 per 1M tokens', tags: ['Reasoning', 'Vision', 'Agent'], enabled: true,
     agentEnabled: true, favorite: true, tint: '#E8794A', asset: 'claude',
@@ -16,19 +16,19 @@ export const seedModels: PrototypeModel[] = [
     ] }],
   },
   {
-    id: 'gpt-5', name: 'GPT-5', provider: 'OpenAI', lab: 'OpenAI', description: 'Strong general intelligence with reliable tool use.',
+    id: 'gpt-5', name: 'GPT-5', providerGroupId: 'openai', provider: 'OpenAI', lab: 'OpenAI', description: 'Strong general intelligence with reliable tool use.',
     contextWindow: '400K context', pricing: '$1.25 / $10.00 per 1M tokens', tags: ['Reasoning', 'Vision', 'Agent'], enabled: true,
     agentEnabled: true, favorite: true, tint: '#D9D9D9', asset: 'openai', presets: [{ id: 'reasoning', name: 'Reasoning', icon: 'brain', selectedId: 'medium', choices: [
       { id: 'minimal', label: 'Minimal', icon: 'bolt' }, { id: 'medium', label: 'Medium', icon: 'brain' }, { id: 'high', label: 'High', icon: 'tortoise' },
     ] }],
   },
   {
-    id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'Google', lab: 'Google', description: 'Long-context multimodal reasoning for documents and media.',
+    id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', providerGroupId: 'google', provider: 'Google', lab: 'Google', description: 'Long-context multimodal reasoning for documents and media.',
     contextWindow: '1M context', pricing: '$1.25 / $10.00 per 1M tokens', tags: ['Long context', 'Vision'], enabled: true,
     agentEnabled: false, favorite: false, tint: '#6EA8FF', asset: 'gemini', presets: [],
   },
   {
-    id: 'deepseek-r1', name: 'DeepSeek R1', provider: 'DeepSeek', lab: 'DeepSeek', description: 'Deep reasoning with visible thought traces.',
+    id: 'deepseek-r1', name: 'DeepSeek R1', providerGroupId: 'deepseek', provider: 'DeepSeek', lab: 'DeepSeek', description: 'Deep reasoning with visible thought traces.',
     contextWindow: '128K context', pricing: '$0.55 / $2.19 per 1M tokens', tags: ['Reasoning'], enabled: true,
     agentEnabled: false, favorite: false, tint: '#5B8CFF', asset: 'deepseek', presets: [],
   },

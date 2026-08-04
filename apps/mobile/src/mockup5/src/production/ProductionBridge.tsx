@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { useShallow } from 'zustand/react/shallow'
-import { cacheNamespace, cachedChats, getValue, reconcileCachedChatScope } from '../../../data/database'
+import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, reconcileCachedChatScope } from '../../../data/database'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, queryKeys } from '../../../data/queries'
 import { isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
@@ -30,8 +30,9 @@ function mapModel(model: MobileModel, favorites: string[]): PrototypeModel {
   return {
     id: model.id,
     name: model.name,
+    providerGroupId: model.lab?.id ?? 'internal',
     provider: model.provider.name,
-    lab: model.lab?.name ?? model.provider.name,
+    lab: model.lab?.name ?? 'Internal',
     description: model.description,
     contextWindow: model.tags.find((tag) => /context/i.test(tag)) ?? `${Math.round(model.maxOutputTokens / 1000)}K max output`,
     pricing: 'Managed by this Pulpo instance',
@@ -130,6 +131,10 @@ async function offlineCapableMutation<T>(input: {
   request: () => Promise<T>
 }): Promise<T | undefined> {
   try {
+    if (input.entityKey.startsWith('setting:')) {
+      // A newer whole-value setting mutation supersedes any older queued value.
+      await completeOutboxEntity(input.namespace, input.entityKey)
+    }
     return await input.request()
   } catch (error) {
     if (!isNetworkError(error)) throw error
@@ -155,6 +160,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     localChatLimit: state.localChatLimit,
     trashRetention: state.trashRetention,
     favoriteModelIds: state.favoriteModelIds,
+    providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
   })))
   const snapshots = useRealtimeStore((state) => state.snapshots)
@@ -173,6 +179,11 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   })
 
   useEffect(() => { serverHydrated.current = false }, [namespace])
+
+  useEffect(() => {
+    if (!userId || usePreferencesStore.getState().synchronizedOwnerNamespace === namespace) return
+    void usePreferencesStore.getState().resetSynchronizedModelPreferences(namespace)
+  }, [namespace, userId])
 
   useEffect(() => {
     if (!enabled) return
@@ -217,10 +228,29 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         const body = preferencePatchForServer(key, value)
         if (!body) return
         const serverKey = Object.keys(body)[0] ?? String(key)
-        await offlineCapableMutation({
+        const saved = await offlineCapableMutation({
           namespace, entityKey: `setting:${serverKey}`, method: 'PATCH', path: '/api/settings', body,
           request: () => mobileApi.updateSettings(body),
         })
+        if (saved && (key === 'favoriteModelIds' || key === 'providerOrder')) {
+          await usePreferencesStore.getState().markModelPreferenceSynced(key, value as string[])
+        }
+      },
+      toggleFavoriteModel: async (modelId: string, favorite: boolean) => {
+        const current = usePreferencesStore.getState().favoriteModelIds
+        const next = favorite
+          ? [...current.filter((id) => id !== modelId), modelId]
+          : current.filter((id) => id !== modelId)
+        await usePreferencesStore.getState().setPreference('favoriteModelIds', next)
+        const saved = await offlineCapableMutation({
+          namespace,
+          entityKey: 'setting:favoriteModelIds',
+          method: 'PATCH',
+          path: '/api/settings',
+          body: { favoriteModelIds: next },
+          request: () => mobileApi.updateSettings({ favoriteModelIds: next }),
+        })
+        if (saved) await usePreferencesStore.getState().markModelPreferenceSynced('favoriteModelIds', next)
       },
     })
   }, [namespace])
@@ -228,9 +258,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     if (!settings.data) return
     const patch = preferencesFromServer(settings.data.values)
-    for (const [key, value] of Object.entries(patch)) {
-      void usePreferencesStore.getState().setPreference(key as keyof typeof patch, value as never)
-    }
+    void usePreferencesStore.getState().applyServerPreferences(patch)
   }, [settings.data])
 
   useEffect(() => {

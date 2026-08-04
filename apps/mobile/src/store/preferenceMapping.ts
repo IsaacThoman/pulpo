@@ -13,6 +13,7 @@ export interface Preferences {
   localChatLimit: number
   trashRetention: TrashRetentionPreference
   favoriteModelIds: string[]
+  providerOrder: string[]
   defaultModelId: string | null
   agentMode: boolean
   /** Per-model map of generation preset id to selected choice id. */
@@ -22,14 +23,17 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', favoriteModelIds: [], defaultModelId: null, agentMode: false,
+  trashRetention: '30d', favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
   generation: {},
 }
 
 const trashRetentionValues: TrashRetentionPreference[] = ['instant', '24h', '7d', '30d', '90d', 'indefinite']
 
 export function preferencesFromServer(values: Record<string, unknown>): Partial<Preferences> {
-  const result: Partial<Preferences> = {}
+  const result: Partial<Preferences> = {
+    favoriteModelIds: validOrderedIds(values.favoriteModelIds),
+    providerOrder: validOrderedIds(values.providerOrder),
+  }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
   if (typeof values.streamResponses === 'boolean') result.streamResponses = values.streamResponses
@@ -48,10 +52,15 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   return result
 }
 
+function validOrderedIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))]
+}
+
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
     : key === 'agentMode' ? 'agentModeEnabled'
-      : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId'].includes(key)
+      : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId', 'favoriteModelIds', 'providerOrder'].includes(key)
         ? key
         : null
   return serverKey ? { [serverKey]: value } : null

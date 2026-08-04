@@ -9,6 +9,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
+import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -23,7 +24,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         leaderboardColor: users.leaderboardColor,
       }).from(users).where(eq(users.id, user.id)).limit(1),
     ])
-    const values = row?.values as Record<string, unknown> | undefined
+    const values = preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined)
     return {
       values: {
         ...values,
@@ -38,15 +39,24 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
 
   app.patch('/api/settings', async (request) => {
     const user = requireUser(request)
-    const patch = preferencesSchema.parse(request.body)
+    const patch = normalizedPreferencePatch(preferencesSchema.parse(request.body))
     if ('trashRetention' in patch && !trashRetentionValues.includes(patch.trashRetention as typeof trashRetentionValues[number])) {
       throw new AppError(400, 'invalid_trash_retention', 'Choose a valid trash retention period')
     }
     const [existing] = await db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
     const previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
-    const values = { ...(existing?.values as Record<string, unknown> | undefined), ...patch }
-    const [saved] = await db.insert(userPreferences).values({ userId: user.id, values })
-      .onConflictDoUpdate({ target: userPreferences.userId, set: { values, updatedAt: new Date() } }).returning()
+    const insertValues = preferencesWithModelDefaults(patch)
+    const defaults = JSON.stringify(preferencesWithModelDefaults())
+    const patchJson = JSON.stringify(patch)
+    const [saved] = await db.insert(userPreferences).values({ userId: user.id, values: insertValues })
+      .onConflictDoUpdate({
+        target: userPreferences.userId,
+        set: {
+          // One SQL expression prevents concurrent PATCH requests from losing unrelated fields.
+          values: sql`${defaults}::jsonb || ${userPreferences.values} || ${patchJson}::jsonb`,
+          updatedAt: new Date(),
+        },
+      }).returning()
     const nickname = typeof patch.nickname === 'string'
       ? patch.nickname.trim() || null
       : patch.nickname === null ? null : undefined

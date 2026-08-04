@@ -332,6 +332,20 @@ export const modelSchema = z.object({
 })
 export type Model = z.infer<typeof modelSchema>
 
+const orderedPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).max(500)
+  .transform((ids) => [...new Set(ids)])
+
+/** Account-scoped model picker customization shared by web and mobile. */
+export const modelPreferencesSchema = z.object({
+  favoriteModelIds: orderedPreferenceIdsSchema.default([]),
+  providerOrder: orderedPreferenceIdsSchema.default([]),
+})
+export const modelPreferencesPatchSchema = z.object({
+  favoriteModelIds: orderedPreferenceIdsSchema.optional(),
+  providerOrder: orderedPreferenceIdsSchema.optional(),
+})
+export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
+
 export const createProviderSchema = z.object({
   name: z.string().trim().min(1).max(120),
   baseUrl: z.url().default('https://api.openai.com/v1'),

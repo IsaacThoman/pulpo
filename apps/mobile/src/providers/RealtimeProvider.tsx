@@ -183,6 +183,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced and was reconciled with the server.`
             : null)
           if (replayed || rejected) invalidateScope('chats', activeChatId)
+          if (replayed || rejected) void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
         }).catch((error) => {
           useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Offline changes could not be synced.')
         })

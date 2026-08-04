@@ -5,6 +5,8 @@ export type { ChatPreset, ChatPresetAction, ChatPresetChoice, ChatPresetIcon } f
 export interface Model {
   id: string
   name: string
+  /** Stable catalog lab id used for synchronized provider grouping/order. */
+  providerGroupId: string
   provider: string
   /** Monochrome company/lab mark used in the picker header and provider rail. */
   labLogo: string

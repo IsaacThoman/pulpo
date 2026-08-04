@@ -1,5 +1,5 @@
 import * as Crypto from 'expo-crypto'
-import { enqueueOutbox } from './database'
+import { completeOutboxEntity, enqueueOutbox } from './database'
 
 type OfflineMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 let lastCreatedAt = 0
@@ -14,6 +14,10 @@ export async function queueOfflineMutation(input: {
 }): Promise<void> {
   const now = Date.now()
   lastCreatedAt = Math.max(now, lastCreatedAt + 1)
+  if (input.entityKey.startsWith('setting:')) {
+    // Settings patches carry the whole latest value, so only the newest queued value is useful.
+    await completeOutboxEntity(input.namespace, input.entityKey)
+  }
   await enqueueOutbox({
     id: input.idempotencyKey ?? Crypto.randomUUID(),
     namespace: input.namespace,

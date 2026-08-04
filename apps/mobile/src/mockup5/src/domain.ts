@@ -42,6 +42,7 @@ export interface GenerationPreset {
 export interface PrototypeModel {
   id: string;
   name: string;
+  providerGroupId: string;
   provider: string;
   lab: string;
   description: string;

@@ -1,8 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { apiRequest } from '@/lib/api'
+import { modelPreferencesSchema } from '@pulpo/contracts'
+import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
+import { enqueueMutation } from '@/lib/local-first/outbox'
+import { localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
+import { useModels } from '@/stores/models'
 import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
 
 const persistedKeys = [
@@ -20,10 +24,39 @@ function settingsSnapshot() {
   return Object.fromEntries(persistedKeys.map((key) => [key, state[key]]))
 }
 
+function modelPreferencesSnapshot() {
+  const state = useModels.getState()
+  return {
+    favoriteModelIds: state.favoriteModelIds,
+    providerOrder: state.providerOrder,
+  }
+}
+
+async function persistModelPreferences(userId: string, body: ReturnType<typeof modelPreferencesSnapshot>): Promise<boolean> {
+  const id = `settings-model-preferences:${userId}`
+  try {
+    await apiRequest('/api/settings', { method: 'PATCH', body })
+    await localDb.outbox.delete(id)
+    return true
+  } catch (error) {
+    if (!(isNetworkError(error) || (error instanceof ApiError && error.status >= 500))) throw error
+    await enqueueMutation({
+      id,
+      userId,
+      method: 'PATCH',
+      path: '/api/settings',
+      body,
+    })
+    return false
+  }
+}
+
 export function SettingsBridge() {
   const userId = useAuth((state) => state.user?.id)
   const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const hydrated = useRef(false)
+  const modelsHydrated = useRef(false)
+  const modelsDirty = useRef(false)
   const applyingRemote = useRef(false)
   const query = useQuery({
     queryKey: ['settings', userId],
@@ -32,8 +65,13 @@ export function SettingsBridge() {
   })
 
   useEffect(() => {
-    if (!userId || useSettings.getState().ownerUserId === userId) return
-    useSettings.setState({ ...DEFAULT_SETTINGS, ownerUserId: userId })
+    if (!userId) return
+    if (useSettings.getState().ownerUserId !== userId) {
+      useSettings.setState({ ...DEFAULT_SETTINGS, ownerUserId: userId })
+    }
+    if (useModels.getState().ownerUserId !== userId) {
+      useModels.setState({ ownerUserId: userId, favoriteModelIds: [], providerOrder: [] })
+    }
   }, [userId])
 
   useEffect(() => {
@@ -45,10 +83,18 @@ export function SettingsBridge() {
     applyingRemote.current = true
     try {
       useSettings.setState({ ...DEFAULT_SETTINGS, ...query.data.values, ownerUserId: userId })
+      const modelPreferences = modelPreferencesSchema.parse(query.data.values)
+      const local = modelPreferencesSnapshot()
+      const matchesLocal = JSON.stringify(modelPreferences) === JSON.stringify(local)
+      if (!modelsDirty.current || matchesLocal) {
+        useModels.setState({ ...modelPreferences, ownerUserId: userId })
+        modelsDirty.current = false
+      }
     } finally {
       applyingRemote.current = false
     }
     hydrated.current = true
+    modelsHydrated.current = true
   }, [query.data, userId])
 
   useEffect(() => {
@@ -67,6 +113,33 @@ export function SettingsBridge() {
       hydrated.current = false
     }
   }, [userId])
+
+  useEffect(() => {
+    if (!userId) return
+    let timer: number | undefined
+    const unsubscribe = useModels.subscribe((state, previous) => {
+      if (!modelsHydrated.current || applyingRemote.current || state.ownerUserId !== userId) return
+      if (state.favoriteModelIds === previous.favoriteModelIds && state.providerOrder === previous.providerOrder) return
+      modelsDirty.current = true
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        const body = modelPreferencesSnapshot()
+        void persistModelPreferences(userId, body).then((saved) => {
+          const current = modelPreferencesSnapshot()
+          if (saved && JSON.stringify(current) === JSON.stringify(body)) {
+            modelsDirty.current = false
+            void query.refetch()
+          }
+        })
+      }, 500)
+    })
+    return () => {
+      unsubscribe()
+      window.clearTimeout(timer)
+      modelsHydrated.current = false
+      modelsDirty.current = false
+    }
+  }, [query.refetch, userId])
 
   return null
 }

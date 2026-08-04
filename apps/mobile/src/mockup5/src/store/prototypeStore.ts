@@ -172,9 +172,9 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
   addRecentSearch: (query) => set((state) => ({ recentSearches: [query.trim(), ...state.recentSearches.filter((item) => item.toLowerCase() !== query.trim().toLowerCase())].slice(0, 6) })),
   setDefaultModel: (defaultModelId) => { set({ defaultModelId }); runProductionAction(productionActions.setPreference('defaultModelId', defaultModelId)); },
   toggleFavoriteModel: (modelId) => {
-    const favoriteModelIds = get().models.filter((model) => model.favorite !== (model.id === modelId)).map((model) => model.id);
+    const favorite = !get().models.find((model) => model.id === modelId)?.favorite;
     set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: !model.favorite } : model) }));
-    runProductionAction(productionActions.setPreference('favoriteModelIds', favoriteModelIds));
+    runProductionAction(productionActions.toggleFavoriteModel(modelId, favorite));
   },
   resetDemo: () => set({ ...createSeedState(), hydrated: true }),
 }), {

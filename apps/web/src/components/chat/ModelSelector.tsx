@@ -31,8 +31,8 @@ export function ModelSelector({
   const dragIdRef = useRef<string | null>(null)
   const dragKindRef = useRef<DragKind | null>(null)
   const didDragRef = useRef(false)
-  const favorites = useModels((s) => s.favorites)
-  const providerOrder = useModels((s) => s.providers)
+  const favorites = useModels((s) => s.favoriteModelIds)
+  const providerOrder = useModels((s) => s.providerOrder)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
@@ -42,7 +42,7 @@ export function ModelSelector({
   const selected = catalogModels.find((m) => m.id === value) ?? catalogModels[0] ?? getCatalogModel(value)
 
   const enabled = useMemo(() => catalogModels.filter((m) => m.enabled), [catalogModels])
-  const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.provider))], [enabled])
+  const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.providerGroupId))], [enabled])
   const providers = useMemo(() => resolveProviderOrder(providerOrder, availableProviders), [providerOrder, availableProviders])
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -52,7 +52,7 @@ export function ModelSelector({
         .map((id) => enabled.find((m) => m.id === id))
         .filter((m): m is (typeof enabled)[number] => !!m)
     }
-    return enabled.filter((m) => m.provider === provider)
+    return enabled.filter((m) => m.providerGroupId === provider)
   }, [provider, query, favorites, enabled])
 
   const searching = query.trim().length > 0
@@ -213,8 +213,8 @@ export function ModelSelector({
                         <div className="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-foreground/35" />
                       )}
                       <ProviderLogo
-                        provider={p}
-                        icon={enabled.find((m) => m.provider === p)?.labLogo}
+                        provider={enabled.find((m) => m.providerGroupId === p)?.provider ?? p}
+                        icon={enabled.find((m) => m.providerGroupId === p)?.labLogo}
                         variant={active ? 'filled' : 'outline'}
                         className={cn(
                           'size-[18px] transition-opacity duration-150',
@@ -223,7 +223,7 @@ export function ModelSelector({
                       />
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="right">{p}</TooltipContent>
+                  <TooltipContent side="right">{enabled.find((m) => m.providerGroupId === p)?.provider ?? p}</TooltipContent>
                 </Tooltip>
               )
             })}

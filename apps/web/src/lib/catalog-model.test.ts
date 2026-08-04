@@ -3,7 +3,7 @@ import type { Model } from '@/lib/types'
 import { findCatalogModel } from './catalog-model'
 
 const kimi: Model = {
-  id: 'kimi-k3', name: 'Kimi K3', provider: 'Moonshot', inferenceProvider: 'Fireworks',
+  id: 'kimi-k3', name: 'Kimi K3', providerGroupId: 'moonshot', provider: 'Moonshot', inferenceProvider: 'Fireworks',
   labLogo: 'moonshot', modelLogo: 'moonshot', description: '', contextWindow: 262_144,
   tags: [], iconLight: '#000', iconDark: '#fff', inputPrice: 3, outputPrice: 15,
   perMessagePrice: 0, enabled: true,

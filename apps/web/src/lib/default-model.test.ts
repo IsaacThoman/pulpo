@@ -6,6 +6,7 @@ function model(id: string, enabled = true): Model {
   return {
     id,
     name: id,
+    providerGroupId: 'openai',
     provider: 'OpenAI',
     inferenceProvider: 'OpenAI',
     labLogo: 'openai',

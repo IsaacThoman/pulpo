@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { reorderList, resolveOrder } from '@/lib/model-order'
+import { appendMissingOrder, reorderList, resolveOrder } from '@/lib/model-order'
 export const CATALOG_PROVIDERS: string[] = []
 
 /** Merge persisted order with catalog so new providers still appear. */
@@ -9,8 +9,9 @@ export function resolveProviderOrder(order: string[], available = CATALOG_PROVID
 }
 
 interface ModelsState {
-  favorites: string[]
-  providers: string[]
+  ownerUserId: string | null
+  favoriteModelIds: string[]
+  providerOrder: string[]
   toggleFavorite: (id: string) => void
   reorderFavorites: (fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderProviders: (fromId: string, toId: string, edge: 'before' | 'after', available: string[]) => void
@@ -19,24 +20,32 @@ interface ModelsState {
 export const useModels = create<ModelsState>()(
   persist(
     (set, get) => ({
-      favorites: [],
-      providers: [...CATALOG_PROVIDERS],
+      ownerUserId: null,
+      favoriteModelIds: [],
+      providerOrder: [...CATALOG_PROVIDERS],
       toggleFavorite: (id) =>
         set({
-          favorites: get().favorites.includes(id)
-            ? get().favorites.filter((f) => f !== id)
-            : [...get().favorites, id],
+          favoriteModelIds: get().favoriteModelIds.includes(id)
+            ? get().favoriteModelIds.filter((favoriteId) => favoriteId !== id)
+            : [...get().favoriteModelIds, id],
         }),
       reorderFavorites: (fromId, toId, edge) =>
-        set({ favorites: reorderList(get().favorites, fromId, toId, edge) }),
+        set({ favoriteModelIds: reorderList(get().favoriteModelIds, fromId, toId, edge) }),
       reorderProviders: (fromId, toId, edge, available) =>
         set({
-          providers: reorderList(resolveProviderOrder(get().providers, available), fromId, toId, edge),
+          providerOrder: reorderList(appendMissingOrder(get().providerOrder, available), fromId, toId, edge),
         }),
     }),
-    { name: 'pulpo-models' }
+    {
+      name: 'pulpo-models',
+      partialize: (state) => ({
+        ownerUserId: state.ownerUserId,
+        favoriteModelIds: state.favoriteModelIds,
+        providerOrder: state.providerOrder,
+      }),
+    }
   )
 )
 
-/** @deprecated use resolveProviderOrder(useModels.getState().providers) */
+/** @deprecated use resolveProviderOrder(useModels.getState().providerOrder) */
 export const PROVIDERS = CATALOG_PROVIDERS

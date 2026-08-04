@@ -79,6 +79,7 @@ export const MODELS: Model[] = [
   {
     id: 'example-model',
     name: 'Example model',
+    providerGroupId: 'moonshot-ai',
     provider: 'Moonshot AI',
     labLogo: 'moonshot',
     modelLogo: 'moonshot',
@@ -98,6 +99,7 @@ export const MODELS: Model[] = [
   {
     id: 'gpt-4o',
     name: 'GPT-4o',
+    providerGroupId: 'openai',
     provider: 'OpenAI',
     labLogo: 'openai',
     modelLogo: 'openai',
@@ -117,6 +119,7 @@ export const MODELS: Model[] = [
   {
     id: 'gpt-4o-mini',
     name: 'GPT-4o mini',
+    providerGroupId: 'openai',
     provider: 'OpenAI',
     labLogo: 'openai',
     modelLogo: 'openai',
@@ -135,6 +138,7 @@ export const MODELS: Model[] = [
   {
     id: 'claude-sonnet-4',
     name: 'Claude Sonnet 4',
+    providerGroupId: 'anthropic',
     provider: 'Anthropic',
     labLogo: 'anthropic',
     modelLogo: 'claude-color',
@@ -154,6 +158,7 @@ export const MODELS: Model[] = [
   {
     id: 'deepseek-r1',
     name: 'DeepSeek R1',
+    providerGroupId: 'deepseek',
     provider: 'DeepSeek',
     labLogo: 'deepseek',
     modelLogo: 'deepseek-color',
@@ -172,6 +177,7 @@ export const MODELS: Model[] = [
   {
     id: 'llama-3.3-70b',
     name: 'Llama 3.3 70B',
+    providerGroupId: 'meta',
     provider: 'Meta',
     labLogo: 'meta',
     modelLogo: 'meta-color',
@@ -190,6 +196,7 @@ export const MODELS: Model[] = [
   {
     id: 'qwen3-235b',
     name: 'Qwen3 235B',
+    providerGroupId: 'alibaba',
     provider: 'Alibaba',
     labLogo: 'alibaba',
     modelLogo: 'qwen-color',
@@ -208,6 +215,7 @@ export const MODELS: Model[] = [
   {
     id: 'mistral-large',
     name: 'Mistral Large',
+    providerGroupId: 'mistral',
     provider: 'Mistral',
     labLogo: 'mistral',
     modelLogo: 'mistral-color',
@@ -226,6 +234,7 @@ export const MODELS: Model[] = [
   {
     id: 'gemini-2.5-pro',
     name: 'Gemini 2.5 Pro',
+    providerGroupId: 'google',
     provider: 'Google',
     labLogo: 'google',
     modelLogo: 'gemini-color',
@@ -244,6 +253,7 @@ export const MODELS: Model[] = [
   {
     id: 'grok-4',
     name: 'Grok 4',
+    providerGroupId: 'xai',
     provider: 'xAI',
     labLogo: 'xai',
     modelLogo: 'grok',

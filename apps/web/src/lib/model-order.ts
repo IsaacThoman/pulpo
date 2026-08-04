@@ -22,3 +22,12 @@ export function resolveOrder(order: string[], available: string[]): string[] {
   }
   return ordered
 }
+
+/** Preserve unavailable ids in storage while adding newly catalogued ids at the end. */
+export function appendMissingOrder(order: string[], available: string[]): string[] {
+  const next = [...new Set(order)]
+  for (const item of available) {
+    if (!next.includes(item)) next.push(item)
+  }
+  return next
+}

@@ -131,6 +131,7 @@ import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
 import { useRealtimeStore } from '../providers/realtimeStore';
 import { usePreferencesStore } from '../store/preferences';
+import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
@@ -315,8 +316,8 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { id: string; name: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
-type ModelSection = 'Favorites' | Model['lab'];
+type Model = { id: string; name: string; providerGroupId: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
+type ModelSection = string;
 type Attachment = {
   id: string;
   name: string;
@@ -356,10 +357,10 @@ type StreamingSession = {
 type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean };
 
 const MODELS: Model[] = [
-  { id: 'demo-claude', name: 'Claude Sonnet 4', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
-  { id: 'demo-gpt', name: 'GPT-5', lab: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence', agentEnabled: true },
-  { id: 'demo-gemini', name: 'Gemini 2.5 Pro', lab: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision', agentEnabled: true },
-  { id: 'demo-deepseek', name: 'DeepSeek R1', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces', agentEnabled: false },
+  { id: 'demo-claude', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
+  { id: 'demo-gpt', name: 'GPT-5', providerGroupId: 'openai', lab: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence', agentEnabled: true },
+  { id: 'demo-gemini', name: 'Gemini 2.5 Pro', providerGroupId: 'google', lab: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision', agentEnabled: true },
+  { id: 'demo-deepseek', name: 'DeepSeek R1', providerGroupId: 'deepseek', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces', agentEnabled: false },
 ];
 
 function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
@@ -367,7 +368,7 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
     ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
     ?? MODELS[1];
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark);
-  return { ...template, id: model.id, name: model.name, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined, agentEnabled: model.agentEnabled };
+  return { ...template, id: model.id, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined, agentEnabled: model.agentEnabled };
 }
 
 const REASONING_SAMPLE =
@@ -1881,16 +1882,27 @@ const StreamingResponse = memo(function StreamingResponse({
 });
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
-  const [section, setSection] = useState<ModelSection>('Favorites');
+  const favoritesSection = '__favorites__';
+  const [section, setSection] = useState<ModelSection>(favoritesSection);
   const prototypeModels = usePrototypeStore((state) => state.models);
+  const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
+  const providerOrder = usePreferencesStore((state) => state.providerOrder);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
   const setDefaultModel = usePrototypeStore((state) => state.setDefaultModel);
   const toggleFavoriteModel = usePrototypeStore((state) => state.toggleFavoriteModel);
   const currentPrototypeModel = prototypeModels.find((candidate) => candidate.id === model.id);
-  const modelSections: ModelSection[] = ['Favorites', ...new Set(models.map((candidate) => candidate.lab))];
-  const visibleModels = section === 'Favorites'
-    ? models.filter((candidate) => prototypeModels.find((prototype) => prototype.id === candidate.id)?.favorite)
-    : models.filter((candidate) => candidate.lab === section);
+  const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
+  const modelSections = [
+    { id: favoritesSection, label: 'Favorites' },
+    ...resolveVisibleOrder(providerOrder, availableProviderIds).map((id) => ({
+      id,
+      label: models.find((candidate) => candidate.providerGroupId === id)?.lab ?? 'Internal',
+    })),
+  ];
+  const sectionLabel = modelSections.find((candidate) => candidate.id === section)?.label ?? 'Favorites';
+  const visibleModels = section === favoritesSection
+    ? orderedModelsById(models, favoriteModelIds)
+    : models.filter((candidate) => candidate.providerGroupId === section);
 
   return (
     <SwiftUIHost matchContents style={styles.modelMenuHost}>
@@ -1914,7 +1926,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           swiftUIAccessibilityHint('Opens models and lab sections'),
         ]}
       >
-        <SwiftUISection title={section}>
+        <SwiftUISection key="models" title={sectionLabel}>
           {visibleModels.map((candidate) => (
             <SwiftUIButton
               key={candidate.id}
@@ -1928,31 +1940,33 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             </SwiftUIButton>
           ))}
         </SwiftUISection>
-        <SwiftUIDivider />
+        <SwiftUIDivider key="divider" />
         <SwiftUIMenu
-          label={section}
-          systemImage={section === 'Favorites' ? 'star.fill' : 'square.grid.2x2'}
+          key="sections"
+          label={sectionLabel}
+          systemImage={section === favoritesSection ? 'star.fill' : 'square.grid.2x2'}
         >
           {modelSections.map((candidateSection) => (
             <SwiftUIButton
-              key={candidateSection}
+              key={candidateSection.id}
               modifiers={[menuActionDismissBehavior('disabled')]}
               onPress={() => {
-                setSection(candidateSection);
+                setSection(candidateSection.id);
                 Haptics.selectionAsync();
               }}
             >
               <NativeModelSectionRow
-                label={candidateSection}
-                section={candidateSection}
+                label={candidateSection.label}
+                section={candidateSection.id}
                 models={models}
-                selected={candidateSection === section}
+                selected={candidateSection.id === section}
               />
             </SwiftUIButton>
           ))}
         </SwiftUIMenu>
-        <SwiftUIMenu label="Current model actions" systemImage="slider.horizontal.3">
+        <SwiftUIMenu key="actions" label="Current model actions" systemImage="slider.horizontal.3">
           <SwiftUIButton
+            key="default"
             label="Set as default"
             systemImage={defaultModelId === currentPrototypeModel?.id ? 'checkmark' : 'checkmark.circle'}
             onPress={() => {
@@ -1961,6 +1975,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             }}
           />
           <SwiftUIToggle
+            key="favorite"
             isOn={Boolean(currentPrototypeModel?.favorite)}
             label="Favorite"
             systemImage="star"
@@ -1970,6 +1985,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             }}
           />
           <SwiftUIButton
+            key="information"
             label="Model information"
             systemImage="info.circle"
             onPress={() => Alert.alert(model.name, `${model.lab}\n${model.detail}`)}
@@ -1994,7 +2010,7 @@ function NativeModelMenuRow({ label, model, selected = false }: { label: string;
 }
 
 function NativeModelSectionRow({ label, section, models, selected = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean }) {
-  const labModel = section === 'Favorites' ? null : models.find((model) => model.lab === section);
+  const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
       <SwiftUILabel

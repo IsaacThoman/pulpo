@@ -8,6 +8,8 @@ import { ModelMark } from '../../components/ModelMark'
 import { usePreferencesStore } from '../../store/preferences'
 import { useAppTheme } from '../../theme'
 import type { MobileModel } from '../../types'
+import { orderedModelsById, resolveVisibleOrder } from './modelPreferences'
+import { productionActions } from '../../mockup5/src/production/productionActions'
 
 export function ModelPicker({ visible, models, selectedId, onClose, onSelect }: {
   visible: boolean
@@ -18,25 +20,31 @@ export function ModelPicker({ visible, models, selectedId, onClose, onSelect }: 
 }) {
   const theme = useAppTheme()
   const favorites = usePreferencesStore((state) => state.favoriteModelIds)
+  const providerOrder = usePreferencesStore((state) => state.providerOrder)
   const defaultModelId = usePreferencesStore((state) => state.defaultModelId)
   const setPreference = usePreferencesStore((state) => state.setPreference)
   const [query, setQuery] = useState('')
   const filtered = models.filter((model) => `${model.name} ${model.provider.name} ${model.lab?.name ?? ''}`.toLowerCase().includes(query.toLowerCase()))
   const sections = useMemo(() => {
     const result: Array<{ title: string; data: MobileModel[] }> = []
-    const favoriteModels = filtered.filter((model) => favorites.includes(model.id))
+    const favoriteModels = orderedModelsById(filtered, favorites)
     if (favoriteModels.length) result.push({ title: 'Favorites', data: favoriteModels })
-    const groups = new Map<string, MobileModel[]>()
+    const groups = new Map<string, { title: string; data: MobileModel[] }>()
     for (const model of filtered) {
-      const name = model.lab?.name ?? model.provider.name
-      groups.set(name, [...(groups.get(name) ?? []), model])
+      const id = model.lab?.id ?? 'internal'
+      const group = groups.get(id) ?? { title: model.lab?.name ?? 'Internal', data: [] }
+      group.data.push(model)
+      groups.set(id, group)
     }
-    for (const [title, data] of groups) result.push({ title, data })
+    for (const id of resolveVisibleOrder(providerOrder, [...groups.keys()])) {
+      const group = groups.get(id)
+      if (group) result.push(group)
+    }
     return result
-  }, [favorites, filtered])
+  }, [favorites, filtered, providerOrder])
   const toggleFavorite = async (id: string) => {
     await Haptics.selectionAsync()
-    await setPreference('favoriteModelIds', favorites.includes(id) ? favorites.filter((item) => item !== id) : [...favorites, id])
+    await productionActions.toggleFavoriteModel(id, !favorites.includes(id))
   }
   return <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
     <SafeAreaView style={[styles.root, { backgroundColor: theme.background }]} edges={['top', 'bottom']}>

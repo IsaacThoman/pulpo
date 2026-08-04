@@ -8,6 +8,8 @@ import {
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
   mobileConfigSchema,
+  modelPreferencesPatchSchema,
+  modelPreferencesSchema,
   nativeLoginInputSchema,
   ocrSettingsSchema,
   responseEventSchema,
@@ -93,6 +95,19 @@ describe('shared contracts', () => {
       ],
     }])
     expect(presets[0]?.defaultChoiceId).toBe('medium')
+  })
+
+  it('normalizes ordered account model preferences', () => {
+    expect(modelPreferencesSchema.parse({
+      favoriteModelIds: ['model-b', 'model-a', 'model-b'],
+      providerOrder: ['lab-two', 'lab-one', 'lab-two'],
+    })).toEqual({
+      favoriteModelIds: ['model-b', 'model-a'],
+      providerOrder: ['lab-two', 'lab-one'],
+    })
+    expect(modelPreferencesSchema.parse({})).toEqual({ favoriteModelIds: [], providerOrder: [] })
+    expect(modelPreferencesPatchSchema.safeParse({ favoriteModelIds: [42] }).success).toBe(false)
+    expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
   it('validates native sessions and instance discovery', () => {
