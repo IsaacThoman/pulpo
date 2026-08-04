@@ -97,7 +97,7 @@ export function ModelSelector({
   }
 
   return (
-    <div className="flex flex-col items-start">
+    <div className="relative">
       <DropdownMenu
         open={open}
         onOpenChange={(v) => {
@@ -319,7 +319,7 @@ export function ModelSelector({
       {value && value !== defaultModelId && (
         <button
           type="button"
-          className="-mt-1 cursor-pointer px-2 text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
+          className="absolute left-9 top-7 cursor-pointer whitespace-nowrap text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
           onClick={() => setSetting('defaultModelId', value)}
         >
           Set as default
