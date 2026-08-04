@@ -1941,9 +1941,6 @@ function ChatView({
           ) : streamingSession ? (
             <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
           ) : null}
-          ListHeaderComponent={!empty ? (
-            <Text maxFontSizeMultiplier={1.5} style={styles.dateLabel}>{(chatTitle ?? 'NEW CHAT').toUpperCase()}</Text>
-          ) : null}
           maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
           onContentSizeChange={followContentIfNeeded}
           onScroll={trackScrollPosition}
@@ -1954,9 +1951,9 @@ function ChatView({
           style={styles.flex}
         />
 
-        <KeyboardStickyView offset={keyboardOffset}>
+        <KeyboardStickyView offset={keyboardOffset} style={styles.composerSticky}>
           <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-            <View style={styles.composer}>
+            <Glass interactive style={styles.composer}>
               <AttachmentStrip
                 attachments={attachments}
                 onRemove={(id) => {
@@ -2085,7 +2082,7 @@ function ChatView({
                   </>
                 )}
               </View>
-            </View>
+            </Glass>
           </View>
         </KeyboardStickyView>
         <ReasoningEffortSheet
@@ -2621,16 +2618,14 @@ const styles = StyleSheet.create({
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
-  conversation: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 26 },
-  emptyConversation: { flexGrow: 1, justifyContent: 'center', paddingBottom: 24 },
+  conversation: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 156 },
+  emptyConversation: { flexGrow: 1, justifyContent: 'center' },
   emptyState: { alignItems: 'center' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
   emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
   emptyTitle: { color: COLORS.text, fontSize: 26, fontWeight: '600', letterSpacing: -0.8, textAlign: 'center' },
   emptyProvider: { color: COLORS.muted, fontSize: 13.5, marginTop: 7 },
-  dateLabel: { color: COLORS.dim, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.9, alignSelf: 'center', marginBottom: 26, marginTop: 6 },
-
   userRow: { alignItems: 'flex-end', marginBottom: 30 },
   userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', gap: 7 },
   userMessageContextHost: { maxWidth: '85%', alignSelf: 'flex-end' },
@@ -2682,8 +2677,9 @@ const styles = StyleSheet.create({
   suggestionCardAccessible: { width: '100%' },
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
-  composerWrap: { paddingHorizontal: 12, paddingTop: 6, backgroundColor: COLORS.background },
-  composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4, backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
+  composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  composerWrap: { paddingHorizontal: 12, paddingTop: 6 },
+  composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4 },
   attachmentStrip: { maxHeight: 89, marginBottom: 8 },
   attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 17, paddingRight: 17 },
