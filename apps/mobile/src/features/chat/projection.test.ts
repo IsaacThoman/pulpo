@@ -9,6 +9,8 @@ function response(input: {
   output: string
   branchIds: string[]
   branchIndex: number
+  modelId?: string
+  displayModelId?: string
 }): ServerResponse {
   const output = [{ type: 'message', content: [{ type: 'output_text', text: input.output }] }]
   return {
@@ -16,7 +18,8 @@ function response(input: {
     parentResponseId: null,
     previousResponseId: null,
     userMessageId: 'user-1',
-    modelId: 'model-1',
+    modelId: input.modelId ?? 'model-1',
+    displayModelId: input.displayModelId,
     status: 'completed',
     input: [{ role: 'user', content: input.text }],
     output,
@@ -95,5 +98,23 @@ describe('projectChat branch variants', () => {
       'First generation',
       'Streaming second generation',
     ])
+  })
+
+  it('preserves the producing model for every regeneration branch', () => {
+    const branchIds = ['response-a', 'response-b']
+    const responses = [
+      response({ id: branchIds[0]!, text: 'Prompt', output: 'First', branchIds, branchIndex: 0, displayModelId: 'actual-a' }),
+      response({ id: branchIds[1]!, text: 'Prompt', output: 'Second', branchIds, branchIndex: 1, displayModelId: 'actual-b' }),
+    ]
+    const chat = {
+      id: 'chat-1', title: 'Branches', modelId: 'composer-model', pinned: false, folderId: null,
+      sortOrder: 0, temporary: false, activeResponseId: 'response-b', activeBranchLeafId: 'response-b',
+      createdAt: '2026-08-04T12:00:00.000Z', updatedAt: '2026-08-04T12:00:01.000Z', responses,
+    } satisfies ServerChat
+
+    const assistant = projectChat(chat, {}).find((message) => message.role === 'assistant')
+
+    expect(assistant?.modelId).toBe('actual-b')
+    expect(assistant?.branch.variants.map((branch) => branch.modelId)).toEqual(['actual-a', 'actual-b'])
   })
 })

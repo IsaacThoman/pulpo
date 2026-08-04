@@ -125,6 +125,7 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { useSessionStore } from '../store/session';
+import { apiRequest } from '../api/client';
 import { ProductionBridge } from './src/production/ProductionBridge';
 import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
@@ -438,12 +439,26 @@ function prototypeChatToLegacy(chat: PrototypeChat): Chat {
   return value;
 }
 
-const SUGGESTIONS = [
-  'What can you help me build today?',
-  'Explain how KV caching speeds up decoding',
-  'Draft a terse commit message for a sidebar refactor',
-  'Compare mixture-of-experts vs dense models',
+type SuggestedPrompt = { id: string; label: string; message: string };
+
+const DEFAULT_SUGGESTED_PROMPTS: SuggestedPrompt[] = [
+  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
+  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
 ];
+
+function pickSuggestedPrompts(items: SuggestedPrompt[], count: number): SuggestedPrompt[] {
+  if (count <= 0 || items.length === 0) return [];
+  const pool = [...items];
+  const result: SuggestedPrompt[] = [];
+  const uniqueCount = Math.min(count, pool.length);
+  for (let index = 0; index < uniqueCount; index += 1) {
+    result.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]!);
+  }
+  while (result.length < count) result.push(items[Math.floor(Math.random() * items.length)]!);
+  return result;
+}
 
 function Icon({ name, size = 20, color = COLORS.text, weight = 'regular' }: { name: SymbolName; size?: number; color?: ColorValue; weight?: ComponentProps<typeof SymbolView>['weight'] }) {
   return <SymbolView name={name} size={size} tintColor={color} weight={weight} />;
@@ -2083,6 +2098,11 @@ function ChatView({
   const [temporary, setTemporary] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [promptConfig, setPromptConfig] = useState({
+    enabled: true,
+    count: 4,
+    prompts: DEFAULT_SUGGESTED_PROMPTS,
+  });
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
   const realtimeConnected = useRealtimeStore((state) => state.connected);
@@ -2091,6 +2111,19 @@ function ChatView({
   const connectionState = networkState.isConnected === false || networkState.isInternetReachable === false
     ? 'offline'
     : realtimeConnected ? 'online' : 'reconnecting';
+  const isEmptyConversation = messages.length === 0;
+  const suggestions = useMemo(
+    () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
+    [chatId, isEmptyConversation, promptConfig],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiRequest<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>('/api/interface/suggested-prompts')
+      .then((config) => { if (!cancelled) setPromptConfig(config); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
   const keyboardOffset = useMemo(
     () => ({ closed: 0, opened: Math.max(insets.bottom, 10) - 8 }),
     [insets.bottom],
@@ -2302,7 +2335,7 @@ function ChatView({
     />
   ), [model, models, onRegenerate, presetSelections]);
 
-  const empty = messages.length === 0 && assistantStatus === 'idle';
+  const empty = isEmptyConversation && assistantStatus === 'idle';
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const canSend = (input.trim().length > 0 || attachments.length > 0) && assistantStatus === 'idle';
 
@@ -2375,12 +2408,12 @@ function ChatView({
                   }}
                   style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
                 >
-                  {SUGGESTIONS.map((suggestion) => (
+                  {suggestions.map((suggestion, index) => (
                     <SuggestedPromptButton
                       accessible={accessibilityLayout}
-                      key={suggestion}
-                      label={suggestion}
-                      onPress={() => onSend(suggestion, [], { presetSelections, agentEnabled, temporary })}
+                      key={`${suggestion.id}:${index}`}
+                      label={suggestion.label}
+                      onPress={() => onSend(suggestion.message, [], { presetSelections, agentEnabled, temporary })}
                     />
                   ))}
                 </View>
