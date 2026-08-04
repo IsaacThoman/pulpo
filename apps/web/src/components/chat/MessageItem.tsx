@@ -28,51 +28,22 @@ import { useSettings } from '@/stores/settings'
 import { Markdown } from './Markdown'
 import { MessageAttachmentList } from './AttachmentImage'
 import { activityDurationMs } from './activity-timing'
+import {
+  buildTimeline,
+  workspaceIsActive,
+  type ActivitySegment,
+  type ActivityStep,
+  type ReasoningStep,
+  type TimelineSegment,
+  type ToolItem,
+  type WorkspaceItem,
+  type WorkspaceStep,
+} from './message-timeline'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
-
-type ToolItem = {
-  type: 'pulpo_tool'
-  id?: string
-  tool?: string
-  status?: string
-  arguments?: unknown
-  output?: string
-  isError?: boolean
-  startedAt?: string
-  durationMs?: number
-}
-
-type WorkspaceItem = {
-  type: 'pulpo_workspace'
-  state?: string
-  position?: number
-  error?: string
-  startedAt?: string
-  durationMs?: number
-}
-
-type ReasoningStep = {
-  kind: 'reasoning'
-  text: string
-  active: boolean
-  durationMs?: number
-}
-
-type ToolStep = {
-  kind: 'tool'
-  tool: ToolItem
-}
-
-type WorkspaceStep = {
-  kind: 'workspace'
-  workspace: WorkspaceItem
-}
-
-type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep
 
 function ActionButton({
   label,
@@ -275,25 +246,8 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   )
 }
 
-type ActivitySegment = {
-  kind: 'activity'
-  steps: ActivityStep[]
-  active: boolean
-}
-
-type TextSegment = {
-  kind: 'text'
-  text: string
-}
-
-type TimelineSegment = ActivitySegment | TextSegment
-
 function workspaceIsQuiet(state?: string) {
   return state === 'ready' || state === 'running'
-}
-
-function workspaceIsActive(state?: string) {
-  return state === 'waiting' || state === 'provisioning'
 }
 
 function workspaceIsFailed(state?: string) {
@@ -309,117 +263,6 @@ function workspaceLabel(item: WorkspaceItem): string {
   if (workspaceIsFailed(item.state)) return `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
   if (workspaceIsQuiet(item.state)) return 'Started workspace'
   return 'Workspace'
-}
-
-function reasoningFromItem(item: unknown): string {
-  const typed = item as { summary?: unknown[] }
-  if (!Array.isArray(typed.summary)) return ''
-  return typed.summary.map((part) => {
-    const entry = part as { text?: string; content?: string }
-    return entry.text ?? entry.content ?? ''
-  }).join('')
-}
-
-function messageTextFromItem(item: unknown): string {
-  const typed = item as { content?: unknown }
-  if (typeof typed.content === 'string') return typed.content
-  if (!Array.isArray(typed.content)) return ''
-  return typed.content.map((part) => {
-    const entry = part as { text?: string; content?: string }
-    return entry.text ?? entry.content ?? ''
-  }).join('')
-}
-
-function activityHasContent(steps: ActivityStep[], showReasoning: boolean): boolean {
-  return steps.some((step) => {
-    if (step.kind === 'reasoning') return showReasoning && Boolean(step.text)
-    return true
-  })
-}
-
-function insertWorkspaceStep(steps: ActivityStep[], workspace: WorkspaceItem): ActivityStep[] {
-  if (steps.some((step) => step.kind === 'workspace')) return steps
-  const step: WorkspaceStep = { kind: 'workspace', workspace }
-  const firstTool = steps.findIndex((entry) => entry.kind === 'tool')
-  if (firstTool === -1) return [step, ...steps]
-  return [...steps.slice(0, firstTool), step, ...steps.slice(firstTool)]
-}
-
-/** Group consecutive reasoning/tools into activity blocks; messages become text segments.
- *  Steps keep arrival order (think → tool → think → tool). Workspace is lazy-started on the
- *  first tool call, so it is inserted immediately before the first tool step. */
-function buildTimeline(outputItems: unknown[], showReasoning: boolean): TimelineSegment[] {
-  const segments: TimelineSegment[] = []
-  let activity: ActivitySegment | null = null
-  const workspace = outputItems.find(
-    (item): item is WorkspaceItem => (item as { type?: string }).type === 'pulpo_workspace',
-  )
-
-  const flushActivity = () => {
-    if (!activity) return
-    const steps = showReasoning
-      ? activity.steps
-      : activity.steps.filter((step) => step.kind !== 'reasoning')
-    if (activityHasContent(steps, true)) {
-      segments.push({ ...activity, steps })
-    }
-    activity = null
-  }
-
-  for (const item of outputItems) {
-    const type = (item as { type?: string }).type
-    if (type === 'pulpo_workspace') continue
-    if (type === 'reasoning') {
-      if (!activity) activity = { kind: 'activity', steps: [], active: false }
-      const text = reasoningFromItem(item)
-      if (text || (item as { status?: string }).status === 'in_progress') {
-        activity.steps.push({
-          kind: 'reasoning',
-          text,
-          active: (item as { status?: string }).status === 'in_progress',
-          durationMs: typeof (item as { durationMs?: unknown }).durationMs === 'number'
-            ? (item as { durationMs: number }).durationMs
-            : undefined,
-        })
-      }
-      if ((item as { status?: string }).status === 'in_progress') activity.active = true
-      continue
-    }
-    if (type === 'pulpo_tool') {
-      if (!activity) activity = { kind: 'activity', steps: [], active: false }
-      const tool = item as ToolItem
-      activity.steps.push({ kind: 'tool', tool })
-      if (tool.status === 'running') activity.active = true
-      continue
-    }
-    if (type === 'message') {
-      flushActivity()
-      const text = messageTextFromItem(item)
-      if (text) segments.push({ kind: 'text', text })
-    }
-  }
-  flushActivity()
-
-  if (workspace) {
-    const toolActivity = segments.find(
-      (segment): segment is ActivitySegment =>
-        segment.kind === 'activity' && segment.steps.some((step) => step.kind === 'tool'),
-    )
-    const target = toolActivity
-      ?? segments.find((segment): segment is ActivitySegment => segment.kind === 'activity')
-    if (target) {
-      target.steps = insertWorkspaceStep(target.steps, workspace)
-      if (workspaceIsActive(workspace.state)) target.active = true
-    } else {
-      segments.unshift({
-        kind: 'activity',
-        steps: [{ kind: 'workspace', workspace }],
-        active: workspaceIsActive(workspace.state),
-      })
-    }
-  }
-
-  return segments
 }
 
 const WORKSPACE_ACTIONS_DELAY_MS = 15_000
