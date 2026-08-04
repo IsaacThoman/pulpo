@@ -11,6 +11,7 @@ import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
 import { resolveProviderOrder, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
+import { useSettings } from '@/stores/settings'
 
 type DragKind = 'model' | 'provider'
 
@@ -36,6 +37,8 @@ export function ModelSelector({
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
   const catalogModels = useCatalog((state) => state.models)
+  const defaultModelId = useSettings((state) => state.defaultModelId)
+  const setSetting = useSettings((state) => state.set)
   const selected = catalogModels.find((m) => m.id === value) ?? catalogModels[0] ?? getCatalogModel(value)
 
   const enabled = useMemo(() => catalogModels.filter((m) => m.enabled), [catalogModels])
@@ -94,17 +97,18 @@ export function ModelSelector({
   }
 
   return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(v) => {
-        setOpen(v)
-        if (!v) {
-          setQuery('')
-          setProvider(null)
-          clearDrag()
-        }
-      }}
-    >
+    <div className="flex flex-col items-start">
+      <DropdownMenu
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v)
+          if (!v) {
+            setQuery('')
+            setProvider(null)
+            clearDrag()
+          }
+        }}
+      >
       <DropdownMenuTrigger asChild>
         <button className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
           <ProviderLogo
@@ -311,6 +315,16 @@ export function ModelSelector({
           </div>
         </div>
       </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenu>
+      {value && value !== defaultModelId && (
+        <button
+          type="button"
+          className="-mt-1 cursor-pointer px-2 text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
+          onClick={() => setSetting('defaultModelId', value)}
+        >
+          Set as default
+        </button>
+      )}
+    </div>
   )
 }

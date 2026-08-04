@@ -12,6 +12,7 @@ const persistedKeys = [
   'localChatLimit',
   'localAttachmentCacheMb',
   'trashRetention',
+  'defaultModelId',
 ] as const
 
 function settingsSnapshot() {

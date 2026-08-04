@@ -25,6 +25,7 @@ interface SettingsState {
   localChatLimit: number
   localAttachmentCacheMb: number
   trashRetention: TrashRetention
+  defaultModelId: string
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS = {
   localChatLimit: 50,
   localAttachmentCacheMb: 50,
   trashRetention: '30d' as TrashRetention,
+  defaultModelId: '',
   generation: {},
 }
 

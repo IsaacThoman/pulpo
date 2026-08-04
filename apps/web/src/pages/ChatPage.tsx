@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Share2 } from 'lucide-react'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
@@ -12,6 +12,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
+import { resolveDefaultModelId } from '@/lib/default-model'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
@@ -78,9 +79,11 @@ function Placeholder({
 export function ChatPage() {
   const { chatId } = useParams()
   const [params] = useSearchParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
   const chatWidth = useSettings((s) => s.chatWidth)
+  const defaultModelId = useSettings((s) => s.defaultModelId)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const [temporary, setTemporary] = useState(params.get('temporary') === '1')
@@ -91,17 +94,44 @@ export function ChatPage() {
   })
 
   const chatModelId = chat?.modelId
+  const shouldApplyDefaultRef = useRef(!chatId && !routeModelId)
+  const handledResetRef = useRef<unknown>(null)
   const [modelId, setModelId] = useState(
-    () => routeModelId ?? chatModelId ?? models[0]?.id ?? ''
+    () => routeModelId ?? chatModelId ?? resolveDefaultModelId(models, defaultModelId)
   )
   useEffect(() => {
     if (chat || models.length === 0 || models.some((model) => model.id === modelId)) return
-    setModelId(models.find((model) => model.enabled)?.id ?? models[0]!.id)
-  }, [chat, modelId, models])
+    setModelId(resolveDefaultModelId(models, defaultModelId))
+  }, [chat, defaultModelId, modelId, models])
   useEffect(() => {
-    if (chatModelId) setModelId(chatModelId)
-    else if (routeModelId) setModelId(routeModelId)
+    if (chatModelId) {
+      shouldApplyDefaultRef.current = false
+      setModelId(chatModelId)
+    } else if (routeModelId) {
+      shouldApplyDefaultRef.current = false
+      setModelId(routeModelId)
+    }
   }, [chatId, chatModelId, routeModelId])
+
+  const resetDefaultToken = (location.state as { resetDefaultModel?: unknown } | null)?.resetDefaultModel
+  useEffect(() => {
+    if (!resetDefaultToken || handledResetRef.current === resetDefaultToken) return
+    handledResetRef.current = resetDefaultToken
+    shouldApplyDefaultRef.current = true
+    const next = resolveDefaultModelId(models, defaultModelId)
+    if (next) setModelId(next)
+  }, [defaultModelId, models, resetDefaultToken])
+
+  useEffect(() => {
+    if (chatId || routeModelId || !shouldApplyDefaultRef.current) return
+    const next = resolveDefaultModelId(models, defaultModelId)
+    if (next && next !== modelId) setModelId(next)
+  }, [chatId, defaultModelId, modelId, models, routeModelId])
+
+  const selectModel = (id: string) => {
+    shouldApplyDefaultRef.current = false
+    setModelId(id)
+  }
 
   useEffect(() => {
     void apiRequest<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>('/api/interface/suggested-prompts')
@@ -150,7 +180,7 @@ export function ChatPage() {
     <div className="flex h-full flex-col">
       {/* header */}
       <header className="flex h-12 shrink-0 items-center gap-1 px-3">
-        <ModelSelector value={modelId} onChange={setModelId} />
+        <ModelSelector value={modelId} onChange={selectModel} />
         <div className="flex-1" />
         <Tooltip>
           <TooltipTrigger asChild>

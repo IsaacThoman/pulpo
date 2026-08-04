@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   BarChart3,
   ChevronRight,
@@ -576,6 +576,7 @@ export function Sidebar({
   onOpenSettings: () => void
 }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
     `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}`
@@ -715,6 +716,15 @@ export function Sidebar({
 
   const go = (path: string) => {
     navigate(path)
+    onNavigate()
+  }
+
+  const startNewChat = () => {
+    navigate('/', {
+      state: location.pathname === '/'
+        ? { resetDefaultModel: `${Date.now()}-${Math.random()}` }
+        : null,
+    })
     onNavigate()
   }
 
@@ -860,7 +870,7 @@ export function Sidebar({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
-          {iconBtn('New chat', () => go('/'), <SquarePen className="size-4" />)}
+          {iconBtn('New chat', startNewChat, <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
           {iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
           {apiKeysEnabled && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
