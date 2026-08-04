@@ -12,11 +12,14 @@
     "dev:web": "npm run dev -w @pulpo/web",
     "dev:api": "npm run dev:api -w @pulpo/server",
     "dev:worker": "npm run dev:worker -w @pulpo/server",
-    "build": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/web && npm run build -w @pulpo/server",
+    "dev:mobile": "npm run start -w @pulpo/mobile",
+    "build": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/web && npm run build -w @pulpo/server && npm run typecheck -w @pulpo/mobile",
     "build:web": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/web",
     "db:generate": "npm run db:generate -w @pulpo/server",
     "db:migrate": "npm run db:migrate -w @pulpo/server",
-    "test": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run test -w @pulpo/contracts && npm run test -w @pulpo/client-core && npm run test -w @pulpo/web && npm run test -w @pulpo/workspace-controller && npm run test -w @pulpo/server",
+    "mobile:typecheck": "npm run typecheck -w @pulpo/mobile",
+    "mobile:export": "npm run export -w @pulpo/mobile",
+    "test": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run test -w @pulpo/contracts && npm run test -w @pulpo/client-core && npm run test -w @pulpo/web && npm run test -w @pulpo/workspace-controller && npm run test -w @pulpo/server && npm run test -w @pulpo/mobile",
     "lint": "oxlint",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
@@ -34,7 +37,17 @@
     "@semantic-release/release-notes-generator": "^14.1.1",
     "conventional-changelog-conventionalcommits": "^10.2.1",
     "oxlint": "^1.71.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native-worklets": "0.10.1",
     "semantic-release": "^25.0.8",
     "typescript": "~6.0.2"
+  },
+  "overrides": {
+    "linkify-it": "6.1.0",
+    "markdown-it": "15.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native-worklets": "0.10.1"
   }
 }

@@ -2,6 +2,7 @@ node_modules
 dist
 server/dist
 packages/*/dist
+apps/mobile
 .git
 .env
 *.yaml

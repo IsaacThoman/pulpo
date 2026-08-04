@@ -1,0 +1,23 @@
+{
+  "configVersion": 0,
+  "apple": {
+    "copyright": "2026 Isaac Thoman",
+    "categories": ["PRODUCTIVITY", "UTILITIES"],
+    "release": {
+      "automaticRelease": false,
+      "phasedRelease": false
+    },
+    "info": {
+      "en-US": {
+        "title": "Pulpo",
+        "subtitle": "Your AI workspace, anywhere",
+        "description": "Pulpo is the native iPhone client for Pulpo AI workspaces. Connect securely to pulpo.baby or your own compatible Pulpo instance, continue conversations in real time, manage folders and branches, work with files, and keep useful drafts and history available on your device.\n\nPulpo supports model presets, reasoning controls, agent activity, response streaming and cancellation, public sharing, offline-safe organization changes, local full-text search, and native iOS accessibility preferences.",
+        "keywords": ["AI", "chat", "assistant", "workspace", "models", "productivity"],
+        "promoText": "A fast, native way to use your Pulpo AI workspace on iPhone.",
+        "marketingUrl": "https://pulpo.baby",
+        "supportUrl": "https://pulpo.baby/support",
+        "privacyPolicyUrl": "https://pulpo.baby/privacy"
+      }
+    }
+  }
+}

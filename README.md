@@ -17,9 +17,11 @@ The repository is organized as an npm-workspaces monorepo:
 ```text
 apps/web/src/         React web application
 apps/server/src/      API, worker, storage, accounting, and realtime services
+apps/mobile/          Expo Router iPhone application
 apps/server/drizzle/  ordered PostgreSQL migrations
 packages/contracts/   shared Zod and Socket.IO contracts
-packages/*/           shared runtime and workspace packages
+packages/client-core/ platform-neutral chat and client behavior
+packages/*/           other shared runtime and infrastructure packages
 deploy/               nginx gateway configuration
 ```
 
@@ -112,6 +114,21 @@ npm test
 npm run lint
 docker compose config --quiet
 ```
+
+### iPhone app
+
+The native client lives in `apps/mobile` and targets iPhone on iOS 26 with Expo
+SDK 57. It connects to `https://pulpo.baby` by default and can switch to another
+HTTPS Pulpo instance. To run it against the local Compose gateway:
+
+```bash
+docker compose up --build -d
+EXPO_PUBLIC_DEFAULT_INSTANCE_URL=http://localhost:8080 npm run dev:mobile
+```
+
+Open the project in an iOS 26 simulator through Expo CLI. Local HTTP is accepted
+only by development builds; preview and production builds require HTTPS. See
+`apps/mobile/README.md` for EAS, Release build, and environment details.
 
 ## Local-first and realtime behavior
 
