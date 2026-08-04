@@ -185,6 +185,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       togglePin: (id, pinned) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { pinned }, request: () => updateChat(id, { pinned }) }),
       moveChat: (id, folderId) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'PATCH', path: `/api/chats/${id}`, body: { folderId }, request: () => updateChat(id, { folderId }) }),
       trashChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}`, request: () => trashChat(id) }),
+      trashAllChats: () => offlineCapableMutation({ namespace, entityKey: 'chats:all', method: 'DELETE', path: '/api/chats', request: () => mobileApi.trashAllChats() }),
       restoreChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'POST', path: `/api/chats/${id}/recover`, request: () => restoreChat(id) }),
       permanentlyDeleteChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}/permanent`, request: () => permanentlyDeleteChat(id) }),
       emptyTrash: () => offlineCapableMutation({ namespace, entityKey: 'trash:all', method: 'DELETE', path: '/api/chats/deleted', request: () => mobileApi.emptyTrash() }),

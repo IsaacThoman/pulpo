@@ -32,6 +32,7 @@ type PrototypeActions = {
   togglePin: (id: string) => void;
   moveChat: (id: string, folderId: string | null) => void;
   trashChat: (id: string) => void;
+  trashAllChats: () => void;
   restoreChat: (id: string) => void;
   permanentlyDeleteChat: (id: string) => void;
   emptyTrash: () => void;
@@ -135,6 +136,20 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
     const deletedAt = Date.now();
     return { chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt, purgeAt: duration === null ? null : deletedAt + duration, pinned: false } : chat) };
   }); runProductionAction(productionActions.trashChat(chatId)); },
+  trashAllChats: () => {
+    set((state) => {
+      const duration = retentionMs[state.preferences.trashRetention];
+      if (duration === 0) return { chats: [] };
+      const deletedAt = Date.now();
+      return { chats: state.chats.map((chat) => chat.deletedAt === null ? {
+        ...chat,
+        deletedAt,
+        purgeAt: duration === null ? null : deletedAt + duration,
+        pinned: false,
+      } : chat) };
+    });
+    runProductionAction(productionActions.trashAllChats());
+  },
   restoreChat: (chatId) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, purgeAt: null, updatedAt: Date.now() } : chat) })); runProductionAction(productionActions.restoreChat(chatId)); },
   permanentlyDeleteChat: (chatId) => { set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })); runProductionAction(productionActions.permanentlyDeleteChat(chatId)); },
   emptyTrash: () => {

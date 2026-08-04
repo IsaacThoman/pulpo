@@ -40,6 +40,19 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.deletedAt).toBeNull();
   });
 
+  it('moves all active chats to trash in one local state transition', () => {
+    usePrototypeStore.getState().trashAllChats();
+    const chats = usePrototypeStore.getState().chats;
+    expect(chats.every((chat) => chat.deletedAt !== null)).toBe(true);
+    expect(chats.every((chat) => !chat.pinned)).toBe(true);
+  });
+
+  it('removes all chats locally when trash retention is disabled', () => {
+    usePrototypeStore.getState().setPreference('trashRetention', 'instant');
+    usePrototypeStore.getState().trashAllChats();
+    expect(usePrototypeStore.getState().chats).toEqual([]);
+  });
+
   it('deletes a message and every later message in its branch', () => {
     usePrototypeStore.getState().deleteMessageCascade('c-streaming', 'm-stream-user');
     expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-streaming')?.messages).toEqual([]);

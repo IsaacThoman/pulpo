@@ -108,6 +108,7 @@ export const mobileApi = {
     method: 'POST', auth: false, body: { email },
   }),
   chats: () => apiRequest<{ data: ServerChat[] }>('/api/chats'),
+  trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
   chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}`),

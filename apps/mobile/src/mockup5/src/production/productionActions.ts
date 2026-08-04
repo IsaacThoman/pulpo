@@ -5,6 +5,7 @@ type ProductionActions = {
   togglePin: AsyncAction
   moveChat: AsyncAction
   trashChat: AsyncAction
+  trashAllChats: AsyncAction
   restoreChat: AsyncAction
   permanentlyDeleteChat: AsyncAction
   emptyTrash: AsyncAction
@@ -19,7 +20,7 @@ type ProductionActions = {
 const noop: AsyncAction = async () => undefined
 
 export const productionActions: ProductionActions = {
-  renameChat: noop, togglePin: noop, moveChat: noop, trashChat: noop, restoreChat: noop,
+  renameChat: noop, togglePin: noop, moveChat: noop, trashChat: noop, trashAllChats: noop, restoreChat: noop,
   permanentlyDeleteChat: noop, duplicateChat: noop, shareChat: noop, createFolder: noop,
   renameFolder: noop, deleteFolder: noop, emptyTrash: noop, setPreference: noop,
 }
