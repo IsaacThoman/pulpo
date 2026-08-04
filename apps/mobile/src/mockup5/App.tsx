@@ -1919,7 +1919,7 @@ function ChatView({
 }) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, height: windowHeight } = useWindowDimensions();
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -1929,6 +1929,8 @@ function ChatView({
   const [temporary, setTemporary] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [effortPickerOpen, setEffortPickerOpen] = useState(false);
+  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  const suggestionGridHeight = useSharedValue(0);
   const realtimeConnected = useRealtimeStore((state) => state.connected);
   const syncError = useRealtimeStore((state) => state.syncError);
   const networkState = Network.useNetworkState();
@@ -1939,6 +1941,19 @@ function ChatView({
     () => ({ closed: 0, opened: Math.max(insets.bottom, 10) - 8 }),
     [insets.bottom],
   );
+  const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{
+      translateY: interpolate(keyboardProgress.value, [0, 1], [0, -Math.min(64, windowHeight * 0.065)]),
+    }],
+  }));
+  const suggestionsAnimatedStyle = useAnimatedStyle(() => ({
+    height: suggestionGridHeight.value > 0
+      ? suggestionGridHeight.value * (1 - keyboardProgress.value)
+      : undefined,
+    marginTop: interpolate(keyboardProgress.value, [0, 1], [30, 0]),
+    opacity: interpolate(keyboardProgress.value, [0, 0.65], [1, 0]),
+    transform: [{ translateY: interpolate(keyboardProgress.value, [0, 1], [0, -14]) }],
+  }));
 
   const openEffortPicker = useCallback(() => {
     Haptics.selectionAsync();
@@ -2101,24 +2116,33 @@ function ChatView({
           keyExtractor={(message) => message.id}
           ListEmptyComponent={empty ? (
             <View style={styles.emptyState}>
-              <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
-                <ModelMark model={model} size={48} />
-                <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
-              </View>
-              <Text style={styles.emptyProvider}>{model.lab}</Text>
-              <View style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}>
-                {SUGGESTIONS.map((suggestion) => (
-                  <Pressable
-                    accessibilityHint="Sends this suggestion"
-                    accessibilityRole="button"
-                    key={suggestion}
-                    onPress={() => onSend(suggestion, [], { reasoningEffort, agentEnabled, temporary })}
-                    style={({ pressed }) => [styles.suggestionCard, accessibilityLayout && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
-                  >
-                    <Text style={styles.suggestionLabel}>{suggestion}</Text>
-                  </Pressable>
-                ))}
-              </View>
+              <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
+                <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
+                  <ModelMark model={model} size={48} />
+                  <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
+                </View>
+                <Text style={styles.emptyProvider}>{model.lab}</Text>
+              </Reanimated.View>
+              <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+                <View
+                  onLayout={(event) => {
+                    suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
+                  }}
+                  style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
+                >
+                  {SUGGESTIONS.map((suggestion) => (
+                    <Pressable
+                      accessibilityHint="Sends this suggestion"
+                      accessibilityRole="button"
+                      key={suggestion}
+                      onPress={() => onSend(suggestion, [], { reasoningEffort, agentEnabled, temporary })}
+                      style={({ pressed }) => [styles.suggestionCard, accessibilityLayout && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
+                    >
+                      <Text style={styles.suggestionLabel}>{suggestion}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Reanimated.View>
             </View>
           ) : null}
           ListFooterComponent={assistantStatus === 'thinking' ? (
@@ -2816,6 +2840,7 @@ const styles = StyleSheet.create({
   conversation: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 156 },
   emptyConversation: { flexGrow: 1, justifyContent: 'center' },
   emptyState: { alignItems: 'center' },
+  emptyIdentity: { alignItems: 'center' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
   emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
@@ -2891,7 +2916,8 @@ const styles = StyleSheet.create({
   branchLabel: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
   iconAction: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
 
-  suggestionGrid: { width: '100%', marginTop: 30, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
+  suggestionReveal: { width: '100%', overflow: 'hidden' },
+  suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   suggestionGridAccessible: { flexDirection: 'column', flexWrap: 'nowrap' },
   suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
   suggestionCardAccessible: { width: '100%' },
