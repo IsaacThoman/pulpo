@@ -9,7 +9,7 @@ describe('production preference mapping', () => {
       favoriteModelIds: ['model-b', 'model-a', 'model-b'], providerOrder: ['lab-b', 'lab-a'],
     })).toEqual({
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
-      trashRetention: '7d', agentMode: false,
+      trashRetention: '7d',
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
     })
   })
@@ -20,6 +20,8 @@ describe('production preference mapping', () => {
     expect(preferencePatchForServer('favoriteModelIds', ['model-b', 'model-a'])).toEqual({ favoriteModelIds: ['model-b', 'model-a'] })
     expect(preferencePatchForServer('providerOrder', ['lab-b', 'lab-a'])).toEqual({ providerOrder: ['lab-b', 'lab-a'] })
     expect(preferencePatchForServer('haptics', false)).toBeNull()
+    expect(preferencePatchForServer('agentMode', true)).toBeNull()
+    expect(preferencesFromServer({ agentModeEnabled: true })).not.toHaveProperty('agentMode')
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {

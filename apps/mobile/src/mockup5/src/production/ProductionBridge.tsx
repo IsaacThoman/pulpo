@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { useShallow } from 'zustand/react/shallow'
 import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, reconcileCachedChatScope } from '../../../data/database'
-import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, queryKeys } from '../../../data/queries'
+import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, queryKeys, type ModelCatalog } from '../../../data/queries'
 import { isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
 import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
@@ -122,6 +122,65 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
   }
 }
 
+let scopeHydrationToken = 0
+
+function clearProductionScopeState(): void {
+  usePrototypeStore.setState((state) => ({
+    productionNamespace: null,
+    chats: [],
+    folders: [],
+    models: [],
+    memories: [],
+    recentSearches: [],
+    defaultModelId: '',
+    agentAvailable: false,
+    usage: { ...state.usage, inputTokens: 0, outputTokens: 0 },
+  }))
+}
+
+// oxlint-disable-next-line react/only-export-components -- production scope lifecycle API
+export function clearProductionScope(): void {
+  scopeHydrationToken += 1
+  clearProductionScopeState()
+}
+
+/** Clear the previous production scope, then hydrate only namespaced SQLite data. */
+// oxlint-disable-next-line react/only-export-components -- production scope lifecycle API
+export async function hydrateProductionScope(namespace: string): Promise<void> {
+  const token = ++scopeHydrationToken
+  clearProductionScopeState()
+
+  const preferenceHydration = (async () => {
+    const store = usePreferencesStore.getState()
+    if (store.synchronizedOwnerNamespace !== namespace) {
+      await store.resetSynchronizedModelPreferences(namespace)
+    }
+    await usePreferencesStore.getState().activateAgentNamespace(namespace)
+    return usePreferencesStore.getState()
+  })()
+  const [localChats, localFolders, catalog, preferences] = await Promise.all([
+    cachedChats(namespace).catch(() => []),
+    getValue<ServerFolder[]>(namespace, 'folders').catch(() => null),
+    getValue<ModelCatalog>(namespace, 'model-catalog').catch(() => null),
+    preferenceHydration,
+  ])
+  if (token !== scopeHydrationToken) return
+  const favorites = preferences.favoriteModelIds
+  const liveSnapshots = useRealtimeStore.getState().snapshots
+  usePrototypeStore.setState({
+    productionNamespace: namespace,
+    chats: localChats.map((chat) => mapChat(
+      chat,
+      chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : [],
+      Boolean(chat.responses),
+    )),
+    folders: (localFolders ?? []).map((folder) => ({ id: folder.id, name: folder.name, expanded: true })),
+    models: (catalog?.data ?? []).map((model) => mapModel(model, favorites)),
+    defaultModelId: preferences.defaultModelId ?? catalog?.data[0]?.id ?? '',
+    agentAvailable: catalog?.agentAvailable ?? false,
+  })
+}
+
 async function offlineCapableMutation<T>(input: {
   namespace: string
   entityKey: string
@@ -162,6 +221,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     favoriteModelIds: state.favoriteModelIds,
     providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
+    agentMode: state.agentMode,
   })))
   const snapshots = useRealtimeStore((state) => state.snapshots)
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
@@ -171,7 +231,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
-  const models = useQuery({ queryKey: queryKeys.models(namespace), queryFn: mobileApi.models, enabled })
+  const models = useQuery({ ...modelsQuery(namespace), enabled })
   const settings = useQuery({ queryKey: queryKeys.settings(namespace), queryFn: mobileApi.settings, enabled })
   const detail = useQuery({
     ...chatQuery(namespace, activeChatId ?? '', preferences.localChatLimit),
@@ -184,31 +244,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     if (!userId || usePreferencesStore.getState().synchronizedOwnerNamespace === namespace) return
     void usePreferencesStore.getState().resetSynchronizedModelPreferences(namespace)
   }, [namespace, userId])
-
-  useEffect(() => {
-    if (!enabled) return
-    let cancelled = false
-    void Promise.all([cachedChats(namespace), getValue<ServerFolder[]>(namespace, 'folders')]).then(([localChats, localFolders]) => {
-      if (cancelled || serverHydrated.current || (!localChats.length && !localFolders?.length)) return
-      usePrototypeStore.setState((state) => {
-        const existingChats = new Map(state.chats.map((chat) => [chat.id, chat]))
-        const liveSnapshots = useRealtimeStore.getState().snapshots
-        return {
-          chats: localChats.length ? localChats.map((chat) => mapChat(
-            chat,
-            chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : existingChats.get(chat.id)?.messages,
-            existingChats.get(chat.id)?.detailLoaded,
-          )) : state.chats,
-          folders: localFolders?.map((folder) => ({
-            id: folder.id,
-            name: folder.name,
-            expanded: state.folders.find((item) => item.id === folder.id)?.expanded ?? true,
-          })) ?? state.folders,
-        }
-      })
-    })
-    return () => { cancelled = true }
-  }, [enabled, namespace])
 
   useEffect(() => {
     configureProductionActions({
@@ -224,6 +259,10 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
       setPreference: async (key, value) => {
+        if (key === 'agentMode') {
+          await usePreferencesStore.getState().setNamespacedAgentMode(namespace, Boolean(value))
+          return
+        }
         await usePreferencesStore.getState().setPreference(key, value)
         const body = preferencePatchForServer(key, value)
         if (!body) return
@@ -286,9 +325,11 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         attachmentCacheMb: preferences.attachmentCacheMb,
         localChatLimit: preferences.localChatLimit,
         trashRetention: preferences.trashRetention,
+        agentMode: preferences.agentMode,
       },
       defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
       models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,
+      agentAvailable: models.data?.agentAvailable ?? state.agentAvailable,
     }))
   }, [models.data, preferences])
 

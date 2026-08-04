@@ -8,6 +8,8 @@ export { preferencePatchForServer, preferencesFromServer } from './preferenceMap
 
 interface PreferenceState extends Preferences {
   hydrated: boolean
+  activeAgentNamespace: string | null
+  agentModeHydrated: boolean
   synchronizedOwnerNamespace: string | null
   modelPreferencesDirty: boolean
   hydrate: () => Promise<void>
@@ -15,6 +17,8 @@ interface PreferenceState extends Preferences {
   applyServerPreferences: (patch: Partial<Preferences>) => Promise<void>
   markModelPreferenceSynced: <K extends 'favoriteModelIds' | 'providerOrder'>(key: K, value: Preferences[K]) => Promise<void>
   resetSynchronizedModelPreferences: (namespace: string) => Promise<void>
+  activateAgentNamespace: (namespace: string | null) => Promise<void>
+  setNamespacedAgentMode: (namespace: string, value: boolean) => Promise<void>
 }
 
 type StoredPreferences = Partial<Preferences> & {
@@ -23,8 +27,9 @@ type StoredPreferences = Partial<Preferences> & {
 }
 
 function persistedSnapshot(state: PreferenceState): StoredPreferences {
+  const persistedKeys = Object.keys(defaults).filter((name) => name !== 'agentMode')
   return {
-    ...Object.fromEntries(Object.keys(defaults).map((name) => [name, state[name as keyof Preferences]])),
+    ...Object.fromEntries(persistedKeys.map((name) => [name, state[name as keyof Preferences]])),
     synchronizedOwnerNamespace: state.synchronizedOwnerNamespace,
     modelPreferencesDirty: state.modelPreferencesDirty,
   }
@@ -33,6 +38,8 @@ function persistedSnapshot(state: PreferenceState): StoredPreferences {
 export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   ...defaults,
   hydrated: false,
+  activeAgentNamespace: null,
+  agentModeHydrated: false,
   synchronizedOwnerNamespace: null,
   modelPreferencesDirty: false,
   hydrate: async () => {
@@ -41,6 +48,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       const preferences = {
         ...defaults,
         ...stored,
+        agentMode: false,
         localChatLimit: Math.min(defaults.localChatLimit, stored?.localChatLimit ?? defaults.localChatLimit),
       }
       Appearance.setColorScheme(preferences.theme === 'system' ? 'unspecified' : preferences.theme)
@@ -48,11 +56,13 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
         ...preferences,
         synchronizedOwnerNamespace: stored?.synchronizedOwnerNamespace ?? null,
         modelPreferencesDirty: stored?.modelPreferencesDirty ?? false,
+        activeAgentNamespace: null,
+        agentModeHydrated: false,
         hydrated: true,
       })
     } catch {
       Appearance.setColorScheme('unspecified')
-      set({ ...defaults, hydrated: true })
+      set({ ...defaults, hydrated: true, activeAgentNamespace: null, agentModeHydrated: false })
     }
   },
   setPreference: async (key, value) => {
@@ -70,6 +80,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       || JSON.stringify(patch.providerOrder) === JSON.stringify(current.providerOrder)
     const acceptsSynchronized = !current.modelPreferencesDirty || (favoriteMatches && providerMatches)
     const safePatch = { ...patch }
+    delete safePatch.agentMode
     if (!acceptsSynchronized) {
       delete safePatch.favoriteModelIds
       delete safePatch.providerOrder
@@ -93,5 +104,23 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
     const next = { ...get(), synchronizedOwnerNamespace: namespace, favoriteModelIds: [], providerOrder: [], modelPreferencesDirty: false }
     set({ synchronizedOwnerNamespace: namespace, favoriteModelIds: [], providerOrder: [], modelPreferencesDirty: false })
     await setValue('global', 'preferences', persistedSnapshot(next))
+  },
+  activateAgentNamespace: async (namespace) => {
+    if (!namespace) {
+      set({ activeAgentNamespace: null, agentMode: false, agentModeHydrated: true })
+      return
+    }
+    set({ activeAgentNamespace: namespace, agentMode: false, agentModeHydrated: false })
+    const value = await getValue<boolean>('global', `agent-mode:${namespace}`).catch(() => false)
+    if (get().activeAgentNamespace !== namespace) return
+    set({ agentMode: value === true, agentModeHydrated: true })
+  },
+  setNamespacedAgentMode: async (namespace, value) => {
+    if (get().activeAgentNamespace !== namespace) {
+      await get().activateAgentNamespace(namespace)
+    }
+    if (get().activeAgentNamespace !== namespace) return
+    set({ agentMode: value })
+    await setValue('global', `agent-mode:${namespace}`, value)
   },
 }))

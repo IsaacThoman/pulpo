@@ -11,6 +11,7 @@ import { usePreferencesStore } from '../store/preferences'
 import { useSessionStore } from '../store/session'
 import { isNetworkError } from '../api/client'
 import { useAppTheme } from '../theme'
+import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeStore'
 import { RealtimeProvider } from './RealtimeProvider'
 
 void SplashScreen.preventAutoHideAsync()
@@ -23,7 +24,7 @@ function Bootstrap({ children }: { children: React.ReactNode }) {
   const theme = useAppTheme()
 
   useEffect(() => {
-    void Promise.allSettled([hydrateSession(), hydratePreferences()]).then(() => {
+    void Promise.allSettled([hydrateSession(), hydratePreferences(), purgeLegacyPrototypeSnapshots()]).then(() => {
       if (useSessionStore.getState().status === 'hydrating') {
         useSessionStore.setState({ status: 'anonymous', error: 'Could not finish loading the app.' })
       }

@@ -5,17 +5,24 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
     getItem: vi.fn(async () => null),
     setItem: vi.fn(async () => undefined),
     removeItem: vi.fn(async () => undefined),
+    multiRemove: vi.fn(async () => undefined),
   },
 }));
 
 import { createSeedState } from '../seed';
-import { usePrototypeStore } from './prototypeStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LEGACY_PROTOTYPE_STORAGE_KEYS, purgeLegacyPrototypeSnapshots, usePrototypeStore } from './prototypeStore';
 
 beforeEach(() => {
   usePrototypeStore.setState({ ...createSeedState(), hydrated: true });
 });
 
 describe('prototype store', () => {
+  it('purges every legacy non-namespaced production snapshot', async () => {
+    await purgeLegacyPrototypeSnapshots();
+    expect(AsyncStorage.multiRemove).toHaveBeenCalledWith([...LEGACY_PROTOTYPE_STORAGE_KEYS]);
+  });
+
   it('runs the pending approval authentication flow', () => {
     usePrototypeStore.getState().signUp('Ada Lovelace', 'ada@example.com');
     expect(usePrototypeStore.getState().session.status).toBe('pending');

@@ -38,7 +38,6 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
   if (typeof values.streamResponses === 'boolean') result.streamResponses = values.streamResponses
   if (typeof values.showReasoning === 'boolean') result.showReasoning = values.showReasoning
-  if (typeof values.agentModeEnabled === 'boolean') result.agentMode = values.agentModeEnabled
   if (typeof values.defaultModelId === 'string') result.defaultModelId = values.defaultModelId || null
   if (typeof values.localChatLimit === 'number' && Number.isFinite(values.localChatLimit)) {
     result.localChatLimit = Math.max(0, Math.min(50, Math.floor(values.localChatLimit)))
@@ -59,9 +58,8 @@ function validOrderedIds(value: unknown): string[] {
 
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : key === 'agentMode' ? 'agentModeEnabled'
-      : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId', 'favoriteModelIds', 'providerOrder'].includes(key)
-        ? key
-        : null
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId', 'favoriteModelIds', 'providerOrder'].includes(key)
+      ? key
+      : null
   return serverKey ? { [serverKey]: value } : null
 }

@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
 import type {
   AppPreferences, DemoScenarios, PersistedPrototypeState,
   PrototypeChat, PrototypeFolder, PrototypeMessage, SessionState,
@@ -11,6 +10,8 @@ import { productionActions, runProductionAction } from '../production/production
 
 type PrototypeActions = {
   hydrated: boolean;
+  productionNamespace: string | null;
+  agentAvailable: boolean;
   setHydrated: (hydrated: boolean) => void;
   signIn: (email: string) => void;
   signUp: (name: string, email: string) => void;
@@ -47,6 +48,20 @@ type PrototypeActions = {
 
 export type PrototypeStore = PersistedPrototypeState & PrototypeActions;
 
+export const LEGACY_PROTOTYPE_STORAGE_KEYS = [
+  'pulpo-mockup-5-prototype-v1',
+  'pulpo-mockup-5-prototype-v2',
+  'pulpo-mockup-5-prototype-v3',
+] as const;
+
+/**
+ * The prototype used to persist a second, non-namespaced copy of production
+ * data. SQLite is now the only persisted source for chats and account data.
+ */
+export async function purgeLegacyPrototypeSnapshots(): Promise<void> {
+  await AsyncStorage.multiRemove([...LEGACY_PROTOTYPE_STORAGE_KEYS]);
+}
+
 const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
   instant: 0, '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000,
   '90d': 7_776_000_000, indefinite: null,
@@ -55,32 +70,6 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention']);
-
-let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
-let pendingPersistence: { name: string; value: StorageValue<PersistedPrototypeState> } | undefined;
-const coalescedStorage: PersistStorage<PersistedPrototypeState> = {
-  getItem: async (name) => {
-    const value = await AsyncStorage.getItem(name);
-    return value ? JSON.parse(value) as StorageValue<PersistedPrototypeState> : null;
-  },
-  setItem: (name, value) => {
-    pendingPersistence = { name, value };
-    if (persistenceTimer) clearTimeout(persistenceTimer);
-    persistenceTimer = setTimeout(() => {
-      const pending = pendingPersistence;
-      pendingPersistence = undefined;
-      persistenceTimer = undefined;
-      if (pending) void AsyncStorage.setItem(pending.name, JSON.stringify(pending.value));
-    }, 500);
-    return Promise.resolve();
-  },
-  removeItem: async (name: string) => {
-    if (persistenceTimer) clearTimeout(persistenceTimer);
-    persistenceTimer = undefined;
-    pendingPersistence = undefined;
-    await AsyncStorage.removeItem(name);
-  },
-};
 
 export function migratePrototypeState(value: unknown): PersistedPrototypeState {
   const seed = createSeedState();
@@ -99,8 +88,8 @@ export function migratePrototypeState(value: unknown): PersistedPrototypeState {
   return { ...seed, ...previous, preferences: { ...seed.preferences, ...(previous.preferences ?? {}) }, demo: { ...seed.demo, ...cleanDemo } };
 }
 
-export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => ({
-  ...createSeedState(), hydrated: false,
+export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
+  ...createSeedState(), hydrated: true, productionNamespace: null, agentAvailable: false,
   setHydrated: (hydrated) => set({ hydrated }),
   signIn: (email) => set({ session: { status: 'signed-in', user: { id: 'u-demo', name: email.toLowerCase().startsWith('isaac') ? 'Isaac Thoman' : 'Pulpo Member', email, role: 'member', initials: email.toLowerCase().startsWith('isaac') ? 'IT' : 'PM' } } }),
   signUp: (name, email) => set({ session: { status: 'pending', user: { id: id('user'), name, email, role: 'pending', initials: initialsFor(name) } } }),
@@ -176,18 +165,7 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
     set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: !model.favorite } : model) }));
     runProductionAction(productionActions.toggleFavoriteModel(modelId, favorite));
   },
-  resetDemo: () => set({ ...createSeedState(), hydrated: true }),
-}), {
-  name: 'pulpo-mockup-5-prototype-v3',
-  version: SEED_VERSION,
-  storage: coalescedStorage,
-  migrate: (persisted) => migratePrototypeState(persisted),
-  partialize: (state) => ({
-    seedVersion: state.seedVersion, instance: state.instance, session: state.session, models: state.models,
-    defaultModelId: state.defaultModelId, chats: state.chats, folders: state.folders,
-    usage: state.usage, memories: state.memories, preferences: state.preferences, demo: state.demo, recentSearches: state.recentSearches,
-  }),
-  onRehydrateStorage: () => (state) => state?.setHydrated(true),
+  resetDemo: () => set({ ...createSeedState(), hydrated: true, productionNamespace: null, agentAvailable: false }),
 }));
 
 export const selectFolders = (state: PrototypeStore): PrototypeFolder[] => state.folders;

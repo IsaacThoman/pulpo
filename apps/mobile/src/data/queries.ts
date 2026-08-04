@@ -9,7 +9,12 @@ import {
   setValue,
   trimCachedChats,
 } from './database'
-import type { ServerChat, ServerDeletedChat, ServerFolder } from '../types'
+import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
+
+export interface ModelCatalog {
+  agentAvailable: boolean
+  data: MobileModel[]
+}
 
 export const queryKeys = {
   chats: (namespace: string) => ['chats', namespace] as const,
@@ -108,6 +113,23 @@ export function foldersQuery(namespace: string) {
         return data
       } catch (error) {
         const cached = await getValue<ServerFolder[]>(namespace, 'folders')
+        if (cached) return cached
+        throw error
+      }
+    },
+  })
+}
+
+export function modelsQuery(namespace: string) {
+  return queryOptions({
+    queryKey: queryKeys.models(namespace),
+    queryFn: async () => {
+      try {
+        const catalog = await mobileApi.models()
+        await setValue(namespace, 'model-catalog', catalog)
+        return catalog
+      } catch (error) {
+        const cached = await getValue<ModelCatalog>(namespace, 'model-catalog')
         if (cached) return cached
         throw error
       }

@@ -119,6 +119,8 @@ export const mobileApi = {
 }
 
 export function isNetworkError(error: unknown): boolean {
-  return error instanceof TypeError
-    || (error instanceof ApiError && (error.code === 'request_timeout' || error.status >= 500))
+  if (error instanceof TypeError) return true
+  if (error instanceof ApiError) return error.code === 'request_timeout' || error.status >= 500
+  if (!(error instanceof Error)) return false
+  return /network request failed|fetch failed|could not connect to the server|network connection was lost|internet connection appears to be offline|cannot connect to host/i.test(error.message)
 }

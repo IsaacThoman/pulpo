@@ -80,6 +80,7 @@ export function AuthExperience() {
   const login = useSessionStore((state) => state.login);
   const signup = useSessionStore((state) => state.signup);
   const logout = useSessionStore((state) => state.logout);
+  const refreshSession = useSessionStore((state) => state.refreshSession);
   const switchInstance = useSessionStore((state) => state.switchInstance);
   const session = {
     status: productionStatus === 'pending' ? 'pending' as const : productionStatus === 'authenticated' ? 'signed-in' as const : 'signed-out' as const,
@@ -93,10 +94,12 @@ export function AuthExperience() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [instanceUrl, setInstanceUrl] = useState(productionInstanceUrl);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [pendingFeedback, setPendingFeedback] = useState('');
 
   const goTo = (next: AuthPage) => {
     setError('');
@@ -123,6 +126,7 @@ export function AuthExperience() {
     if (name.trim().length < 2) return setError('Enter your full name.');
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid email address.');
     if (password.length < 8) return setError('Use at least eight characters.');
+    if (password !== confirmPassword) return setError('Passwords do not match.');
     void run(() => signup(name.trim(), email.trim(), password));
   };
   const submitForgotPassword = () => {
@@ -144,6 +148,19 @@ export function AuthExperience() {
       setPage('login');
     });
   };
+  const refreshApproval = async () => {
+    setError('');
+    setPendingFeedback('');
+    setLoading(true);
+    try {
+      await refreshSession();
+      if (useSessionStore.getState().status === 'pending') setPendingFeedback('Still waiting for administrator approval.');
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Could not refresh approval status. Check your connection and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (session.status === 'pending' && session.user) return <AuthShell colors={colors} title="Approval needed" subtitle="Your Pulpo account is ready, but an administrator needs to approve it before you can start chatting.">
     <View style={[styles.pendingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -153,7 +170,10 @@ export function AuthExperience() {
         <Text style={[styles.pendingEmail, { color: colors.textMuted }]}>{session.user.email}</Text>
       </View>
     </View>
-    <Text style={[styles.pendingHelp, { color: colors.textMuted }]}>Once approved, sign in again to continue.</Text>
+    <Text style={[styles.pendingHelp, { color: colors.textMuted }]}>Refresh after your administrator approves the account. Pulpo will open your chats automatically.</Text>
+    {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+    <PrimaryAuthButton label="Refresh status" colors={colors} loading={loading} onPress={() => { void refreshApproval(); }} />
     <Pressable accessibilityRole="button" onPress={() => { void logout(); }} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.text }]}>Back to sign in</Text></Pressable>
   </AuthShell>;
 
@@ -163,6 +183,7 @@ export function AuthExperience() {
       <AuthField colors={colors} icon="person" label="Name" value={name} onChangeText={setName} autoComplete="name" />
       <AuthField colors={colors} icon="envelope" label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" />
       <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="new-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitSignup} />
+      <AuthField colors={colors} icon="lock" label="Confirm password" invalid={Boolean(confirmPassword && password !== confirmPassword)} value={confirmPassword} onChangeText={setConfirmPassword} autoComplete="new-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitSignup} />
       <Text style={[styles.hint, { color: colors.textFaint }]}>Use at least 8 characters.</Text>
       {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
       <PrimaryAuthButton label="Create account" colors={colors} loading={loading} disabled={!valid} onPress={submitSignup} />

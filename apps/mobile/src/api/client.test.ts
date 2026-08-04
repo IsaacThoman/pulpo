@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { apiUrl, configureApi, nativeAuthorizationHeaders } from './client'
+import { ApiError, apiUrl, configureApi, isNetworkError, nativeAuthorizationHeaders } from './client'
 
 describe('attachment URL resolution', () => {
   afterEach(() => configureApi({ instanceUrl: 'https://pulpo.baby', token: null }))
@@ -18,5 +18,18 @@ describe('attachment URL resolution', () => {
 
     expect(apiUrl('https://objects.example.test/signed-file')).toBe('https://objects.example.test/signed-file')
     expect(nativeAuthorizationHeaders('https://objects.example.test/signed-file')).toEqual({})
+  })
+})
+
+describe('native network error detection', () => {
+  it('recognizes the Expo iOS fetch exception used while offline', () => {
+    expect(isNetworkError(new Error(
+      "fetch failed: UnexpectedException: Could not connect to the server. (at ExpoModulesCore/Promise.swift:56)",
+    ))).toBe(true)
+  })
+
+  it('keeps validation and authorization errors out of the offline queue', () => {
+    expect(isNetworkError(new Error('The selected model is unavailable'))).toBe(false)
+    expect(isNetworkError(new ApiError(401, 'unauthorized', 'Unauthorized'))).toBe(false)
   })
 })
