@@ -4,6 +4,7 @@ import {
 } from 'react-native';
 import { SymbolView } from 'expo-symbols';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useQuery } from '@tanstack/react-query';
 import {
   Button as SwiftUIButton,
   Form as SwiftUIForm,
@@ -28,7 +29,7 @@ import { useAppTheme } from '../theme';
 import { usePrototypeStore } from '../store/prototypeStore';
 import type { PrototypeChat } from '../domain';
 import type { RootStackParamList, SettingsSection } from '../navigation';
-import { mobileApi } from '../../../api/client';
+import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 
 const relative = (timestamp: number) => {
@@ -38,6 +39,12 @@ const relative = (timestamp: number) => {
   if (delta < 86_400_000) return `${Math.floor(delta / 3_600_000)}h`;
   return `${Math.floor(delta / 86_400_000)}d`;
 };
+
+const formatBytes = (value: number) => value < 1024 * 1024
+  ? `${Math.round(value / 1024)} KB`
+  : value < 1024 * 1024 * 1024
+    ? `${(value / 1024 / 1024).toFixed(1)} MB`
+    : `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 
 const pulpoSmiley = require('../../assets/pulpo-smiley.png');
 
@@ -197,6 +204,16 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   const setDemo = usePrototypeStore((state) => state.setDemoScenario);
   const resetDemo = usePrototypeStore((state) => state.resetDemo);
   const chats = usePrototypeStore((state) => state.chats);
+  const instanceUrl = useSessionStore((state) => state.instanceUrl);
+  const userId = useSessionStore((state) => state.user?.id);
+  const storage = useQuery({
+    queryKey: ['attachment-usage', instanceUrl, userId],
+    queryFn: () => apiRequest<{ usedBytes: number; reservedBytes: number; limitBytes: number }>('/api/attachments/usage'),
+    enabled: section === 'data' && Boolean(userId),
+  });
+  const storageUsed = storage.data ? storage.data.usedBytes + storage.data.reservedBytes : 0;
+  const storageProgress = storage.data?.limitBytes ? Math.min(1, storageUsed / storage.data.limitBytes) : 0;
+  const storageLabel = storage.data ? `${formatBytes(storageUsed)} of ${formatBytes(storage.data.limitBytes)}` : 'Loading…';
   useLayoutEffect(() => {
     if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section] });
   }, [navigation, section]);
@@ -222,8 +239,8 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
     </>}
     {section === 'data' && <>
       <SwiftUISection title="File storage" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Uploaded files and model-created files count toward this allowance.</SwiftUIText>}>
-        <SwiftUILabeledContent label="Storage used"><SwiftUIText>{demo.fileQuota === 'full' ? '10 GB of 10 GB' : demo.fileQuota === 'near-limit' ? '9.1 GB of 10 GB' : '1.8 GB of 10 GB'}</SwiftUIText></SwiftUILabeledContent>
-        <SwiftUIProgressView value={demo.fileQuota === 'full' ? 1 : demo.fileQuota === 'near-limit' ? 0.91 : 0.18} />
+        <SwiftUILabeledContent label="Storage used"><SwiftUIText>{storageLabel}</SwiftUIText></SwiftUILabeledContent>
+        <SwiftUIProgressView value={storageProgress} />
       </SwiftUISection>
       <SwiftUISection title="Danger zone"><SwiftUIButton label="Trash all chats" role="destructive" systemImage="trash" onPress={() => Alert.alert('Trash all chats?', 'Chats remain recoverable according to your trash retention setting.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Trash all', style: 'destructive', onPress: () => chats.filter((chat) => !chat.deletedAt).forEach((chat) => usePrototypeStore.getState().trashChat(chat.id)) }])} /></SwiftUISection>
     </>}
@@ -231,7 +248,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   return <Screen><PageHeader title={settingTitles[section]} onBack={() => navigation.goBack()} />
     {section === 'general' && <><SectionTitle>Appearance</SectionTitle><Card><ListRow title="Theme" detail="Applies across the whole app."><View style={{ width: 178 }}><Segmented options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} value={preferences.theme} onChange={(value) => setPreference('theme', value)} /></View></ListRow></Card><SectionTitle>Behavior</SectionTitle><Card><Toggle title="Send with Enter" detail="Hardware keyboard behavior." value={preferences.sendWithEnter} onChange={(value) => setPreference('sendWithEnter', value)} last /></Card></>}
     {section === 'interface' && <><SectionTitle>Conversation</SectionTitle><Card><Toggle title="Stream responses" detail="Render tokens as they arrive." value={preferences.streamResponses} onChange={(value) => setPreference('streamResponses', value)} /><Toggle title="Show reasoning" detail="Show expandable work details." value={preferences.showReasoning} onChange={(value) => setPreference('showReasoning', value)} /><Toggle title="Haptics" detail="Feedback for sends, menus, and completion." value={preferences.haptics} onChange={(value) => setPreference('haptics', value)} last /></Card><SectionTitle>Offline storage</SectionTitle><Card><ListRow title="Chats kept on device" detail="Recent chats remain instantly available." value={`${preferences.localChatLimit}`} /><ListRow title="Attachment cache" detail="Maximum local file data." value={`${preferences.attachmentCacheMb} MB`} last /></Card></>}
-    {section === 'data' && <><SectionTitle>File storage</SectionTitle><Card style={styles.storage}><View style={styles.storageLine}><Text style={[styles.storageTitle, { color: theme.text }]}>1.8 GB of 10 GB</Text><Text style={[styles.storagePercent, { color: theme.secondary }]}>18%</Text></View><View style={[styles.storageTrack, { backgroundColor: theme.fillStrong }]}><View style={[styles.storageBar, { backgroundColor: theme.blue, width: demo.fileQuota === 'full' ? '100%' : demo.fileQuota === 'near-limit' ? '91%' : '18%' }]} /></View><Text style={[styles.helper, { color: theme.secondary }]}>Uploaded files and model-created files count toward this allowance.</Text></Card><SectionTitle>Danger zone</SectionTitle><Card><ListRow icon="trash" iconColor={theme.red} title="Trash all chats" detail={`${chats.filter((chat) => chat.deletedAt === null).length} active chats`} destructive last onPress={() => Alert.alert('Trash all chats?', 'Chats remain recoverable according to your trash retention setting.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Trash all', style: 'destructive', onPress: () => chats.filter((chat) => !chat.deletedAt).forEach((chat) => usePrototypeStore.getState().trashChat(chat.id)) }])} /></Card></>}
+    {section === 'data' && <><SectionTitle>File storage</SectionTitle><Card style={styles.storage}><View style={styles.storageLine}><Text style={[styles.storageTitle, { color: theme.text }]}>{storageLabel}</Text><Text style={[styles.storagePercent, { color: theme.secondary }]}>{`${Math.round(storageProgress * 100)}%`}</Text></View><View style={[styles.storageTrack, { backgroundColor: theme.fillStrong }]}><View style={[styles.storageBar, { backgroundColor: theme.blue, width: `${storageProgress * 100}%` }]} /></View><Text style={[styles.helper, { color: theme.secondary }]}>Uploaded files and model-created files count toward this allowance.</Text></Card><SectionTitle>Danger zone</SectionTitle><Card><ListRow icon="trash" iconColor={theme.red} title="Trash all chats" detail={`${chats.filter((chat) => chat.deletedAt === null).length} active chats`} destructive last onPress={() => Alert.alert('Trash all chats?', 'Chats remain recoverable according to your trash retention setting.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Trash all', style: 'destructive', onPress: () => chats.filter((chat) => !chat.deletedAt).forEach((chat) => usePrototypeStore.getState().trashChat(chat.id)) }])} /></Card></>}
   </Screen>;
 }
 
