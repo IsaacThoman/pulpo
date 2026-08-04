@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lineageFromLeaf, metadataForTurn, newestDescendantId, type BranchTurn } from './branching.js'
+import { cascadeDeletionIds, lineageFromLeaf, metadataForTurn, newestDescendantId, type BranchTurn } from './branching.js'
 
 const originalInput = [{ role: 'user', content: 'Original prompt' }]
 const editedInput = [{ role: 'user', content: 'Edited prompt' }]
@@ -25,6 +25,14 @@ describe('response branches', () => {
   it('continues down the newest saved lineage when activating an ancestor', () => {
     expect(newestDescendantId(turns, 'regenerated')).toBe('follow-up')
     expect(newestDescendantId(turns, 'edited-prompt')).toBe('edited-prompt')
+  })
+
+  it('cascades assistant deletion without removing its sibling response', () => {
+    expect([...cascadeDeletionIds(turns, turns[1]!, false)]).toEqual(['regenerated', 'follow-up'])
+  })
+
+  it('cascades a user-message variant across its regenerated responses', () => {
+    expect([...cascadeDeletionIds(turns, turns[0]!, true)]).toEqual(['first', 'regenerated', 'follow-up'])
   })
 
   it('returns only the selected lineage for display and sharing', () => {

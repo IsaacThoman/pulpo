@@ -27,6 +27,8 @@ const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage').
 const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })))
 const PendingPage = lazy(() => import('@/pages/auth/PendingPage').then((module) => ({ default: module.PendingPage })))
 const SharedChatPage = lazy(() => import('@/pages/SharedChatPage').then((module) => ({ default: module.SharedChatPage })))
+const PrivacyPage = lazy(() => import('@/pages/PrivacyPage').then((module) => ({ default: module.PrivacyPage })))
+const SupportPage = lazy(() => import('@/pages/SupportPage').then((module) => ({ default: module.SupportPage })))
 
 export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
@@ -45,6 +47,8 @@ export default function App() {
         </Route>
         <Route path="pending" element={<PendingPage />} />
         <Route path="share/:token" element={<SharedChatPage />} />
+        <Route path="privacy" element={<PrivacyPage />} />
+        <Route path="support" element={<SupportPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>

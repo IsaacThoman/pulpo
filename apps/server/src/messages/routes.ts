@@ -7,7 +7,7 @@ import { db } from '../database/client.js'
 import { chats, requestLogs, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { newestDescendantId } from './branching.js'
+import { cascadeDeletionIds, newestDescendantId } from './branching.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { replaceResponseInputText, responseAttachmentIds, responseInputText } from './input.js'
@@ -186,17 +186,10 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/messages/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    if (!id.endsWith(':input')) throw new AppError(400, 'user_message_required', 'Only user messages can be deleted from this control')
     const original = await ownedResponse(user.id, id)
     const [chat] = await db.select().from(chats).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id))).limit(1)
     const turns = await db.select().from(responses).where(and(eq(responses.chatId, original.chatId), eq(responses.userId, user.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))
-    const sameVariant = (turn: typeof responses.$inferSelect) => turn.parentResponseId === original.parentResponseId && (original.userMessageId ? turn.userMessageId === original.userMessageId : JSON.stringify(turn.input) === JSON.stringify(original.input))
-    const deleting = new Set(turns.filter(sameVariant).map((turn) => turn.id))
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const turn of turns) if (turn.parentResponseId && deleting.has(turn.parentResponseId) && !deleting.has(turn.id)) { deleting.add(turn.id); changed = true }
-    }
+    const deleting = cascadeDeletionIds(turns, original, id.endsWith(':input'))
     const now = new Date()
     if (deleting.size) {
       await Promise.all(turns.filter((turn) => deleting.has(turn.id) && ['queued', 'in_progress'].includes(turn.status)).map((turn) => requestCancellation(turn.id)))

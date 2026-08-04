@@ -1,0 +1,12 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["PX72AL9366.com.isaacthoman.pulpo"],
+        "components": [
+          { "/": "/share/*", "comment": "Open public Pulpo shares in the iOS app" }
+        ]
+      }
+    ]
+  }
+}

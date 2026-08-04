@@ -49,6 +49,27 @@ export function newestDescendantId(turns: BranchTurn[], selectedId: string): str
   }
 }
 
+export function cascadeDeletionIds(turns: BranchTurn[], selected: BranchTurn, includeUserVariant: boolean): Set<string> {
+  const deleting = new Set(includeUserVariant
+    ? turns.filter((turn) => turn.parentResponseId === selected.parentResponseId
+      && (selected.userMessageId
+        ? turn.userMessageId === selected.userMessageId
+        : inputSignature(turn.input) === inputSignature(selected.input)))
+      .map((turn) => turn.id)
+    : [selected.id])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const turn of turns) {
+      if (turn.parentResponseId && deleting.has(turn.parentResponseId) && !deleting.has(turn.id)) {
+        deleting.add(turn.id)
+        changed = true
+      }
+    }
+  }
+  return deleting
+}
+
 export function lineageFromLeaf<T extends BranchTurn>(turns: T[], leafId: string | null): T[] {
   const byId = new Map(turns.map((turn) => [turn.id, turn]))
   const lineage: T[] = []

@@ -140,7 +140,7 @@ export interface AttachmentCandidate {
 export function attachmentValidationError(candidate: AttachmentCandidate): string | null {
   if (!candidate.name.trim()) return 'Attachment name is required'
   if (!Number.isFinite(candidate.sizeBytes) || candidate.sizeBytes <= 0) return 'Attachment is empty'
-  if (candidate.sizeBytes > 20 * 1024 * 1024 * 1024) return 'Attachment exceeds the 20 GB limit'
+  if (candidate.sizeBytes > 25 * 1024 * 1024) return 'Attachment exceeds the 25 MB limit'
   if (['text/html', 'image/svg+xml'].includes(candidate.mimeType.toLowerCase())) return 'This file type is not supported'
   const dot = candidate.name.lastIndexOf('.')
   if (dot < 0 || !SUPPORTED_EXTENSIONS.has(candidate.name.slice(dot).toLowerCase())) return 'This file type is not supported'

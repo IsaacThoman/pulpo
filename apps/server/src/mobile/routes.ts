@@ -103,4 +103,9 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
     await destroyNativeSession(request)
     reply.code(204).send()
   })
+
+  app.get('/api/mobile/me', async (request) => {
+    if (!request.user) throw unauthorized()
+    return { user: request.user }
+  })
 }
