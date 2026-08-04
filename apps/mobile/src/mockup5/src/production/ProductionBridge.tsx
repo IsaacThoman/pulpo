@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { idSchema } from '@pulpo/contracts'
 import { cacheNamespace } from '../../../data/database'
 import { chatQuery, chatsQuery, foldersQuery, queryKeys } from '../../../data/queries'
 import { mobileApi } from '../../../api/client'
@@ -119,11 +120,16 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const snapshots = useRealtimeStore((state) => state.snapshots)
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
   const enabled = status === 'authenticated' && Boolean(userId)
+  const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
   const chats = useQuery({ ...chatsQuery(namespace), enabled })
   const deleted = useQuery({ queryKey: queryKeys.deletedChats(namespace), queryFn: () => mobileApi.deletedChats().then((result) => result.data), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
   const models = useQuery({ queryKey: queryKeys.models(namespace), queryFn: mobileApi.models, enabled })
-  const detail = useQuery({ ...chatQuery(namespace, activeChatId ?? ''), enabled: enabled && Boolean(activeChatId), refetchInterval: activeChatId ? 4_000 : false })
+  const detail = useQuery({
+    ...chatQuery(namespace, activeChatId ?? ''),
+    enabled: enabled && activeChatIsServerAddressable,
+    refetchInterval: activeChatIsServerAddressable ? 4_000 : false,
+  })
 
   useEffect(() => {
     configureProductionActions({
@@ -141,11 +147,11 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   }, [])
 
   useEffect(() => {
-    if (!activeChatId) return
+    if (!activeChatId || !activeChatIsServerAddressable) return
     const unsubscribeChat = subscribeToChat(activeChatId)
     const unsubscribers = (detail.data?.responses ?? []).map((response) => subscribeToResponse(response.id, response.snapshot.sequence))
     return () => { unsubscribeChat(); unsubscribers.forEach((unsubscribe) => unsubscribe()) }
-  }, [activeChatId, detail.data?.responses])
+  }, [activeChatId, activeChatIsServerAddressable, detail.data?.responses])
 
   useEffect(() => {
     usePrototypeStore.setState((state) => ({

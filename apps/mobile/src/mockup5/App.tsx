@@ -82,6 +82,7 @@ import {
 } from '@expo/ui/swift-ui/modifiers';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
 import * as Clipboard from 'expo-clipboard';
+import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ExpoHaptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
@@ -1045,7 +1046,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     setInput('');
     const timestamp = Date.now();
-    const key = activeChat?.id ?? `chat-${timestamp}`;
+    const key = activeChat?.id ?? Crypto.randomUUID();
     const selectedPrototypeModel = prototypeModels.find((model) => model.name === selectedModel.name);
     if (!activeChat) {
       upsertChat({
@@ -1076,15 +1077,18 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
     setAssistantStatus('thinking');
     setStreamingSession(null);
+    let serverChatCreated = Boolean(activeChat);
     void (async () => {
       let serverChatId = activeChat?.id;
       if (!serverChatId) {
         const created = await createServerChat({
+          clientId: key,
           modelId: selectedPrototypeModel?.id ?? defaultModelId,
           temporary: options?.temporary ?? false,
           title: trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat',
         });
         serverChatId = created.id;
+        serverChatCreated = true;
         setActiveChatId(created.id);
       }
       const uploaded = await Promise.all(attachments.map((attachment) => uploadAttachment({
@@ -1116,6 +1120,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       }
     })().catch((error) => {
       setAssistantStatus('idle');
+      if (!activeChat && !serverChatCreated) {
+        usePrototypeStore.getState().discardChat(key);
+        setActiveChatId((current) => current === key ? null : current);
+        setInput((current) => current || value);
+      }
       const message = error instanceof Error ? error.message : 'The message could not be sent.';
       Alert.alert('Couldn’t send message', message);
     });

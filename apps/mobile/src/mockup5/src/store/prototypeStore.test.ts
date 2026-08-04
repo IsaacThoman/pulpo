@@ -45,6 +45,12 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-streaming')?.messages).toEqual([]);
   });
 
+  it('discards a local chat when initial server creation fails', () => {
+    const chat = usePrototypeStore.getState().chats[0]!;
+    usePrototypeStore.getState().discardChat(chat.id);
+    expect(usePrototypeStore.getState().chats.some((item) => item.id === chat.id)).toBe(false);
+  });
+
   it('restores the complete seeded showcase', () => {
     usePrototypeStore.getState().setPreference('theme', 'light');
     usePrototypeStore.getState().emptyTrash();

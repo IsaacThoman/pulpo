@@ -10,11 +10,12 @@ import { useRealtimeStore } from '../../providers/RealtimeProvider'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
 
-export async function createChat(input: { modelId: string; temporary?: boolean; title?: string }): Promise<ServerChat> {
+export async function createChat(input: { clientId?: string; modelId: string; temporary?: boolean; title?: string }): Promise<ServerChat> {
+  const clientId = input.clientId ?? Crypto.randomUUID()
   return apiRequest('/api/chats', {
     method: 'POST',
-    idempotencyKey: Crypto.randomUUID(),
-    body: { clientId: Crypto.randomUUID(), modelId: input.modelId, temporary: input.temporary ?? false, title: input.title },
+    idempotencyKey: clientId,
+    body: { clientId, modelId: input.modelId, temporary: input.temporary ?? false, title: input.title },
   })
 }
 

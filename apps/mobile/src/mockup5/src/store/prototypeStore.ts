@@ -27,6 +27,7 @@ type PrototypeActions = {
   deleteFolder: (id: string) => void;
   toggleFolder: (id: string) => void;
   upsertChat: (chat: PrototypeChat) => void;
+  discardChat: (id: string) => void;
   renameChat: (id: string, title: string) => void;
   togglePin: (id: string) => void;
   moveChat: (id: string, folderId: string | null) => void;
@@ -98,6 +99,7 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
   deleteFolder: (folderId) => { set((state) => ({ folders: state.folders.filter((folder) => folder.id !== folderId), chats: state.chats.map((chat) => chat.folderId === folderId ? { ...chat, folderId: null } : chat) })); runProductionAction(productionActions.deleteFolder(folderId)); },
   toggleFolder: (folderId) => set((state) => ({ folders: state.folders.map((folder) => folder.id === folderId ? { ...folder, expanded: !folder.expanded } : folder) })),
   upsertChat: (chat) => set((state) => ({ chats: state.chats.some((item) => item.id === chat.id) ? state.chats.map((item) => item.id === chat.id ? chat : item) : [chat, ...state.chats] })),
+  discardChat: (chatId) => set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })),
   renameChat: (chatId, title) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, title: title.trim(), updatedAt: Date.now() } : chat) })); runProductionAction(productionActions.renameChat(chatId, title.trim())); },
   togglePin: (chatId) => { const next = !get().chats.find((chat) => chat.id === chatId)?.pinned; set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next } : chat) })); runProductionAction(productionActions.togglePin(chatId, next)); },
   moveChat: (chatId, folderId) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId } : chat) })); runProductionAction(productionActions.moveChat(chatId, folderId)); },

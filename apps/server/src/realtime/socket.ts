@@ -3,7 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
 import type { ClientToServerEvents, ResponseSnapshot, ServerToClientEvents, SyncResult } from '@pulpo/contracts'
-import { syncRequestSchema } from '@pulpo/contracts'
+import { idSchema, syncRequestSchema } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
 import { getAllowedOrigins, getConfig } from '../config.js'
 import { authenticateSessionToken, type AuthenticatedUser } from '../auth/service.js'
@@ -34,6 +34,17 @@ export function socketSessionToken(
   return typeof authToken === 'string' && authToken.length >= 32
     ? authToken
     : cookieValue(cookieHeader, cookieName)
+}
+
+export function realtimeResourceId(value: unknown): string | undefined {
+  const result = idSchema.safeParse(value)
+  return result.success ? result.data : undefined
+}
+
+function runSocketTask(event: string, task: () => Promise<void>): void {
+  void task().catch((error) => {
+    console.error(`[realtime] ${event} failed`, error)
+  })
 }
 
 function snapshotPreview(snapshot: ResponseSnapshot): string {
@@ -80,50 +91,66 @@ export async function createSocketServer(httpServer: HttpServer) {
     const user = socket.data.user
     void socket.join(`user:${user.id}`)
 
-    socket.on('client.sync', async (raw, ack) => {
-      const input = syncRequestSchema.parse(raw)
-      const [current] = await db.select({ revision: users.stateRevision }).from(users).where(eq(users.id, user.id)).limit(1)
-      const responseIds = Object.keys(input.responseCursors)
-      const owned = responseIds.length
-        ? await db.select().from(responses).where(and(eq(responses.userId, user.id), inArray(responses.id, responseIds)))
-        : []
-      const result: SyncResult = {
-        accountRevision: current?.revision ?? user.stateRevision,
-        invalidate: current?.revision !== input.accountRevision ? ['chats', 'models', 'usage', 'settings'] : [],
-        snapshots: [],
-        events: [],
-      }
-      for (const response of owned) {
-        const cursor = input.responseCursors[response.id] ?? 0
-        const events = await readResponseEvents(response.id, cursor)
-        if (events.length > 0 && events.length <= 2_000) result.events.push(...events)
-        else if (cursor < response.lastSequence || response.status !== 'in_progress') result.snapshots.push(toSnapshot(response))
-      }
-      ack(result)
+    socket.on('client.sync', (raw, ack) => {
+      runSocketTask('client.sync', async () => {
+        const input = syncRequestSchema.parse(raw)
+        const [current] = await db.select({ revision: users.stateRevision }).from(users).where(eq(users.id, user.id)).limit(1)
+        const responseIds = Object.keys(input.responseCursors)
+        const owned = responseIds.length
+          ? await db.select().from(responses).where(and(eq(responses.userId, user.id), inArray(responses.id, responseIds)))
+          : []
+        const result: SyncResult = {
+          accountRevision: current?.revision ?? user.stateRevision,
+          invalidate: current?.revision !== input.accountRevision ? ['chats', 'models', 'usage', 'settings'] : [],
+          snapshots: [],
+          events: [],
+        }
+        for (const response of owned) {
+          const cursor = input.responseCursors[response.id] ?? 0
+          const events = await readResponseEvents(response.id, cursor)
+          if (events.length > 0 && events.length <= 2_000) result.events.push(...events)
+          else if (cursor < response.lastSequence || response.status !== 'in_progress') result.snapshots.push(toSnapshot(response))
+        }
+        ack(result)
+      })
     })
 
-    socket.on('chat.subscribe', async ({ chatId }) => {
-      const [owned] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, user.id))).limit(1)
-      if (owned) await socket.join(`chat:${chatId}`)
+    socket.on('chat.subscribe', ({ chatId: rawChatId }) => {
+      const chatId = realtimeResourceId(rawChatId)
+      if (!chatId) return
+      runSocketTask('chat.subscribe', async () => {
+        const [owned] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, user.id))).limit(1)
+        if (owned) await socket.join(`chat:${chatId}`)
+      })
     })
-    socket.on('chat.unsubscribe', ({ chatId }) => void socket.leave(`chat:${chatId}`))
-    socket.on('response.subscribe', async ({ responseId, afterSequence }) => {
-      const [owned] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, user.id))).limit(1)
-      if (!owned) return
-      const events = await readResponseEvents(responseId, afterSequence)
-      let replayedThrough = afterSequence
-      if (events.length > 0 && events.length <= 2_000) {
-        for (const event of events) socket.emit('response.event', event)
-        replayedThrough = events.at(-1)?.sequence ?? afterSequence
-      } else if (afterSequence < owned.lastSequence) {
-        socket.emit('response.snapshot', toSnapshot(owned))
-        replayedThrough = owned.lastSequence
-      }
-      await socket.join(`response:${responseId}`)
-      const racedEvents = await readResponseEvents(responseId, replayedThrough)
-      for (const event of racedEvents) socket.emit('response.event', event)
+    socket.on('chat.unsubscribe', ({ chatId: rawChatId }) => {
+      const chatId = realtimeResourceId(rawChatId)
+      if (chatId) void socket.leave(`chat:${chatId}`)
     })
-    socket.on('response.unsubscribe', ({ responseId }) => void socket.leave(`response:${responseId}`))
+    socket.on('response.subscribe', ({ responseId: rawResponseId, afterSequence }) => {
+      const responseId = realtimeResourceId(rawResponseId)
+      if (!responseId || !Number.isSafeInteger(afterSequence) || afterSequence < 0) return
+      runSocketTask('response.subscribe', async () => {
+        const [owned] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, user.id))).limit(1)
+        if (!owned) return
+        const events = await readResponseEvents(responseId, afterSequence)
+        let replayedThrough = afterSequence
+        if (events.length > 0 && events.length <= 2_000) {
+          for (const event of events) socket.emit('response.event', event)
+          replayedThrough = events.at(-1)?.sequence ?? afterSequence
+        } else if (afterSequence < owned.lastSequence) {
+          socket.emit('response.snapshot', toSnapshot(owned))
+          replayedThrough = owned.lastSequence
+        }
+        await socket.join(`response:${responseId}`)
+        const racedEvents = await readResponseEvents(responseId, replayedThrough)
+        for (const event of racedEvents) socket.emit('response.event', event)
+      })
+    })
+    socket.on('response.unsubscribe', ({ responseId: rawResponseId }) => {
+      const responseId = realtimeResourceId(rawResponseId)
+      if (responseId) void socket.leave(`response:${responseId}`)
+    })
     socket.on('admin.usage.subscribe', () => {
       if (user.role === 'admin') void socket.join('admin:usage')
     })
