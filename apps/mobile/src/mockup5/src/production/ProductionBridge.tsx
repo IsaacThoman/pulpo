@@ -16,6 +16,12 @@ import type { ActivityStep, PrototypeAttachment, PrototypeChat, PrototypeMessage
 import { usePrototypeStore } from '../store/prototypeStore'
 import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
+import {
+  acknowledgeOptimisticChatList,
+  clearPendingOptimisticResponses,
+  pendingOptimisticChatIds,
+  reconcileOptimisticResponses,
+} from './optimisticResponses'
 
 function modelAsset(model: MobileModel): PrototypeModel['asset'] {
   const value = `${model.provider.name} ${model.name}`.toLowerCase()
@@ -125,6 +131,7 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
 let scopeHydrationToken = 0
 
 function clearProductionScopeState(): void {
+  clearPendingOptimisticResponses()
   usePrototypeStore.setState((state) => ({
     productionNamespace: null,
     chats: [],
@@ -237,6 +244,10 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     ...chatQuery(namespace, activeChatId ?? '', preferences.localChatLimit),
     enabled: enabled && activeChatIsServerAddressable,
   })
+  const reconciledDetail = useMemo(
+    () => detail.data ? reconcileOptimisticResponses(namespace, detail.data, snapshots) : undefined,
+    [detail.data, namespace, snapshots],
+  )
 
   useEffect(() => { serverHydrated.current = false }, [namespace])
 
@@ -303,14 +314,14 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     if (!enabled || !activeChatId || !activeChatIsServerAddressable) return
     const unsubscribeChat = subscribeToChat(activeChatId)
-    const unsubscribers = (detail.data?.responses ?? [])
+    const unsubscribers = (reconciledDetail?.responses ?? [])
       .filter((response) => response.status === 'queued' || response.status === 'in_progress')
       .map((response) => subscribeToResponse(
         response.id,
         useRealtimeStore.getState().snapshots[response.id]?.sequence ?? response.snapshot.sequence,
       ))
     return () => { unsubscribeChat(); unsubscribers.forEach((unsubscribe) => unsubscribe()) }
-  }, [activeChatId, activeChatIsServerAddressable, detail.data?.responses, enabled])
+  }, [activeChatId, activeChatIsServerAddressable, enabled, reconciledDetail?.responses])
 
   useEffect(() => {
     usePrototypeStore.setState((state) => ({
@@ -339,16 +350,23 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     usePrototypeStore.setState((state) => {
       const oldChats = new Map(state.chats.map((chat) => [chat.id, chat]))
       const serverChats = [...(chats.data ?? []), ...(deleted.data ?? [])]
+      const serverChatIds = new Set(serverChats.map((chat) => chat.id))
+      acknowledgeOptimisticChatList(namespace, serverChatIds)
+      const pendingChatIds = pendingOptimisticChatIds(namespace)
+      const pendingLocalChats = state.chats.filter((chat) => pendingChatIds.has(chat.id) && !serverChatIds.has(chat.id))
       return {
-        chats: serverChats.map((chat) => mapChat(
-          chat,
-          oldChats.get(chat.id)?.messages,
-          oldChats.get(chat.id)?.detailLoaded,
-        )),
+        chats: [
+          ...pendingLocalChats,
+          ...serverChats.map((chat) => mapChat(
+            chat,
+            oldChats.get(chat.id)?.messages,
+            oldChats.get(chat.id)?.detailLoaded,
+          )),
+        ],
         folders: folders.data?.map((folder) => ({ id: folder.id, name: folder.name, expanded: state.folders.find((item) => item.id === folder.id)?.expanded ?? true })) ?? state.folders,
       }
     })
-  }, [chats.data, deleted.data, folders.data])
+  }, [chats.data, deleted.data, folders.data, namespace])
 
   useEffect(() => {
     if (!chats.data || !deleted.data) return
@@ -366,14 +384,14 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   }, [detail.data])
 
   useEffect(() => {
-    if (!detail.data) return
-    const projected = projectChat(detail.data, snapshots).map(mapMessage)
+    if (!reconciledDetail) return
+    const projected = projectChat(reconciledDetail, snapshots).map(mapMessage)
     usePrototypeStore.setState((state) => ({
-      chats: state.chats.map((chat) => chat.id === detail.data.id
-        ? mapChat(detail.data, reuseProjectedMessages(chat.messages, projected), true)
+      chats: state.chats.map((chat) => chat.id === reconciledDetail.id
+        ? mapChat(reconciledDetail, reuseProjectedMessages(chat.messages, projected), true)
         : chat),
     }))
-  }, [detail.data, snapshots])
+  }, [reconciledDetail, snapshots])
 
   return null
 }

@@ -18,6 +18,7 @@ interface RealtimeState {
   receiveEvent: (event: ResponseEvent) => void
   receiveEvents: (events: ResponseEvent[]) => void
   receiveSnapshot: (snapshot: ResponseSnapshot) => void
+  removeSnapshot: (responseId: string) => void
   resetSnapshots: () => void
 }
 
@@ -54,6 +55,12 @@ export const useRealtimeStore = create<RealtimeState>((set) => {
       const merged = current ? mergeResponseSnapshots(current, snapshot) : snapshot
       if (merged === current) return state
       return { snapshots: { ...state.snapshots, [snapshot.responseId]: merged } }
+    }),
+    removeSnapshot: (responseId) => set((state) => {
+      if (!state.snapshots[responseId]) return state
+      const snapshots = { ...state.snapshots }
+      delete snapshots[responseId]
+      return { snapshots }
     }),
     resetSnapshots: () => set({ snapshots: {} }),
   }

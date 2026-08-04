@@ -76,6 +76,14 @@ export async function sendMessage(input: {
 }): Promise<ResponseSnapshot> {
   const responseId = input.clientId ?? Crypto.randomUUID()
   const path = `/api/chats/${input.chatId}/responses`
+  const queued: ResponseSnapshot = {
+    responseId, status: 'queued', sequence: 0, output: [], usage: null, error: null,
+    updatedAt: new Date().toISOString(),
+  }
+  // Establish the replay base before the request. Response events are also
+  // delivered through the account room and can otherwise arrive before the
+  // 202 acknowledgement, leaving mobile unable to apply the first deltas.
+  useRealtimeStore.getState().receiveSnapshot(queued)
   const body = {
     clientId: responseId,
     parentResponseId: input.parentResponseId,
@@ -90,20 +98,18 @@ export async function sendMessage(input: {
       method: 'POST', idempotencyKey: responseId, body,
     })
     useRealtimeStore.getState().receiveSnapshot(result.response)
-    return result.response
+    return useRealtimeStore.getState().snapshots[responseId] ?? result.response
   } catch (error) {
     const { instanceUrl, user } = useSessionStore.getState()
-    if (!user || !isNetworkError(error)) throw error
+    if (!user || !isNetworkError(error)) {
+      useRealtimeStore.getState().removeSnapshot(responseId)
+      throw error
+    }
     await queueOfflineMutation({
       namespace: cacheNamespace(instanceUrl, user.id), entityKey: `response:${responseId}`,
       method: 'POST', path, body, idempotencyKey: responseId,
     })
-    const queued: ResponseSnapshot = {
-      responseId, status: 'queued', sequence: 0, output: [], usage: null, error: null,
-      updatedAt: new Date().toISOString(),
-    }
-    useRealtimeStore.getState().receiveSnapshot(queued)
-    return queued
+    return useRealtimeStore.getState().snapshots[responseId] ?? queued
   }
 }
 

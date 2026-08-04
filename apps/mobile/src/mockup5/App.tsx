@@ -126,10 +126,11 @@ import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, Res
 import { useSessionStore } from '../store/session';
 import { apiRequest } from '../api/client';
 import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
+import { cacheOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
-import { useRealtimeStore } from '../providers/realtimeStore';
+import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
@@ -948,6 +949,16 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [streamingSession, setStreamingSession] = useState<StreamingSession | null>(null);
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeResponseId = useRef<string | null>(null);
+  const activeResponseSubscription = useRef<(() => void) | null>(null);
+
+  const trackActiveResponse = useCallback((response: { responseId: string; status: string; sequence: number }) => {
+    activeResponseSubscription.current?.();
+    activeResponseSubscription.current = null;
+    const active = response.status === 'queued' || response.status === 'in_progress';
+    activeResponseId.current = active ? response.responseId : null;
+    if (active) activeResponseSubscription.current = subscribeToResponse(response.responseId, response.sequence);
+    return active;
+  }, []);
 
   useEffect(() => {
     if (prototypeModels.some((model) => model.id === selectedModelId)) return;
@@ -960,6 +971,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const status = state.snapshots[responseId]?.status;
     if (!status || status === 'queued' || status === 'in_progress') return;
     activeResponseId.current = null;
+    activeResponseSubscription.current?.();
+    activeResponseSubscription.current = null;
     setAssistantStatus('idle');
     AccessibilityInfo.announceForAccessibility(status === 'completed' ? 'Response complete' : 'Response stopped');
     if (status === 'completed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -968,6 +981,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   useEffect(() => {
     return () => {
       if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
+      activeResponseSubscription.current?.();
+      activeResponseSubscription.current = null;
     };
   }, []);
 
@@ -1137,10 +1152,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const selections = options?.presetSelections ?? presetSelections;
+    const title = trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat';
+    const productionNamespace = productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null;
     if (!activeChat) {
       upsertChat({
         id: key,
-        title: trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat',
+        title,
         modelId,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -1177,6 +1194,28 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       outputItems: [],
       agentMode,
     });
+    if (productionNamespace) {
+      cacheOptimisticTurn({
+        queryClient,
+        namespace: productionNamespace,
+        chatId: key,
+        responseId,
+        parentResponseId,
+        content: trimmed,
+        title,
+        modelId,
+        temporary: options?.temporary ?? false,
+        presetSelections: selections,
+        agentMode,
+        attachments: attachments.map((attachment) => ({
+          id: attachment.serverId,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.size ?? 0,
+        })),
+        createdAt: timestamp,
+      });
+    }
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
     setStreamingSession(null);
@@ -1188,7 +1227,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           clientId: key,
           modelId,
           temporary: options?.temporary ?? false,
-          title: trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat',
+          title,
         });
         serverChatId = created.id;
         serverChatCreated = true;
@@ -1215,18 +1254,26 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           ? String((response.error as { message?: unknown }).message ?? '')
           : undefined,
       });
-      const responseActive = response.status === 'queued' || response.status === 'in_progress';
-      activeResponseId.current = responseActive ? response.responseId : null;
+      const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? 'streaming' : 'idle');
-      if (productionUserId) {
-        const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, serverChatId) });
+      if (productionNamespace) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats(productionNamespace) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chat(productionNamespace, serverChatId) });
       }
       return true;
     } catch (error) {
       activeResponseId.current = null;
+      activeResponseSubscription.current?.();
+      activeResponseSubscription.current = null;
       setAssistantStatus('idle');
+      if (productionNamespace) {
+        rejectOptimisticTurn({
+          queryClient,
+          namespace: productionNamespace,
+          responseId,
+          discardChat: !activeChat && !serverChatCreated,
+        });
+      }
       usePrototypeStore.setState((state) => ({
         chats: activeChat || serverChatCreated
           ? state.chats.map((chat) => chat.id === key
@@ -1282,20 +1329,21 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setAssistantStatus('thinking');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     void regenerateServerResponse(message.id, modelId, selections).then(async (response) => {
-      const responseActive = response.status === 'queued' || response.status === 'in_progress';
-      activeResponseId.current = responseActive ? response.responseId : null;
+      const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
       if (productionUserId) {
         const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-        await queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
-        await queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
       }
     }).catch((error) => {
       activeResponseId.current = null;
+      activeResponseSubscription.current?.();
+      activeResponseSubscription.current = null;
       setAssistantStatus('idle');
       Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined);
     });
-  }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id]);
+  }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, trackActiveResponse]);
 
   const activateMessageBranch = useCallback(async (message: Message, branchId: string) => {
     const chatId = message.chatId ?? activeChatId;
@@ -1312,6 +1360,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setStreamingSession(null);
     setAssistantStatus('idle');
     const responseId = activeResponseId.current;
+    activeResponseSubscription.current?.();
+    activeResponseSubscription.current = null;
     if (responseId) {
       const store = usePrototypeStore.getState();
       const chat = store.chats.find((candidate) => candidate.messages.some((message) => message.id === responseId));
