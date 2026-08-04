@@ -3,8 +3,8 @@ import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError } from '@pulpo/client-core'
 import type { ResponseSnapshot } from '@pulpo/contracts'
-import { apiOrigin, apiRequest, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
-import { cacheNamespace, recordCachedAttachment } from '../../data/database'
+import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
+import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
 import type { AttachmentDraft, ServerAttachment, ServerChat, ServerFolder } from '../../types'
 import { useRealtimeStore } from '../../providers/realtimeStore'
@@ -165,10 +165,11 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     body: { chatId, originalName: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
   })
   const file = new File(draft.uri)
-  const result = await file.upload(reservation.uploadUrl, {
+  const uploadUrl = apiUrl(reservation.uploadUrl)
+  const result = await file.upload(uploadUrl, {
     httpMethod: 'PUT',
     mimeType: draft.mimeType,
-    headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(reservation.uploadUrl) },
+    headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
   })
   if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
   return apiRequest(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
@@ -178,18 +179,42 @@ function safeFilename(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-120) || 'pulpo-file'
 }
 
-export async function downloadAttachment(id: string, name: string): Promise<File> {
-  const { url } = await apiRequest<{ url: string }>(`/api/attachments/${id}/download`)
+const activeAttachmentDownloads = new Map<string, Promise<File>>()
+
+export function downloadAttachment(id: string, name: string): Promise<File> {
+  const key = `${apiOrigin()}:${id}`
+  const existing = activeAttachmentDownloads.get(key)
+  if (existing) return existing
+  const pending = downloadAttachmentOnce(id, name)
+  activeAttachmentDownloads.set(key, pending)
+  void pending.then(
+    () => activeAttachmentDownloads.delete(key),
+    () => activeAttachmentDownloads.delete(key),
+  )
+  return pending
+}
+
+async function downloadAttachmentOnce(id: string, name: string): Promise<File> {
+  const { instanceUrl, user } = useSessionStore.getState()
+  const namespace = user ? cacheNamespace(instanceUrl, user.id) : null
+  if (namespace) {
+    const localUri = await cachedAttachmentUri(namespace, id)
+    if (localUri) {
+      const cached = new File(localUri)
+      if (cached.exists) return cached
+    }
+  }
+  const { url: rawUrl } = await apiRequest<{ url: string }>(`/api/attachments/${id}/download`)
+  const url = apiUrl(rawUrl)
   const destination = new File(Paths.cache, safeFilename(`${id}-${name}`))
   const file = await File.downloadFileAsync(url, destination, {
     idempotent: true,
     headers: nativeAuthorizationHeaders(url),
   })
-  const { instanceUrl, user } = useSessionStore.getState()
-  if (user) {
+  if (namespace) {
     const quotaBytes = Math.max(usePreferencesStore.getState().attachmentCacheMb * 1024 * 1024, file.size)
     const evictedUris = await recordCachedAttachment(
-      cacheNamespace(instanceUrl, user.id), id, file.uri, file.size, quotaBytes,
+      namespace, id, file.uri, file.size, quotaBytes,
     )
     for (const uri of evictedUris) {
       try {

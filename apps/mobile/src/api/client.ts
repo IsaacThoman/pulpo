@@ -31,8 +31,12 @@ export function apiOrigin(): string {
   return instanceUrl
 }
 
+export function apiUrl(url: string): string {
+  return new URL(url, `${instanceUrl}/`).toString()
+}
+
 export function nativeAuthorizationHeaders(url?: string): Record<string, string> {
-  if (!sessionToken || (url && new URL(url).origin !== new URL(instanceUrl).origin)) return {}
+  if (!sessionToken || (url && new URL(apiUrl(url)).origin !== new URL(instanceUrl).origin)) return {}
   return { authorization: `Bearer ${sessionToken}` }
 }
 
@@ -105,6 +109,7 @@ export const mobileApi = {
   }),
   chats: () => apiRequest<{ data: ServerChat[] }>('/api/chats'),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
+  emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
   chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}`),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),

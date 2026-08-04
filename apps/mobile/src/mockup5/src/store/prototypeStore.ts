@@ -137,7 +137,10 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
   }); runProductionAction(productionActions.trashChat(chatId)); },
   restoreChat: (chatId) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, purgeAt: null, updatedAt: Date.now() } : chat) })); runProductionAction(productionActions.restoreChat(chatId)); },
   permanentlyDeleteChat: (chatId) => { set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })); runProductionAction(productionActions.permanentlyDeleteChat(chatId)); },
-  emptyTrash: () => set((state) => ({ chats: state.chats.filter((chat) => chat.deletedAt === null) })),
+  emptyTrash: () => {
+    set((state) => ({ chats: state.chats.filter((chat) => chat.deletedAt === null) }));
+    runProductionAction(productionActions.emptyTrash());
+  },
   appendMessage: (chatId, message) => set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? {
     ...chat,
     messages: chat.messages.some((candidate) => candidate.id === message.id)

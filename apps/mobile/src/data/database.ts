@@ -127,6 +127,24 @@ export async function recordCachedAttachment(
   })
 }
 
+export async function cachedAttachmentUri(namespace: string, attachmentId: string): Promise<string | null> {
+  return withDatabase(async (database) => {
+    const row = await database.getFirstAsync<{ local_uri: string }>(
+      'SELECT local_uri FROM attachment_cache WHERE namespace = ? AND attachment_id = ?',
+      namespace,
+      attachmentId,
+    )
+    if (!row) return null
+    await database.runAsync(
+      'UPDATE attachment_cache SET last_accessed = ? WHERE namespace = ? AND attachment_id = ?',
+      Date.now(),
+      namespace,
+      attachmentId,
+    )
+    return row.local_uri
+  })
+}
+
 export async function saveDraft(namespace: string, chatId: string, body: string, attachments: unknown[]): Promise<void> {
   await withDatabase(async (database) => {
     if (!body && attachments.length === 0) {

@@ -1,3 +1,5 @@
+import type { CompactionItem } from '@pulpo/contracts'
+
 export type ToolItem = {
   type: 'pulpo_tool'
   id?: string
@@ -23,6 +25,7 @@ export type TimelineStep =
   | { kind: 'reasoning'; text: string; active: boolean; durationMs?: number }
   | { kind: 'tool'; tool: ToolItem }
   | { kind: 'workspace'; workspace: WorkspaceItem }
+  | { kind: 'compaction'; compaction: CompactionItem }
 
 export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
@@ -68,6 +71,16 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
   for (const item of output) {
     const value = item as Record<string, unknown>
     if (value.type === 'pulpo_workspace') continue
+    if (value.type === 'pulpo_compaction') {
+      flush()
+      const compaction = item as CompactionItem
+      segments.push({
+        kind: 'activity',
+        steps: [{ kind: 'compaction', compaction }],
+        active: compaction.status === 'in_progress',
+      })
+      continue
+    }
     if (value.type === 'reasoning') {
       activity ??= { kind: 'activity', steps: [], active: false }
       const text = textFromParts(value.summary)
@@ -114,7 +127,11 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
-    const duration = step.kind === 'tool' ? step.tool.durationMs : step.workspace.durationMs
+    const duration = step.kind === 'tool'
+      ? step.tool.durationMs
+      : step.kind === 'workspace'
+        ? step.workspace.durationMs
+        : step.compaction.duration_ms
     return duration === undefined ? [] : [duration]
   })
   return durations.length ? durations.reduce((sum, value) => sum + value, 0) : undefined

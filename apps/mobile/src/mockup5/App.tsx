@@ -132,6 +132,7 @@ import { activateBranch as activateServerBranch, cancelResponse, continueWithout
 import { useRealtimeStore } from '../providers/realtimeStore';
 import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
+import { timeAgo } from '../features/chat/format';
 import { activityDurationMs, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
@@ -1372,8 +1373,8 @@ function SentAttachmentContextMenu({ attachment, children }: { attachment: Attac
   return (
     <NativeObjectContextMenu
       style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
-      preview={attachment.kind === 'image' && attachment.uri ? (
-        <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.attachmentContextImagePreview} />
+      preview={attachment.kind === 'image' ? (
+        <ResolvedAttachmentImage attachment={attachment} variant="preview" />
       ) : (
         <View style={styles.attachmentContextFilePreview}>
           <Icon name="doc.fill" size={38} color={COLORS.muted} />
@@ -1399,7 +1400,36 @@ function SentAttachmentContextMenu({ attachment, children }: { attachment: Attac
   );
 }
 
+function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachment; variant: 'message' | 'preview' }) {
+  const [uri, setUri] = useState(attachment.uri);
+  const [failed, setFailed] = useState(false);
+  const style = variant === 'preview' ? styles.attachmentContextImagePreview : styles.sentAttachmentImage;
+
+  useEffect(() => {
+    setUri(attachment.uri);
+    setFailed(false);
+    if (attachment.uri) return;
+    let cancelled = false;
+    void downloadAttachment(attachment.id, attachment.name).then((file) => {
+      if (!cancelled) setUri(file.uri);
+    }).catch(() => {
+      if (!cancelled) setFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [attachment.id, attachment.name, attachment.uri]);
+
+  if (uri) return <Image accessibilityLabel={attachment.name} source={{ uri }} style={style} />;
+  return (
+    <View accessibilityLabel={attachment.name} style={[style, styles.attachmentImagePlaceholder]}>
+      {failed
+        ? <Icon name="photo.badge.exclamationmark" size={22} color={COLORS.muted} />
+        : <ActivityIndicator color={COLORS.muted} size="small" />}
+    </View>
+  );
+}
+
 function workIcon(steps: TimelineStep[]): SymbolName {
+  if (steps.some((step) => step.kind === 'compaction')) return 'arrow.down.right.and.arrow.up.left';
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace) return workspaceIsActive(workspace.workspace.state) ? 'shippingbox.and.arrow.backward' : 'shippingbox';
   if (steps.some((step) => step.kind === 'tool')) return 'hammer';
@@ -1407,6 +1437,12 @@ function workIcon(steps: TimelineStep[]): SymbolName {
 }
 
 function workLabel(steps: TimelineStep[], active: boolean): string {
+  const compaction = steps.find((step) => step.kind === 'compaction');
+  if (compaction?.kind === 'compaction') {
+    if (compaction.compaction.status === 'in_progress') return 'Compacting context…';
+    if (compaction.compaction.status === 'failed') return 'Context compaction failed';
+    return 'Compacted context';
+  }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
     if (workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
@@ -1472,6 +1508,32 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
   );
 });
 
+function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: 'compaction' }> }) {
+  const item = step.compaction;
+  return (
+    <View style={styles.compactionDetail}>
+      {item.error ? <Text style={styles.compactionError}>{item.error}</Text> : null}
+      {item.summary ? (
+        <View style={styles.compactionSection}>
+          <Text style={styles.compactionSectionTitle}>Compacted summary</Text>
+          <SafeMarkdown compact>{item.summary}</SafeMarkdown>
+        </View>
+      ) : null}
+      {item.retained_turns.length ? (
+        <View style={styles.compactionSection}>
+          <Text style={styles.compactionSectionTitle}>Kept verbatim</Text>
+          {item.retained_turns.map((entry, index) => (
+            <View key={`${entry.role}:${index}`} style={styles.compactionTurn}>
+              <Text style={styles.compactionRole}>{entry.role}</Text>
+              <Text selectable style={styles.compactionContent}>{entry.content}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
@@ -1498,6 +1560,9 @@ function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               return <View key={`workspace:${index}`} style={styles.workRow}><Icon name="shippingbox" size={13} color={COLORS.muted} /><Text style={styles.workRowText}>{detail}</Text></View>;
             }
+            if (step.kind === 'compaction') {
+              return <CompactionStepContent key={step.compaction.id} step={step} />;
+            }
             return <ToolStepRow key={step.tool.id ?? `tool:${index}`} step={step} />;
           })}
         </View>
@@ -1507,7 +1572,7 @@ function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -1557,8 +1622,8 @@ const MessageRow = memo(function MessageRow({
             <View style={styles.sentAttachments}>
               {message.attachments.map((attachment) => (
                 <SentAttachmentContextMenu attachment={attachment} key={attachment.id}>
-                  {attachment.kind === 'image' && attachment.uri ? (
-                    <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.sentAttachmentImage} />
+                  {attachment.kind === 'image' ? (
+                    <ResolvedAttachmentImage attachment={attachment} variant="message" />
                   ) : (
                     <View style={styles.sentFileAttachment}>
                       <Icon name="doc.fill" size={17} color={COLORS.muted} />
@@ -1582,7 +1647,7 @@ const MessageRow = memo(function MessageRow({
           <View style={styles.assistantHeader}>
             <ModelMark model={model} size={26} />
             <Text style={styles.assistantName}>{model.name}</Text>
-            <Text style={styles.messageTime}>now</Text>
+            <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
           </View>
           {timeline.length ? (
             <MessageContextMenu message={message}>
@@ -1606,11 +1671,11 @@ const MessageRow = memo(function MessageRow({
             <View style={[styles.sentAttachments, styles.assistantAttachments]}>
               {message.attachments.map((attachment) => (
                 <SentAttachmentContextMenu attachment={attachment} key={attachment.id}>
-                  {attachment.kind === 'image' && attachment.uri ? (
-                    <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.sentAttachmentImage} />
+                  {attachment.kind === 'image' ? (
+                    <ResolvedAttachmentImage attachment={attachment} variant="message" />
                   ) : (
                     <View style={styles.sentFileAttachment}>
-                      <Icon name={attachment.kind === 'image' ? 'photo' : 'doc.fill'} size={17} color={COLORS.muted} />
+                      <Icon name="doc.fill" size={17} color={COLORS.muted} />
                       <Text numberOfLines={1} style={styles.sentFileName}>{attachment.name}</Text>
                     </View>
                   )}
@@ -2763,6 +2828,7 @@ const styles = StyleSheet.create({
   sentImageContextHost: { width: 112, height: 112 },
   sentFileContextHost: { maxWidth: 230, minHeight: 48 },
   sentAttachmentImage: { width: 112, height: 112, borderRadius: 16, backgroundColor: COLORS.fill },
+  attachmentImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
   sentFileAttachment: { maxWidth: 230, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, backgroundColor: COLORS.secondary, paddingHorizontal: 12 },
   sentFileName: { color: COLORS.text, fontSize: 13.5, flexShrink: 1 },
   messageText: { color: COLORS.text, fontSize: 15.5, lineHeight: 22.5 },
@@ -2793,6 +2859,13 @@ const styles = StyleSheet.create({
   workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
   workStep: { gap: 5 },
+  compactionDetail: { gap: 12 },
+  compactionSection: { gap: 6 },
+  compactionSectionTitle: { color: COLORS.textSoft, fontSize: 12, fontWeight: '600' },
+  compactionError: { color: '#FF6961', fontSize: 12, lineHeight: 17 },
+  compactionTurn: { borderRadius: 8, backgroundColor: COLORS.fill, paddingHorizontal: 9, paddingVertical: 7, gap: 3 },
+  compactionRole: { color: COLORS.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.7, textTransform: 'uppercase' },
+  compactionContent: { color: COLORS.textSoft, fontSize: 12, lineHeight: 18 },
   workToolTrigger: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
   workToolName: { color: COLORS.textSoft, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   workToolSummary: { color: COLORS.muted, fontSize: 11, lineHeight: 16, fontFamily: COLORS.mono, flex: 1 },

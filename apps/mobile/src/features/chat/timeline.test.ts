@@ -24,4 +24,27 @@ describe('buildMessageTimeline', () => {
     ], false)
     expect(timeline).toMatchObject([{ kind: 'activity', active: true, steps: [{ kind: 'workspace', workspace: { position: 2 } }] }])
   })
+
+  it('preserves context compaction as its own activity between assistant turns', () => {
+    const timeline = buildMessageTimeline([
+      { type: 'message', content: [{ text: 'Before compaction' }] },
+      {
+        id: 'compact-1', type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
+        model_id: 'gpt-5', estimated_tokens: 120_000, threshold_tokens: 100_000,
+        retained_turns: [{ role: 'user', content: 'Keep this' }], retained_context: [],
+        retained_context_turns: [], summary: 'Earlier **summary**',
+        started_at: '2026-08-04T12:00:00.000Z', duration_ms: 900,
+      },
+      { type: 'message', content: [{ text: 'After compaction' }] },
+    ], true)
+
+    expect(timeline).toMatchObject([
+      { kind: 'text', text: 'Before compaction' },
+      {
+        kind: 'activity', active: false,
+        steps: [{ kind: 'compaction', compaction: { id: 'compact-1', summary: 'Earlier **summary**' } }],
+      },
+      { kind: 'text', text: 'After compaction' },
+    ])
+  })
 })

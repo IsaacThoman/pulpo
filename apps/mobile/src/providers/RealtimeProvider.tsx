@@ -216,6 +216,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     socket.on('account.revision', ({ revision }) => {
       stateRevision.current = Math.max(stateRevision.current, revision)
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
     })
     const appState = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return

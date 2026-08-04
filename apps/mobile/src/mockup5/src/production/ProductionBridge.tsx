@@ -186,6 +186,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       trashChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}`, request: () => trashChat(id) }),
       restoreChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'POST', path: `/api/chats/${id}/recover`, request: () => restoreChat(id) }),
       permanentlyDeleteChat: (id) => offlineCapableMutation({ namespace, entityKey: `chat:${id}`, method: 'DELETE', path: `/api/chats/${id}/permanent`, request: () => permanentlyDeleteChat(id) }),
+      emptyTrash: () => offlineCapableMutation({ namespace, entityKey: 'trash:all', method: 'DELETE', path: '/api/chats/deleted', request: () => mobileApi.emptyTrash() }),
       createFolder: (name, clientId) => offlineCapableMutation({ namespace, entityKey: `folder:${clientId}`, method: 'POST', path: '/api/folders', body: { name, clientId }, request: () => createFolder(name, clientId) }),
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
