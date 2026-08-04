@@ -1,5 +1,5 @@
-import { ChatScreen } from '@/features/chat/ChatScreen'
+import { MemberShell } from '@/features/chat/MemberShell'
 
 export default function NewChatRoute() {
-  return <ChatScreen />
+  return <MemberShell />
 }

@@ -17,6 +17,13 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
+function messageTime(value: string): string {
+  const date = new Date(value)
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+}
+
 function BranchControl({ branch, onSelect }: { branch: DisplayMessage['branch']; onSelect: (id: string) => void }) {
   const theme = useAppTheme()
   if (branch.ids.length <= 1) return null
@@ -70,24 +77,23 @@ export function MessageItem({ message, model, onReply, onEdit, onRegenerate, onD
   ]
   if (message.role === 'user') return <View style={styles.userWrap}>
     {message.attachments.map((attachment) => <AttachmentChip key={attachment.id} attachment={attachment} onOpen={onOpenAttachment} />)}
-    <NativeContextMenu actions={actions} style={styles.userMenu}>
-      <View style={[styles.userBubble, { backgroundColor: theme.elevated }]}><Text selectable style={[styles.userText, { color: theme.text }]}>{message.text}</Text></View>
+    <NativeContextMenu actions={actions} preview={<View style={[styles.contextPreview, { backgroundColor: theme.fillStrong, borderColor: theme.separator }]}><Text style={[styles.contextEyebrow, { color: theme.tertiary }]}>YOU</Text><Text numberOfLines={10} style={[styles.contextText, { color: theme.text }]}>{message.text}</Text></View>} style={styles.userMenu}>
+      <View style={[styles.userBubble, { backgroundColor: theme.fillStrong }]}><Text selectable style={[styles.userText, { color: theme.text }]}>{message.text}</Text></View>
     </NativeContextMenu>
     <BranchControl branch={message.branch} onSelect={onActivateBranch} />
   </View>
 
   const active = message.status === 'queued' || message.status === 'in_progress'
   return <View style={styles.assistantWrap}>
-    <View style={styles.assistantHeader}><ModelMark model={model} size={27} /><Text style={[styles.modelName, { color: theme.text }]}>{model?.name ?? message.modelId}</Text>{active ? <Text accessibilityLiveRegion="polite" style={[styles.working, { color: theme.secondary }]}>Working…</Text> : null}</View>
-    {showReasoningPreference && message.reasoning ? <Pressable onPress={() => setReasoningOpen((current) => !current)} style={[styles.disclosure, { borderColor: theme.separator }]}>
+    <View style={styles.assistantHeader}><ModelMark model={model} size={26} /><Text style={[styles.modelName, { color: theme.text }]}>{model?.name ?? message.modelId}</Text><Text style={[styles.messageTime, { color: theme.tertiary }]}>{messageTime(message.createdAt)}</Text>{active ? <Text accessibilityLiveRegion="polite" style={[styles.working, { color: theme.secondary }]}>Working…</Text> : null}</View>
+    {showReasoningPreference && message.reasoning ? <View><Pressable onPress={() => setReasoningOpen((current) => !current)} style={styles.disclosure}>
       <View style={styles.disclosureTitle}><SymbolView name="brain.head.profile" size={15} tintColor={theme.secondary} /><Text style={[styles.disclosureLabel, { color: theme.secondary }]}>Reasoning</Text><SymbolView name={reasoningOpen ? 'chevron.up' : 'chevron.down'} size={11} tintColor={theme.secondary} /></View>
-      {reasoningOpen ? <Text selectable style={[styles.reasoning, { color: theme.secondary }]}>{message.reasoning}</Text> : null}
-    </Pressable> : null}
+    </Pressable>{reasoningOpen ? <View style={[styles.reasoningBody, { borderLeftColor: theme.separator }]}><Text selectable style={[styles.reasoning, { color: theme.secondary }]}>{message.reasoning}</Text></View> : null}</View> : null}
     {message.activity.length ? <View style={[styles.activity, { borderColor: theme.separator }]}>
       <Pressable onPress={() => setActivityOpen((current) => !current)} style={styles.disclosureTitle}><SymbolView name="hammer" size={15} tintColor={theme.secondary} /><Text style={[styles.disclosureLabel, { color: theme.secondary }]}>Activity</Text><Text style={[styles.activityCount, { color: theme.secondary }]}>{message.activity.length}</Text><SymbolView name={activityOpen ? 'chevron.up' : 'chevron.down'} size={11} tintColor={theme.secondary} /></Pressable>
       {activityOpen ? message.activity.map((item) => <View key={item.id} style={styles.activityRow}><SymbolView name={item.kind === 'workspace' ? 'shippingbox' : item.status === 'failed' ? 'exclamationmark.triangle' : 'terminal'} size={15} tintColor={item.status === 'failed' ? theme.red : theme.secondary} /><View style={{ flex: 1 }}><Text style={[styles.activityTitle, { color: theme.text }]}>{item.title}</Text>{item.detail ? <Text numberOfLines={4} style={[styles.activityDetail, { color: theme.secondary }]}>{item.detail}</Text> : null}</View></View>) : null}
     </View> : null}
-    <NativeContextMenu actions={actions} style={styles.assistantMenu}>
+    <NativeContextMenu actions={actions} preview={<View style={[styles.contextPreview, { backgroundColor: theme.elevated, borderColor: theme.separator }]}><Text style={[styles.contextEyebrow, { color: theme.tertiary }]}>PULPO RESPONSE</Text><Text numberOfLines={10} style={[styles.contextText, { color: theme.text }]}>{message.text}</Text></View>} style={styles.assistantMenu}>
       <View>{message.text ? <SafeMarkdown>{message.text}</SafeMarkdown> : active ? <Text style={[styles.placeholder, { color: theme.secondary }]}>Pulpo is preparing a response…</Text> : null}</View>
     </NativeContextMenu>
     {message.error ? <View style={[styles.error, { backgroundColor: `${theme.red}14`, borderColor: `${theme.red}44` }]}><SymbolView name="exclamationmark.triangle.fill" size={16} tintColor={theme.red} /><View style={{ flex: 1 }}><Text style={[styles.errorTitle, { color: theme.red }]}>Response failed</Text><Text style={[styles.errorText, { color: theme.secondary }]}>{message.error}</Text></View><Pressable onPress={() => onRegenerate(message)}><Text style={{ color: theme.blue, fontWeight: '700' }}>Retry</Text></Pressable></View> : null}
@@ -99,8 +105,8 @@ export function MessageItem({ message, model, onReply, onEdit, onRegenerate, onD
 }
 
 const styles = StyleSheet.create({
-  userWrap: { alignItems: 'flex-end', marginBottom: 24, gap: 8 }, userMenu: { maxWidth: '88%' }, userBubble: { borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 }, userText: { fontSize: 16, lineHeight: 23 }, assistantWrap: { marginBottom: 30, gap: 10 }, assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 }, modelName: { fontSize: 13, fontWeight: '700' }, working: { fontSize: 12, marginLeft: 2 }, assistantMenu: { alignSelf: 'stretch' }, placeholder: { fontSize: 15, paddingVertical: 4 },
-  disclosure: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 11, gap: 9 }, disclosureTitle: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 }, disclosureLabel: { fontSize: 12, fontWeight: '700', flex: 1 }, reasoning: { fontSize: 13, lineHeight: 19 }, activity: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 11, gap: 8 }, activityCount: { fontSize: 11 }, activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingVertical: 5 }, activityTitle: { fontSize: 13, fontWeight: '600' }, activityDetail: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  userWrap: { alignItems: 'flex-end', marginBottom: 30, gap: 7 }, userMenu: { maxWidth: '85%' }, userBubble: { borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 }, userText: { fontSize: 15.5, lineHeight: 22.5 }, assistantWrap: { marginBottom: 32, gap: 10 }, assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 1 }, modelName: { fontSize: 13.5, fontWeight: '600' }, messageTime: { fontSize: 11.5 }, working: { fontSize: 12, marginLeft: 2 }, assistantMenu: { alignSelf: 'stretch' }, placeholder: { fontSize: 15.5, paddingVertical: 4 }, contextPreview: { width: 320, maxHeight: 360, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, padding: 20 }, contextEyebrow: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 }, contextText: { fontSize: 16, lineHeight: 24 },
+  disclosure: { alignSelf: 'flex-start', paddingVertical: 4 }, disclosureTitle: { minHeight: 24, flexDirection: 'row', alignItems: 'center', gap: 7 }, disclosureLabel: { fontSize: 12.5, fontWeight: '500' }, reasoningBody: { borderLeftWidth: 2, paddingLeft: 12, marginBottom: 6, marginLeft: 2 }, reasoning: { fontSize: 13, lineHeight: 19 }, activity: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, padding: 11, gap: 8 }, activityCount: { fontSize: 11 }, activityRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 9, paddingVertical: 5 }, activityTitle: { fontSize: 13, fontWeight: '600' }, activityDetail: { fontSize: 12, lineHeight: 17, marginTop: 2 },
   attachment: { minWidth: 230, maxWidth: '100%', borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 9 }, attachmentIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' }, attachmentName: { fontSize: 13, fontWeight: '700' }, attachmentMeta: { fontSize: 11, marginTop: 2 },
-  error: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 15, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 9 }, errorTitle: { fontSize: 13, fontWeight: '700' }, errorText: { fontSize: 12, lineHeight: 17, marginTop: 2 }, continueButton: { minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, meta: { fontSize: 11 }, branch: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 26 }, branchText: { fontSize: 11 },
+  error: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, padding: 11, flexDirection: 'row', alignItems: 'flex-start', gap: 9 }, errorTitle: { fontSize: 13, fontWeight: '700' }, errorText: { fontSize: 12, lineHeight: 17, marginTop: 2 }, continueButton: { minHeight: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' }, meta: { fontSize: 11, marginTop: 2, fontFamily: 'Menlo' }, branch: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 26 }, branchText: { fontSize: 11 },
 })

@@ -11,7 +11,7 @@ export function SafeMarkdown({ children }: { children: string }) {
       return false
     }}
     style={{
-      body: { color: theme.text, fontSize: 16, lineHeight: 24 },
+      body: { color: theme.text, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
       paragraph: { marginTop: 0, marginBottom: 10 },
       link: { color: theme.blue },
       code_inline: { color: theme.text, backgroundColor: theme.fillStrong, fontFamily: 'Menlo', paddingHorizontal: 4, borderRadius: 4 },
