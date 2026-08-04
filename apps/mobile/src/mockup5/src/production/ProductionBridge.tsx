@@ -8,7 +8,7 @@ import { queueOfflineMutation } from '../../../data/mutations'
 import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
 import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
-import { usePreferencesStore } from '../../../store/preferences'
+import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
 import { useSessionStore } from '../../../store/session'
 import type { MobileModel, ServerChat, ServerFolder } from '../../../types'
 import type { ActivityStep, PrototypeAttachment, PrototypeChat, PrototypeMessage, PrototypeModel } from '../domain'
@@ -147,6 +147,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
   const models = useQuery({ queryKey: queryKeys.models(namespace), queryFn: mobileApi.models, enabled })
+  const settings = useQuery({ queryKey: queryKeys.settings(namespace), queryFn: mobileApi.settings, enabled })
   const detail = useQuery({
     ...chatQuery(namespace, activeChatId ?? '', preferences.localChatLimit),
     enabled: enabled && activeChatIsServerAddressable,
@@ -190,9 +191,26 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       createFolder: (name, clientId) => offlineCapableMutation({ namespace, entityKey: `folder:${clientId}`, method: 'POST', path: '/api/folders', body: { name, clientId }, request: () => createFolder(name, clientId) }),
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
-      setPreference: (key, value) => usePreferencesStore.getState().setPreference(key, value),
+      setPreference: async (key, value) => {
+        await usePreferencesStore.getState().setPreference(key, value)
+        const body = preferencePatchForServer(key, value)
+        if (!body) return
+        const serverKey = Object.keys(body)[0] ?? String(key)
+        await offlineCapableMutation({
+          namespace, entityKey: `setting:${serverKey}`, method: 'PATCH', path: '/api/settings', body,
+          request: () => mobileApi.updateSettings(body),
+        })
+      },
     })
   }, [namespace])
+
+  useEffect(() => {
+    if (!settings.data) return
+    const patch = preferencesFromServer(settings.data.values)
+    for (const [key, value] of Object.entries(patch)) {
+      void usePreferencesStore.getState().setPreference(key as keyof typeof patch, value as never)
+    }
+  }, [settings.data])
 
   useEffect(() => {
     if (!enabled || !activeChatId || !activeChatIsServerAddressable) return
@@ -218,6 +236,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         sendWithEnter: preferences.sendWithEnter,
         attachmentCacheMb: preferences.attachmentCacheMb,
         localChatLimit: preferences.localChatLimit,
+        trashRetention: preferences.trashRetention,
       },
       defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
       models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,

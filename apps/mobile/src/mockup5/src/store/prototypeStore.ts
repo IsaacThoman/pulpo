@@ -53,7 +53,7 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit']);
+const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention']);
 
 let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
 let pendingPersistence: { name: string; value: StorageValue<PersistedPrototypeState> } | undefined;

@@ -32,6 +32,8 @@ import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
+import { SafeMarkdown } from '../../../components/SafeMarkdown';
+import { projectSharedMessages, type PublicShareResponse } from '../../../features/chat/shared';
 
 const relative = (timestamp: number) => {
   const delta = Date.now() - timestamp;
@@ -283,18 +285,7 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
   </Screen>;
 }
 
-type PublicShare = { chat: { title: string; modelId: string }; responses: { id: string; input: unknown[]; output: unknown[]; modelId: string }[] };
-
-function sharedText(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (!Array.isArray(value)) return '';
-  return value.map((part) => {
-    if (typeof part === 'string') return part;
-    const item = part as { text?: string; content?: unknown; type?: string; role?: string };
-    if (item.role === 'user' || item.type === 'message') return sharedText(item.content);
-    return item.text ?? '';
-  }).join('');
-}
+type PublicShare = { chat: { title: string; modelId: string }; responses: PublicShareResponse[] };
 
 export function SharedChatScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'SharedChat'>) {
   const theme = useAppTheme();
@@ -310,11 +301,8 @@ export function SharedChatScreen({ navigation, route }: NativeStackScreenProps<R
   }, [instanceUrl, route.params.token]);
   if (error) return <Screen><PageHeader title="Shared Chat" onBack={() => navigation.goBack()} /><EmptyState icon="link.badge.plus" title="Link unavailable" detail={error} /></Screen>;
   if (!share) return <Screen><PageHeader title="Shared Chat" onBack={() => navigation.goBack()} /><EmptyState icon="hourglass" title="Opening shared chat" detail="Loading the public snapshot…" /></Screen>;
-  const messages = share.responses.flatMap((response) => [
-    { id: `${response.id}:input`, role: 'user' as const, text: sharedText(response.input), modelId: response.modelId },
-    { id: response.id, role: 'assistant' as const, text: sharedText(response.output), modelId: response.modelId },
-  ]);
-  return <Screen><PageHeader title="Shared Chat" subtitle="Read-only Pulpo link" onBack={() => navigation.goBack()} right={<GlassIconButton icon="square.and.arrow.up" label="Share link" onPress={() => Share.share({ message: `${share.chat.title}\n${url}`, url })} />} /><View style={styles.sharedIntro}><Image source={pulpoSmiley} style={styles.sharedPulpo} /><Badge label="SHARED FROM PULPO" color={theme.blue} /><Text style={[styles.sharedTitle, { color: theme.text }]}>{share.chat.title}</Text><Text style={[styles.sharedMeta, { color: theme.secondary }]}>{messages.length} messages · {share.chat.modelId}</Text></View>{messages.map((message) => <View key={message.id} style={[styles.sharedMessage, message.role === 'user' ? { backgroundColor: theme.elevated, alignSelf: 'flex-end' } : { alignSelf: 'stretch' }]}><Text style={[styles.sharedRole, { color: theme.secondary }]}>{message.role === 'user' ? 'You' : message.modelId}</Text><Text style={[styles.sharedText, { color: theme.text }]}>{message.text}</Text></View>)}<Text style={[styles.privacyNote, { color: theme.secondary }]}>This is a public, read-only snapshot. Reasoning is never included in shared chats.</Text></Screen>;
+  const messages = projectSharedMessages(share.responses);
+  return <Screen><PageHeader title="Shared Chat" subtitle="Read-only Pulpo link" onBack={() => navigation.goBack()} right={<GlassIconButton icon="square.and.arrow.up" label="Share link" onPress={() => Share.share({ message: `${share.chat.title}\n${url}`, url })} />} /><View style={styles.sharedIntro}><Image source={pulpoSmiley} style={styles.sharedPulpo} /><Badge label="SHARED FROM PULPO" color={theme.blue} /><Text style={[styles.sharedTitle, { color: theme.text }]}>{share.chat.title}</Text><Text style={[styles.sharedMeta, { color: theme.secondary }]}>{messages.length} messages · {share.chat.modelId}</Text></View>{messages.map((message) => <View key={message.id} style={[styles.sharedMessage, message.role === 'user' ? { backgroundColor: theme.elevated, alignSelf: 'flex-end' } : { alignSelf: 'stretch' }]}><Text style={[styles.sharedRole, { color: theme.secondary }]}>{message.role === 'user' ? 'You' : message.modelId}</Text><SafeMarkdown>{message.text}</SafeMarkdown></View>)}<Text style={[styles.privacyNote, { color: theme.secondary }]}>This is a public, read-only snapshot. Reasoning is never included in shared chats.</Text></Screen>;
 }
 
 const styles = StyleSheet.create({

@@ -113,6 +113,8 @@ export const mobileApi = {
   chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}`),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
+  settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),
+  updateSettings: (patch: Record<string, unknown>) => apiRequest<{ values: Record<string, unknown>; updatedAt: string }>('/api/settings', { method: 'PATCH', body: patch }),
 }
 
 export function isNetworkError(error: unknown): boolean {

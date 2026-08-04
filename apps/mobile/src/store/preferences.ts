@@ -1,29 +1,10 @@
 import { Appearance } from 'react-native'
 import { create } from 'zustand'
 import { getValue, setValue } from '../data/database'
+import { defaultPreferences as defaults, type Preferences } from './preferenceMapping'
 
-export type ThemePreference = 'system' | 'light' | 'dark'
-export type TextSizePreference = 'default' | 'large' | 'extra-large'
-
-export interface Preferences {
-  theme: ThemePreference
-  textSize: TextSizePreference
-  streamResponses: boolean
-  showReasoning: boolean
-  haptics: boolean
-  sendWithEnter: boolean
-  attachmentCacheMb: number
-  localChatLimit: number
-  favoriteModelIds: string[]
-  defaultModelId: string | null
-  agentMode: boolean
-}
-
-const defaults: Preferences = {
-  theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
-  haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  favoriteModelIds: [], defaultModelId: null, agentMode: false,
-}
+export type { Preferences, TextSizePreference, ThemePreference, TrashRetentionPreference } from './preferenceMapping'
+export { preferencePatchForServer, preferencesFromServer } from './preferenceMapping'
 
 interface PreferenceState extends Preferences {
   hydrated: boolean
