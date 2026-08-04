@@ -1327,6 +1327,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             messages={messages}
             chatId={activeChat?.id ?? null}
             chatTitle={activeChat?.title ?? null}
+            chatLoaded={activePrototypeChat?.detailLoaded !== false}
             model={selectedModel}
             models={availableModels}
             prototypeModel={selectedPrototypeModel}
@@ -2057,12 +2058,13 @@ function SuggestedPromptButton({ label, accessible, onPress }: { label: string; 
 }
 
 function ChatView({
-  messages, chatId, chatTitle, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
+  messages, chatId, chatTitle, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
   onStreamingComplete, onRegenerate, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat,
 }: {
   messages: Message[];
   chatId: string | null;
   chatTitle: string | null;
+  chatLoaded: boolean;
   model: Model;
   models: Model[];
   prototypeModel?: PrototypeModel;
@@ -2145,10 +2147,15 @@ function ChatView({
   }));
 
   const presetLabel = generationSummary(prototypeModel, presetSelections);
+  const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
 
   useEffect(() => {
     if (!model.agentEnabled) setAgentEnabled(false);
   }, [model.agentEnabled]);
+
+  useEffect(() => {
+    if (!hasGenerationPresets) setPresetPickerOpen(false);
+  }, [hasGenerationPresets]);
 
   const openPresetPicker = useCallback(() => {
     Haptics.selectionAsync();
@@ -2351,6 +2358,7 @@ function ChatView({
   ), [model, models, onRegenerate, presetSelections]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
+  const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const canSend = (input.trim().length > 0 || attachments.length > 0) && assistantStatus === 'idle';
 
@@ -2403,7 +2411,11 @@ function ChatView({
           </View>
         )}
 
-        {empty ? (
+        {loadingExistingChat ? (
+          <View accessibilityLabel="Loading conversation" accessibilityRole="progressbar" style={styles.emptyConversation}>
+            <ActivityIndicator color={COLORS.muted} />
+          </View>
+        ) : empty ? (
           // The landing surface is intentionally not a scroll view. Keeping it
           // outside FlatList prevents iOS keyboard focus from retaining a stale
           // content offset and clipping the identity above its resting position.
@@ -2507,7 +2519,7 @@ function ChatView({
                     <Icon name="plus" size={16} />
                   </Pressable>
                 )}
-                {Platform.OS === 'ios' ? (
+                {hasGenerationPresets && (Platform.OS === 'ios' ? (
                   <SwiftUIHost ignoreSafeArea="keyboard" matchContents style={styles.effortMenuHost}>
                     <SwiftUIMenu
                       label={presetLabel}
@@ -2543,7 +2555,7 @@ function ChatView({
                   >
                     <Text maxFontSizeMultiplier={1.4} style={styles.effortText}>{presetLabel}</Text>
                   </Pressable>
-                )}
+                ))}
                 <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
                   <>

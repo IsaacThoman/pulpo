@@ -104,7 +104,7 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
   }
 }
 
-function mapChat(chat: ServerChat, messages: PrototypeMessage[] = []): PrototypeChat {
+function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoaded = false): PrototypeChat {
   return {
     id: chat.id,
     title: chat.title,
@@ -114,6 +114,7 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = []): Prototype
     pinned: chat.pinned,
     folderId: chat.folderId,
     temporary: chat.temporary,
+    detailLoaded: detailLoaded || chat.responses !== undefined,
     messages,
     deletedAt: chat.deletedAt ? Date.parse(chat.deletedAt) : null,
     purgeAt: chat.purgeAt ? Date.parse(chat.purgeAt) : null,
@@ -179,12 +180,13 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     void Promise.all([cachedChats(namespace), getValue<ServerFolder[]>(namespace, 'folders')]).then(([localChats, localFolders]) => {
       if (cancelled || serverHydrated.current || (!localChats.length && !localFolders?.length)) return
       usePrototypeStore.setState((state) => {
-        const existingMessages = new Map(state.chats.map((chat) => [chat.id, chat.messages]))
+        const existingChats = new Map(state.chats.map((chat) => [chat.id, chat]))
         const liveSnapshots = useRealtimeStore.getState().snapshots
         return {
           chats: localChats.length ? localChats.map((chat) => mapChat(
             chat,
-            chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : existingMessages.get(chat.id),
+            chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : existingChats.get(chat.id)?.messages,
+            existingChats.get(chat.id)?.detailLoaded,
           )) : state.chats,
           folders: localFolders?.map((folder) => ({
             id: folder.id,
@@ -266,10 +268,14 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     if (!chats.data && !deleted.data && !folders.data) return
     serverHydrated.current = true
     usePrototypeStore.setState((state) => {
-      const oldMessages = new Map(state.chats.map((chat) => [chat.id, chat.messages]))
+      const oldChats = new Map(state.chats.map((chat) => [chat.id, chat]))
       const serverChats = [...(chats.data ?? []), ...(deleted.data ?? [])]
       return {
-        chats: serverChats.map((chat) => mapChat(chat, oldMessages.get(chat.id))),
+        chats: serverChats.map((chat) => mapChat(
+          chat,
+          oldChats.get(chat.id)?.messages,
+          oldChats.get(chat.id)?.detailLoaded,
+        )),
         folders: folders.data?.map((folder) => ({ id: folder.id, name: folder.name, expanded: state.folders.find((item) => item.id === folder.id)?.expanded ?? true })) ?? state.folders,
       }
     })
@@ -295,7 +301,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     const projected = projectChat(detail.data, snapshots).map(mapMessage)
     usePrototypeStore.setState((state) => ({
       chats: state.chats.map((chat) => chat.id === detail.data.id
-        ? mapChat(detail.data, reuseProjectedMessages(chat.messages, projected))
+        ? mapChat(detail.data, reuseProjectedMessages(chat.messages, projected), true)
         : chat),
     }))
   }, [detail.data, snapshots])
