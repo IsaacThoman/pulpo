@@ -78,8 +78,9 @@ const config: ExpoConfig = {
     'expo-sqlite',
     [
       'expo-build-properties',
-      { ios: { deploymentTarget: '26.0' } },
+      { ios: { deploymentTarget: '26.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true } },
     ],
+    ['react-native-enriched-markdown', { enableMath: true }],
     [
       'expo-image-picker',
       { photosPermission: 'Allow Pulpo to attach photos to your chats.', cameraPermission: false },

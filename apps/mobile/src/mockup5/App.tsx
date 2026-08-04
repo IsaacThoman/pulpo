@@ -73,7 +73,6 @@ import {
   font,
   frame,
   labelStyle,
-  labelsHidden,
   menuActionDismissBehavior,
   padding,
   resizable,
@@ -87,6 +86,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ExpoHaptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Linking from 'expo-linking';
+import * as Network from 'expo-network';
 import { StatusBar } from 'expo-status-bar';
 import { usePathname } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -122,14 +122,16 @@ import {
 } from './src/screens/MemberScreens';
 import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
-import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel } from './src/domain';
+import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { useSessionStore } from '../store/session';
 import { ProductionBridge } from './src/production/ProductionBridge';
 import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
-import { activateBranch as activateServerBranch, cancelResponse, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
-import { useRealtimeStore } from '../providers/RealtimeProvider';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
+import { useRealtimeStore } from '../providers/realtimeStore';
 import { aiIconSource } from './src/production/AiIconAssets';
+import { SafeMarkdown } from '../components/SafeMarkdown';
+import { activityDurationMs, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
   if (Platform.OS === 'ios') return PlatformColor(ios);
@@ -238,7 +240,7 @@ function AppPreferencesProvider({ children }: { children: ReactNode }) {
     setShowReasoning,
     haptics,
     setHaptics,
-  }), [haptics, setHaptics, setTheme, showReasoning, smoothStreaming, textSize, theme]);
+  }), [haptics, setHaptics, setShowReasoning, setSmoothStreaming, setTextSize, setTheme, showReasoning, smoothStreaming, textSize, theme]);
 
   return <AppPreferencesContext.Provider value={value}>{children}</AppPreferencesContext.Provider>;
 }
@@ -320,13 +322,23 @@ type Attachment = {
 };
 type Message = {
   id: string;
+  chatId?: string;
+  chatModelId?: string;
   role: 'user' | 'assistant';
   text: string;
+  createdAt?: number;
+  modelId?: string;
   attachments?: Attachment[];
   thinkSeconds?: number;
   reasoning?: string;
   meta?: string;
   activity?: ActivityStep[];
+  outputItems?: unknown[];
+  status?: PrototypeMessage['status'];
+  error?: string;
+  branches?: ResponseBranch[];
+  activeBranch?: number;
+  agentMode?: boolean;
 };
 type Chat = { id: string; title: string; time: string; section: string; messages: Message[] };
 type StreamingSession = {
@@ -352,51 +364,8 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
   return { ...template, name: model.name, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined };
 }
 
-const MODEL_SECTIONS: ModelSection[] = ['Favorites', ...new Set(MODELS.map((model) => model.lab))];
-
 const REASONING_SAMPLE =
   'The user wants a practical answer, not an architecture lecture. Lead with the state boundary: durable messages in the store, transient tokens in the view. Mention the commit-once pattern and why it keeps rendering cheap.';
-
-const RESPONSES = [
-  'Keep the durable conversation in your store, but hold the active token stream close to the view. Commit the finished response once, rather than writing every token through global state.\n\nThis gives you smooth rendering, clean persistence, and a much smaller update surface.',
-  'A three-step flow works well here: a single welcome screen with the value proposition, one permissions primer that explains why before iOS asks, and a deferred account step that lets people try the product first.\n\nThe key is that every step earns its place. If a screen does not reduce a real drop-off, cut it.',
-  'KV caching stores the key and value tensors computed for previous tokens so the model does not recompute them for every new token. That turns generation from quadratic reprocessing into a linear append.\n\nThe tradeoff is memory: the cache grows with context length, which is why long-context serving is bandwidth-bound.',
-];
-
-const CHATS: Chat[] = [
-  {
-    id: 'c1', title: 'Streaming state architecture', time: '9:42 AM', section: 'Today',
-    messages: [
-      { id: 'c1u1', role: 'user', text: 'How should I structure streaming state in a React chat app?' },
-      {
-        id: 'c1a1', role: 'assistant', text: RESPONSES[0], thinkSeconds: 8, reasoning: REASONING_SAMPLE,
-        meta: '1,204→356 tok · 42 tok/s · 8.4s',
-      },
-    ],
-  },
-  {
-    id: 'c2', title: 'Mobile onboarding flow', time: '8:15 AM', section: 'Today',
-    messages: [
-      { id: 'c2u1', role: 'user', text: 'Help me design an onboarding flow for the Pulpo mobile app.' },
-      {
-        id: 'c2a1', role: 'assistant', text: RESPONSES[1], thinkSeconds: 5, reasoning: REASONING_SAMPLE,
-        meta: '860→412 tok · 51 tok/s · 8.1s',
-      },
-    ],
-  },
-  { id: 'c3', title: 'SSE vs WebSockets', time: 'Yesterday', section: 'Yesterday', messages: [
-    { id: 'c3u1', role: 'user', text: 'SSE or WebSockets for token streaming?' },
-    { id: 'c3a1', role: 'assistant', text: 'For token streaming, SSE is usually enough: one-directional, automatic reconnects, and it rides plain HTTP through proxies. WebSockets earn their complexity when you need bidirectional traffic, like live cancellation channels or collaborative sessions.', thinkSeconds: 3, reasoning: REASONING_SAMPLE, meta: '640→198 tok · 47 tok/s · 4.2s' },
-  ] },
-  { id: 'c4', title: 'Message branching design', time: 'Tue', section: 'Previous 7 Days', messages: [] },
-  { id: 'c5', title: 'Cmd+K palette patterns', time: 'Mon', section: 'Previous 7 Days', messages: [] },
-  { id: 'c6', title: 'Scroll anchoring fix', time: 'Jul 24', section: 'Previous 30 Days', messages: [] },
-  { id: 'c7', title: 'Sidebar search naming', time: 'Jul 19', section: 'Previous 30 Days', messages: [] },
-  { id: 'c8', title: 'KV caching explainer', time: 'Jul 12', section: 'Previous 30 Days', messages: [
-    { id: 'c8u1', role: 'user', text: 'Explain KV caching in one paragraph.' },
-    { id: 'c8a1', role: 'assistant', text: RESPONSES[2], thinkSeconds: 4, reasoning: REASONING_SAMPLE, meta: '512→171 tok · 55 tok/s · 3.1s' },
-  ] },
-];
 
 function prototypeSection(updatedAt: number) {
   const days = Math.floor((Date.now() - updatedAt) / 86_400_000);
@@ -406,12 +375,20 @@ function prototypeSection(updatedAt: number) {
   return 'Previous 30 Days';
 }
 
-function prototypeMessageToLegacy(message: PrototypeMessage): Message {
+const legacyMessageCache = new WeakMap<PrototypeMessage, { chatId: string; chatModelId: string; value: Message }>();
+
+function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, chatModelId: string): Message {
+  const cached = legacyMessageCache.get(message);
+  if (cached?.chatId === chatId && cached.chatModelId === chatModelId) return cached.value;
   const reasoning = message.activity?.find((step) => step.kind === 'reasoning')?.detail;
-  return {
+  const value: Message = {
     id: message.id,
+    chatId,
+    chatModelId,
     role: message.role,
     text: message.branches?.[message.activeBranch ?? 0]?.text ?? message.text,
+    createdAt: message.createdAt,
+    modelId: message.modelId,
     attachments: message.attachments?.map((attachment) => ({
       id: attachment.id,
       name: attachment.name,
@@ -424,9 +401,17 @@ function prototypeMessageToLegacy(message: PrototypeMessage): Message {
       ? Math.max(1, Math.round(message.activity.reduce((sum, step) => sum + step.durationMs, 0) / 1000))
       : undefined,
     reasoning,
-    meta: message.status === 'failed' ? message.error : message.meta,
+    meta: message.meta,
+    error: message.error,
     activity: message.activity,
+    outputItems: message.outputItems,
+    status: message.status,
+    branches: message.branches,
+    activeBranch: message.activeBranch,
+    agentMode: message.agentMode,
   };
+  legacyMessageCache.set(message, { chatId, chatModelId, value });
+  return value;
 }
 
 function prototypeChatToLegacy(chat: PrototypeChat): Chat {
@@ -437,7 +422,7 @@ function prototypeChatToLegacy(chat: PrototypeChat): Chat {
       ? new Date(chat.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
       : new Date(chat.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
     section: chat.pinned ? 'Pinned' : prototypeSection(chat.updatedAt),
-    messages: chat.messages.map(prototypeMessageToLegacy),
+    messages: chat.messages.map((message) => prototypeMessageToLegacy(message, chat.id, chat.modelId)),
   };
 }
 
@@ -875,7 +860,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const appendStoredMessage = usePrototypeStore((state) => state.appendMessage);
   const prototypeModels = usePrototypeStore((state) => state.models);
-  const demo = usePrototypeStore((state) => state.demo);
   const defaultModelName = prototypeModels.find((model) => model.id === defaultModelId)?.name;
   const availableModels = useMemo(() => prototypeModels.map((model) => prototypeModelToLegacy(model, isDark)), [isDark, prototypeModels]);
   const [selectedModel, setSelectedModel] = useState(() => availableModels.find((model) => model.name === defaultModelName) ?? availableModels[0] ?? MODELS[0]);
@@ -884,9 +868,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [assistantStatus, setAssistantStatus] = useState<'idle' | 'thinking' | 'streaming'>('idle');
   const [streamingSession, setStreamingSession] = useState<StreamingSession | null>(null);
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const responseIndex = useRef(0);
   const activeResponseId = useRef<string | null>(null);
-  const liveSnapshots = useRealtimeStore((state) => state.snapshots);
 
   useEffect(() => {
     const defaultModel = prototypeModels.find((model) => model.id === defaultModelId);
@@ -894,16 +876,16 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setSelectedModel((current) => availableModels.find((model) => model.name === current.name) ?? prototypeModelToLegacy(defaultModel, isDark));
   }, [availableModels, defaultModelId, isDark, prototypeModels]);
 
-  useEffect(() => {
+  useEffect(() => useRealtimeStore.subscribe((state) => {
     const responseId = activeResponseId.current;
     if (!responseId) return;
-    const status = liveSnapshots[responseId]?.status;
+    const status = state.snapshots[responseId]?.status;
     if (!status || status === 'queued' || status === 'in_progress') return;
     activeResponseId.current = null;
     setAssistantStatus('idle');
     AccessibilityInfo.announceForAccessibility(status === 'completed' ? 'Response complete' : 'Response stopped');
     if (status === 'completed') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [liveSnapshots]);
+  }), []);
 
   useEffect(() => {
     return () => {
@@ -1069,7 +1051,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       role: 'user',
       text: trimmed,
       createdAt: timestamp,
-      status: demo.network === 'offline' ? 'queued' : 'complete',
+      status: 'complete',
       attachments: attachments.map((attachment) => ({
         id: attachment.id, name: attachment.name, uri: attachment.uri, mimeType: attachment.mimeType,
         sizeBytes: attachment.size ?? 0, kind: attachment.kind, status: 'ready',
@@ -1111,8 +1093,29 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         attachmentIds: uploaded.map((attachment) => attachment.id),
         agentMode: options?.agentEnabled ?? false,
       });
-      activeResponseId.current = response.responseId;
-      setAssistantStatus('streaming');
+      const responseAlreadyProjected = usePrototypeStore.getState().chats
+        .find((chat) => chat.id === serverChatId)?.messages
+        .some((message) => message.id === response.responseId);
+      if (!responseAlreadyProjected) {
+        appendStoredMessage(serverChatId, {
+          id: response.responseId,
+          role: 'assistant',
+          text: '',
+          createdAt: Date.now(),
+          modelId: selectedPrototypeModel?.id ?? defaultModelId,
+          status: response.status === 'completed' ? 'complete'
+            : response.status === 'failed' ? 'failed'
+              : response.status === 'cancelled' || response.status === 'incomplete' ? 'stopped'
+                : response.status === 'queued' ? 'queued' : 'streaming',
+          outputItems: response.output,
+          error: response.error && typeof response.error === 'object' && 'message' in response.error
+            ? String((response.error as { message?: unknown }).message ?? '')
+            : undefined,
+        });
+      }
+      const responseActive = response.status === 'queued' || response.status === 'in_progress';
+      activeResponseId.current = responseActive ? response.responseId : null;
+      setAssistantStatus(responseActive ? 'streaming' : 'idle');
       if (productionUserId) {
         const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
         await queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
@@ -1253,7 +1256,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 }
 
 function MessageContextMenu({ message, children }: { message: Message; children: ReactNode }) {
-  const containingChat = usePrototypeStore((state) => state.chats.find((chat) => chat.messages.some((candidate) => candidate.id === message.id)));
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
   const deleteStoredMessage = usePrototypeStore((state) => state.deleteMessageCascade);
   const runAction = (action: 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete') => {
@@ -1270,30 +1272,31 @@ function MessageContextMenu({ message, children }: { message: Message; children:
       Alert.alert('Delete message?', 'This message will be removed from the conversation.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Delete', style: 'destructive', onPress: () => {
-          if (!containingChat) return;
-          deleteStoredMessage(containingChat.id, message.id);
+          if (!message.chatId) return;
+          deleteStoredMessage(message.chatId, message.id);
           void deleteServerMessage(message.id).catch((error) => Alert.alert('Couldn’t delete message', error instanceof Error ? error.message : undefined));
         } },
       ]);
       return;
     }
-    if (action === 'edit' && containingChat) {
+    if (action === 'edit') {
+      const chatId = message.chatId;
+      if (!chatId) return;
       if (Platform.OS === 'ios') {
         Alert.prompt('Edit message', message.role === 'user' ? 'Saving resends from this point in the conversation.' : 'Saving creates a response branch.', (text) => {
           const trimmed = text.trim();
           if (!trimmed) return;
-          const stored = containingChat.messages.find((candidate) => candidate.id === message.id);
           void editServerMessage(message.id, trimmed).catch((error) => Alert.alert('Couldn’t edit message', error instanceof Error ? error.message : undefined));
-          if (message.role === 'assistant' && stored) {
-            const branches = stored.branches?.length ? [...stored.branches] : [{ id: `${stored.id}-original`, text: stored.text, modelId: stored.modelId ?? containingChat.modelId, createdAt: stored.createdAt }];
-            branches.push({ id: `${stored.id}-edit-${Date.now()}`, text: trimmed, modelId: stored.modelId ?? containingChat.modelId, createdAt: Date.now() });
-            updateStoredMessage(containingChat.id, message.id, { text: trimmed, branches, activeBranch: branches.length - 1 });
-          } else updateStoredMessage(containingChat.id, message.id, { text: trimmed });
+          if (message.role === 'assistant') {
+            const branches = message.branches?.length ? [...message.branches] : [{ id: `${message.id}-original`, text: message.text, modelId: message.modelId ?? message.chatModelId ?? '', createdAt: message.createdAt ?? Date.now() }];
+            branches.push({ id: `${message.id}-edit-${Date.now()}`, text: trimmed, modelId: message.modelId ?? message.chatModelId ?? '', createdAt: Date.now() });
+            updateStoredMessage(chatId, message.id, { text: trimmed, branches, activeBranch: branches.length - 1 });
+          } else updateStoredMessage(chatId, message.id, { text: trimmed });
         }, 'plain-text', message.text);
       }
       return;
     }
-    if (action === 'regenerate' && containingChat) {
+    if (action === 'regenerate') {
       void regenerateServerResponse(message.id).then(() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)).catch((error) => Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined));
       return;
     }
@@ -1351,7 +1354,7 @@ function SentAttachmentContextMenu({ attachment, children }: { attachment: Attac
   return (
     <NativeObjectContextMenu
       style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
-      preview={attachment.kind === 'image' ? (
+      preview={attachment.kind === 'image' && attachment.uri ? (
         <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.attachmentContextImagePreview} />
       ) : (
         <View style={styles.attachmentContextFilePreview}>
@@ -1378,81 +1381,113 @@ function SentAttachmentContextMenu({ attachment, children }: { attachment: Attac
   );
 }
 
-function ReasoningContextMenu({
-  message,
-  expanded,
-  onToggle,
-}: {
-  message: Message;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const { setShowReasoning } = useAppPreferences();
-  const reasoning = message.reasoning || `Worked for ${message.thinkSeconds ?? 0}s`;
-  const content = (
-    <View>
+function workIcon(steps: TimelineStep[]): SymbolName {
+  const workspace = steps.find((step) => step.kind === 'workspace');
+  if (workspace) return workspaceIsActive(workspace.workspace.state) ? 'shippingbox.and.arrow.backward' : 'shippingbox';
+  if (steps.some((step) => step.kind === 'tool')) return 'hammer';
+  return 'brain.head.profile';
+}
+
+function workLabel(steps: TimelineStep[], active: boolean): string {
+  const workspace = steps.find((step) => step.kind === 'workspace');
+  if (workspace?.kind === 'workspace') {
+    if (workspace.workspace.state === 'waiting') return `Waiting for workspace${typeof workspace.workspace.position === 'number' ? ` · queue #${workspace.workspace.position}` : ''}`;
+    if (workspace.workspace.state === 'provisioning') return 'Starting workspace…';
+    if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
+  }
+  const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
+  if (runningTool?.kind === 'tool') return `Running ${runningTool.tool.tool ?? 'tool'}…`;
+  if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
+  const duration = activityDurationMs(steps);
+  const seconds = duration === undefined ? null : Math.max(0, Math.round(duration / 1000));
+  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace');
+  return `${worked ? 'Worked' : 'Thought'}${seconds === null ? '' : ` for ${seconds}s`}`;
+}
+
+function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (steps.length === 0) return null;
+  return (
+    <View style={styles.workBlock}>
       <Pressable
-        accessibilityLabel={`Work details, ${message.thinkSeconds} seconds`}
         accessibilityRole="button"
-        accessibilityState={{ expanded }}
-        onPress={onToggle}
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={workLabel(steps, active)}
+        onPress={() => setOpen((value) => !value)}
         style={styles.reasoningTrigger}
       >
-        <Icon name="brain.head.profile" size={14} color={COLORS.muted} />
-        <Text style={styles.reasoningLabel}>Worked for {message.thinkSeconds}s</Text>
-        <Icon name={expanded ? 'chevron.up' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />
+        <Icon name={workIcon(steps)} size={14} color={COLORS.muted} />
+        <Text style={styles.reasoningLabel}>{workLabel(steps, active)}</Text>
+        <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />
       </Pressable>
-      {expanded && (
+      {open && (
         <View style={styles.reasoningBody}>
-          <Text style={styles.reasoningText}>{message.reasoning}</Text>
-          <Text style={styles.reasoningDuration}>{message.thinkSeconds}s</Text>
+          {steps.map((step, index) => {
+            if (step.kind === 'reasoning') {
+              return <SafeMarkdown compact key={`reasoning:${index}`} streaming={step.active}>{step.text || (step.active ? 'Thinking…' : '')}</SafeMarkdown>;
+            }
+            if (step.kind === 'workspace') {
+              const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
+              return <View key={`workspace:${index}`} style={styles.workRow}><Icon name="shippingbox" size={13} color={COLORS.muted} /><Text style={styles.workRowText}>{detail}</Text></View>;
+            }
+            const details = [
+              step.tool.arguments === undefined ? '' : typeof step.tool.arguments === 'string' ? step.tool.arguments : JSON.stringify(step.tool.arguments, null, 2),
+              step.tool.output ?? '',
+            ].filter(Boolean).join('\n');
+            return <View key={step.tool.id ?? `tool:${index}`} style={styles.workStep}>
+              <View style={styles.workRow}><Icon name={step.tool.status === 'failed' || step.tool.isError ? 'exclamationmark.triangle' : 'terminal'} size={13} color={step.tool.status === 'failed' || step.tool.isError ? '#FF6961' : COLORS.muted} /><Text style={styles.workRowTitle}>{step.tool.tool ?? 'Tool'}</Text></View>
+              {details ? <Text selectable style={styles.workDetail}>{details}</Text> : null}
+            </View>;
+          })}
         </View>
       )}
     </View>
   );
-  return (
-    <NativeObjectContextMenu
-      style={styles.reasoningContextHost}
-      preview={(
-        <View style={styles.reasoningContextPreview}>
-          <Text style={styles.reasoningContextPreviewTitle}>WORK · {message.thinkSeconds}s</Text>
-          <Text numberOfLines={10} style={styles.reasoningContextPreviewText}>{reasoning}</Text>
-        </View>
-      )}
-      items={(
-        <>
-          <SwiftUIControlGroup>
-            <SwiftUIButton label="Copy" systemImage="doc.on.doc" onPress={() => void copyText(reasoning, 'Work details copied')} />
-            <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => void Share.share({ message: reasoning })} />
-            <SwiftUIButton label="Hide" systemImage="eye.slash" onPress={() => setShowReasoning(false)} />
-          </SwiftUIControlGroup>
-          <SwiftUIDivider />
-          <SwiftUIButton label={expanded ? 'Collapse work' : 'Expand work'} systemImage={expanded ? 'chevron.up' : 'chevron.down'} onPress={onToggle} />
-        </>
-      )}
-    >
-      {content}
-    </NativeObjectContextMenu>
-  );
+}
+
+function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment']);
+  return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
+    const type = (item as { type?: unknown }).type;
+    return typeof type === 'string' && !known.has(type);
+  });
+}
+
+function outputItemTitle(item: Record<string, unknown>): string {
+  const type = String(item.type ?? 'output').replaceAll('_', ' ');
+  return type.replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 const MessageRow = memo(function MessageRow({
   message,
   model,
-  reasoningOpen,
-  onToggleReasoning,
 }: {
   message: Message;
   model: Model;
-  reasoningOpen: boolean;
-  onToggleReasoning: (messageId: string) => void;
 }) {
   const { showReasoning } = useAppPreferences();
-  const containingChat = usePrototypeStore((state) => state.chats.find((chat) => chat.messages.some((candidate) => candidate.id === message.id)));
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
-  const storedMessage = containingChat?.messages.find((candidate) => candidate.id === message.id);
-  const branches = storedMessage?.branches ?? [];
-  const branchIndex = storedMessage?.activeBranch ?? 0;
+  const chatId = message.chatId;
+  const branches = message.branches ?? [];
+  const branchIndex = message.activeBranch ?? 0;
+  const [capacityPending, setCapacityPending] = useState(false);
+  const streaming = message.status === 'streaming' || message.status === 'queued';
+  const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
+  const capacityWorkspace = useMemo(() => (message.outputItems ?? []).some((item) => {
+    const value = item as { type?: string; state?: string };
+    return value.type === 'pulpo_workspace' && ['waiting', 'unavailable'].includes(value.state ?? '');
+  }), [message.outputItems]);
+  const timeline = useMemo(() => {
+    if (message.role !== 'assistant') return [];
+    if (message.outputItems?.length) return buildMessageTimeline(message.outputItems, showReasoning);
+    const fallback: ReturnType<typeof buildMessageTimeline> = [];
+    if (showReasoning && (message.reasoning || streaming)) fallback.push({
+      kind: 'activity', active: streaming && !message.text,
+      steps: [{ kind: 'reasoning', text: message.reasoning ?? '', active: streaming && !message.text, durationMs: message.thinkSeconds === undefined ? undefined : message.thinkSeconds * 1000 }],
+    });
+    if (message.text) fallback.push({ kind: 'text', text: message.text });
+    return fallback;
+  }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
   return (
     <View style={message.role === 'user' ? styles.userRow : styles.assistantRow}>
       {message.role === 'user' ? (
@@ -1461,7 +1496,7 @@ const MessageRow = memo(function MessageRow({
             <View style={styles.sentAttachments}>
               {message.attachments.map((attachment) => (
                 <SentAttachmentContextMenu attachment={attachment} key={attachment.id}>
-                  {attachment.kind === 'image' ? (
+                  {attachment.kind === 'image' && attachment.uri ? (
                     <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.sentAttachmentImage} />
                   ) : (
                     <View style={styles.sentFileAttachment}>
@@ -1476,7 +1511,7 @@ const MessageRow = memo(function MessageRow({
           {message.text.length > 0 && (
             <MessageContextMenu message={message}>
               <View style={styles.userBubble}>
-                <Text style={styles.messageText}>{message.text}</Text>
+                <SafeMarkdown>{message.text}</SafeMarkdown>
               </View>
             </MessageContextMenu>
           )}
@@ -1488,32 +1523,69 @@ const MessageRow = memo(function MessageRow({
             <Text style={styles.assistantName}>{model.name}</Text>
             <Text style={styles.messageTime}>now</Text>
           </View>
-          {showReasoning && message.thinkSeconds != null && (
-            <ReasoningContextMenu
-              expanded={reasoningOpen}
-              message={message}
-              onToggle={() => onToggleReasoning(message.id)}
-            />
-          )}
-          {message.text ? (
+          {timeline.length ? (
             <MessageContextMenu message={message}>
-              <Text style={styles.assistantText}>{message.text}</Text>
+              <View style={styles.assistantContent}>
+                {timeline.map((segment, index) => segment.kind === 'activity'
+                  ? <WorkBlock active={segment.active || (streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text'))} key={`activity:${index}`} steps={segment.steps} />
+                  : <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>)}
+              </View>
             </MessageContextMenu>
-          ) : message.meta ? (
-            <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.meta}</Text></View>
-          ) : null}
+          ) : message.error ? (
+            <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text></View>
+          ) : streaming ? <ThinkingLabel label="Thinking…" /> : null}
+          {extraOutput.map((item, index) => {
+            const details = JSON.stringify(item, null, 2).slice(0, 4000);
+            return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
+              <View style={styles.workRow}><Icon name="doc.text.magnifyingglass" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{outputItemTitle(item)}</Text></View>
+              <Text selectable style={styles.workDetail}>{details}</Text>
+            </View>;
+          })}
+          {message.attachments && message.attachments.length > 0 && (
+            <View style={[styles.sentAttachments, styles.assistantAttachments]}>
+              {message.attachments.map((attachment) => (
+                <SentAttachmentContextMenu attachment={attachment} key={attachment.id}>
+                  {attachment.kind === 'image' && attachment.uri ? (
+                    <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.sentAttachmentImage} />
+                  ) : (
+                    <View style={styles.sentFileAttachment}>
+                      <Icon name={attachment.kind === 'image' ? 'photo' : 'doc.fill'} size={17} color={COLORS.muted} />
+                      <Text numberOfLines={1} style={styles.sentFileName}>{attachment.name}</Text>
+                    </View>
+                  )}
+                </SentAttachmentContextMenu>
+              ))}
+            </View>
+          )}
+          {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text></View>}
+          {!message.error && message.status === 'stopped' && <View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text></View>}
+          {message.agentMode && streaming && capacityWorkspace && (
+            <Pressable
+              accessibilityRole="button"
+              disabled={capacityPending}
+              onPress={() => {
+                setCapacityPending(true);
+                void continueWithoutAgent(message.id)
+                  .catch((error) => Alert.alert('Couldn’t continue', error instanceof Error ? error.message : undefined))
+                  .finally(() => setCapacityPending(false));
+              }}
+              style={({ pressed }) => [styles.continueButton, pressed && styles.navRowPressed]}
+            >
+              <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
+            </Pressable>
+          )}
           {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
-          {branches.length > 1 && containingChat && (
+          {branches.length > 1 && chatId && (
             <View style={styles.branchControls}>
               <IconAction icon="chevron.left" label="Previous branch" onPress={() => {
                 const next = Math.max(0, branchIndex - 1);
-                updateStoredMessage(containingChat.id, message.id, { activeBranch: next, text: branches[next]!.text });
+                updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text });
                 void activateServerBranch(branches[next]!.id);
               }} />
               <Text style={styles.branchLabel}>{branchIndex + 1} / {branches.length}</Text>
               <IconAction icon="chevron.right" label="Next branch" onPress={() => {
                 const next = Math.min(branches.length - 1, branchIndex + 1);
-                updateStoredMessage(containingChat.id, message.id, { activeBranch: next, text: branches[next]!.text });
+                updateStoredMessage(chatId, message.id, { activeBranch: next, text: branches[next]!.text });
                 void activateServerBranch(branches[next]!.id);
               }} />
             </View>
@@ -1725,23 +1797,21 @@ function ChatView({
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
-  const [reasoningOpen, setReasoningOpen] = useState<Record<string, boolean>>({});
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('Medium');
   const [agentEnabled, setAgentEnabled] = useState(true);
   const [temporary, setTemporary] = useState(false);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [effortPickerOpen, setEffortPickerOpen] = useState(false);
-  const demo = usePrototypeStore((state) => state.demo);
-  const instanceUrl = usePrototypeStore((state) => state.instance.url);
+  const realtimeConnected = useRealtimeStore((state) => state.connected);
+  const syncError = useRealtimeStore((state) => state.syncError);
+  const networkState = Network.useNetworkState();
+  const connectionState = networkState.isConnected === false || networkState.isInternetReachable === false
+    ? 'offline'
+    : realtimeConnected ? 'online' : 'reconnecting';
   const keyboardOffset = useMemo(
     () => ({ closed: 0, opened: Math.max(insets.bottom, 10) - 8 }),
     [insets.bottom],
   );
-
-  const toggleReasoning = useCallback((messageId: string) => {
-    Haptics.selectionAsync();
-    setReasoningOpen((open) => ({ ...open, [messageId]: !open[messageId] }));
-  }, []);
 
   const openEffortPicker = useCallback(() => {
     Haptics.selectionAsync();
@@ -1762,14 +1832,6 @@ function ChatView({
   }, []);
 
   const pickPhotos = useCallback(async () => {
-    if (demo.photos === 'denied') {
-      Alert.alert('Photos access is off', 'Allow Pulpo to select images in iOS Settings, or choose a file instead.', [{ text: 'Not now', style: 'cancel' }, { text: 'Open Settings' }]);
-      return;
-    }
-    if (demo.fileQuota === 'full') {
-      Alert.alert('Storage allowance reached', 'Remove cached files or ask your workspace administrator for more storage.');
-      return;
-    }
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsMultipleSelection: true,
@@ -1789,13 +1851,9 @@ function ChatView({
     } catch {
       Alert.alert('Couldn’t open Photos', 'Please try again or choose the image from Files.');
     }
-  }, [addAttachments, demo.fileQuota, demo.photos]);
+  }, [addAttachments]);
 
   const pickFiles = useCallback(async () => {
-    if (demo.fileQuota === 'full') {
-      Alert.alert('Storage allowance reached', 'This workspace has used its full file allowance.');
-      return;
-    }
     try {
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
@@ -1814,7 +1872,7 @@ function ChatView({
     } catch {
       Alert.alert('Couldn’t open Files', 'Please try choosing the file again.');
     }
-  }, [addAttachments, demo.fileQuota]);
+  }, [addAttachments]);
 
   const submitMessage = useCallback(() => {
     if (!onSend(input, attachments, { reasoningEffort, agentEnabled, temporary })) return;
@@ -1842,10 +1900,8 @@ function ChatView({
     <MessageRow
       message={item}
       model={model}
-      onToggleReasoning={toggleReasoning}
-      reasoningOpen={Boolean(reasoningOpen[item.id])}
     />
-  ), [model, reasoningOpen, toggleReasoning]);
+  ), [model]);
 
   const empty = messages.length === 0 && assistantStatus === 'idle';
   const canSend = (input.trim().length > 0 || attachments.length > 0) && assistantStatus === 'idle';
@@ -1885,10 +1941,10 @@ function ChatView({
           )}
         </AppHeader>
 
-        {demo.network !== 'online' && (
-          <View style={[styles.connectionBanner, demo.network === 'offline' && styles.connectionBannerOffline]}>
-            <Icon name={demo.network === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={demo.network === 'offline' ? '#FFB15A' : COLORS.muted} />
-            <Text style={styles.connectionBannerText}>{demo.network === 'offline' ? 'Offline · messages will send when Pulpo reconnects' : demo.network === 'slow' ? 'Slow connection · responses may take longer' : 'Reconnecting to Pulpo…'}</Text>
+        {(connectionState !== 'online' || syncError) && (
+          <View style={[styles.connectionBanner, (connectionState === 'offline' || syncError) && styles.connectionBannerOffline]}>
+            <Icon name={syncError ? 'exclamationmark.triangle' : connectionState === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={connectionState === 'offline' || syncError ? '#FFB15A' : COLORS.muted} />
+            <Text style={styles.connectionBannerText}>{syncError ?? (connectionState === 'offline' ? 'Offline · messages will send when Pulpo reconnects' : 'Reconnecting to Pulpo…')}</Text>
           </View>
         )}
 
@@ -2632,6 +2688,7 @@ const styles = StyleSheet.create({
   assistantMessageContextHost: { width: '100%' },
   userBubble: { maxWidth: '100%', backgroundColor: COLORS.secondary, borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 },
   sentAttachments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
+  assistantAttachments: { justifyContent: 'flex-start', marginTop: 8 },
   sentImageContextHost: { width: 112, height: 112 },
   sentFileContextHost: { maxWidth: 230, minHeight: 48 },
   sentAttachmentImage: { width: 112, height: 112, borderRadius: 16, backgroundColor: COLORS.fill },
@@ -2650,6 +2707,7 @@ const styles = StyleSheet.create({
   assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 11 },
   assistantName: { color: COLORS.textSoft, fontSize: 13.5, fontWeight: '600' },
   messageTime: { color: COLORS.dim, fontSize: 11.5 },
+  assistantContent: { width: '100%', gap: 4 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   draftText: { marginTop: 10 },
   caret: { color: COLORS.muted, fontSize: 15.5 },
@@ -2659,6 +2717,12 @@ const styles = StyleSheet.create({
   reasoningContextHost: { width: '100%' },
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
   reasoningBody: { borderLeftWidth: 2, borderLeftColor: COLORS.line, paddingLeft: 12, marginBottom: 16, marginLeft: 2, gap: 8 },
+  workBlock: { width: '100%' },
+  workRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 22 },
+  workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
+  workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
+  workStep: { gap: 5 },
+  workDetail: { color: COLORS.muted, fontSize: 11.5, lineHeight: 17, fontFamily: COLORS.mono, backgroundColor: COLORS.fill, borderRadius: 9, paddingHorizontal: 9, paddingVertical: 7 },
   reasoningText: { color: COLORS.muted, fontSize: 13, lineHeight: 19 },
   reasoningDuration: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
   reasoningContextPreview: { width: 320, minHeight: 180, maxHeight: 380, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
@@ -2667,6 +2731,9 @@ const styles = StyleSheet.create({
   messageMeta: { color: COLORS.dim, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
   responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 6 },
   responseErrorText: { color: '#FF8A84', flex: 1, fontSize: 12.5, lineHeight: 18 },
+  otherOutput: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 12, padding: 10, gap: 7, marginTop: 6 },
+  continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },
+  continueButtonText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
   branchControls: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 5 },
   branchLabel: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
   iconAction: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },

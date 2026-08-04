@@ -1,35 +1,14 @@
-import * as Crypto from 'expo-crypto'
 import { ApiError, apiRequest } from '../api/client'
-import { completeOutbox, enqueueOutbox, failOutbox, pendingOutbox } from './database'
+import { completeOutbox, failOutbox, pendingOutbox } from './database'
+import { readyOutboxPrefix } from './schema'
 
-type OfflineMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+const activeReplays = new Map<string, Promise<{ replayed: number; rejected: number }>>()
 
-export async function queueOfflineMutation(input: {
-  namespace: string
-  entityKey: string
-  method: OfflineMethod
-  path: string
-  body?: unknown
-}): Promise<void> {
-  await enqueueOutbox({
-    id: Crypto.randomUUID(),
-    namespace: input.namespace,
-    entityKey: input.entityKey,
-    method: input.method,
-    path: input.path,
-    body: input.body === undefined ? null : JSON.stringify(input.body),
-    createdAt: Date.now(),
-    attempts: 0,
-    nextAttemptAt: 0,
-  })
-}
-
-export async function replayOutbox(namespace: string): Promise<{ replayed: number; rejected: number }> {
-  const rows = await pendingOutbox(namespace)
+async function performReplay(namespace: string): Promise<{ replayed: number; rejected: number }> {
+  const rows = readyOutboxPrefix(await pendingOutbox(namespace), Date.now())
   let replayed = 0
   let rejected = 0
   for (const row of rows) {
-    if (row.nextAttemptAt > Date.now()) continue
     try {
       await apiRequest(row.path, {
         method: row.method,
@@ -49,4 +28,15 @@ export async function replayOutbox(namespace: string): Promise<{ replayed: numbe
     }
   }
   return { replayed, rejected }
+}
+
+export function replayOutbox(namespace: string): Promise<{ replayed: number; rejected: number }> {
+  const active = activeReplays.get(namespace)
+  if (active) return active
+  const replay = performReplay(namespace)
+  activeReplays.set(namespace, replay)
+  void replay.finally(() => {
+    if (activeReplays.get(namespace) === replay) activeReplays.delete(namespace)
+  }).catch(() => undefined)
+  return replay
 }

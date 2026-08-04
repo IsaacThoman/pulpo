@@ -1,5 +1,5 @@
 import type { MobileConfig, NativeAuthResponse, User } from '@pulpo/contracts'
-import type { MobileModel, ServerChat, ServerFolder } from '../types'
+import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
   constructor(
@@ -104,12 +104,13 @@ export const mobileApi = {
     method: 'POST', auth: false, body: { email },
   }),
   chats: () => apiRequest<{ data: ServerChat[] }>('/api/chats'),
-  deletedChats: () => apiRequest<{ data: ServerChat[] }>('/api/chats/deleted'),
+  deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}`),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
 }
 
 export function isNetworkError(error: unknown): boolean {
-  return error instanceof TypeError || (error instanceof ApiError && error.status >= 500)
+  return error instanceof TypeError
+    || (error instanceof ApiError && (error.code === 'request_timeout' || error.status >= 500))
 }

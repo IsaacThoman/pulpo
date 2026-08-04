@@ -99,6 +99,8 @@ export interface PrototypeMessage {
   error?: string;
   meta?: string;
   feedback?: 'good' | 'bad' | null;
+  outputItems?: unknown[];
+  agentMode?: boolean;
 }
 
 export interface PrototypeChat {

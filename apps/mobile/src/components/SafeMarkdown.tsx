@@ -1,24 +1,59 @@
+import { memo, useMemo } from 'react'
 import { Linking } from 'react-native'
-import Markdown from 'react-native-markdown-display'
+import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { useAppTheme } from '../theme'
+import { normalizeMathDelimiters } from './markdown'
 
-export function SafeMarkdown({ children }: { children: string }) {
+export const SafeMarkdown = memo(function SafeMarkdown({
+  children,
+  streaming = false,
+  compact = false,
+}: {
+  children: string
+  streaming?: boolean
+  compact?: boolean
+}) {
   const theme = useAppTheme()
-  return <Markdown
-    onLinkPress={(url) => {
-      if (!/^https?:\/\//i.test(url)) return false
-      void Linking.openURL(url)
-      return false
+  const markdown = useMemo(() => normalizeMathDelimiters(children), [children])
+  const markdownStyle = useMemo<MarkdownStyle>(() => {
+    const fontSize = compact ? 13 : 16
+    const lineHeight = compact ? 19 : 24
+    return {
+      paragraph: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, marginBottom: compact ? 6 : 10 },
+      h1: { color: theme.text, fontSize: compact ? 18 : 24, lineHeight: compact ? 23 : 30, marginTop: 14, marginBottom: 8 },
+      h2: { color: theme.text, fontSize: compact ? 16 : 21, lineHeight: compact ? 22 : 27, marginTop: 13, marginBottom: 7 },
+      h3: { color: theme.text, fontSize: compact ? 14 : 18, lineHeight: compact ? 20 : 24, marginTop: 11, marginBottom: 6 },
+      h4: { color: theme.text, fontSize, lineHeight, marginTop: 10, marginBottom: 5 },
+      h5: { color: theme.text, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
+      h6: { color: theme.secondary, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
+      list: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, markerColor: theme.secondary, bulletColor: theme.secondary, gapWidth: 8, marginLeft: 18, marginBottom: 8 },
+      strong: { color: theme.text },
+      em: { color: compact ? theme.secondary : theme.text },
+      link: { color: theme.blue, underline: true },
+      code: { color: theme.text, backgroundColor: theme.fillStrong, borderColor: theme.separator, fontFamily: 'Menlo', fontSize: Math.max(11, fontSize - 2) },
+      codeBlock: { color: theme.text, backgroundColor: theme.elevated, borderColor: theme.separator, borderWidth: 1, borderRadius: 10, fontFamily: 'Menlo', fontSize: Math.max(11, fontSize - 2), lineHeight: Math.max(16, lineHeight - 3), padding: 12, marginBottom: 10 },
+      blockquote: { color: theme.secondary, backgroundColor: theme.fill, borderColor: theme.secondary, borderWidth: 2, gapWidth: 10, fontSize, lineHeight, marginBottom: 10 },
+      thematicBreak: { color: theme.separator, height: 1, marginTop: 12, marginBottom: 12 },
+      table: { color: theme.text, fontSize: Math.max(12, fontSize - 2), lineHeight: Math.max(17, lineHeight - 4), headerBackgroundColor: theme.fillStrong, headerTextColor: theme.text, rowEvenBackgroundColor: theme.fill, rowOddBackgroundColor: theme.background, borderColor: theme.separator, borderWidth: 1, borderRadius: 10, cellPaddingHorizontal: 9, cellPaddingVertical: 7, marginBottom: 12 },
+      taskList: { checkedColor: theme.blue, borderColor: theme.secondary, checkmarkColor: theme.background, checkedTextColor: theme.secondary },
+      math: { color: theme.text, backgroundColor: theme.fill, padding: 12, marginTop: 8, marginBottom: 12, textAlign: 'center' },
+      inlineMath: { color: theme.text },
+    }
+  }, [compact, theme])
+
+  if (!markdown) return null
+  return <EnrichedMarkdownText
+    accessibilityRole="text"
+    allowTrailingMargin={false}
+    flavor="github"
+    markdown={markdown}
+    markdownStyle={markdownStyle}
+    maxFontSizeMultiplier={2}
+    onLinkPress={({ url }) => {
+      if (/^https?:\/\//i.test(url)) void Linking.openURL(url)
     }}
-    style={{
-      body: { color: theme.text, fontSize: 16, lineHeight: 24 },
-      paragraph: { marginTop: 0, marginBottom: 10 },
-      link: { color: theme.blue },
-      code_inline: { color: theme.text, backgroundColor: theme.fillStrong, fontFamily: 'Menlo', paddingHorizontal: 4, borderRadius: 4 },
-      code_block: { color: theme.text, backgroundColor: theme.elevated, fontFamily: 'Menlo', padding: 12, borderRadius: 12 },
-      fence: { color: theme.text, backgroundColor: theme.elevated, fontFamily: 'Menlo', padding: 12, borderRadius: 12 },
-      blockquote: { borderLeftColor: theme.secondary, backgroundColor: theme.fill, color: theme.secondary },
-      heading1: { color: theme.text }, heading2: { color: theme.text }, heading3: { color: theme.text },
-    }}
-  >{children}</Markdown>
-}
+    selectable
+    streamingAnimation={streaming}
+    streamingConfig={{ tableMode: 'progressive' }}
+  />
+})

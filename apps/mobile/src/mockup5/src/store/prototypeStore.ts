@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist, type PersistStorage, type StorageValue } from 'zustand/middleware';
 import type {
   AppPreferences, DemoScenarios, PersistedPrototypeState,
   PrototypeChat, PrototypeFolder, PrototypeMessage, SessionState,
@@ -54,6 +54,32 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit']);
+
+let persistenceTimer: ReturnType<typeof setTimeout> | undefined;
+let pendingPersistence: { name: string; value: StorageValue<PersistedPrototypeState> } | undefined;
+const coalescedStorage: PersistStorage<PersistedPrototypeState> = {
+  getItem: async (name) => {
+    const value = await AsyncStorage.getItem(name);
+    return value ? JSON.parse(value) as StorageValue<PersistedPrototypeState> : null;
+  },
+  setItem: (name, value) => {
+    pendingPersistence = { name, value };
+    if (persistenceTimer) clearTimeout(persistenceTimer);
+    persistenceTimer = setTimeout(() => {
+      const pending = pendingPersistence;
+      pendingPersistence = undefined;
+      persistenceTimer = undefined;
+      if (pending) void AsyncStorage.setItem(pending.name, JSON.stringify(pending.value));
+    }, 500);
+    return Promise.resolve();
+  },
+  removeItem: async (name: string) => {
+    if (persistenceTimer) clearTimeout(persistenceTimer);
+    persistenceTimer = undefined;
+    pendingPersistence = undefined;
+    await AsyncStorage.removeItem(name);
+  },
+};
 
 export function migratePrototypeState(value: unknown): PersistedPrototypeState {
   const seed = createSeedState();
@@ -112,7 +138,13 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
   restoreChat: (chatId) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, purgeAt: null, updatedAt: Date.now() } : chat) })); runProductionAction(productionActions.restoreChat(chatId)); },
   permanentlyDeleteChat: (chatId) => { set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })); runProductionAction(productionActions.permanentlyDeleteChat(chatId)); },
   emptyTrash: () => set((state) => ({ chats: state.chats.filter((chat) => chat.deletedAt === null) })),
-  appendMessage: (chatId, message) => set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, messages: [...chat.messages, message], updatedAt: Date.now() } : chat) })),
+  appendMessage: (chatId, message) => set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? {
+    ...chat,
+    messages: chat.messages.some((candidate) => candidate.id === message.id)
+      ? chat.messages.map((candidate) => candidate.id === message.id ? { ...candidate, ...message } : candidate)
+      : [...chat.messages, message],
+    updatedAt: Date.now(),
+  } : chat) })),
   updateMessage: (chatId, messageId, patch) => set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, messages: chat.messages.map((message) => message.id === messageId ? { ...message, ...patch } : message), updatedAt: Date.now() } : chat) })),
   deleteMessageCascade: (chatId, messageId) => set((state) => ({ chats: state.chats.map((chat) => {
     if (chat.id !== chatId) return chat;
@@ -130,7 +162,7 @@ export const usePrototypeStore = create<PrototypeStore>()(persist((set, get) => 
 }), {
   name: 'pulpo-mockup-5-prototype-v3',
   version: SEED_VERSION,
-  storage: createJSONStorage(() => AsyncStorage),
+  storage: coalescedStorage,
   migrate: (persisted) => migratePrototypeState(persisted),
   partialize: (state) => ({
     seedVersion: state.seedVersion, instance: state.instance, session: state.session, models: state.models,

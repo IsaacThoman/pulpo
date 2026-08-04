@@ -85,7 +85,13 @@ export interface OutboxRecord {
 
 export function orderOutbox(records: OutboxRecord[]): OutboxRecord[] {
   return [...records].sort((left, right) =>
-    left.nextAttemptAt - right.nextAttemptAt || left.createdAt - right.createdAt || left.id.localeCompare(right.id))
+    left.createdAt - right.createdAt || left.id.localeCompare(right.id))
+}
+
+export function readyOutboxPrefix(records: OutboxRecord[], now: number): OutboxRecord[] {
+  const ordered = orderOutbox(records)
+  const firstWaiting = ordered.findIndex((record) => record.nextAttemptAt > now)
+  return firstWaiting === -1 ? ordered : ordered.slice(0, firstWaiting)
 }
 
 export function outboxRetryDelay(attempts: number): number {

@@ -36,6 +36,14 @@ export interface ServerChat {
   responses?: ServerResponse[]
 }
 
+export interface ServerDeletedChat {
+  id: string
+  title: string
+  modelId: string
+  deletedAt: string
+  purgeAt: string | null
+}
+
 export interface ServerFolder {
   id: string
   name: string

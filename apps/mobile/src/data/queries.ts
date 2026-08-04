@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query'
 import { mobileApi } from '../api/client'
-import { cacheChats, cachedChats, getValue, setValue } from './database'
-import type { ServerChat, ServerFolder } from '../types'
+import { cacheChats, cachedChats, getValue, setValue, trimCachedChats } from './database'
+import type { ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export const queryKeys = {
   chats: (namespace: string) => ['chats', namespace] as const,
@@ -11,16 +11,57 @@ export const queryKeys = {
   models: (namespace: string) => ['models', namespace] as const,
 }
 
-export function chatsQuery(namespace: string) {
+export function chatsQuery(namespace: string, localChatLimit = 200) {
   return queryOptions({
     queryKey: queryKeys.chats(namespace),
     queryFn: async () => {
       try {
         const { data } = await mobileApi.chats()
         await cacheChats(namespace, data)
+        await trimCachedChats(namespace, localChatLimit)
         return data
       } catch (error) {
-        const cached = await cachedChats(namespace)
+        const cached = (await cachedChats(namespace)).filter((chat) => !chat.deletedAt)
+        if (cached.length) return cached
+        throw error
+      }
+    },
+  })
+}
+
+function normalizeDeletedChat(chat: ServerDeletedChat, existing?: ServerChat): ServerChat {
+  const timestamp = chat.deletedAt || new Date().toISOString()
+  return {
+    ...existing,
+    id: chat.id,
+    title: chat.title,
+    modelId: chat.modelId,
+    pinned: false,
+    folderId: null,
+    sortOrder: existing?.sortOrder ?? 0,
+    temporary: false,
+    activeResponseId: existing?.activeResponseId ?? null,
+    activeBranchLeafId: existing?.activeBranchLeafId ?? null,
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: existing?.updatedAt ?? timestamp,
+    deletedAt: chat.deletedAt,
+    purgeAt: chat.purgeAt,
+  }
+}
+
+export function deletedChatsQuery(namespace: string, localChatLimit = 200) {
+  return queryOptions({
+    queryKey: queryKeys.deletedChats(namespace),
+    queryFn: async () => {
+      try {
+        const [{ data }, cached] = await Promise.all([mobileApi.deletedChats(), cachedChats(namespace)])
+        const existing = new Map(cached.map((chat) => [chat.id, chat]))
+        const normalized = data.map((chat) => normalizeDeletedChat(chat, existing.get(chat.id)))
+        await cacheChats(namespace, normalized)
+        await trimCachedChats(namespace, localChatLimit)
+        return normalized
+      } catch (error) {
+        const cached = (await cachedChats(namespace)).filter((chat) => Boolean(chat.deletedAt))
         if (cached.length) return cached
         throw error
       }

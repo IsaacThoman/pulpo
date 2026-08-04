@@ -3,20 +3,33 @@ import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError } from '@pulpo/client-core'
 import type { ResponseSnapshot } from '@pulpo/contracts'
-import { apiOrigin, apiRequest, nativeAuthorizationHeaders } from '../../api/client'
+import { apiOrigin, apiRequest, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, recordCachedAttachment } from '../../data/database'
+import { queueOfflineMutation } from '../../data/mutations'
 import type { AttachmentDraft, ServerAttachment, ServerChat, ServerFolder } from '../../types'
-import { useRealtimeStore } from '../../providers/RealtimeProvider'
+import { useRealtimeStore } from '../../providers/realtimeStore'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
 
 export async function createChat(input: { clientId?: string; modelId: string; temporary?: boolean; title?: string }): Promise<ServerChat> {
   const clientId = input.clientId ?? Crypto.randomUUID()
-  return apiRequest('/api/chats', {
-    method: 'POST',
-    idempotencyKey: clientId,
-    body: { clientId, modelId: input.modelId, temporary: input.temporary ?? false, title: input.title },
-  })
+  const body = { clientId, modelId: input.modelId, temporary: input.temporary ?? false, title: input.title }
+  try {
+    return await apiRequest('/api/chats', { method: 'POST', idempotencyKey: clientId, body })
+  } catch (error) {
+    const { instanceUrl, user } = useSessionStore.getState()
+    if (!user || !isNetworkError(error)) throw error
+    await queueOfflineMutation({
+      namespace: cacheNamespace(instanceUrl, user.id), entityKey: `chat:${clientId}`,
+      method: 'POST', path: '/api/chats', body, idempotencyKey: clientId,
+    })
+    const now = new Date().toISOString()
+    return {
+      id: clientId, title: input.title ?? 'New chat', modelId: input.modelId, pinned: false,
+      folderId: null, sortOrder: 0, temporary: input.temporary ?? false, activeResponseId: null,
+      activeBranchLeafId: null, createdAt: now, updatedAt: now, responses: [], attachments: [],
+    }
+  }
 }
 
 export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder'>>): Promise<ServerChat> {
@@ -61,20 +74,36 @@ export async function sendMessage(input: {
   agentMode?: boolean
 }): Promise<ResponseSnapshot> {
   const responseId = Crypto.randomUUID()
-  const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/chats/${input.chatId}/responses`, {
-    method: 'POST', idempotencyKey: responseId,
-    body: {
-      clientId: responseId,
-      parentResponseId: input.parentResponseId,
-      input: input.content,
-      modelId: input.modelId,
-      presetSelections: input.presetSelections ?? {},
-      attachmentIds: input.attachmentIds ?? [],
-      agentMode: input.agentMode ?? false,
-    },
-  })
-  useRealtimeStore.getState().receiveSnapshot(result.response)
-  return result.response
+  const path = `/api/chats/${input.chatId}/responses`
+  const body = {
+    clientId: responseId,
+    parentResponseId: input.parentResponseId,
+    input: input.content,
+    modelId: input.modelId,
+    presetSelections: input.presetSelections ?? {},
+    attachmentIds: input.attachmentIds ?? [],
+    agentMode: input.agentMode ?? false,
+  }
+  try {
+    const result = await apiRequest<{ response: ResponseSnapshot }>(path, {
+      method: 'POST', idempotencyKey: responseId, body,
+    })
+    useRealtimeStore.getState().receiveSnapshot(result.response)
+    return result.response
+  } catch (error) {
+    const { instanceUrl, user } = useSessionStore.getState()
+    if (!user || !isNetworkError(error)) throw error
+    await queueOfflineMutation({
+      namespace: cacheNamespace(instanceUrl, user.id), entityKey: `response:${responseId}`,
+      method: 'POST', path, body, idempotencyKey: responseId,
+    })
+    const queued: ResponseSnapshot = {
+      responseId, status: 'queued', sequence: 0, output: [], usage: null, error: null,
+      updatedAt: new Date().toISOString(),
+    }
+    useRealtimeStore.getState().receiveSnapshot(queued)
+    return queued
+  }
 }
 
 export async function cancelResponse(id: string): Promise<ResponseSnapshot> {
@@ -112,7 +141,9 @@ export async function deleteMessageCascade(id: string): Promise<void> {
 }
 
 export async function continueWithoutAgent(id: string): Promise<ResponseSnapshot> {
-  return apiRequest(`/api/responses/${id}/continue-without-agent`, { method: 'POST' })
+  const snapshot = await apiRequest<ResponseSnapshot>(`/api/responses/${id}/continue-without-agent`, { method: 'POST' })
+  useRealtimeStore.getState().receiveSnapshot(snapshot)
+  return snapshot
 }
 
 export async function shareChat(id: string): Promise<string> {

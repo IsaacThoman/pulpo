@@ -6,6 +6,7 @@ import {
   cacheNamespace,
   orderOutbox,
   outboxRetryDelay,
+  readyOutboxPrefix,
   type OutboxRecord,
 } from './schema'
 
@@ -27,13 +28,17 @@ describe('mobile SQLite schema', () => {
     expect(cacheNamespace('https://other.example', 'user-1')).not.toBe(cacheNamespace('https://pulpo.baby', 'user-1'))
   })
 
-  it('replays outbox records deterministically', () => {
+  it('replays outbox records in causal creation order, regardless of retry time', () => {
     const record = (id: string, nextAttemptAt: number, createdAt: number): OutboxRecord => ({
       id, namespace: 'n', entityKey: id, method: 'PATCH', path: `/api/chats/${id}`,
       body: '{}', attempts: 0, nextAttemptAt, createdAt,
     })
-    expect(orderOutbox([record('third', 2, 1), record('second', 1, 2), record('first', 1, 1)])
+    expect(orderOutbox([record('third', 0, 3), record('second', 1, 2), record('first', 10, 1)])
       .map((item) => item.id)).toEqual(['first', 'second', 'third'])
+    expect(readyOutboxPrefix([
+      record('response', 0, 2),
+      record('chat', 2_000, 1),
+    ], 1_000)).toEqual([])
     expect([0, 1, 5, 20].map(outboxRetryDelay)).toEqual([1_000, 2_000, 32_000, 60_000])
   })
 

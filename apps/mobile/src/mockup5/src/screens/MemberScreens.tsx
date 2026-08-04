@@ -1,8 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button as RNButton, Image, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View,
+  Alert, Button as RNButton, Image, Platform, ScrollView, Share, StyleSheet, Text, View,
 } from 'react-native';
-import { SymbolView } from 'expo-symbols';
+import * as Network from 'expo-network';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -31,6 +31,7 @@ import type { PrototypeChat } from '../domain';
 import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
+import { useRealtimeStore } from '../../../providers/realtimeStore';
 
 const relative = (timestamp: number) => {
   const delta = Date.now() - timestamp;
@@ -104,14 +105,14 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   const updateProfile = usePrototypeStore((state) => state.updateProfile);
   const setProductionUser = useSessionStore((state) => state.setUser);
   const [name, setName] = useState(session.user?.name ?? '');
-  const save = () => {
+  const save = useCallback(() => {
     if (!name.trim()) return;
     void mobileApi.updateProfile(name.trim()).then(({ user }) => {
       setProductionUser(user);
       updateProfile({ name: user.name });
       navigation.goBack();
     }).catch((error) => Alert.alert('Couldn’t update profile', error instanceof Error ? error.message : undefined));
-  };
+  }, [name, navigation, setProductionUser, updateProfile]);
 
   useLayoutEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -119,7 +120,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
       headerLeft: () => <RNButton title="Cancel" onPress={() => navigation.goBack()} />,
       headerRight: () => <RNButton title="Done" disabled={!name.trim()} onPress={save} />,
     });
-  }, [name, navigation]);
+  }, [name, navigation, save]);
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>This is the name shown on your Pulpo account.</SwiftUIText>}><NativeFormTextField title="Name" value={name} onChange={setName} /><SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><Field label="Display name" value={name} onChangeText={setName} /><PrimaryButton label="Save" onPress={save} /></Screen>;
@@ -149,8 +150,12 @@ export function ChangePasswordScreen({ navigation }: NativeStackScreenProps<Root
 export function InstanceDetailsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'InstanceDetails'>) {
   const theme = useAppTheme();
   const instance = usePrototypeStore((state) => state.instance);
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Connection"><SwiftUILabeledContent label="Status"><SwiftUIText>Connected</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Name"><SwiftUIText>{instance.name}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Version"><SwiftUIText>{instance.version}</SwiftUIText></SwiftUILabeledContent></SwiftUISection><SwiftUISection title="Endpoints"><SwiftUILabeledContent label="Server"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{instance.url}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="API"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{`${instance.url}/v1`}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
-  return <Screen><PageHeader title="Pulpo Instance" onBack={() => navigation.goBack()} /><Card><ListRow title="Status" value="Connected" /><ListRow title="Name" value={instance.name} /><ListRow title="Version" value={instance.version} /><ListRow title="Server" detail={instance.url} /><ListRow title="API" detail={`${instance.url}/v1`} last /></Card></Screen>;
+  const realtimeConnected = useRealtimeStore((state) => state.connected);
+  const networkState = Network.useNetworkState();
+  const connectionLabel = networkState.isConnected === false || networkState.isInternetReachable === false
+    ? 'Offline' : realtimeConnected ? 'Connected' : 'Reconnecting';
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Connection"><SwiftUILabeledContent label="Status"><SwiftUIText>{connectionLabel}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Name"><SwiftUIText>{instance.name}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Version"><SwiftUIText>{instance.version}</SwiftUIText></SwiftUILabeledContent></SwiftUISection><SwiftUISection title="Endpoints"><SwiftUILabeledContent label="Server"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{instance.url}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="API"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{`${instance.url}/v1`}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  return <Screen><PageHeader title="Pulpo Instance" onBack={() => navigation.goBack()} /><Card><ListRow title="Status" value={connectionLabel} /><ListRow title="Name" value={instance.name} /><ListRow title="Version" value={instance.version} /><ListRow title="Server" detail={instance.url} /><ListRow title="API" detail={`${instance.url}/v1`} last /></Card></Screen>;
 }
 
 type SettingsDestination = SettingsSection | 'trash';
@@ -200,9 +205,6 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   const theme = useAppTheme();
   const preferences = usePrototypeStore((state) => state.preferences);
   const setPreference = usePrototypeStore((state) => state.setPreference);
-  const demo = usePrototypeStore((state) => state.demo);
-  const setDemo = usePrototypeStore((state) => state.setDemoScenario);
-  const resetDemo = usePrototypeStore((state) => state.resetDemo);
   const chats = usePrototypeStore((state) => state.chats);
   const instanceUrl = useSessionStore((state) => state.instanceUrl);
   const userId = useSessionStore((state) => state.user?.id);
@@ -253,8 +255,6 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
 }
 
 function Toggle({ title, detail, value, onChange, last = false }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void; last?: boolean }) { return <ListRow title={title} detail={detail} last={last}><NativeSwitch label={title} value={value} onChange={onChange} /></ListRow>; }
-function Choice({ title, selected, onPress, last = false }: { title: string; selected: boolean; onPress: () => void; last?: boolean }) { const theme = useAppTheme(); return <ListRow title={title} last={last} onPress={onPress}>{selected ? <SymbolView name="checkmark.circle.fill" size={20} tintColor={theme.green} /> : null}</ListRow>; }
-
 export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Trash'>) {
   const theme = useAppTheme();
   const storedChats = usePrototypeStore((state) => state.chats);
@@ -264,11 +264,11 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
   const restore = usePrototypeStore((state) => state.restoreChat);
   const remove = usePrototypeStore((state) => state.permanentlyDeleteChat);
   const empty = usePrototypeStore((state) => state.emptyTrash);
-  const confirmEmpty = () => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }]);
+  const confirmEmpty = useCallback(() => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }]), [empty]);
   useLayoutEffect(() => {
     if (Platform.OS !== 'ios') return;
     navigation.setOptions({ headerRight: chats.length ? () => <RNButton title="Empty" color={theme.red} onPress={confirmEmpty} /> : undefined });
-  }, [chats.length, navigation, theme.red]);
+  }, [chats.length, confirmEmpty, navigation, theme.red]);
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Retention" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Chats are permanently removed after this period.</SwiftUIText>}>
       <NativeChoiceRow title="Keep trashed chats" value={retention} options={[{ value: 'instant', label: 'No retention' }, { value: '24h', label: '24 hours' }, { value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }, { value: '90d', label: '90 days' }, { value: 'indefinite', label: 'Indefinitely' }] as const} onChange={(value) => setPreference('trashRetention', value)} />

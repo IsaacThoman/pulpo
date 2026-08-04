@@ -34,6 +34,7 @@ export interface DisplayMessage {
   error?: string
   agentMode: boolean
   usage?: { inputTokens: number; outputTokens: number } | null
+  outputItems: unknown[]
 }
 
 function textFromContent(content: unknown): string {
@@ -151,11 +152,13 @@ export function projectChat(chat: ServerChat, liveSnapshots: Record<string, Resp
       id: `${response.id}:input`, responseId: response.id, role: 'user', text: inputText(response.input),
       modelId: response.displayModelId ?? response.modelId, status: 'completed', createdAt: response.createdAt,
       attachments: inputAttachments, activity: [], branch: response.branches.user, agentMode: response.agentMode,
+      outputItems: [],
     }, {
       id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
       modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
       attachments: generatedAttachments(output), activity: activities(output), branch: response.branches.assistant,
       error: errorMessage, agentMode: response.agentMode, usage: response.usage,
+      outputItems: output,
     }]
   })
 }
