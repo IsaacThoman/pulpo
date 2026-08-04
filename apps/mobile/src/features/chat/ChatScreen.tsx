@@ -7,10 +7,6 @@ import * as DocumentPicker from 'expo-document-picker'
 import * as ImagePicker from 'expo-image-picker'
 import * as Haptics from 'expo-haptics'
 import { File } from 'expo-file-system'
-import { GlassView } from 'expo-glass-effect'
-import { SymbolView } from 'expo-symbols'
-import { Button as SwiftUIButton, Divider as SwiftUIDivider, Host as SwiftUIHost, Image as SwiftUIImage, Menu as SwiftUIMenu, Toggle as SwiftUIToggle } from '@expo/ui/swift-ui'
-import { accessibilityLabel as swiftUIAccessibilityLabel, buttonBorderShape, buttonStyle, controlSize, frame } from '@expo/ui/swift-ui/modifiers'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiRequest, mobileApi } from '../../api/client'
 import { GlassIconButton } from '../../components/PrototypeUI'
@@ -46,36 +42,10 @@ import { projectChat, type DisplayAttachment, type DisplayMessage } from './proj
 
 const SUGGESTIONS = [
   'What can you help me build today?',
-  'Explain how KV caching speeds up decoding',
-  'Draft a terse commit message for a sidebar refactor',
-  'Compare mixture-of-experts vs dense models',
+  'Explain a difficult idea clearly',
+  'Review this plan for blind spots',
+  'Draft a concise project update',
 ]
-
-function NativeChatActionsMenu({ activeChat, temporary, onTemporaryChange, onShare, onRename, onDuplicate, onTrash, onNewChat }: {
-  activeChat: boolean
-  temporary: boolean
-  onTemporaryChange: (value: boolean) => void
-  onShare: () => void
-  onRename: () => void
-  onDuplicate: () => void
-  onTrash: () => void
-  onNewChat: () => void
-}) {
-  return <SwiftUIHost matchContents style={styles.nativeHeaderAction}>
-    <SwiftUIMenu
-      label={<SwiftUIImage systemName="ellipsis" size={18} modifiers={[frame({ width: 28, height: 28 })]} />}
-      modifiers={[buttonStyle('glass'), buttonBorderShape('circle'), controlSize('regular'), swiftUIAccessibilityLabel('Chat actions')]}
-    >
-      {!activeChat ? <SwiftUIToggle isOn={temporary} label="Temporary chat" systemImage="eye.slash" onIsOnChange={(value) => { onTemporaryChange(value); void Haptics.selectionAsync() }} /> : null}
-      {activeChat ? <SwiftUIButton label="Share chat" systemImage="square.and.arrow.up" onPress={onShare} /> : null}
-      {activeChat ? <SwiftUIButton label="Rename chat" systemImage="pencil" onPress={onRename} /> : null}
-      {activeChat ? <SwiftUIButton label="Duplicate chat" systemImage="plus.square.on.square" onPress={onDuplicate} /> : null}
-      {activeChat ? <SwiftUIButton label="Move to Trash" role="destructive" systemImage="trash" onPress={onTrash} /> : null}
-      <SwiftUIDivider />
-      <SwiftUIButton label="New chat" systemImage="square.and.pencil" onPress={onNewChat} />
-    </SwiftUIMenu>
-  </SwiftUIHost>
-}
 
 function defaultSelections(model: MobileModel | undefined): Record<string, string> {
   return Object.fromEntries((model?.presets ?? []).flatMap((preset) => {
@@ -96,7 +66,7 @@ function localAttachment(asset: { uri: string; name?: string | null; fileName?: 
   }
 }
 
-export function ChatScreen({ chatId, onOpenPanel, onNewChat }: { chatId?: string; onOpenPanel?: () => void; onNewChat?: () => void }) {
+export function ChatScreen({ chatId }: { chatId?: string }) {
   const theme = useAppTheme()
   const queryClient = useQueryClient()
   const user = useSessionStore((state) => state.user)!
@@ -277,16 +247,9 @@ export function ChatScreen({ chatId, onOpenPanel, onNewChat }: { chatId?: string
     try { const url = await shareChat(activeChatId); await Share.share({ message: `${chat?.title ?? 'Pulpo chat'}\n${url}`, url }) }
     catch (cause) { Alert.alert('Could not share chat', cause instanceof Error ? cause.message : undefined) }
   }
-  const renameCurrent = () => Platform.OS === 'ios' && activeChatId && Alert.prompt('Rename chat', undefined, (title) => title.trim() && void updateChat(activeChatId, { title: title.trim() }).then(() => invalidate()), 'plain-text', chat?.title)
-  const duplicateCurrent = () => activeChatId && void duplicateChat(activeChatId).then((copy) => router.push({ pathname: '/(member)/chat/[id]', params: { id: copy.id } }))
-  const trashCurrent = () => activeChatId && Alert.alert('Move chat to Trash?', 'You can restore it later from Settings.', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Move to Trash', style: 'destructive', onPress: () => void trashChat(activeChatId).then(() => { void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) }); router.replace('/(member)') }) },
-  ])
   const chatActions = () => Alert.alert(chat?.title ?? 'New chat', undefined, [
     ...(!activeChatId ? [{ text: temporary ? 'Use chat history' : 'Make temporary', onPress: () => setTemporary((current) => !current) }] : []),
-    ...(activeChatId ? [{ text: 'Share', onPress: () => { void shareCurrent() } }, { text: 'Rename', onPress: renameCurrent }, { text: 'Duplicate', onPress: duplicateCurrent }, { text: 'Move to Trash', style: 'destructive' as const, onPress: trashCurrent }] : []),
-    { text: 'New chat', onPress: () => onNewChat?.() },
+    ...(activeChatId ? [{ text: 'Share', onPress: () => { void shareCurrent() } }, { text: 'Rename', onPress: () => Platform.OS === 'ios' && Alert.prompt('Rename chat', undefined, (title) => title.trim() && void updateChat(activeChatId, { title: title.trim() }).then(() => invalidate()), 'plain-text', chat?.title) }, { text: 'Duplicate', onPress: () => void duplicateChat(activeChatId).then((copy) => router.push({ pathname: '/(member)/chat/[id]', params: { id: copy.id } })) }, { text: 'Move to Trash', style: 'destructive' as const, onPress: () => void trashChat(activeChatId).then(() => { void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) }); router.replace('/(member)') }) }] : []),
     { text: 'Cancel', style: 'cancel' },
   ])
 
@@ -295,14 +258,11 @@ export function ChatScreen({ chatId, onOpenPanel, onNewChat }: { chatId?: string
   return <View style={[styles.root, { backgroundColor: theme.background }]}>
     <SafeAreaView edges={['top']} style={{ backgroundColor: theme.background }}>
       <View style={styles.header}>
-        <GlassIconButton icon="line.3.horizontal" label="Open chats" onPress={() => onOpenPanel?.()} />
-        <View style={styles.modelTriggerWrap}><Pressable accessibilityHint="Opens the model picker" accessibilityLabel={`Model, ${selectedModel?.name ?? 'Choose a model'}`} accessibilityRole="button" onPress={() => setModelPicker(true)}>
-          <GlassView isInteractive style={styles.modelTrigger}><ModelMark model={selectedModel} size={22} /><Text numberOfLines={1} style={[styles.modelTriggerText, { color: theme.text }]}>{selectedModel?.name ?? 'Choose a model'}</Text></GlassView>
-        </Pressable></View>
-        {Platform.OS === 'ios' ? <NativeChatActionsMenu activeChat={Boolean(activeChatId)} temporary={temporary} onTemporaryChange={setTemporary} onShare={() => { void shareCurrent() }} onRename={renameCurrent} onDuplicate={duplicateCurrent} onTrash={trashCurrent} onNewChat={() => onNewChat?.()} /> : <GlassIconButton icon="ellipsis" label="Chat actions" onPress={chatActions} />}
+        <GlassIconButton icon="sidebar.left" label="Chats" onPress={() => router.back()} />
+        <Pressable accessibilityRole="button" onPress={() => setModelPicker(true)} style={styles.headerTitle}><Text numberOfLines={1} style={[styles.title, { color: theme.text }]}>{chat?.title ?? (temporary ? 'Temporary chat' : 'New chat')}</Text><Text numberOfLines={1} style={[styles.subtitle, { color: theme.secondary }]}>{selectedModel?.name ?? 'Choose a model'}</Text></Pressable>
+        <GlassIconButton icon="ellipsis" label="Chat actions" onPress={chatActions} />
       </View>
     </SafeAreaView>
-    {temporary ? <View style={[styles.temporaryBanner, { backgroundColor: theme.fill }]}><SymbolView name="eye.slash" size={12} tintColor={theme.secondary} /><Text style={[styles.temporaryBannerText, { color: theme.secondary }]}>Temporary chat · not saved to history</Text></View> : null}
     {error ? <View style={styles.center}><Text style={{ color: theme.red }}>{error instanceof Error ? error.message : 'Could not load chat'}</Text></View> : null}
     <FlatList
       ref={listRef}
@@ -312,20 +272,19 @@ export function ChatScreen({ chatId, onOpenPanel, onNewChat }: { chatId?: string
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
       onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
-      ListHeaderComponent={displayMessages.length ? <Text style={[styles.dateLabel, { color: theme.tertiary }]}>{(chat?.title ?? 'NEW CHAT').toUpperCase()}</Text> : null}
       ListEmptyComponent={!isLoading ? <View style={styles.empty}>
         <View style={styles.modelTitle}><ModelMark model={selectedModel} size={48} /><Text style={[styles.emptyTitle, { color: theme.text }]}>{selectedModel?.name ?? 'Pulpo'}</Text></View>
         <Text style={[styles.emptyProvider, { color: theme.secondary }]}>{selectedModel?.provider.name ?? 'Choose a model to begin'}</Text>
         <View style={styles.suggestions}>{SUGGESTIONS.map((suggestion) => <Pressable key={suggestion} onPress={() => { setInput(suggestion); void submit(suggestion) }} style={[styles.suggestion, { backgroundColor: theme.fill, borderColor: theme.separator }]}><Text style={[styles.suggestionText, { color: theme.text }]}>{suggestion}</Text></Pressable>)}</View>
       </View> : null}
       renderItem={({ item }) => <MessageItem message={item} model={models.find((model) => model.id === item.modelId)} onReply={(text) => setInput(`> ${text.split('\n')[0]}\n\n`)} onEdit={edit} onRegenerate={regenerate} onDelete={remove} onActivateBranch={activate} onOpenAttachment={openAttachment} onContinueWithoutAgent={(message) => { void continueWithoutAgent(message.responseId).then(() => invalidate()) }} />}
-      ListFooterComponent={pendingText ? <View style={{ gap: 18 }}><View style={[styles.pendingUser, { backgroundColor: theme.fillStrong }]}><Text style={{ color: theme.text, fontSize: 15.5, lineHeight: 22.5 }}>{pendingText}</Text></View><View style={styles.pendingAssistant}><Image source={require('../../../assets/pulpo-smiley.png')} style={styles.pendingLogo} /><Text style={{ color: theme.secondary }}>Working…</Text></View></View> : null}
+      ListFooterComponent={pendingText ? <View style={{ gap: 18 }}><View style={[styles.pendingUser, { backgroundColor: theme.elevated }]}><Text style={{ color: theme.text, fontSize: 16 }}>{pendingText}</Text></View><View style={styles.pendingAssistant}><Image source={require('../../../assets/pulpo-smiley.png')} style={styles.pendingLogo} /><Text style={{ color: theme.secondary }}>Working…</Text></View></View> : null}
     />
-    <Composer value={input} onChange={setInput} model={selectedModel} presets={presetSelections} attachments={attachments} agentMode={agentMode} canUseAgent={Boolean(modelResult?.agentAvailable && selectedModel?.agentEnabled)} active={active} onToggleAgent={() => { const next = !agentMode; setAgentMode(next); void setPreference('agentMode', next) }} onPickAttachment={chooseAttachment} onPickFiles={() => { void pickFiles() }} onPickPhotos={() => { void pickPhotos() }} onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.localId !== id))} onRetryAttachment={(attachment) => activeChatId && void uploadOne(attachment, activeChatId)} onOpenPreset={openPreset} onSelectPreset={(presetId, choiceId) => setPresetSelections((current) => ({ ...current, [presetId]: choiceId }))} onSend={() => { void submit() }} onStop={() => { void stop() }} />
+    <Composer value={input} onChange={setInput} model={selectedModel} presets={presetSelections} attachments={attachments} agentMode={agentMode} canUseAgent={Boolean(modelResult?.agentAvailable && selectedModel?.agentEnabled)} active={active} onToggleAgent={() => { const next = !agentMode; setAgentMode(next); void setPreference('agentMode', next) }} onPickAttachment={chooseAttachment} onRemoveAttachment={(id) => setAttachments((current) => current.filter((item) => item.localId !== id))} onRetryAttachment={(attachment) => activeChatId && void uploadOne(attachment, activeChatId)} onOpenModels={() => setModelPicker(true)} onOpenPreset={openPreset} onSend={() => { void submit() }} onStop={() => { void stop() }} />
     <ModelPicker visible={modelPicker} models={models} selectedId={selectedModel?.id ?? null} onClose={() => setModelPicker(false)} onSelect={selectModel} />
   </View>
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, header: { height: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, gap: 10 }, nativeHeaderAction: { width: 44, height: 44 }, modelTriggerWrap: { flex: 1, alignItems: 'center' }, modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 }, modelTriggerText: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 }, temporaryBanner: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 2 }, temporaryBannerText: { fontSize: 11.5, fontWeight: '500' }, messages: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 26 }, emptyMessages: { flexGrow: 1, justifyContent: 'center', paddingBottom: 24 }, dateLabel: { fontSize: 10.5, fontWeight: '600', letterSpacing: 0.9, alignSelf: 'center', marginBottom: 26, marginTop: 6 }, center: { padding: 16, alignItems: 'center' }, empty: { flex: 1, justifyContent: 'center' }, modelTitle: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 13 }, emptyTitle: { fontSize: 26, fontWeight: '600', letterSpacing: -0.8 }, emptyProvider: { textAlign: 'center', marginTop: 7, fontSize: 13.5 }, suggestions: { width: '100%', marginTop: 30, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 }, suggestion: { width: '48.7%', minHeight: 68, borderWidth: StyleSheet.hairlineWidth, borderRadius: 13, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' }, suggestionText: { fontSize: 13, lineHeight: 18 }, pendingUser: { alignSelf: 'flex-end', maxWidth: '88%', borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 }, pendingAssistant: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 20 }, pendingLogo: { width: 26, height: 26, borderRadius: 8 },
+  root: { flex: 1 }, header: { height: 58, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, gap: 8 }, headerTitle: { flex: 1, alignItems: 'center' }, title: { fontSize: 16, fontWeight: '700', maxWidth: '100%' }, subtitle: { fontSize: 10, marginTop: 2 }, messages: { paddingHorizontal: 16, paddingTop: 18, paddingBottom: 16 }, emptyMessages: { flexGrow: 1 }, center: { padding: 16, alignItems: 'center' }, empty: { flex: 1, justifyContent: 'center', paddingBottom: 60 }, modelTitle: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 12 }, emptyTitle: { fontSize: 24, fontWeight: '800', letterSpacing: -0.6 }, emptyProvider: { textAlign: 'center', marginTop: 7, fontSize: 13 }, suggestions: { marginTop: 30, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, suggestion: { width: '48%', minHeight: 76, borderWidth: StyleSheet.hairlineWidth, borderRadius: 17, padding: 13, justifyContent: 'center' }, suggestionText: { fontSize: 13, lineHeight: 18, fontWeight: '600' }, pendingUser: { alignSelf: 'flex-end', maxWidth: '88%', borderRadius: 20, borderBottomRightRadius: 7, padding: 12 }, pendingAssistant: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 }, pendingLogo: { width: 27, height: 27, borderRadius: 8 },
 })

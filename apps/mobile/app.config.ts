@@ -1,5 +1,8 @@
 import type { ExpoConfig } from 'expo/config'
 
+// mockup-5 owns its native-stack transitions while Expo Router remains the app entry point.
+process.env.EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK ??= '1'
+
 const defaultInstanceUrl = process.env.EXPO_PUBLIC_DEFAULT_INSTANCE_URL ?? 'https://pulpo.baby'
 
 const config: ExpoConfig = {

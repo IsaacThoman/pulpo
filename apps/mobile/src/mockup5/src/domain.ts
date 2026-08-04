@@ -1,0 +1,199 @@
+export type ThemePreference = 'system' | 'light' | 'dark';
+export type TextSizePreference = 'default' | 'large' | 'extra-large';
+export type NetworkScenario = 'online' | 'slow' | 'offline' | 'reconnecting';
+export type ResponseScenario = 'success' | 'tool-heavy' | 'capacity' | 'failure';
+export type PermissionScenario = 'ask' | 'granted' | 'denied';
+export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite';
+export type SessionStatus = 'signed-out' | 'signed-in' | 'pending';
+
+export interface InstanceProfile {
+  url: string;
+  name: string;
+  version: string;
+  signupOpen: boolean;
+  connectedAt: number;
+}
+
+export interface SessionState {
+  status: SessionStatus;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+    role: 'member' | 'pending';
+    initials: string;
+  } | null;
+}
+
+export interface GenerationPresetChoice {
+  id: string;
+  label: string;
+  icon: string;
+}
+
+export interface GenerationPreset {
+  id: string;
+  name: string;
+  icon: string;
+  choices: GenerationPresetChoice[];
+  selectedId: string;
+}
+
+export interface PrototypeModel {
+  id: string;
+  name: string;
+  provider: string;
+  lab: string;
+  description: string;
+  contextWindow: string;
+  pricing: string;
+  tags: string[];
+  enabled: boolean;
+  agentEnabled: boolean;
+  favorite: boolean;
+  tint: string;
+  asset: 'claude' | 'openai' | 'gemini' | 'deepseek';
+  presets: GenerationPreset[];
+}
+
+export type AttachmentStatus = 'uploading' | 'ready' | 'failed' | 'cached';
+
+export interface PrototypeAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  uri?: string;
+  kind: 'image' | 'file';
+  status: AttachmentStatus;
+  progress?: number;
+  error?: string;
+}
+
+export type ActivityStep =
+  | { id: string; kind: 'reasoning'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' }
+  | { id: string; kind: 'tool'; title: string; detail: string; output?: string; durationMs: number; status: 'complete' | 'active' | 'failed' }
+  | { id: string; kind: 'workspace'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' | 'failed' };
+
+export interface ResponseBranch {
+  id: string;
+  text: string;
+  modelId: string;
+  createdAt: number;
+}
+
+export interface PrototypeMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  createdAt: number;
+  modelId?: string;
+  attachments?: PrototypeAttachment[];
+  activity?: ActivityStep[];
+  branches?: ResponseBranch[];
+  activeBranch?: number;
+  status?: 'complete' | 'streaming' | 'queued' | 'failed' | 'stopped';
+  error?: string;
+  meta?: string;
+  feedback?: 'good' | 'bad' | null;
+}
+
+export interface PrototypeChat {
+  id: string;
+  title: string;
+  modelId: string;
+  createdAt: number;
+  updatedAt: number;
+  pinned: boolean;
+  folderId: string | null;
+  temporary: boolean;
+  messages: PrototypeMessage[];
+  deletedAt: number | null;
+  purgeAt: number | null;
+}
+
+export interface PrototypeFolder {
+  id: string;
+  name: string;
+  expanded: boolean;
+}
+
+export interface UsageRecord {
+  id: string;
+  createdAt: number;
+  modelId: string;
+  source: 'Web' | 'API' | 'Agent' | 'Mobile';
+  inputTokens: number;
+  outputTokens: number;
+  cost: number;
+  latencyMs: number;
+  status: 'complete' | 'failed';
+}
+
+export interface MemoryRecord {
+  id: string;
+  content: string;
+}
+
+export interface AppPreferences {
+  theme: ThemePreference;
+  textSize: TextSizePreference;
+  language: string;
+  notifications: boolean;
+  sendWithEnter: boolean;
+  streamResponses: boolean;
+  showReasoning: boolean;
+  haptics: boolean;
+  customInstructions: string;
+  nickname: string;
+  memoryEnabled: boolean;
+  localChatLimit: number;
+  attachmentCacheMb: number;
+  trashRetention: TrashRetention;
+  leaderboardVisible: boolean;
+  leaderboardColor: string;
+}
+
+export interface DemoScenarios {
+  network: NetworkScenario;
+  response: ResponseScenario;
+  photos: PermissionScenario;
+  fileQuota: 'normal' | 'near-limit' | 'full';
+  loading: boolean;
+}
+
+export interface PersistedPrototypeState {
+  seedVersion: number;
+  instance: InstanceProfile;
+  session: SessionState;
+  models: PrototypeModel[];
+  defaultModelId: string;
+  chats: PrototypeChat[];
+  folders: PrototypeFolder[];
+  usage: UsageRecord[];
+  memories: MemoryRecord[];
+  preferences: AppPreferences;
+  demo: DemoScenarios;
+  recentSearches: string[];
+}
+
+export function normalizeInstanceUrl(input: string): string {
+  const candidate = input.trim();
+  if (!candidate) throw new Error('Enter an instance URL.');
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(candidate) && !/^https?:\/\//i.test(candidate)) {
+    throw new Error('Use an HTTP or HTTPS address.');
+  }
+  const withProtocol = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(withProtocol);
+  } catch {
+    throw new Error('Enter a valid web address.');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Use an HTTP or HTTPS address.');
+  if (!parsed.hostname || parsed.username || parsed.password) throw new Error('Enter a valid Pulpo instance address.');
+  parsed.pathname = '';
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.origin;
+}

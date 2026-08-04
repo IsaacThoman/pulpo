@@ -10,15 +10,10 @@ function imageFor(model: Pick<MobileModel, 'name' | 'provider'>) {
   return require('../../assets/model-openai.png')
 }
 
-function usesSemanticTint(model: Pick<MobileModel, 'name' | 'provider'>) {
-  const value = `${model.provider.name} ${model.name}`.toLowerCase()
-  return value.includes('openai') || value.includes('gpt')
-}
-
 export function ModelMark({ model, size = 28 }: { model?: MobileModel; size?: number }) {
   const theme = useAppTheme()
   if (!model) return <View style={[styles.fallback, { width: size, height: size, borderRadius: size * 0.3, backgroundColor: theme.fillStrong }]}><Text style={{ color: theme.text, fontSize: size * 0.38, fontWeight: '800' }}>P</Text></View>
-  return <Image source={imageFor(model)} style={{ width: size, height: size, borderRadius: size * 0.22, tintColor: usesSemanticTint(model) ? theme.text : undefined }} resizeMode="contain" />
+  return <Image source={imageFor(model)} style={{ width: size, height: size, borderRadius: size * 0.22 }} resizeMode="contain" />
 }
 
 const styles = StyleSheet.create({ fallback: { alignItems: 'center', justifyContent: 'center' } })

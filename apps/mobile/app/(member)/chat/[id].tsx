@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from 'expo-router'
-import { MemberShell } from '@/features/chat/MemberShell'
+import { ChatScreen } from '@/features/chat/ChatScreen'
 
 export default function ExistingChatRoute() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  return <MemberShell chatId={id} />
+  return <ChatScreen chatId={id} />
 }

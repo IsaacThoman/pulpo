@@ -8,17 +8,17 @@
       "developmentClient": true,
       "distribution": "internal",
       "ios": { "simulator": true },
-      "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "http://localhost:8080" }
+      "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "http://localhost:8080", "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1" }
     },
     "preview": {
       "distribution": "internal",
       "ios": { "resourceClass": "m-medium" },
-      "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "https://pulpo.baby" }
+      "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "https://pulpo.baby", "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1" }
     },
     "production": {
       "autoIncrement": true,
       "ios": { "resourceClass": "m-medium" },
-      "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "https://pulpo.baby" }
+      "env": { "EXPO_PUBLIC_DEFAULT_INSTANCE_URL": "https://pulpo.baby", "EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK": "1" }
     }
   },
   "submit": {
