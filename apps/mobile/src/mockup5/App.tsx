@@ -2211,10 +2211,25 @@ function ChatView({
     }
   }, [addAttachments]);
 
+  const followComposerGeneration = useCallback(() => {
+    // A send is an explicit request to see the new turn. Reset any stale
+    // proximity left over from the previously-short transcript so the first
+    // content-size update follows the optimistic user/assistant rows.
+    readerInteracting.current = false;
+    isNearBottom.current = true;
+    shouldAutoFollow.current = true;
+  }, []);
+
   const submitMessage = useCallback(() => {
     if (!onSend(input, attachments, { presetSelections, agentEnabled, temporary })) return;
+    followComposerGeneration();
     setAttachments([]);
-  }, [agentEnabled, attachments, input, onSend, presetSelections, temporary]);
+  }, [agentEnabled, attachments, followComposerGeneration, input, onSend, presetSelections, temporary]);
+
+  const submitSuggestion = useCallback((message: string) => {
+    if (!onSend(message, [], { presetSelections, agentEnabled, temporary })) return;
+    followComposerGeneration();
+  }, [agentEnabled, followComposerGeneration, onSend, presetSelections, temporary]);
 
   const shareChat = useCallback(() => {
     if (!chatId) return;
@@ -2413,7 +2428,7 @@ function ChatView({
                       accessible={accessibilityLayout}
                       key={`${suggestion.id}:${index}`}
                       label={suggestion.label}
-                      onPress={() => onSend(suggestion.message, [], { presetSelections, agentEnabled, temporary })}
+                      onPress={() => submitSuggestion(suggestion.message)}
                     />
                   ))}
                 </View>
