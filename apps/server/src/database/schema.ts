@@ -41,7 +41,7 @@ export const users = pgTable('users', {
   storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_242_880_000),
   blocked: boolean('blocked').notNull().default(false),
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
-  leaderboardVisible: boolean('leaderboard_visible').notNull().default(true),
+  leaderboardVisible: boolean('leaderboard_visible').notNull().default(false),
   leaderboardColor: text('leaderboard_color').notNull().default('#71717a'),
   nickname: text('nickname'),
   ...timestamps,

@@ -111,7 +111,7 @@ export function createSeedState(): PersistedPrototypeState {
       theme: 'system', textSize: 'default', language: 'en-US', notifications: true, sendWithEnter: true,
       streamResponses: true, showReasoning: true, haptics: true,
       customInstructions: 'Be direct. Prefer implementation-ready answers.', nickname: 'isaac', memoryEnabled: true,
-      localChatLimit: 50, attachmentCacheMb: 50, trashRetention: '30d', leaderboardVisible: true, leaderboardColor: '#10B981',
+      localChatLimit: 50, attachmentCacheMb: 50, trashRetention: '30d', leaderboardVisible: false, leaderboardColor: '#10B981',
     },
     demo: { network: 'online', response: 'success', photos: 'granted', fileQuota: 'normal', loading: false },
     recentSearches: ['streaming state', 'onboarding'],

@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS = {
   nickname: '',
   memoryEnabled: false,
   agentModeEnabled: true,
-  leaderboardVisible: true,
+  leaderboardVisible: false,
   leaderboardColor: '#10b981',
   localChatLimit: 50,
   localAttachmentCacheMb: 50,

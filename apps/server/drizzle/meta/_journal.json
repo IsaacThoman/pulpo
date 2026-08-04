@@ -148,6 +148,13 @@
       "when": 1785816642710,
       "tag": "0020_worthless_giant_man",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1785874375916,
+      "tag": "0021_previous_glorian",
+      "breakpoints": true
     }
   ]
 }

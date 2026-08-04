@@ -1,0 +1,1 @@
+ALTER TABLE "users" ALTER COLUMN "leaderboard_visible" SET DEFAULT false;

@@ -30,7 +30,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
         nickname: profile?.nickname ?? '',
-        leaderboardVisible: profile?.leaderboardVisible ?? true,
+        leaderboardVisible: profile?.leaderboardVisible ?? false,
         leaderboardColor: profile?.leaderboardColor ?? '#10b981',
       },
       updatedAt: row?.updatedAt.toISOString() ?? null,
