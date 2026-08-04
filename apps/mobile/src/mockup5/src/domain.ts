@@ -53,6 +53,8 @@ export interface PrototypeModel {
   favorite: boolean;
   tint: string;
   asset: 'claude' | 'openai' | 'gemini' | 'deepseek';
+  modelLogo?: string;
+  labLogo?: string;
   presets: GenerationPreset[];
 }
 

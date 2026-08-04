@@ -37,6 +37,8 @@ function mapModel(model: MobileModel, favorites: string[]): PrototypeModel {
     favorite: favorites.includes(model.id),
     tint: asset === 'claude' ? '#E8794A' : asset === 'gemini' ? '#6EA8FF' : asset === 'deepseek' ? '#5B8CFF' : '#D9D9D9',
     asset,
+    modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
+    labLogo: model.lab?.logo ?? 'pulpo',
     presets: model.presets.map((preset) => ({
       id: preset.id,
       name: preset.name,

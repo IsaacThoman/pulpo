@@ -69,7 +69,6 @@ import {
   buttonStyle,
   controlSize,
   disabled as swiftUIDisabled,
-  foregroundColor,
   foregroundStyle,
   font,
   frame,
@@ -129,6 +128,7 @@ import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
 import { useRealtimeStore } from '../providers/RealtimeProvider';
+import { aiIconSource } from './src/production/AiIconAssets';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
   if (Platform.OS === 'ios') return PlatformColor(ios);
@@ -307,7 +307,7 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { name: string; lab: string; icon: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string };
+type Model = { name: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string };
 type ModelSection = 'Favorites' | Model['lab'];
 type Attachment = {
   id: string;
@@ -343,11 +343,12 @@ const MODELS: Model[] = [
   { name: 'DeepSeek R1', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces' },
 ];
 
-function prototypeModelToLegacy(model: PrototypeModel): Model {
+function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
   const template = MODELS.find((candidate) => candidate.lab === model.lab)
     ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
     ?? MODELS[1];
-  return { ...template, name: model.name, lab: model.lab, detail: model.description };
+  const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark);
+  return { ...template, name: model.name, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined };
 }
 
 const MODEL_SECTIONS: ModelSection[] = ['Favorites', ...new Set(MODELS.map((model) => model.lab))];
@@ -859,6 +860,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionUserId = useSessionStore((state) => state.user?.id);
   const { width } = useWindowDimensions();
+  const isDark = useColorScheme() === 'dark';
   const { reduceMotion } = useAccessibilityPreferences();
   const peek = 64;
   const openOffset = width - peek;
@@ -874,7 +876,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const prototypeModels = usePrototypeStore((state) => state.models);
   const demo = usePrototypeStore((state) => state.demo);
   const defaultModelName = prototypeModels.find((model) => model.id === defaultModelId)?.name;
-  const availableModels = useMemo(() => prototypeModels.map(prototypeModelToLegacy), [prototypeModels]);
+  const availableModels = useMemo(() => prototypeModels.map((model) => prototypeModelToLegacy(model, isDark)), [isDark, prototypeModels]);
   const [selectedModel, setSelectedModel] = useState(() => availableModels.find((model) => model.name === defaultModelName) ?? availableModels[0] ?? MODELS[0]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
@@ -888,8 +890,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   useEffect(() => {
     const defaultModel = prototypeModels.find((model) => model.id === defaultModelId);
     if (!defaultModel) return;
-    setSelectedModel((current) => availableModels.find((model) => model.name === current.name) ?? prototypeModelToLegacy(defaultModel));
-  }, [availableModels, defaultModelId, prototypeModels]);
+    setSelectedModel((current) => availableModels.find((model) => model.name === current.name) ?? prototypeModelToLegacy(defaultModel, isDark));
+  }, [availableModels, defaultModelId, isDark, prototypeModels]);
 
   useEffect(() => {
     const responseId = activeResponseId.current;
@@ -1678,7 +1680,7 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
       <SwiftUILabel
         title={label}
         icon={labModel
-          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.menuIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
+          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
           : <SwiftUIImage systemName="star.fill" size={18} />}
       />
       <SwiftUISpacer />
@@ -2142,8 +2144,8 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
         modifiers={[buttonStyle('plain'), frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), swiftUIAccessibilityLabel('Search chats')]}
       >
         <SwiftUIHStack spacing={12}>
-          <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundColor('#FFFFFF')]} />
-          <SwiftUIText modifiers={[font({ textStyle: 'body' }), foregroundColor('#FFFFFF')]}>Search chats</SwiftUIText>
+          <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />
+          <SwiftUIText modifiers={[font({ textStyle: 'body' }), foregroundStyle('secondary')]}>Search chats</SwiftUIText>
           <SwiftUISpacer />
         </SwiftUIHStack>
       </SwiftUIButton>
@@ -2152,7 +2154,7 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
 
   return <SwiftUIHost style={styles.nativeDrawerSearchHost}>
     <SwiftUIHStack spacing={12}>
-      <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundColor('#FFFFFF')]} />
+      <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />
       <SwiftUITextField ref={fieldRef} placeholder="Search chats" text={nativeValue} onFocusChange={onFocusChange} onTextChange={onChange} modifiers={[textFieldStyle('plain'), font({ textStyle: 'body' }), frame({ maxWidth: Infinity, minHeight: 44 }), swiftUIAccessibilityLabel('Search chats')]} />
       {value.length > 0 ? <SwiftUIButton label="Clear search" systemImage="xmark.circle.fill" onPress={() => { nativeValue.set(''); onChange(''); }} modifiers={[buttonStyle('plain'), labelStyle('iconOnly'), frame({ width: 44, height: 44 }), swiftUIAccessibilityLabel('Clear search')]} /> : null}
     </SwiftUIHStack>
