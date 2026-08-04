@@ -12,7 +12,7 @@ export interface DisplayAttachment {
 
 export interface ActivityItem {
   id: string
-  kind: 'tool' | 'workspace'
+  kind: 'tool' | 'workspace' | 'compaction'
   title: string
   detail: string
   status: string
@@ -94,6 +94,27 @@ function activities(output: unknown[]): ActivityItem[] {
       id: value.id ?? `workspace-${index}`, kind: 'workspace' as const, title: 'Agent workspace',
       detail: value.error ?? value.capacity ?? value.state ?? '', status: value.state ?? 'running', durationMs: value.durationMs,
     }]
+    if (value.type === 'pulpo_compaction') {
+      const compaction = value as typeof value & {
+        summary?: string
+        retained_turns?: Array<{ role?: string; content?: string }>
+      }
+      const sections = [
+        compaction.summary ? `Compacted summary\n${compaction.summary}` : '',
+        compaction.retained_turns?.length
+          ? `Kept verbatim\n${compaction.retained_turns.map((entry) => `${(entry.role ?? 'context').toUpperCase()}\n${entry.content ?? ''}`).join('\n\n')}`
+          : '',
+        compaction.error ?? '',
+      ].filter(Boolean)
+      return [{
+        id: value.id ?? `compaction-${index}`,
+        kind: 'compaction',
+        title: value.status === 'in_progress' ? 'Compacting context…' : value.status === 'failed' ? 'Context compaction failed' : 'Compacted context',
+        detail: sections.join('\n\n'),
+        status: value.status ?? 'in_progress',
+        durationMs: value.durationMs ?? (typeof (value as { duration_ms?: unknown }).duration_ms === 'number' ? (value as { duration_ms: number }).duration_ms : undefined),
+      }]
+    }
     return []
   })
 }

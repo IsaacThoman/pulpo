@@ -448,6 +448,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         interceptImagesWithOcr: input.interceptImagesWithOcr,
         contextWindow: input.contextWindow,
         maxOutputTokens: input.maxOutputTokens,
+        compactionEnabled: input.compactionEnabled,
+        compactionThresholdTokens: input.compactionThresholdTokens,
+        agentCompactionThresholdTokens: input.agentCompactionThresholdTokens,
+        compactionRetainedTurns: input.compactionRetainedTurns,
         executionMode: input.executionMode,
         tags: input.tags,
         allowedParameters: input.allowedParameters,
@@ -483,6 +487,12 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
     const body = request.body as Record<string, unknown>
+    const compactionPatch = z.object({
+      compactionEnabled: z.boolean().optional(),
+      compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
+      agentCompactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
+      compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
+    }).parse(body)
     const [current] = await db.select().from(models).where(eq(models.id, id)).limit(1)
     if (!current) throw notFound('Model')
     const parsedPresets = body.presets === undefined ? undefined : chatPresetsSchema.parse(body.presets)
@@ -512,6 +522,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       interceptImagesWithOcr: typeof body.interceptImagesWithOcr === 'boolean' ? body.interceptImagesWithOcr : undefined,
       contextWindow: typeof body.contextWindow === 'number' ? body.contextWindow : undefined,
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,
+      compactionEnabled: compactionPatch.compactionEnabled,
+      compactionThresholdTokens: compactionPatch.compactionThresholdTokens,
+      agentCompactionThresholdTokens: compactionPatch.agentCompactionThresholdTokens,
+      compactionRetainedTurns: compactionPatch.compactionRetainedTurns,
       executionMode: body.executionMode === 'background' ? 'background' : body.executionMode === 'stream' ? 'stream' : undefined,
       tags: Array.isArray(body.tags) ? body.tags : undefined,
       allowedParameters: Array.isArray(body.allowedParameters) ? body.allowedParameters : undefined,

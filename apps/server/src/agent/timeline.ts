@@ -1,4 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
+import type { CompactionItem } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -101,6 +102,7 @@ export function buildAgentOutput(options: {
   toolItems: Map<string, ToolTimelineItem>
   attachmentItems?: Map<string, AttachmentTimelineItem>
   workspaceItem?: Record<string, unknown>
+  compactionItems?: CompactionItem[]
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -113,11 +115,13 @@ export function buildAgentOutput(options: {
     toolItems,
     attachmentItems = new Map(),
     workspaceItem,
+    compactionItems = [],
     turnDurationsMs,
     streaming = false,
     terminal = false,
   } = options
   const output: unknown[] = []
+  output.push(...compactionItems.filter((item) => item.phase === 'pre_response'))
   if (workspaceItem) output.push(workspaceItem)
 
   const relevant = messages.slice(Math.max(0, skipMessageCount))
@@ -126,6 +130,7 @@ export function buildAgentOutput(options: {
   relevant.forEach((message, index) => {
     if (message.role !== 'assistant') return
     assistantTurn += 1
+    output.push(...compactionItems.filter((item) => item.phase === 'agent_mid_run' && item.before_agent_turn === assistantTurn))
     const content = Array.isArray(message.content) ? message.content : []
     const isStreamingTail = streaming && index === relevant.length - 1
     const status = terminal || !isStreamingTail ? 'completed' : 'in_progress'
@@ -144,6 +149,8 @@ export function buildAgentOutput(options: {
       }
     }
   })
+
+  output.push(...compactionItems.filter((item) => item.phase === 'agent_mid_run' && !output.includes(item)))
 
   // Tools started before their assistant message is fully recorded (or orphans).
   for (const [id, item] of toolItems) {

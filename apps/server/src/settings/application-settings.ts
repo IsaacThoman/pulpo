@@ -72,8 +72,6 @@ export const suggestedPromptItemSchema = z.object({
 
 export const interfaceSettingsSchema = z.object({
   localTask: z.string().min(1).max(200).default('current'),
-  compaction: z.boolean().default(true),
-  compactionTokens: z.number().int().min(2_000).max(1_000_000).default(12_000),
   title: z.boolean().default(true),
   titlePrompt: z.string().max(10_000).default(DEFAULT_TITLE_PROMPT),
   titleIncludeFirstCharacters: z.number().int().min(0).max(1_000_000).default(8_000),

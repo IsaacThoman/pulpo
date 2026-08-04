@@ -144,4 +144,18 @@ describe('buildTimeline', () => {
 
     expect(activityDurationMs(activity.steps)).toBe(5_000)
   })
+
+  it('shows compaction independently of reasoning visibility and preserves its timeline position', () => {
+    const compaction = {
+      id: 'compact-1', type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
+      model_id: 'hidden-model', estimated_tokens: 110_000, threshold_tokens: 100_000,
+      retained_turns: [{ role: 'user', content: 'kept exactly' }], retained_context: [], retained_context_turns: [],
+      summary: 'Earlier context', started_at: new Date(0).toISOString(), duration_ms: 500,
+    }
+    const timeline = buildTimeline([compaction, reasoning('hidden'), message('Answer')], false)
+    expect(timeline.map((segment) => segment.kind)).toEqual(['activity', 'text'])
+    const activity = timeline[0] as ActivitySegment
+    expect(activity.steps).toEqual([{ kind: 'compaction', compaction }])
+    expect(activityDurationMs(activity.steps)).toBe(500)
+  })
 })

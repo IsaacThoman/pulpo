@@ -44,6 +44,10 @@ interface AdminModel {
   interceptImagesWithOcr: boolean
   contextWindow: number
   maxOutputTokens: number
+  compactionEnabled: boolean
+  compactionThresholdTokens: number
+  agentCompactionThresholdTokens: number
+  compactionRetainedTurns: number
   executionMode: 'stream' | 'background'
   tags: string[]
   allowedParameters: string[]
@@ -69,6 +73,7 @@ interface Lab { id: string; name: string; logo?: string }
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
   id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: 'openai', systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
+  compactionEnabled: true, compactionThresholdTokens: 100_000, agentCompactionThresholdTokens: 180_000, compactionRetainedTurns: 4,
   useProviderCost: false,
   inputPriceMicros: 0, cachedInputPriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
@@ -107,7 +112,11 @@ export function AdminModelsPage() {
     setDraft(null); await Promise.all([load(), useCatalog.getState().load()])
   }
 
-  const canSave = !!draft?.id && !!draft?.name && !!draft?.upstreamModelId && !!draft.providerConnectionId && !!draft.labId && presetErrors.length === 0 && presetEditorValid && paramsValid
+  const canSave = !!draft?.id && !!draft?.name && !!draft?.upstreamModelId && !!draft.providerConnectionId && !!draft.labId
+    && draft.compactionThresholdTokens >= 2_000 && draft.compactionThresholdTokens <= 1_000_000
+    && draft.agentCompactionThresholdTokens >= 2_000 && draft.agentCompactionThresholdTokens <= 1_000_000
+    && draft.compactionRetainedTurns >= 1 && draft.compactionRetainedTurns <= 32
+    && presetErrors.length === 0 && presetEditorValid && paramsValid
 
   return (
     <div className="space-y-4">
@@ -379,6 +388,27 @@ function ModelEditorBody({
             <Input value={draft.tags.join(', ')} onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} placeholder="reasoning, vision" />
           </Field>
         </div>
+        <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+          <ToggleRow
+            label="Enable context compaction"
+            description="Summarize older context with this model when its configured threshold is reached."
+            checked={draft.compactionEnabled}
+            onChange={(compactionEnabled) => setDraft({ ...draft, compactionEnabled })}
+          />
+          {draft.compactionEnabled && (
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <Field label="Chat threshold tokens">
+                <Input type="number" min={2000} max={1000000} className="tabular-nums" value={draft.compactionThresholdTokens} onChange={(e) => setDraft({ ...draft, compactionThresholdTokens: Number(e.target.value) })} />
+              </Field>
+              <Field label="Agent threshold tokens">
+                <Input type="number" min={2000} max={1000000} className="tabular-nums" value={draft.agentCompactionThresholdTokens} onChange={(e) => setDraft({ ...draft, agentCompactionThresholdTokens: Number(e.target.value) })} />
+              </Field>
+              <Field label="Recent turns kept">
+                <Input type="number" min={1} max={32} className="tabular-nums" value={draft.compactionRetainedTurns} onChange={(e) => setDraft({ ...draft, compactionRetainedTurns: Number(e.target.value) })} />
+              </Field>
+            </div>
+          )}
+        </div>
       </div>
 
       <Separator />
@@ -561,6 +591,10 @@ function ModelEditorBody({
                 slow_sticky_min_tokens_per_second: draft.slowStickyMinTokensPerSecond,
                 slow_sticky_min_completion_seconds: draft.slowStickyMinCompletionSeconds,
                 intercept_images_with_ocr: draft.interceptImagesWithOcr,
+                compaction_enabled: draft.compactionEnabled,
+                compaction_threshold_tokens: draft.compactionThresholdTokens,
+                agent_compaction_threshold_tokens: draft.agentCompactionThresholdTokens,
+                compaction_retained_turns: draft.compactionRetainedTurns,
                 meta: {
                   model_logo: draft.logo,
                   description: draft.description,

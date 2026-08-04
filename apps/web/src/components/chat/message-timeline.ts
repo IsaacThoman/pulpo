@@ -36,7 +36,12 @@ export type WorkspaceStep = {
   workspace: WorkspaceItem
 }
 
-export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep
+export type CompactionStep = {
+  kind: 'compaction'
+  compaction: CompactionItem
+}
+
+export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep
 
 export type ActivitySegment = {
   kind: 'activity'
@@ -115,6 +120,16 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
   for (const item of outputItems) {
     const type = (item as { type?: string }).type
     if (type === 'pulpo_workspace') continue
+    if (type === 'pulpo_compaction') {
+      flushActivity()
+      const compaction = item as CompactionItem
+      segments.push({
+        kind: 'activity',
+        steps: [{ kind: 'compaction', compaction }],
+        active: compaction.status === 'in_progress',
+      })
+      continue
+    }
     if (type === 'reasoning') {
       if (!activity) activity = { kind: 'activity', steps: [], active: false }
       const text = reasoningFromItem(item)
@@ -168,3 +183,4 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
 
   return segments
 }
+import type { CompactionItem } from '@pulpo/contracts'

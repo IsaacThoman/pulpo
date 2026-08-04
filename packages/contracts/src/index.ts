@@ -147,6 +147,32 @@ export const responseEventSchema = z.object({
 })
 export type ResponseEvent = z.infer<typeof responseEventSchema>
 
+export const compactionRetainedEntrySchema = z.object({
+  role: z.enum(['developer', 'user', 'assistant', 'tool']),
+  content: z.string(),
+})
+export type CompactionRetainedEntry = z.infer<typeof compactionRetainedEntrySchema>
+
+export const compactionItemSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('pulpo_compaction'),
+  phase: z.enum(['pre_response', 'agent_mid_run']),
+  status: z.enum(['in_progress', 'completed', 'failed']),
+  model_id: z.string().min(1),
+  estimated_tokens: z.number().int().nonnegative(),
+  threshold_tokens: z.number().int().positive(),
+  retained_turns: z.array(compactionRetainedEntrySchema).default([]),
+  retained_context: z.array(z.unknown()).default([]),
+  retained_context_turns: z.array(z.array(z.unknown())).default([]),
+  summary: z.string().default(''),
+  started_at: isoDateSchema,
+  duration_ms: z.number().int().nonnegative().optional(),
+  error: z.string().optional(),
+  covered_through_response_id: idSchema.optional(),
+  before_agent_turn: z.number().int().positive().optional(),
+})
+export type CompactionItem = z.infer<typeof compactionItemSchema>
+
 export const responseSnapshotSchema = z.object({
   responseId: idSchema,
   status: responseStatusSchema,
@@ -391,6 +417,10 @@ export const createModelSchema = z.object({
   interceptImagesWithOcr: z.boolean().default(false),
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
+  compactionEnabled: z.boolean().default(true),
+  compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(100_000),
+  agentCompactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(180_000),
+  compactionRetainedTurns: z.number().int().min(1).max(32).default(4),
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),
   allowedParameters: z.array(z.string()).default([]),

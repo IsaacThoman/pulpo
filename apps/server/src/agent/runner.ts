@@ -1,6 +1,7 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
+import type { CompactionItem } from '@pulpo/contracts'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
@@ -27,6 +28,10 @@ import type { AttachmentTimelineItem } from './timeline.js'
 import { KagiClient } from './kagi.js'
 import { createWebTools } from './web-tools.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
+import { estimateInputTokens } from '../accounting/pricing.js'
+import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
+import { trackInternalModelCall } from '../responses/model-calls.js'
+import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -72,7 +77,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     : []
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  const resumedMessages = initialMessages(existingRun?.context ?? parentRun?.context)
+  let resumedMessages = initialMessages(existingRun?.context ?? parentRun?.context)
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
@@ -126,9 +131,13 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       mime_type: attachment.mimeType, size_bytes: attachment.sizeBytes, status: 'completed' as const,
     }] as const] : []
   )))
+  const compactionItems: CompactionItem[] = (record.response.output as unknown[]).filter((raw): raw is CompactionItem => (
+    (raw as { type?: string }).type === 'pulpo_compaction'
+  ))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
-  const skipMessageCount = initialMessages(parentRun?.context).length
+  let skipMessageCount = initialMessages(parentRun?.context).length
+  const archivedDisplayMessages: AgentMessage[] = []
   let lastSnapshotAt = 0
   const emit = async (type: string, payload: Record<string, unknown>) => {
     sequence += 1
@@ -139,16 +148,18 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     const state = agent?.state
     const streamingMessage = state?.streamingMessage
     const hasStreaming = Boolean(streamingMessage && streamingMessage.role === 'assistant')
-    const messages = [
+    const stateMessages = [
       ...(state?.messages ?? resumedMessages),
       ...(hasStreaming ? [streamingMessage as AgentMessage] : []),
     ]
+    const messages = [...archivedDisplayMessages, ...stateMessages.slice(skipMessageCount)]
     const output = buildAgentOutput({
       messages,
-      skipMessageCount,
+      skipMessageCount: 0,
       toolItems,
       attachmentItems,
       workspaceItem,
+      compactionItems,
       turnDurationsMs,
       streaming: hasStreaming && !terminal,
       terminal: Boolean(terminal),
@@ -157,6 +168,86 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
     lastSnapshotAt = Date.now()
+  }
+  const updateCompaction = async (item: CompactionItem) => {
+    const index = compactionItems.findIndex((candidate) => candidate.id === item.id)
+    if (index >= 0) compactionItems[index] = item
+    else compactionItems.push(item)
+    await emit('pulpo.compaction.updated', item as unknown as Record<string, unknown>)
+    await snapshot()
+  }
+  const agentCycles = (messages: AgentMessage[]): AgentMessage[][] => {
+    const cycles: AgentMessage[][] = []
+    let current: AgentMessage[] = []
+    for (const message of messages) {
+      if (message.role === 'assistant' && current.length) {
+        cycles.push(current)
+        current = []
+      }
+      current.push(message)
+    }
+    if (current.length) cycles.push(current)
+    return cycles
+  }
+  const compactAgentContext = async (
+    messages: AgentMessage[],
+    thresholdTokens: number,
+    phase: CompactionItem['phase'],
+    beforeAgentTurn?: number,
+    extraContext: unknown[] = [],
+  ): Promise<AgentMessage[]> => {
+    const estimatedTokens = estimateInputTokens([
+      buildAgentSystemPrompt(active.model.systemPrompt, active.model.agentInstructions),
+      ...messages,
+      ...extraContext,
+    ])
+    const cycles = agentCycles(messages)
+    if (!active.model.compactionEnabled || estimatedTokens <= thresholdTokens || cycles.length <= active.model.compactionRetainedTurns) return messages
+    const retained = cycles.slice(-active.model.compactionRetainedTurns).flat()
+    const older = cycles.slice(0, -active.model.compactionRetainedTurns).flat()
+    const id = `${responseId}:compaction:${phase}:${beforeAgentTurn ?? 0}`
+    const started = Date.now()
+    const base: CompactionItem = {
+      id,
+      type: 'pulpo_compaction',
+      phase,
+      status: 'in_progress',
+      model_id: active.model.id,
+      estimated_tokens: estimatedTokens,
+      threshold_tokens: thresholdTokens,
+      retained_turns: retainedEntries(retained),
+      retained_context: retained,
+      retained_context_turns: cycles.slice(-active.model.compactionRetainedTurns) as unknown[][],
+      summary: '',
+      started_at: new Date(started).toISOString(),
+      ...(beforeAgentTurn ? { before_agent_turn: beforeAgentTurn } : {}),
+    }
+    await updateCompaction(base)
+    try {
+      const client = createCatalogModelClient(active)
+      const result = await trackInternalModelCall({
+        requestLogId: requestLog.id,
+        modelId: active.model.id,
+        upstreamModelId: active.model.upstreamModelId,
+        purpose: 'compaction',
+        invoke: () => client.responses.create({
+          model: active.model.upstreamModelId,
+          input: [{ role: 'user', content: `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}` }],
+          store: false,
+          max_output_tokens: Math.min(2_000, active.model.maxOutputTokens),
+        }),
+      })
+      const item: CompactionItem = { ...base, status: 'completed', summary: result.output_text, duration_ms: Date.now() - started }
+      await updateCompaction(item)
+      return [{
+        role: 'user',
+        content: [{ type: 'text', text: `[Compacted context]\n${result.output_text}` }],
+        timestamp: Date.now(),
+      } as AgentMessage, ...retained]
+    } catch (error) {
+      await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
   }
   const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
@@ -226,11 +317,23 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       messages: resumedMessages,
       thinkingLevel: 'medium',
     },
-    streamFn: async (model, context, options) => streams.streamSimple(
-      model as Model<'openai-responses'>,
-      await interceptAgentContextImages(context, active.model, imageInterceptor),
-      { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries },
-    ),
+    streamFn: async (model, context, options) => {
+      if (modelTurns > 1) {
+        const originalMessages = context.messages as AgentMessage[]
+        const compactedMessages = await compactAgentContext(originalMessages, active.model.agentCompactionThresholdTokens, 'agent_mid_run', modelTurns)
+        if (compactedMessages !== originalMessages) {
+          archivedDisplayMessages.push(...agent.state.messages.slice(skipMessageCount))
+          context = { ...context, messages: compactedMessages as typeof context.messages }
+          agent.state.messages = compactedMessages
+          skipMessageCount = compactedMessages.length
+        }
+      }
+      return streams.streamSimple(
+        model as Model<'openai-responses'>,
+        await interceptAgentContextImages(context, active.model, imageInterceptor),
+        { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries },
+      )
+    },
     toolExecution: 'sequential',
     beforeToolCall: async () => {
       if (manager.continuedWithoutAgent) return { block: true, reason: 'Agent tools were disabled at the user’s request' }
@@ -333,8 +436,23 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
     await emit('pulpo.agent.started', { runId })
+    const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
+    if (!existingRun) {
+      while (true) {
+        try {
+          resumedMessages = await compactAgentContext(resumedMessages, active.model.compactionThresholdTokens, 'pre_response', undefined, [initialPrompt])
+          agent.state.messages = resumedMessages
+          agent.state.model = active.piModel
+          skipMessageCount = resumedMessages.length
+          break
+        } catch (error) {
+          if (activeIndex + 1 >= runtimes.length) throw error
+          active = runtimes[++activeIndex]!
+        }
+      }
+    }
     if (existingRun && resumedMessages.length > initialMessages(parentRun?.context).length) await agent.continue()
-    else await agent.prompt(buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?')
+    else await agent.prompt(initialPrompt)
     let last = agent.state.messages.at(-1)
     while (last?.role === 'assistant' && last.stopReason === 'error' && !assistantText(last) && activeIndex + 1 < runtimes.length) {
       agent.state.messages = agent.state.messages.slice(0, -1)

@@ -18,7 +18,9 @@ import {
   Wrench,
   Loader2,
   XCircle,
+  Minimize2,
 } from 'lucide-react'
+import type { CompactionItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -246,6 +248,41 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
   )
 }
 
+function CompactionStepRow({ item }: { item: CompactionItem }) {
+  const [open, setOpen] = useState(false)
+  const active = item.status === 'in_progress'
+  const failed = item.status === 'failed'
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+      <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-[12px] text-muted-foreground hover:text-foreground">
+        {active ? <Loader2 className="size-3 shrink-0 animate-spin" /> : failed ? <XCircle className="size-3 shrink-0 text-destructive" /> : <Minimize2 className="size-3 shrink-0" />}
+        <span className="flex-1 font-medium text-foreground/80">{active ? 'Compacting context…' : failed ? 'Context compaction failed' : 'Compacted context'}</span>
+        <StepDuration ms={active ? undefined : item.duration_ms} live={active} />
+        <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="mt-2 space-y-3 pl-4 text-xs">
+          {item.error ? <p className="text-destructive">{item.error}</p> : null}
+          {item.summary ? <div><div className="mb-1 font-medium text-foreground/80">Compacted summary</div><Markdown content={item.summary} /></div> : null}
+          {item.retained_turns.length ? (
+            <div>
+              <div className="mb-1 font-medium text-foreground/80">Kept verbatim</div>
+              <div className="space-y-1.5">
+                {item.retained_turns.map((entry, index) => (
+                  <div key={`${entry.role}:${index}`} className="rounded-md bg-muted/40 px-2 py-1.5">
+                    <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{entry.role}</div>
+                    <pre className="whitespace-pre-wrap break-words font-sans text-[12px] leading-5">{entry.content}</pre>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
+  )
+}
+
 function workspaceIsQuiet(state?: string) {
   return state === 'ready' || state === 'running'
 }
@@ -337,6 +374,7 @@ function ActivityBlock({
   capacityPending: boolean
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
+  const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const workspaceBusy = workspaceIsActive(workspace?.state)
@@ -360,6 +398,9 @@ function ActivityBlock({
   const runningTool = tools.find((tool) => tool.status === 'running')
 
   const label = useMemo(() => {
+    if (compaction?.status === 'in_progress') return 'Compacting context…'
+    if (compaction?.status === 'failed') return 'Context compaction failed'
+    if (compaction) return 'Compacted context'
     if (workspace && workspaceBusy) return workspaceLabel(workspace)
     if (workspaceFailed && workspace) return workspaceLabel(workspace)
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
@@ -373,9 +414,12 @@ function ActivityBlock({
       return hasTools || hasWorkspace ? `Worked for ${duration}` : `Thought for ${duration}`
     }
     return hasTools || hasWorkspace ? 'Worked' : 'Thought'
-  }, [workspace, workspaceBusy, workspaceFailed, runningTool, active, hasTools, hasReasoning, hasWorkspace, showDuration, durationMs])
+  }, [compaction, workspace, workspaceBusy, workspaceFailed, runningTool, active, hasTools, hasReasoning, hasWorkspace, showDuration, durationMs])
 
   const triggerIcon = (() => {
+    if (compaction?.status === 'in_progress') return <Loader2 className="size-3.5 shrink-0 animate-spin" />
+    if (compaction?.status === 'failed') return <XCircle className="size-3.5 shrink-0 text-destructive" />
+    if (compaction) return <Minimize2 className="size-3.5 shrink-0" />
     if (workspace && workspaceBusy) {
       return <Server className="size-3.5 shrink-0 animate-pulse" />
     }
@@ -392,6 +436,7 @@ function ActivityBlock({
   })()
 
   if (steps.length === 0) return null
+  if (compaction && steps.length === 1) return <CompactionStepRow item={compaction} />
 
   return (
     <div className="space-y-1.5">
@@ -409,6 +454,9 @@ function ActivityBlock({
               }
               if (step.kind === 'workspace') {
                 return <WorkspaceStepRow key={`workspace:${index}`} workspace={step.workspace} />
+              }
+              if (step.kind === 'compaction') {
+                return <CompactionStepRow key={step.compaction.id} item={step.compaction} />
               }
               return (
                 <ActivityToolRow
@@ -609,7 +657,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction'].includes(type)
   })
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)

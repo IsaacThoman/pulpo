@@ -93,8 +93,9 @@ describe('interface application settings', () => {
   })
 
   it('fills suggested prompt defaults for settings saved by older Pulpo versions', () => {
-    const settings = parseInterfaceSettings({ compaction: false, title: true })
-    expect(settings.compaction).toBe(false)
+    const settings = parseInterfaceSettings({ compaction: false, compactionTokens: 12_000, title: true })
+    expect(settings).not.toHaveProperty('compaction')
+    expect(settings).not.toHaveProperty('compactionTokens')
     expect(settings.suggestedPromptsEnabled).toBe(true)
     expect(settings.suggestedPrompts).toEqual([...DEFAULT_SUGGESTED_PROMPTS])
     expect(settings.titleIncludeFirstCharacters).toBe(8_000)

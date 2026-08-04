@@ -92,4 +92,30 @@ describe('buildAgentOutput', () => {
     })
     expect(output.map((item) => (item as { type?: string }).type)).toEqual(['pulpo_tool', 'pulpo_attachment'])
   })
+
+  it('keeps pre-response and mid-run compaction activities in model-turn order', () => {
+    const base = {
+      type: 'pulpo_compaction' as const, status: 'completed' as const, model_id: 'model',
+      estimated_tokens: 200_000, threshold_tokens: 100_000, retained_turns: [], retained_context: [], retained_context_turns: [],
+      summary: 'summary', started_at: new Date(0).toISOString(),
+    }
+    const output = buildAgentOutput({
+      skipMessageCount: 0,
+      toolItems: new Map(),
+      compactionItems: [
+        { ...base, id: 'pre', phase: 'pre_response' },
+        { ...base, id: 'mid', phase: 'agent_mid_run', before_agent_turn: 2 },
+      ],
+      messages: [
+        { role: 'assistant', content: [{ type: 'text', text: 'First.' }] } as never,
+        { role: 'assistant', content: [{ type: 'text', text: 'Second.' }] } as never,
+      ],
+      terminal: true,
+    })
+    expect(output.map((item) => (item as { type?: string }).type === 'pulpo_compaction'
+      ? (item as { id?: string }).id
+      : (item as { type?: string }).type)).toEqual([
+      'pre', 'message', 'mid', 'message',
+    ])
+  })
 })

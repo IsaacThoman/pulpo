@@ -160,8 +160,6 @@ export function InterfaceSection() {
   const models = useAvailableModels()
   const [t, setT, save] = useAdminSetting('interface', {
     localTask: 'current',
-    compaction: true,
-    compactionTokens: 12000,
     title: true,
     titlePrompt: DEFAULT_TITLE_PROMPT,
     titleIncludeFirstCharacters: 8000,
@@ -201,15 +199,6 @@ export function InterfaceSection() {
       </Section>
 
       <Section title="Tasks">
-        <Toggle label="Context compaction" checked={t.compaction} onChange={(v) => s('compaction', v)} />
-        {t.compaction && (
-          <NumField
-            label="Token threshold"
-            value={t.compactionTokens}
-            onChange={(v) => s('compactionTokens', v)}
-            indent
-          />
-        )}
         <Toggle label="Title generation" checked={t.title} onChange={(v) => s('title', v)} />
         {t.title && (
           <div className="space-y-3 pl-4">

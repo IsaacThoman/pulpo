@@ -3,6 +3,7 @@ import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
   chatPresetsSchema,
+  createModelSchema,
   createChatResponseSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
@@ -42,6 +43,24 @@ function targetedDelta(type: string, text: string, sequence: number, itemId: str
 describe('shared contracts', () => {
   it('uses the Pulpo Proxy OCR prompt by default', () => {
     expect(ocrSettingsSchema.parse({}).systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
+  })
+
+  it('defaults and validates per-model compaction policy', () => {
+    const policy = createModelSchema.pick({
+      compactionEnabled: true,
+      compactionThresholdTokens: true,
+      agentCompactionThresholdTokens: true,
+      compactionRetainedTurns: true,
+    })
+    expect(policy.parse({})).toEqual({
+      compactionEnabled: true,
+      compactionThresholdTokens: 100_000,
+      agentCompactionThresholdTokens: 180_000,
+      compactionRetainedTurns: 4,
+    })
+    expect(policy.safeParse({ compactionThresholdTokens: 1_999 }).success).toBe(false)
+    expect(policy.safeParse({ agentCompactionThresholdTokens: 1_000_001 }).success).toBe(false)
+    expect(policy.safeParse({ compactionRetainedTurns: 33 }).success).toBe(false)
   })
 
   it('rejects response events without a positive sequence', () => {
