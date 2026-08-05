@@ -141,6 +141,8 @@ function clearProductionScopeState(): void {
   clearOptimisticBranchSelections()
   usePrototypeStore.setState({
     productionNamespace: null,
+    productionScopeReady: false,
+    modelCatalogReady: false,
     chats: [],
     folders: [],
     models: [],
@@ -160,6 +162,7 @@ export function clearProductionScope(): void {
 export async function hydrateProductionScope(namespace: string): Promise<void> {
   const token = ++scopeHydrationToken
   clearProductionScopeState()
+  usePrototypeStore.setState({ productionNamespace: namespace })
 
   const preferenceHydration = (async () => {
     const store = usePreferencesStore.getState()
@@ -168,7 +171,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
     }
     await usePreferencesStore.getState().activateAgentNamespace(namespace)
     return usePreferencesStore.getState()
-  })()
+  })().catch(() => usePreferencesStore.getState())
   const [localChats, localFolders, catalog, preferences] = await Promise.all([
     cachedChats(namespace).catch(() => []),
     getValue<ServerFolder[]>(namespace, 'folders').catch(() => null),
@@ -178,8 +181,10 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
   if (token !== scopeHydrationToken) return
   const favorites = preferences.favoriteModelIds
   const liveSnapshots = useRealtimeStore.getState().snapshots
-  usePrototypeStore.setState({
+  usePrototypeStore.setState((state) => ({
     productionNamespace: namespace,
+    productionScopeReady: true,
+    modelCatalogReady: catalog !== null,
     chats: localChats.map((chat) => mapChat(
       chat,
       chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : [],
@@ -189,7 +194,20 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
     models: (catalog?.data ?? []).map((model) => mapModel(model, favorites)),
     defaultModelId: preferences.defaultModelId ?? catalog?.data[0]?.id ?? '',
     agentAvailable: catalog?.agentAvailable ?? false,
-  })
+    preferences: {
+      ...state.preferences,
+      theme: preferences.theme,
+      textSize: preferences.textSize,
+      streamResponses: preferences.streamResponses,
+      showReasoning: preferences.showReasoning,
+      haptics: preferences.haptics,
+      sendWithEnter: preferences.sendWithEnter,
+      attachmentCacheMb: preferences.attachmentCacheMb,
+      localChatLimit: preferences.localChatLimit,
+      trashRetention: preferences.trashRetention,
+      agentMode: preferences.agentMode,
+    },
+  }))
 }
 
 async function offlineCapableMutation<T>(input: {
@@ -235,7 +253,12 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     agentMode: state.agentMode,
   })))
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
-  const enabled = status === 'authenticated' && Boolean(userId)
+  const productionNamespace = usePrototypeStore((state) => state.productionNamespace)
+  const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady)
+  const enabled = status === 'authenticated'
+    && Boolean(userId)
+    && productionNamespace === namespace
+    && productionScopeReady
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
   const serverHydrated = useRef(false)
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
@@ -332,9 +355,10 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
 
   useEffect(() => {
     if (!settings.data) return
+    if (usePrototypeStore.getState().productionNamespace !== namespace) return
     const patch = preferencesFromServer(settings.data.values)
     void usePreferencesStore.getState().applyServerPreferences(patch)
-  }, [settings.data])
+  }, [namespace, settings.data])
 
   useEffect(() => {
     if (!enabled || !activeChatId || !activeChatIsServerAddressable) return
@@ -349,30 +373,35 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   }, [activeChatId, activeChatIsServerAddressable, activeResponseSubscriptionIds, enabled])
 
   useEffect(() => {
-    usePrototypeStore.setState((state) => ({
-      preferences: {
-        ...state.preferences,
-        theme: preferences.theme,
-        textSize: preferences.textSize,
-        streamResponses: preferences.streamResponses,
-        showReasoning: preferences.showReasoning,
-        haptics: preferences.haptics,
-        sendWithEnter: preferences.sendWithEnter,
-        attachmentCacheMb: preferences.attachmentCacheMb,
-        localChatLimit: preferences.localChatLimit,
-        trashRetention: preferences.trashRetention,
-        agentMode: preferences.agentMode,
-      },
-      defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
-      models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,
-      agentAvailable: models.data?.agentAvailable ?? state.agentAvailable,
-    }))
-  }, [models.data, preferences])
+    usePrototypeStore.setState((state) => {
+      if (state.productionNamespace !== namespace) return state
+      return {
+        preferences: {
+          ...state.preferences,
+          theme: preferences.theme,
+          textSize: preferences.textSize,
+          streamResponses: preferences.streamResponses,
+          showReasoning: preferences.showReasoning,
+          haptics: preferences.haptics,
+          sendWithEnter: preferences.sendWithEnter,
+          attachmentCacheMb: preferences.attachmentCacheMb,
+          localChatLimit: preferences.localChatLimit,
+          trashRetention: preferences.trashRetention,
+          agentMode: preferences.agentMode,
+        },
+        defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
+        models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,
+        modelCatalogReady: Boolean(models.data) || models.isError || state.modelCatalogReady,
+        agentAvailable: models.data?.agentAvailable ?? state.agentAvailable,
+      }
+    })
+  }, [models.data, models.isError, namespace, preferences])
 
   useEffect(() => {
     if (!chats.data && !deleted.data && !folders.data) return
     serverHydrated.current = true
     usePrototypeStore.setState((state) => {
+      if (state.productionNamespace !== namespace) return state
       const oldChats = new Map(state.chats.map((chat) => [chat.id, chat]))
       const serverChats = [...(chats.data ?? []), ...(deleted.data ?? [])]
       const serverChatIds = new Set(serverChats.map((chat) => chat.id))
@@ -409,11 +438,11 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     if (!reconciledDetail) return
     const projected = projectChat(reconciledDetail, snapshots).map(mapMessage)
     usePrototypeStore.setState((state) => ({
-      chats: state.chats.map((chat) => chat.id === reconciledDetail.id
+      chats: state.productionNamespace === namespace ? state.chats.map((chat) => chat.id === reconciledDetail.id
         ? mapChat(reconciledDetail, reuseProjectedMessages(chat.messages, projected), true)
-        : chat),
+        : chat) : state.chats,
     }))
-  }, [reconciledDetail, snapshots])
+  }, [namespace, reconciledDetail, snapshots])
 
   return null
 }

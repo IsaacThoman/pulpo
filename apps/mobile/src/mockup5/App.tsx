@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -377,6 +378,12 @@ const UNAVAILABLE_MODEL: Model = {
   icon: require('./assets/pulpo-smiley.png'),
   detail: 'Ask an administrator to enable a model',
   agentEnabled: false,
+};
+
+const LOADING_MODEL: Model = {
+  ...UNAVAILABLE_MODEL,
+  name: 'Loading models…',
+  detail: 'Your available models are loading in the background',
 };
 
 function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
@@ -810,7 +817,6 @@ function PrototypeRoot() {
   const productionUser = useSessionStore((state) => state.user);
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionConfig = useSessionStore((state) => state.config);
-  const productionNamespace = usePrototypeStore((state) => state.productionNamespace);
   const expectedNamespace = productionUser?.id ? cacheNamespace(productionInstanceUrl, productionUser.id) : null;
   const status = productionStatus === 'authenticated' ? 'signed-in' : productionStatus === 'pending' ? 'pending' : 'signed-out';
   const appearance = useColorScheme();
@@ -851,7 +857,7 @@ function PrototypeRoot() {
       },
     }));
   }, [productionConfig, productionInstanceUrl, productionStatus, productionUser]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (productionStatus !== 'authenticated' || !expectedNamespace) {
       if (usePrototypeStore.getState().productionNamespace !== null) clearProductionScope();
       void usePreferencesStore.getState().activateAgentNamespace(null);
@@ -861,19 +867,8 @@ function PrototypeRoot() {
       void hydrateProductionScope(expectedNamespace);
     }
   }, [expectedNamespace, productionStatus]);
-  if (productionStatus === 'hydrating') {
-    return <View accessibilityLabel="Loading your chats" accessibilityRole="progressbar" style={styles.sessionLoading}>
-      <ActivityIndicator color={isDark ? '#FFFFFF' : '#111114'} size="large" />
-      <RNText style={[styles.sessionLoadingText, { color: isDark ? '#A1A1A8' : '#6E6E73' }]}>Loading your chats…</RNText>
-    </View>;
-  }
+  if (productionStatus === 'hydrating') return null;
   if (status !== 'signed-in') return <AuthExperience />;
-  if (expectedNamespace && productionNamespace !== expectedNamespace) {
-    return <View accessibilityLabel="Loading your chats" accessibilityRole="progressbar" style={styles.sessionLoading}>
-      <ActivityIndicator color={isDark ? '#FFFFFF' : '#111114'} size="large" />
-      <RNText style={[styles.sessionLoadingText, { color: isDark ? '#A1A1A8' : '#6E6E73' }]}>Loading your chats…</RNText>
-    </View>;
-  }
   return (
     <NavigationContainer theme={navigationTheme}>
       <RootStack.Navigator
@@ -909,6 +904,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [modelSheet, setModelSheet] = useState(false);
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
+  const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady);
+  const modelCatalogReady = usePrototypeStore((state) => state.modelCatalogReady);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const appendStoredMessage = usePrototypeStore((state) => state.appendMessage);
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
@@ -921,8 +918,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     [prototypeModels, selectedModelId],
   );
   const selectedModel = useMemo(
-    () => availableModels.find((model) => model.id === selectedModelId) ?? availableModels[0] ?? UNAVAILABLE_MODEL,
-    [availableModels, selectedModelId],
+    () => availableModels.find((model) => model.id === selectedModelId)
+      ?? availableModels[0]
+      ?? (modelCatalogReady ? UNAVAILABLE_MODEL : LOADING_MODEL),
+    [availableModels, modelCatalogReady, selectedModelId],
   );
   const generationPreferences = usePreferencesStore((state) => state.generation);
   const presetSelections = useMemo(
@@ -1437,6 +1436,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           chats={legacyChats}
           activeChatId={activeChatId}
           drawerOpen={panelOpen}
+          loading={!productionScopeReady}
           onSelectChat={selectChat}
           onNewChat={() => { newChat(); animatePanel(false); }}
           onOpenSettings={() => {
@@ -3048,10 +3048,11 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   </Reanimated.View>;
 }
 
-function HistoryPanel({ chats, activeChatId, drawerOpen, onSelectChat, onNewChat, onOpenSettings }: {
+function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings }: {
   chats: Chat[];
   activeChatId: string | null;
   drawerOpen: boolean;
+  loading: boolean;
   onSelectChat: (chat: Chat) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
@@ -3253,7 +3254,12 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, onSelectChat, onNewChat
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           keyExtractor={(chat) => chat.id}
-          ListEmptyComponent={<Text style={styles.noResults}>No chats match “{search}”</Text>}
+          ListEmptyComponent={loading && !search ? (
+            <View accessibilityLabel="Loading chats" accessibilityRole="progressbar" style={styles.historyLoading}>
+              <ActivityIndicator color={COLORS.muted} size="small" />
+              <Text style={styles.noResults}>Loading chats…</Text>
+            </View>
+          ) : <Text style={styles.noResults}>{search ? `No chats match “${search}”` : 'No chats yet'}</Text>}
           ListHeaderComponent={<Reanimated.View style={historyHeaderAnimatedStyle}><Text style={styles.panelSectionLabel}>Chat history</Text></Reanimated.View>}
           renderItem={({ item: chat }) => Platform.OS === 'ios' ? (
             <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.chatContextMenuHost}>
@@ -3402,8 +3408,7 @@ function NativeModelSheet({ visible, selected, models: availableModels, onClose,
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, backgroundColor: COLORS.panel },
-  sessionLoading: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, backgroundColor: COLORS.background },
-  sessionLoadingText: { fontSize: 14, fontWeight: '500' },
+  historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
   mainView: {

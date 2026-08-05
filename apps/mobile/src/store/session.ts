@@ -5,11 +5,12 @@ import * as SecureStore from 'expo-secure-store'
 import { create } from 'zustand'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import type { MobileConfig, User } from '@pulpo/contracts'
-import { apiOrigin, configureApi, mobileApi } from '../api/client'
+import { ApiError, apiOrigin, configureApi, isNetworkError, mobileApi } from '../api/client'
 import { cacheNamespace, clearNamespace, getValue, setValue } from '../data/database'
 
 const SESSION_TOKEN_KEY = 'pulpo.native.session'
 const GLOBAL_NAMESPACE = 'global'
+const ACTIVE_SESSION_NAMESPACE_KEY = 'activeSessionNamespace'
 const DEFAULT_INSTANCE = process.env.EXPO_PUBLIC_DEFAULT_INSTANCE_URL ?? 'https://pulpo.baby'
 
 type SessionStatus = 'hydrating' | 'anonymous' | 'authenticated' | 'pending'
@@ -40,14 +41,49 @@ async function deviceLabel(): Promise<string> {
   return Device.deviceName ?? Device.modelName ?? 'Pulpo for iPhone'
 }
 
+async function rememberActiveNamespace(namespace: string): Promise<void> {
+  const known = new Set(await getValue<string[]>(GLOBAL_NAMESPACE, 'knownNamespaces') ?? [])
+  known.add(namespace)
+  await Promise.all([
+    setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, namespace),
+    setValue(GLOBAL_NAMESPACE, 'knownNamespaces', [...known]),
+  ])
+}
+
+async function persistAccount(instanceUrl: string, user: User): Promise<void> {
+  const namespace = cacheNamespace(instanceUrl, user.id)
+  await Promise.all([
+    setValue(GLOBAL_NAMESPACE, 'instanceUrl', instanceUrl),
+    setValue(namespace, 'user', user),
+    rememberActiveNamespace(namespace),
+  ])
+}
+
 async function persistSession(instanceUrl: string, user: User, token: string): Promise<void> {
   await SecureStore.setItemAsync(SESSION_TOKEN_KEY, token, {
     keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
   })
-  await Promise.all([
-    setValue(GLOBAL_NAMESPACE, 'instanceUrl', instanceUrl),
-    setValue(cacheNamespace(instanceUrl, user.id), 'user', user),
-  ])
+  await persistAccount(instanceUrl, user)
+}
+
+async function cachedAccount(instanceUrl: string): Promise<{ namespace: string; user: User } | null> {
+  const expectedOrigin = new URL(instanceUrl).origin
+  const preferredNamespace = await getValue<string>(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY)
+  if (preferredNamespace?.startsWith(`${expectedOrigin}|`)) {
+    const user = await getValue<User>(preferredNamespace, 'user')
+    if (user && cacheNamespace(instanceUrl, user.id) === preferredNamespace) {
+      return { namespace: preferredNamespace, user }
+    }
+  }
+
+  const namespaces = await getValue<string[]>(GLOBAL_NAMESPACE, 'knownNamespaces') ?? []
+  const candidates = (await Promise.all(namespaces
+    .filter((namespace) => namespace.startsWith(`${expectedOrigin}|`))
+    .map(async (namespace) => ({ namespace, user: await getValue<User>(namespace, 'user') }))))
+    .filter((candidate): candidate is { namespace: string; user: User } => Boolean(
+      candidate.user && cacheNamespace(instanceUrl, candidate.user.id) === candidate.namespace,
+    ))
+  return candidates.length === 1 ? candidates[0]! : null
 }
 
 function removeCachedFiles(uris: string[]): void {
@@ -71,29 +107,58 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   hydrate: async () => {
     try {
-      const storedInstance = await getValue<string>(GLOBAL_NAMESPACE, 'instanceUrl')
+      const [storedInstance, token] = await Promise.all([
+        getValue<string>(GLOBAL_NAMESPACE, 'instanceUrl'),
+        SecureStore.getItemAsync(SESSION_TOKEN_KEY),
+      ])
       const instanceUrl = normalizeInstanceUrl(storedInstance ?? DEFAULT_INSTANCE, allowLocalhost())
-      const token = await SecureStore.getItemAsync(SESSION_TOKEN_KEY)
       configureApi({ instanceUrl, token, onUnauthorized: () => { void get().handleUnauthorized() } })
       set({ instanceUrl, token, status: token ? 'hydrating' : 'anonymous' })
-      let config: MobileConfig | null = null
-      try {
-      config = await mobileApi.config()
-      if (!token) return set({ config, status: 'anonymous', error: null })
-      const { user } = await mobileApi.me()
-      await setValue(cacheNamespace(instanceUrl, user.id), 'user', user)
-      set({ config, user, status: user.role === 'pending' ? 'pending' : 'authenticated', error: null })
-      } catch (error) {
-        if (token) {
-          const namespaces = await getValue<string[]>(GLOBAL_NAMESPACE, 'knownNamespaces') ?? []
-          const cachedUsers = await Promise.all(namespaces
-            .filter((namespace) => namespace.startsWith(`${new URL(instanceUrl).origin}|`))
-            .map((namespace) => getValue<User>(namespace, 'user')))
-          const user = cachedUsers.find(Boolean) ?? null
-          if (user) return set({ config, user, status: user.role === 'pending' ? 'pending' : 'authenticated', error: 'Offline' })
-        }
-        set({ config, status: 'anonymous', error: error instanceof Error ? error.message : 'Could not connect' })
+      if (!token) {
+        void mobileApi.config()
+          .then((config) => {
+            if (get().instanceUrl === instanceUrl && !get().token) set({ config, error: null })
+          })
+          .catch((error) => {
+            if (get().instanceUrl === instanceUrl && !get().token) {
+              set({ error: error instanceof Error ? error.message : 'Could not connect' })
+            }
+          })
+        return
       }
+
+      const cached = await cachedAccount(instanceUrl)
+      if (cached) {
+        set({
+          user: cached.user,
+          status: cached.user.role === 'pending' ? 'pending' : 'authenticated',
+          error: null,
+        })
+        void rememberActiveNamespace(cached.namespace)
+      }
+
+      const refreshFromServer = async () => {
+        const [configResult, userResult] = await Promise.allSettled([mobileApi.config(), mobileApi.me()])
+        if (get().token !== token || get().instanceUrl !== instanceUrl) return
+        if (configResult.status === 'fulfilled') set({ config: configResult.value })
+        if (userResult.status === 'fulfilled') {
+          const user = userResult.value.user
+          await persistAccount(instanceUrl, user)
+          if (get().token !== token || get().instanceUrl !== instanceUrl) return
+          set({ user, status: user.role === 'pending' ? 'pending' : 'authenticated', error: null })
+          return
+        }
+        const error = userResult.reason
+        if (error instanceof ApiError && error.status === 401) return
+        if (cached) {
+          set({ error: isNetworkError(error) ? 'Offline' : error instanceof Error ? error.message : 'Could not refresh session' })
+          return
+        }
+        set({ status: 'anonymous', error: error instanceof Error ? error.message : 'Could not connect' })
+      }
+
+      if (cached) void refreshFromServer()
+      else await refreshFromServer()
     } catch {
       const instanceUrl = normalizeInstanceUrl(DEFAULT_INSTANCE, allowLocalhost())
       configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
@@ -113,10 +178,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     configureApi({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     const result = await mobileApi.login(email.trim(), password, await deviceLabel())
     await persistSession(get().instanceUrl, result.user, result.session.token)
-    const namespace = cacheNamespace(get().instanceUrl, result.user.id)
-    const known = new Set(await getValue<string[]>(GLOBAL_NAMESPACE, 'knownNamespaces') ?? [])
-    known.add(namespace)
-    await setValue(GLOBAL_NAMESPACE, 'knownNamespaces', [...known])
     configureApi({ instanceUrl: get().instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
@@ -125,10 +186,6 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     configureApi({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     const result = await mobileApi.signup(name.trim(), email.trim(), password, await deviceLabel())
     await persistSession(get().instanceUrl, result.user, result.session.token)
-    const namespace = cacheNamespace(get().instanceUrl, result.user.id)
-    const known = new Set(await getValue<string[]>(GLOBAL_NAMESPACE, 'knownNamespaces') ?? [])
-    known.add(namespace)
-    await setValue(GLOBAL_NAMESPACE, 'knownNamespaces', [...known])
     configureApi({ instanceUrl: get().instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
@@ -136,7 +193,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   logout: async () => {
     const { user, instanceUrl, token } = get()
     if (token) await mobileApi.logout().catch(() => undefined)
-    await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY)
+    await Promise.all([
+      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
+      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
+    ])
     if (user) removeCachedFiles(await clearNamespace(cacheNamespace(instanceUrl, user.id)))
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: null, user: null, status: 'anonymous', error: null })
@@ -157,7 +217,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       configureApi({ instanceUrl: previous.instanceUrl, token: previous.token })
       await mobileApi.logout().catch(() => undefined)
     }
-    await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY)
+    await Promise.all([
+      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
+      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
+    ])
     if (previous.user) removeCachedFiles(await clearNamespace(cacheNamespace(previous.instanceUrl, previous.user.id)))
     await setValue(GLOBAL_NAMESPACE, 'instanceUrl', instanceUrl)
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
@@ -166,13 +229,15 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   setUser: async (user) => {
-    const namespace = cacheNamespace(get().instanceUrl, user.id)
-    await setValue(namespace, 'user', user)
+    await persistAccount(get().instanceUrl, user)
     set({ user, status: user.role === 'pending' ? 'pending' : 'authenticated' })
   },
 
   handleUnauthorized: async () => {
-    await SecureStore.deleteItemAsync(SESSION_TOKEN_KEY)
+    await Promise.all([
+      SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
+      setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
+    ])
     configureApi({ instanceUrl: apiOrigin(), token: null })
     set({ token: null, user: null, status: 'anonymous', error: 'Your session expired. Sign in again.' })
     Appearance.setColorScheme('unspecified')

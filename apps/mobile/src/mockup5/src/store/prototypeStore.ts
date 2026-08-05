@@ -11,6 +11,8 @@ import { usePreferencesStore } from '../../../store/preferences';
 
 type PrototypeActions = {
   productionNamespace: string | null;
+  productionScopeReady: boolean;
+  modelCatalogReady: boolean;
   agentAvailable: boolean;
   updateProfile: (patch: Partial<NonNullable<SessionState['user']>>) => void;
   setPreference: <K extends keyof AppPreferences>(key: K, value: AppPreferences[K]) => void;
@@ -78,7 +80,9 @@ function runOptimisticAction(key: string, action: Promise<unknown>, rollback: ()
 }
 
 export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
-  ...createSeedState(), productionNamespace: null, agentAvailable: false,
+  ...createSeedState(),
+  models: [], defaultModelId: '', chats: [], folders: [],
+  productionNamespace: null, productionScopeReady: false, modelCatalogReady: false, agentAvailable: false,
   updateProfile: (patch) => set((state) => state.session.user ? { session: { ...state.session, user: { ...state.session.user, ...patch, initials: patch.name ? initialsFor(patch.name) : state.session.user.initials } } } : {}),
   setPreference: (key, value) => {
     const previous = get().preferences[key];
