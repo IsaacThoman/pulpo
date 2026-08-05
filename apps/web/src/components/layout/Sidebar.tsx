@@ -374,10 +374,15 @@ function ChatRow({
             >
               {generating ? (
                 <>
-                  <Loader2
+                  <span
                     aria-hidden="true"
-                    className="size-4 animate-spin motion-reduce:animate-none group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden"
-                  />
+                    className="relative block size-4 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden"
+                  >
+                    <svg className="absolute inset-0 size-4 text-muted-foreground/25" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+                    </svg>
+                    <Loader2 className="absolute inset-0 size-4 animate-spin motion-reduce:animate-none" />
+                  </span>
                   <MoreHorizontal
                     aria-hidden="true"
                     className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
