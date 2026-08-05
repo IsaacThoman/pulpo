@@ -30,6 +30,7 @@ import { useSettings } from '@/stores/settings'
 import { Markdown } from './Markdown'
 import { MessageAttachmentList } from './AttachmentImage'
 import { activityDurationMs } from './activity-timing'
+import { canSubmitMessageEdit } from './message-edit'
 import {
   buildTimeline,
   workspaceIsActive,
@@ -557,17 +558,17 @@ export const MessageItem = memo(function MessageItem({
   const hasAttachments = Boolean(message.attachments?.length)
   const submitEdit = () => {
     const content = draft.trim()
+    if (!canSubmitMessageEdit({
+      role: message.role,
+      draft,
+      originalContent: message.content,
+      hasAttachments,
+    })) return
     if (message.role === 'user') {
-      if (!content && !hasAttachments) return
-      if (content === message.content) {
-        setEditing(false)
-        return
-      }
       setEditing(false)
       editUserMessage(chat.id, message.id, content, activeModelId)
       return
     }
-    if (!content || content === message.content) return
     setEditing(false)
     editAssistantMessage(chat.id, message.id, content)
   }
@@ -610,7 +611,12 @@ export const MessageItem = memo(function MessageItem({
               <Button
                 size="sm"
                 onClick={submitEdit}
-                disabled={(!draft.trim() && !hasAttachments) || draft.trim() === message.content}
+                disabled={!canSubmitMessageEdit({
+                  role: 'user',
+                  draft,
+                  originalContent: message.content,
+                  hasAttachments,
+                })}
               >
                 Save & resend
               </Button>
@@ -690,7 +696,12 @@ export const MessageItem = memo(function MessageItem({
                 <Button
                   size="sm"
                   onClick={submitEdit}
-                  disabled={!draft.trim() || draft.trim() === message.content}
+                  disabled={!canSubmitMessageEdit({
+                    role: 'assistant',
+                    draft,
+                    originalContent: message.content,
+                    hasAttachments: false,
+                  })}
                 >
                   Save as branch
                 </Button>

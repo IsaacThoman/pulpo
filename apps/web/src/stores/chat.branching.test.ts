@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const storage = new Map<string, string>()
 vi.stubGlobal('localStorage', {
@@ -21,13 +21,17 @@ vi.stubGlobal('window', {
 
 interface PendingRequest {
   path: string
+  method?: string
+  body?: unknown
   resolve: (body: unknown) => void
 }
 
 const requests: PendingRequest[] = []
-vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => new Promise<Response>((resolve) => {
+vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => new Promise<Response>((resolve) => {
   requests.push({
     path: String(input),
+    method: init?.method,
+    body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
     resolve: (body) => resolve(new Response(JSON.stringify(body), {
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -108,7 +112,8 @@ function expectOnly(responseId: string): void {
   expect(visibleResponseIds()).toEqual([responseId])
 }
 
-beforeAll(() => {
+beforeEach(() => {
+  requests.splice(0)
   useAuth.setState({
     user: {
       id: userId,
@@ -139,6 +144,40 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('creates and submits a distinct user branch for unchanged text', async () => {
+    const responseA = response(responseAId, 'completed')
+    const initial = detail(responseAId, [responseA])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    useChat.getState().editUserMessage(chatId, `${responseAId}:input`, 'one prompt', 'test-model')
+
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const responseBId = optimistic.activeBranchLeafId!
+    const responseB = optimistic.responses!.find((item) => item.id === responseBId)!
+    expect(responseBId).not.toBe(responseAId)
+    expect(responseB.userMessageId).not.toBe(responseA.userMessageId)
+    expect(responseB.input).toEqual(responseA.input)
+    expect(responseB.branches.user).toEqual({ ids: [responseAId, responseBId], index: 1 })
+    expectOnly(responseBId)
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: `/api/messages/${responseAId}:input`,
+      method: 'PATCH',
+      body: expect.objectContaining({ content: 'one prompt' }),
+    })
+    requests[0]!.resolve({ response: responseB.snapshot })
+
+    const completed = {
+      ...response(responseBId, 'completed'),
+      userMessageId: responseB.userMessageId,
+    }
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    useChat.getState().setDetailedChat(detail(responseBId, [responseA, completed]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
   it('keeps one visible turn through regenerate, back, forward, stale detail, and completion', async () => {
     const responseA = response(responseAId, 'completed')
     const initial = detail(responseAId, [responseA])
