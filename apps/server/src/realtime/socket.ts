@@ -135,10 +135,16 @@ export async function createSocketServer(httpServer: HttpServer) {
         if (!owned) return
         const events = await readResponseEvents(responseId, afterSequence)
         let replayedThrough = afterSequence
+        let snapshotSent = false
         if (events.length > 0 && events.length <= 2_000) {
           for (const event of events) socket.emit('response.event', event)
           replayedThrough = events.at(-1)?.sequence ?? afterSequence
         } else if (afterSequence < owned.lastSequence) {
+          socket.emit('response.snapshot', toSnapshot(owned))
+          replayedThrough = owned.lastSequence
+          snapshotSent = true
+        }
+        if (!snapshotSent && !['queued', 'in_progress'].includes(owned.status)) {
           socket.emit('response.snapshot', toSnapshot(owned))
           replayedThrough = owned.lastSequence
         }

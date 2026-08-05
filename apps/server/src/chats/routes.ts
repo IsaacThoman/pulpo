@@ -33,7 +33,27 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .from(chats)
       .where(and(eq(chats.userId, user.id), isNull(chats.deletedAt), eq(chats.temporary, false)))
       .orderBy(desc(chats.updatedAt))
-    return { data: rows }
+    const inFlight = rows.length
+      ? await db.select({ id: responses.id, chatId: responses.chatId })
+        .from(responses)
+        .where(and(
+          eq(responses.userId, user.id),
+          inArray(responses.chatId, rows.map((chat) => chat.id)),
+          inArray(responses.status, ['queued', 'in_progress']),
+        ))
+      : []
+    const responseIdsByChat = new Map<string, string[]>()
+    for (const response of inFlight) {
+      const ids = responseIdsByChat.get(response.chatId)
+      if (ids) ids.push(response.id)
+      else responseIdsByChat.set(response.chatId, [response.id])
+    }
+    return {
+      data: rows.map((chat) => ({
+        ...chat,
+        inFlightResponseIds: responseIdsByChat.get(chat.id) ?? [],
+      })),
+    }
   })
 
   app.get('/api/chats/deleted', async (request) => {

@@ -558,6 +558,7 @@ export const chatSummarySchema = z.object({
   temporary: z.boolean(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
+  inFlightResponseIds: z.array(idSchema).default([]),
 })
 export type ChatSummary = z.infer<typeof chatSummarySchema>
 

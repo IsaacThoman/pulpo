@@ -4,6 +4,35 @@ interface ResponseDetail {
   responses?: Array<{ id: string; status: string }>
 }
 
+interface ChatSummaryActivity {
+  id: string
+  inFlightResponseIds?: string[]
+}
+
+export function mergeSummaryResponseTracking(
+  summaries: ChatSummaryActivity[],
+  streamingIds: string[],
+  responseChatIds: Record<string, string>,
+): { streamingIds: string[]; responseChatIds: Record<string, string> } {
+  let nextStreamingIds = streamingIds
+  const nextResponseChatIds = { ...responseChatIds }
+  for (const summary of summaries) {
+    for (const responseId of summary.inFlightResponseIds ?? []) {
+      nextResponseChatIds[responseId] = summary.id
+      if (!nextStreamingIds.includes(responseId)) nextStreamingIds = [...nextStreamingIds, responseId]
+    }
+  }
+  return { streamingIds: nextStreamingIds, responseChatIds: nextResponseChatIds }
+}
+
+export function chatHasStreamingResponse(
+  chatId: string,
+  streamingIds: readonly string[],
+  responseChatIds: Readonly<Record<string, string>>,
+): boolean {
+  return streamingIds.some((responseId) => responseChatIds[responseId] === chatId)
+}
+
 export function reconcileStreamingResponseIds(
   chats: Chat[],
   previous: string[],

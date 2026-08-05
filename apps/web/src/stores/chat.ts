@@ -13,7 +13,7 @@ import { applyEventToSnapshot } from '@/lib/local-first/response-snapshot'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { coalesceResponseEvents } from '@/features/chat/response-sync'
 import { withBranchMetadata } from '@/lib/message-branches'
-import { reconcileStreamingResponseIds, reindexDetailedChatResponses } from '@/lib/response-tracking'
+import { mergeSummaryResponseTracking, reconcileStreamingResponseIds, reindexDetailedChatResponses } from '@/lib/response-tracking'
 import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
@@ -86,6 +86,7 @@ export interface ServerChat {
   updatedAt: string
   activeResponseId: string | null
   activeBranchLeafId: string | null
+  inFlightResponseIds?: string[]
   attachments?: ServerAttachment[]
   responses?: ServerResponse[]
 }
@@ -681,7 +682,12 @@ export const useChat = create<ChatState>()((set, get) => ({
 
   replaceSummaries: (rows) => set((state) => {
     const chats = rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds))
-    return { chats, responseChatIds: responseChatIndex(chats, state.responseChatIds) }
+    const tracking = mergeSummaryResponseTracking(
+      rows,
+      state.streamingIds,
+      responseChatIndex(chats, state.responseChatIds),
+    )
+    return { chats, ...tracking }
   }),
   replaceFolders: (rows) => set((state) => {
     const persisted = loadFolderExpanded()

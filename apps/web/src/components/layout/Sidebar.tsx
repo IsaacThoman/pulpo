@@ -7,6 +7,7 @@ import {
   FolderInput,
   KeyRound,
   LogOut,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -25,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { chatTimeGroup } from '@/lib/format'
+import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -311,9 +313,14 @@ function ChatRow({
   const [title, setTitle] = useState(chat.title)
   const renameChat = useChat((state) => state.renameChat)
   const deleteChat = useChat((state) => state.deleteChat)
+  const generating = useChat((state) => chatHasStreamingResponse(
+    chat.id,
+    state.streamingIds,
+    state.responseChatIds,
+  ))
 
   const actionClassName =
-    'invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible'
+    'rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground'
 
   return (
     <div
@@ -343,7 +350,7 @@ function ChatRow({
       <span className="flex-1 truncate">{chat.title}</span>
       {shiftHeld ? (
         <button
-          className={cn(actionClassName, 'hover:text-destructive')}
+          className={cn(actionClassName, 'invisible hover:text-destructive group-hover:visible')}
           onClick={(e) => {
             e.stopPropagation()
             deleteChat(chat.id)
@@ -356,11 +363,29 @@ function ChatRow({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className={cn(actionClassName, 'data-[state=open]:visible')}
+              className={cn(
+                actionClassName,
+                'group/chat-action',
+                generating ? 'visible' : 'invisible group-hover:visible',
+                'data-[state=open]:visible',
+              )}
               onClick={(e) => e.stopPropagation()}
-              aria-label="Chat options"
+              aria-label={generating ? 'Generation active; chat options' : 'Chat options'}
             >
-              <MoreHorizontal className="size-4" />
+              {generating ? (
+                <>
+                  <Loader2
+                    aria-hidden="true"
+                    className="size-4 animate-spin motion-reduce:animate-none group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden"
+                  />
+                  <MoreHorizontal
+                    aria-hidden="true"
+                    className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
+                  />
+                </>
+              ) : (
+                <MoreHorizontal className="size-4" />
+              )}
             </button>
           </DropdownMenuTrigger>
           <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />

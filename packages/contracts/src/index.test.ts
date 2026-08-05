@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
+  chatSummarySchema,
   chatPresetsSchema,
   createModelSchema,
   createChatResponseSchema,
@@ -44,6 +45,24 @@ function targetedDelta(type: string, text: string, sequence: number, itemId: str
 }
 
 describe('shared contracts', () => {
+  it('defaults missing in-flight response ids in chat summaries', () => {
+    const summary = {
+      id: crypto.randomUUID(),
+      title: 'Active chat',
+      modelId: 'model',
+      pinned: false,
+      folderId: null,
+      temporary: false,
+      updatedAt: '2026-08-05T00:00:00.000Z',
+      activeResponseId: null,
+    }
+    expect(chatSummarySchema.parse(summary).inFlightResponseIds).toEqual([])
+
+    const responseId = crypto.randomUUID()
+    expect(chatSummarySchema.parse({ ...summary, inFlightResponseIds: [responseId] }).inFlightResponseIds)
+      .toEqual([responseId])
+  })
+
   it('uses the Pulpo Proxy OCR prompt by default', () => {
     expect(ocrSettingsSchema.parse({}).systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
   })
