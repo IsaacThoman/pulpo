@@ -54,7 +54,7 @@ export function SetupPage() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-email">Email</Label>
-          <Input id="setup-email" type="email" autoComplete="email" placeholder="you@company.com" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          <Input id="setup-email" type="email" autoComplete="email" placeholder="jon@pulpo.baby" value={email} onChange={(event) => setEmail(event.target.value)} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-password">Password</Label>
