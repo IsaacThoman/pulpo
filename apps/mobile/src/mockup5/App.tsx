@@ -660,7 +660,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, size = 44 }: { icon: S
 }
 
 function AppHeader({ children }: { children: ReactNode }) {
-  return <View style={styles.appHeader}>{children}</View>;
+  return <View pointerEvents="box-none" style={styles.appHeader}>{children}</View>;
 }
 
 function NativeObjectContextMenu({
@@ -2312,6 +2312,7 @@ function ChatView({
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
   const [promptConfig, setPromptConfig] = useState({
     enabled: true,
     count: 4,
@@ -2643,7 +2644,14 @@ function ChatView({
 
   return (
     <View style={styles.chatRoot}>
-      <SafeAreaView style={styles.flex} edges={['top']}>
+      <View
+        onLayout={(event) => {
+          const height = event.nativeEvent.layout.height;
+          setHeaderOverlayHeight((current) => current === height ? current : height);
+        }}
+        pointerEvents="box-none"
+        style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
+      >
         {/* Header */}
         <AppHeader>
           <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} />
@@ -2689,84 +2697,90 @@ function ChatView({
             <Text style={styles.temporaryBannerText}>Temporary chat · not saved to history</Text>
           </View>
         )}
+      </View>
 
-        {loadingExistingChat ? (
-          <View accessibilityLabel="Loading conversation" accessibilityRole="progressbar" style={styles.emptyConversation}>
-            <ActivityIndicator color={COLORS.muted} />
-          </View>
-        ) : empty ? (
-          // The landing surface is intentionally not a scroll view. Keeping it
-          // outside FlatList prevents iOS keyboard focus from retaining a stale
-          // content offset and clipping the identity above its resting position.
-          <View onTouchStart={Keyboard.dismiss} style={styles.emptyConversation}>
-            <View style={styles.emptyState}>
-              <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
-                <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
-                  <ModelMark model={model} size={48} />
-                  <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
-                </View>
-                <Text style={styles.emptyProvider}>{model.lab}</Text>
-              </Reanimated.View>
-              <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
-                <View
-                  onLayout={(event) => {
-                    suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
-                  }}
-                  style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
-                >
-                  {suggestions.map((suggestion, index) => (
-                    <SuggestedPromptButton
-                      accessible={accessibilityLayout}
-                      key={`${suggestion.id}:${index}`}
-                      label={suggestion.label}
-                      onPress={() => submitSuggestion(suggestion.message)}
-                    />
-                  ))}
-                </View>
-              </Reanimated.View>
-            </View>
-          </View>
-        ) : (
-          /* Virtualized conversation that follows only while the reader remains at the end. */
-          <FlatList
-            alwaysBounceVertical
-            bounces
-            contentContainerStyle={styles.conversation}
-            data={messages}
-            initialNumToRender={10}
-            keyboardDismissMode="interactive"
-            keyboardShouldPersistTaps="handled"
-            key={chatId ?? 'unsaved-chat'}
-            keyExtractor={(message) => message.id}
-            ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
-              <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
-                <View style={styles.assistantHeader}>
-                  <ModelMark model={model} size={26} />
-                  <Text style={styles.assistantName}>{model.name}</Text>
-                  <Text style={styles.messageTime}>now</Text>
-                </View>
-                <ResponsePendingIndicator />
+      {loadingExistingChat ? (
+        <View
+          accessibilityLabel="Loading conversation"
+          accessibilityRole="progressbar"
+          style={[styles.emptyConversation, { paddingTop: headerOverlayHeight + 16 }]}
+        >
+          <ActivityIndicator color={COLORS.muted} />
+        </View>
+      ) : empty ? (
+        // The landing surface is intentionally not a scroll view. Keeping it
+        // outside FlatList prevents iOS keyboard focus from retaining a stale
+        // content offset and clipping the identity above its resting position.
+        <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, { paddingTop: headerOverlayHeight + 16 }]}>
+          <View style={styles.emptyState}>
+            <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
+              <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
+                <ModelMark model={model} size={48} />
+                <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
               </View>
-            ) : streamingSession ? (
-              <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
-            ) : null}
-            onContentSizeChange={handleContentSizeChange}
-            onMomentumScrollBegin={beginReaderInteraction}
-            onMomentumScrollEnd={endReaderInteraction}
-            onScroll={updateBottomProximity}
-            onScrollBeginDrag={beginReaderInteraction}
-            onScrollEndDrag={endReaderInteraction}
-            onTouchStart={Keyboard.dismiss}
-            ref={listRef}
-            renderItem={renderMessage}
-            scrollEventThrottle={16}
-            showsVerticalScrollIndicator={false}
-            style={styles.flex}
-          />
-        )}
+              <Text style={styles.emptyProvider}>{model.lab}</Text>
+            </Reanimated.View>
+            <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+              <View
+                onLayout={(event) => {
+                  suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
+                }}
+                style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
+              >
+                {suggestions.map((suggestion, index) => (
+                  <SuggestedPromptButton
+                    accessible={accessibilityLayout}
+                    key={`${suggestion.id}:${index}`}
+                    label={suggestion.label}
+                    onPress={() => submitSuggestion(suggestion.message)}
+                  />
+                ))}
+              </View>
+            </Reanimated.View>
+          </View>
+        </View>
+      ) : (
+        /* The full-screen transcript scrolls beneath the transparent status/header overlay. */
+        <FlatList
+          alwaysBounceVertical
+          bounces
+          contentContainerStyle={[styles.conversation, { paddingTop: headerOverlayHeight + 16 }]}
+          contentInsetAdjustmentBehavior="never"
+          data={messages}
+          initialNumToRender={10}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+          key={chatId ?? 'unsaved-chat'}
+          keyExtractor={(message) => message.id}
+          ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
+            <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
+              <View style={styles.assistantHeader}>
+                <ModelMark model={model} size={26} />
+                <Text style={styles.assistantName}>{model.name}</Text>
+                <Text style={styles.messageTime}>now</Text>
+              </View>
+              <ResponsePendingIndicator />
+            </View>
+          ) : streamingSession ? (
+            <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
+          ) : null}
+          onContentSizeChange={handleContentSizeChange}
+          onMomentumScrollBegin={beginReaderInteraction}
+          onMomentumScrollEnd={endReaderInteraction}
+          onScroll={updateBottomProximity}
+          onScrollBeginDrag={beginReaderInteraction}
+          onScrollEndDrag={endReaderInteraction}
+          onTouchStart={Keyboard.dismiss}
+          ref={listRef}
+          renderItem={renderMessage}
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          style={styles.flex}
+        />
+      )}
 
-        <KeyboardStickyView offset={keyboardOffset} style={styles.composerSticky}>
-          <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+      <KeyboardStickyView offset={keyboardOffset} style={styles.composerSticky}>
+        <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <Glass interactive style={styles.composer}>
               <AttachmentStrip
                 attachments={attachments}
@@ -2900,16 +2914,15 @@ function ChatView({
                 )}
               </View>
             </Glass>
-          </View>
-        </KeyboardStickyView>
-        <GenerationPresetSheet
-          model={prototypeModel}
-          selections={presetSelections}
-          visible={presetPickerOpen}
-          onClose={() => setPresetPickerOpen(false)}
-          onSelect={onSelectPreset}
-        />
-      </SafeAreaView>
+        </View>
+      </KeyboardStickyView>
+      <GenerationPresetSheet
+        model={prototypeModel}
+        selections={presetSelections}
+        visible={presetPickerOpen}
+        onClose={() => setPresetPickerOpen(false)}
+        onSelect={onSelectPreset}
+      />
     </View>
   );
 }
@@ -3432,6 +3445,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
+  chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   nativeHeaderActionHost: { width: 44, height: 44 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
@@ -3446,8 +3460,8 @@ const styles = StyleSheet.create({
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
-  conversation: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 156 },
-  emptyConversation: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingTop: 16, paddingBottom: 156 },
+  conversation: { paddingHorizontal: 18, paddingBottom: 156 },
+  emptyConversation: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingBottom: 156 },
   emptyState: { alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
