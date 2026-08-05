@@ -36,3 +36,20 @@ export function calculateReservationMicros(
     tokenCostMicros(maxOutputTokens, pricing.outputPriceMicros)
   )
 }
+
+export function calculateRollingReservationMicros(
+  accruedCostMicros: number,
+  input: unknown,
+  maxOutputTokens: number,
+  pricing: Pricing,
+): number {
+  return accruedCostMicros + calculateReservationMicros(input, maxOutputTokens, pricing)
+}
+
+export function availableReservationCapacityMicros(
+  balanceMicros: number,
+  totalPendingMicros: number,
+  currentReservationMicros: number,
+): number {
+  return balanceMicros - Math.max(0, totalPendingMicros - currentReservationMicros)
+}

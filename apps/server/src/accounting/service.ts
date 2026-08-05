@@ -12,7 +12,13 @@ import {
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { calculateCostMicros, calculateReservationMicros, type Pricing } from './pricing.js'
+import {
+  availableReservationCapacityMicros,
+  calculateCostMicros,
+  calculateReservationMicros,
+  calculateRollingReservationMicros,
+  type Pricing,
+} from './pricing.js'
 
 export interface ActivePricing extends Pricing {
   id: string
@@ -159,20 +165,22 @@ export async function settleBudget(input: {
   })
 }
 
-export async function extendBudgetReservation(input: {
+export async function resizeBudgetReservation(input: {
   responseId: string
+  accruedCostMicros: number
   requestInput: unknown
   maxOutputTokens: number
   pricing: ActivePricing
 }): Promise<void> {
-  const additional = calculateReservationMicros(input.requestInput, input.maxOutputTokens, input.pricing)
+  const amount = calculateRollingReservationMicros(input.accruedCostMicros, input.requestInput, input.maxOutputTokens, input.pricing)
   await db.transaction(async (tx) => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, input.responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
     const [user] = await tx.select().from(users).where(eq(users.id, reservation.userId)).for('update')
     const [reserved] = await tx.select({ total: sql<number>`coalesce(sum(${budgetReservations.amountMicros}), 0)::bigint` }).from(budgetReservations).where(and(eq(budgetReservations.userId, reservation.userId), eq(budgetReservations.status, 'pending')))
-    if (!user || user.balanceMicros - Number(reserved?.total ?? 0) < additional) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the next agent turn')
-    await tx.update(budgetReservations).set({ amountMicros: reservation.amountMicros + additional }).where(eq(budgetReservations.id, reservation.id))
+    const available = user ? availableReservationCapacityMicros(user.balanceMicros, Number(reserved?.total ?? 0), reservation.amountMicros) : 0
+    if (!user || available < amount) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the next agent turn')
+    await tx.update(budgetReservations).set({ amountMicros: amount }).where(eq(budgetReservations.id, reservation.id))
   })
 }
 

@@ -12,7 +12,7 @@ import { parseAgentSettings, parseWebToolsSettings } from '../settings/applicati
 import { isCancellationRequested, publishResponseEvent, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
-import { extendBudgetReservation, extendBudgetReservationFixedCost, getActivePricing, releaseBudget, settleBudget } from '../accounting/service.js'
+import { extendBudgetReservationFixedCost, getActivePricing, releaseBudget, resizeBudgetReservation, settleBudget } from '../accounting/service.js'
 import { WorkspaceManager } from './controller.js'
 import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
@@ -113,10 +113,17 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   }
   let activeIndex = 0; let active = runtimes[0]!
   const streams = openAIResponsesApi()
-  let sequence = record.response.lastSequence; let modelTurns = 0; let toolCalls = 0
-  let usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }; let accruedCostMicros = 0
-  const [previousWebToolCost] = await db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
-    .from(toolExecutions).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.status, 'completed')))
+  const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
+  const persistedUsage = record.response.usage as typeof emptyUsage | null
+  let sequence = record.response.lastSequence; let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
+  let usage = persistedUsage ?? emptyUsage
+  const [[previousModelCost], [previousWebToolCost]] = await Promise.all([
+    db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
+      .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'agent'))),
+    db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
+      .from(toolExecutions).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.status, 'completed'))),
+  ])
+  let accruedCostMicros = Number(previousModelCost?.total ?? 0)
   let accruedWebToolCostMicros = Number(previousWebToolCost?.total ?? 0)
   const billingTurns: Array<Record<string, unknown>> = []
   const modelTurnStartedAt = new Map<number, number>()
@@ -356,7 +363,13 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     if (event.type === 'turn_start') {
       modelTurns += 1
       if (modelTurns > settings.maxModelTurns) agent.abort()
-      if (modelTurns > 1) await extendBudgetReservation({ responseId, requestInput: agent.state.messages, maxOutputTokens: active.model.maxOutputTokens, pricing: await getActivePricing(active.model.id) })
+      if (modelTurns > 1) await resizeBudgetReservation({
+        responseId,
+        accruedCostMicros: accruedCostMicros + accruedWebToolCostMicros,
+        requestInput: agent.state.messages,
+        maxOutputTokens: active.model.maxOutputTokens,
+        pricing: await getActivePricing(active.model.id),
+      })
     } else if (event.type === 'message_start' && event.message.role === 'assistant') {
       modelTurnStartedAt.set(modelTurns, Date.now())
       await db.insert(generationAttempts).values({ id: newId(), requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: 1, turnNumber: modelTurns, status: 'in_progress' })
