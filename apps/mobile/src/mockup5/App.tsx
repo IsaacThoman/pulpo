@@ -68,6 +68,7 @@ import {
   accessibilityLabel as swiftUIAccessibilityLabel,
   buttonBorderShape,
   buttonStyle,
+  contentShape,
   controlSize,
   disabled as swiftUIDisabled,
   foregroundStyle,
@@ -77,6 +78,7 @@ import {
   menuActionDismissBehavior,
   padding,
   resizable,
+  shapes,
   textFieldStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -2966,11 +2968,11 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
           onFocusChange(true);
           requestAnimationFrame(() => { void fieldRef.current?.focus(); });
         }}
-        modifiers={[buttonStyle('plain'), frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), swiftUIAccessibilityLabel('Search chats')]}
+        modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('Search chats')]}
       >
-        <SwiftUIHStack spacing={12}>
+        <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
           <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />
-          <SwiftUIText modifiers={[font({ textStyle: 'body' }), foregroundStyle('secondary')]}>Search chats</SwiftUIText>
+          <SwiftUIText modifiers={[font({ textStyle: 'body' }), foregroundStyle('primary')]}>Search chats</SwiftUIText>
           <SwiftUISpacer />
         </SwiftUIHStack>
       </SwiftUIButton>
@@ -2988,8 +2990,8 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
 
 function NativeDrawerAction({ icon, label, value, onPress }: { icon: NativeButtonSystemImage; label: string; value?: string; onPress: () => void }) {
   return <SwiftUIHost style={styles.nativeDrawerActionHost}>
-    <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), frame({ maxWidth: Infinity, minHeight: 46 }), swiftUIAccessibilityLabel(value ? `${label}, ${value}` : label)]}>
-      <SwiftUIHStack spacing={12}><SwiftUIImage systemName={icon} size={17} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>{label}</SwiftUIText><SwiftUISpacer />{value ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{value}</SwiftUIText> : null}</SwiftUIHStack>
+    <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(value ? `${label}, ${value}` : label)]}>
+      <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: 46 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon} size={17} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>{label}</SwiftUIText><SwiftUISpacer />{value ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{value}</SwiftUIText> : null}</SwiftUIHStack>
     </SwiftUIButton>
   </SwiftUIHost>;
 }
@@ -3009,8 +3011,8 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
     <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFoldersHeaderHost}>
       <SwiftUIContextMenu>
         <SwiftUIContextMenu.Trigger>
-          <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpanded((current) => !current); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), swiftUIAccessibilityLabel(`Folders, ${folders.length}, ${expanded ? 'expanded' : 'collapsed'}`)]}>
-            <SwiftUIHStack spacing={12}>
+          <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpanded((current) => !current); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`Folders, ${folders.length}, ${expanded ? 'expanded' : 'collapsed'}`)]}>
+            <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
               <SwiftUIImage systemName={expanded ? 'folder.fill' : 'folder'} size={17} modifiers={[frame({ width: 20, height: 20 })]} />
               <SwiftUIText>Folders</SwiftUIText>
               <SwiftUISpacer />
@@ -3026,8 +3028,8 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
         const folderExpanded = expandedFolders[folder.id] ?? false;
         return <Reanimated.View key={folder.id} layout={layout} style={styles.nativeFolderGroup}>
           <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderRowHost}>
-            <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpandedFolders((current) => ({ ...current, [folder.id]: !folderExpanded })); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), swiftUIAccessibilityLabel(`${folder.name}, ${folder.chats.length} chats, ${folderExpanded ? 'expanded' : 'collapsed'}`)]}>
-              <SwiftUIHStack spacing={10}>
+            <SwiftUIButton onPress={() => { Haptics.selectionAsync(); setExpandedFolders((current) => ({ ...current, [folder.id]: !folderExpanded })); }} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`${folder.name}, ${folder.chats.length} chats, ${folderExpanded ? 'expanded' : 'collapsed'}`)]}>
+              <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), contentShape(shapes.rectangle())]}>
                 <SwiftUIImage systemName={folderExpanded ? 'folder.fill' : 'folder'} size={15} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} />
                 <SwiftUIText>{folder.name}</SwiftUIText>
                 <SwiftUISpacer />
@@ -3038,8 +3040,8 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
           {folderExpanded ? <Reanimated.View entering={entering} exiting={exiting} layout={layout} style={styles.nativeFoldersContent}>
             {folder.chats.length > 0 ? folder.chats.map((chat) =>
               <SwiftUIHost ignoreSafeArea="all" key={chat.id} style={styles.nativeFolderChatRowHost}>
-                <SwiftUIButton onPress={() => onSelectChat(chat)} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), padding({ leading: 48 }), frame({ maxWidth: Infinity, minHeight: 38 }), swiftUIAccessibilityLabel(`Open ${chat.title}`)]}>
-                  <SwiftUIHStack spacing={10}><SwiftUIImage systemName="bubble.left" size={14} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} /><SwiftUIText>{chat.title}</SwiftUIText><SwiftUISpacer /></SwiftUIHStack>
+                <SwiftUIButton onPress={() => onSelectChat(chat)} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(`Open ${chat.title}`)]}>
+                  <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 48 }), frame({ maxWidth: Infinity, minHeight: 38 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName="bubble.left" size={14} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('secondary')]} /><SwiftUIText>{chat.title}</SwiftUIText><SwiftUISpacer /></SwiftUIHStack>
                 </SwiftUIButton>
               </SwiftUIHost>
             ) : <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderEmptyRowHost}><SwiftUIHStack modifiers={[padding({ leading: 78 }), frame({ maxWidth: Infinity, minHeight: 34 })]}><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>No chats yet</SwiftUIText><SwiftUISpacer /></SwiftUIHStack></SwiftUIHost>}
@@ -3047,8 +3049,8 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
         </Reanimated.View>;
       })}
       <SwiftUIHost ignoreSafeArea="all" style={styles.nativeFolderRowHost}>
-        <SwiftUIButton onPress={onCreate} modifiers={[buttonStyle('plain'), foregroundStyle('secondary'), padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), swiftUIAccessibilityLabel('New folder')]}>
-          <SwiftUIHStack spacing={10}><SwiftUIImage systemName="folder.badge.plus" size={15} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>New folder</SwiftUIText><SwiftUISpacer /></SwiftUIHStack>
+        <SwiftUIButton onPress={onCreate} modifiers={[buttonStyle('plain'), foregroundStyle('secondary'), swiftUIAccessibilityLabel('New folder')]}>
+          <SwiftUIHStack spacing={10} modifiers={[padding({ leading: 24 }), frame({ maxWidth: Infinity, minHeight: 40 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName="folder.badge.plus" size={15} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>New folder</SwiftUIText><SwiftUISpacer /></SwiftUIHStack>
         </SwiftUIButton>
       </SwiftUIHost>
     </Reanimated.View> : null}
