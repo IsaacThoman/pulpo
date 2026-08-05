@@ -1425,32 +1425,32 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, []);
 
   return (
-    <View style={styles.root}>
-      <ProductionBridge activeChatId={activeChatId} />
-      <StatusBar style="auto" />
+    <GestureDetector gesture={panelGesture}>
+      <View style={styles.root}>
+        <ProductionBridge activeChatId={activeChatId} />
+        <StatusBar style="auto" />
 
-      {/* History page, revealed underneath as the chat view slides right */}
-      <Reanimated.View
-        accessibilityElementsHidden={!panelOpen}
-        importantForAccessibility={!panelOpen ? 'no-hide-descendants' : 'auto'}
-        style={[StyleSheet.absoluteFill, panelAnimatedStyle]}
-      >
-        <HistoryPanel
-          chats={legacyChats}
-          activeChatId={activeChatId}
-          drawerOpen={panelOpen}
-          loading={!productionScopeReady}
-          onSelectChat={selectChat}
-          onNewChat={() => { newChat(); animatePanel(false); }}
-          onOpenSettings={() => {
-            Keyboard.dismiss();
-            navigation.navigate('Settings');
-          }}
-        />
-      </Reanimated.View>
+        {/* History page, revealed underneath as the chat view slides right */}
+        <Reanimated.View
+          accessibilityElementsHidden={!panelOpen}
+          importantForAccessibility={!panelOpen ? 'no-hide-descendants' : 'auto'}
+          style={[StyleSheet.absoluteFill, panelAnimatedStyle]}
+        >
+          <HistoryPanel
+            chats={legacyChats}
+            activeChatId={activeChatId}
+            drawerOpen={panelOpen}
+            loading={!productionScopeReady}
+            onSelectChat={selectChat}
+            onNewChat={() => { newChat(); animatePanel(false); }}
+            onOpenSettings={() => {
+              Keyboard.dismiss();
+              navigation.navigate('Settings');
+            }}
+          />
+        </Reanimated.View>
 
-      {/* Main chat view sliding over to the right */}
-      <GestureDetector gesture={panelGesture}>
+        {/* Main chat view sliding over to the right */}
         <Reanimated.View
           accessibilityElementsHidden={panelOpen}
           importantForAccessibility={panelOpen ? 'no-hide-descendants' : 'auto'}
@@ -1486,19 +1486,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             <Pressable accessibilityLabel="Close chats" accessibilityRole="button" style={StyleSheet.absoluteFill} onPress={() => animatePanel(false)} />
           )}
         </Reanimated.View>
-      </GestureDetector>
 
-      <ModelSheet
-        models={availableModels}
-        visible={modelSheet}
-        selected={selectedModel.id}
-        onClose={() => setModelSheet(false)}
-        onSelect={(model) => {
-          selectModel(model);
-          setModelSheet(false);
-        }}
-      />
-    </View>
+        <ModelSheet
+          models={availableModels}
+          visible={modelSheet}
+          selected={selectedModel.id}
+          onClose={() => setModelSheet(false)}
+          onSelect={(model) => {
+            selectModel(model);
+            setModelSheet(false);
+          }}
+        />
+      </View>
+    </GestureDetector>
   );
 }
 
