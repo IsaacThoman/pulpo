@@ -127,6 +127,7 @@ import { useSessionStore } from '../store/session';
 import { apiRequest } from '../api/client';
 import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { cacheOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
+import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
@@ -1348,10 +1349,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const activateMessageBranch = useCallback(async (message: Message, branchId: string) => {
     const chatId = message.chatId ?? activeChatId;
     if (!chatId || !productionUserId) throw new Error('This branch is not available yet.');
-    await activateServerBranch(branchId);
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
-    await queryClient.refetchQueries({ queryKey: queryKeys.chat(namespace, chatId), type: 'active' });
+    await activateOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId,
+      selectedResponseId: branchId,
+      request: activateServerBranch,
+    });
   }, [activeChatId, productionInstanceUrl, productionUserId, queryClient]);
 
   const stopGeneration = useCallback(() => {
@@ -1836,24 +1841,18 @@ function BranchControls({ branches, activeIndex, onActivate }: {
   activeIndex: number;
   onActivate: (branchId: string) => Promise<void>;
 }) {
-  const [activating, setActivating] = useState(false);
-  const activate = useCallback(async (index: number) => {
+  const activate = useCallback((index: number) => {
     const branch = branches[index];
-    if (!branch || activating) return;
-    setActivating(true);
-    try {
-      await onActivate(branch.id);
-    } catch (error) {
+    if (!branch) return;
+    void onActivate(branch.id).catch((error) => {
       Alert.alert('Couldn’t switch version', error instanceof Error ? error.message : 'The current version was kept.');
-    } finally {
-      setActivating(false);
-    }
-  }, [activating, branches, onActivate]);
+    });
+  }, [branches, onActivate]);
   return (
     <View accessibilityLabel={`Version ${activeIndex + 1} of ${branches.length}`} style={styles.branchControls}>
-      <IconAction disabled={activating || activeIndex <= 0} icon="chevron.left" label="Previous version" onPress={() => void activate(activeIndex - 1)} />
-      <Text style={styles.branchLabel}>{activating ? 'Switching…' : `${activeIndex + 1} / ${branches.length}`}</Text>
-      <IconAction disabled={activating || activeIndex >= branches.length - 1} icon="chevron.right" label="Next version" onPress={() => void activate(activeIndex + 1)} />
+      <IconAction disabled={activeIndex <= 0} icon="chevron.left" label="Previous version" onPress={() => activate(activeIndex - 1)} />
+      <Text style={styles.branchLabel}>{`${activeIndex + 1} / ${branches.length}`}</Text>
+      <IconAction disabled={activeIndex >= branches.length - 1} icon="chevron.right" label="Next version" onPress={() => activate(activeIndex + 1)} />
     </View>
   );
 }

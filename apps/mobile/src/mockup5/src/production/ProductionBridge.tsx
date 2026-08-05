@@ -22,6 +22,10 @@ import {
   pendingOptimisticChatIds,
   reconcileOptimisticResponses,
 } from './optimisticResponses'
+import {
+  clearOptimisticBranchSelections,
+  reconcileOptimisticBranchSelection,
+} from './optimisticBranches'
 
 function modelAsset(model: MobileModel): PrototypeModel['asset'] {
   const value = `${model.provider.name} ${model.name}`.toLowerCase()
@@ -132,6 +136,7 @@ let scopeHydrationToken = 0
 
 function clearProductionScopeState(): void {
   clearPendingOptimisticResponses()
+  clearOptimisticBranchSelections()
   usePrototypeStore.setState((state) => ({
     productionNamespace: null,
     chats: [],
@@ -245,7 +250,12 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     enabled: enabled && activeChatIsServerAddressable,
   })
   const reconciledDetail = useMemo(
-    () => detail.data ? reconcileOptimisticResponses(namespace, detail.data, snapshots) : undefined,
+    () => detail.data
+      ? reconcileOptimisticBranchSelection(
+        namespace,
+        reconcileOptimisticResponses(namespace, detail.data, snapshots),
+      )
+      : undefined,
     [detail.data, namespace, snapshots],
   )
 
