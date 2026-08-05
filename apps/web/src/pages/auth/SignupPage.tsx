@@ -73,7 +73,7 @@ export function SignupPage() {
           <Input
             id="name"
             autoComplete="name"
-            placeholder="Crazy Hamburger"
+            placeholder="Jon Arbuckle"
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
