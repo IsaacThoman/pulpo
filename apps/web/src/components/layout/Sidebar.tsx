@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
+import { useSettings } from '@/stores/settings'
 import { chatTimeGroup } from '@/lib/format'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
@@ -212,6 +213,7 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const deleteChat = useChat((state) => state.deleteChat)
   const moveToFolder = useChat((state) => state.moveToFolder)
   const folders = useChat((state) => state.folders)
+  const trashRetention = useSettings((state) => state.trashRetention)
   return (
     <DropdownMenuContent side="right" align="start" className="w-48">
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
@@ -249,7 +251,7 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => deleteChat(chat.id)}>
         <Trash2 />
-        Delete
+        {trashRetention === 'instant' ? 'Delete' : 'Trash'}
       </DropdownMenuItem>
     </DropdownMenuContent>
   )
@@ -313,6 +315,7 @@ function ChatRow({
   const [title, setTitle] = useState(chat.title)
   const renameChat = useChat((state) => state.renameChat)
   const deleteChat = useChat((state) => state.deleteChat)
+  const trashRetention = useSettings((state) => state.trashRetention)
   const generating = useChat((state) => chatHasStreamingResponse(
     chat.id,
     state.streamingIds,
@@ -355,7 +358,7 @@ function ChatRow({
             e.stopPropagation()
             deleteChat(chat.id)
           }}
-          aria-label="Delete chat"
+          aria-label={`${trashRetention === 'instant' ? 'Delete' : 'Trash'} chat`}
         >
           <Trash2 className="size-4" />
         </button>
