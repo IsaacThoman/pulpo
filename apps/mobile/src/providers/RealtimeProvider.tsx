@@ -38,6 +38,7 @@ import {
   type PulpoSocket,
 } from './realtimeStore'
 import {
+  FOREGROUND_CONNECTION_GRACE_MS,
   INITIAL_CONNECTION_FAILURE_DELAY_MS,
   phaseAfterDisconnect,
   REALTIME_UNAVAILABLE_MESSAGE,
@@ -85,9 +86,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const unregisterSocket = registerRealtimeSocket(socket)
 
     let disposed = false
-    let hasConnected = false
     let silentConnectionAttempt = true
     let appStateValue = AppState.currentState
+    let foregroundGraceUntil = Date.now() + FOREGROUND_CONNECTION_GRACE_MS
     let connectionFailureTimer: ReturnType<typeof setTimeout> | undefined
     let eventTimer: ReturnType<typeof setTimeout> | undefined
     let cursorTimer: ReturnType<typeof setTimeout> | undefined
@@ -216,7 +217,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           accountRevision: stateRevision.current,
           ...(activeChatId ? { activeChatId } : {}),
           responseCursors: cursors,
-        }, (result) => { if (!disposed) applySync(result, activeChatId) })
+        }, (result) => {
+          if (disposed) return
+          if (appStateValue === 'active') silentConnectionAttempt = false
+          applySync(result, activeChatId)
+        })
         for (const chatId of chatSubscriptionIds()) socket.emit('chat.subscribe', { chatId })
         for (const [responseId, subscription] of responseSubscriptionEntries()) {
           socket.emit('response.subscribe', {
@@ -239,8 +244,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
 
     socket.on('connect', () => {
-      hasConnected = true
-      silentConnectionAttempt = false
       clearConnectionFailureTimer()
       useRealtimeStore.getState().setConnectionPhase('connected')
       useRealtimeStore.getState().setSyncError(null)
@@ -248,17 +251,21 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     })
     socket.on('disconnect', () => {
       if (disposed) return
-      const phase = silentConnectionAttempt
-        ? phaseAfterDisconnect(false, appStateValue === 'active')
-        : phaseAfterDisconnect(hasConnected, appStateValue === 'active')
+      const phase = phaseAfterDisconnect(
+        !silentConnectionAttempt,
+        appStateValue === 'active',
+        Date.now() >= foregroundGraceUntil,
+      )
       useRealtimeStore.getState().setConnectionPhase(phase)
       if (phase === 'connecting') scheduleConnectionFailure()
     })
     socket.on('connect_error', () => {
       if (disposed) return
-      const phase = silentConnectionAttempt
-        ? phaseAfterDisconnect(false, appStateValue === 'active')
-        : phaseAfterDisconnect(hasConnected, appStateValue === 'active')
+      const phase = phaseAfterDisconnect(
+        !silentConnectionAttempt,
+        appStateValue === 'active',
+        Date.now() >= foregroundGraceUntil,
+      )
       useRealtimeStore.getState().setConnectionPhase(phase)
       scheduleConnectionFailure()
     })
@@ -282,11 +289,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         useRealtimeStore.getState().setConnectionPhase('idle')
         return
       }
+      silentConnectionAttempt = true
+      foregroundGraceUntil = Date.now() + FOREGROUND_CONNECTION_GRACE_MS
       if (socket.connected) {
         useRealtimeStore.getState().setConnectionPhase('connected')
         void sync()
       } else {
-        silentConnectionAttempt = true
         useRealtimeStore.getState().setConnectionPhase('connecting')
         if (useRealtimeStore.getState().syncError === REALTIME_UNAVAILABLE_MESSAGE) {
           useRealtimeStore.getState().setSyncError(null)

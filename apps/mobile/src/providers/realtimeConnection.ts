@@ -2,10 +2,15 @@ export type RealtimeConnectionPhase = 'idle' | 'connecting' | 'connected' | 'rec
 
 export const REALTIME_UNAVAILABLE_MESSAGE = 'Realtime is temporarily unavailable. Retrying…'
 export const INITIAL_CONNECTION_FAILURE_DELAY_MS = 10_000
+export const FOREGROUND_CONNECTION_GRACE_MS = 10_000
 
-export function phaseAfterDisconnect(hasConnected: boolean, appIsActive: boolean): RealtimeConnectionPhase {
+export function phaseAfterDisconnect(
+  hasSynchronized: boolean,
+  appIsActive: boolean,
+  foregroundGraceElapsed = true,
+): RealtimeConnectionPhase {
   if (!appIsActive) return 'idle'
-  return hasConnected ? 'reconnecting' : 'connecting'
+  return hasSynchronized && foregroundGraceElapsed ? 'reconnecting' : 'connecting'
 }
 
 export function shouldShowConnectionBanner(input: {

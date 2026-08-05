@@ -9,7 +9,9 @@ describe('mobile realtime connection presentation', () => {
     expect(shouldShowConnectionBanner({ phase: 'idle', offline: false, syncError: null })).toBe(false)
   })
 
-  it('shows a reconnect after an active connection drops', () => {
+  it('shows a reconnect only after an active connection has synchronized', () => {
+    expect(phaseAfterDisconnect(false, true)).toBe('connecting')
+    expect(phaseAfterDisconnect(true, true, false)).toBe('connecting')
     expect(phaseAfterDisconnect(true, true)).toBe('reconnecting')
     expect(shouldShowConnectionBanner({ phase: 'reconnecting', offline: false, syncError: null })).toBe(true)
   })
