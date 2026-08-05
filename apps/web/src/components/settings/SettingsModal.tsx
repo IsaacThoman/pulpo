@@ -403,9 +403,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       </SelectContent>
                     </Select>
                   </Row>
-                  <Row label="Notifications" hint="Notify when a response finishes in a background tab.">
-                    <Switch checked={s.notifications} onCheckedChange={(v) => s.set('notifications', v)} />
-                  </Row>
                   <Row label="Send with Enter" hint="When off, Enter adds a newline and Cmd+Enter sends.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
                   </Row>

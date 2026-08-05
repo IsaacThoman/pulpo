@@ -15,7 +15,6 @@ interface SettingsState {
   streamResponses: boolean
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
-  notifications: boolean
   customInstructions: string
   nickname: string
   memoryEnabled: boolean
@@ -41,7 +40,6 @@ export const DEFAULT_SETTINGS = {
   streamResponses: true,
   showReasoning: true,
   chatWidth: 'narrow' as const,
-  notifications: true,
   customInstructions: '',
   nickname: '',
   memoryEnabled: false,
