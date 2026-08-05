@@ -9,12 +9,22 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
+const { setPreference } = vi.hoisted(() => ({ setPreference: vi.fn(async () => undefined) }));
+
+vi.mock('../../../store/preferences', () => ({
+  usePreferencesStore: { getState: () => ({ favoriteModelIds: [], setPreference }) },
+}));
+
 import { createSeedState } from '../seed';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LEGACY_PROTOTYPE_STORAGE_KEYS, purgeLegacyPrototypeSnapshots, usePrototypeStore } from './prototypeStore';
+import { configureProductionActions } from '../production/productionActions';
+import { useRealtimeStore } from '../../../providers/realtimeStore';
 
 beforeEach(() => {
   usePrototypeStore.setState({ ...createSeedState(), productionNamespace: null, agentAvailable: false });
+  useRealtimeStore.getState().setSyncError(null);
+  configureProductionActions({ renameChat: async () => undefined });
 });
 
 describe('prototype store', () => {
@@ -61,6 +71,37 @@ describe('prototype store', () => {
     const chat = usePrototypeStore.getState().chats[0]!;
     usePrototypeStore.getState().discardChat(chat.id);
     expect(usePrototypeStore.getState().chats.some((item) => item.id === chat.id)).toBe(false);
+  });
+
+  it('rolls back the latest optimistic action when the server rejects it', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    configureProductionActions({ renameChat: async () => { throw new Error('Rename rejected'); } });
+    const original = usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')!.title;
+
+    usePrototypeStore.getState().renameChat('c-kv', 'Optimistic title');
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe('Optimistic title');
+    await vi.waitFor(() => expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe(original));
+    expect(useRealtimeStore.getState().syncError).toBe('Rename rejected');
+    warning.mockRestore();
+  });
+
+  it('does not let an older failure overwrite a newer optimistic choice', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let rejectFirst!: (error: Error) => void;
+    let call = 0;
+    configureProductionActions({
+      renameChat: async () => {
+        call += 1;
+        if (call === 1) await new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+      },
+    });
+
+    usePrototypeStore.getState().renameChat('c-kv', 'First title');
+    usePrototypeStore.getState().renameChat('c-kv', 'Final title');
+    rejectFirst(new Error('Older rename rejected'));
+    await vi.waitFor(() => expect(useRealtimeStore.getState().syncError).toBe('Older rename rejected'));
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe('Final title');
+    warning.mockRestore();
   });
 
 });

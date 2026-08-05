@@ -30,6 +30,13 @@ export function configureProductionActions(actions: Partial<ProductionActions>):
   Object.assign(productionActions, actions)
 }
 
-export function runProductionAction(action: Promise<unknown>): void {
-  void action.catch((error) => console.warn('Pulpo action failed', error instanceof Error ? error.message : error))
+export function runProductionAction(action: Promise<unknown>, options?: {
+  rollback?: () => void
+  onError?: (error: unknown) => void
+}): void {
+  void action.catch((error) => {
+    options?.rollback?.()
+    options?.onError?.(error)
+    console.warn('Pulpo action failed', error instanceof Error ? error.message : error)
+  })
 }

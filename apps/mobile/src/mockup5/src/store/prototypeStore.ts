@@ -6,6 +6,8 @@ import type {
 } from '../domain';
 import { createSeedState } from '../seed';
 import { productionActions, runProductionAction } from '../production/productionActions';
+import { useRealtimeStore } from '../../../providers/realtimeStore';
+import { usePreferencesStore } from '../../../store/preferences';
 
 type PrototypeActions = {
   productionNamespace: string | null;
@@ -57,30 +59,133 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention']);
+const actionVersions = new Map<string, number>();
+
+function runOptimisticAction(key: string, action: Promise<unknown>, rollback: () => void): void {
+  const namespace = usePrototypeStore.getState().productionNamespace;
+  const scopedKey = `${namespace ?? 'local'}:${key}`;
+  const version = (actionVersions.get(scopedKey) ?? 0) + 1;
+  actionVersions.set(scopedKey, version);
+  runProductionAction(action, {
+    rollback: () => {
+      if (usePrototypeStore.getState().productionNamespace === namespace && actionVersions.get(scopedKey) === version) rollback();
+    },
+    onError: (error) => {
+      if (usePrototypeStore.getState().productionNamespace !== namespace) return;
+      useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The change could not be saved.');
+    },
+  });
+}
 
 export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
   ...createSeedState(), productionNamespace: null, agentAvailable: false,
   updateProfile: (patch) => set((state) => state.session.user ? { session: { ...state.session, user: { ...state.session.user, ...patch, initials: patch.name ? initialsFor(patch.name) : state.session.user.initials } } } : {}),
   setPreference: (key, value) => {
+    const previous = get().preferences[key];
     set((state) => ({ preferences: { ...state.preferences, [key]: value } }));
-    if (productionPreferenceKeys.has(key)) runProductionAction(productionActions.setPreference(key as never, value as never));
+    if (productionPreferenceKeys.has(key)) runOptimisticAction(
+      `preference:${String(key)}`,
+      productionActions.setPreference(key as never, value as never),
+      () => {
+        set((state) => ({ preferences: { ...state.preferences, [key]: previous } }));
+        void usePreferencesStore.getState().setPreference(key as never, previous as never);
+      },
+    );
   },
-  addFolder: (name) => { const folderId = id('folder'); set((state) => ({ folders: [...state.folders, { id: folderId, name: name.trim(), expanded: true }] })); runProductionAction(productionActions.createFolder(name.trim(), folderId)); return folderId; },
-  renameFolder: (folderId, name) => { set((state) => ({ folders: state.folders.map((folder) => folder.id === folderId ? { ...folder, name: name.trim() } : folder) })); runProductionAction(productionActions.renameFolder(folderId, name.trim())); },
-  deleteFolder: (folderId) => { set((state) => ({ folders: state.folders.filter((folder) => folder.id !== folderId), chats: state.chats.map((chat) => chat.folderId === folderId ? { ...chat, folderId: null } : chat) })); runProductionAction(productionActions.deleteFolder(folderId)); },
+  addFolder: (name) => {
+    const folderId = id('folder');
+    const trimmed = name.trim();
+    set((state) => ({ folders: [...state.folders, { id: folderId, name: trimmed, expanded: true }] }));
+    runOptimisticAction(`folder:${folderId}:create`, productionActions.createFolder(trimmed, folderId), () => set((state) => ({
+      folders: state.folders.filter((folder) => folder.id !== folderId),
+      chats: state.chats.map((chat) => chat.folderId === folderId ? { ...chat, folderId: null } : chat),
+    })));
+    return folderId;
+  },
+  renameFolder: (folderId, name) => {
+    const previous = get().folders.find((folder) => folder.id === folderId)?.name;
+    const trimmed = name.trim();
+    set((state) => ({ folders: state.folders.map((folder) => folder.id === folderId ? { ...folder, name: trimmed } : folder) }));
+    runOptimisticAction(`folder:${folderId}:name`, productionActions.renameFolder(folderId, trimmed), () => {
+      if (previous === undefined) return;
+      set((state) => ({ folders: state.folders.map((folder) => folder.id === folderId ? { ...folder, name: previous } : folder) }));
+    });
+  },
+  deleteFolder: (folderId) => {
+    const previous = get().folders.find((folder) => folder.id === folderId);
+    const previousIndex = get().folders.findIndex((folder) => folder.id === folderId);
+    const chatIds = new Set(get().chats.filter((chat) => chat.folderId === folderId).map((chat) => chat.id));
+    set((state) => ({
+      folders: state.folders.filter((folder) => folder.id !== folderId),
+      chats: state.chats.map((chat) => chat.folderId === folderId ? { ...chat, folderId: null } : chat),
+    }));
+    runOptimisticAction(`folder:${folderId}:delete`, productionActions.deleteFolder(folderId), () => {
+      if (!previous) return;
+      set((state) => {
+        const folders = [...state.folders];
+        if (!folders.some((folder) => folder.id === folderId)) folders.splice(Math.max(0, previousIndex), 0, previous);
+        return {
+          folders,
+          chats: state.chats.map((chat) => chatIds.has(chat.id) && chat.folderId === null ? { ...chat, folderId } : chat),
+        };
+      });
+    });
+  },
   toggleFolder: (folderId) => set((state) => ({ folders: state.folders.map((folder) => folder.id === folderId ? { ...folder, expanded: !folder.expanded } : folder) })),
   upsertChat: (chat) => set((state) => ({ chats: state.chats.some((item) => item.id === chat.id) ? state.chats.map((item) => item.id === chat.id ? chat : item) : [chat, ...state.chats] })),
   discardChat: (chatId) => set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })),
-  renameChat: (chatId, title) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, title: title.trim(), updatedAt: Date.now() } : chat) })); runProductionAction(productionActions.renameChat(chatId, title.trim())); },
-  togglePin: (chatId) => { const next = !get().chats.find((chat) => chat.id === chatId)?.pinned; set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next } : chat) })); runProductionAction(productionActions.togglePin(chatId, next)); },
-  moveChat: (chatId, folderId) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId } : chat) })); runProductionAction(productionActions.moveChat(chatId, folderId)); },
-  trashChat: (chatId) => { set((state) => {
+  renameChat: (chatId, title) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    const trimmed = title.trim();
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, title: trimmed, updatedAt: Date.now() } : chat) }));
+    runOptimisticAction(`chat:${chatId}:title`, productionActions.renameChat(chatId, trimmed), () => {
+      if (!previous) return;
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, title: previous.title, updatedAt: previous.updatedAt } : chat) }));
+    });
+  },
+  togglePin: (chatId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)?.pinned;
+    const next = !previous;
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: next } : chat) }));
+    runOptimisticAction(`chat:${chatId}:pinned`, productionActions.togglePin(chatId, next), () => {
+      if (previous === undefined) return;
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, pinned: previous } : chat) }));
+    });
+  },
+  moveChat: (chatId, folderId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)?.folderId;
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId } : chat) }));
+    runOptimisticAction(`chat:${chatId}:folder`, productionActions.moveChat(chatId, folderId), () => {
+      if (previous === undefined) return;
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: previous } : chat) }));
+    });
+  },
+  trashChat: (chatId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    const previousIndex = get().chats.findIndex((chat) => chat.id === chatId);
+    set((state) => {
     const duration = retentionMs[state.preferences.trashRetention];
     if (duration === 0) return { chats: state.chats.filter((chat) => chat.id !== chatId) };
     const deletedAt = Date.now();
     return { chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt, purgeAt: duration === null ? null : deletedAt + duration, pinned: false } : chat) };
-  }); runProductionAction(productionActions.trashChat(chatId)); },
+    });
+    runOptimisticAction(`chat:${chatId}:deleted`, productionActions.trashChat(chatId), () => {
+      if (!previous) return;
+      set((state) => {
+        const existing = state.chats.findIndex((chat) => chat.id === chatId);
+        if (existing < 0) {
+          const chats = [...state.chats];
+          chats.splice(Math.max(0, previousIndex), 0, previous);
+          return { chats };
+        }
+        return { chats: state.chats.map((chat) => chat.id === chatId ? {
+          ...chat, deletedAt: previous.deletedAt, purgeAt: previous.purgeAt, pinned: previous.pinned,
+        } : chat) };
+      });
+    });
+  },
   trashAllChats: () => {
+    const previous = get().chats;
     set((state) => {
       const duration = retentionMs[state.preferences.trashRetention];
       if (duration === 0) return { chats: [] };
@@ -92,13 +197,53 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
         pinned: false,
       } : chat) };
     });
-    runProductionAction(productionActions.trashAllChats());
+    runOptimisticAction('chats:all:deleted', productionActions.trashAllChats(), () => set((state) => {
+      const previousById = new Map(previous.map((chat) => [chat.id, chat]));
+      const currentIds = new Set(state.chats.map((chat) => chat.id));
+      return {
+        chats: [
+          ...state.chats.map((chat) => {
+            const before = previousById.get(chat.id);
+            return before && before.deletedAt === null
+              ? { ...chat, deletedAt: before.deletedAt, purgeAt: before.purgeAt, pinned: before.pinned }
+              : chat;
+          }),
+          ...previous.filter((chat) => !currentIds.has(chat.id)),
+        ],
+      };
+    }));
   },
-  restoreChat: (chatId) => { set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, purgeAt: null, updatedAt: Date.now() } : chat) })); runProductionAction(productionActions.restoreChat(chatId)); },
-  permanentlyDeleteChat: (chatId) => { set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) })); runProductionAction(productionActions.permanentlyDeleteChat(chatId)); },
+  restoreChat: (chatId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, purgeAt: null, updatedAt: Date.now() } : chat) }));
+    runOptimisticAction(`chat:${chatId}:deleted`, productionActions.restoreChat(chatId), () => {
+      if (!previous) return;
+      set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? {
+        ...chat, deletedAt: previous.deletedAt, purgeAt: previous.purgeAt, updatedAt: previous.updatedAt,
+      } : chat) }));
+    });
+  },
+  permanentlyDeleteChat: (chatId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId);
+    const previousIndex = get().chats.findIndex((chat) => chat.id === chatId);
+    set((state) => ({ chats: state.chats.filter((chat) => chat.id !== chatId) }));
+    runOptimisticAction(`chat:${chatId}:permanent`, productionActions.permanentlyDeleteChat(chatId), () => {
+      if (!previous) return;
+      set((state) => {
+        if (state.chats.some((chat) => chat.id === chatId)) return state;
+        const chats = [...state.chats];
+        chats.splice(Math.max(0, previousIndex), 0, previous);
+        return { chats };
+      });
+    });
+  },
   emptyTrash: () => {
+    const previousDeleted = get().chats.filter((chat) => chat.deletedAt !== null);
     set((state) => ({ chats: state.chats.filter((chat) => chat.deletedAt === null) }));
-    runProductionAction(productionActions.emptyTrash());
+    runOptimisticAction('trash:all:permanent', productionActions.emptyTrash(), () => set((state) => {
+      const currentIds = new Set(state.chats.map((chat) => chat.id));
+      return { chats: [...state.chats, ...previousDeleted.filter((chat) => !currentIds.has(chat.id))] };
+    }));
   },
   appendMessage: (chatId, message) => set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? {
     ...chat,
@@ -113,11 +258,24 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     const index = chat.messages.findIndex((message) => message.id === messageId);
     return index < 0 ? chat : { ...chat, messages: chat.messages.slice(0, index), updatedAt: Date.now() };
   }) })),
-  setDefaultModel: (defaultModelId) => { set({ defaultModelId }); runProductionAction(productionActions.setPreference('defaultModelId', defaultModelId)); },
+  setDefaultModel: (defaultModelId) => {
+    const previous = get().defaultModelId;
+    set({ defaultModelId });
+    runOptimisticAction('preference:defaultModelId', productionActions.setPreference('defaultModelId', defaultModelId), () => {
+      set({ defaultModelId: previous });
+      void usePreferencesStore.getState().setPreference('defaultModelId', previous);
+    });
+  },
   toggleFavoriteModel: (modelId) => {
-    const favorite = !get().models.find((model) => model.id === modelId)?.favorite;
+    const previous = get().models.find((model) => model.id === modelId)?.favorite;
+    const previousIds = usePreferencesStore.getState().favoriteModelIds;
+    const favorite = !previous;
     set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: !model.favorite } : model) }));
-    runProductionAction(productionActions.toggleFavoriteModel(modelId, favorite));
+    runOptimisticAction(`model:${modelId}:favorite`, productionActions.toggleFavoriteModel(modelId, favorite), () => {
+      if (previous === undefined) return;
+      set((state) => ({ models: state.models.map((model) => model.id === modelId ? { ...model, favorite: previous } : model) }));
+      void usePreferencesStore.getState().setPreference('favoriteModelIds', previousIds);
+    });
   },
 }));
 
