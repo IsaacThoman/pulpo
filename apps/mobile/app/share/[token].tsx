@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ActivityIndicator, Image, ScrollView, Share, StyleSheet, Text, View } from 'react-native'
 import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { GlassIconButton } from '@/components/PrototypeUI'
+import { GlassIconButton } from '@/components/GlassIconButton'
 import { SafeMarkdown } from '@/components/SafeMarkdown'
 import { useAppTheme } from '@/theme'
 
