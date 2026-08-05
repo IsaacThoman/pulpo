@@ -358,6 +358,12 @@ export function pendingOptimisticChatIds(namespace: string): ReadonlySet<string>
     .map((item) => item.chatId))
 }
 
+export function pendingOptimisticResponseIds(namespace: string, chatId: string): string[] {
+  return [...pendingResponses.values()]
+    .filter((item) => item.namespace === namespace && item.chatId === chatId)
+    .map((item) => item.response.id)
+}
+
 /** Mark chat-list persistence separately from transcript persistence. */
 export function acknowledgeOptimisticChatList(namespace: string, chatIds: ReadonlySet<string>): void {
   for (const [key, pending] of pendingResponses) {

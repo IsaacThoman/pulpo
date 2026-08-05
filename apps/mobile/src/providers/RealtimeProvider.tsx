@@ -8,6 +8,7 @@ import {
   type ResponseSnapshot,
   type SyncResult,
 } from '@pulpo/contracts'
+import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiOrigin } from '../api/client'
 import {
   cacheNamespace,
@@ -81,6 +82,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     let disposed = false
     let eventTimer: ReturnType<typeof setTimeout> | undefined
     let cursorTimer: ReturnType<typeof setTimeout> | undefined
+    let revisionTimer: ReturnType<typeof setTimeout> | undefined
+    let pendingRevision: RevisionInvalidationBatch | undefined
     let cursorWriteTail: Promise<void> = Promise.resolve()
     const pendingEvents = new Map<string, ResponseEvent[]>()
     const pendingCursors = new Map<string, number>()
@@ -150,6 +153,26 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.models(namespace) })
       }
     }
+    const flushRevisionInvalidations = () => {
+      if (revisionTimer) clearTimeout(revisionTimer)
+      revisionTimer = undefined
+      const batch = pendingRevision
+      pendingRevision = undefined
+      if (!batch) return
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
+      for (const chatId of batch.chatIds) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) })
+      }
+      if (batch.accountOnlyRevisions.length) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
+      }
+    }
+    const queueRevisionInvalidation = (event: { revision: number; chatId?: string }) => {
+      stateRevision.current = Math.max(stateRevision.current, event.revision)
+      pendingRevision = mergeRevisionInvalidation(pendingRevision, event)
+      revisionTimer ??= setTimeout(flushRevisionInvalidations, 16)
+    }
     const applySync = (result: SyncResult, activeChatId?: string) => {
       stateRevision.current = Math.max(stateRevision.current, result.accountRevision)
       for (const snapshot of result.snapshots) applySnapshot(snapshot)
@@ -209,16 +232,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
     })
     socket.on('chat.changed', ({ chatId, revision }) => {
-      stateRevision.current = Math.max(stateRevision.current, revision)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
+      queueRevisionInvalidation({ chatId, revision })
     })
     socket.on('account.revision', ({ revision }) => {
-      stateRevision.current = Math.max(stateRevision.current, revision)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
+      queueRevisionInvalidation({ revision })
     })
     const appState = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return
@@ -231,6 +248,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       disposed = true
       appState.remove()
       if (eventTimer) clearTimeout(eventTimer)
+      if (revisionTimer) clearTimeout(revisionTimer)
       flushEventBatches()
       void flushCursors().catch(() => undefined)
       socket.disconnect()

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   attachmentValidationError,
   lineageFromLeaf,
+  mergeRevisionInvalidation,
   normalizeInstanceUrl,
   reconcileResponseEvents,
   resolvePresetActions,
@@ -33,6 +34,17 @@ describe('client core', () => {
       { responseId, sequence: 1, type: 'response.output_text.delta', payload: { delta: 'one ' }, emittedAt: '2026-08-01T00:00:01.000Z' },
     ])
     expect(result.output).toMatchObject([{ content: [{ text: 'one two' }] }])
+  })
+
+  it('coalesces paired account and chat revisions without hiding account-only changes', () => {
+    const account = mergeRevisionInvalidation(undefined, { revision: 10 })
+    const paired = mergeRevisionInvalidation(account, { revision: 10, chatId: 'chat-1' })
+    const combined = mergeRevisionInvalidation(paired, { revision: 11 })
+    expect(combined).toEqual({
+      revision: 11,
+      chatIds: ['chat-1'],
+      accountOnlyRevisions: [11],
+    })
   })
 
   it('resolves preset defaults and filters parameters', async () => {

@@ -21,6 +21,7 @@ import {
   acknowledgeOptimisticChatList,
   clearPendingOptimisticResponses,
   pendingOptimisticChatIds,
+  pendingOptimisticResponseIds,
   reconcileOptimisticResponses,
 } from './optimisticResponses'
 import {
@@ -233,7 +234,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     defaultModelId: state.defaultModelId,
     agentMode: state.agentMode,
   })))
-  const snapshots = useRealtimeStore((state) => state.snapshots)
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
   const enabled = status === 'authenticated' && Boolean(userId)
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
@@ -247,6 +247,18 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     ...chatQuery(namespace, activeChatId ?? '', preferences.localChatLimit),
     enabled: enabled && activeChatIsServerAddressable,
   })
+  const detailResponseIds = useMemo(() => {
+    const ids = new Set((detail.data?.responses ?? []).map((response) => response.id))
+    if (activeChatId) {
+      for (const responseId of pendingOptimisticResponseIds(namespace, activeChatId)) ids.add(responseId)
+    }
+    return [...ids]
+  }, [activeChatId, detail.data?.responses, namespace])
+  const snapshots = useRealtimeStore(useShallow((state) => Object.fromEntries(
+    detailResponseIds.flatMap((responseId) => state.snapshots[responseId]
+      ? [[responseId, state.snapshots[responseId]]]
+      : []),
+  )))
   const reconciledDetail = useMemo(
     () => detail.data
       ? reconcileOptimisticBranchSelection(
@@ -256,6 +268,11 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       : undefined,
     [detail.data, namespace, snapshots],
   )
+  const activeResponseSubscriptionIds = useMemo(() => (reconciledDetail?.responses ?? [])
+    .filter((response) => response.status === 'queued' || response.status === 'in_progress')
+    .map((response) => response.id)
+    .sort()
+    .join('\n'), [reconciledDetail?.responses])
 
   useEffect(() => { serverHydrated.current = false }, [namespace])
 
@@ -322,14 +339,14 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     if (!enabled || !activeChatId || !activeChatIsServerAddressable) return
     const unsubscribeChat = subscribeToChat(activeChatId)
-    const unsubscribers = (reconciledDetail?.responses ?? [])
-      .filter((response) => response.status === 'queued' || response.status === 'in_progress')
-      .map((response) => subscribeToResponse(
-        response.id,
-        useRealtimeStore.getState().snapshots[response.id]?.sequence ?? response.snapshot.sequence,
+    const unsubscribers = activeResponseSubscriptionIds
+      ? activeResponseSubscriptionIds.split('\n').map((responseId) => subscribeToResponse(
+        responseId,
+        useRealtimeStore.getState().snapshots[responseId]?.sequence ?? 0,
       ))
+      : []
     return () => { unsubscribeChat(); unsubscribers.forEach((unsubscribe) => unsubscribe()) }
-  }, [activeChatId, activeChatIsServerAddressable, enabled, reconciledDetail?.responses])
+  }, [activeChatId, activeChatIsServerAddressable, activeResponseSubscriptionIds, enabled])
 
   useEffect(() => {
     usePrototypeStore.setState((state) => ({

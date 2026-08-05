@@ -11,6 +11,33 @@ export interface ChatTreeNode {
   parentResponseId: string | null
 }
 
+export interface RevisionInvalidationBatch {
+  revision: number
+  chatIds: string[]
+  /** Account revisions that have not been paired with a chat change. */
+  accountOnlyRevisions: number[]
+}
+
+/** Merge the paired account/chat events emitted for one server revision. */
+export function mergeRevisionInvalidation(
+  current: RevisionInvalidationBatch | undefined,
+  event: { revision: number; chatId?: string },
+): RevisionInvalidationBatch {
+  const chatIds = new Set(current?.chatIds ?? [])
+  const accountOnlyRevisions = new Set(current?.accountOnlyRevisions ?? [])
+  if (event.chatId) {
+    chatIds.add(event.chatId)
+    accountOnlyRevisions.delete(event.revision)
+  } else if (!accountOnlyRevisions.has(event.revision)) {
+    accountOnlyRevisions.add(event.revision)
+  }
+  return {
+    revision: Math.max(current?.revision ?? 0, event.revision),
+    chatIds: [...chatIds],
+    accountOnlyRevisions: [...accountOnlyRevisions],
+  }
+}
+
 export function lineageFromLeaf<T extends ChatTreeNode>(nodes: T[], leafId: string | null): T[] {
   const byId = new Map(nodes.map((node) => [node.id, node]))
   const lineage: T[] = []

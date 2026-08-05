@@ -4,6 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { io, type Socket } from 'socket.io-client'
 import type { ResponseEvent, ServerToClientEvents, ClientToServerEvents, SyncResult } from '@pulpo/contracts'
+import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiRequest } from '@/lib/api'
 import { localDb } from '@/lib/local-first/database'
 import { warmAttachmentCache } from '@/lib/local-first/attachment-cache'
@@ -85,6 +86,8 @@ export function ChatDataBridge() {
 
     let eventFrame: number | undefined
     let cursorTimer: number | undefined
+    let revisionTimer: number | undefined
+    let pendingRevision: RevisionInvalidationBatch | undefined
     const pendingEvents = new Map<string, ResponseEvent[]>()
     const pendingCursors = new Map<string, number>()
 
@@ -104,6 +107,26 @@ export function ChatDataBridge() {
       if (cursorTimer === undefined) {
         cursorTimer = window.setTimeout(() => { void flushCursors() }, 250)
       }
+    }
+    const flushRevisionInvalidations = () => {
+      if (revisionTimer !== undefined) window.clearTimeout(revisionTimer)
+      revisionTimer = undefined
+      const batch = pendingRevision
+      pendingRevision = undefined
+      if (!batch) return
+      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
+      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
+      for (const changedChatId of batch.chatIds) {
+        void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
+      }
+      if (batch.accountOnlyRevisions.length) {
+        void queryClient.invalidateQueries({ queryKey: ['settings', userId] })
+      }
+    }
+    const queueRevisionInvalidation = (event: { revision: number; chatId?: string }) => {
+      revisionRef.current = Math.max(revisionRef.current, event.revision)
+      pendingRevision = mergeRevisionInvalidation(pendingRevision, event)
+      revisionTimer ??= window.setTimeout(flushRevisionInvalidations, 16)
     }
     const applyEventBatch = (events: ResponseEvent[]) => {
       const compacted = coalesceResponseEvents(events)
@@ -203,16 +226,11 @@ export function ChatDataBridge() {
         setCompletionToasts((current) => current.filter((toast) => toast.responseId !== completion.responseId))
       }, 8_000)
     })
-    socket.on('chat.changed', ({ chatId: changedChatId }) => {
-      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
-      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
-      void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
+    socket.on('chat.changed', ({ chatId: changedChatId, revision }) => {
+      queueRevisionInvalidation({ revision, chatId: changedChatId })
     })
     socket.on('account.revision', ({ revision }) => {
-      revisionRef.current = revision
-      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
-      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
-      void queryClient.invalidateQueries({ queryKey: ['settings', userId] })
+      queueRevisionInvalidation({ revision })
     })
     const wake = () => { if (document.visibilityState === 'visible') void sync() }
     const online = () => void sync()
@@ -224,6 +242,7 @@ export function ChatDataBridge() {
       window.removeEventListener('focus', wake)
       window.removeEventListener('online', online)
       if (eventFrame !== undefined) window.clearTimeout(eventFrame)
+      if (revisionTimer !== undefined) window.clearTimeout(revisionTimer)
       flushEventBatches()
       void flushCursors()
       socket.disconnect()
