@@ -10,6 +10,7 @@ import {
   trimCachedChats,
 } from './database'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
+import { enqueueCacheWrite } from './writeBehind'
 
 export interface ModelCatalog {
   agentAvailable: boolean
@@ -31,8 +32,10 @@ export function chatsQuery(namespace: string, localChatLimit = 50) {
     queryFn: async () => {
       try {
         const { data } = await mobileApi.chats()
-        await cacheChats(namespace, data)
-        await trimCachedChats(namespace, localChatLimit)
+        enqueueCacheWrite(namespace, async () => {
+          await cacheChats(namespace, data)
+          await trimCachedChats(namespace, localChatLimit)
+        })
         return data
       } catch (error) {
         const cached = (await cachedChats(namespace)).filter((chat) => !chat.deletedAt)
@@ -68,11 +71,12 @@ export function deletedChatsQuery(namespace: string, localChatLimit = 50) {
     queryKey: queryKeys.deletedChats(namespace),
     queryFn: async () => {
       try {
-        const [{ data }, cached] = await Promise.all([mobileApi.deletedChats(), cachedChats(namespace)])
-        const existing = new Map(cached.map((chat) => [chat.id, chat]))
-        const normalized = data.map((chat) => normalizeDeletedChat(chat, existing.get(chat.id)))
-        await cacheChats(namespace, normalized)
-        await trimCachedChats(namespace, localChatLimit)
+        const { data } = await mobileApi.deletedChats()
+        const normalized = data.map((chat) => normalizeDeletedChat(chat))
+        enqueueCacheWrite(namespace, async () => {
+          await cacheChats(namespace, normalized)
+          await trimCachedChats(namespace, localChatLimit)
+        })
         return normalized
       } catch (error) {
         const cached = (await cachedChats(namespace)).filter((chat) => Boolean(chat.deletedAt))
@@ -89,12 +93,12 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
     queryFn: async () => {
       try {
         const chat = await mobileApi.chat(id)
-        await cacheOpenedChat(namespace, chat, localChatLimit)
+        enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, chat, localChatLimit))
         return chat
       } catch (error) {
         const chat = (await cachedChats(namespace)).find((candidate) => candidate.id === id)
         if (chat?.responses) {
-          await markCachedChatOpened(namespace, id, localChatLimit)
+          enqueueCacheWrite(namespace, () => markCachedChatOpened(namespace, id, localChatLimit))
           return chat
         }
         throw error
@@ -109,7 +113,7 @@ export function foldersQuery(namespace: string) {
     queryFn: async () => {
       try {
         const { data } = await mobileApi.folders()
-        await setValue(namespace, 'folders', data)
+        enqueueCacheWrite(namespace, () => setValue(namespace, 'folders', data))
         return data
       } catch (error) {
         const cached = await getValue<ServerFolder[]>(namespace, 'folders')
@@ -126,7 +130,7 @@ export function modelsQuery(namespace: string) {
     queryFn: async () => {
       try {
         const catalog = await mobileApi.models()
-        await setValue(namespace, 'model-catalog', catalog)
+        enqueueCacheWrite(namespace, () => setValue(namespace, 'model-catalog', catalog))
         return catalog
       } catch (error) {
         const cached = await getValue<ModelCatalog>(namespace, 'model-catalog')

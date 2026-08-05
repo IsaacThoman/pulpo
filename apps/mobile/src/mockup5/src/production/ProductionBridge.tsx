@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { useShallow } from 'zustand/react/shallow'
-import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, reconcileCachedChatScope } from '../../../data/database'
+import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
+import { enqueueCacheWrite } from '../../../data/writeBehind'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, queryKeys, type ModelCatalog } from '../../../data/queries'
 import { isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
@@ -377,12 +378,9 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
 
   useEffect(() => {
     if (!chats.data || !deleted.data) return
-    void reconcileCachedChatScope(
-      namespace,
-      [...chats.data, ...deleted.data],
-      'all',
-      preferences.localChatLimit,
-    )
+    enqueueCacheWrite(namespace, () => pruneCachedChatScope(
+      namespace, [...chats.data, ...deleted.data], 'all', preferences.localChatLimit,
+    ))
   }, [chats.data, deleted.data, namespace, preferences.localChatLimit])
 
   useEffect(() => {
