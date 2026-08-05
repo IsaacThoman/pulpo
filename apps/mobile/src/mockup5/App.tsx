@@ -129,6 +129,7 @@ import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
+import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
@@ -2316,12 +2317,18 @@ function ChatView({
   });
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
-  const realtimeConnected = useRealtimeStore((state) => state.connected);
+  const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
   const syncError = useRealtimeStore((state) => state.syncError);
   const networkState = Network.useNetworkState();
-  const connectionState = networkState.isConnected === false || networkState.isInternetReachable === false
+  const networkOffline = networkState.isConnected === false || networkState.isInternetReachable === false;
+  const connectionState = networkOffline
     ? 'offline'
-    : realtimeConnected ? 'online' : 'reconnecting';
+    : realtimeConnectionPhase === 'connected' ? 'online' : realtimeConnectionPhase;
+  const showConnectionBanner = shouldShowConnectionBanner({
+    phase: realtimeConnectionPhase,
+    offline: networkOffline,
+    syncError,
+  });
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -2667,7 +2674,7 @@ function ChatView({
           )}
         </AppHeader>
 
-        {(connectionState !== 'online' || syncError) && (
+        {showConnectionBanner && (
           <View style={[styles.connectionBanner, (connectionState === 'offline' || syncError) && styles.connectionBannerOffline]}>
             <Icon name={syncError ? 'exclamationmark.triangle' : connectionState === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={connectionState === 'offline' || syncError ? '#FFB15A' : COLORS.muted} />
             <Text style={styles.connectionBannerText}>{syncError ?? (connectionState === 'offline' ? 'Offline · messages will send when Pulpo reconnects' : 'Reconnecting to Pulpo…')}</Text>

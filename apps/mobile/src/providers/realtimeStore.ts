@@ -8,12 +8,14 @@ import {
 } from '@pulpo/contracts'
 import type { Socket } from 'socket.io-client'
 import { create } from 'zustand'
+import type { RealtimeConnectionPhase } from './realtimeConnection'
 
 interface RealtimeState {
   connected: boolean
+  connectionPhase: RealtimeConnectionPhase
   syncError: string | null
   snapshots: Record<string, ResponseSnapshot>
-  setConnected: (connected: boolean) => void
+  setConnectionPhase: (connectionPhase: RealtimeConnectionPhase) => void
   setSyncError: (message: string | null) => void
   receiveEvent: (event: ResponseEvent) => void
   receiveEvents: (events: ResponseEvent[]) => void
@@ -44,9 +46,13 @@ export const useRealtimeStore = create<RealtimeState>((set) => {
   }
   return {
     connected: false,
+    connectionPhase: 'idle',
     syncError: null,
     snapshots: {},
-    setConnected: (connected) => set({ connected }),
+    setConnectionPhase: (connectionPhase) => set({
+      connectionPhase,
+      connected: connectionPhase === 'connected',
+    }),
     setSyncError: (syncError) => set({ syncError }),
     receiveEvent: (event) => set((state) => applyEvents(state, [event])),
     receiveEvents: (events) => set((state) => applyEvents(state, events)),

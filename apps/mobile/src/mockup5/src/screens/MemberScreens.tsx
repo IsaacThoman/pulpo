@@ -124,10 +124,12 @@ export function ChangePasswordScreen({ navigation }: NativeStackScreenProps<Root
 export function InstanceDetailsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'InstanceDetails'>) {
   const theme = useAppTheme();
   const instance = usePrototypeStore((state) => state.instance);
-  const realtimeConnected = useRealtimeStore((state) => state.connected);
+  const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
   const networkState = Network.useNetworkState();
   const connectionLabel = networkState.isConnected === false || networkState.isInternetReachable === false
-    ? 'Offline' : realtimeConnected ? 'Connected' : 'Reconnecting';
+    ? 'Offline'
+    : realtimeConnectionPhase === 'connected' ? 'Connected'
+      : realtimeConnectionPhase === 'reconnecting' ? 'Reconnecting' : 'Connecting';
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Connection"><SwiftUILabeledContent label="Status"><SwiftUIText>{connectionLabel}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Name"><SwiftUIText>{instance.name}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Version"><SwiftUIText>{instance.version}</SwiftUIText></SwiftUILabeledContent></SwiftUISection><SwiftUISection title="Endpoints"><SwiftUILabeledContent label="Server"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{instance.url}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="API"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{`${instance.url}/v1`}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Pulpo Instance" onBack={() => navigation.goBack()} /><Card><ListRow title="Status" value={connectionLabel} /><ListRow title="Name" value={instance.name} /><ListRow title="Version" value={instance.version} /><ListRow title="Server" detail={instance.url} /><ListRow title="API" detail={`${instance.url}/v1`} last /></Card></Screen>;
 }

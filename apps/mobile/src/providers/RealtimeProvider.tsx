@@ -37,6 +37,11 @@ import {
   useRealtimeStore,
   type PulpoSocket,
 } from './realtimeStore'
+import {
+  INITIAL_CONNECTION_FAILURE_DELAY_MS,
+  phaseAfterDisconnect,
+  REALTIME_UNAVAILABLE_MESSAGE,
+} from './realtimeConnection'
 
 async function realtimeClientId(namespace: string): Promise<string> {
   const existing = await getValue<string>(namespace, 'realtime-client-id')
@@ -80,6 +85,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const unregisterSocket = registerRealtimeSocket(socket)
 
     let disposed = false
+    let hasConnected = false
+    let silentConnectionAttempt = true
+    let appStateValue = AppState.currentState
+    let connectionFailureTimer: ReturnType<typeof setTimeout> | undefined
     let eventTimer: ReturnType<typeof setTimeout> | undefined
     let cursorTimer: ReturnType<typeof setTimeout> | undefined
     let revisionTimer: ReturnType<typeof setTimeout> | undefined
@@ -87,6 +96,20 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     let cursorWriteTail: Promise<void> = Promise.resolve()
     const pendingEvents = new Map<string, ResponseEvent[]>()
     const pendingCursors = new Map<string, number>()
+
+    const clearConnectionFailureTimer = () => {
+      if (connectionFailureTimer) clearTimeout(connectionFailureTimer)
+      connectionFailureTimer = undefined
+    }
+    const scheduleConnectionFailure = () => {
+      if (connectionFailureTimer || appStateValue !== 'active') return
+      connectionFailureTimer = setTimeout(() => {
+        connectionFailureTimer = undefined
+        if (!disposed && !socket.connected && appStateValue === 'active') {
+          useRealtimeStore.getState().setSyncError(REALTIME_UNAVAILABLE_MESSAGE)
+        }
+      }, INITIAL_CONNECTION_FAILURE_DELAY_MS)
+    }
 
     const queueCursorWrite = (write: () => Promise<void>): Promise<void> => {
       const result = cursorWriteTail.then(write)
@@ -216,14 +239,28 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
 
     socket.on('connect', () => {
-      useRealtimeStore.getState().setConnected(true)
+      hasConnected = true
+      silentConnectionAttempt = false
+      clearConnectionFailureTimer()
+      useRealtimeStore.getState().setConnectionPhase('connected')
       useRealtimeStore.getState().setSyncError(null)
       void sync()
     })
-    socket.on('disconnect', () => useRealtimeStore.getState().setConnected(false))
+    socket.on('disconnect', () => {
+      if (disposed) return
+      const phase = silentConnectionAttempt
+        ? phaseAfterDisconnect(false, appStateValue === 'active')
+        : phaseAfterDisconnect(hasConnected, appStateValue === 'active')
+      useRealtimeStore.getState().setConnectionPhase(phase)
+      if (phase === 'connecting') scheduleConnectionFailure()
+    })
     socket.on('connect_error', () => {
-      useRealtimeStore.getState().setConnected(false)
-      useRealtimeStore.getState().setSyncError('Realtime is temporarily unavailable. Retrying…')
+      if (disposed) return
+      const phase = silentConnectionAttempt
+        ? phaseAfterDisconnect(false, appStateValue === 'active')
+        : phaseAfterDisconnect(hasConnected, appStateValue === 'active')
+      useRealtimeStore.getState().setConnectionPhase(phase)
+      scheduleConnectionFailure()
     })
     socket.on('response.event', queueEvent)
     socket.on('response.snapshot', applySnapshot)
@@ -238,22 +275,41 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       queueRevisionInvalidation({ revision })
     })
     const appState = AppState.addEventListener('change', (state) => {
-      if (state !== 'active') return
-      if (socket.connected) void sync()
-      else socket.connect()
+      appStateValue = state
+      if (state !== 'active') {
+        silentConnectionAttempt = true
+        clearConnectionFailureTimer()
+        useRealtimeStore.getState().setConnectionPhase('idle')
+        return
+      }
+      if (socket.connected) {
+        useRealtimeStore.getState().setConnectionPhase('connected')
+        void sync()
+      } else {
+        silentConnectionAttempt = true
+        useRealtimeStore.getState().setConnectionPhase('connecting')
+        if (useRealtimeStore.getState().syncError === REALTIME_UNAVAILABLE_MESSAGE) {
+          useRealtimeStore.getState().setSyncError(null)
+        }
+        scheduleConnectionFailure()
+        socket.connect()
+      }
     })
     // Attach every listener before opening the transport so a fast cold-start connection cannot be missed.
+    useRealtimeStore.getState().setConnectionPhase('connecting')
+    scheduleConnectionFailure()
     socket.connect()
     return () => {
       disposed = true
       appState.remove()
+      clearConnectionFailureTimer()
       if (eventTimer) clearTimeout(eventTimer)
       if (revisionTimer) clearTimeout(revisionTimer)
       flushEventBatches()
       void flushCursors().catch(() => undefined)
       socket.disconnect()
       unregisterSocket()
-      useRealtimeStore.getState().setConnected(false)
+      useRealtimeStore.getState().setConnectionPhase('idle')
     }
   }, [instanceUrl, namespace, queryClient, token, userId])
 
