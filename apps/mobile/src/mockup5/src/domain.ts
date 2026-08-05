@@ -1,8 +1,6 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type TextSizePreference = 'default' | 'large' | 'extra-large';
-export type NetworkScenario = 'online' | 'slow' | 'offline' | 'reconnecting';
 export type ResponseScenario = 'success' | 'tool-heavy' | 'capacity' | 'failure';
-export type PermissionScenario = 'ask' | 'granted' | 'denied';
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite';
 export type SessionStatus = 'signed-out' | 'signed-in' | 'pending';
 
@@ -126,63 +124,31 @@ export interface PrototypeFolder {
   expanded: boolean;
 }
 
-export interface UsageRecord {
-  id: string;
-  createdAt: number;
-  modelId: string;
-  source: 'Web' | 'API' | 'Agent' | 'Mobile';
-  inputTokens: number;
-  outputTokens: number;
-  cost: number;
-  latencyMs: number;
-  status: 'complete' | 'failed';
-}
-
-export interface MemoryRecord {
-  id: string;
-  content: string;
-}
-
 export interface AppPreferences {
   theme: ThemePreference;
   textSize: TextSizePreference;
-  language: string;
-  notifications: boolean;
   sendWithEnter: boolean;
   streamResponses: boolean;
   showReasoning: boolean;
   haptics: boolean;
-  customInstructions: string;
-  nickname: string;
-  memoryEnabled: boolean;
   localChatLimit: number;
   attachmentCacheMb: number;
   trashRetention: TrashRetention;
-  leaderboardVisible: boolean;
-  leaderboardColor: string;
 }
 
 export interface DemoScenarios {
-  network: NetworkScenario;
   response: ResponseScenario;
-  photos: PermissionScenario;
-  fileQuota: 'normal' | 'near-limit' | 'full';
-  loading: boolean;
 }
 
 export interface PersistedPrototypeState {
-  seedVersion: number;
   instance: InstanceProfile;
   session: SessionState;
   models: PrototypeModel[];
   defaultModelId: string;
   chats: PrototypeChat[];
   folders: PrototypeFolder[];
-  usage: UsageRecord[];
-  memories: MemoryRecord[];
   preferences: AppPreferences;
   demo: DemoScenarios;
-  recentSearches: string[];
 }
 
 export function normalizeInstanceUrl(input: string): string {

@@ -1,8 +1,7 @@
-export type SettingsSection = 'general' | 'interface' | 'data' | 'demo';
+export type SettingsSection = 'general' | 'interface' | 'data';
 
 export type RootStackParamList = {
   Chat: { chatId?: string } | undefined;
-  Search: undefined;
   Settings: undefined;
   Account: undefined;
   EditProfile: undefined;
@@ -10,5 +9,4 @@ export type RootStackParamList = {
   InstanceDetails: undefined;
   SettingsDetail: { section: SettingsSection };
   Trash: undefined;
-  SharedChat: { token: string };
 };

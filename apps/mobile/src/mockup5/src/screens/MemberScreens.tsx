@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button as RNButton, Image, Platform, ScrollView, Share, StyleSheet, Text, View,
+  Alert, Button as RNButton, Platform, StyleSheet, Text, View,
 } from 'react-native';
 import * as Network from 'expo-network';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -27,13 +27,10 @@ import { buttonStyle, contentShape, font, foregroundStyle, frame, lineLimit, mul
 import { Badge, Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
 import { usePrototypeStore } from '../store/prototypeStore';
-import type { PrototypeChat } from '../domain';
 import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
-import { SafeMarkdown } from '../../../components/SafeMarkdown';
-import { projectSharedMessages, type PublicShareResponse } from '../../../features/chat/shared';
 
 const relative = (timestamp: number) => {
   const delta = Date.now() - timestamp;
@@ -48,31 +45,6 @@ const formatBytes = (value: number) => value < 1024 * 1024
   : value < 1024 * 1024 * 1024
     ? `${(value / 1024 / 1024).toFixed(1)} MB`
     : `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
-
-const pulpoSmiley = require('../../assets/pulpo-smiley.png');
-
-export function SearchScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Search'>) {
-  const theme = useAppTheme();
-  const storedChats = usePrototypeStore((state) => state.chats);
-  const chats = useMemo(() => storedChats.filter((chat) => chat.deletedAt === null), [storedChats]);
-  const recent = usePrototypeStore((state) => state.recentSearches);
-  const addRecent = usePrototypeStore((state) => state.addRecentSearch);
-  const [query, setQuery] = useState('');
-  const normalized = query.trim().toLowerCase();
-  const results = useMemo(() => normalized ? chats.flatMap((chat) => {
-    const matchingMessages = chat.messages.filter((message) => message.text.toLowerCase().includes(normalized));
-    return chat.title.toLowerCase().includes(normalized) || matchingMessages.length ? [{ chat, excerpt: matchingMessages[0]?.text ?? chat.messages.at(-1)?.text ?? '' }] : [];
-  }) : [], [chats, normalized]);
-  const open = (chat: PrototypeChat) => { if (query.trim()) addRecent(query); navigation.navigate('Chat', { chatId: chat.id }); };
-  return <Screen scroll={false}><PageHeader title="Search" subtitle="Chats and messages" onBack={() => navigation.goBack()} />
-    <Field autoFocus accessibilityLabel="Search chats and messages" autoCapitalize="none" placeholder="Search chats and messages…" value={query} onChangeText={setQuery} />
-    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.searchResults}>
-      {!normalized && <><SectionTitle>Recent searches</SectionTitle><Card>{recent.map((item, index) => <ListRow key={item} icon="clock" title={item} last={index === recent.length - 1} onPress={() => setQuery(item)} />)}</Card><SectionTitle>Search tips</SectionTitle><Text style={[styles.helper, { color: theme.secondary }]}>Search looks through chat titles and the full text of every cached message. Try a model name, code symbol, or phrase you remember.</Text></>}
-      {normalized && results.length === 0 ? <EmptyState icon="magnifyingglass" title="No results" detail={`Nothing in your local chat history matches “${query.trim()}”.`} /> : null}
-      {results.length ? <Card>{results.map(({ chat, excerpt }, index) => <ListRow key={chat.id} icon="bubble.left.and.text.bubble.right" title={chat.title} detail={excerpt} value={relative(chat.updatedAt)} last={index === results.length - 1} onPress={() => open(chat)} />)}</Card> : null}
-    </ScrollView>
-  </Screen>;
-}
 
 function NativeDestinationRow({ icon, title, detail, onPress }: { icon: string; title: string; detail?: string; onPress: () => void }) {
   return <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary')]}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIText>{title}</SwiftUIText><SwiftUISpacer />{detail ? <SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{detail}</SwiftUIText> : null}<SwiftUIImage systemName="chevron.right" size={11} modifiers={[foregroundStyle('secondary')]} /></SwiftUIHStack></SwiftUIButton>;
@@ -184,7 +156,7 @@ function NativeSettingsLink({ icon, title, detail, onPress }: { icon: string; ti
   return <SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={onPress}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon as never} size={17} modifiers={[frame({ width: 22, height: 22 })]} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'medium' }), lineLimit(1)]}>{title}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary'), lineLimit(1)]}>{detail}</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} /></SwiftUIHStack></SwiftUIButton>;
 }
 
-const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', data: 'Data Controls', demo: 'Demo Controls' };
+const settingTitles: Record<SettingsSection, string> = { general: 'General', interface: 'Interface', data: 'Data Controls' };
 
 function NativeChoiceRow<T extends string>({ title, value, options, onChange, icon }: { title: string; value: T; options: readonly { value: T; label: string }[]; onChange: (value: T) => void; icon?: string }) {
   const selected = options.find((option) => option.value === value)?.label ?? value;
@@ -283,28 +255,7 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
   </Screen>;
 }
 
-type PublicShare = { chat: { title: string; modelId: string }; responses: PublicShareResponse[] };
-
-export function SharedChatScreen({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'SharedChat'>) {
-  const theme = useAppTheme();
-  const instanceUrl = usePrototypeStore((state) => state.instance.url);
-  const [share, setShare] = useState<PublicShare | null>(null);
-  const [error, setError] = useState('');
-  const url = `${instanceUrl}/share/${route.params.token}`;
-  useEffect(() => {
-    void fetch(`${instanceUrl}/api/shares/${encodeURIComponent(route.params.token)}`).then(async (response) => {
-      if (!response.ok) throw new Error('This share does not exist or has expired.');
-      setShare(await response.json() as PublicShare);
-    }).catch((cause) => setError(cause instanceof Error ? cause.message : 'Could not open this share.'));
-  }, [instanceUrl, route.params.token]);
-  if (error) return <Screen><PageHeader title="Shared Chat" onBack={() => navigation.goBack()} /><EmptyState icon="link.badge.plus" title="Link unavailable" detail={error} /></Screen>;
-  if (!share) return <Screen><PageHeader title="Shared Chat" onBack={() => navigation.goBack()} /><EmptyState icon="hourglass" title="Opening shared chat" detail="Loading the public snapshot…" /></Screen>;
-  const messages = projectSharedMessages(share.responses);
-  return <Screen><PageHeader title="Shared Chat" subtitle="Read-only Pulpo link" onBack={() => navigation.goBack()} right={<GlassIconButton icon="square.and.arrow.up" label="Share link" onPress={() => Share.share({ message: `${share.chat.title}\n${url}`, url })} />} /><View style={styles.sharedIntro}><Image source={pulpoSmiley} style={styles.sharedPulpo} /><Badge label="SHARED FROM PULPO" color={theme.blue} /><Text style={[styles.sharedTitle, { color: theme.text }]}>{share.chat.title}</Text><Text style={[styles.sharedMeta, { color: theme.secondary }]}>{messages.length} messages · {share.chat.modelId}</Text></View>{messages.map((message) => <View key={message.id} style={[styles.sharedMessage, message.role === 'user' ? { backgroundColor: theme.elevated, alignSelf: 'flex-end' } : { alignSelf: 'stretch' }]}><Text style={[styles.sharedRole, { color: theme.secondary }]}>{message.role === 'user' ? 'You' : message.modelId}</Text><SafeMarkdown>{message.text}</SafeMarkdown></View>)}<Text style={[styles.privacyNote, { color: theme.secondary }]}>This is a public, read-only snapshot. Reasoning is never included in shared chats.</Text></Screen>;
-}
-
 const styles = StyleSheet.create({
-  flex: { flex: 1 }, search: { minHeight: 48, borderRadius: 15, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 9 }, searchInput: { flex: 1, fontSize: 15, paddingVertical: 0 }, searchResults: { paddingBottom: 34 }, helper: { fontSize: 12, lineHeight: 18 }, result: { flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth }, resultIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, resultTitle: { fontSize: 15, fontWeight: '700' }, resultExcerpt: { fontSize: 12, lineHeight: 17, marginTop: 2 }, resultTime: { fontSize: 11 }, privacyNote: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginVertical: 18, paddingHorizontal: 20 },
-  profileCard: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 12 }, profileAvatar: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, profileInitials: { fontSize: 15, fontWeight: '900' }, profileName: { fontSize: 16, fontWeight: '700' }, profileEmail: { fontSize: 12, marginTop: 3 }, storage: { padding: 15 }, storageLine: { flexDirection: 'row', justifyContent: 'space-between' }, storageTitle: { fontSize: 14, fontWeight: '700' }, storagePercent: { fontSize: 12 }, storageTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 11 }, storageBar: { height: 8, borderRadius: 4 }, demoNotice: { padding: 13, borderRadius: 14, fontSize: 12, lineHeight: 18 },
-  trashRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, gap: 11 }, trashIcon: { width: 38, height: 38, borderRadius: 12, alignItems: 'center', justifyContent: 'center' }, trashTitle: { fontSize: 14, fontWeight: '700' }, trashMeta: { fontSize: 11, marginTop: 3 }, sharedIntro: { alignItems: 'center', paddingVertical: 28 }, sharedPulpo: { width: 48, height: 48, borderRadius: 16, marginBottom: 13 }, sharedTitle: { fontSize: 23, fontWeight: '800', letterSpacing: -0.5, textAlign: 'center', marginTop: 12 }, sharedMeta: { fontSize: 12, marginTop: 5 }, sharedMessage: { maxWidth: '88%', borderRadius: 18, padding: 14, marginBottom: 16 }, sharedRole: { fontSize: 11, fontWeight: '800', marginBottom: 6 }, sharedText: { fontSize: 15, lineHeight: 23 },
+  flex: { flex: 1 }, helper: { fontSize: 12, lineHeight: 18 },
+  profileCard: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 12 }, profileAvatar: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, profileInitials: { fontSize: 15, fontWeight: '900' }, profileName: { fontSize: 16, fontWeight: '700' }, profileEmail: { fontSize: 12, marginTop: 3 }, storage: { padding: 15 }, storageLine: { flexDirection: 'row', justifyContent: 'space-between' }, storageTitle: { fontSize: 14, fontWeight: '700' }, storagePercent: { fontSize: 12 }, storageTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 11 }, storageBar: { height: 8, borderRadius: 4 },
 });

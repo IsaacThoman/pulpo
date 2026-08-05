@@ -85,10 +85,8 @@ import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ExpoHaptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { StatusBar } from 'expo-status-bar';
-import { usePathname } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -115,9 +113,7 @@ import {
   EditProfileScreen,
   InstanceDetailsScreen,
   MemberSettingsScreen,
-  SearchScreen,
   SettingsDetailScreen,
-  SharedChatScreen,
   TrashScreen,
 } from './src/screens/MemberScreens';
 import type { RootStackParamList } from './src/navigation';
@@ -793,14 +789,14 @@ function BlinkingCaret() {
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
-export default function App({ initialShareToken }: { initialShareToken?: string }) {
+export default function App() {
   return (
     <GestureHandlerRootView style={styles.flex}>
       <KeyboardProvider>
         <SafeAreaProvider>
           <AppPreferencesProvider>
             <AccessibilityPreferencesProvider>
-              <PrototypeRoot initialShareToken={initialShareToken} />
+              <PrototypeRoot />
             </AccessibilityPreferencesProvider>
           </AppPreferencesProvider>
         </SafeAreaProvider>
@@ -809,10 +805,7 @@ export default function App({ initialShareToken }: { initialShareToken?: string 
   );
 }
 
-function PrototypeRoot({ initialShareToken }: { initialShareToken?: string }) {
-  const incomingUrl = Linking.useURL();
-  const pathname = usePathname();
-  const shareToken = initialShareToken ?? pathname.match(/^\/share\/([^/]+)/)?.[1];
+function PrototypeRoot() {
   const productionStatus = useSessionStore((state) => state.status);
   const productionUser = useSessionStore((state) => state.user);
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
@@ -874,27 +867,20 @@ function PrototypeRoot({ initialShareToken }: { initialShareToken?: string }) {
       <RNText style={[styles.sessionLoadingText, { color: isDark ? '#A1A1A8' : '#6E6E73' }]}>Loading your chats…</RNText>
     </View>;
   }
-  if (status !== 'signed-in' && !incomingUrl?.includes('/share/') && !shareToken) return <AuthExperience />;
-  if (status === 'signed-in' && expectedNamespace && productionNamespace !== expectedNamespace && !shareToken) {
+  if (status !== 'signed-in') return <AuthExperience />;
+  if (expectedNamespace && productionNamespace !== expectedNamespace) {
     return <View accessibilityLabel="Loading your chats" accessibilityRole="progressbar" style={styles.sessionLoading}>
       <ActivityIndicator color={isDark ? '#FFFFFF' : '#111114'} size="large" />
       <RNText style={[styles.sessionLoadingText, { color: isDark ? '#A1A1A8' : '#6E6E73' }]}>Loading your chats…</RNText>
     </View>;
   }
   return (
-    <NavigationContainer
-      theme={navigationTheme}
-      linking={{
-        prefixes: ['pulpo://', 'https://pulpo.baby'],
-        config: { screens: { SharedChat: 'share/:token' } },
-      }}
-    >
+    <NavigationContainer theme={navigationTheme}>
       <RootStack.Navigator
-        initialRouteName={shareToken ? 'SharedChat' : 'Chat'}
+        initialRouteName="Chat"
         screenOptions={{ animation: 'default', contentStyle: { backgroundColor: isDark ? '#000000' : '#F5F5F7' }, headerShown: false, headerShadowVisible: false }}
       >
         <RootStack.Screen name="Chat" component={AppContent} />
-        <RootStack.Screen name="Search" component={SearchScreen} />
         <RootStack.Screen name="Settings" component={MemberSettingsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Settings' }} />
         <RootStack.Screen name="Account" component={AccountScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Account', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: Platform.OS === 'ios', presentation: 'formSheet', title: 'Edit Profile' }} />
@@ -902,7 +888,6 @@ function PrototypeRoot({ initialShareToken }: { initialShareToken?: string }) {
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
-        <RootStack.Screen name="SharedChat" component={SharedChatScreen} initialParams={shareToken ? { token: decodeURIComponent(shareToken) } : undefined} />
       </RootStack.Navigator>
     </NavigationContainer>
   );

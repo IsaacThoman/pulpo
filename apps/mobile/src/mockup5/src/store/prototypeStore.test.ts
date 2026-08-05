@@ -14,21 +14,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LEGACY_PROTOTYPE_STORAGE_KEYS, purgeLegacyPrototypeSnapshots, usePrototypeStore } from './prototypeStore';
 
 beforeEach(() => {
-  usePrototypeStore.setState({ ...createSeedState(), hydrated: true });
+  usePrototypeStore.setState({ ...createSeedState(), productionNamespace: null, agentAvailable: false });
 });
 
 describe('prototype store', () => {
   it('purges every legacy non-namespaced production snapshot', async () => {
     await purgeLegacyPrototypeSnapshots();
     expect(AsyncStorage.multiRemove).toHaveBeenCalledWith([...LEGACY_PROTOTYPE_STORAGE_KEYS]);
-  });
-
-  it('runs the pending approval authentication flow', () => {
-    usePrototypeStore.getState().signUp('Ada Lovelace', 'ada@example.com');
-    expect(usePrototypeStore.getState().session.status).toBe('pending');
-    usePrototypeStore.getState().approvePendingDemo();
-    expect(usePrototypeStore.getState().session.status).toBe('signed-in');
-    expect(usePrototypeStore.getState().session.user?.role).toBe('member');
   });
 
   it('creates, renames, and deletes folders without deleting chats', () => {
@@ -71,11 +63,4 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats.some((item) => item.id === chat.id)).toBe(false);
   });
 
-  it('restores the complete seeded showcase', () => {
-    usePrototypeStore.getState().setPreference('theme', 'light');
-    usePrototypeStore.getState().emptyTrash();
-    usePrototypeStore.getState().resetDemo();
-    expect(usePrototypeStore.getState().preferences.theme).toBe('system');
-    expect(usePrototypeStore.getState().chats.some((chat) => chat.deletedAt !== null)).toBe(true);
-  });
 });

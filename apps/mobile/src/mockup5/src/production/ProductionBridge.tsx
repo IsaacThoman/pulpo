@@ -137,17 +137,14 @@ let scopeHydrationToken = 0
 function clearProductionScopeState(): void {
   clearPendingOptimisticResponses()
   clearOptimisticBranchSelections()
-  usePrototypeStore.setState((state) => ({
+  usePrototypeStore.setState({
     productionNamespace: null,
     chats: [],
     folders: [],
     models: [],
-    memories: [],
-    recentSearches: [],
     defaultModelId: '',
     agentAvailable: false,
-    usage: { ...state.usage, inputTokens: 0, outputTokens: 0 },
-  }))
+  })
 }
 
 // oxlint-disable-next-line react/only-export-components -- production scope lifecycle API

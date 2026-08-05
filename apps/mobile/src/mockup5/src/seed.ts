@@ -1,6 +1,5 @@
-import type { PersistedPrototypeState, PrototypeChat, PrototypeModel, UsageRecord } from './domain';
+import type { PersistedPrototypeState, PrototypeChat, PrototypeModel } from './domain';
 
-export const SEED_VERSION = 3;
 const now = Date.now();
 const hour = 60 * 60 * 1000;
 const day = 24 * hour;
@@ -77,21 +76,8 @@ export const seedChats: PrototypeChat[] = [
   },
 ];
 
-export const seedUsage: UsageRecord[] = Array.from({ length: 38 }, (_, index) => ({
-  id: `usage-${index}`,
-  createdAt: now - index * 17 * hour,
-  modelId: seedModels[index % seedModels.length]!.id,
-  source: (['Mobile', 'Web', 'API', 'Agent'] as const)[index % 4]!,
-  inputTokens: 480 + ((index * 347) % 5200),
-  outputTokens: 120 + ((index * 173) % 1800),
-  cost: Number((0.002 + ((index * 19) % 170) / 1000).toFixed(4)),
-  latencyMs: 1100 + ((index * 839) % 17000),
-  status: index === 11 || index === 29 ? 'failed' : 'complete',
-}));
-
 export function createSeedState(): PersistedPrototypeState {
   return {
-    seedVersion: SEED_VERSION,
     instance: { url: 'https://pulpo.baby', name: 'Pulpo', version: '0.1.0', signupOpen: true, connectedAt: now },
     session: { status: 'signed-in', user: { id: 'u-isaac', name: 'Isaac Thoman', email: 'isaac@pulpo.dev', role: 'member', initials: 'IT' } },
     models: seedModels,
@@ -102,18 +88,11 @@ export function createSeedState(): PersistedPrototypeState {
       { id: 'f-design', name: 'Product design', expanded: true },
       { id: 'f-research', name: 'Research', expanded: false },
     ],
-    usage: seedUsage,
-    memories: [
-      { id: 'memory-1', content: 'Isaac prefers terse implementation notes and concrete tradeoffs.' },
-      { id: 'memory-2', content: 'Pulpo mobile should feel native on iOS and remain functional on Android.' },
-    ],
     preferences: {
-      theme: 'system', textSize: 'default', language: 'en-US', notifications: true, sendWithEnter: true,
+      theme: 'system', textSize: 'default', sendWithEnter: true,
       streamResponses: true, showReasoning: true, haptics: true,
-      customInstructions: 'Be direct. Prefer implementation-ready answers.', nickname: 'isaac', memoryEnabled: true,
-      localChatLimit: 50, attachmentCacheMb: 50, trashRetention: '30d', leaderboardVisible: false, leaderboardColor: '#10B981',
+      localChatLimit: 50, attachmentCacheMb: 50, trashRetention: '30d',
     },
-    demo: { network: 'online', response: 'success', photos: 'granted', fileQuota: 'normal', loading: false },
-    recentSearches: ['streaming state', 'onboarding'],
+    demo: { response: 'success' },
   };
 }
