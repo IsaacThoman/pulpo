@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, startChatSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
@@ -232,6 +232,60 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     await bumpRevision(user.id, id)
     reply.code(201)
     return created
+  })
+
+  app.post('/api/chats/start', async (request, reply) => {
+    const user = requireUser(request)
+    const input = startChatSchema.parse(request.body)
+    if (input.response.parentResponseId) {
+      throw new AppError(400, 'invalid_parent_response', 'A new chat cannot start from an existing response')
+    }
+    const [model] = await db.select({ id: models.id }).from(models).where(and(
+      eq(models.id, input.chat.modelId), eq(models.enabled, true),
+    )).limit(1)
+    if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
+    const expiresAt = input.chat.temporary ? new Date(Date.now() + 86_400_000) : null
+    const [inserted] = await db.insert(chats).values({
+      id: input.chat.clientId,
+      userId: user.id,
+      modelId: input.chat.modelId,
+      title: input.chat.title ?? 'New chat',
+      temporary: input.chat.temporary,
+      expiresAt,
+    }).onConflictDoNothing().returning()
+    let chat = inserted
+    if (!chat) {
+      const [existing] = await db.select().from(chats).where(and(
+        eq(chats.id, input.chat.clientId), eq(chats.userId, user.id), isNull(chats.deletedAt),
+      )).limit(1)
+      if (!existing) throw new AppError(409, 'chat_id_conflict', 'Chat identifier is already in use')
+      chat = existing
+    }
+    try {
+      const response = await createResponse({
+        userId: user.id,
+        chatId: chat.id,
+        input: input.response,
+        parentResponseId: null,
+        idempotencyKey: request.headers['idempotency-key'] as string | undefined,
+      })
+      await bumpRevision(user.id, chat.id)
+      const [updatedChat] = await db.select().from(chats).where(eq(chats.id, chat.id)).limit(1)
+      reply.code(202)
+      return { chat: updatedChat ?? chat, response: toSnapshot(response) }
+    } catch (error) {
+      if (inserted) {
+        if (input.response.attachmentIds.length) {
+          await db.update(attachments).set({ chatId: null, updatedAt: new Date() }).where(and(
+            eq(attachments.userId, user.id),
+            eq(attachments.chatId, inserted.id),
+            inArray(attachments.id, input.response.attachmentIds),
+          ))
+        }
+        await db.delete(chats).where(and(eq(chats.id, inserted.id), eq(chats.userId, user.id)))
+      }
+      throw error
+    }
   })
 
   app.post('/api/chats/:id/duplicate', async (request, reply) => {

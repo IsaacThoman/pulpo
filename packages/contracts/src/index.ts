@@ -584,6 +584,12 @@ export const createChatResponseSchema = z.object({
 })
 export type CreateChatResponseInput = z.infer<typeof createChatResponseSchema>
 
+export const startChatSchema = z.object({
+  chat: createChatSchema.extend({ clientId: idSchema }),
+  response: createChatResponseSchema.safeExtend({ clientId: idSchema }),
+})
+export type StartChatInput = z.infer<typeof startChatSchema>
+
 export const syncRequestSchema = z.object({
   tabId: z.string().min(1).max(128),
   accountRevision: z.number().int().nonnegative(),

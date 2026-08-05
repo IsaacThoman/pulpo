@@ -13,6 +13,7 @@ import {
   nativeLoginInputSchema,
   ocrSettingsSchema,
   responseEventSchema,
+  startChatSchema,
   syncRequestSchema,
   type ResponseEvent,
   type ResponseSnapshot,
@@ -299,6 +300,19 @@ describe('response snapshot accumulation', () => {
     })
 
     expect(parsed.parentResponseId).toBe(parentResponseId)
+  })
+
+  it('requires stable chat and response IDs for atomic chat startup', () => {
+    const chatId = '00000000-0000-4000-8000-000000000002'
+    const responseId = '00000000-0000-4000-8000-000000000003'
+    expect(startChatSchema.parse({
+      chat: { clientId: chatId, modelId: 'model-1', title: 'Hello' },
+      response: { clientId: responseId, input: 'Hello', modelId: 'model-1' },
+    })).toMatchObject({ chat: { clientId: chatId }, response: { clientId: responseId } })
+    expect(() => startChatSchema.parse({
+      chat: { modelId: 'model-1' },
+      response: { clientId: responseId, input: 'Hello', modelId: 'model-1' },
+    })).toThrow()
   })
 
 })

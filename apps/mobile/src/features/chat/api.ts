@@ -113,6 +113,86 @@ export async function sendMessage(input: {
   }
 }
 
+export async function startChat(input: {
+  chatId: string
+  responseId: string
+  content: string
+  modelId: string
+  title: string
+  temporary?: boolean
+  presetSelections?: Record<string, string>
+  attachmentIds?: string[]
+  agentMode?: boolean
+}): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
+  const now = new Date().toISOString()
+  const queued: ResponseSnapshot = {
+    responseId: input.responseId,
+    status: 'queued',
+    sequence: 0,
+    output: [],
+    usage: null,
+    error: null,
+    updatedAt: now,
+  }
+  useRealtimeStore.getState().receiveSnapshot(queued)
+  const body = {
+    chat: {
+      clientId: input.chatId,
+      modelId: input.modelId,
+      title: input.title,
+      temporary: input.temporary ?? false,
+    },
+    response: {
+      clientId: input.responseId,
+      parentResponseId: null,
+      input: input.content,
+      modelId: input.modelId,
+      presetSelections: input.presetSelections ?? {},
+      attachmentIds: input.attachmentIds ?? [],
+      agentMode: input.agentMode ?? false,
+    },
+  }
+  try {
+    const result = await apiRequest<{ chat: ServerChat; response: ResponseSnapshot }>('/api/chats/start', {
+      method: 'POST', idempotencyKey: input.responseId, body,
+    })
+    useRealtimeStore.getState().receiveSnapshot(result.response)
+    return { ...result, response: useRealtimeStore.getState().snapshots[input.responseId] ?? result.response }
+  } catch (error) {
+    const { instanceUrl, user } = useSessionStore.getState()
+    if (!user || !isNetworkError(error)) {
+      useRealtimeStore.getState().removeSnapshot(input.responseId)
+      throw error
+    }
+    await queueOfflineMutation({
+      namespace: cacheNamespace(instanceUrl, user.id),
+      entityKey: `response:${input.responseId}`,
+      method: 'POST',
+      path: '/api/chats/start',
+      body,
+      idempotencyKey: input.responseId,
+    })
+    return {
+      chat: {
+        id: input.chatId,
+        title: input.title,
+        modelId: input.modelId,
+        pinned: false,
+        folderId: null,
+        sortOrder: 0,
+        temporary: input.temporary ?? false,
+        activeResponseId: input.responseId,
+        activeBranchLeafId: input.responseId,
+        createdAt: now,
+        updatedAt: now,
+        responses: [],
+        attachments: [],
+      },
+      response: useRealtimeStore.getState().snapshots[input.responseId] ?? queued,
+    }
+  }
+}
+
 export async function cancelResponse(id: string): Promise<ResponseSnapshot> {
   const snapshot = await apiRequest<ResponseSnapshot>(`/api/responses/${id}/cancel`, { method: 'POST' })
   useRealtimeStore.getState().receiveSnapshot(snapshot)

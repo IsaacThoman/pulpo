@@ -126,7 +126,7 @@ import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTu
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, createChat as createServerChat, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
@@ -1208,27 +1208,35 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     let serverChatCreated = Boolean(activeChat);
     try {
       let serverChatId = activeChat?.id;
+      let response: Awaited<ReturnType<typeof sendServerMessage>>;
       if (!serverChatId) {
-        const created = await createServerChat({
-          clientId: key,
+        const started = await startServerChat({
+          chatId: key,
+          responseId,
+          content: trimmed,
           modelId,
           temporary: options?.temporary ?? false,
           title,
+          presetSelections: selections,
+          attachmentIds: attachments.map((attachment) => attachment.serverId),
+          agentMode,
         });
-        serverChatId = created.id;
+        serverChatId = started.chat.id;
+        response = started.response;
         serverChatCreated = true;
-        setActiveChatId(created.id);
+        setActiveChatId(serverChatId);
+      } else {
+        response = await sendServerMessage({
+          clientId: responseId,
+          chatId: serverChatId,
+          content: trimmed,
+          modelId,
+          parentResponseId,
+          presetSelections: selections,
+          attachmentIds: attachments.map((attachment) => attachment.serverId),
+          agentMode,
+        });
       }
-      const response = await sendServerMessage({
-        clientId: responseId,
-        chatId: serverChatId,
-        content: trimmed,
-        modelId,
-        parentResponseId,
-        presetSelections: selections,
-        attachmentIds: attachments.map((attachment) => attachment.serverId),
-        agentMode,
-      });
       updateStoredMessage(serverChatId, response.responseId, {
         modelId,
         status: response.status === 'completed' ? 'complete'

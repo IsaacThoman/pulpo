@@ -1050,15 +1050,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
 
     void (async () => {
-      if (!chatId) {
-        await optimisticRequest('POST', '/api/chats', {
-          clientId: id,
-          modelId,
-          title: (content || attachments[0]?.name || 'Image').slice(0, 200),
-          temporary,
-        })
-      }
-      const result = await enqueueChatMutation(id, () => optimisticRequest('POST', `/api/chats/${id}/responses`, {
+      const responseBody = {
         clientId: responseId,
         parentResponseId,
         input: content,
@@ -1066,7 +1058,18 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
         agentMode: useSettings.getState().agentModeEnabled && getCatalogModel(modelId).agentEnabled && useCatalog.getState().agentAvailable,
-      })) as { response?: ResponseSnapshot } | undefined
+      }
+      const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
+      const body = chatId ? responseBody : {
+        chat: {
+          clientId: id,
+          modelId,
+          title: (content || attachments[0]?.name || 'Image').slice(0, 200),
+          temporary,
+        },
+        response: responseBody,
+      }
+      const result = await enqueueChatMutation(id, () => optimisticRequest('POST', path, body)) as { response?: ResponseSnapshot } | undefined
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {
         const clientUserId = `${responseId}:input`
