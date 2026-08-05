@@ -119,8 +119,8 @@ export async function cancelResponse(id: string): Promise<ResponseSnapshot> {
   return snapshot
 }
 
-export async function regenerateResponse(id: string, modelId?: string, presetSelections?: Record<string, string>): Promise<ResponseSnapshot> {
-  const responseId = Crypto.randomUUID()
+export async function regenerateResponse(id: string, modelId?: string, presetSelections?: Record<string, string>, clientId?: string): Promise<ResponseSnapshot> {
+  const responseId = clientId ?? Crypto.randomUUID()
   const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${id}/regenerate`, {
     method: 'POST', idempotencyKey: responseId,
     body: { clientId: responseId, modelId, presetSelections },
@@ -129,8 +129,8 @@ export async function regenerateResponse(id: string, modelId?: string, presetSel
   return result.response
 }
 
-export async function editMessage(id: string, content: string, modelId?: string, presetSelections?: Record<string, string>): Promise<ResponseSnapshot> {
-  const responseId = Crypto.randomUUID()
+export async function editMessage(id: string, content: string, modelId?: string, presetSelections?: Record<string, string>, clientId?: string): Promise<ResponseSnapshot> {
+  const responseId = clientId ?? Crypto.randomUUID()
   const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${id}`, {
     method: 'PATCH', idempotencyKey: responseId,
     body: { clientId: responseId, content, modelId, presetSelections },

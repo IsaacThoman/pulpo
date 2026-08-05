@@ -14,6 +14,7 @@ interface PendingOptimisticResponse {
   namespace: string
   chatId: string
   response: ServerResponse
+  rollbackResponseId: string | null
   attachments: ServerAttachment[]
   chatListed: boolean
   terminalDetailSeen: boolean
@@ -32,6 +33,19 @@ interface CacheOptimisticTurnInput {
   presetSelections: Record<string, string>
   agentMode: boolean
   attachments: OptimisticAttachment[]
+  createdAt: number
+}
+
+interface CacheOptimisticBranchInput {
+  queryClient: QueryClient
+  namespace: string
+  chatId: string
+  sourceResponseId: string
+  responseId: string
+  modelId: string
+  presetSelections: Record<string, string>
+  editedInput?: string
+  editedOutput?: string
   createdAt: number
 }
 
@@ -58,6 +72,59 @@ function responseFromSnapshot(response: ServerResponse, live: ResponseSnapshot |
     completedAt: terminal ? response.completedAt ?? snapshot.updatedAt : response.completedAt,
     snapshot,
   }
+}
+
+function replaceInputText(input: unknown[], content: string): unknown[] {
+  const lastUserIndex = input.reduce((last, entry, index) => (
+    (entry as { role?: string }).role === 'user' ? index : last
+  ), -1)
+  let replaced = false
+  const updated = input.map((item, index) => {
+    const typed = item as { role?: string; content?: unknown }
+    if (typed.role !== 'user' || index !== lastUserIndex) return item
+    replaced = true
+    if (!Array.isArray(typed.content)) return { ...typed, content }
+    let found = false
+    const parts = typed.content.map((part) => {
+      const value = part as { type?: string }
+      if (value.type !== 'input_text') return part
+      found = true
+      return { ...value, text: content }
+    })
+    return { ...typed, content: found ? parts : [{ type: 'input_text', text: content }, ...parts] }
+  })
+  return replaced ? updated : [...updated, { role: 'user', content }]
+}
+
+function userBranchKey(response: ServerResponse): string {
+  return response.userMessageId ?? `legacy:${JSON.stringify(response.input)}`
+}
+
+/** Recompute branch controls whenever an optimistic response changes the tree. */
+export function withBranchMetadata(responses: ServerResponse[]): ServerResponse[] {
+  const sorted = [...responses].sort((left, right) => (
+    left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id)
+  ))
+  return sorted.map((active) => {
+    const siblings = sorted.filter((response) => response.parentResponseId === active.parentResponseId)
+    const groups = new Map<string, ServerResponse[]>()
+    for (const sibling of siblings) {
+      const key = userBranchKey(sibling)
+      groups.set(key, [...(groups.get(key) ?? []), sibling])
+    }
+    const activeKey = userBranchKey(active)
+    const userIds = [...groups.entries()].map(([key, group]) => (
+      key === activeKey ? active.id : group.at(-1)!.id
+    ))
+    const assistantIds = groups.get(activeKey)?.map((response) => response.id) ?? [active.id]
+    return {
+      ...active,
+      branches: {
+        user: { ids: userIds, index: userIds.indexOf(active.id) },
+        assistant: { ids: assistantIds, index: assistantIds.indexOf(active.id) },
+      },
+    }
+  })
 }
 
 /**
@@ -114,6 +181,7 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
     namespace: input.namespace,
     chatId: input.chatId,
     response,
+    rollbackResponseId: input.parentResponseId,
     attachments: attachmentRows,
     chatListed: false,
     terminalDetailSeen: false,
@@ -123,7 +191,7 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
   const existingResponses = existing?.responses ?? []
   const responses = existingResponses.some((item) => item.id === response.id)
     ? existingResponses
-    : [...existingResponses, response]
+    : withBranchMetadata([...existingResponses, response])
   const existingAttachments = existing?.attachments ?? []
   const attachmentIds = new Set(attachmentRows.map((attachment) => attachment.id))
   const detail: ServerChat = existing ? {
@@ -154,6 +222,71 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
   }
   input.queryClient.setQueryData(chatKey(input.namespace, input.chatId), detail)
   useRealtimeStore.getState().receiveSnapshot(snapshot)
+}
+
+/** Add a regenerated or edited branch before its request leaves the device. */
+export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): ServerResponse | undefined {
+  const existing = input.queryClient.getQueryData<ServerChat>(chatKey(input.namespace, input.chatId))
+  const source = existing?.responses?.find((response) => response.id === input.sourceResponseId)
+  if (!existing?.responses || !source) return undefined
+  const createdAt = new Date(input.createdAt).toISOString()
+  const isAssistantEdit = input.editedOutput !== undefined
+  const output = isAssistantEdit ? [{
+    id: `msg_${input.responseId}`,
+    type: 'message',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: input.editedOutput, annotations: [] }],
+  }] : []
+  const snapshot: ResponseSnapshot = {
+    responseId: input.responseId,
+    status: isAssistantEdit ? 'completed' : 'queued',
+    sequence: 0,
+    output,
+    usage: null,
+    error: null,
+    updatedAt: createdAt,
+  }
+  const response: ServerResponse = {
+    ...source,
+    id: input.responseId,
+    previousResponseId: source.parentResponseId,
+    userMessageId: input.editedInput === undefined ? source.userMessageId : `${input.responseId}:input`,
+    modelId: input.modelId,
+    displayModelId: input.modelId,
+    status: snapshot.status,
+    input: input.editedInput === undefined ? source.input : replaceInputText(source.input, input.editedInput),
+    output,
+    presetSelections: input.presetSelections,
+    usage: null,
+    error: null,
+    createdAt,
+    completedAt: isAssistantEdit ? createdAt : null,
+    snapshot,
+    branches: {
+      user: { ids: [input.responseId], index: 0 },
+      assistant: { ids: [input.responseId], index: 0 },
+    },
+  }
+  pendingResponses.set(pendingKey(input.namespace, input.responseId), {
+    namespace: input.namespace,
+    chatId: input.chatId,
+    response,
+    rollbackResponseId: source.id,
+    attachments: [],
+    chatListed: false,
+    terminalDetailSeen: false,
+  })
+  input.queryClient.setQueryData<ServerChat>(chatKey(input.namespace, input.chatId), {
+    ...existing,
+    modelId: input.modelId,
+    updatedAt: createdAt,
+    activeResponseId: response.id,
+    activeBranchLeafId: response.id,
+    responses: withBranchMetadata([...existing.responses, response]),
+  })
+  useRealtimeStore.getState().receiveSnapshot(snapshot)
+  return response
 }
 
 /**
@@ -214,7 +347,7 @@ export function reconcileOptimisticResponses(
     ...chat,
     activeResponseId: optimisticLeaf ?? chat.activeResponseId,
     activeBranchLeafId: optimisticLeaf ?? chat.activeBranchLeafId,
-    responses,
+    responses: withBranchMetadata(responses),
     attachments,
   }
 }
@@ -255,10 +388,56 @@ export function rejectOptimisticTurn(input: {
     const responses = chat.responses.filter((response) => response.id !== input.responseId)
     return {
       ...chat,
-      activeResponseId: pending.response.parentResponseId,
-      activeBranchLeafId: pending.response.parentResponseId,
-      responses,
+      activeResponseId: pending.rollbackResponseId,
+      activeBranchLeafId: pending.rollbackResponseId,
+      responses: withBranchMetadata(responses),
     }
+  })
+}
+
+function deletionIds(responses: ServerResponse[], selected: ServerResponse, includeUserVariant: boolean): Set<string> {
+  const deleting = new Set(includeUserVariant
+    ? responses.filter((response) => response.parentResponseId === selected.parentResponseId
+      && userBranchKey(response) === userBranchKey(selected)).map((response) => response.id)
+    : [selected.id])
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const response of responses) {
+      if (response.parentResponseId && deleting.has(response.parentResponseId) && !deleting.has(response.id)) {
+        deleting.add(response.id)
+        changed = true
+      }
+    }
+  }
+  return deleting
+}
+
+/** Apply a deletion after server success without blocking on a transcript refetch. */
+export function applyConfirmedMessageDeletion(input: {
+  queryClient: QueryClient
+  namespace: string
+  chatId: string
+  messageId: string
+}): void {
+  const responseId = input.messageId.endsWith(':input') ? input.messageId.slice(0, -6) : input.messageId
+  const includeUserVariant = input.messageId.endsWith(':input')
+  const chat = input.queryClient.getQueryData<ServerChat>(chatKey(input.namespace, input.chatId))
+  const selected = chat?.responses?.find((response) => response.id === responseId)
+  if (!chat?.responses || !selected) return
+  const deleting = deletionIds(chat.responses, selected, includeUserVariant)
+  const responses = chat.responses.filter((response) => !deleting.has(response.id))
+  const currentLeaf = chat.activeBranchLeafId ?? chat.activeResponseId
+  const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : responses.at(-1)?.id ?? null
+  for (const id of deleting) {
+    pendingResponses.delete(pendingKey(input.namespace, id))
+    useRealtimeStore.getState().removeSnapshot(id)
+  }
+  input.queryClient.setQueryData<ServerChat>(chatKey(input.namespace, input.chatId), {
+    ...chat,
+    activeResponseId: leafId,
+    activeBranchLeafId: leafId,
+    responses: withBranchMetadata(responses),
   })
 }
 

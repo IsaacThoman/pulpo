@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerChat } from '../../../types'
 import {
   acknowledgeOptimisticChatList,
+  applyConfirmedMessageDeletion,
+  cacheOptimisticBranch,
   cacheOptimisticTurn,
   clearPendingOptimisticResponses,
   pendingOptimisticChatIds,
@@ -180,5 +182,70 @@ describe('optimistic response reconciliation', () => {
     expect(cached?.responses).toEqual([])
     expect(realtime.snapshots['response-1']).toBeUndefined()
     expect(pendingOptimisticChatIds(namespace)).toEqual(new Set())
+  })
+
+  it('shows a regenerated branch immediately and rolls back to its source', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+
+    const branch = cacheOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId: 'chat-1',
+      sourceResponseId: 'response-1',
+      responseId: 'response-2',
+      modelId: 'model-1',
+      presetSelections: {},
+      createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
+    })
+
+    expect(branch?.branches.assistant.ids).toEqual(['response-2'])
+    const optimistic = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))
+    expect(optimistic?.activeBranchLeafId).toBe('response-2')
+    expect(optimistic?.responses?.find((response) => response.id === 'response-2')?.branches.assistant.ids)
+      .toEqual(['response-1', 'response-2'])
+
+    rejectOptimisticTurn({ queryClient, namespace, responseId: 'response-2', discardChat: false })
+    expect(queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.activeBranchLeafId).toBe('response-1')
+  })
+
+  it('creates visible user and assistant edit branches with caller-owned IDs', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+
+    cacheOptimisticBranch({
+      queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId: 'response-2',
+      modelId: 'model-1', presetSelections: {}, editedInput: 'Edited prompt', createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
+    })
+    const userEdit = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.responses?.find((response) => response.id === 'response-2')
+    expect(userEdit?.branches.user.ids).toEqual(['response-1', 'response-2'])
+    expect(JSON.stringify(userEdit?.input)).toContain('Edited prompt')
+
+    cacheOptimisticBranch({
+      queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-2', responseId: 'response-3',
+      modelId: 'model-1', presetSelections: {}, editedOutput: 'Edited answer', createdAt: Date.parse('2026-08-04T00:00:03.000Z'),
+    })
+    const assistantEdit = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.responses?.find((response) => response.id === 'response-3')
+    expect(assistantEdit?.status).toBe('completed')
+    expect(JSON.stringify(assistantEdit?.output)).toContain('Edited answer')
+    expect(assistantEdit?.branches.assistant.ids).toEqual(['response-2', 'response-3'])
+  })
+
+  it('applies a confirmed user-message cascade without waiting for a refetch', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+    cacheOptimisticBranch({
+      queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId: 'response-2',
+      modelId: 'model-1', presetSelections: {}, createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
+    })
+
+    applyConfirmedMessageDeletion({ queryClient, namespace, chatId: 'chat-1', messageId: 'response-1:input' })
+
+    const cached = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))
+    expect(cached?.responses).toEqual([])
+    expect(cached?.activeBranchLeafId).toBeNull()
   })
 })

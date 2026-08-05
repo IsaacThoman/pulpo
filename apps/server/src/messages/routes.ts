@@ -129,7 +129,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       }
     }
     const createdAt = new Date()
-    const createdId = newId()
+    const createdId = clientId ?? newId()
     const output = editedOutput(content)
     await db.transaction(async (tx) => {
       await tx.insert(responses).values({

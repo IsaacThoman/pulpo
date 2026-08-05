@@ -122,7 +122,7 @@ import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, Res
 import { useSessionStore } from '../store/session';
 import { apiRequest } from '../api/client';
 import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
-import { cacheOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
+import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace } from '../data/database';
 import { queryKeys } from '../data/queries';
@@ -1309,25 +1309,75 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   const regenerateMessage = useCallback((message: Message) => {
     const chatId = message.chatId ?? activeChatId;
-    if (!chatId || effectiveAssistantStatus !== 'idle') return;
+    if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    const responseId = Crypto.randomUUID();
+    const optimistic = cacheOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId,
+      sourceResponseId: message.id,
+      responseId,
+      modelId,
+      presetSelections: selections,
+      createdAt: Date.now(),
+    });
     setAssistantStatus('thinking');
+    if (optimistic) trackActiveResponse(optimistic.snapshot);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    void regenerateServerResponse(message.id, modelId, selections).then(async (response) => {
+    void regenerateServerResponse(message.id, modelId, selections, responseId).then((response) => {
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
-      if (productionUserId) {
-        const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-        void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
-        void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
-      }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
     }).catch((error) => {
       activeResponseId.current = null;
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
+      rejectOptimisticTurn({ queryClient, namespace, responseId, discardChat: false });
       setAssistantStatus('idle');
       Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined);
+    });
+  }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, trackActiveResponse]);
+
+  const editMessage = useCallback((message: Message, content: string) => {
+    const chatId = message.chatId ?? activeChatId;
+    if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
+    const modelId = selectedModel.id;
+    const selections = { ...presetSelections };
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    const responseId = Crypto.randomUUID();
+    const sourceResponseId = message.id.endsWith(':input') ? message.id.slice(0, -6) : message.id;
+    const optimistic = cacheOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId,
+      sourceResponseId,
+      responseId,
+      modelId,
+      presetSelections: selections,
+      ...(message.role === 'user' ? { editedInput: content } : { editedOutput: content }),
+      createdAt: Date.now(),
+    });
+    if (message.role === 'user') {
+      setAssistantStatus('thinking');
+      if (optimistic) trackActiveResponse(optimistic.snapshot);
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
+    void editServerMessage(message.id, content, modelId, selections, responseId).then((response) => {
+      const responseActive = trackActiveResponse(response);
+      setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
+    }).catch((error) => {
+      activeResponseId.current = null;
+      activeResponseSubscription.current?.();
+      activeResponseSubscription.current = null;
+      rejectOptimisticTurn({ queryClient, namespace, responseId, discardChat: false });
+      setAssistantStatus('idle');
+      Alert.alert(message.role === 'user' ? 'Couldn’t edit message' : 'Couldn’t edit response', error instanceof Error ? error.message : undefined);
     });
   }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, trackActiveResponse]);
 
@@ -1413,6 +1463,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             streamingSession={streamingSession}
             onStreamingComplete={completeStreamingResponse}
             onRegenerate={regenerateMessage}
+            onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
             onOpenPanel={() => animatePanel(true)}
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
@@ -1442,20 +1493,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
 type MessageAction = 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete';
 
-function useMessageActionRunner({ message, generationModelId, presetSelections, onRegenerate }: {
+function useMessageActionRunner({ message, onEdit, onRegenerate }: {
   message: Message;
-  generationModelId: string;
-  presetSelections: GenerationSelections;
+  onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
 }) {
   const queryClient = useQueryClient();
   const instanceUrl = useSessionStore((state) => state.instanceUrl);
   const userId = useSessionStore((state) => state.user?.id);
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
     if (!message.chatId || !userId) return;
     const namespace = cacheNamespace(instanceUrl, userId);
-    await queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
-    await queryClient.refetchQueries({ queryKey: queryKeys.chat(namespace, message.chatId), type: 'active' });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, message.chatId) });
   }, [instanceUrl, message.chatId, queryClient, userId]);
 
   return useCallback((action: MessageAction) => {
@@ -1477,7 +1527,15 @@ function useMessageActionRunner({ message, generationModelId, presetSelections, 
         { text: 'Delete', style: 'destructive', onPress: () => {
           if (!message.chatId) return;
           void deleteServerMessage(message.id)
-            .then(refresh)
+            .then(() => {
+              if (userId) applyConfirmedMessageDeletion({
+                queryClient,
+                namespace: cacheNamespace(instanceUrl, userId),
+                chatId: message.chatId!,
+                messageId: message.id,
+              });
+              refresh();
+            })
             .catch((error) => Alert.alert('Couldn’t delete message', error instanceof Error ? error.message : undefined));
         } },
       ]);
@@ -1490,9 +1548,7 @@ function useMessageActionRunner({ message, generationModelId, presetSelections, 
         Alert.prompt(message.role === 'user' ? 'Edit message' : 'Edit response', message.role === 'user' ? 'Saving resends from this point in the conversation.' : 'Saving creates a response branch.', (text) => {
           const trimmed = text.trim();
           if (!trimmed && !(message.role === 'user' && (message.attachments?.length ?? 0) > 0)) return;
-          void editServerMessage(message.id, trimmed, generationModelId, presetSelections)
-            .then(refresh)
-            .catch((error) => Alert.alert('Couldn’t edit message', error instanceof Error ? error.message : undefined));
+          onEdit(message, trimmed);
         }, 'plain-text', message.text);
       }
       return;
@@ -1512,23 +1568,21 @@ function useMessageActionRunner({ message, generationModelId, presetSelections, 
       regenerate: 'Regenerate response',
     } as const;
     Alert.alert(labels[action], message.text.slice(0, 120));
-  }, [generationModelId, message, onRegenerate, presetSelections, refresh]);
+  }, [instanceUrl, message, onEdit, onRegenerate, queryClient, refresh, userId]);
 }
 
 function MessageContextMenu({
   message,
-  generationModelId,
-  presetSelections,
+  onEdit,
   onRegenerate,
   children,
 }: {
   message: Message;
-  generationModelId: string;
-  presetSelections: GenerationSelections;
+  onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
-  const runAction = useMessageActionRunner({ message, generationModelId, presetSelections, onRegenerate });
+  const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
 
   return (
     <NativeObjectContextMenu
@@ -1562,15 +1616,14 @@ function MessageContextMenu({
   );
 }
 
-function SentAttachmentContextMenu({ attachment, message, generationModelId, presetSelections, onRegenerate, children }: {
+function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, children }: {
   attachment: Attachment;
   message: Message;
-  generationModelId: string;
-  presetSelections: GenerationSelections;
+  onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
-  const runMessageAction = useMessageActionRunner({ message, generationModelId, presetSelections, onRegenerate });
+  const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const shareAttachment = () => {
     if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
     else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
@@ -1845,15 +1898,13 @@ function BranchControls({ branches, activeIndex, onActivate }: {
 const MessageRow = memo(function MessageRow({
   message,
   model,
-  generationModelId,
-  presetSelections,
+  onEdit,
   onRegenerate,
   onActivateBranch,
 }: {
   message: Message;
   model: Model;
-  generationModelId: string;
-  presetSelections: GenerationSelections;
+  onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
 }) {
@@ -1885,7 +1936,7 @@ const MessageRow = memo(function MessageRow({
           {message.attachments && message.attachments.length > 0 && (
             <View style={styles.sentAttachments}>
               {message.attachments.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} generationModelId={generationModelId} key={attachment.id} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
+                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
                   {attachment.kind === 'image' ? (
                     <ResolvedAttachmentImage attachment={attachment} variant="message" />
                   ) : (
@@ -1899,7 +1950,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.text.length > 0 && (
-            <MessageContextMenu generationModelId={generationModelId} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
+            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userBubble}>
                 <SafeMarkdown>{message.text}</SafeMarkdown>
               </View>
@@ -1914,7 +1965,7 @@ const MessageRow = memo(function MessageRow({
             <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
           </View>
           {timeline.length ? (
-            <MessageContextMenu generationModelId={generationModelId} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
+            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.assistantContent}>
                 {timeline.map((segment, index) => segment.kind === 'activity'
                   ? <WorkBlock active={segment.active || (streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text'))} key={`activity:${index}`} steps={segment.steps} />
@@ -1922,7 +1973,7 @@ const MessageRow = memo(function MessageRow({
               </View>
             </MessageContextMenu>
           ) : message.error ? (
-            <MessageContextMenu generationModelId={generationModelId} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
+            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
             </MessageContextMenu>
           ) : streaming ? <ResponsePendingIndicator /> : null}
@@ -1936,7 +1987,7 @@ const MessageRow = memo(function MessageRow({
           {message.attachments && message.attachments.length > 0 && (
             <View style={[styles.sentAttachments, styles.assistantAttachments]}>
               {message.attachments.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} generationModelId={generationModelId} key={attachment.id} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}>
+                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
                   {attachment.kind === 'image' ? (
                     <ResolvedAttachmentImage attachment={attachment} variant="message" />
                   ) : (
@@ -1950,7 +2001,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
-          {!message.error && message.status === 'stopped' && <MessageContextMenu generationModelId={generationModelId} message={message} onRegenerate={onRegenerate} presetSelections={presetSelections}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
+          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
           {message.agentMode && streaming && capacityWorkspace && (
             <Pressable
               accessibilityRole="button"
@@ -2200,7 +2251,7 @@ function SuggestedPromptButton({ label, accessible, onPress }: { label: string; 
 
 function ChatView({
   messages, chatId, chatTitle, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat,
+  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -2216,6 +2267,7 @@ function ChatView({
   assistantStatus: 'idle' | 'thinking' | 'streaming';
   streamingSession: StreamingSession | null;
   onStreamingComplete: (session: StreamingSession) => void;
+  onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onStop: () => void;
@@ -2555,14 +2607,13 @@ function ChatView({
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
-      generationModelId={model.id}
       message={item}
       model={responseModel(item, models, model)}
+      onEdit={onEdit}
       onRegenerate={onRegenerate}
       onActivateBranch={onActivateBranch}
-      presetSelections={presetSelections}
     />
-  ), [model, models, onActivateBranch, onRegenerate, presetSelections]);
+  ), [model, models, onActivateBranch, onEdit, onRegenerate]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
