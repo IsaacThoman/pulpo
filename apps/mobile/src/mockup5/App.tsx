@@ -94,7 +94,7 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { Bot } from 'lucide-react-native';
+import { Bot, Ghost } from 'lucide-react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider, KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, {
@@ -102,6 +102,7 @@ import Reanimated, {
   FadeInUp,
   FadeOutUp,
   interpolate,
+  interpolateColor,
   LinearTransition,
   runOnJS,
   useAnimatedStyle,
@@ -2290,6 +2291,7 @@ function ChatView({
 }) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
+  const { reduceMotion } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight } = useWindowDimensions();
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
@@ -2319,6 +2321,7 @@ function ChatView({
   });
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
+  const temporaryProgress = useSharedValue(temporary ? 1 : 0);
   const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
   const syncError = useRealtimeStore((state) => state.syncError);
   const networkState = Network.useNetworkState();
@@ -2363,6 +2366,20 @@ function ChatView({
     opacity: interpolate(keyboardProgress.value, [0, 0.65], [1, 0]),
     transform: [{ translateY: interpolate(keyboardProgress.value, [0, 1], [0, -14]) }],
   }));
+  const temporarySurfaceAnimatedStyle = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(
+      temporaryProgress.value,
+      [0, 1],
+      colorScheme === 'dark' ? ['#000000', '#080312'] : ['#ffffff', '#f4f0ff'],
+    ),
+  }));
+  const temporaryLabelAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: temporaryProgress.value,
+    transform: [
+      { translateY: interpolate(temporaryProgress.value, [0, 1], [6, 0]) },
+      { scale: interpolate(temporaryProgress.value, [0, 1], [0.98, 1]) },
+    ],
+  }));
 
   const presetLabel = generationSummary(prototypeModel, presetSelections);
   const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
@@ -2370,6 +2387,15 @@ function ChatView({
   useEffect(() => {
     setAgentEnabled(preferredAgentMode && canUseAgent);
   }, [canUseAgent, preferredAgentMode]);
+
+  useEffect(() => {
+    const target = temporary ? 1 : 0;
+    temporaryProgress.value = reduceMotion
+      ? target
+      : withTiming(target, {
+        duration: temporary ? 320 : 240,
+      });
+  }, [reduceMotion, temporary, temporaryProgress]);
 
   useEffect(() => {
     if (!hasGenerationPresets) setPresetPickerOpen(false);
@@ -2639,7 +2665,7 @@ function ChatView({
     && !attachments.some((attachment) => attachment.state === 'uploading');
 
   return (
-    <View style={styles.chatRoot}>
+    <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
@@ -2690,12 +2716,6 @@ function ChatView({
           </View>
         )}
 
-        {temporary && (
-          <View accessibilityRole="text" style={styles.temporaryBanner}>
-            <Icon name="eye.slash" size={12} color={COLORS.muted} />
-            <Text style={styles.temporaryBannerText}>Temporary chat · not saved to history</Text>
-          </View>
-        )}
       </View>
 
       {loadingExistingChat ? (
@@ -2713,9 +2733,20 @@ function ChatView({
         <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, { paddingTop: headerOverlayHeight + 16 }]}>
           <View style={styles.emptyState}>
             <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
-              <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
-                <ModelMark model={model} size={48} />
-                <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
+              <View style={styles.emptyModelLineWrap}>
+                <Reanimated.View
+                  accessibilityElementsHidden={!temporary}
+                  accessibilityLabel="Temporary chat"
+                  pointerEvents="none"
+                  style={[styles.temporaryLabel, temporaryLabelAnimatedStyle]}
+                >
+                  <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
+                  <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
+                </Reanimated.View>
+                <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
+                  <ModelMark model={model} size={48} />
+                  <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
+                </View>
               </View>
               <Text style={styles.emptyProvider}>{model.lab}</Text>
             </Reanimated.View>
@@ -2780,7 +2811,14 @@ function ChatView({
 
       <KeyboardStickyView offset={keyboardOffset} style={styles.composerSticky}>
         <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-            <Glass interactive style={styles.composer}>
+            <Glass
+              interactive
+              style={[
+                styles.composer,
+                temporary && styles.temporaryComposer,
+                temporary && (colorScheme === 'dark' ? styles.temporaryComposerDark : styles.temporaryComposerLight),
+              ]}
+            >
               <AttachmentStrip
                 attachments={attachments}
                 onRetry={retryAttachment}
@@ -2794,7 +2832,7 @@ function ChatView({
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
-                placeholder={attachments.length > 0 ? 'Add a caption…' : 'Message…'}
+                placeholder={attachments.length > 0 ? 'Add a caption…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.dim}
                 style={styles.input}
                 value={input}
@@ -2922,7 +2960,7 @@ function ChatView({
         onClose={() => setPresetPickerOpen(false)}
         onSelect={onSelectPreset}
       />
-    </View>
+    </Reanimated.View>
   );
 }
 
@@ -3444,8 +3482,6 @@ const styles = StyleSheet.create({
   modelMenuHost: { minHeight: 44, maxWidth: 230, justifyContent: 'center' },
   modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
-  temporaryBanner: { alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 5, marginBottom: 2 },
-  temporaryBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '500' },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
@@ -3453,6 +3489,10 @@ const styles = StyleSheet.create({
   emptyConversation: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingBottom: 156 },
   emptyState: { alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
+  emptyModelLineWrap: { position: 'relative', alignItems: 'center' },
+  temporaryLabel: { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  temporaryLabelText: { color: '#6d28d9', fontSize: 12, fontWeight: '600' },
+  temporaryLabelTextDark: { color: '#c4b5fd' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
   emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
@@ -3540,6 +3580,9 @@ const styles = StyleSheet.create({
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   composerWrap: { paddingHorizontal: 12, paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4 },
+  temporaryComposer: { borderWidth: 1.25, borderStyle: 'dashed' },
+  temporaryComposerLight: { backgroundColor: 'rgba(237,233,254,0.86)', borderColor: 'rgba(139,92,246,0.78)' },
+  temporaryComposerDark: { backgroundColor: 'rgba(46,16,101,0.52)', borderColor: 'rgba(124,58,237,0.68)' },
   attachmentStrip: { maxHeight: 112, marginBottom: 8 },
   attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 17, paddingRight: 17 },
