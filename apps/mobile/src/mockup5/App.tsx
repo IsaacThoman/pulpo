@@ -127,6 +127,7 @@ import {
 import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
+import { chatRemovalBehavior } from './src/chatRemoval';
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
@@ -3432,6 +3433,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
   const folders = usePrototypeStore((state) => state.folders);
   const storedChats = usePrototypeStore((state) => state.chats);
   const trashChat = usePrototypeStore((state) => state.trashChat);
+  const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const moveChat = usePrototypeStore((state) => state.moveChat);
@@ -3478,13 +3480,19 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
     filtered.forEach((chat) => grouped.set(chat.section, [...(grouped.get(chat.section) ?? []), chat]));
     return Array.from(grouped, ([title, data]) => ({ title, data }));
   }, [filtered]);
+  const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = (chat: Chat, action: 'share' | 'move' | 'delete' | 'pin' | 'rename' | 'duplicate' | 'archive') => {
     if (action === 'delete') {
+      if (!requiresConfirmation) {
+        Haptics.selectionAsync();
+        trashChat(chat.id);
+        return;
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       Alert.alert('Delete chat?', `“${chat.title}” will be removed from your history.`, [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Move to Trash', style: 'destructive', onPress: () => trashChat(chat.id) },
+        { text: 'Delete', style: 'destructive', onPress: () => trashChat(chat.id) },
       ]);
       return;
     }
@@ -3539,7 +3547,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
     Alert.alert(chat.title, undefined, [
       { text: 'Rename', onPress: () => runChatAction(chat, 'rename') },
       { text: 'Share', onPress: () => runChatAction(chat, 'share') },
-      { text: 'Delete', style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
+      { text: removeChatLabel, style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
@@ -3663,7 +3671,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
                   <SwiftUIControlGroup>
                     <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runChatAction(chat, 'share')} />
                     <SwiftUIButton label="Move" systemImage="folder" onPress={() => runChatAction(chat, 'move')} />
-                    <SwiftUIButton label="Delete" role="destructive" systemImage="trash" onPress={() => runChatAction(chat, 'delete')} />
+                    <SwiftUIButton label={removeChatLabel} role="destructive" systemImage="trash" onPress={() => runChatAction(chat, 'delete')} />
                   </SwiftUIControlGroup>
                   <SwiftUIDivider />
                   <SwiftUIButton label="Pin chat" systemImage="pin" onPress={() => runChatAction(chat, 'pin')} />
