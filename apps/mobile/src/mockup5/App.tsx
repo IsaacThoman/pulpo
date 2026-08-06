@@ -2284,8 +2284,10 @@ const MessageRow = memo(function MessageRow({
           )}
           {message.text.length > 0 && (
             <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
-              <View style={styles.userBubble}>
-                <SafeMarkdown>{message.text}</SafeMarkdown>
+              <View style={styles.userMessageContextContent}>
+                <View style={styles.userBubble}>
+                  <SafeMarkdown containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
+                </View>
               </View>
             </MessageContextMenu>
           )}
@@ -3890,8 +3892,10 @@ const styles = StyleSheet.create({
   userRow: { alignItems: 'flex-end', marginBottom: 30 },
   userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', gap: 7 },
   userMessageContextHost: { maxWidth: '85%', alignSelf: 'flex-end' },
+  userMessageContextContent: { width: '100%', alignItems: 'flex-end' },
   assistantMessageContextHost: { width: '100%' },
   userBubble: { maxWidth: '100%', backgroundColor: COLORS.secondary, borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 },
+  userMessageMarkdown: { alignSelf: 'flex-start' },
   sentAttachments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
   assistantAttachments: { justifyContent: 'flex-start', marginTop: 8 },
   sentImageContextHost: { width: 112, height: 112 },

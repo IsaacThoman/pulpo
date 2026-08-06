@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { Linking } from 'react-native'
+import { Linking, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { useAppTheme } from '../theme'
 import { normalizeMathDelimiters } from './markdown'
@@ -7,10 +7,12 @@ import { normalizeMathDelimiters } from './markdown'
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
   compact = false,
+  containerStyle,
 }: {
   children: string
   streaming?: boolean
   compact?: boolean
+  containerStyle?: ViewStyle | TextStyle
 }) {
   const theme = useAppTheme()
   const markdown = useMemo(() => normalizeMathDelimiters(children), [children])
@@ -44,6 +46,7 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   return <EnrichedMarkdownText
     accessibilityRole="text"
     allowTrailingMargin={false}
+    containerStyle={containerStyle}
     flavor="github"
     markdown={markdown}
     markdownStyle={markdownStyle}
