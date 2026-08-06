@@ -94,7 +94,22 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { Bot, Ghost } from 'lucide-react-native';
+import {
+  Bot,
+  Brain,
+  FilePenLine,
+  FileText,
+  FolderSearch,
+  Ghost,
+  List,
+  Loader2,
+  Minimize2,
+  Search,
+  Server,
+  Terminal,
+  Wrench,
+  XCircle,
+} from 'lucide-react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider, KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, {
@@ -1976,12 +1991,49 @@ function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachme
   );
 }
 
-function workIcon(steps: TimelineStep[]): SymbolName {
-  if (steps.some((step) => step.kind === 'compaction')) return 'arrow.down.right.and.arrow.up.left';
+function toolActivityIcon(name?: string) {
+  switch (name) {
+    case 'read':
+      return FileText;
+    case 'write':
+    case 'edit':
+      return FilePenLine;
+    case 'bash':
+      return Terminal;
+    case 'ls':
+      return List;
+    case 'find':
+      return FolderSearch;
+    case 'grep':
+      return Search;
+    default:
+      return Wrench;
+  }
+}
+
+function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
+  const compaction = steps.find((step) => step.kind === 'compaction');
+  if (compaction?.kind === 'compaction') {
+    if (compaction.compaction.status === 'in_progress') return <Loader2 color={COLORS.muted} size={14} />;
+    if (compaction.compaction.status === 'failed') return <XCircle color="#FF6961" size={14} />;
+    return <Minimize2 color={COLORS.muted} size={14} />;
+  }
   const workspace = steps.find((step) => step.kind === 'workspace');
-  if (workspace) return workspaceIsActive(workspace.workspace.state) ? 'shippingbox.and.arrow.backward' : 'shippingbox';
-  if (steps.some((step) => step.kind === 'tool')) return 'hammer';
-  return 'brain.head.profile';
+  if (workspace?.kind === 'workspace') {
+    if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color="#FF6961" size={14} />;
+    if (workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
+  }
+  const tools = steps.filter((step) => step.kind === 'tool');
+  const runningTool = tools.find((step) => step.tool.status === 'running');
+  if (runningTool?.kind === 'tool') {
+    const RunningToolIcon = toolActivityIcon(runningTool.tool.tool);
+    return <RunningToolIcon color={COLORS.muted} size={14} />;
+  }
+  if (active && tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
+  if (active) return <Brain color={COLORS.muted} size={14} />;
+  if (tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
+  if (workspace && !steps.some((step) => step.kind === 'reasoning' && step.text)) return <Server color={COLORS.muted} size={14} />;
+  return <Brain color={COLORS.muted} size={14} />;
 }
 
 function workLabel(steps: TimelineStep[], active: boolean): string {
@@ -2031,6 +2083,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
     step.tool.output ?? '',
   ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
   const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
+  const ToolIcon = toolActivityIcon(step.tool.tool);
   return (
     <View style={styles.workStep}>
       <Pressable
@@ -2040,7 +2093,11 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
         onPress={() => setOpen((value) => !value)}
         style={styles.workToolTrigger}
       >
-        <Icon name={failed ? 'exclamationmark.triangle' : 'terminal'} size={13} color={failed ? '#FF6961' : COLORS.muted} />
+        {running
+          ? <Loader2 color={COLORS.muted} size={13} />
+          : failed
+            ? <XCircle color="#FF6961" size={13} />
+            : <ToolIcon color={COLORS.muted} size={13} />}
         <Text style={styles.workToolName}>{step.tool.tool ?? 'Tool'}</Text>
         <Text numberOfLines={1} style={styles.workToolSummary}>{toolStepSummary(step.tool)}</Text>
         {seconds !== null && <Text style={styles.workToolDuration}>{seconds}s</Text>}
@@ -2094,7 +2151,7 @@ function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }
         onPress={() => setOpen((value) => !value)}
         style={styles.reasoningTrigger}
       >
-        <Icon name={workIcon(steps)} size={14} color={COLORS.muted} />
+        <WorkTriggerIcon active={active} steps={steps} />
         <Text style={styles.reasoningLabel}>{workLabel(steps, active)}</Text>
         <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />
       </Pressable>
@@ -2106,7 +2163,8 @@ function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }
             }
             if (step.kind === 'workspace') {
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
-              return <View key={`workspace:${index}`} style={styles.workRow}><Icon name="shippingbox" size={13} color={COLORS.muted} /><Text style={styles.workRowText}>{detail}</Text></View>;
+              const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
+              return <View key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color="#FF6961" size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
             }
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
