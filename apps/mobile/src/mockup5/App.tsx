@@ -144,6 +144,7 @@ import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
+import { resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
@@ -634,16 +635,17 @@ function Glass({ children, style, interactive = false }: { children: ReactNode; 
   );
 }
 
-function RoundButton({ icon, onPress, accessibilityLabel, size = 44 }: { icon: SymbolName; onPress: () => void; accessibilityLabel: string; size?: number }) {
+function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size = 44 }: { icon: SymbolName; onPress: () => void; accessibilityLabel: string; selected?: boolean; size?: number }) {
   if (Platform.OS === 'ios') {
     return (
       <SwiftUIHost matchContents style={{ width: size, height: size }}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
-            buttonStyle('glass'),
+            buttonStyle(selected ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
+            ...(selected ? [tint('#AF52DE'), foregroundStyle('#ffffff')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
           ]}
         >
@@ -653,10 +655,10 @@ function RoundButton({ icon, onPress, accessibilityLabel, size = 44 }: { icon: S
     );
   }
   return (
-    <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="button" onPress={onPress} hitSlop={8}>
+    <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} hitSlop={8}>
       {({ pressed }) => (
-        <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, pressed && styles.pressed]}>
-          <Icon name={icon} size={size * 0.44} />
+        <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]}>
+          <Icon name={icon} size={size * 0.44} color={selected ? '#AF52DE' : COLORS.text} />
         </Glass>
       )}
     </Pressable>
@@ -700,45 +702,6 @@ async function copyText(text: string, announcement = 'Copied') {
   await Clipboard.setStringAsync(text);
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   AccessibilityInfo.announceForAccessibility(announcement);
-}
-
-function NativeChatActionsMenu({
-  temporary,
-  onTemporaryChange,
-  onShare,
-  onNewChat,
-}: {
-  temporary: boolean;
-  onTemporaryChange: (value: boolean) => void;
-  onShare: () => void;
-  onNewChat: () => void;
-}) {
-  return (
-    <SwiftUIHost matchContents style={styles.nativeHeaderActionHost}>
-      <SwiftUIMenu
-        label={<SwiftUIImage systemName="ellipsis" size={18} modifiers={[frame({ width: 28, height: 28 })]} />}
-        modifiers={[
-          buttonStyle('glass'),
-          buttonBorderShape('circle'),
-          controlSize('regular'),
-          swiftUIAccessibilityLabel('Chat actions'),
-        ]}
-      >
-        <SwiftUIToggle
-          isOn={temporary}
-          label="Temporary chat"
-          systemImage="eye.slash"
-          onIsOnChange={(value) => {
-            onTemporaryChange(value);
-            Haptics.selectionAsync();
-          }}
-        />
-        <SwiftUIButton label="Share chat" systemImage="square.and.arrow.up" onPress={onShare} />
-        <SwiftUIDivider />
-        <SwiftUIButton label="New chat" systemImage="square.and.pencil" onPress={onNewChat} />
-      </SwiftUIMenu>
-    </SwiftUIHost>
-  );
 }
 
 function IconAction({ disabled = false, icon, label, onPress }: { disabled?: boolean; icon: SymbolName; label: string; onPress: () => void }) {
@@ -965,6 +928,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     [generationPreferences, selectedModel.id, selectedPrototypeModel],
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [newChatTemporary, setNewChatTemporary] = useState(false);
   const [input, setInput] = useState('');
   const [assistantStatus, setAssistantStatus] = useState<'idle' | 'thinking' | 'streaming'>('idle');
   const [streamingSession, setStreamingSession] = useState<StreamingSession | null>(null);
@@ -1141,6 +1105,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setAssistantStatus('idle');
     setStreamingSession(null);
     setActiveChatId(null);
+    setNewChatTemporary(false);
     setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
     setInput('');
   };
@@ -1492,7 +1457,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           <ChatView
             messages={messages}
             chatId={activeChat?.id ?? null}
-            chatTitle={activeChat?.title ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
             model={selectedModel}
             models={availableModels}
@@ -1512,6 +1476,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onOpenPanel={() => animatePanel(true)}
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
             onSelectModel={selectModel}
+            temporary={activePrototypeChat?.temporary ?? newChatTemporary}
+            onTemporaryChange={setNewChatTemporary}
             onNewChat={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); newChat(); }}
           />
           {/* Tap catcher while the panel is open */}
@@ -2294,12 +2260,11 @@ function SuggestedPromptButton({ label, accessible, onPress }: { label: string; 
 }
 
 function ChatView({
-  messages, chatId, chatTitle, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat,
+  messages, chatId, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
+  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, temporary, onTemporaryChange,
 }: {
   messages: Message[];
   chatId: string | null;
-  chatTitle: string | null;
   chatLoaded: boolean;
   model: Model;
   models: Model[];
@@ -2320,6 +2285,8 @@ function ChatView({
   onSelectModel: (model: Model) => void;
   onSelectPreset: (presetId: string, choiceId: string) => void;
   onNewChat: () => void;
+  temporary: boolean;
+  onTemporaryChange: (value: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -2341,7 +2308,6 @@ function ChatView({
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
-  const [temporary, setTemporary] = useState(false);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
@@ -2547,10 +2513,6 @@ function ChatView({
     }).catch((error) => Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined));
   }, [activeAgentEnabled, followComposerGeneration, onSend, presetSelections, temporary]);
 
-  const shareChat = useCallback(() => {
-    if (!chatId) return;
-    void shareServerChat(chatId).then((url) => Share.share({ message: `${chatTitle ?? 'Pulpo chat'}\n\n${url}`, url })).catch((error) => Alert.alert('Couldn’t share chat', error instanceof Error ? error.message : undefined));
-  }, [chatId, chatTitle]);
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
 
@@ -2667,6 +2629,7 @@ function ChatView({
   ), [model, models, onActivateBranch, onEdit, onRegenerate]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
+  const headerAction = resolveChatHeaderAction(chatId, messages.length);
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const canSend = Boolean(model.id)
@@ -2705,12 +2668,15 @@ function ChatView({
               </Pressable>
             )}
           </View>
-          {Platform.OS === 'ios' ? (
-            <NativeChatActionsMenu
-              temporary={temporary}
-              onTemporaryChange={setTemporary}
-              onShare={shareChat}
-              onNewChat={onNewChat}
+          {headerAction === 'temporary-toggle' ? (
+            <RoundButton
+              icon="eye.slash"
+              accessibilityLabel={temporary ? 'Disable temporary chat' : 'Enable temporary chat'}
+              selected={temporary}
+              onPress={() => {
+                onTemporaryChange(!temporary);
+                Haptics.selectionAsync();
+              }}
             />
           ) : (
             <RoundButton icon="square.and.pencil" accessibilityLabel="New chat" onPress={onNewChat} />
@@ -3470,8 +3436,8 @@ const styles = StyleSheet.create({
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
   chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  nativeHeaderActionHost: { width: 44, height: 44 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
+  roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },
   glassFallback: { backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
   pressed: { opacity: 0.75 },
   modelTriggerWrap: { flex: 1, alignItems: 'center' },
