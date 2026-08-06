@@ -636,7 +636,9 @@ function Glass({ children, style, interactive = false }: { children: ReactNode; 
   );
 }
 
-function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size = 44 }: { icon: SymbolName; onPress: () => void; accessibilityLabel: string; selected?: boolean; size?: number }) {
+function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size = 44 }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; size?: number }) {
+  const colorScheme = useColorScheme();
+  const ghostColor = selected ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   if (Platform.OS === 'ios') {
     return (
       <SwiftUIHost matchContents style={{ width: size, height: size }}>
@@ -650,7 +652,15 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size
             swiftUIAccessibilityLabel(accessibilityLabel),
           ]}
         >
-          <SwiftUIImage systemName={icon as NativeButtonSystemImage} size={18} modifiers={[frame({ width: 28, height: 28 })]} />
+          {icon === 'ghost' ? (
+            <SwiftUIRNHostView matchContents>
+              <View pointerEvents="none" style={styles.roundButtonCustomIcon}>
+                <Ghost color={ghostColor} size={18} strokeWidth={2} />
+              </View>
+            </SwiftUIRNHostView>
+          ) : (
+            <SwiftUIImage systemName={icon as NativeButtonSystemImage} size={18} modifiers={[frame({ width: 28, height: 28 })]} />
+          )}
         </SwiftUIButton>
       </SwiftUIHost>
     );
@@ -659,7 +669,9 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size
     <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} hitSlop={8}>
       {({ pressed }) => (
         <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]}>
-          <Icon name={icon} size={size * 0.44} color={selected ? '#AF52DE' : COLORS.text} />
+          {icon === 'ghost'
+            ? <Ghost color={selected ? '#AF52DE' : ghostColor} size={size * 0.44} strokeWidth={2} />
+            : <Icon name={icon} size={size * 0.44} color={selected ? '#AF52DE' : COLORS.text} />}
         </Glass>
       )}
     </Pressable>
@@ -2227,10 +2239,14 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
   );
 }
 
-function SuggestedPromptButton({ label, accessible, onPress }: { label: string; accessible: boolean; onPress: () => void }) {
+function SuggestedPromptButton({ label, accessible, onPress, temporary = false }: { label: string; accessible: boolean; onPress: () => void; temporary?: boolean }) {
+  const colorScheme = useColorScheme();
+  const temporaryStyle = temporary
+    ? colorScheme === 'dark' ? styles.temporarySuggestionCardDark : styles.temporarySuggestionCardLight
+    : undefined;
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost style={[styles.suggestionCard, accessible && styles.suggestionCardAccessible]}>
+      <SwiftUIHost style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -2253,7 +2269,7 @@ function SuggestedPromptButton({ label, accessible, onPress }: { label: string; 
       accessibilityHint="Sends this suggestion"
       accessibilityRole="button"
       onPress={onPress}
-      style={({ pressed }) => [styles.suggestionCard, accessible && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
+      style={({ pressed }) => [styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
     >
       <Text style={styles.suggestionLabel}>{label}</Text>
     </Pressable>
@@ -2696,7 +2712,7 @@ function ChatView({
           </View>
           {headerAction === 'temporary-toggle' ? (
             <RoundButton
-              icon="eye.slash"
+              icon="ghost"
               accessibilityLabel={temporary ? 'Disable temporary chat' : 'Enable temporary chat'}
               selected={temporary}
               onPress={() => {
@@ -2763,6 +2779,7 @@ function ChatView({
                     key={`${suggestion.id}:${index}`}
                     label={suggestion.label}
                     onPress={() => submitSuggestion(suggestion.message)}
+                    temporary={temporary}
                   />
                 ))}
               </View>
@@ -3475,6 +3492,7 @@ const styles = StyleSheet.create({
   chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
+  roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },
   glassFallback: { backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
   pressed: { opacity: 0.75 },
@@ -3574,6 +3592,8 @@ const styles = StyleSheet.create({
   suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   suggestionGridAccessible: { flexDirection: 'column', flexWrap: 'nowrap' },
   suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
+  temporarySuggestionCardLight: { backgroundColor: 'rgba(237,233,254,0.82)', borderColor: 'rgba(139,92,246,0.48)' },
+  temporarySuggestionCardDark: { backgroundColor: 'rgba(46,16,101,0.58)', borderColor: 'rgba(124,58,237,0.52)' },
   suggestionCardAccessible: { width: '100%' },
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
