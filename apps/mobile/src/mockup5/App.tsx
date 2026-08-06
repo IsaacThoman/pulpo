@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -47,12 +48,15 @@ import {
   ControlGroup as SwiftUIControlGroup,
   Divider as SwiftUIDivider,
   Form as SwiftUIForm,
+  GlassEffectContainer as SwiftUIGlassEffectContainer,
   Group as SwiftUIGroup,
   HStack as SwiftUIHStack,
   Host as SwiftUIHost,
   Image as SwiftUIImage,
   Label as SwiftUILabel,
   Menu as SwiftUIMenu,
+  Namespace as SwiftUINamespace,
+  ProgressView as SwiftUIProgressView,
   RNHostView as SwiftUIRNHostView,
   Section as SwiftUISection,
   Spacer as SwiftUISpacer,
@@ -64,21 +68,30 @@ import {
   useNativeState,
 } from '@expo/ui/swift-ui';
 import {
+  accessibilityHidden as swiftUIAccessibilityHidden,
   accessibilityHint as swiftUIAccessibilityHint,
   accessibilityLabel as swiftUIAccessibilityLabel,
+  animation as swiftUIAnimation,
+  Animation as SwiftUIAnimation,
   buttonBorderShape,
   buttonStyle,
   contentShape,
   controlSize,
+  clipped as swiftUIClipped,
   disabled as swiftUIDisabled,
   foregroundStyle,
   font,
   frame,
+  glassEffect,
+  glassEffectId,
   labelStyle,
   menuActionDismissBehavior,
+  opacity as swiftUIOpacity,
   padding,
   resizable,
+  scaleEffect as swiftUIScaleEffect,
   shapes,
+  symbolEffect,
   textFieldStyle,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -128,13 +141,14 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { useSessionStore } from '../store/session';
+import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
 import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, deleteResponseCursor } from '../data/database';
 import { queryKeys } from '../data/queries';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { usePreferencesStore } from '../store/preferences';
@@ -146,7 +160,7 @@ import { generationSummary, resolveGenerationSelections, type GenerationSelectio
 import { visibleHistoryChats } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
-import { resolveChatHeaderAction } from '../features/chat/headerAction';
+import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
@@ -625,13 +639,17 @@ function PulpoMark({ size = 40 }: { size?: number }) {
   );
 }
 
-function Glass({ children, style, interactive = false }: { children: ReactNode; style?: ComponentProps<typeof View>['style']; interactive?: boolean }) {
+type GlassProps = Omit<ComponentProps<typeof GlassView>, 'isInteractive'> & {
+  interactive?: boolean;
+};
+
+function Glass({ children, style, interactive = false, tintColor, ...props }: GlassProps) {
   const colorScheme = useColorScheme();
   const { reduceTransparency } = useAccessibilityPreferences();
   const available = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && !reduceTransparency;
-  if (!available) return <View style={[styles.glassFallback, style]}>{children}</View>;
+  if (!available) return <View {...props} style={[styles.glassFallback, style]}>{children}</View>;
   return (
-    <GlassView colorScheme={colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : undefined} glassEffectStyle="regular" isInteractive={interactive} style={style}>
+    <GlassView {...props} colorScheme={colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : undefined} glassEffectStyle="regular" isInteractive={interactive} style={style} tintColor={tintColor}>
       {children}
     </GlassView>
   );
@@ -677,6 +695,241 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size
       )}
     </Pressable>
   );
+}
+
+function HeaderActionGlyph({ name }: { name: 'bookmark' | 'square.and.pencil' }) {
+  if (Platform.OS === 'ios') {
+    return (
+      <View pointerEvents="none" style={styles.headerActionGlyphHost}>
+        <SwiftUIHost matchContents style={styles.headerActionGlyphHost}>
+          <SwiftUIImage systemName={name} size={18} modifiers={[frame({ width: 28, height: 28 })]} />
+        </SwiftUIHost>
+      </View>
+    );
+  }
+  return <Icon name={name} size={44 * 0.44} color={COLORS.text} />;
+}
+
+type TemporaryChatHeaderControlProps = {
+  active: boolean;
+  expanded: boolean;
+  saving: boolean;
+  saveDisabled: boolean;
+  onToggleTemporary: () => void;
+  onSave: () => void;
+  onNewChat: () => void;
+};
+
+function NativeTemporaryChatHeaderControl({
+  active,
+  expanded,
+  saving,
+  saveDisabled,
+  onToggleTemporary,
+  onSave,
+  onNewChat,
+}: TemporaryChatHeaderControlProps) {
+  const colorScheme = useColorScheme();
+  const { reduceMotion } = useAccessibilityPreferences();
+  const namespaceId = useId();
+  const symbolTransition = useNativeState(expanded ? 1 : 0);
+  const width = expanded ? 88 : 44;
+  const spring = reduceMotion
+    ? SwiftUIAnimation.linear({ duration: 0 })
+    : SwiftUIAnimation.spring({ response: 0.38, dampingFraction: 0.86 });
+  const tintColor = active
+    ? colorScheme === 'dark' ? '#581c8752' : '#af52de29'
+    : undefined;
+  const primaryLabel = expanded
+    ? saving ? 'Saving chat' : 'Save chat'
+    : active ? 'Disable temporary chat' : 'Enable temporary chat';
+
+  useEffect(() => {
+    symbolTransition.set(expanded ? 1 : 0);
+  }, [expanded, symbolTransition]);
+
+  return (
+    <SwiftUIHost style={{ width, height: 44 }}>
+      <SwiftUINamespace id={namespaceId}>
+        <SwiftUIGlassEffectContainer spacing={8}>
+          <SwiftUIHStack
+            spacing={0}
+            modifiers={[
+              frame({ width, height: 44 }),
+              glassEffect({
+                glass: { variant: 'regular', interactive: true, tint: tintColor },
+                shape: expanded ? 'capsule' : 'circle',
+              }),
+              glassEffectId('temporary-chat-header', namespaceId),
+              swiftUIAnimation(spring, expanded),
+            ]}
+          >
+            <SwiftUIButton
+              onPress={expanded ? onSave : onToggleTemporary}
+              modifiers={[
+                buttonStyle('plain'),
+                frame({ width: 44, height: 44 }),
+                swiftUIDisabled(expanded && (saveDisabled || saving)),
+                swiftUIAccessibilityLabel(primaryLabel),
+              ]}
+            >
+              {saving ? (
+                <SwiftUIProgressView modifiers={[frame({ width: 18, height: 18 })]} />
+              ) : (
+                <SwiftUIImage
+                  systemName={(expanded ? 'bookmark' : 'ghost') as NativeButtonSystemImage}
+                  size={18}
+                  modifiers={[
+                    frame({ width: 28, height: 28 }),
+                    foregroundStyle('primary'),
+                    symbolEffect(
+                      { effect: 'appear', scale: 'up', scope: 'wholeSymbol' },
+                      { value: symbolTransition, options: { repeat: 'nonRepeating', speed: 1.15 } },
+                    ),
+                  ]}
+                />
+              )}
+            </SwiftUIButton>
+            <SwiftUIButton
+              onPress={onNewChat}
+              modifiers={[
+                buttonStyle('plain'),
+                frame({ width: expanded ? 44 : 0, height: 44 }),
+                swiftUIOpacity(expanded ? 1 : 0),
+                swiftUIScaleEffect(expanded ? 1 : 0.78),
+                swiftUIClipped(),
+                swiftUIDisabled(!expanded),
+                swiftUIAccessibilityHidden(!expanded),
+                swiftUIAccessibilityLabel('New temporary chat'),
+                swiftUIAnimation(spring, expanded),
+              ]}
+            >
+              <SwiftUIImage systemName="square.and.pencil" size={18} modifiers={[frame({ width: 28, height: 28 }), foregroundStyle('primary')]} />
+            </SwiftUIButton>
+          </SwiftUIHStack>
+        </SwiftUIGlassEffectContainer>
+      </SwiftUINamespace>
+    </SwiftUIHost>
+  );
+}
+
+function FallbackTemporaryChatHeaderControl({
+  active,
+  expanded,
+  saving,
+  saveDisabled,
+  onToggleTemporary,
+  onSave,
+  onNewChat,
+}: TemporaryChatHeaderControlProps) {
+  const colorScheme = useColorScheme();
+  const { reduceMotion } = useAccessibilityPreferences();
+  const iconColor = active ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const expansion = useSharedValue(expanded ? 1 : 0);
+  const containerStyle = useAnimatedStyle(() => ({
+    width: interpolate(expansion.value, [0, 1], [44, 88]),
+  }));
+  const ghostStyle = useAnimatedStyle(() => ({
+    opacity: 1 - expansion.value,
+    transform: [{ scale: interpolate(expansion.value, [0, 1], [1, 0.72]) }],
+  }));
+  const saveStyle = useAnimatedStyle(() => ({
+    opacity: expansion.value,
+    transform: [{ scale: interpolate(expansion.value, [0, 1], [0.72, 1]) }],
+  }));
+  const newChatStyle = useAnimatedStyle(() => ({
+    opacity: expansion.value,
+    transform: [
+      { translateX: interpolate(expansion.value, [0, 1], [-10, 0]) },
+      { scale: interpolate(expansion.value, [0, 1], [0.82, 1]) },
+    ],
+  }));
+
+  useEffect(() => {
+    const target = expanded ? 1 : 0;
+    expansion.value = reduceMotion
+      ? target
+      : withSpring(target, {
+          damping: 18,
+          stiffness: 220,
+          mass: 0.8,
+        });
+  }, [expanded, expansion, reduceMotion]);
+
+  return (
+    <Reanimated.View style={[styles.temporaryHeaderActionsShell, containerStyle]}>
+      <Glass
+        interactive
+        accessibilityActions={expanded ? [
+          { name: 'activate', label: 'Save chat' },
+          { name: 'new-chat', label: 'New temporary chat' },
+        ] : undefined}
+        accessibilityHint={expanded ? 'Tap the left side to save or the right side to start a new temporary chat.' : undefined}
+        accessibilityLabel={expanded ? saving ? 'Saving chat' : 'Temporary chat actions' : active ? 'Disable temporary chat' : 'Enable temporary chat'}
+        accessibilityRole="button"
+        onAccessibilityTap={() => {
+          if (!expanded) {
+            onToggleTemporary();
+          } else if (!saveDisabled && !saving) {
+            onSave();
+          }
+        }}
+        onAccessibilityAction={(event) => {
+          if (!expanded) {
+            onToggleTemporary();
+          } else if (event.nativeEvent.actionName === 'new-chat') {
+            onNewChat();
+          } else if (!saveDisabled && !saving) {
+            onSave();
+          }
+        }}
+        onTouchStart={(event) => {
+          touchStart.current = {
+            x: event.nativeEvent.pageX,
+            y: event.nativeEvent.pageY,
+          };
+        }}
+        onTouchEnd={(event) => {
+          const start = touchStart.current;
+          touchStart.current = null;
+          if (!start || Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) > 10) return;
+          if (expanded && event.nativeEvent.locationX >= 44) {
+            onNewChat();
+          } else if (expanded) {
+            if (!saveDisabled && !saving) onSave();
+          } else {
+            onToggleTemporary();
+          }
+        }}
+        style={styles.temporaryHeaderActions}
+        tintColor={active ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
+      >
+        <View style={[styles.temporaryHeaderAction, styles.temporaryHeaderPrimaryAction]}>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, ghostStyle]}>
+            <Ghost color={iconColor} size={18} strokeWidth={2} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, saveStyle]}>
+            {saving
+              ? <ActivityIndicator color={iconColor} size="small" />
+              : <HeaderActionGlyph name="bookmark" />}
+          </Reanimated.View>
+        </View>
+        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderNewChatAction, newChatStyle]}>
+          <View style={styles.temporaryHeaderAction}>
+            <HeaderActionGlyph name="square.and.pencil" />
+          </View>
+        </Reanimated.View>
+      </Glass>
+    </Reanimated.View>
+  );
+}
+
+function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
+  // SwiftUI-hosted buttons can render as an inert, empty host in physical-device
+  // Release builds. Keep interaction in React Native while Glass supplies the
+  // native material, and use Reanimated's spring for the expansion transition.
+  return <FallbackTemporaryChatHeaderControl {...props} />;
 }
 
 function AppHeader({ children }: { children: ReactNode }) {
@@ -944,12 +1197,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [newChatTemporary, setNewChatTemporary] = useState(false);
+  const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [assistantStatus, setAssistantStatus] = useState<'idle' | 'thinking' | 'streaming'>('idle');
   const [streamingSession, setStreamingSession] = useState<StreamingSession | null>(null);
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeResponseId = useRef<string | null>(null);
   const activeResponseSubscription = useRef<(() => void) | null>(null);
+  const pendingTemporaryStart = useRef<{
+    chatId: string;
+    promise: ReturnType<typeof startServerChat>;
+  } | null>(null);
 
   const trackActiveResponse = useCallback((response: { responseId: string; status: string; sequence: number }) => {
     activeResponseSubscription.current?.();
@@ -1129,17 +1387,69 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     animatePanel(false);
   };
 
-  const newChat = () => {
+  const newChat = (temporaryByDefault = false) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
     setAssistantStatus('idle');
     setStreamingSession(null);
     setActiveChatId(null);
-    setNewChatTemporary(false);
+    setNewChatTemporary(temporaryByDefault);
     setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
     setInput('');
   };
+
+  const saveActiveTemporaryChat = useCallback(async () => {
+    if (!activeChatId || savingTemporaryChatId) return;
+    const chat = usePrototypeStore.getState().chats.find((candidate) => candidate.id === activeChatId);
+    if (!chat?.temporary) return;
+    if (chat.expired) {
+      Alert.alert('Temporary chat expired', 'This conversation can no longer be saved.');
+      return;
+    }
+    setSavingTemporaryChatId(activeChatId);
+    try {
+      const pending = pendingTemporaryStart.current;
+      if (pending?.chatId === activeChatId) await pending.promise;
+      const persisted = await persistServerChat(activeChatId);
+      usePrototypeStore.setState((state) => ({
+        chats: state.chats.map((candidate) => candidate.id === activeChatId
+          ? { ...candidate, temporary: false, expiresAt: null, expired: false }
+          : candidate),
+      }));
+      setNewChatTemporary(false);
+      if (productionUserId) {
+        const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+        queryClient.setQueryData<ServerChat>(queryKeys.chat(namespace, activeChatId), (current) => current
+          ? {
+            ...current,
+            ...persisted,
+            temporary: false,
+            expiresAt: null,
+            responses: current.responses,
+            attachments: current.attachments,
+          }
+          : { ...persisted, temporary: false, expiresAt: null });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) }),
+          queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, activeChatId) }),
+        ]);
+      }
+      AccessibilityInfo.announceForAccessibility('Chat saved to history');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      if (error instanceof ApiError && (error.code === 'temporary_chat_expired' || error.status === 404)) {
+        usePrototypeStore.setState((state) => ({
+          chats: state.chats.map((candidate) => candidate.id === activeChatId
+            ? { ...candidate, expired: true }
+            : candidate),
+        }));
+      }
+      Alert.alert('Couldn’t save chat', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSavingTemporaryChatId((current) => current === activeChatId ? null : current);
+    }
+  }, [activeChatId, productionInstanceUrl, productionUserId, queryClient, savingTemporaryChatId]);
 
   const selectModel = useCallback((model: Model) => {
     setSelectedModelId(model.id);
@@ -1241,7 +1551,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       let serverChatId = activeChat?.id;
       let response: Awaited<ReturnType<typeof sendServerMessage>>;
       if (!serverChatId) {
-        const started = await startServerChat({
+        const startPromise = startServerChat({
           chatId: key,
           responseId,
           content: trimmed,
@@ -1252,6 +1562,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: attachments.map((attachment) => attachment.serverId),
           agentMode,
         });
+        if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
+        let started: Awaited<typeof startPromise>;
+        try {
+          started = await startPromise;
+        } finally {
+          if (pendingTemporaryStart.current?.promise === startPromise) pendingTemporaryStart.current = null;
+        }
         serverChatId = started.chat.id;
         response = started.response;
         serverChatCreated = true;
@@ -1518,8 +1835,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
             expired={Boolean(activePrototypeChat?.expired)}
+            savingTemporary={savingTemporaryChatId === activePrototypeChat?.id}
             onTemporaryChange={setNewChatTemporary}
-            onNewChat={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); newChat(); }}
+            onSaveTemporary={() => { void saveActiveTemporaryChat(); }}
+            onNewChat={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              newChat(nextChatStartsTemporary(Boolean(activePrototypeChat?.temporary)));
+            }}
           />
           {/* Tap catcher while the panel is open */}
           {panelOpen && (
@@ -2306,7 +2628,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 function ChatView({
   messages, chatId, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, temporary, expired, onTemporaryChange,
+  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, temporary, expired, savingTemporary, onTemporaryChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -2330,8 +2652,10 @@ function ChatView({
   onSelectModel: (model: Model) => void;
   onSelectPreset: (presetId: string, choiceId: string) => void;
   onNewChat: () => void;
+  onSaveTemporary: () => void;
   temporary: boolean;
   expired: boolean;
+  savingTemporary: boolean;
   onTemporaryChange: (value: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -2702,7 +3026,7 @@ function ChatView({
   ), [expired, model, models, onActivateBranch, onEdit, onRegenerate]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
-  const headerAction = resolveChatHeaderAction(chatId, messages.length);
+  const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const canSend = Boolean(model.id)
@@ -2742,19 +3066,37 @@ function ChatView({
               </Pressable>
             )}
           </View>
-          {headerAction === 'temporary-toggle' ? (
-            <RoundButton
-              icon="ghost"
-              accessibilityLabel={temporary ? 'Disable temporary chat' : 'Enable temporary chat'}
-              selected={temporary}
-              onPress={() => {
-                onTemporaryChange(!temporary);
-                Haptics.selectionAsync();
-              }}
-            />
-          ) : (
-            <RoundButton icon="square.and.pencil" accessibilityLabel="New chat" onPress={onNewChat} />
-          )}
+          <Reanimated.View
+            layout={LinearTransition.duration(220)}
+            style={headerAction === 'temporary-actions' ? styles.headerActionExpanded : styles.headerActionCollapsed}
+          >
+            {headerAction === 'temporary-toggle' ? (
+              <TemporaryChatHeaderControl
+                active={temporary}
+                expanded={false}
+                onToggleTemporary={() => {
+                  onTemporaryChange(!temporary);
+                  Haptics.selectionAsync();
+                }}
+                onNewChat={onNewChat}
+                onSave={onSaveTemporary}
+                saveDisabled={expired}
+                saving={savingTemporary}
+              />
+            ) : headerAction === 'temporary-actions' ? (
+              <TemporaryChatHeaderControl
+                active
+                expanded
+                onToggleTemporary={() => onTemporaryChange(false)}
+                onNewChat={onNewChat}
+                onSave={onSaveTemporary}
+                saveDisabled={expired}
+                saving={savingTemporary}
+              />
+            ) : (
+              <RoundButton icon="square.and.pencil" accessibilityLabel="New chat" onPress={onNewChat} />
+            )}
+          </Reanimated.View>
         </AppHeader>
 
         {showConnectionBanner && (
@@ -3529,9 +3871,18 @@ const styles = StyleSheet.create({
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
   chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  headerActionCollapsed: { width: 44, height: 44, alignItems: 'flex-end' },
+  headerActionExpanded: { width: 88, height: 44, alignItems: 'flex-end' },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
   roundButtonSelected: { backgroundColor: 'rgba(175,82,222,0.18)' },
+  headerActionGlyphHost: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+  temporaryHeaderActionsShell: { height: 44, borderRadius: 22 },
+  temporaryHeaderActions: { width: '100%', height: 44, borderRadius: 22 },
+  temporaryHeaderAction: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  temporaryHeaderPrimaryAction: { position: 'absolute', left: 0, top: 0 },
+  temporaryHeaderNewChatAction: { position: 'absolute', right: 0, top: 0, width: 44, height: 44 },
+  temporaryHeaderIconLayer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   glassFallback: { backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
   pressed: { opacity: 0.75 },
   modelTriggerWrap: { flex: 1, alignItems: 'center' },

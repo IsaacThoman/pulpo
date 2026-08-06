@@ -37,7 +37,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { sendMessage, startChat } from './api'
+import { persistChat, sendMessage, startChat } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
@@ -64,5 +64,15 @@ describe('temporary chat offline behavior', () => {
 
     expect(mocks.queueOfflineMutation).not.toHaveBeenCalled()
     expect(mocks.removeSnapshot).toHaveBeenCalledWith('generated-id')
+  })
+})
+
+describe('temporary chat promotion', () => {
+  it('promotes the existing chat through the persist endpoint', async () => {
+    mocks.apiRequest.mockResolvedValueOnce({ id: 'chat-1', temporary: false, expiresAt: null })
+
+    await expect(persistChat('chat-1')).resolves.toMatchObject({ temporary: false, expiresAt: null })
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/chats/chat-1/persist', { method: 'POST' })
+    expect(mocks.queueOfflineMutation).not.toHaveBeenCalled()
   })
 })

@@ -37,6 +37,10 @@ export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'ti
   return apiRequest(`/api/chats/${id}`, { method: 'PATCH', body: patch })
 }
 
+export async function persistChat(id: string): Promise<ServerChat> {
+  return apiRequest(`/api/chats/${id}/persist`, { method: 'POST' })
+}
+
 export async function trashChat(id: string): Promise<void> {
   await apiRequest(`/api/chats/${id}`, { method: 'DELETE' })
 }

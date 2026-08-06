@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveChatHeaderAction } from './headerAction'
+import { nextChatStartsTemporary, resolveChatHeaderAction } from './headerAction'
 
 describe('resolveChatHeaderAction', () => {
   it('shows the temporary toggle on an empty new chat', () => {
@@ -12,5 +12,14 @@ describe('resolveChatHeaderAction', () => {
 
   it('shows new chat while an existing conversation is loading', () => {
     expect(resolveChatHeaderAction('chat-1', 0)).toBe('new-chat')
+  })
+
+  it('expands into save and new-chat actions after the first temporary message', () => {
+    expect(resolveChatHeaderAction('temporary-1', 2, true)).toBe('temporary-actions')
+  })
+
+  it('keeps the next chat temporary when started from a temporary conversation', () => {
+    expect(nextChatStartsTemporary(true)).toBe(true)
+    expect(nextChatStartsTemporary(false)).toBe(false)
   })
 })
