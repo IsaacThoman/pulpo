@@ -98,6 +98,7 @@ import { Bot } from 'lucide-react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { KeyboardProvider, KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, {
+  cancelAnimation,
   FadeInUp,
   FadeOutUp,
   interpolate,
@@ -105,6 +106,9 @@ import Reanimated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
@@ -765,26 +769,28 @@ function ModelMark({ model, size = 28 }: { model: Model; size?: number }) {
 
 /** Neutral pending state; reasoning is rendered only from reasoning output. */
 function ResponsePendingDot({ delay, reduceMotion }: { delay: number; reduceMotion: boolean }) {
-  const translateY = useRef(new Animated.Value(0)).current;
+  const translateY = useSharedValue(0);
+  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
 
   useEffect(() => {
-    translateY.setValue(0);
+    cancelAnimation(translateY);
+    translateY.value = 0;
     if (reduceMotion) return undefined;
 
-    const animation = Animated.sequence([
-      Animated.delay(delay),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(translateY, { toValue: -4, duration: 300, useNativeDriver: true }),
-          Animated.timing(translateY, { toValue: 0, duration: 300, useNativeDriver: true }),
-        ]),
+    translateY.value = withDelay(
+      delay,
+      withRepeat(
+        withSequence(
+          withTiming(-4, { duration: 300 }),
+          withTiming(0, { duration: 300 }),
+        ),
+        -1,
       ),
-    ]);
-    animation.start();
-    return () => animation.stop();
+    );
+    return () => cancelAnimation(translateY);
   }, [delay, reduceMotion, translateY]);
 
-  return <Animated.View style={[styles.responsePendingDot, { transform: [{ translateY }] }]} />;
+  return <Reanimated.View style={[styles.responsePendingDot, animatedStyle]} />;
 }
 
 function ResponsePendingIndicator() {
