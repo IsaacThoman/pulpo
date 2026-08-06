@@ -71,7 +71,7 @@ jobs:
   testflight:
     name: Build and submit iOS to TestFlight
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: checks
+    needs: release
     runs-on: macos-26
     environment: testflight
     permissions:
@@ -85,6 +85,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -134,7 +136,16 @@ jobs:
 
           archive_path="${RUNNER_TEMP}/Pulpo.xcarchive"
           export_options_path="${RUNNER_TEMP}/ExportOptions.plist"
+          version_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+          app_version="${version_tag#v}"
           build_number="$(date -u +%s)"
+
+          if [[ ! "${app_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Latest release tag ${version_tag} is not a valid vX.Y.Z version." >&2
+            exit 1
+          fi
+
+          echo "Uploading ${app_version} (${build_number}) to TestFlight."
 
           xcodebuild \
             -workspace ios/Pulpo.xcworkspace \
@@ -147,6 +158,7 @@ jobs:
             -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
             -authenticationKeyIssuerID "${APP_STORE_CONNECT_API_ISSUER_ID}" \
             DEVELOPMENT_TEAM=PX72AL9366 \
+            MARKETING_VERSION="${app_version}" \
             CURRENT_PROJECT_VERSION="${build_number}" \
             archive
 
