@@ -29,7 +29,7 @@ describe('temporary chat retention', () => {
     const expiresAt = new Date('2026-08-07T12:00:00.000Z')
     const query = new PgDialect().sqlToQuery(temporaryChatExpiryValue(expiresAt))
 
-    expect(query.sql).toContain('case when "chats"."temporary" then $1 else null end')
+    expect(query.sql).toContain('case when "chats"."temporary" then cast($1 as timestamp with time zone) else null end')
     expect(query.params).toEqual([expiresAt.toISOString()])
     expect(query.params[0]).not.toBeInstanceOf(Date)
   })

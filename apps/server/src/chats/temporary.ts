@@ -23,7 +23,7 @@ export function accessibleChatCondition(now = new Date()) {
 }
 
 export function temporaryChatExpiryValue(expiresAt: Date | null) {
-  return sql<Date | null>`case when ${chats.temporary} then ${sql.param(expiresAt, chats.expiresAt)} else null end`
+  return sql<Date | null>`case when ${chats.temporary} then cast(${sql.param(expiresAt, chats.expiresAt)} as timestamp with time zone) else null end`
 }
 
 export async function scheduleTemporaryChatExpiry(input: {
