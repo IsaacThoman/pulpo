@@ -764,7 +764,32 @@ function ModelMark({ model, size = 28 }: { model: Model; size?: number }) {
 }
 
 /** Neutral pending state; reasoning is rendered only from reasoning output. */
+function ResponsePendingDot({ delay, reduceMotion }: { delay: number; reduceMotion: boolean }) {
+  const translateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    translateY.setValue(0);
+    if (reduceMotion) return undefined;
+
+    const animation = Animated.sequence([
+      Animated.delay(delay),
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(translateY, { toValue: -4, duration: 300, useNativeDriver: true }),
+          Animated.timing(translateY, { toValue: 0, duration: 300, useNativeDriver: true }),
+        ]),
+      ),
+    ]);
+    animation.start();
+    return () => animation.stop();
+  }, [delay, reduceMotion, translateY]);
+
+  return <Animated.View style={[styles.responsePendingDot, { transform: [{ translateY }] }]} />;
+}
+
 function ResponsePendingIndicator() {
+  const { reduceMotion } = useAccessibilityPreferences();
+
   return (
     <View
       accessibilityLabel="Assistant is responding"
@@ -772,7 +797,9 @@ function ResponsePendingIndicator() {
       accessibilityRole="progressbar"
       style={styles.responsePending}
     >
-      <ActivityIndicator color={COLORS.muted} size="small" />
+      <ResponsePendingDot delay={0} reduceMotion={reduceMotion} />
+      <ResponsePendingDot delay={150} reduceMotion={reduceMotion} />
+      <ResponsePendingDot delay={300} reduceMotion={reduceMotion} />
     </View>
   );
 }
@@ -3119,15 +3146,6 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
     };
   });
-  const historyHeaderAnimatedStyle = useAnimatedStyle(() => {
-    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
-    return {
-      height: interpolate(collapseProgress, [0, 1], [35, 0]),
-      opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
-      overflow: 'hidden',
-      transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -18]) }],
-    };
-  });
   const filtered = useMemo(
     () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
     [chats, search],
@@ -3282,7 +3300,6 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
               <Text style={styles.noResults}>Loading chats…</Text>
             </View>
           ) : <Text style={styles.noResults}>{search ? `No chats match “${search}”` : 'No chats yet'}</Text>}
-          ListHeaderComponent={<Reanimated.View style={historyHeaderAnimatedStyle}><Text style={styles.panelSectionLabel}>Chat history</Text></Reanimated.View>}
           renderItem={({ item: chat }) => Platform.OS === 'ios' ? (
             <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.chatContextMenuHost}>
               <SwiftUIContextMenu>
@@ -3499,7 +3516,8 @@ const styles = StyleSheet.create({
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   draftText: { marginTop: 10 },
   caret: { color: COLORS.muted, fontSize: 15.5 },
-  responsePending: { alignItems: 'flex-start', minHeight: 28, justifyContent: 'center', paddingVertical: 4 },
+  responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
+  responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },
   reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingVertical: 4 },
   reasoningContextHost: { width: '100%' },
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
@@ -3612,7 +3630,6 @@ const styles = StyleSheet.create({
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
   navMeta: { color: COLORS.dim, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
-  panelSectionLabel: { color: COLORS.dim, fontSize: 13, marginTop: 14, marginBottom: 4, marginHorizontal: 12 },
   sectionLabel: { color: COLORS.dim, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
   chatContextMenuHost: { width: '100%', height: 44 },
   chatRow: { minHeight: 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
