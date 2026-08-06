@@ -105,6 +105,13 @@ export function ChatDataBridge() {
       await localDb.responseCursors.bulkPut(rows)
     }
     const rememberCursor = (responseId: string, sequence: number) => {
+      const state = useChat.getState()
+      const responseChatId = state.responseChatIds[responseId]
+      if (responseChatId && state.chats.some((chat) => chat.id === responseChatId && chat.temporary)) {
+        pendingCursors.delete(responseId)
+        void localDb.responseCursors.delete(`${currentTabId}:${responseId}`)
+        return
+      }
       pendingCursors.set(responseId, Math.max(pendingCursors.get(responseId) ?? 0, sequence))
       if (cursorTimer === undefined) {
         cursorTimer = window.setTimeout(() => { void flushCursors() }, 250)

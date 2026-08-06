@@ -9,6 +9,7 @@ import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
 import { expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { parseAgentSettings } from './settings/application-settings.js'
+import { accessibleChatCondition } from './chats/temporary.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -83,7 +84,7 @@ const recoverable = await db
   .select({ id: responses.id })
   .from(responses)
   .innerJoin(chats, eq(chats.id, responses.chatId))
-  .where(and(inArray(responses.status, ['queued', 'in_progress']), isNull(chats.deletedAt)))
+  .where(and(inArray(responses.status, ['queued', 'in_progress']), isNull(chats.deletedAt), accessibleChatCondition()))
 for (const response of recoverable) {
   const existing = await generationQueue.getJob(response.id)
   if (!existing) await generationQueue.add('recover', { responseId: response.id }, { jobId: response.id })

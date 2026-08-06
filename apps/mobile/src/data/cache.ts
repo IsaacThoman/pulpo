@@ -1,5 +1,9 @@
 import type { ServerChat } from '../types'
 
+export function persistableChats(chats: ServerChat[]): ServerChat[] {
+  return chats.filter((chat) => !chat.temporary)
+}
+
 /** A summaries refresh must not erase the detailed response graph held for offline use. */
 export function mergeCachedChat(existing: ServerChat | null, incoming: ServerChat): ServerChat {
   if (!existing) return incoming

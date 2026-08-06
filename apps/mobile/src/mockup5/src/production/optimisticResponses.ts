@@ -364,6 +364,14 @@ export function pendingOptimisticResponseIds(namespace: string, chatId: string):
     .map((item) => item.response.id)
 }
 
+export function discardOptimisticChat(namespace: string, chatId: string): void {
+  for (const [key, pending] of pendingResponses) {
+    if (pending.namespace !== namespace || pending.chatId !== chatId) continue
+    pendingResponses.delete(key)
+    useRealtimeStore.getState().removeSnapshot(pending.response.id)
+  }
+}
+
 /** Mark chat-list persistence separately from transcript persistence. */
 export function acknowledgeOptimisticChatList(namespace: string, chatIds: ReadonlySet<string>): void {
   for (const [key, pending] of pendingResponses) {

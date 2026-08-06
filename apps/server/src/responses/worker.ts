@@ -31,6 +31,7 @@ import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
+import { temporaryChatIsExpired } from '../chats/temporary.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -477,14 +478,21 @@ function classifyError(error: unknown): string {
 }
 
 export async function processGeneration(responseId: string): Promise<void> {
-  const [base] = await db.select({ response: responses, model: models, log: requestLogs, chatDeletedAt: chats.deletedAt })
+  const [base] = await db.select({
+    response: responses,
+    model: models,
+    log: requestLogs,
+    chatDeletedAt: chats.deletedAt,
+    chatTemporary: chats.temporary,
+    chatExpiresAt: chats.expiresAt,
+  })
     .from(responses)
     .innerJoin(chats, eq(chats.id, responses.chatId))
     .innerJoin(models, eq(responses.modelId, models.id))
     .innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!base || ['completed', 'cancelled'].includes(base.response.status)) return
-  if (base.chatDeletedAt) {
+  if (base.chatDeletedAt || temporaryChatIsExpired({ temporary: base.chatTemporary, expiresAt: base.chatExpiresAt })) {
     const now = new Date()
     await db.update(responses).set({ status: 'cancelled', completedAt: now, updatedAt: now }).where(eq(responses.id, responseId))
     await releaseBudget(responseId)

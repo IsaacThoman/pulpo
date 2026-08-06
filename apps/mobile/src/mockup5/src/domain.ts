@@ -111,6 +111,8 @@ export interface PrototypeChat {
   pinned: boolean;
   folderId: string | null;
   temporary: boolean;
+  expiresAt?: number | null;
+  expired?: boolean;
   /** False while a server chat only has list metadata and its transcript is loading. */
   detailLoaded?: boolean;
   messages: PrototypeMessage[];

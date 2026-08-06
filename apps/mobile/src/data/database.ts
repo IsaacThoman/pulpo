@@ -176,6 +176,12 @@ function searchableText(chat: ServerChat): string {
 async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: string, chats: ServerChat[]): Promise<void> {
   await database.withTransactionAsync(async () => {
     for (const chat of chats) {
+      if (chat.temporary) {
+        await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+        await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+        await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
+        continue
+      }
       const current = await database.getFirstAsync<{ payload: string }>(
         'SELECT payload FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id,
       )
@@ -249,6 +255,7 @@ export async function cacheOpenedChat(
 ): Promise<void> {
   await withDatabase(async (database) => {
     await cacheChatsInDatabase(database, namespace, [chat])
+    if (chat.temporary) return
     await database.runAsync(
       `INSERT INTO chat_access(namespace, chat_id, opened_at) VALUES (?, ?, ?)
        ON CONFLICT(namespace, chat_id) DO UPDATE SET opened_at = excluded.opened_at`,
@@ -327,7 +334,18 @@ export async function cachedChats(namespace: string): Promise<ServerChat[]> {
     const rows = await database.getAllAsync<{ payload: string }>(
       'SELECT payload FROM chat_cache WHERE namespace = ? ORDER BY updated_at DESC', namespace,
     )
-    return rows.map((row) => JSON.parse(row.payload) as ServerChat)
+    const parsed = rows.map((row) => JSON.parse(row.payload) as ServerChat)
+    const temporaryIds = parsed.filter((chat) => chat.temporary).map((chat) => chat.id)
+    if (temporaryIds.length) {
+      await database.withTransactionAsync(async () => {
+        for (const chatId of temporaryIds) {
+          await database.runAsync('DELETE FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chatId)
+          await database.runAsync('DELETE FROM chat_access WHERE namespace = ? AND chat_id = ?', namespace, chatId)
+          await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chatId)
+        }
+      })
+    }
+    return parsed.filter((chat) => !chat.temporary)
   })
 }
 

@@ -26,6 +26,7 @@ export interface ServerChat {
   folderId: string | null
   sortOrder: number
   temporary: boolean
+  expiresAt?: string | null
   activeResponseId: string | null
   activeBranchLeafId?: string | null
   createdAt: string

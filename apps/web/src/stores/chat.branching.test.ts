@@ -27,7 +27,9 @@ interface PendingRequest {
 }
 
 const requests: PendingRequest[] = []
+let networkFailure = false
 vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => new Promise<Response>((resolve) => {
+  if (networkFailure) throw new TypeError('Failed to fetch')
   requests.push({
     path: String(input),
     method: init?.method,
@@ -113,6 +115,7 @@ function expectOnly(responseId: string): void {
 }
 
 beforeEach(() => {
+  networkFailure = false
   requests.splice(0)
   useAuth.setState({
     user: {
@@ -145,6 +148,16 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('fails a temporary send instead of persisting it to the offline outbox', async () => {
+    networkFailure = true
+    const temporaryId = useChat.getState().sendMessage(null, 'private prompt', 'test-model', [], true)
+
+    await vi.waitFor(() => {
+      const assistant = useChat.getState().chats.find((chat) => chat.id === temporaryId)?.messages.at(-1)
+      expect(assistant).toMatchObject({ done: true, error: 'Failed to fetch' })
+    })
+  })
+
   it('keeps a temporary start routeless, preserves it across summaries, and waits to persist', async () => {
     const temporaryId = useChat.getState().sendMessage(null, 'private prompt', 'test-model', [], true)
     const temporaryChat = useChat.getState().chats.find((chat) => chat.id === temporaryId)

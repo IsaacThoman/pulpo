@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ServerChat } from '../types'
-import { cachedChatIdsToRemove, mergeCachedChat, withoutCachedChatDetails } from './cache'
+import { cachedChatIdsToRemove, mergeCachedChat, persistableChats, withoutCachedChatDetails } from './cache'
 
 function chat(overrides: Partial<ServerChat> = {}): ServerChat {
   return {
@@ -24,6 +24,12 @@ describe('mergeCachedChat', () => {
   it('accepts newer detailed data when it is available', () => {
     const newer = [{ id: 'response-2' }] as ServerChat['responses']
     expect(mergeCachedChat(chat({ responses: [] }), chat({ responses: newer })).responses).toBe(newer)
+  })
+})
+
+describe('persistableChats', () => {
+  it('never returns temporary chats for durable storage', () => {
+    expect(persistableChats([chat(), chat({ id: 'temporary', temporary: true })]).map((item) => item.id)).toEqual(['chat-1'])
   })
 })
 

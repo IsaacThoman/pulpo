@@ -7,6 +7,7 @@ import {
   cacheOptimisticBranch,
   cacheOptimisticTurn,
   clearPendingOptimisticResponses,
+  discardOptimisticChat,
   pendingOptimisticChatIds,
   reconcileOptimisticResponses,
   rejectOptimisticTurn,
@@ -78,6 +79,16 @@ describe('optimistic response reconciliation', () => {
     expect(cached?.responses?.map((response) => response.id)).toEqual(['response-1'])
     expect(cached?.activeBranchLeafId).toBe('response-1')
     expect((realtime.snapshots['response-1'] as { status?: string } | undefined)?.status).toBe('queued')
+  })
+
+  it('forgets pending response state when a temporary chat is abandoned', () => {
+    const queryClient = new QueryClient()
+    seed(queryClient, 'temporary-chat', 'temporary-response')
+
+    discardOptimisticChat(namespace, 'temporary-chat')
+
+    expect(pendingOptimisticChatIds(namespace)).toEqual(new Set())
+    expect(realtime.snapshots['temporary-response']).toBeUndefined()
   })
 
   it('keeps the optimistic turn when a stale empty transcript arrives', () => {

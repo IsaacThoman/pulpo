@@ -633,6 +633,7 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
 
 async function optimisticRequest(
   method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', path: string, body?: unknown,
+  options: { queueOffline?: boolean } = {},
 ): Promise<unknown> {
   const userId = currentUserId()
   if (!userId) return
@@ -640,7 +641,7 @@ async function optimisticRequest(
   try {
     return await apiRequest(path, { method, body, idempotencyKey })
   } catch (error) {
-    if (isNetworkError(error)) {
+    if (isNetworkError(error) && options.queueOffline !== false) {
       await enqueueMutation({ userId, method, path, body, idempotencyKey })
       return
     }
@@ -1185,7 +1186,9 @@ export const useChat = create<ChatState>()((set, get) => ({
         },
         response: responseBody,
       }
-      const result = await enqueueChatMutation(id, () => optimisticRequest('POST', path, body)) as { response?: ResponseSnapshot } | undefined
+      const result = await enqueueChatMutation(id, () => optimisticRequest('POST', path, body, {
+        queueOffline: !(temporary || currentChat?.temporary),
+      })) as { response?: ResponseSnapshot } | undefined
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {
         const clientUserId = `${responseId}:input`
@@ -1293,7 +1296,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       clientId: responseId,
       modelId,
       presetSelections: generation.selections,
-    })).then((result) => {
+    }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
       if (result === undefined) return
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
@@ -1333,7 +1336,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       content,
       modelId,
       presetSelections: generation.selections,
-    })).then((result) => {
+    }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
       if (result === undefined) return
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
@@ -1349,11 +1352,15 @@ export const useChat = create<ChatState>()((set, get) => ({
     })
   },
   editAssistantMessage: (chatId, messageId, content) => {
-    void enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }))
+    void enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }, {
+      queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
+    }))
       .then(() => queryClient.invalidateQueries({ queryKey: chatKey(chatId) }))
   },
   deleteUserMessage: (chatId, messageId) => {
-    void enqueueChatMutation(chatId, () => optimisticRequest('DELETE', `/api/messages/${messageId}`)).then(async () => {
+    void enqueueChatMutation(chatId, () => optimisticRequest('DELETE', `/api/messages/${messageId}`, undefined, {
+      queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
+    })).then(async () => {
       await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
     })
@@ -1369,7 +1376,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
     }
-    void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate`)).then((result) => {
+    void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate`, undefined, {
+      queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
+    })).then((result) => {
       const activeBranchLeafId = (result as { activeBranchLeafId?: string } | undefined)?.activeBranchLeafId
       if (!activeBranchLeafId) return
       if (!branchSelectionIntents.isCurrent(chatId, selectionIntent.version)) return

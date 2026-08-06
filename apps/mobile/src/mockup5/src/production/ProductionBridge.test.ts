@@ -147,4 +147,15 @@ describe('production scope hydration', () => {
       modelCatalogReady: false, chats: [], folders: [], models: [],
     })
   })
+
+  it('does not restore temporary chats from a legacy local cache', async () => {
+    mocks.cachedChats.mockResolvedValue([
+      chat('saved', 'Saved chat'),
+      { ...chat('temporary', 'Temporary chat'), temporary: true },
+    ])
+
+    await hydrateProductionScope('instance|user-a')
+
+    expect(usePrototypeStore.getState().chats.map((item) => item.id)).toEqual(['saved'])
+  })
 })

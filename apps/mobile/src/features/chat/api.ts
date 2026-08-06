@@ -18,6 +18,7 @@ export async function createChat(input: { clientId?: string; modelId: string; te
     return await apiRequest('/api/chats', { method: 'POST', idempotencyKey: clientId, body })
   } catch (error) {
     const { instanceUrl, user } = useSessionStore.getState()
+    if (input.temporary && isNetworkError(error)) throw error
     if (!user || !isNetworkError(error)) throw error
     await queueOfflineMutation({
       namespace: cacheNamespace(instanceUrl, user.id), entityKey: `chat:${clientId}`,
@@ -73,6 +74,7 @@ export async function sendMessage(input: {
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
   agentMode?: boolean
+  temporary?: boolean
 }): Promise<ResponseSnapshot> {
   const responseId = input.clientId ?? Crypto.randomUUID()
   const path = `/api/chats/${input.chatId}/responses`
@@ -101,6 +103,10 @@ export async function sendMessage(input: {
     return useRealtimeStore.getState().snapshots[responseId] ?? result.response
   } catch (error) {
     const { instanceUrl, user } = useSessionStore.getState()
+    if (input.temporary && isNetworkError(error)) {
+      useRealtimeStore.getState().removeSnapshot(responseId)
+      throw error
+    }
     if (!user || !isNetworkError(error)) {
       useRealtimeStore.getState().removeSnapshot(responseId)
       throw error
@@ -160,6 +166,10 @@ export async function startChat(input: {
     return { ...result, response: useRealtimeStore.getState().snapshots[input.responseId] ?? result.response }
   } catch (error) {
     const { instanceUrl, user } = useSessionStore.getState()
+    if (input.temporary && isNetworkError(error)) {
+      useRealtimeStore.getState().removeSnapshot(input.responseId)
+      throw error
+    }
     if (!user || !isNetworkError(error)) {
       useRealtimeStore.getState().removeSnapshot(input.responseId)
       throw error

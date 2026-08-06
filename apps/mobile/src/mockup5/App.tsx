@@ -128,11 +128,11 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { useSessionStore } from '../store/session';
-import { apiRequest } from '../api/client';
+import { apiRequest, ApiError } from '../api/client';
 import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
-import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, rejectOptimisticTurn } from './src/production/optimisticResponses';
+import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
-import { cacheNamespace } from '../data/database';
+import { cacheNamespace, deleteResponseCursor } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
@@ -143,6 +143,7 @@ import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
+import { visibleHistoryChats } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
 import { resolveChatHeaderAction } from '../features/chat/headerAction';
@@ -919,6 +920,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady);
   const modelCatalogReady = usePrototypeStore((state) => state.modelCatalogReady);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
+  const discardStoredChat = usePrototypeStore((state) => state.discardChat);
   const appendStoredMessage = usePrototypeStore((state) => state.appendMessage);
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
   const prototypeModels = usePrototypeStore((state) => state.models);
@@ -1091,7 +1093,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, reduceMotion]);
-  const legacyChats = useMemo(() => storedChats.filter((chat) => chat.deletedAt === null).map(prototypeChatToLegacy), [storedChats]);
+  const legacyChats = useMemo(() => visibleHistoryChats(storedChats).map(prototypeChatToLegacy), [storedChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
   const messages = activeChat?.messages ?? [];
@@ -1102,9 +1104,24 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       : 'idle';
   const effectiveAssistantStatus = assistantStatus === 'idle' ? remoteAssistantStatus : assistantStatus;
 
+  const abandonActiveTemporaryChat = () => {
+    if (!activePrototypeChat?.temporary) return;
+    discardStoredChat(activePrototypeChat.id);
+    if (!productionUserId) return;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    discardOptimisticChat(namespace, activePrototypeChat.id);
+    queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, activePrototypeChat.id), exact: true });
+    for (const message of activePrototypeChat.messages) {
+      if (message.role !== 'assistant') continue;
+      useRealtimeStore.getState().removeSnapshot(message.id);
+      void deleteResponseCursor(namespace, message.id);
+    }
+  };
+
   const selectChat = (chat: Chat) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
+    abandonActiveTemporaryChat();
     setActiveChatId(chat.id);
     setSelectedModelId(chat.modelId);
     setAssistantStatus('idle');
@@ -1115,6 +1132,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const newChat = () => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
+    abandonActiveTemporaryChat();
     setAssistantStatus('idle');
     setStreamingSession(null);
     setActiveChatId(null);
@@ -1248,6 +1266,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           presetSelections: selections,
           attachmentIds: attachments.map((attachment) => attachment.serverId),
           agentMode,
+          temporary: activePrototypeChat?.temporary ?? false,
         });
       }
       updateStoredMessage(serverChatId, response.responseId, {
@@ -1284,7 +1303,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       usePrototypeStore.setState((state) => ({
         chats: activeChat || serverChatCreated
           ? state.chats.map((chat) => chat.id === key
-            ? { ...chat, messages: chat.messages.filter((message) => message.id !== inputMessageId && message.id !== responseId) }
+            ? {
+              ...chat,
+              expired: chat.temporary && error instanceof ApiError
+                && (error.code === 'temporary_chat_expired' || error.status === 404)
+                ? true
+                : chat.expired,
+              messages: chat.messages.filter((message) => message.id !== inputMessageId && message.id !== responseId),
+            }
             : chat)
           : state.chats.filter((chat) => chat.id !== key),
       }));
@@ -1455,6 +1481,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onSelectChat={selectChat}
             onNewChat={() => { newChat(); animatePanel(false); }}
             onOpenSettings={() => {
+              abandonActiveTemporaryChat();
               Keyboard.dismiss();
               navigation.navigate('Settings');
             }}
@@ -1490,6 +1517,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
+            expired={Boolean(activePrototypeChat?.expired)}
             onTemporaryChange={setNewChatTemporary}
             onNewChat={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); newChat(); }}
           />
@@ -2278,7 +2306,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 function ChatView({
   messages, chatId, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, temporary, onTemporaryChange,
+  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, temporary, expired, onTemporaryChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -2303,6 +2331,7 @@ function ChatView({
   onSelectPreset: (presetId: string, choiceId: string) => void;
   onNewChat: () => void;
   temporary: boolean;
+  expired: boolean;
   onTemporaryChange: (value: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -2664,11 +2693,13 @@ function ChatView({
     <MessageRow
       message={item}
       model={responseModel(item, models, model)}
-      onEdit={onEdit}
-      onRegenerate={onRegenerate}
-      onActivateBranch={onActivateBranch}
+      onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onEdit}
+      onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
+      onActivateBranch={expired
+        ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
+        : onActivateBranch}
     />
-  ), [model, models, onActivateBranch, onEdit, onRegenerate]);
+  ), [expired, model, models, onActivateBranch, onEdit, onRegenerate]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length);
@@ -2678,6 +2709,7 @@ function ChatView({
     && (input.trim().length > 0 || attachments.length > 0)
     && assistantStatus === 'idle'
     && !sending
+    && !expired
     && !attachments.some((attachment) => attachment.state === 'uploading');
 
   return (
@@ -2729,6 +2761,12 @@ function ChatView({
           <View style={[styles.connectionBanner, (connectionState === 'offline' || syncError) && styles.connectionBannerOffline]}>
             <Icon name={syncError ? 'exclamationmark.triangle' : connectionState === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={connectionState === 'offline' || syncError ? '#FFB15A' : COLORS.muted} />
             <Text style={styles.connectionBannerText}>{syncError ?? (connectionState === 'offline' ? 'Offline · messages will send when Pulpo reconnects' : 'Reconnecting to Pulpo…')}</Text>
+          </View>
+        )}
+        {expired && (
+          <View accessibilityRole="alert" style={[styles.connectionBanner, styles.temporaryExpiredBanner]}>
+            <Icon name="clock.badge.xmark" size={12} color="#8B5CF6" />
+            <Text style={styles.connectionBannerText}>This temporary chat expired and is now read-only.</Text>
           </View>
         )}
 
@@ -3502,6 +3540,7 @@ const styles = StyleSheet.create({
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
+  temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   conversation: { paddingHorizontal: 18, paddingBottom: 156 },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingBottom: 156 },

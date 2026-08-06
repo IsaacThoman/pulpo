@@ -5,7 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
 import { enqueueCacheWrite } from '../../../data/writeBehind'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, queryKeys, type ModelCatalog } from '../../../data/queries'
-import { isNetworkError, mobileApi } from '../../../api/client'
+import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
 import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
 import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
@@ -127,6 +127,8 @@ function mapChat(chat: ServerChat, messages: PrototypeMessage[] = [], detailLoad
     pinned: chat.pinned,
     folderId: chat.folderId,
     temporary: chat.temporary,
+    expiresAt: chat.expiresAt ? Date.parse(chat.expiresAt) : null,
+    expired: false,
     detailLoaded: detailLoaded || chat.responses !== undefined,
     messages,
     deletedAt: chat.deletedAt ? Date.parse(chat.deletedAt) : null,
@@ -185,7 +187,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
     productionNamespace: namespace,
     productionScopeReady: true,
     modelCatalogReady: catalog !== null,
-    chats: localChats.map((chat) => mapChat(
+    chats: localChats.filter((chat) => !chat.temporary).map((chat) => mapChat(
       chat,
       chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : [],
       Boolean(chat.responses),
@@ -433,6 +435,16 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     if (!detail.data) return
     for (const response of detail.data.responses ?? []) useRealtimeStore.getState().receiveSnapshot(response.snapshot)
   }, [detail.data])
+
+  useEffect(() => {
+    if (!activeChatId || !(detail.error instanceof ApiError)) return
+    if (detail.error.code !== 'temporary_chat_expired' && detail.error.status !== 404) return
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === activeChatId && chat.temporary
+        ? { ...chat, expired: true }
+        : chat),
+    }))
+  }, [activeChatId, detail.error])
 
   useEffect(() => {
     if (!reconciledDetail) return

@@ -11,6 +11,7 @@ import {
 } from './database'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 import { enqueueCacheWrite } from './writeBehind'
+import { persistableChats } from './cache'
 
 export interface ModelCatalog {
   agentAvailable: boolean
@@ -32,13 +33,14 @@ export function chatsQuery(namespace: string, localChatLimit = 50) {
     queryFn: async () => {
       try {
         const { data } = await mobileApi.chats()
+        const visible = persistableChats(data)
         enqueueCacheWrite(namespace, async () => {
-          await cacheChats(namespace, data)
+          await cacheChats(namespace, visible)
           await trimCachedChats(namespace, localChatLimit)
         })
-        return data
+        return visible
       } catch (error) {
-        const cached = (await cachedChats(namespace)).filter((chat) => !chat.deletedAt)
+        const cached = persistableChats(await cachedChats(namespace)).filter((chat) => !chat.deletedAt)
         if (cached.length) return cached
         throw error
       }
@@ -93,10 +95,10 @@ export function chatQuery(namespace: string, id: string, localChatLimit = 50) {
     queryFn: async () => {
       try {
         const chat = await mobileApi.chat(id)
-        enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, chat, localChatLimit))
+        if (!chat.temporary) enqueueCacheWrite(namespace, () => cacheOpenedChat(namespace, chat, localChatLimit))
         return chat
       } catch (error) {
-        const chat = (await cachedChats(namespace)).find((candidate) => candidate.id === id)
+        const chat = persistableChats(await cachedChats(namespace)).find((candidate) => candidate.id === id)
         if (chat?.responses) {
           enqueueCacheWrite(namespace, () => markCachedChatOpened(namespace, id, localChatLimit))
           return chat

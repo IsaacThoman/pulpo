@@ -20,6 +20,7 @@ import {
 } from '../data/database'
 import { replayOutbox } from '../data/outbox'
 import { queryKeys } from '../data/queries'
+import type { ServerChat } from '../types'
 import { useSessionStore } from '../store/session'
 import {
   coalesceResponseEvents,
@@ -126,6 +127,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       return queueCursorWrite(() => saveResponseCursors(namespace, cursors))
     }
     const rememberCursor = (responseId: string, sequence: number) => {
+      const activeChatId = activeChatSubscription()
+      const activeChat = activeChatId
+        ? queryClient.getQueryData<ServerChat>(queryKeys.chat(namespace, activeChatId))
+        : undefined
+      if (activeChat?.temporary && activeChat.responses?.some((response) => response.id === responseId)) {
+        pendingCursors.delete(responseId)
+        void queueCursorWrite(() => deleteResponseCursor(namespace, responseId))
+        return
+      }
       pendingCursors.set(responseId, Math.max(pendingCursors.get(responseId) ?? 0, sequence))
       cursorTimer ??= setTimeout(() => { void flushCursors().catch(() => undefined) }, 250)
     }
