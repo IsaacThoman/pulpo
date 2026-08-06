@@ -9,6 +9,7 @@ import { generationQueue } from '../jobs.js'
 import { parseAgentSettings, parseLoggingSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { PresetResolutionError, resolvePresetActions, type PresetResolutionModel } from './presets.js'
+import { attachmentsRequireAgentMode } from '../attachments/policy.js'
 import {
   accessibleChatCondition,
   scheduleTemporaryChatExpiry,
@@ -139,6 +140,9 @@ export async function createResponse(options: CreateResponseOptions) {
       eq(attachments.userId, options.userId), eq(attachments.status, 'ready'), inArray(attachments.id, options.input.attachmentIds),
     ))
     if (ownedAttachments.length !== options.input.attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
+    if (!options.input.agentMode && attachmentsRequireAgentMode(ownedAttachments)) {
+      throw new AppError(400, 'attachment_requires_agent', 'Non-image attachments require Agent mode')
+    }
     await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(inArray(attachments.id, options.input.attachmentIds))
   }
   const storedInput = options.rawInput !== undefined

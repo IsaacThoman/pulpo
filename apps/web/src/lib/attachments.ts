@@ -7,7 +7,6 @@ const IMAGE_MIME_TYPES = new Set([
 ])
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif'])
-const SUPPORTED_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'])
 
 const MIME_TO_EXTENSION: Record<string, string> = {
   'image/png': '.png',
@@ -33,7 +32,7 @@ export function extensionForImageMime(mimeType: string): string {
   return MIME_TO_EXTENSION[mimeType.toLowerCase()] ?? '.png'
 }
 
-/** Normalize clipboard / drop files so the server accept list always gets a valid name. */
+/** Normalize image metadata so byte-valid images reach the server with a useful name and MIME type. */
 export function normalizeImageFile(file: File): File | null {
   if (!isSupportedImageFile(file)) return null
   const mimeType = file.type && isSupportedImageMime(file.type)
@@ -80,15 +79,27 @@ export function collectImageFiles(list: FileList | File[] | DataTransferItemList
   return files
 }
 
-export function collectSupportedFiles(list: FileList | File[] | DataTransferItemList | null | undefined): File[] {
+export function collectUploadFiles(list: FileList | File[] | DataTransferItemList | null | undefined): File[] {
   if (!list) return []
   const values = typeof DataTransferItemList !== 'undefined' && list instanceof DataTransferItemList
     ? Array.from(list).flatMap((item) => item.kind === 'file' && item.getAsFile() ? [item.getAsFile()!] : [])
     : Array.from(list as FileList | File[])
-  return values.filter((file) => {
-    const dot = file.name.lastIndexOf('.')
-    return dot >= 0 && SUPPORTED_EXTENSIONS.has(file.name.slice(dot).toLowerCase()) && file.type !== 'text/html' && file.type !== 'image/svg+xml'
-  })
+  return values.map((file) => normalizeImageFile(file) ?? file)
+}
+
+export type NonImageAttachmentRestriction = 'enable_agent' | 'model_not_capable' | 'agent_unavailable'
+
+export function nonImageAttachmentRestriction(input: {
+  hasNonImage: boolean
+  agentModeEnabled: boolean
+  agentAvailable: boolean
+  agentCapable: boolean
+}): NonImageAttachmentRestriction | null {
+  if (!input.hasNonImage) return null
+  if (!input.agentAvailable) return 'agent_unavailable'
+  if (!input.agentCapable) return 'model_not_capable'
+  if (!input.agentModeEnabled) return 'enable_agent'
+  return null
 }
 
 export function formatBytes(bytes: number): string {

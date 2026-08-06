@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowUp, Bot, Check, ChevronDown, ImagePlus, Loader2, Mic, Plus, Square } from 'lucide-react'
+import { AlertCircle, ArrowUp, Bot, Check, ChevronDown, ImagePlus, Loader2, Mic, Plus, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -20,7 +20,13 @@ import { PendingImageChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
-import { collectImageFiles, collectSupportedFiles } from '@/lib/attachments'
+import {
+  collectImageFiles,
+  collectUploadFiles,
+  isSupportedImageFile,
+  isSupportedImageMime,
+  nonImageAttachmentRestriction,
+} from '@/lib/attachments'
 import { useAuth } from '@/stores/auth'
 
 interface PendingAttachment {
@@ -83,7 +89,7 @@ export function Composer({
   const agentModeEnabled = useSettings((s) => s.agentModeEnabled)
   const setSetting = useSettings((s) => s.set)
   const agentAvailable = useCatalog((s) => s.agentAvailable)
-  const agentCapable = getCatalogModel(modelId).agentEnabled
+  const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
@@ -91,8 +97,16 @@ export function Composer({
   const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
   const uploading = attachments.some((a) => a.status === 'uploading')
+  const uploadFailed = attachments.some((a) => a.status === 'error')
+  const hasNonImage = attachments.some((a) => !isSupportedImageMime(a.mimeType))
+  const attachmentRestriction = nonImageAttachmentRestriction({
+    hasNonImage,
+    agentModeEnabled,
+    agentAvailable,
+    agentCapable,
+  })
   const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
-  const canSend = Boolean(modelId) && !uploading && !streamingResponseId
+  const canSend = Boolean(modelId) && !uploading && !uploadFailed && !attachmentRestriction && !streamingResponseId
     && (value.trim().length > 0 || readyAttachments.length > 0)
 
   useEffect(() => {
@@ -126,8 +140,8 @@ export function Composer({
       localId: crypto.randomUUID(),
       name: file.name,
       size: file.size,
-      mimeType: file.type || 'image/png',
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+      mimeType: file.type || 'application/octet-stream',
+      previewUrl: isSupportedImageFile(file) ? URL.createObjectURL(file) : null,
       status: 'uploading' as const,
       file,
     }))
@@ -152,8 +166,8 @@ export function Composer({
           credentials: created.uploadUrl.startsWith('/api/') ? 'include' : 'omit',
         })
         if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
-        await apiRequest(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
-        const mimeType = file.type || 'application/octet-stream'
+        const confirmed = await apiRequest<{ mimeType: string }>(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
+        const mimeType = confirmed.mimeType
         const userId = useAuth.getState().user?.id
         if (userId && !temporary) {
           await cacheAttachmentBlob(userId, {
@@ -165,7 +179,7 @@ export function Composer({
         }
         setAttachments((current) => current.map((item) => (
           item.localId === pending.localId
-            ? { ...item, id: created.attachment.id, status: 'ready' as const }
+            ? { ...item, id: created.attachment.id, mimeType, status: 'ready' as const }
             : item
         )))
       } catch (error) {
@@ -181,8 +195,8 @@ export function Composer({
     if (fileInputRef.current) fileInputRef.current.value = ''
   }, [chatId, temporary])
 
-  const addSupportedFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
-    void uploadFiles(collectSupportedFiles(list))
+  const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
+    void uploadFiles(collectUploadFiles(list))
   }, [uploadFiles])
 
   const submit = () => {
@@ -192,7 +206,7 @@ export function Composer({
     const payload = readyAttachments.map((attachment) => ({
       id: attachment.id!,
       name: attachment.name,
-      type: (attachment.mimeType.startsWith('image/') ? 'image' : 'file') as 'image' | 'file',
+      type: (isSupportedImageMime(attachment.mimeType) ? 'image' : 'file') as 'image' | 'file',
       size: attachment.size,
     }))
     const targetChatId = sendMessage(chatId, text, modelId, payload, temporary)
@@ -230,7 +244,7 @@ export function Composer({
     event.preventDefault()
     dragDepth.current = 0
     setDragging(false)
-    addSupportedFiles(event.dataTransfer.files)
+    addFiles(event.dataTransfer.files)
   }
 
   const onPaste = (event: React.ClipboardEvent) => {
@@ -283,6 +297,26 @@ export function Composer({
           </div>
         )}
 
+        {attachmentRestriction && (
+          <div role="status" className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            <AlertCircle className="size-4 shrink-0" />
+            <span className="flex-1">
+              {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
+              {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
+              {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
+            </span>
+            {attachmentRestriction === 'enable_agent' && (
+              <button
+                type="button"
+                onClick={() => setSetting('agentModeEnabled', true)}
+                className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
+              >
+                Enable Agent
+              </button>
+            )}
+          </div>
+        )}
+
         <textarea
           ref={ref}
           value={value}
@@ -305,10 +339,9 @@ export function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,.txt,.md,.csv,.json,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
             multiple
             className="hidden"
-            onChange={(event) => addSupportedFiles(event.target.files)}
+            onChange={(event) => addFiles(event.target.files)}
           />
           <Tooltip>
             <TooltipTrigger asChild>
