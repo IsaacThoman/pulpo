@@ -247,7 +247,9 @@ export function Composer({
     <div className={cn('w-full', centered && 'px-2')}>
       <div
         className={cn(
-          'relative rounded-2xl border bg-card shadow-sm transition-[box-shadow,border-color] focus-within:shadow-md',
+          'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
+          temporary && 'border-violet-400/65 bg-violet-100/65 dark:border-violet-600/60 dark:bg-violet-950/45',
+          temporary && 'border-dashed',
           dragging && 'border-primary ring-2 ring-primary/25',
         )}
         onDragEnter={onDragEnter}
@@ -296,7 +298,7 @@ export function Composer({
           }}
           onPaste={onPaste}
           rows={1}
-          placeholder={attachments.length ? 'Add a caption…' : 'Message…'}
+          placeholder={attachments.length ? 'Add a caption…' : temporary ? 'Temporary message…' : 'Message…'}
           className="max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
         />
         <div className="flex items-center gap-1 px-2.5 pb-2.5">

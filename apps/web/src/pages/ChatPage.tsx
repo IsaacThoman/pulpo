@@ -42,15 +42,25 @@ function Placeholder({
   modelId,
   suggestions,
   onPick,
+  showTemporaryLabel = false,
 }: {
   modelId: string
   suggestions: SuggestedPrompt[]
   onPick: (message: string) => void
+  showTemporaryLabel?: boolean
 }) {
   const model = getCatalogModel(modelId)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
-      <div className="flex items-center gap-3">
+      <div className="relative flex items-center gap-3">
+        <div
+          aria-hidden={!showTemporaryLabel}
+          data-visible={showTemporaryLabel}
+          className="temporary-label-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 whitespace-nowrap text-xs font-medium text-violet-700 dark:text-violet-300"
+        >
+          <Ghost className="size-3.5" />
+          Temporary
+        </div>
         <ModelIcon model={model} className="size-12" boxed={false} />
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
       </div>
@@ -216,7 +226,10 @@ export function ChatPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className={cn(
+      'flex h-full flex-col transition-colors duration-200',
+      temporaryMode && 'bg-violet-50/55 dark:bg-violet-950/15',
+    )}>
       {/* header */}
       <header className="flex h-12 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />
@@ -253,7 +266,12 @@ export function ChatPage() {
       {isEmpty ? (
         <>
           <div className="min-h-0 flex-1">
-            <Placeholder modelId={modelId} suggestions={suggestions} onPick={sendSuggestion} />
+            <Placeholder
+              modelId={modelId}
+              suggestions={suggestions}
+              onPick={sendSuggestion}
+              showTemporaryLabel={temporaryMode}
+            />
           </div>
           <div
             className={cn(
