@@ -248,7 +248,7 @@ export function Composer({
       <div
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
-          temporary && 'border-violet-400/65 bg-violet-100/65 dark:border-violet-600/60 dark:bg-violet-950/45',
+          temporary && 'border-violet-500/70 bg-violet-100/80 dark:border-violet-600/60 dark:bg-violet-950/45',
           temporary && 'border-dashed',
           dragging && 'border-primary ring-2 ring-primary/25',
         )}

@@ -228,7 +228,7 @@ export function ChatPage() {
   return (
     <div className={cn(
       'flex h-full flex-col transition-colors duration-200',
-      temporaryMode && 'bg-violet-50/55 dark:bg-violet-950/15',
+      temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
     )}>
       {/* header */}
       <header className="flex h-12 shrink-0 items-center gap-1 px-3">
