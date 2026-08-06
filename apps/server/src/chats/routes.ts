@@ -16,6 +16,12 @@ import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from
 import { planDuplicateTree } from './duplicate.js'
 import { responseDisplayModelId } from './modelIdentity.js'
 import { responseAttachmentIds } from '../messages/input.js'
+import {
+  accessibleChatCondition,
+  scheduleTemporaryChatExpiry,
+  temporaryChatExpiresAt,
+  temporaryChatIsExpired,
+} from './temporary.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string) => {
@@ -95,8 +101,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/chats/export', async (request, reply) => {
     const user = requireUser(request)
-    const chatRows = await db.select().from(chats).where(eq(chats.userId, user.id))
-    const responseRows = await db.select().from(responses).where(eq(responses.userId, user.id))
+    const chatRows = await db.select().from(chats).where(and(eq(chats.userId, user.id), eq(chats.temporary, false)))
+    const responseRows = chatRows.length
+      ? await db.select().from(responses).where(and(
+        eq(responses.userId, user.id),
+        inArray(responses.chatId, chatRows.map((chat) => chat.id)),
+      ))
+      : []
     return reply.type('application/json').header('content-disposition', 'attachment; filename="pulpo-chats.json"')
       .send({ format: 'pulpo-chat-export', version: 2, exportedAt: new Date().toISOString(), chats: chatRows, responses: responseRows })
   })
@@ -235,7 +246,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
     const id = input.clientId ?? newId()
-    const expiresAt = input.temporary ? new Date(Date.now() + 86_400_000) : null
+    const expiresAt = input.temporary ? temporaryChatExpiresAt() : null
     const [created] = await db.insert(chats).values({
       id,
       userId: user.id,
@@ -249,7 +260,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) throw new AppError(409, 'chat_id_conflict', 'Chat identifier is already in use')
       return existing
     }
-    await bumpRevision(user.id, id)
+    if (created.temporary && created.expiresAt) {
+      await scheduleTemporaryChatExpiry({ chatId: created.id, userId: user.id, expiresAt: created.expiresAt })
+    }
+    if (!created.temporary) await bumpRevision(user.id, id)
     reply.code(201)
     return created
   })
@@ -264,7 +278,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(models.id, input.chat.modelId), eq(models.enabled, true),
     )).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
-    const expiresAt = input.chat.temporary ? new Date(Date.now() + 86_400_000) : null
+    const expiresAt = input.chat.temporary ? temporaryChatExpiresAt() : null
     const [inserted] = await db.insert(chats).values({
       id: input.chat.clientId,
       userId: user.id,
@@ -289,7 +303,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       })
-      await bumpRevision(user.id, chat.id)
+      if (!chat.temporary) await bumpRevision(user.id, chat.id)
       const [updatedChat] = await db.select().from(chats).where(eq(chats.id, chat.id)).limit(1)
       reply.code(202)
       return { chat: updatedChat ?? chat, response: toSnapshot(response) }
@@ -308,6 +322,48 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
   })
 
+  app.post('/api/chats/:id/persist', async (request) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const now = new Date()
+    const [current] = await db.select().from(chats).where(and(
+      eq(chats.id, id),
+      eq(chats.userId, user.id),
+    )).limit(1)
+    if (!current) throw notFound('Chat')
+    if (temporaryChatIsExpired(current, now)) {
+      throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+    }
+    if (current.deletedAt || current.purgeStartedAt) throw notFound('Chat')
+    if (!current.temporary) return current
+
+    const [updated] = await db.update(chats).set({
+      temporary: false,
+      expiresAt: null,
+      updatedAt: now,
+    }).where(and(
+      eq(chats.id, id),
+      eq(chats.userId, user.id),
+      eq(chats.temporary, true),
+      isNull(chats.deletedAt),
+      isNull(chats.purgeStartedAt),
+      accessibleChatCondition(now),
+    )).returning()
+    if (!updated) {
+      const [afterRace] = await db.select().from(chats).where(and(
+        eq(chats.id, id),
+        eq(chats.userId, user.id),
+      )).limit(1)
+      if (afterRace && temporaryChatIsExpired(afterRace, new Date())) {
+        throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+      }
+      if (afterRace && !afterRace.temporary && !afterRace.deletedAt && !afterRace.purgeStartedAt) return afterRace
+      throw notFound('Chat')
+    }
+    await bumpRevision(user.id, id)
+    return updated
+  })
+
   app.post('/api/chats/:id/duplicate', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -315,6 +371,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(chats.id, id),
       eq(chats.userId, user.id),
       isNull(chats.deletedAt),
+      eq(chats.temporary, false),
     )).limit(1)
     if (!source) throw notFound('Chat')
     const sourceResponses = await db.select().from(responses).where(and(
@@ -376,6 +433,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const existing = await db.select({ id: chats.id }).from(chats).where(and(
       eq(chats.userId, user.id),
       isNull(chats.deletedAt),
+      eq(chats.temporary, false),
       inArray(chats.id, chatIds),
     ))
     if (existing.length !== chatIds.length) throw notFound('Chat')
@@ -383,7 +441,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       for (const [sortOrder, chatId] of chatIds.entries()) {
         await tx.update(chats)
           .set({ sortOrder })
-          .where(and(eq(chats.id, chatId), eq(chats.userId, user.id)))
+          .where(and(eq(chats.id, chatId), eq(chats.userId, user.id), eq(chats.temporary, false)))
       }
     })
     await bumpRevision(user.id)
@@ -393,8 +451,21 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [chat] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
-    if (!chat) throw notFound('Chat')
+    const now = new Date()
+    const [chat] = await db.select().from(chats).where(and(
+      eq(chats.id, id),
+      eq(chats.userId, user.id),
+      isNull(chats.deletedAt),
+      accessibleChatCondition(now),
+    )).limit(1)
+    if (!chat) {
+      const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
+        .from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
+      if (owned && temporaryChatIsExpired(owned, now)) {
+        throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+      }
+      throw notFound('Chat')
+    }
     const allTurns = await db.select()
       .from(responses)
       .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
@@ -438,7 +509,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       modelId: patch.modelId,
       sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
       updatedAt: new Date(),
-    }).where(and(eq(chats.id, id), eq(chats.userId, user.id))).returning()
+    }).where(and(eq(chats.id, id), eq(chats.userId, user.id), eq(chats.temporary, false))).returning()
     if (!updated) throw notFound('Chat')
     await bumpRevision(user.id, id)
     return updated
@@ -471,6 +542,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [recovered] = await db.update(chats).set({ deletedAt: null, updatedAt: new Date() }).where(and(
       eq(chats.id, id),
       eq(chats.userId, user.id),
+      eq(chats.temporary, false),
       isNotNull(chats.deletedAt),
       isNull(chats.purgeStartedAt),
     )).returning()
@@ -520,15 +592,32 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/responses/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [response] = await db.select().from(responses).where(and(eq(responses.id, id), eq(responses.userId, user.id), isNull(responses.deletedAt))).limit(1)
-    if (!response) throw notFound('Response')
-    return toSnapshot(response)
+    const [row] = await db.select({ response: responses }).from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).limit(1)
+    if (!row) throw notFound('Response')
+    return toSnapshot(row.response)
   })
 
   app.post('/api/responses/:id/cancel', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [response] = await db.select().from(responses).where(and(eq(responses.id, id), eq(responses.userId, user.id), isNull(responses.deletedAt))).limit(1)
+    const [row] = await db.select({ response: responses }).from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).limit(1)
+    const response = row?.response
     if (!response) throw notFound('Response')
     if (!['queued', 'in_progress'].includes(response.status)) return toSnapshot(response)
     await requestCancellation(id)
@@ -543,7 +632,16 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/responses/:id/continue-without-agent', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [response] = await db.select().from(responses).where(and(eq(responses.id, id), eq(responses.userId, user.id), isNull(responses.deletedAt))).limit(1)
+    const [row] = await db.select({ response: responses }).from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, user.id),
+        isNull(responses.deletedAt),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).limit(1)
+    const response = row?.response
     if (!response) throw notFound('Response')
     if (!response.agentMode || !['queued', 'in_progress'].includes(response.status)) throw new AppError(409, 'agent_not_waiting', 'This response cannot continue without agent tools')
     const [waitingLease] = await db.select({ id: workspaceLeases.id }).from(workspaceLeases).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning'), inArray(workspaceLeases.capacityState, ['waiting', 'claiming']))).limit(1)

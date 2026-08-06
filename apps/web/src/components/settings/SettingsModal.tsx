@@ -243,7 +243,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     if (!confirm(message)) return
     await apiRequest('/api/chats', { method: 'DELETE' })
     const chatIds = useChat.getState().chats.map((chat) => chat.id)
-    useChat.setState({ chats: [], activeChatId: null })
+    useChat.setState({ chats: [], activeChatId: null, activeTemporaryChatId: null })
     if (s.trashRetention === 'instant' && user?.id) {
       void clearLocalChats(user.id, chatIds).catch(() => undefined)
     }

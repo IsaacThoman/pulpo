@@ -1,6 +1,6 @@
-import { and, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, chats, responses, userPreferences } from '../database/schema.js'
+import { attachments, chats, memories, responses, userPreferences } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
 import { requestCancellation } from '../responses/events.js'
@@ -81,7 +81,7 @@ export async function markExpiredChatsForPurge(now = new Date(), userId?: string
 
   const temporaryRows = await db.select({ id: chats.id }).from(chats).where(and(
     eq(chats.temporary, true),
-    lt(chats.expiresAt, now),
+    lte(chats.expiresAt, now),
     isNull(chats.purgeStartedAt),
     userId ? eq(chats.userId, userId) : undefined,
   ))
@@ -99,8 +99,24 @@ export async function markExpiredChatsForPurge(now = new Date(), userId?: string
   return normalCount + markedTemporary.length
 }
 
+export async function expireTemporaryChat(chatId: string, userId: string, now = new Date()): Promise<boolean> {
+  const [marked] = await db.update(chats).set({
+    deletedAt: now,
+    purgeStartedAt: now,
+    updatedAt: now,
+  }).where(and(
+    eq(chats.id, chatId),
+    eq(chats.userId, userId),
+    eq(chats.temporary, true),
+    lte(chats.expiresAt, now),
+    isNull(chats.deletedAt),
+    isNull(chats.purgeStartedAt),
+  )).returning({ id: chats.id })
+  return Boolean(marked)
+}
+
 export async function purgePendingChats(userId?: string): Promise<number> {
-  const pending = await db.select({ id: chats.id }).from(chats).where(and(
+  const pending = await db.select({ id: chats.id, temporary: chats.temporary }).from(chats).where(and(
     isNotNull(chats.purgeStartedAt),
     userId ? eq(chats.userId, userId) : undefined,
   ))
@@ -116,6 +132,7 @@ export async function purgePendingChats(userId?: string): Promise<number> {
       const files = await db.select({ objectKey: attachments.objectKey }).from(attachments)
         .where(eq(attachments.chatId, row.id))
       await Promise.all(files.map((file) => getBlobStore().delete(file.objectKey)))
+      if (row.temporary) await db.delete(memories).where(eq(memories.sourceChatId, row.id))
       await db.delete(chats).where(and(eq(chats.id, row.id), isNotNull(chats.purgeStartedAt)))
       purged += 1
     } catch (error) {

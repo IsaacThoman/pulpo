@@ -68,6 +68,9 @@ export interface Chat {
   folderId: string | null
   sortOrder: number
   tags: string[]
+  temporary: boolean
+  expiresAt: number | null
+  expired: boolean
   shareId?: string
 }
 

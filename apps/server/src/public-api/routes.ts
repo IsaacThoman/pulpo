@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { db } from '../database/client.js'
@@ -9,6 +9,7 @@ import { createResponse } from '../responses/service.js'
 import { createRedis } from '../redis.js'
 import { readResponseEvents, requestCancellation } from '../responses/events.js'
 import { notFound } from '../lib/errors.js'
+import { accessibleChatCondition, temporaryChatExpiresAt } from '../chats/temporary.js'
 
 const publicResponseInput = z.object({
   model: z.string().min(1),
@@ -125,7 +126,17 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
     await assertApiKeyModelAllowed(key.id, input.model)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (idempotencyKey) {
-      const [existing] = await db.select().from(responses).where(and(eq(responses.userId, user.id), eq(responses.idempotencyKey, idempotencyKey))).limit(1)
+      const [existingRow] = await db.select({ response: responses })
+        .from(responses)
+        .innerJoin(chats, eq(chats.id, responses.chatId))
+        .where(and(
+          eq(responses.userId, user.id),
+          eq(responses.idempotencyKey, idempotencyKey),
+          isNull(chats.deletedAt),
+          accessibleChatCondition(),
+        ))
+        .limit(1)
+      const existing = existingRow?.response
       if (existing) {
         if (input.stream) return streamResponse(reply, existing.id)
         return publicResponse(existing)
@@ -138,7 +149,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
       modelId: input.model,
       title: 'API request',
       temporary: true,
-      expiresAt: new Date(Date.now() + 86_400_000),
+      expiresAt: temporaryChatExpiresAt(),
     })
     const created = await createResponse({
       userId: user.id,
@@ -171,7 +182,17 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
   app.get('/v1/responses/:id', async (request) => {
     const key = await authenticateApiKey(request, 'responses')
     const { id } = request.params as { id: string }
-    const [row] = await db.select().from(responses).where(and(eq(responses.id, id), eq(responses.userId, key.userId))).limit(1)
+    const [result] = await db.select({ response: responses })
+      .from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, key.userId),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      ))
+      .limit(1)
+    const row = result?.response
     if (!row) throw notFound('Response')
     return publicResponse(row)
   })
@@ -179,7 +200,17 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
   app.post('/v1/responses/:id/cancel', async (request) => {
     const key = await authenticateApiKey(request, 'responses')
     const { id } = request.params as { id: string }
-    const [row] = await db.select().from(responses).where(and(eq(responses.id, id), eq(responses.userId, key.userId))).limit(1)
+    const [result] = await db.select({ response: responses })
+      .from(responses)
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.id, id),
+        eq(responses.userId, key.userId),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      ))
+      .limit(1)
+    const row = result?.response
     if (!row) throw notFound('Response')
     if (['queued', 'in_progress'].includes(row.status)) await requestCancellation(id)
     const [current] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)

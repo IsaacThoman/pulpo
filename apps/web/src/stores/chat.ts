@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { mergeResponseSnapshots, type ResponseEvent, type ResponseSnapshot } from '@pulpo/contracts'
 import type { Attachment, Chat, Folder, Message } from '@/lib/types'
-import { apiRequest, isNetworkError } from '@/lib/api'
+import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { chatOptionsFor, resolveGeneration, useModelConfig } from '@/stores/modelConfig'
@@ -82,6 +82,8 @@ export interface ServerChat {
   pinned: boolean
   folderId: string | null
   sortOrder?: number
+  temporary?: boolean
+  expiresAt?: string | null
   createdAt: string
   updatedAt: string
   activeResponseId: string | null
@@ -102,6 +104,7 @@ interface ChatState {
   chats: Chat[]
   folders: Folder[]
   activeChatId: string | null
+  activeTemporaryChatId: string | null
   streamingIds: string[]
   responseSequences: Record<string, number>
   responseChatIds: Record<string, string>
@@ -112,6 +115,9 @@ interface ChatState {
   applyResponseSnapshot: (snapshot: ResponseSnapshot, options?: { invalidate?: boolean }) => void
   newChat: (modelId?: string) => string
   setActive: (id: string | null) => void
+  persistTemporaryChat: (id: string) => Promise<ServerChat>
+  abandonTemporaryChat: (id?: string) => void
+  markTemporaryExpired: (id: string) => void
   deleteChat: (id: string) => void
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
@@ -302,6 +308,11 @@ function toChat(
     folderId: row.folderId,
     sortOrder: row.sortOrder ?? current?.sortOrder ?? 0,
     tags: current?.tags ?? [],
+    temporary: row.temporary ?? current?.temporary ?? false,
+    expiresAt: row.expiresAt === undefined
+      ? current?.expiresAt ?? null
+      : row.expiresAt === null ? null : Date.parse(row.expiresAt),
+    expired: current?.expired ?? false,
   }
 }
 
@@ -394,6 +405,10 @@ function cacheOptimisticTurn(input: {
         updatedAt: createdAt,
         activeResponseId: input.responseId,
         activeBranchLeafId: input.responseId,
+        temporary: existing.temporary ?? input.temporary,
+        expiresAt: (existing.temporary ?? input.temporary)
+          ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString()
+          : null,
         attachments: [
           ...(existing.attachments ?? []).filter((attachment) => !input.attachments.some((item) => item.id === attachment.id)),
           ...input.attachments.map((attachment) => ({
@@ -412,6 +427,8 @@ function cacheOptimisticTurn(input: {
         pinned: false,
         folderId: null,
         sortOrder: 0,
+        temporary: input.temporary,
+        expiresAt: input.temporary ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString() : null,
         createdAt,
         updatedAt: createdAt,
         activeResponseId: input.responseId,
@@ -425,10 +442,12 @@ function cacheOptimisticTurn(input: {
         responses: [response],
       }
   queryClient.setQueryData(chatKey(input.chatId), detail)
-  queryClient.setQueryData<ServerChat[]>(chatsKey(), (rows = []) => {
-    const summary = { ...detail, responses: undefined }
-    return [summary, ...rows.filter((row) => row.id !== input.chatId)]
-  })
+  if (!input.temporary) {
+    queryClient.setQueryData<ServerChat[]>(chatsKey(), (rows = []) => {
+      const summary = { ...detail, responses: undefined }
+      return [summary, ...rows.filter((row) => row.id !== input.chatId)]
+    })
+  }
   return selectionIntent.version
 }
 
@@ -676,12 +695,19 @@ export const useChat = create<ChatState>()((set, get) => ({
   chats: [],
   folders: [],
   activeChatId: null,
+  activeTemporaryChatId: null,
   streamingIds: [],
   responseSequences: {},
   responseChatIds: {},
 
   replaceSummaries: (rows) => set((state) => {
-    const chats = rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds))
+    const serverChats = rows.map((row) => toChat(row, state.chats.find((chat) => chat.id === row.id), state.responseSequences, state.streamingIds))
+    const activeTemporary = state.activeTemporaryChatId
+      ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
+      : undefined
+    const chats = activeTemporary && !serverChats.some((chat) => chat.id === activeTemporary.id)
+      ? [activeTemporary, ...serverChats]
+      : serverChats
     const tracking = mergeSummaryResponseTracking(
       rows,
       state.streamingIds,
@@ -829,10 +855,72 @@ export const useChat = create<ChatState>()((set, get) => ({
   },
 
   newChat: (modelId) => {
+    get().abandonTemporaryChat()
     set({ activeChatId: null })
     return modelId ?? useCatalog.getState().models[0]?.id ?? ''
   },
   setActive: (activeChatId) => set({ activeChatId }),
+
+  persistTemporaryChat: async (id) => {
+    try {
+      const persisted = await enqueueChatMutation(id, () => apiRequest<ServerChat>(`/api/chats/${id}/persist`, {
+        method: 'POST',
+      }))
+      const normalized: ServerChat = { ...persisted, temporary: false, expiresAt: null }
+      set((state) => ({
+        activeTemporaryChatId: state.activeTemporaryChatId === id ? null : state.activeTemporaryChatId,
+        chats: state.chats.map((chat) => chat.id === id ? {
+          ...chat,
+          temporary: false,
+          expiresAt: null,
+          expired: false,
+        } : chat),
+      }))
+      queryClient.setQueryData<ServerChat>(chatKey(id), (chat) => chat ? {
+        ...chat,
+        ...normalized,
+        responses: chat.responses,
+        attachments: chat.attachments,
+      } : normalized)
+      await queryClient.invalidateQueries({ queryKey: chatsKey() })
+      return normalized
+    } catch (error) {
+      if (error instanceof ApiError && (error.code === 'temporary_chat_expired' || error.status === 404)) {
+        get().markTemporaryExpired(id)
+      }
+      throw error
+    }
+  },
+
+  abandonTemporaryChat: (requestedId) => {
+    const id = requestedId ?? get().activeTemporaryChatId
+    if (!id) return
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat?.temporary) {
+      set((state) => ({
+        activeTemporaryChatId: state.activeTemporaryChatId === id ? null : state.activeTemporaryChatId,
+      }))
+      return
+    }
+    const responseIds = new Set(chat.messages.filter((message) => message.role === 'assistant').map((message) => message.id))
+    for (const responseId of responseIds) pendingOptimisticResponses.delete(responseId)
+    set((state) => ({
+      activeTemporaryChatId: state.activeTemporaryChatId === id ? null : state.activeTemporaryChatId,
+      activeChatId: state.activeChatId === id ? null : state.activeChatId,
+      chats: state.chats.filter((item) => item.id !== id),
+      streamingIds: state.streamingIds.filter((responseId) => !responseIds.has(responseId)),
+      responseChatIds: Object.fromEntries(Object.entries(state.responseChatIds).filter(([, chatId]) => chatId !== id)),
+    }))
+    queryClient.setQueryData<ServerChat[]>(chatsKey(), (rows) => rows?.filter((row) => row.id !== id))
+    const userId = currentUserId()
+    if (userId) void clearLocalChats(userId, [id]).catch(() => undefined)
+    else queryClient.removeQueries({ queryKey: chatKey(id), exact: true })
+  },
+
+  markTemporaryExpired: (id) => set((state) => ({
+    streamingIds: state.streamingIds.filter((responseId) => state.responseChatIds[responseId] !== id),
+    chats: state.chats.map((chat) => chat.id === id && chat.temporary ? { ...chat, expired: true } : chat),
+  })),
 
   deleteChat: (id) => {
     const userId = currentUserId()
@@ -1008,6 +1096,8 @@ export const useChat = create<ChatState>()((set, get) => ({
     const responseId = crypto.randomUUID()
     const timestamp = Date.now()
     const cachedChat = queryClient.getQueryData<ServerChat>(chatKey(id))
+    const currentChat = get().chats.find((chat) => chat.id === id)
+    if (currentChat?.temporary && currentChat.expired) return id
     const parentResponseId = cachedChat?.activeBranchLeafId ?? cachedChat?.activeResponseId ?? null
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
@@ -1032,11 +1122,31 @@ export const useChat = create<ChatState>()((set, get) => ({
       const titleSource = content || (attachments[0]?.name ?? 'Image')
       const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
       const updated: Chat = existing
-        ? { ...existing, updatedAt: timestamp, messages: [...existing.messages, userMessage, assistantMessage] }
-        : { id, title, modelId, messages: [userMessage, assistantMessage], createdAt: timestamp, updatedAt: timestamp, pinned: false, folderId: null, sortOrder: 0, tags: [] }
+        ? {
+          ...existing,
+          updatedAt: timestamp,
+          expiresAt: existing.temporary ? timestamp + 48 * 60 * 60 * 1_000 : existing.expiresAt,
+          messages: [...existing.messages, userMessage, assistantMessage],
+        }
+        : {
+          id,
+          title,
+          modelId,
+          messages: [userMessage, assistantMessage],
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          pinned: false,
+          folderId: null,
+          sortOrder: 0,
+          tags: [],
+          temporary,
+          expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : null,
+          expired: false,
+        }
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
         activeChatId: id,
+        activeTemporaryChatId: temporary || existing?.temporary ? id : state.activeTemporaryChatId,
         streamingIds: addStreamingId(state.streamingIds, responseId),
         responseChatIds: { ...state.responseChatIds, [responseId]: id },
       }
@@ -1121,7 +1231,11 @@ export const useChat = create<ChatState>()((set, get) => ({
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
       await queryClient.invalidateQueries({ queryKey: chatKey(id) })
     })().catch((error: unknown) => {
-      const errorMessage = error instanceof Error ? error.message : 'Unable to generate a response'
+      const expired = error instanceof ApiError
+        && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === id && chat.temporary)))
+      const errorMessage = expired
+        ? 'This temporary chat has expired and cannot be recovered.'
+        : error instanceof Error ? error.message : 'Unable to generate a response'
       const failedAt = new Date().toISOString()
       set((state) => ({
         streamingIds: removeStreamingId(state.streamingIds, responseId),
@@ -1152,6 +1266,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           }),
         }
       })
+      if (expired) get().markTemporaryExpired(id)
     })
     return id
   },
@@ -1183,9 +1298,14 @@ export const useChat = create<ChatState>()((set, get) => ({
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'Unable to regenerate the response'
+      const expired = error instanceof ApiError
+        && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === chatId && chat.temporary)))
+      const message = expired
+        ? 'This temporary chat has expired and cannot be recovered.'
+        : error instanceof Error ? error.message : 'Unable to regenerate the response'
       const failed = failOptimisticResponse(chatId, responseId, messageId, selectionVersion, message)
       if (failed) get().setDetailedChat(failed)
+      if (expired) get().markTemporaryExpired(chatId)
     })
   },
   editUserMessage: (chatId, messageId, content, modelId) => {
@@ -1218,9 +1338,14 @@ export const useChat = create<ChatState>()((set, get) => ({
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : 'Unable to save and resend the message'
+      const expired = error instanceof ApiError
+        && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === chatId && chat.temporary)))
+      const message = expired
+        ? 'This temporary chat has expired and cannot be recovered.'
+        : error instanceof Error ? error.message : 'Unable to save and resend the message'
       const failed = failOptimisticResponse(chatId, responseId, sourceResponseId, selectionVersion, message)
       if (failed) get().setDetailedChat(failed)
+      if (expired) get().markTemporaryExpired(chatId)
     })
   },
   editAssistantMessage: (chatId, messageId, content) => {

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { io, type Socket } from 'socket.io-client'
 import type { ResponseEvent, ServerToClientEvents, ClientToServerEvents, SyncResult } from '@pulpo/contracts'
 import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
-import { apiRequest } from '@/lib/api'
+import { apiRequest, ApiError } from '@/lib/api'
 import { localDb } from '@/lib/local-first/database'
 import { warmAttachmentCache } from '@/lib/local-first/attachment-cache'
 import { flushOutbox } from '@/lib/local-first/outbox'
@@ -29,7 +29,9 @@ export function ChatDataBridge() {
   const userId = user?.id
   const userRole = user?.role
   const location = useLocation()
-  const chatId = /^\/c\/([^/]+)/.exec(location.pathname)?.[1]
+  const routeChatId = /^\/c\/([^/]+)/.exec(location.pathname)?.[1]
+  const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
+  const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
   const streamingIds = useChat((state) => state.streamingIds)
   const replaceSummaries = useChat((state) => state.replaceSummaries)
   const replaceFolders = useChat((state) => state.replaceFolders)
@@ -67,7 +69,12 @@ export function ChatDataBridge() {
   useEffect(() => { if (foldersQuery.data) replaceFolders(foldersQuery.data) }, [foldersQuery.data, replaceFolders])
   useEffect(() => { if (chatQuery.data) setDetailedChat(chatQuery.data) }, [chatQuery.data, setDetailedChat])
   useEffect(() => {
-    if (userId && chatQuery.data?.attachments?.length) {
+    if (chatId === activeTemporaryChatId && chatQuery.error instanceof ApiError && chatQuery.error.code === 'temporary_chat_expired') {
+      useChat.getState().markTemporaryExpired(chatId)
+    }
+  }, [activeTemporaryChatId, chatId, chatQuery.error])
+  useEffect(() => {
+    if (userId && !chatQuery.data?.temporary && chatQuery.data?.attachments?.length) {
       void warmAttachmentCache(userId, chatQuery.data.attachments, attachmentCacheMb)
     }
   }, [userId, chatQuery.data, attachmentCacheMb])

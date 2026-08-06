@@ -228,7 +228,11 @@ export const chats = pgTable('chats', {
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   purgeStartedAt: timestamp('purge_started_at', { withTimezone: true }),
   ...timestamps,
-}, (table) => [index('chats_user_updated_idx').on(table.userId, table.updatedAt)])
+}, (table) => [
+  index('chats_user_updated_idx').on(table.userId, table.updatedAt),
+  index('chats_temporary_expiry_idx').on(table.expiresAt)
+    .where(sql`${table.temporary} = true and ${table.purgeStartedAt} is null`),
+])
 
 export const responses = pgTable('responses', {
   id: uuid('id').primaryKey(),

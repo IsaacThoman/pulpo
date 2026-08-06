@@ -637,21 +637,25 @@ export const MessageItem = memo(function MessageItem({
         )}
         {!editing && (
           <div className="flex items-center gap-1">
-            <BranchControls chatId={chat.id} branch={message.branch} />
+            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {message.content ? <CopyButton text={message.content} /> : null}
-              <ActionButton
-                label="Edit"
-                onClick={() => {
-                  setDraft(message.content)
-                  setEditing(true)
-                }}
-              >
-                <Pencil className="size-3.5" />
-              </ActionButton>
-              <ActionButton label="Delete message" onClick={() => { if (confirm('Delete this user message and every response that follows from it?')) deleteUserMessage(chat.id, message.id) }}>
-                <Trash2 className="size-3.5" />
-              </ActionButton>
+              {!chat.expired && (
+                <>
+                  <ActionButton
+                    label="Edit"
+                    onClick={() => {
+                      setDraft(message.content)
+                      setEditing(true)
+                    }}
+                  >
+                    <Pencil className="size-3.5" />
+                  </ActionButton>
+                  <ActionButton label="Delete message" onClick={() => { if (confirm('Delete this user message and every response that follows from it?')) deleteUserMessage(chat.id, message.id) }}>
+                    <Trash2 className="size-3.5" />
+                  </ActionButton>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -784,22 +788,26 @@ export const MessageItem = memo(function MessageItem({
 
         {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex items-center gap-1">
-            <BranchControls chatId={chat.id} branch={message.branch} />
+            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
             {message.done && (
               <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                 <CopyButton text={message.content} />
-                <ActionButton
-                  label="Edit response"
-                  onClick={() => {
-                    setDraft(message.content)
-                    setEditing(true)
-                  }}
-                >
-                  <Pencil className="size-3.5" />
-                </ActionButton>
-                <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
-                  <RefreshCw className="size-3.5" />
-                </ActionButton>
+                {!chat.expired && (
+                  <>
+                    <ActionButton
+                      label="Edit response"
+                      onClick={() => {
+                        setDraft(message.content)
+                        setEditing(true)
+                      }}
+                    >
+                      <Pencil className="size-3.5" />
+                    </ActionButton>
+                    <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
+                      <RefreshCw className="size-3.5" />
+                    </ActionButton>
+                  </>
+                )}
                 {(message.tokensIn !== undefined || message.cost !== undefined) && (
                   <span className="ml-1 text-[11px] text-muted-foreground">
                     {message.tokensIn !== undefined &&
@@ -825,6 +833,7 @@ export const MessageItem = memo(function MessageItem({
   && previous.activeModelId === next.activeModelId
   && previous.chat.id === next.chat.id
   && previous.chat.modelId === next.chat.modelId
+  && previous.chat.expired === next.chat.expired
 ))
 
 export function UserAvatar() {

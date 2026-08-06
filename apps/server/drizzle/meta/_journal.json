@@ -155,6 +155,13 @@
       "when": 1785874375916,
       "tag": "0021_previous_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785977850663,
+      "tag": "0022_wild_reaper",
+      "breakpoints": true
     }
   ]
 }

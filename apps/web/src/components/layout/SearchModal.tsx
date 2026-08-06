@@ -23,7 +23,11 @@ export function SearchModal({
 }) {
   const [query, setQuery] = useState('')
   const [cursor, setCursor] = useState(0)
-  const chats = useChat((state) => open ? state.chats : EMPTY_CHATS)
+  const allChats = useChat((state) => state.chats)
+  const chats = useMemo(
+    () => open ? allChats.filter((chat) => !chat.temporary) : EMPTY_CHATS,
+    [allChats, open],
+  )
   const navigate = useNavigate()
   const [remote, setRemote] = useState<ServerChat[]>([])
 
@@ -60,7 +64,14 @@ export function SearchModal({
     )
     const localIds = new Set(local.map((chat) => chat.id))
     return [...local, ...remote.filter((chat) => !localIds.has(chat.id)).map((chat) => ({
-      ...chat, messages: [], createdAt: Date.parse(chat.createdAt), updatedAt: Date.parse(chat.updatedAt), tags: [],
+      ...chat,
+      messages: [],
+      createdAt: Date.parse(chat.createdAt),
+      updatedAt: Date.parse(chat.updatedAt),
+      tags: [],
+      temporary: false,
+      expiresAt: null,
+      expired: false,
     }))]
   }, [chats, query, remote])
 

@@ -34,7 +34,12 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       const cached = await redis.get(redisKey)
       if (cached) { reply.code(201); return JSON.parse(decryptSecret(cached, getConfig().ENCRYPTION_KEY)) }
     }
-    const [chat] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, input.chatId), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
+    const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
+      eq(chats.id, input.chatId),
+      eq(chats.userId, user.id),
+      eq(chats.temporary, false),
+      isNull(chats.deletedAt),
+    )).limit(1)
     if (!chat) throw notFound('Chat')
     const token = randomToken(32)
     const [created] = await db.insert(chatShares).values({

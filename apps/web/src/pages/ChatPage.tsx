@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Ghost, Share2 } from 'lucide-react'
+import { Ghost, Loader2, Save } from 'lucide-react'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
@@ -77,16 +77,20 @@ function Placeholder({
 }
 
 export function ChatPage() {
-  const { chatId } = useParams()
+  const { chatId: routeChatId } = useParams()
   const [params] = useSearchParams()
   const location = useLocation()
   const navigate = useNavigate()
+  const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
+  const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
   const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
-  const [temporary, setTemporary] = useState(params.get('temporary') === '1')
+  const [temporary, setTemporary] = useState(false)
+  const [savingTemporary, setSavingTemporary] = useState(false)
+  const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
     count: 4,
@@ -117,10 +121,18 @@ export function ChatPage() {
   useEffect(() => {
     if (!resetDefaultToken || handledResetRef.current === resetDefaultToken) return
     handledResetRef.current = resetDefaultToken
+    setTemporary(false)
+    setTemporaryError(null)
     shouldApplyDefaultRef.current = true
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next) setModelId(next)
   }, [defaultModelId, models, resetDefaultToken])
+
+  useEffect(() => {
+    if (!routeChatId || !chat?.temporary) return
+    useChat.getState().abandonTemporaryChat(chat.id)
+    navigate('/', { replace: true, state: { resetDefaultModel: crypto.randomUUID() } })
+  }, [chat, navigate, routeChatId])
 
   useEffect(() => {
     if (chatId || routeModelId || !shouldApplyDefaultRef.current) return
@@ -173,7 +185,34 @@ export function ChatPage() {
 
   const sendSuggestion = (s: string) => {
     const id = useChat.getState().sendMessage(null, s, modelId, [], temporary)
-    navigate(`/c/${id}`)
+    if (!temporary) navigate(`/c/${id}`)
+  }
+
+  const handleTemporaryControl = async () => {
+    setTemporaryError(null)
+    if (!chat) {
+      setTemporary((value) => !value)
+      return
+    }
+    if (!chat.temporary || chat.expired || savingTemporary) return
+    setSavingTemporary(true)
+    try {
+      await useChat.getState().persistTemporaryChat(chat.id)
+      setTemporary(false)
+      navigate(`/c/${chat.id}`)
+    } catch (error) {
+      setTemporaryError(error instanceof Error ? error.message : 'Unable to save this chat')
+    } finally {
+      setSavingTemporary(false)
+    }
+  }
+
+  const temporaryMode = temporary || Boolean(chat?.temporary)
+  const showTemporaryControl = !routeChatId && (!chat || chat.temporary)
+  const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
+
+  if (legacyTemporaryRoute) {
+    return <div className="grid h-full place-items-center text-sm text-muted-foreground">Opening a new chat…</div>
   }
 
   return (
@@ -182,35 +221,33 @@ export function ChatPage() {
       <header className="flex h-12 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />
         <div className="flex-1" />
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-              aria-label="Temporary chat"
-              onClick={() => setTemporary((value) => !value)}
-              data-active={temporary}
-            >
-              <Ghost className={cn('size-4', temporary && 'text-primary')} />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>Temporary chat</TooltipContent>
-        </Tooltip>
-        {chat && (
+        {showTemporaryControl && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                onClick={() => void useChat.getState().shareChat(chat.id)
-                  .then((url) => navigator.clipboard?.writeText(url))}
-                aria-label="Share chat"
+                aria-label={temporaryMode ? 'Save chat' : 'Temporary chat'}
+                onClick={() => void handleTemporaryControl()}
+                disabled={savingTemporary || Boolean(chat?.expired)}
+                data-active={temporaryMode}
               >
-                <Share2 className="size-4" />
+                {savingTemporary
+                  ? <Loader2 className="size-4 animate-spin" />
+                  : temporaryMode
+                    ? <Save className="size-4 text-primary" />
+                    : <Ghost className="size-4" />}
               </button>
             </TooltipTrigger>
-            <TooltipContent>Copy share link</TooltipContent>
+            <TooltipContent>{chat?.expired ? 'Temporary chat expired' : temporaryMode ? 'Save chat' : 'Temporary chat'}</TooltipContent>
           </Tooltip>
         )}
       </header>
+
+      {temporaryError && (
+        <div role="status" className="mx-auto w-full max-w-5xl px-4 pb-2 text-sm text-destructive">
+          {temporaryError}
+        </div>
+      )}
 
       {/* body */}
       {isEmpty ? (
@@ -224,7 +261,7 @@ export function ChatPage() {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer chatId={null} modelId={modelId} temporary={temporary} />
+            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} />
           </div>
         </>
       ) : (
@@ -255,7 +292,13 @@ export function ChatPage() {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer chatId={chat.id} modelId={modelId} />
+            {chat.expired ? (
+              <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.
+              </div>
+            ) : (
+              <Composer chatId={chat.id} modelId={modelId} temporary={chat.temporary} />
+            )}
           </div>
         </>
       )}

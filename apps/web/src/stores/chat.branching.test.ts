@@ -132,6 +132,7 @@ beforeEach(() => {
     chats: [],
     folders: [],
     activeChatId: chatId,
+    activeTemporaryChatId: null,
     streamingIds: [],
     responseSequences: {},
     responseChatIds: {},
@@ -144,6 +145,47 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('keeps a temporary start routeless, preserves it across summaries, and waits to persist', async () => {
+    const temporaryId = useChat.getState().sendMessage(null, 'private prompt', 'test-model', [], true)
+    const temporaryChat = useChat.getState().chats.find((chat) => chat.id === temporaryId)
+
+    expect(temporaryChat).toMatchObject({ temporary: true, expired: false })
+    expect(useChat.getState().activeTemporaryChatId).toBe(temporaryId)
+    expect(queryClient.getQueryData<ServerChat[]>(['chats', userId])).toBeUndefined()
+
+    useChat.getState().replaceSummaries([])
+    expect(useChat.getState().chats.some((chat) => chat.id === temporaryId)).toBe(true)
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    const save = useChat.getState().persistTemporaryChat(temporaryId)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(requests).toHaveLength(1)
+
+    requests[0]!.resolve({})
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    expect(requests[1]).toMatchObject({
+      path: `/api/chats/${temporaryId}/persist`,
+      method: 'POST',
+    })
+    requests[1]!.resolve({
+      id: temporaryId,
+      title: 'private prompt',
+      modelId: 'test-model',
+      pinned: false,
+      folderId: null,
+      temporary: false,
+      expiresAt: null,
+      createdAt,
+      updatedAt: createdAt,
+      activeResponseId: null,
+      activeBranchLeafId: null,
+    })
+    await save
+
+    expect(useChat.getState().activeTemporaryChatId).toBeNull()
+    expect(useChat.getState().chats.find((chat) => chat.id === temporaryId)?.temporary).toBe(false)
+  })
+
   it('creates and submits a distinct user branch for unchanged text', async () => {
     const responseA = response(responseAId, 'completed')
     const initial = detail(responseAId, [responseA])

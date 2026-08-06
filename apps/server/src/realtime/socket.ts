@@ -1,5 +1,5 @@
 import type { Server as HttpServer } from 'node:http'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
 import type { ClientToServerEvents, ResponseSnapshot, ServerToClientEvents, SyncResult } from '@pulpo/contracts'
@@ -11,6 +11,7 @@ import { db } from '../database/client.js'
 import { chats, responses, users } from '../database/schema.js'
 import { readResponseEvents } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
+import { accessibleChatCondition } from '../chats/temporary.js'
 
 interface SocketData {
   user: AuthenticatedUser
@@ -97,7 +98,14 @@ export async function createSocketServer(httpServer: HttpServer) {
         const [current] = await db.select({ revision: users.stateRevision }).from(users).where(eq(users.id, user.id)).limit(1)
         const responseIds = Object.keys(input.responseCursors)
         const owned = responseIds.length
-          ? await db.select().from(responses).where(and(eq(responses.userId, user.id), inArray(responses.id, responseIds)))
+          ? await db.select({ response: responses }).from(responses)
+            .innerJoin(chats, eq(chats.id, responses.chatId))
+            .where(and(
+              eq(responses.userId, user.id),
+              inArray(responses.id, responseIds),
+              isNull(chats.deletedAt),
+              accessibleChatCondition(),
+            )).then((rows) => rows.map((row) => row.response))
           : []
         const result: SyncResult = {
           accountRevision: current?.revision ?? user.stateRevision,
@@ -119,7 +127,12 @@ export async function createSocketServer(httpServer: HttpServer) {
       const chatId = realtimeResourceId(rawChatId)
       if (!chatId) return
       runSocketTask('chat.subscribe', async () => {
-        const [owned] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, chatId), eq(chats.userId, user.id))).limit(1)
+        const [owned] = await db.select({ id: chats.id }).from(chats).where(and(
+          eq(chats.id, chatId),
+          eq(chats.userId, user.id),
+          isNull(chats.deletedAt),
+          accessibleChatCondition(),
+        )).limit(1)
         if (owned) await socket.join(`chat:${chatId}`)
       })
     })
@@ -131,7 +144,15 @@ export async function createSocketServer(httpServer: HttpServer) {
       const responseId = realtimeResourceId(rawResponseId)
       if (!responseId || !Number.isSafeInteger(afterSequence) || afterSequence < 0) return
       runSocketTask('response.subscribe', async () => {
-        const [owned] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, user.id))).limit(1)
+        const [row] = await db.select({ response: responses }).from(responses)
+          .innerJoin(chats, eq(chats.id, responses.chatId))
+          .where(and(
+            eq(responses.id, responseId),
+            eq(responses.userId, user.id),
+            isNull(chats.deletedAt),
+            accessibleChatCondition(),
+          )).limit(1)
+        const owned = row?.response
         if (!owned) return
         const events = await readResponseEvents(responseId, afterSequence)
         let replayedThrough = afterSequence

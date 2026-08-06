@@ -30,7 +30,10 @@ export function aggregateOcrStatus(current: string, next: 'completed' | 'failed'
   return current === 'failed' || next === 'failed' ? 'failed' : 'completed'
 }
 
-export async function createModelImageInterceptor(requestLogId: string): Promise<ModelImageInterceptor> {
+export async function createModelImageInterceptor(
+  requestLogId: string,
+  options: { allowCache?: boolean } = {},
+): Promise<ModelImageInterceptor> {
   const [ocrRow, loggingRow, requestLog] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
@@ -76,7 +79,8 @@ export async function createModelImageInterceptor(requestLogId: string): Promise
         attemptModelId = runtime.model.id
         providerFingerprint = `${runtime.model.id}:${runtime.provider.id}:${runtime.model.upstreamModelId}`
         cacheChecksum = createHash('sha256').update(providerFingerprint).update(image.data).digest('hex')
-        const [cached] = settings.cacheEnabled
+        const cacheEnabled = settings.cacheEnabled && options.allowCache !== false
+        const [cached] = cacheEnabled
           ? await db.select().from(ocrCacheEntries).where(and(eq(ocrCacheEntries.checksum, cacheChecksum), gt(ocrCacheEntries.expiresAt, new Date()))).limit(1)
           : []
         let text = cached?.text
@@ -97,7 +101,7 @@ export async function createModelImageInterceptor(requestLogId: string): Promise
           })
           text = (rawResponse as { output_text?: string }).output_text?.trim()
           if (!text) throw new Error('OCR returned no text')
-          if (settings.cacheEnabled) {
+          if (cacheEnabled) {
             await db.insert(ocrCacheEntries).values({
               checksum: cacheChecksum,
               providerFingerprint,

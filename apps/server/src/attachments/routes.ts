@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
@@ -10,9 +10,17 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { getStorageUsage, reserveAttachment } from './storage-quota.js'
+import { accessibleChatCondition } from '../chats/temporary.js'
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx'])
+
+function accessibleAttachmentCondition() {
+  return or(
+    isNull(attachments.chatId),
+    and(isNull(chats.deletedAt), accessibleChatCondition()),
+  )
+}
 
 export function attachmentUploadContentType(storageDriver: 'local' | 's3', mimeType: string): string {
   return storageDriver === 'local' ? 'application/octet-stream' : mimeType
@@ -49,7 +57,12 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       throw new AppError(400, 'attachment_type_not_allowed', 'This attachment type is not supported')
     }
     if (input.chatId) {
-      const [chat] = await db.select({ id: chats.id }).from(chats).where(and(eq(chats.id, input.chatId), eq(chats.userId, user.id))).limit(1)
+      const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
+        eq(chats.id, input.chatId),
+        eq(chats.userId, user.id),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).limit(1)
       if (!chat) throw notFound('Chat')
     }
     const id = newId()
@@ -65,7 +78,15 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Upload')
     const { key } = request.params as { key: string }
-    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.objectKey, key), eq(attachments.userId, user.id), eq(attachments.status, 'pending'))).limit(1)
+    const [result] = await db.select({ attachment: attachments }).from(attachments)
+      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .where(and(
+        eq(attachments.objectKey, key),
+        eq(attachments.userId, user.id),
+        eq(attachments.status, 'pending'),
+        accessibleAttachmentCondition(),
+      )).limit(1)
+    const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
     const body = request.body as Buffer
     if (!Buffer.isBuffer(body) || body.byteLength !== attachment.sizeBytes) throw new AppError(400, 'attachment_size_mismatch', 'Uploaded size does not match the declared size')
@@ -81,7 +102,14 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.post('/api/attachments/:id/confirm', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1)
+    const [result] = await db.select({ attachment: attachments }).from(attachments)
+      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .where(and(
+        eq(attachments.id, id),
+        eq(attachments.userId, user.id),
+        accessibleAttachmentCondition(),
+      )).limit(1)
+    const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
     try {
       const body = await getBlobStore().get(attachment.objectKey)
@@ -98,7 +126,15 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/attachments/:id/download', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id), eq(attachments.status, 'ready'))).limit(1)
+    const [result] = await db.select({ attachment: attachments }).from(attachments)
+      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .where(and(
+        eq(attachments.id, id),
+        eq(attachments.userId, user.id),
+        eq(attachments.status, 'ready'),
+        accessibleAttachmentCondition(),
+      )).limit(1)
+    const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
     return { url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300) }
   })
@@ -107,7 +143,15 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     if (getConfig().STORAGE_DRIVER !== 'local') throw notFound('Download')
     const { key } = request.params as { key: string }
-    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.objectKey, key), eq(attachments.userId, user.id), eq(attachments.status, 'ready'))).limit(1)
+    const [result] = await db.select({ attachment: attachments }).from(attachments)
+      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .where(and(
+        eq(attachments.objectKey, key),
+        eq(attachments.userId, user.id),
+        eq(attachments.status, 'ready'),
+        accessibleAttachmentCondition(),
+      )).limit(1)
+    const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
     reply.type(attachment.mimeType).header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`)
     return Buffer.from(await getBlobStore().get(key))

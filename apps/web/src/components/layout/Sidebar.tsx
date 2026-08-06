@@ -612,14 +612,14 @@ export function Sidebar({
   const location = useLocation()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}`
+    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
   )).join('|'))
   void chatListRevision
   const folderListRevision = useChat((state) => state.folders.map((folder) => (
     `${folder.id}:${folder.name}:${folder.pinned}:${folder.expanded}:${folder.sortOrder}`
   )).join('|'))
   void folderListRevision
-  const chats = useChat.getState().chats
+  const chats = useChat.getState().chats.filter((chat) => !chat.temporary)
   const folders = useChat.getState().folders
   const addFolder = useChat((s) => s.addFolder)
   const reorderFolders = useChat((s) => s.reorderFolders)
@@ -753,6 +753,7 @@ export function Sidebar({
   }
 
   const startNewChat = () => {
+    useChat.getState().abandonTemporaryChat()
     navigate('/', {
       state: location.pathname === '/'
         ? { resetDefaultModel: `${Date.now()}-${Math.random()}` }

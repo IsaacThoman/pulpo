@@ -7,7 +7,7 @@ import { generationQueue, maintenanceQueue, type GenerationJob, type Maintenance
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
-import { markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
+import { expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { parseAgentSettings } from './settings/application-settings.js'
 
 const config = getConfig()
@@ -57,6 +57,11 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
     await markExpiredChatsForPurge(new Date(), userId)
     await purgePendingChats(userId)
+  }
+  if (job.data.type === 'expire-temporary-chat') {
+    const chatId = typeof job.data.payload?.chatId === 'string' ? job.data.payload.chatId : ''
+    const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : ''
+    if (chatId && userId && await expireTemporaryChat(chatId, userId)) await purgePendingChats(userId)
   }
   if (job.data.type === 'rollup') await rebuildDailyRollups()
   if (job.data.type === 'backup') await createFullBackup(String(job.data.payload?.jobId))

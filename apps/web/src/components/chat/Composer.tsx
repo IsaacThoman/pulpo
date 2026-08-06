@@ -155,7 +155,7 @@ export function Composer({
         await apiRequest(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
         const mimeType = file.type || 'application/octet-stream'
         const userId = useAuth.getState().user?.id
-        if (userId) {
+        if (userId && !temporary) {
           await cacheAttachmentBlob(userId, {
             id: created.attachment.id,
             originalName: file.name,
@@ -179,7 +179,7 @@ export function Composer({
     }))
 
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [chatId])
+  }, [chatId, temporary])
 
   const addSupportedFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
     void uploadFiles(collectSupportedFiles(list))
@@ -196,7 +196,7 @@ export function Composer({
       size: attachment.size,
     }))
     const targetChatId = sendMessage(chatId, text, modelId, payload, temporary)
-    if (!chatId && targetChatId) navigate(`/c/${targetChatId}`)
+    if (!chatId && targetChatId && !temporary) navigate(`/c/${targetChatId}`)
     setValue('')
     for (const attachment of attachments) if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
     setAttachments([])

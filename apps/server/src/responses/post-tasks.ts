@@ -57,6 +57,9 @@ export async function runPostResponseTasks(
   const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
   const values = (preference?.values ?? {}) as { memoryEnabled?: boolean }
   if (!values.memoryEnabled) return
+  const [chat] = await db.select({ temporary: chats.temporary }).from(chats)
+    .where(eq(chats.id, record.response.chatId)).limit(1)
+  if (chat?.temporary) return
   const memoryResult = await trackInternalModelCall({
     requestLogId,
     modelId: runtime.model.id,

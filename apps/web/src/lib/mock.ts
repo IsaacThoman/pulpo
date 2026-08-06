@@ -420,6 +420,9 @@ export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
       folderId: i % 5 === 1 ? folders[i % 3].id : null,
       sortOrder: i,
       tags: i % 4 === 0 ? ['dev'] : i % 7 === 0 ? ['writing'] : [],
+      temporary: false,
+      expiresAt: null,
+      expired: false,
     })
   })
   return { chats, folders }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -8,6 +8,7 @@ import { SettingsModal } from '@/components/settings/SettingsModal'
 import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
 import { SettingsBridge } from '@/features/settings/SettingsBridge'
 import { BannerBar } from './BannerBar'
+import { useChat } from '@/stores/chat'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -18,6 +19,15 @@ export function AppLayout() {
   const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const location = useLocation()
+  const previousPathRef = useRef(location.pathname)
+
+  useEffect(() => {
+    const previousPath = previousPathRef.current
+    previousPathRef.current = location.pathname
+    if (previousPath === '/' && location.pathname !== '/') {
+      useChat.getState().abandonTemporaryChat()
+    }
+  }, [location.pathname])
 
   useEffect(() => {
     const query = window.matchMedia('(width < 750px)')

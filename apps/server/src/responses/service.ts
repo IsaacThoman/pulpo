@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses } from '../database/schema.js'
@@ -9,6 +9,12 @@ import { generationQueue } from '../jobs.js'
 import { parseAgentSettings, parseLoggingSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { PresetResolutionError, resolvePresetActions, type PresetResolutionModel } from './presets.js'
+import {
+  accessibleChatCondition,
+  scheduleTemporaryChatExpiry,
+  temporaryChatExpiresAt,
+  temporaryChatIsExpired,
+} from '../chats/temporary.js'
 
 export interface CreateResponseOptions {
   userId: string
@@ -47,18 +53,39 @@ async function loadPresetModel(modelId: string): Promise<PresetResolutionModel |
 export async function createResponse(options: CreateResponseOptions) {
   if (options.idempotencyKey) {
     const [existing] = await db
-      .select()
+      .select({ response: responses })
       .from(responses)
-      .where(and(eq(responses.userId, options.userId), eq(responses.idempotencyKey, options.idempotencyKey)))
+      .innerJoin(chats, eq(chats.id, responses.chatId))
+      .where(and(
+        eq(responses.userId, options.userId),
+        eq(responses.idempotencyKey, options.idempotencyKey),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      ))
       .limit(1)
-    if (existing) return existing
+    if (existing) return existing.response
   }
+  const now = new Date()
   const [chat] = await db
     .select()
     .from(chats)
-    .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.userId), isNull(chats.deletedAt)))
+    .where(and(
+      eq(chats.id, options.chatId),
+      eq(chats.userId, options.userId),
+      isNull(chats.deletedAt),
+      accessibleChatCondition(now),
+    ))
     .limit(1)
-  if (!chat) throw notFound('Chat')
+  if (!chat) {
+    const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
+      .from(chats)
+      .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.userId), isNull(chats.deletedAt)))
+      .limit(1)
+    if (owned && temporaryChatIsExpired(owned, now)) {
+      throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+    }
+    throw notFound('Chat')
+  }
   let resolved
   try {
     resolved = await resolvePresetActions(options.input.modelId, options.input.presetSelections, loadPresetModel)
@@ -160,8 +187,33 @@ export async function createResponse(options: CreateResponseOptions) {
       maxOutputTokens,
       pricing,
     })
-    await db.update(chats).set({ activeResponseId: id, activeBranchLeafId: id, updatedAt: new Date() }).where(eq(chats.id, chat.id))
+    const acceptedAt = new Date()
+    const nextExpiresAt = temporaryChatExpiresAt(acceptedAt)
+    const [updatedChat] = await db.update(chats).set({
+      activeResponseId: id,
+      activeBranchLeafId: id,
+      updatedAt: acceptedAt,
+      expiresAt: sql<Date | null>`case when ${chats.temporary} then ${nextExpiresAt} else null end`,
+    }).where(and(
+      eq(chats.id, chat.id),
+      isNull(chats.deletedAt),
+      isNull(chats.purgeStartedAt),
+      accessibleChatCondition(acceptedAt),
+    )).returning({
+      temporary: chats.temporary,
+      expiresAt: chats.expiresAt,
+    })
+    if (!updatedChat) {
+      throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+    }
     await generationQueue.add('generate', { responseId: id }, { jobId: id })
+    if (updatedChat?.temporary && updatedChat.expiresAt) {
+      await scheduleTemporaryChatExpiry({
+        chatId: chat.id,
+        userId: options.userId,
+        expiresAt: updatedChat.expiresAt,
+      })
+    }
   } catch (error) {
     await releaseBudget(id)
     await db.delete(responses).where(eq(responses.id, id))
@@ -169,6 +221,7 @@ export async function createResponse(options: CreateResponseOptions) {
       activeResponseId: previousActiveResponseId,
       activeBranchLeafId: previousActiveResponseId,
       updatedAt: new Date(),
+      expiresAt: sql<Date | null>`case when ${chats.temporary} then ${chat.expiresAt} else null end`,
     }).where(and(eq(chats.id, chat.id), eq(chats.activeResponseId, id)))
     throw error
   }

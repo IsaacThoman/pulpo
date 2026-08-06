@@ -20,6 +20,9 @@ const chat: Chat = {
   folderId: null,
   sortOrder: 0,
   tags: [],
+  temporary: false,
+  expiresAt: null,
+  expired: false,
 }
 
 describe('response tracking', () => {

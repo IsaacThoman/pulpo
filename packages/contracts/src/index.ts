@@ -556,11 +556,18 @@ export const chatSummarySchema = z.object({
   folderId: idSchema.nullable(),
   sortOrder: z.number().int().optional(),
   temporary: z.boolean(),
+  expiresAt: isoDateSchema.nullable().optional(),
   updatedAt: isoDateSchema,
   activeResponseId: idSchema.nullable(),
   inFlightResponseIds: z.array(idSchema).default([]),
 })
 export type ChatSummary = z.infer<typeof chatSummarySchema>
+
+export const persistChatResponseSchema = chatSummarySchema.extend({
+  temporary: z.literal(false),
+  expiresAt: z.null(),
+})
+export type PersistChatResponse = z.infer<typeof persistChatResponseSchema>
 
 export const createChatSchema = z.object({
   clientId: idSchema.optional(),

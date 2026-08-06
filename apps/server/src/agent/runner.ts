@@ -4,7 +4,7 @@ import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem } from '@pulpo/contracts'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -81,7 +81,11 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
-  const imageInterceptor = await createModelImageInterceptor(requestLog.id)
+  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
+    .where(eq(chats.id, record.response.chatId)).limit(1)
+  const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
+    allowCache: !chatState?.temporary,
+  })
   const attachmentIds = (Array.isArray(record.response.input) ? record.response.input : []).flatMap((item) => {
     const content = (item as { content?: unknown }).content
     return Array.isArray(content) ? content.flatMap((part) => {

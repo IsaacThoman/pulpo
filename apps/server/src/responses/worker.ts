@@ -320,7 +320,11 @@ async function processGenerationAttempt(
   }
   const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
-  const imageInterceptor = await createModelImageInterceptor(requestLog.id)
+  const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
+    .where(eq(chats.id, record.response.chatId)).limit(1)
+  const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
+    allowCache: !chatState?.temporary,
+  })
   let sequence = record.response.lastSequence
   const contextual = await contextualInput(client, record, history, requestLog.id, async (item) => {
     sequence += 1

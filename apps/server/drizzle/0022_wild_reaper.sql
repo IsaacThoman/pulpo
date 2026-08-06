@@ -1,0 +1,1 @@
+CREATE INDEX "chats_temporary_expiry_idx" ON "chats" USING btree ("expires_at") WHERE "chats"."temporary" = true and "chats"."purge_started_at" is null;

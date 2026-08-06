@@ -11,15 +11,40 @@ import { cascadeDeletionIds, newestDescendantId } from './branching.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { replaceResponseInputText, responseAttachmentIds, responseInputText } from './input.js'
+import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/temporary.js'
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
-  const [row] = await db.select().from(responses).where(and(eq(responses.id, responseId), eq(responses.userId, userId), isNull(responses.deletedAt))).limit(1)
-  if (!row) throw notFound('Message')
-  return row
+  const now = new Date()
+  const [row] = await db.select({ response: responses }).from(responses)
+    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .where(and(
+      eq(responses.id, responseId),
+      eq(responses.userId, userId),
+      isNull(responses.deletedAt),
+      isNull(chats.deletedAt),
+      accessibleChatCondition(now),
+    )).limit(1)
+  if (row) return row.response
+  const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
+    .from(responses)
+    .innerJoin(chats, eq(chats.id, responses.chatId))
+    .where(and(eq(responses.id, responseId), eq(responses.userId, userId), isNull(chats.deletedAt)))
+    .limit(1)
+  if (owned && temporaryChatIsExpired(owned, now)) {
+    throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+  }
+  throw notFound('Message')
 }
 
 async function bumpRevision(userId: string, chatId: string): Promise<void> {
+  const [permanent] = await db.select({ id: chats.id }).from(chats).where(and(
+    eq(chats.id, chatId),
+    eq(chats.userId, userId),
+    eq(chats.temporary, false),
+    isNull(chats.deletedAt),
+  )).limit(1)
+  if (!permanent) return
   const [updated] = await db.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
     .where(eq(users.id, userId)).returning({ revision: users.stateRevision })
   if (updated) await publishStateChange({ userId, chatId, revision: updated.revision })
@@ -154,11 +179,19 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         createdAt,
         updatedAt: createdAt,
       })
-      await tx.update(chats).set({
+      const [updatedChat] = await tx.update(chats).set({
         activeResponseId: createdId,
         activeBranchLeafId: createdId,
         updatedAt: createdAt,
-      }).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id)))
+      }).where(and(
+        eq(chats.id, original.chatId),
+        eq(chats.userId, user.id),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(createdAt),
+      )).returning({ id: chats.id })
+      if (!updatedChat) {
+        throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+      }
     })
     await bumpRevision(user.id, original.chatId)
     const [created] = await db.select().from(responses).where(eq(responses.id, createdId)).limit(1)
@@ -177,8 +210,17 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       isNull(responses.deletedAt),
     )).orderBy(asc(responses.createdAt), asc(responses.id))
     const leafId = newestDescendantId(turns, selected.id)
-    await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: new Date() })
-      .where(and(eq(chats.id, selected.chatId), eq(chats.userId, user.id)))
+    const now = new Date()
+    const [updatedChat] = await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now })
+      .where(and(
+        eq(chats.id, selected.chatId),
+        eq(chats.userId, user.id),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(now),
+      )).returning({ id: chats.id })
+    if (!updatedChat) {
+      throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+    }
     await bumpRevision(user.id, selected.chatId)
     return { activeBranchLeafId: leafId }
   })
@@ -198,7 +240,12 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const remaining = turns.filter((turn) => !deleting.has(turn.id))
     const currentLeaf = chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null
     const leafId = currentLeaf && !deleting.has(currentLeaf) ? currentLeaf : remaining.at(-1)?.id ?? null
-    await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now }).where(and(eq(chats.id, original.chatId), eq(chats.userId, user.id)))
+    await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now }).where(and(
+      eq(chats.id, original.chatId),
+      eq(chats.userId, user.id),
+      isNull(chats.deletedAt),
+      accessibleChatCondition(now),
+    ))
     await bumpRevision(user.id, original.chatId)
     reply.code(204).send()
   })

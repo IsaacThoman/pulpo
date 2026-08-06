@@ -13,6 +13,7 @@ import {
   modelPreferencesSchema,
   nativeLoginInputSchema,
   ocrSettingsSchema,
+  persistChatResponseSchema,
   responseEventSchema,
   startChatSchema,
   syncRequestSchema,
@@ -61,6 +62,22 @@ describe('shared contracts', () => {
     const responseId = crypto.randomUUID()
     expect(chatSummarySchema.parse({ ...summary, inFlightResponseIds: [responseId] }).inFlightResponseIds)
       .toEqual([responseId])
+  })
+
+  it('requires persisted chat responses to clear temporary retention', () => {
+    const summary = {
+      id: crypto.randomUUID(),
+      title: 'Saved chat',
+      modelId: 'model',
+      pinned: false,
+      folderId: null,
+      temporary: false,
+      expiresAt: null,
+      updatedAt: '2026-08-05T00:00:00.000Z',
+      activeResponseId: null,
+    }
+    expect(persistChatResponseSchema.parse(summary)).toMatchObject({ temporary: false, expiresAt: null })
+    expect(() => persistChatResponseSchema.parse({ ...summary, temporary: true })).toThrow()
   })
 
   it('uses the Pulpo Proxy OCR prompt by default', () => {
