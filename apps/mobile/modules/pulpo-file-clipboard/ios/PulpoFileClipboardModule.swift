@@ -27,5 +27,25 @@ public final class PulpoFileClipboardModule: Module {
       UIPasteboard.general.setItemProviders([provider], localOnly: false, expirationDate: nil)
     }
     .runOnQueue(DispatchQueue.main)
+
+    View(TemporaryChatHeaderView.self) {
+      Events("onToggleTemporary", "onSave", "onNewChat")
+
+      Prop("active") { (view, value: Bool) in
+        view.setActive(value)
+      }
+      Prop("expanded") { (view, value: Bool) in
+        view.setExpanded(value)
+      }
+      Prop("saving") { (view, value: Bool) in
+        view.setSaving(value)
+      }
+      Prop("saveDisabled") { (view, value: Bool) in
+        view.setSaveDisabled(value)
+      }
+      Prop("reduceMotion") { (view, value: Bool) in
+        view.setReduceMotion(value)
+      }
+    }
   }
 }
