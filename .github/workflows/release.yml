@@ -15,8 +15,18 @@ concurrency:
 
 jobs:
   checks:
-    name: Checks
+    name: Checks / ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Test
+            command: npm test
+          - name: Build
+            command: npm run build
+          - name: Lint
+            command: npm run lint
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -30,14 +40,8 @@ jobs:
       - name: Install dependencies
         run: npm clean-install
 
-      - name: Test
-        run: npm test
-
-      - name: Build
-        run: npm run build
-
-      - name: Lint
-        run: npm run lint
+      - name: ${{ matrix.name }}
+        run: ${{ matrix.command }}
 
   release:
     name: Semantic release
