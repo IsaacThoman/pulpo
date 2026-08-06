@@ -4,12 +4,14 @@ import type { ExpoConfig } from 'expo/config'
 process.env.EXPO_ROUTER_DISABLE_RN_NAVIGATION_CHECK ??= '1'
 
 const defaultInstanceUrl = process.env.EXPO_PUBLIC_DEFAULT_INSTANCE_URL ?? 'https://pulpo.baby'
+const appVersion = process.env.PULPO_APP_VERSION ?? '1.0.0'
+const iosBuildNumber = process.env.PULPO_IOS_BUILD_NUMBER ?? '1'
 
 const config: ExpoConfig = {
   name: 'Pulpo',
   slug: 'pulpo',
   owner: 'isaacthoman',
-  version: '1.0.0',
+  version: appVersion,
   orientation: 'portrait',
   scheme: 'pulpo',
   icon: './assets/pulpo-app-icon.png',
@@ -17,7 +19,7 @@ const config: ExpoConfig = {
   experiments: { typedRoutes: true },
   ios: {
     bundleIdentifier: 'com.isaacthoman.pulpo',
-    buildNumber: '1',
+    buildNumber: iosBuildNumber,
     supportsTablet: false,
     appleTeamId: 'PX72AL9366',
     icon: './assets/pulpo-app-icon.png',

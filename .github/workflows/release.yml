@@ -108,6 +108,26 @@ jobs:
           npm run build -w @pulpo/client-core
         working-directory: .
 
+      - name: Set iOS version
+        run: |
+          set -euo pipefail
+
+          version_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
+          app_version="${version_tag#v}"
+          build_number="$(date -u +%s)"
+
+          if [[ ! "${app_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Latest release tag ${version_tag} is not a valid vX.Y.Z version." >&2
+            exit 1
+          fi
+
+          {
+            echo "PULPO_APP_VERSION=${app_version}"
+            echo "PULPO_IOS_BUILD_NUMBER=${build_number}"
+          } >> "${GITHUB_ENV}"
+
+          echo "Preparing ${app_version} (${build_number}) for TestFlight."
+
       - name: Generate the native iOS project
         env:
           CI: 1
@@ -140,16 +160,8 @@ jobs:
 
           archive_path="${RUNNER_TEMP}/Pulpo.xcarchive"
           export_options_path="${RUNNER_TEMP}/ExportOptions.plist"
-          version_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*')"
-          app_version="${version_tag#v}"
-          build_number="$(date -u +%s)"
 
-          if [[ ! "${app_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Latest release tag ${version_tag} is not a valid vX.Y.Z version." >&2
-            exit 1
-          fi
-
-          echo "Uploading ${app_version} (${build_number}) to TestFlight."
+          echo "Uploading ${PULPO_APP_VERSION} (${PULPO_IOS_BUILD_NUMBER}) to TestFlight."
 
           xcodebuild \
             -workspace ios/Pulpo.xcworkspace \
@@ -162,8 +174,8 @@ jobs:
             -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
             -authenticationKeyIssuerID "${APP_STORE_CONNECT_API_ISSUER_ID}" \
             DEVELOPMENT_TEAM=PX72AL9366 \
-            MARKETING_VERSION="${app_version}" \
-            CURRENT_PROJECT_VERSION="${build_number}" \
+            MARKETING_VERSION="${PULPO_APP_VERSION}" \
+            CURRENT_PROJECT_VERSION="${PULPO_IOS_BUILD_NUMBER}" \
             archive
 
           /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "${export_options_path}"
