@@ -96,6 +96,12 @@ jobs:
         run: npm clean-install
         working-directory: .
 
+      - name: Build mobile workspace dependencies
+        run: |
+          npm run build -w @pulpo/contracts
+          npm run build -w @pulpo/client-core
+        working-directory: .
+
       - name: Generate the native iOS project
         env:
           CI: 1
