@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses } from '../database/schema.js'
@@ -12,6 +12,7 @@ import { PresetResolutionError, resolvePresetActions, type PresetResolutionModel
 import {
   accessibleChatCondition,
   scheduleTemporaryChatExpiry,
+  temporaryChatExpiryValue,
   temporaryChatExpiresAt,
   temporaryChatIsExpired,
 } from '../chats/temporary.js'
@@ -193,7 +194,7 @@ export async function createResponse(options: CreateResponseOptions) {
       activeResponseId: id,
       activeBranchLeafId: id,
       updatedAt: acceptedAt,
-      expiresAt: sql<Date | null>`case when ${chats.temporary} then ${nextExpiresAt} else null end`,
+      expiresAt: temporaryChatExpiryValue(nextExpiresAt),
     }).where(and(
       eq(chats.id, chat.id),
       isNull(chats.deletedAt),
@@ -221,7 +222,7 @@ export async function createResponse(options: CreateResponseOptions) {
       activeResponseId: previousActiveResponseId,
       activeBranchLeafId: previousActiveResponseId,
       updatedAt: new Date(),
-      expiresAt: sql<Date | null>`case when ${chats.temporary} then ${chat.expiresAt} else null end`,
+      expiresAt: temporaryChatExpiryValue(chat.expiresAt),
     }).where(and(eq(chats.id, chat.id), eq(chats.activeResponseId, id)))
     throw error
   }

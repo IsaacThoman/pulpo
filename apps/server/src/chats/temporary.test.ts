@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
 import {
   TEMPORARY_CHAT_TTL_MS,
+  temporaryChatExpiryValue,
   temporaryChatExpiresAt,
   temporaryChatIsExpired,
 } from './temporary.js'
@@ -21,5 +23,14 @@ describe('temporary chat retention', () => {
     expect(temporaryChatIsExpired({ temporary: true, expiresAt }, expiresAt)).toBe(true)
     expect(temporaryChatIsExpired({ temporary: true, expiresAt: null }, new Date())).toBe(true)
     expect(temporaryChatIsExpired({ temporary: false, expiresAt }, new Date(expiresAt.getTime() + 1))).toBe(false)
+  })
+
+  it('encodes sliding expiry timestamps for the Postgres driver', () => {
+    const expiresAt = new Date('2026-08-07T12:00:00.000Z')
+    const query = new PgDialect().sqlToQuery(temporaryChatExpiryValue(expiresAt))
+
+    expect(query.sql).toContain('case when "chats"."temporary" then $1 else null end')
+    expect(query.params).toEqual([expiresAt.toISOString()])
+    expect(query.params[0]).not.toBeInstanceOf(Date)
   })
 })
