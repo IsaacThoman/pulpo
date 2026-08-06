@@ -734,11 +734,11 @@ function IconAction({ disabled = false, icon, label, onPress }: { disabled?: boo
   );
 }
 
-function ModelMark({ model, size = 28 }: { model: Model; size?: number }) {
+function ModelMark({ model, size = 28, logo = 'model' }: { model: Model; size?: number; logo?: 'model' | 'lab' }) {
   return (
     <Image
       resizeMode="contain"
-      source={model.icon}
+      source={logo === 'lab' ? model.labIcon ?? model.icon : model.icon}
       style={{ width: size, height: size, tintColor: model.tintColor }}
     />
   );
@@ -2154,7 +2154,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             title={model.name}
             icon={(
               <SwiftUIImage
-                uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri}
+                uiImage={Image.resolveAssetSource(model.labIcon ?? model.icon).uri}
                 modifiers={[resizable(), frame({ width: 22, height: 22 })]}
               />
             )}
@@ -2736,7 +2736,7 @@ function ChatView({
                 onPress={onOpenModelPicker}
               >
                 <Glass interactive style={styles.modelTrigger}>
-                  <ModelMark model={model} size={22} />
+                  <ModelMark model={model} size={22} logo="lab" />
                   <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={styles.modelTriggerText}>{model.name}</Text>
                 </Glass>
               </Pressable>
