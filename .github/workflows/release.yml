@@ -67,3 +67,95 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
         run: npm run release
+
+  testflight:
+    name: Build and submit iOS to TestFlight
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: checks
+    runs-on: macos-26
+    environment: testflight
+    permissions:
+      contents: read
+    concurrency:
+      group: testflight-main
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm clean-install
+        working-directory: .
+
+      - name: Generate the native iOS project
+        env:
+          CI: 1
+        run: npx expo prebuild --platform ios --clean
+
+      # Keep Apple credentials out of dependency and Expo lifecycle scripts.
+      # Xcode receives them only while archiving and uploading the app.
+      - name: Archive and upload to TestFlight
+        env:
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          for variable in \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_PRIVATE_KEY; do
+            if [[ -z "${!variable}" ]]; then
+              echo "The ${variable} GitHub environment secret is not configured." >&2
+              exit 1
+            fi
+          done
+
+          auth_key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          printf '%s' "${APP_STORE_CONNECT_API_PRIVATE_KEY}" > "${auth_key_path}"
+          chmod 600 "${auth_key_path}"
+          trap 'rm -f "${auth_key_path}"' EXIT
+
+          archive_path="${RUNNER_TEMP}/Pulpo.xcarchive"
+          export_options_path="${RUNNER_TEMP}/ExportOptions.plist"
+          build_number="$(date -u +%s)"
+
+          xcodebuild \
+            -workspace ios/Pulpo.xcworkspace \
+            -scheme Pulpo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "${archive_path}" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${auth_key_path}" \
+            -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_API_ISSUER_ID}" \
+            DEVELOPMENT_TEAM=PX72AL9366 \
+            CURRENT_PROJECT_VERSION="${build_number}" \
+            archive
+
+          /usr/libexec/PlistBuddy -c 'Add :method string app-store-connect' "${export_options_path}"
+          /usr/libexec/PlistBuddy -c 'Add :destination string upload' "${export_options_path}"
+          /usr/libexec/PlistBuddy -c 'Add :signingStyle string automatic' "${export_options_path}"
+          /usr/libexec/PlistBuddy -c 'Add :teamID string PX72AL9366' "${export_options_path}"
+          /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool false' "${export_options_path}"
+          /usr/libexec/PlistBuddy -c 'Add :testFlightInternalTestingOnly bool true' "${export_options_path}"
+
+          xcodebuild \
+            -exportArchive \
+            -archivePath "${archive_path}" \
+            -exportOptionsPlist "${export_options_path}" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${auth_key_path}" \
+            -authenticationKeyID "${APP_STORE_CONNECT_API_KEY_ID}" \
+            -authenticationKeyIssuerID "${APP_STORE_CONNECT_API_ISSUER_ID}"
