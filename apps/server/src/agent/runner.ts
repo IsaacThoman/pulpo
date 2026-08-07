@@ -1,6 +1,6 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
-import type { AssistantMessage, Model } from '@earendil-works/pi-ai'
+import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem } from '@pulpo/contracts'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
@@ -32,6 +32,7 @@ import { estimateInputTokens } from '../accounting/pricing.js'
 import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
 import { trackInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
+import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -206,16 +207,18 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     phase: CompactionItem['phase'],
     beforeAgentTurn?: number,
     extraContext: unknown[] = [],
+    options: { force?: boolean; retainedTurns?: number; estimatedTokens?: number } = {},
   ): Promise<AgentMessage[]> => {
-    const estimatedTokens = estimateInputTokens([
+    const estimatedTokens = options.estimatedTokens ?? estimateInputTokens([
       buildAgentSystemPrompt(active.model.systemPrompt, active.model.agentInstructions),
       ...messages,
       ...extraContext,
     ])
     const cycles = agentCycles(messages)
-    if (!active.model.compactionEnabled || estimatedTokens <= thresholdTokens || cycles.length <= active.model.compactionRetainedTurns) return messages
-    const retained = cycles.slice(-active.model.compactionRetainedTurns).flat()
-    const older = cycles.slice(0, -active.model.compactionRetainedTurns).flat()
+    const retainedTurnCount = options.retainedTurns ?? active.model.compactionRetainedTurns
+    if (!active.model.compactionEnabled || (!options.force && estimatedTokens <= thresholdTokens) || cycles.length <= retainedTurnCount) return messages
+    const retained = cycles.slice(-retainedTurnCount).flat()
+    const older = cycles.slice(0, -retainedTurnCount).flat()
     const id = `${responseId}:compaction:${phase}:${beforeAgentTurn ?? 0}`
     const started = Date.now()
     const base: CompactionItem = {
@@ -228,7 +231,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       threshold_tokens: thresholdTokens,
       retained_turns: retainedEntries(retained),
       retained_context: retained,
-      retained_context_turns: cycles.slice(-active.model.compactionRetainedTurns) as unknown[][],
+      retained_context_turns: cycles.slice(-retainedTurnCount) as unknown[][],
       summary: '',
       started_at: new Date(started).toISOString(),
       ...(beforeAgentTurn ? { before_agent_turn: beforeAgentTurn } : {}),
@@ -259,6 +262,13 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
       throw error
     }
+  }
+  const adoptCompactedContext = (originalMessages: AgentMessage[], compactedMessages: AgentMessage[]) => {
+    if (compactedMessages === originalMessages) return false
+    archivedDisplayMessages.push(...agent.state.messages.slice(skipMessageCount))
+    agent.state.messages = compactedMessages
+    skipMessageCount = compactedMessages.length
+    return true
   }
   const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
@@ -329,19 +339,34 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       thinkingLevel: 'medium',
     },
     streamFn: async (model, context, options) => {
-      if (modelTurns > 1) {
+      const thresholdTokens = effectiveAgentCompactionThreshold(
+        active.model.agentCompactionThresholdTokens,
+        active.model.contextWindow,
+      )
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      const estimatedTokens = estimateAgentContextTokens(preparedContext as Context)
+      if (estimatedTokens > thresholdTokens) {
         const originalMessages = context.messages as AgentMessage[]
-        const compactedMessages = await compactAgentContext(originalMessages, active.model.agentCompactionThresholdTokens, 'agent_mid_run', modelTurns)
-        if (compactedMessages !== originalMessages) {
-          archivedDisplayMessages.push(...agent.state.messages.slice(skipMessageCount))
+        const compactedMessages = await compactAgentContext(
+          originalMessages,
+          thresholdTokens,
+          modelTurns > 1 ? 'agent_mid_run' : 'pre_response',
+          modelTurns || undefined,
+          [],
+          { force: true, estimatedTokens },
+        )
+        if (adoptCompactedContext(originalMessages, compactedMessages)) {
           context = { ...context, messages: compactedMessages as typeof context.messages }
-          agent.state.messages = compactedMessages
-          skipMessageCount = compactedMessages.length
+          preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
         }
+      }
+      const hardContextLimit = effectiveAgentCompactionThreshold(Number.MAX_SAFE_INTEGER, active.model.contextWindow)
+      if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
+        throw new Error('Agent context remains above the model context window after compaction')
       }
       return streams.streamSimple(
         model as Model<'openai-responses'>,
-        await interceptAgentContextImages(context, active.model, imageInterceptor),
+        preparedContext,
         { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries },
       )
     },
@@ -457,7 +482,13 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     if (!existingRun) {
       while (true) {
         try {
-          resumedMessages = await compactAgentContext(resumedMessages, active.model.compactionThresholdTokens, 'pre_response', undefined, [initialPrompt])
+          resumedMessages = await compactAgentContext(
+            resumedMessages,
+            effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+            'pre_response',
+            undefined,
+            [initialPrompt],
+          )
           agent.state.messages = resumedMessages
           agent.state.model = active.piModel
           skipMessageCount = resumedMessages.length
@@ -471,7 +502,35 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     if (existingRun && resumedMessages.length > initialMessages(parentRun?.context).length) await agent.continue()
     else await agent.prompt(initialPrompt)
     let last = agent.state.messages.at(-1)
-    while (last?.role === 'assistant' && last.stopReason === 'error' && !assistantText(last) && activeIndex + 1 < runtimes.length) {
+    let overflowRetried = false
+    while (last?.role === 'assistant' && last.stopReason === 'error' && !assistantText(last)) {
+      if (shouldRetryContextOverflow(last, active.model.contextWindow, overflowRetried)) {
+        const failedMessage = last
+        const originalMessages = agent.state.messages.slice(0, -1)
+        agent.state.messages = originalMessages
+        const estimatedTokens = estimateAgentContextTokens({
+          systemPrompt: agent.state.systemPrompt,
+          messages: originalMessages,
+          tools: agent.state.tools,
+        } as Context)
+        const compactedMessages = await compactAgentContext(
+          originalMessages,
+          effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+          'agent_mid_run',
+          modelTurns,
+          [],
+          { force: true, retainedTurns: 1, estimatedTokens },
+        )
+        if (!adoptCompactedContext(originalMessages, compactedMessages)) {
+          agent.state.messages = [...originalMessages, failedMessage]
+          break
+        }
+        overflowRetried = true
+        await agent.continue()
+        last = agent.state.messages.at(-1)
+        continue
+      }
+      if (activeIndex + 1 >= runtimes.length || overflowRetried) break
       agent.state.messages = agent.state.messages.slice(0, -1)
       active = runtimes[++activeIndex]!
       agent.state.model = active.piModel

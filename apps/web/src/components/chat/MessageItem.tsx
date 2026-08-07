@@ -711,10 +711,6 @@ export const MessageItem = memo(function MessageItem({
                 </Button>
               </div>
             </div>
-          ) : message.error ? (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {message.error}
-            </div>
           ) : (
             <>
               {timeline.map((segment, index) => {
@@ -784,6 +780,12 @@ export const MessageItem = memo(function MessageItem({
               </details>
             )
           })}
+
+          {!editing && message.error && (
+            <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {message.error}
+            </div>
+          )}
         </div>
 
         {(message.done || hasMultipleBranches(message.branch)) && (
