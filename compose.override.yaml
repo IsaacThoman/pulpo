@@ -6,6 +6,10 @@ services:
     ports:
       - "${PULPO_HTTP_PORT:-8080}:80"
 
+  api:
+    ports:
+      - "127.0.0.1:${API_PORT:-3000}:3000"
+
   postgres:
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
