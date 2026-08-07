@@ -14,6 +14,8 @@ export default {
     [
       "@semantic-release/exec",
       {
+        prepareCmd:
+          'if [ -n "$GITHUB_OUTPUT" ]; then echo "version=${nextRelease.version}" >> "$GITHUB_OUTPUT"; fi',
         successCmd:
           'gh workflow run workspace-image.yml --repo IsaacThoman/pulpo --ref "v${nextRelease.version}" --field release_tag="v${nextRelease.version}"',
       },
