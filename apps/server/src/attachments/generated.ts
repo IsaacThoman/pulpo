@@ -27,12 +27,11 @@ function generatedName(path: string, requestedName?: string): string {
   const normalized = basename(requestedName?.trim() || path).normalize('NFKC')
   const name = [...normalized].filter((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127).join('').slice(0, 255)
   if (!name || name === '.' || name === '..') throw new Error('Attachment name is invalid')
-  if (!MIME_TYPES[extname(name).toLowerCase()]) throw new Error('This file type cannot be attached')
   return name
 }
 
 function generatedMimeType(name: string, data: Uint8Array): string {
-  const expected = MIME_TYPES[extname(name).toLowerCase()]!
+  const expected = MIME_TYPES[extname(name).toLowerCase()] ?? 'application/octet-stream'
   if (!expected.startsWith('image/')) return expected
   const detected = detectImageMime(data)
   if (!detected || detected !== expected) throw new Error('Image contents do not match the filename')

@@ -8,9 +8,18 @@ describe('generated attachment metadata', () => {
     })
   })
 
-  it('rejects empty and unsupported files', () => {
+  it('uses a binary MIME type for unknown and extensionless files', () => {
+    expect(generatedAttachmentMetadata('/workspace/archive.zip', undefined, Buffer.from('zip'))).toEqual({
+      name: 'archive.zip', mimeType: 'application/octet-stream',
+    })
+    expect(generatedAttachmentMetadata('/workspace/README', undefined, Buffer.from('hello'))).toEqual({
+      name: 'README', mimeType: 'application/octet-stream',
+    })
+  })
+
+  it('rejects empty files and invalid names', () => {
     expect(() => generatedAttachmentMetadata('/workspace/empty.txt', undefined, new Uint8Array())).toThrow('Empty files')
-    expect(() => generatedAttachmentMetadata('/workspace/archive.zip', undefined, Buffer.from('zip'))).toThrow('cannot be attached')
+    expect(() => generatedAttachmentMetadata('/workspace/report.txt', '..', Buffer.from('hello'))).toThrow('name is invalid')
   })
 
   it('rejects image extensions that do not match the bytes', () => {
