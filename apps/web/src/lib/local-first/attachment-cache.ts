@@ -8,6 +8,8 @@ export interface AttachmentMetadata {
   sizeBytes: number
 }
 
+const pendingAttachmentCaches = new Map<string, Promise<boolean>>()
+
 export function attachmentQuotaBytes(quotaMb: number): number {
   if (!Number.isFinite(quotaMb)) return 50 * 1024 * 1024
   return Math.max(0, Math.floor(quotaMb * 1024 * 1024))
@@ -58,7 +60,7 @@ export async function enforceAttachmentQuota(userId: string, quotaMb: number): P
   await pruneAttachmentCache(userId, attachmentQuotaBytes(quotaMb))
 }
 
-export async function ensureAttachmentCached(
+async function cacheRemoteAttachment(
   userId: string,
   metadata: AttachmentMetadata,
   quotaMb: number,
@@ -72,29 +74,39 @@ export async function ensureAttachmentCached(
   return cacheAttachmentBlob(userId, metadata, blob, quotaMb)
 }
 
-export async function warmAttachmentCache(
+export function ensureAttachmentCached(
   userId: string,
-  attachments: AttachmentMetadata[],
+  metadata: AttachmentMetadata,
   quotaMb: number,
-): Promise<void> {
-  await enforceAttachmentQuota(userId, quotaMb)
-  const quotaBytes = attachmentQuotaBytes(quotaMb)
-  let plannedBytes = 0
-  for (const attachment of attachments) {
-    if (plannedBytes + attachment.sizeBytes > quotaBytes) continue
-    plannedBytes += attachment.sizeBytes
-    try {
-      await ensureAttachmentCached(userId, attachment, quotaMb)
-    } catch {
-      // A chat remains usable when an attachment cannot be cached.
-    }
-  }
+): Promise<boolean> {
+  const key = `${userId}:${metadata.id}`
+  const current = pendingAttachmentCaches.get(key)
+  if (current) return current
+  const pending = cacheRemoteAttachment(userId, metadata, quotaMb)
+    .finally(() => {
+      if (pendingAttachmentCaches.get(key) === pending) pendingAttachmentCaches.delete(key)
+    })
+  pendingAttachmentCaches.set(key, pending)
+  return pending
 }
 
-export async function downloadAttachment(userId: string, id: string, fallbackName: string): Promise<void> {
-  const cached = await getCachedAttachment(userId, id)
+export async function downloadAttachment(
+  userId: string,
+  metadata: AttachmentMetadata,
+  quotaMb: number,
+): Promise<void> {
+  let cached = await getCachedAttachment(userId, metadata.id)
+  if (!cached) {
+    try {
+      if (await ensureAttachmentCached(userId, metadata, quotaMb)) {
+        cached = await getCachedAttachment(userId, metadata.id)
+      }
+    } catch {
+      // Fall back to a direct download when local caching is unavailable.
+    }
+  }
   const anchor = document.createElement('a')
-  anchor.download = cached?.originalName ?? fallbackName
+  anchor.download = cached?.originalName ?? metadata.originalName
   if (cached) {
     const url = URL.createObjectURL(cached.blob)
     anchor.href = url
@@ -102,7 +114,7 @@ export async function downloadAttachment(userId: string, id: string, fallbackNam
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
     return
   }
-  const result = await apiRequest<{ url: string }>(`/api/attachments/${id}/download`)
+  const result = await apiRequest<{ url: string }>(`/api/attachments/${metadata.id}/download`)
   anchor.href = result.url
   anchor.click()
 }

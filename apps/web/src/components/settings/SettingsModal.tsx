@@ -523,7 +523,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Chats kept on this device" hint="Recent chats remain available instantly and while offline (0–500).">
                     <Input className="w-28" type="number" min={0} max={500} value={s.localChatLimit} onChange={(event) => s.set('localChatLimit', Math.min(500, Math.max(0, Number(event.target.value))))} />
                   </Row>
-                  <Row label="Attachment cache" hint="Maximum file data retained on this device for offline chats.">
+                  <Row label="Downloaded attachment cache" hint="Maximum file data retained after you upload or explicitly download a file.">
                     <div className="flex items-center gap-2">
                       <Input className="w-24" type="number" min={0} max={2048} step={10} value={s.localAttachmentCacheMb} onChange={(event) => s.set('localAttachmentCacheMb', Math.min(2048, Math.max(0, Number(event.target.value))))} />
                       <span className="text-xs text-muted-foreground">MB</span>

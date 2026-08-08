@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { downloadAttachment, getCachedAttachment } from '@/lib/local-first/attachment-cache'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
+import { useSettings } from '@/stores/settings'
 import { formatBytes } from '@/lib/attachments'
 
 function useAttachmentPreviewUrl(attachmentId: string | undefined, enabled = true): {
@@ -88,7 +89,12 @@ export function MessageAttachmentList({
                 className="top-0.5 left-1 size-6"
                 onDownload={() => {
                   const userId = useAuth.getState().user?.id
-                  if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
+                  if (userId) void downloadAttachment(userId, {
+                    id: attachment.id,
+                    originalName: attachment.name,
+                    mimeType: 'application/octet-stream',
+                    sizeBytes: attachment.size,
+                  }, useSettings.getState().localAttachmentCacheMb)
                 }}
               />
               <Paperclip className="size-3 shrink-0" />
@@ -107,7 +113,12 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
   const [previewOpen, setPreviewOpen] = useState(false)
 
   const handleDownload = () => {
-    if (userId) void downloadAttachment(userId, attachment.id, attachment.name)
+    if (userId) void downloadAttachment(userId, {
+      id: attachment.id,
+      originalName: attachment.name,
+      mimeType: 'image/*',
+      sizeBytes: attachment.size,
+    }, useSettings.getState().localAttachmentCacheMb)
   }
 
   return (

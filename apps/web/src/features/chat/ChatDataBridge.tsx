@@ -6,13 +6,11 @@ import type { ResponseEvent, ServerToClientEvents, ClientToServerEvents, SyncRes
 import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { localDb } from '@/lib/local-first/database'
-import { warmAttachmentCache } from '@/lib/local-first/attachment-cache'
 import { flushOutbox } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
-import { useSettings } from '@/stores/settings'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
@@ -41,7 +39,6 @@ export function ChatDataBridge() {
   const socketRef = useRef<PulpoSocket | null>(null)
   const subscribedResponseIdsRef = useRef(new Set<string>())
   const loadCatalog = useCatalog((state) => state.load)
-  const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const revisionRef = useRef(user?.stateRevision ?? 0)
   const currentTabId = useMemo(tabId, [])
   const activeChatIdRef = useRef(chatId)
@@ -73,11 +70,6 @@ export function ChatDataBridge() {
       useChat.getState().markTemporaryExpired(chatId)
     }
   }, [activeTemporaryChatId, chatId, chatQuery.error])
-  useEffect(() => {
-    if (userId && !chatQuery.data?.temporary && chatQuery.data?.attachments?.length) {
-      void warmAttachmentCache(userId, chatQuery.data.attachments, attachmentCacheMb)
-    }
-  }, [userId, chatQuery.data, attachmentCacheMb])
   useEffect(() => { if (userId) void loadCatalog() }, [userId, loadCatalog])
 
   useEffect(() => {
