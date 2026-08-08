@@ -1,4 +1,4 @@
-import type { ChatPreset, ResponseSnapshot, User } from '@pulpo/contracts'
+import type { ChatPreset, EmbeddedResponseSnapshot, ResponseSnapshot, User } from '@pulpo/contracts'
 
 export type { User }
 
@@ -77,7 +77,7 @@ export interface ServerResponse {
   error: { message?: string } | null
   createdAt: string
   completedAt: string | null
-  snapshot: ResponseSnapshot
+  snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: {
     user: { ids: string[]; index: number }
     assistant: { ids: string[]; index: number }

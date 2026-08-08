@@ -450,6 +450,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
+    const compact = (request.query as { format?: string }).format === 'compact'
     const now = new Date()
     const [chat] = await db.select().from(chats).where(and(
       eq(chats.id, id),
@@ -483,7 +484,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return {
       ...toPublicChat(chat),
       attachments: attachmentRows,
-      responses: allTurns.map((response) => toPublicChatResponse(response, allTurns)),
+      responses: allTurns.map((response) => toPublicChatResponse(response, allTurns, { compact })),
     }
   })
 

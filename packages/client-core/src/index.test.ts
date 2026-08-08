@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   attachmentValidationError,
+  hydrateEmbeddedResponseSnapshot,
   lineageFromLeaf,
   mergeRevisionInvalidation,
   normalizeInstanceUrl,
@@ -9,6 +10,17 @@ import {
 } from './index.js'
 
 describe('client core', () => {
+  it('hydrates compact embedded snapshots from the canonical response output', () => {
+    const marker = {
+      responseId: '00000000-0000-4000-8000-000000000001', status: 'completed' as const,
+      sequence: 4, usage: null, error: null, updatedAt: '2026-08-01T00:00:00.000Z',
+    }
+    const output = [{ type: 'message', content: 'answer' }]
+    expect(hydrateEmbeddedResponseSnapshot(marker, output)).toEqual({ ...marker, output })
+    const full = { ...marker, output: [] }
+    expect(hydrateEmbeddedResponseSnapshot(full, output)).toBe(full)
+  })
+
   it('selects a branch lineage without looping malformed trees', () => {
     const nodes = [
       { id: 'root', parentResponseId: null },

@@ -2,9 +2,17 @@ import {
   applyResponseEventToSnapshot,
   mergeResponseSnapshots,
   type ChatPreset,
+  type EmbeddedResponseSnapshot,
   type ResponseEvent,
   type ResponseSnapshot,
 } from '@pulpo/contracts'
+
+export function hydrateEmbeddedResponseSnapshot(
+  snapshot: ResponseSnapshot | EmbeddedResponseSnapshot,
+  output: unknown[],
+): ResponseSnapshot {
+  return 'output' in snapshot ? snapshot : { ...snapshot, output }
+}
 
 export interface ChatTreeNode {
   id: string

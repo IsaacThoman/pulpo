@@ -1,4 +1,4 @@
-import type { ResponseSnapshot } from '@pulpo/contracts'
+import type { EmbeddedResponseSnapshot, ResponseSnapshot } from '@pulpo/contracts'
 import type { chats, responses } from '../database/schema.js'
 import { metadataForTurn } from '../messages/branching.js'
 import { toSnapshot } from '../responses/service.js'
@@ -23,12 +23,17 @@ export interface PublicChatResponse {
   createdAt: string
   completedAt: string | null
   agentMode: boolean
-  snapshot: ResponseSnapshot
+  snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: ReturnType<typeof metadataForTurn>
 }
 
-export function toPublicChatResponse(response: ResponseRow, allTurns: ResponseRow[]): PublicChatResponse {
+export function toPublicChatResponse(
+  response: ResponseRow,
+  allTurns: ResponseRow[],
+  options: { compact?: boolean } = {},
+): PublicChatResponse {
   const snapshot = toSnapshot(response)
+  const { output: _duplicatedOutput, ...snapshotMarker } = snapshot
   return {
     id: response.id,
     parentResponseId: response.parentResponseId,
@@ -45,7 +50,7 @@ export function toPublicChatResponse(response: ResponseRow, allTurns: ResponseRo
     createdAt: response.createdAt.toISOString(),
     completedAt: response.completedAt?.toISOString() ?? null,
     agentMode: response.agentMode,
-    snapshot,
+    snapshot: options.compact ? snapshotMarker : snapshot,
     branches: metadataForTurn(allTurns, response),
   }
 }

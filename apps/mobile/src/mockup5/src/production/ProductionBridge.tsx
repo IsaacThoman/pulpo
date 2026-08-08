@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
+import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
 import { useShallow } from 'zustand/react/shallow'
 import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
 import { enqueueCacheWrite } from '../../../data/writeBehind'
@@ -433,7 +434,9 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
 
   useEffect(() => {
     if (!detail.data) return
-    for (const response of detail.data.responses ?? []) useRealtimeStore.getState().receiveSnapshot(response.snapshot)
+    for (const response of detail.data.responses ?? []) {
+      useRealtimeStore.getState().receiveSnapshot(hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
+    }
   }, [detail.data])
 
   useEffect(() => {

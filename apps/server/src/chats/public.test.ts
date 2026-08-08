@@ -42,4 +42,26 @@ describe('public chat DTOs', () => {
       'upstreamSequence', 'idempotencyKey', 'startedAt', 'deletedAt', 'updatedAt',
     ]) expect(result).not.toHaveProperty(field)
   })
+
+  it('sends output once in compact history while retaining the legacy shape', () => {
+    const row = {
+      id: '00000000-0000-4000-8000-000000000002',
+      chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
+      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      openaiResponseId: null, previousResponseId: null, parentResponseId: null,
+      userMessageId: null, branchReason: 'message', status: 'completed' as const,
+      executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null,
+      input: [], instructions: null, presetSelections: {}, parameters: {},
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'unique-output-sentinel' }] }],
+      usage: null, error: null, lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
+    }
+    const legacy = toPublicChatResponse(row, [row])
+    const compact = toPublicChatResponse(row, [row], { compact: true })
+
+    expect('output' in legacy.snapshot).toBe(true)
+    expect('output' in compact.snapshot).toBe(false)
+    expect(JSON.stringify(legacy).split('unique-output-sentinel')).toHaveLength(3)
+    expect(JSON.stringify(compact).split('unique-output-sentinel')).toHaveLength(2)
+  })
 })

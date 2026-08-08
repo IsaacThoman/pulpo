@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ResponseSnapshot } from '@pulpo/contracts'
 
 const storage = new Map<string, string>()
 vi.stubGlobal('localStorage', {
@@ -54,7 +55,7 @@ const chatId = '00000000-0000-4000-8000-000000000002'
 const responseAId = '00000000-0000-4000-8000-000000000003'
 const createdAt = '2026-08-03T12:00:00.000Z'
 
-function response(id: string, status: ServerResponse['status']): ServerResponse {
+function response(id: string, status: ServerResponse['status']): ServerResponse & { snapshot: ResponseSnapshot } {
   const done = !['queued', 'in_progress'].includes(status)
   const output = done ? [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: id }] }] : []
   return {

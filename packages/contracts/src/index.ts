@@ -184,6 +184,10 @@ export const responseSnapshotSchema = z.object({
 })
 export type ResponseSnapshot = z.infer<typeof responseSnapshotSchema>
 
+/** Snapshot marker embedded in compact chat history; output lives on the response once. */
+export const embeddedResponseSnapshotSchema = responseSnapshotSchema.omit({ output: true })
+export type EmbeddedResponseSnapshot = z.infer<typeof embeddedResponseSnapshotSchema>
+
 type DeltaTarget = {
   item_id?: unknown
   itemId?: unknown

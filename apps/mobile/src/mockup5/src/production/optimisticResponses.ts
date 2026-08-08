@@ -1,4 +1,5 @@
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
+import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
 import type { QueryClient } from '@tanstack/react-query'
 import { useRealtimeStore } from '../../../providers/realtimeStore'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../../types'
@@ -60,8 +61,9 @@ function pendingKey(namespace: string, responseId: string): string {
 
 function responseFromSnapshot(response: ServerResponse, live: ResponseSnapshot | undefined): ServerResponse {
   if (!live) return response
-  const snapshot = mergeResponseSnapshots(response.snapshot, live)
-  if (snapshot === response.snapshot) return response
+  const base = hydrateEmbeddedResponseSnapshot(response.snapshot, response.output)
+  const snapshot = mergeResponseSnapshots(base, live)
+  if (snapshot === base && 'output' in response.snapshot) return response
   const terminal = snapshot.status !== 'queued' && snapshot.status !== 'in_progress'
   return {
     ...response,

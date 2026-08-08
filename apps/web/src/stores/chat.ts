@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import { mergeResponseSnapshots, type ResponseEvent, type ResponseSnapshot } from '@pulpo/contracts'
+import { mergeResponseSnapshots, type EmbeddedResponseSnapshot, type ResponseEvent, type ResponseSnapshot } from '@pulpo/contracts'
+import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
 import type { Attachment, Chat, Folder, Message } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
@@ -61,7 +62,7 @@ export interface ServerResponse {
   createdAt: string
   completedAt: string | null
   agentMode?: boolean
-  snapshot: ResponseSnapshot
+  snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: {
     user: { ids: string[]; index: number }
     assistant: { ids: string[]; index: number }
@@ -538,6 +539,10 @@ function rememberResponseSnapshot(snapshot: ResponseSnapshot): ResponseSnapshot 
   return merged
 }
 
+function hydratedResponseSnapshot(response: ServerResponse): ResponseSnapshot {
+  return hydrateEmbeddedResponseSnapshot(response.snapshot, response.output)
+}
+
 function flushResponseEvents(responseId: string): void {
   const pending = pendingResponseEvents.get(responseId)
   if (!pending) return
@@ -548,7 +553,7 @@ function flushResponseEvents(responseId: string): void {
       ...chat,
       responses: chat.responses.map((response) => {
         if (response.id !== responseId) return response
-        const base = accumulatedResponseSnapshots.get(responseId) ?? response.snapshot
+        const base = accumulatedResponseSnapshots.get(responseId) ?? hydratedResponseSnapshot(response)
         const snapshot = rememberResponseSnapshot(coalesceResponseEvents(pending.events).reduce(applyEventToSnapshot, base))
         return {
           ...response,
@@ -566,7 +571,7 @@ function flushResponseEvents(responseId: string): void {
 function persistResponseEvent(chatId: string, event: ResponseEvent): void {
   const optimistic = pendingOptimisticResponses.get(event.responseId)
   if (optimistic) {
-    const snapshot = applyEventToSnapshot(optimistic.response.snapshot, event)
+    const snapshot = applyEventToSnapshot(hydratedResponseSnapshot(optimistic.response), event)
     pendingOptimisticResponses.set(event.responseId, {
       ...optimistic,
       response: {
@@ -594,7 +599,7 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
   }
   const optimistic = pendingOptimisticResponses.get(snapshot.responseId)
   if (optimistic) {
-    const merged = mergeResponseSnapshots(optimistic.response.snapshot, snapshot)
+    const merged = mergeResponseSnapshots(hydratedResponseSnapshot(optimistic.response), snapshot)
     const done = !['queued', 'in_progress'].includes(merged.status)
     pendingOptimisticResponses.set(snapshot.responseId, {
       ...optimistic,
@@ -615,7 +620,7 @@ function persistResponseSnapshot(chatId: string, snapshot: ResponseSnapshot): vo
       ...chat,
       responses: chat.responses.map((response) => {
         if (response.id !== snapshot.responseId) return response
-        const merged = rememberResponseSnapshot(mergeResponseSnapshots(response.snapshot, snapshot))
+        const merged = rememberResponseSnapshot(mergeResponseSnapshots(hydratedResponseSnapshot(response), snapshot))
         const done = !['queued', 'in_progress'].includes(merged.status)
         return {
           ...response,
@@ -682,7 +687,7 @@ function failOptimisticResponse(
       status: 'failed',
       error: { message },
       completedAt: failedAt,
-      snapshot: { ...response.snapshot, status: 'failed', error: { message }, updatedAt: failedAt },
+      snapshot: { ...hydratedResponseSnapshot(response), status: 'failed', error: { message }, updatedAt: failedAt },
     })),
   }
   const failedResponse = updated.responses?.find((response) => response.id === responseId)
@@ -738,7 +743,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     set((state) => {
       const responseSequences = { ...state.responseSequences }
       for (const response of row.responses ?? []) {
-        rememberResponseSnapshot(response.snapshot)
+        rememberResponseSnapshot(hydratedResponseSnapshot(response))
         responseSequences[response.id] = Math.max(
           responseSequences[response.id] ?? 0,
           response.snapshot.sequence,
