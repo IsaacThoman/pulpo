@@ -33,7 +33,8 @@ import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
 import { trackInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
-import { sanitizeContextForStorage } from '../responses/public-output.js'
+import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
+import { agentSnapshotIsDue } from './snapshot-policy.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -182,12 +183,16 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     if (updated) await publishSnapshot(toSnapshot(updated))
     lastSnapshotAt = Date.now()
   }
+  const snapshotIfDue = async () => {
+    if (agentSnapshotIsDue(lastSnapshotAt, Date.now(), config.RESPONSE_SNAPSHOT_INTERVAL_MS)) await snapshot()
+  }
   const updateCompaction = async (item: CompactionItem) => {
     const index = compactionItems.findIndex((candidate) => candidate.id === item.id)
     if (index >= 0) compactionItems[index] = item
     else compactionItems.push(item)
-    await emit('pulpo.compaction.updated', item as unknown as Record<string, unknown>)
-    await snapshot()
+    const publicItem = sanitizeOutputForClient([item])[0] as Record<string, unknown>
+    await emit('pulpo.compaction.updated', publicItem)
+    await snapshotIfDue()
   }
   const agentCycles = (messages: AgentMessage[]): AgentMessage[][] => {
     const cycles: AgentMessage[][] = []
@@ -292,7 +297,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       ...details,
     }
     await emit(`pulpo.agent.workspace.${state}`, workspaceItem)
-    await snapshot()
+    await snapshotIfDue()
   })
   const markToolStarted = async (operationId: string) => {
     const item = toolItems.get(operationId)
@@ -301,7 +306,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     Object.assign(item, { status: 'running', startedAt: startedAt.toISOString() })
     await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: 'running', startedAt, updatedAt: startedAt }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, operationId)))
     await emit('pulpo.agent.tool.started', item)
-    await snapshot()
+    await snapshotIfDue()
   }
   const configuredWebTools = webToolsSettings.encryptedApiKey && (webToolsSettings.searchEnabled || webToolsSettings.extractEnabled)
     ? createWebTools({
@@ -328,7 +333,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     }
     attachmentItems.set(operationId, item)
     await emit('pulpo.agent.attachment.created', item)
-    await snapshot()
+    await snapshotIfDue()
     return stored
   }
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
@@ -440,7 +445,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
         durationMs: turnDurationMs, completedAt: new Date(),
       }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.turnNumber, modelTurns), eq(generationAttempts.source, 'agent')))
       await db.update(requestLogs).set({ inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, eventCount: sql`${requestLogs.eventCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-      await snapshot()
+      await snapshotIfDue()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
       const item: ToolTimelineItem = {
@@ -454,12 +459,12 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       toolItems.set(event.toolCallId, item)
       await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'queued' }).onConflictDoNothing()
       await emit('pulpo.agent.tool.queued', item)
-      await snapshot()
+      await snapshotIfDue()
     } else if (event.type === 'tool_execution_update') {
       const item = toolItems.get(event.toolCallId); const delta = truncateUtf8(toolResultText(event.partialResult), settings.maxToolOutputBytes)
       if (item) item.output = delta
       await emit('pulpo.agent.tool.delta', { id: event.toolCallId, delta })
-      await snapshot()
+      await snapshotIfDue()
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
@@ -474,7 +479,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: event.isError ? 'failed' : 'completed', output, providerCostMicros, billedCostMicros, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs })
       if (manager.continuedWithoutAgent) agent.state.tools = []
-      await snapshot()
+      await snapshotIfDue()
     }
     await persistRunContext(event.type !== 'message_update' && event.type !== 'tool_execution_update')
   })

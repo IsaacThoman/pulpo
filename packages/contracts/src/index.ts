@@ -285,6 +285,48 @@ function appendReasoning(output: unknown[], delta: string, payload: DeltaTarget)
   return copy
 }
 
+function upsertOutputItem(
+  output: unknown[],
+  match: (item: Record<string, unknown>) => boolean,
+  value: Record<string, unknown>,
+): unknown[] {
+  const copy = output.slice()
+  const index = copy.findIndex((item) => Boolean(item) && typeof item === 'object' && match(item as Record<string, unknown>))
+  if (index < 0) copy.push(value)
+  else copy[index] = { ...(copy[index] as Record<string, unknown>), ...value }
+  return copy
+}
+
+function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown[] {
+  const payload = event.payload as Record<string, unknown>
+  if (event.type.startsWith('pulpo.agent.workspace.')) {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_workspace', payload)
+  }
+  if (event.type === 'pulpo.compaction.updated' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.id === payload.id, payload)
+  }
+  if (event.type === 'pulpo.agent.attachment.created' && typeof payload.attachment_id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_attachment' && item.attachment_id === payload.attachment_id, payload)
+  }
+  if (!event.type.startsWith('pulpo.agent.tool.') || typeof payload.id !== 'string') return output
+  if (event.type === 'pulpo.agent.tool.delta') {
+    return upsertOutputItem(output, (item) => item.id === payload.id, {
+      id: payload.id,
+      type: 'pulpo_tool',
+      output: typeof payload.delta === 'string' ? payload.delta : '',
+      status: 'running',
+    })
+  }
+  if (event.type === 'pulpo.agent.tool.completed') {
+    return upsertOutputItem(output, (item) => item.id === payload.id, {
+      ...payload,
+      type: 'pulpo_tool',
+      status: payload.isError ? 'failed' : 'completed',
+    })
+  }
+  return upsertOutputItem(output, (item) => item.id === payload.id, payload)
+}
+
 export function applyResponseEventToSnapshot(snapshot: ResponseSnapshot, event: ResponseEvent): ResponseSnapshot {
   if (event.sequence <= snapshot.sequence) return snapshot
   const payload = event.payload as DeltaTarget & { delta?: unknown }
@@ -292,6 +334,7 @@ export function applyResponseEventToSnapshot(snapshot: ResponseSnapshot, event: 
   let output = snapshot.output
   if (delta && event.type === 'response.output_text.delta') output = appendOutputText(output, delta, payload)
   if (delta && event.type === 'response.reasoning_summary_text.delta') output = appendReasoning(output, delta, payload)
+  output = applyAgentEventOutput(output, event)
   return {
     ...snapshot,
     status: snapshot.status === 'queued' ? 'in_progress' : snapshot.status,

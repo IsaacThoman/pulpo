@@ -30,6 +30,7 @@ import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
+import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 
@@ -330,7 +331,8 @@ async function processGenerationAttempt(
   const contextual = await contextualInput(client, record, history, requestLog.id, async (item) => {
     sequence += 1
     const emittedAt = new Date().toISOString()
-    await publishResponseEvent({ responseId, sequence, type: 'pulpo.compaction.updated', payload: item, emittedAt })
+    const publicItem = sanitizeOutputForClient([item])[0]
+    await publishResponseEvent({ responseId, sequence, type: 'pulpo.compaction.updated', payload: publicItem, emittedAt })
     const updatedAt = new Date(emittedAt)
     await db.update(responses).set({
       status: 'in_progress',

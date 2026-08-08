@@ -239,6 +239,31 @@ describe('response snapshot accumulation', () => {
     ])
   })
 
+  it('projects agent tool, workspace, compaction, and attachment events without a full snapshot', () => {
+    const responseId = streamingSnapshot.responseId
+    const event = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+      responseId, sequence, type, payload, emittedAt: `2026-08-01T00:00:0${sequence}.000Z`,
+    })
+    const events = [
+      event(1, 'pulpo.agent.workspace.waiting', { id: 'workspace-1', type: 'pulpo_workspace', state: 'waiting' }),
+      event(2, 'pulpo.agent.tool.queued', { id: 'tool-1', type: 'pulpo_tool', tool: 'web_search', arguments: { query: 'x' }, status: 'queued', output: '' }),
+      event(3, 'pulpo.agent.tool.started', { id: 'tool-1', type: 'pulpo_tool', status: 'running', startedAt: '2026-08-01T00:00:03.000Z' }),
+      event(4, 'pulpo.agent.tool.delta', { id: 'tool-1', delta: 'partial result' }),
+      event(5, 'pulpo.agent.tool.completed', { id: 'tool-1', output: 'final result', isError: false, durationMs: 10 }),
+      event(6, 'pulpo.compaction.updated', { id: 'compact-1', type: 'pulpo_compaction', status: 'completed', summary: 'summary' }),
+      event(7, 'pulpo.agent.attachment.created', { type: 'pulpo_attachment', attachment_id: 'file-1', name: 'result.txt' }),
+    ]
+    const result = events.reduce(applyResponseEventToSnapshot, streamingSnapshot)
+
+    expect(result.output).toMatchObject([
+      { type: 'pulpo_workspace', state: 'waiting' },
+      { id: 'tool-1', tool: 'web_search', status: 'completed', output: 'final result' },
+      { id: 'compact-1', summary: 'summary' },
+      { type: 'pulpo_attachment', attachment_id: 'file-1' },
+    ])
+    expect(result.sequence).toBe(7)
+  })
+
   it('accepts terminal output as authoritative', () => {
     const provisional = applyResponseEventToSnapshot(streamingSnapshot, delta('response.output_text.delta', 'partial', 1))
     const terminal = mergeResponseSnapshots(provisional, {
