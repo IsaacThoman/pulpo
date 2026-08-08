@@ -183,27 +183,31 @@ jobs:
           chmod 600 "${auth_key_path}"
           chmod 600 "${certificate_path}"
 
+          echo 'Creating temporary signing keychain.'
           security create-keychain -p "${keychain_password}" "${keychain_path}"
           security set-keychain-settings -lut 21600 "${keychain_path}"
           security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+
+          echo 'Importing Apple Development signing identity.'
           security import "${certificate_path}" \
             -k "${keychain_path}" \
             -P "${IOS_DEVELOPMENT_CERTIFICATE_PASSWORD}" \
             -A \
             -t cert \
             -f pkcs12
+
+          if ! security find-identity -v -p codesigning "${keychain_path}" | grep -q 'Apple Development'; then
+            echo 'The imported PKCS#12 does not contain a valid Apple Development signing identity and private key.' >&2
+            exit 1
+          fi
+
+          echo 'Configuring signing identity key access.'
           security set-key-partition-list \
             -S apple-tool:,apple: \
-            -s \
             -k "${keychain_password}" \
             "${keychain_path}"
           security list-keychains -d user -s "${keychain_path}"
           security default-keychain -d user -s "${keychain_path}"
-
-          if ! security find-identity -v -p codesigning "${keychain_path}" | grep -q 'Apple Development'; then
-            echo 'The imported PKCS#12 does not contain a valid Apple Development signing identity.' >&2
-            exit 1
-          fi
 
           archive_path="${RUNNER_TEMP}/Pulpo.xcarchive"
           export_options_path="${RUNNER_TEMP}/ExportOptions.plist"
