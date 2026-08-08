@@ -1,4 +1,4 @@
-export const MOBILE_DATABASE_VERSION = 2
+export const MOBILE_DATABASE_VERSION = 3
 
 export const MOBILE_SCHEMA = `
 PRAGMA journal_mode = WAL;

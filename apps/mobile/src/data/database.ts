@@ -10,7 +10,14 @@ import {
   type OutboxRecord,
 } from './schema'
 import type { ServerChat } from '../types'
-import { cachedChatIdsToRemove, mergeCachedChat, withoutCachedChatDetails } from './cache'
+import {
+  MAX_CACHED_CHAT_DETAIL_BYTES,
+  cachedChatDetailIdsToEvict,
+  cachedChatIdsToRemove,
+  mergeCachedChat,
+  utf8ByteLength,
+  withoutCachedChatDetails,
+} from './cache'
 import { createOperationQueue } from './operationQueue'
 
 let databasePromise: Promise<SQLite.SQLiteDatabase> | undefined
@@ -19,6 +26,13 @@ const enqueueDatabaseOperation = createOperationQueue()
 export async function mobileDatabase(): Promise<SQLite.SQLiteDatabase> {
   databasePromise ??= SQLite.openDatabaseAsync('pulpo-mobile.db').then(async (database) => {
     await database.execAsync(MOBILE_SCHEMA)
+    const current = await database.getFirstAsync<{ version: number }>(
+      'SELECT version FROM migrations WHERE version = ?', MOBILE_DATABASE_VERSION,
+    )
+    if (!current) {
+      const namespaces = await database.getAllAsync<{ namespace: string }>('SELECT DISTINCT namespace FROM chat_cache')
+      for (const { namespace } of namespaces) await trimOpenedChatDetailsInDatabase(database, namespace, 50)
+    }
     await database.runAsync(
       'INSERT OR IGNORE INTO migrations(version, applied_at) VALUES (?, ?)',
       MOBILE_DATABASE_VERSION,
@@ -186,15 +200,19 @@ async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: 
         'SELECT payload FROM chat_cache WHERE namespace = ? AND chat_id = ?', namespace, chat.id,
       )
       const merged = mergeCachedChat(current ? JSON.parse(current.payload) as ServerChat : null, chat)
+      const mergedPayload = JSON.stringify(merged)
+      const stored = Object.hasOwn(merged, 'responses') && utf8ByteLength(mergedPayload) > MAX_CACHED_CHAT_DETAIL_BYTES
+        ? withoutCachedChatDetails(merged)
+        : merged
       await database.runAsync(
         `INSERT INTO chat_cache(namespace, chat_id, payload, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(namespace, chat_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`,
-        namespace, chat.id, JSON.stringify(merged), Date.parse(merged.updatedAt) || Date.now(),
+        namespace, chat.id, JSON.stringify(stored), Date.parse(stored.updatedAt) || Date.now(),
       )
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ? AND chat_id = ?', namespace, chat.id)
       await database.runAsync(
         'INSERT INTO chat_fts(namespace, chat_id, title, body) VALUES (?, ?, ?, ?)',
-        namespace, chat.id, merged.title, searchableText(merged),
+        namespace, chat.id, stored.title, Object.hasOwn(stored, 'responses') ? searchableText(stored) : '',
       )
     }
   })
@@ -222,8 +240,13 @@ async function trimOpenedChatDetailsInDatabase(
       ? [{ ...row, chat, openedAt: openedAt.get(row.chat_id) ?? row.updated_at }]
       : []
   }).sort((left, right) => right.openedAt - left.openedAt || left.chat_id.localeCompare(right.chat_id))
-  const keep = detailed.slice(0, Math.max(0, limit))
-  const evict = detailed.slice(Math.max(0, limit))
+  const evictedIds = new Set(cachedChatDetailIdsToEvict(detailed.map((row) => ({
+    chatId: row.chat_id,
+    openedAt: row.openedAt,
+    payloadBytes: utf8ByteLength(row.payload),
+  })), limit))
+  const keep = detailed.filter((row) => !evictedIds.has(row.chat_id))
+  const evict = detailed.filter((row) => evictedIds.has(row.chat_id))
   await database.withTransactionAsync(async () => {
     for (const row of keep) {
       await database.runAsync(

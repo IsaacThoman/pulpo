@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { ServerChat } from '../types'
-import { cachedChatIdsToRemove, mergeCachedChat, persistableChats, withoutCachedChatDetails } from './cache'
+import {
+  cachedChatDetailIdsToEvict,
+  cachedChatIdsToRemove,
+  mergeCachedChat,
+  persistableChats,
+  utf8ByteLength,
+  withoutCachedChatDetails,
+} from './cache'
 
 function chat(overrides: Partial<ServerChat> = {}): ServerChat {
   return {
@@ -49,5 +56,19 @@ describe('cachedChatIdsToRemove', () => {
     expect(summary.responses).toBeUndefined()
     expect(summary.attachments).toBeUndefined()
     expect(summary.title).toBe('Original')
+  })
+})
+
+describe('cached chat detail byte limits', () => {
+  it('measures multibyte payloads as UTF-8', () => {
+    expect(utf8ByteLength('a🐙é')).toBe(7)
+  })
+
+  it('evicts oversized recent records and retains smaller records within both ceilings', () => {
+    expect(cachedChatDetailIdsToEvict([
+      { chatId: 'large', openedAt: 3, payloadBytes: 12 },
+      { chatId: 'middle', openedAt: 2, payloadBytes: 6 },
+      { chatId: 'old', openedAt: 1, payloadBytes: 4 },
+    ], 2, 10)).toEqual(['large'])
   })
 })

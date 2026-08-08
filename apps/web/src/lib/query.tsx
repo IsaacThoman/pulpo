@@ -17,7 +17,7 @@ export function QueryProvider({ children }: PropsWithChildren) {
       persistOptions={{
         persister: indexedDbPersister,
         maxAge: 7 * 24 * 60 * 60 * 1_000,
-        buster: 'pulpo-web-v2',
+        buster: 'pulpo-web-v3',
         dehydrateOptions: {
           shouldDehydrateQuery: shouldPersistQuery,
         },

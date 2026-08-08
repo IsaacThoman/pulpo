@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
+import { retainedChatQueryHashes } from './chat-cache-policy'
 
 const DEFAULT_MAX_LOCAL_CHATS = 50
 const QUERY_CACHE_KEY = 'query-cache-v1'
@@ -92,8 +93,12 @@ function trimChatQueries(client: PersistedClient): PersistedClient {
   const queries = client.clientState.queries
   const chatDetails = queries
     .filter((query) => query.queryKey[0] === 'chat' && typeof query.queryKey[2] === 'string')
-    .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)
-  const retainedHashes = new Set(chatDetails.slice(0, maxLocalChats).map((query) => query.queryHash))
+    .map((query) => ({
+      queryHash: query.queryHash,
+      dataUpdatedAt: query.state.dataUpdatedAt,
+      data: query.state.data,
+    }))
+  const retainedHashes = retainedChatQueryHashes(chatDetails, maxLocalChats)
   return {
     ...client,
     clientState: {
