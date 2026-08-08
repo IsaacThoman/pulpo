@@ -403,9 +403,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       </SelectContent>
                     </Select>
                   </Row>
-                  <Row label="Send with Enter" hint="When off, Enter adds a newline and Cmd+Enter sends.">
-                    <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
-                  </Row>
                 </div>
               )}
 

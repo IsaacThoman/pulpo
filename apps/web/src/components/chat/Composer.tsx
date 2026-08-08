@@ -28,6 +28,7 @@ import {
   nonImageAttachmentRestriction,
 } from '@/lib/attachments'
 import { useAuth } from '@/stores/auth'
+import { shouldSubmitComposerKey } from '@/components/chat/composer-keyboard'
 
 interface PendingAttachment {
   localId: string
@@ -82,7 +83,6 @@ export function Composer({
       ?? null
   })
   const stopStreaming = useChat((s) => s.stopStreaming)
-  const sendWithEnter = useSettings((s) => s.sendWithEnter)
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const setPresetChoice = useSettings((s) => s.setPresetChoice)
@@ -325,7 +325,12 @@ export function Composer({
             autosize()
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && sendWithEnter && !e.nativeEvent.isComposing) {
+            if (shouldSubmitComposerKey({
+              key: e.key,
+              metaKey: e.metaKey,
+              ctrlKey: e.ctrlKey,
+              isComposing: e.nativeEvent.isComposing,
+            })) {
               e.preventDefault()
               submit()
             }
