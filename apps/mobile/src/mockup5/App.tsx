@@ -1,5 +1,6 @@
 import {
   createContext,
+  forwardRef,
   memo,
   useCallback,
   useContext,
@@ -30,6 +31,7 @@ import {
   PlatformColor,
   Pressable,
   ScrollView,
+  type ScrollViewProps,
   SectionList,
   Share,
   StyleSheet,
@@ -112,7 +114,12 @@ import {
   XCircle,
 } from 'lucide-react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import {
+  KeyboardChatScrollView,
+  KeyboardStickyView,
+  type KeyboardChatScrollViewRef,
+  useReanimatedKeyboardAnimation,
+} from 'react-native-keyboard-controller';
 import Reanimated, {
   cancelAnimation,
   FadeInUp,
@@ -167,6 +174,29 @@ import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatConten
 import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 import { TemporaryChatHeaderView as PersistentNativeTemporaryChatHeaderView } from '../native/TemporaryChatHeaderView';
+
+type ChatScrollViewProps = ScrollViewProps & {
+  freezeKeyboardLayout: boolean;
+  keyboardOffset: number;
+};
+
+const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps>(({
+  freezeKeyboardLayout,
+  keyboardOffset,
+  ...props
+}, ref) => (
+  <KeyboardChatScrollView
+    {...props}
+    automaticallyAdjustContentInsets={false}
+    contentInsetAdjustmentBehavior="never"
+    freeze={freezeKeyboardLayout}
+    keyboardLiftBehavior="whenAtEnd"
+    offset={keyboardOffset}
+    ref={ref}
+  />
+));
+
+ChatScrollView.displayName = 'ChatScrollView';
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
   if (Platform.OS === 'ios') return PlatformColor(ios);
@@ -2749,10 +2779,18 @@ function ChatView({
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
+  const keyboardSafeAreaOffset = Math.max(insets.bottom, 10) - 8;
   const keyboardOffset = useMemo(
-    () => ({ closed: 0, opened: Math.max(insets.bottom, 10) - 8 }),
-    [insets.bottom],
+    () => ({ closed: 0, opened: keyboardSafeAreaOffset }),
+    [keyboardSafeAreaOffset],
   );
+  const renderChatScrollComponent = useCallback((props: ScrollViewProps) => (
+    <ChatScrollView
+      {...props}
+      freezeKeyboardLayout={!keyboardLayoutEnabled}
+      keyboardOffset={keyboardSafeAreaOffset}
+    />
+  ), [keyboardLayoutEnabled, keyboardSafeAreaOffset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
@@ -3373,6 +3411,7 @@ function ChatView({
           onTouchStart={Keyboard.dismiss}
           ref={listRef}
           renderItem={renderMessage}
+          renderScrollComponent={renderChatScrollComponent}
           scrollEventThrottle={16}
           showsVerticalScrollIndicator={false}
           style={styles.flex}
