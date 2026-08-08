@@ -206,7 +206,14 @@ describe('chat store branching integration', () => {
     queryClient.setQueryData(['chat', userId, chatId], initial)
     useChat.getState().setDetailedChat(initial)
 
-    useChat.getState().editUserMessage(chatId, `${responseAId}:input`, 'one prompt', 'test-model')
+    void useChat.getState().editUserMessage({
+      chatId,
+      messageId: `${responseAId}:input`,
+      content: 'one prompt',
+      modelId: 'test-model',
+      attachments: [],
+      agentMode: false,
+    })
 
     const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
     const responseBId = optimistic.activeBranchLeafId!
@@ -232,6 +239,59 @@ describe('chat store branching integration', () => {
     useChat.getState().applyResponseSnapshot(completed.snapshot)
     useChat.getState().setDetailedChat(detail(responseBId, [responseA, completed]))
     await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('creates an attachment-specific user branch without mutating its sibling', async () => {
+    const oldAttachmentId = '00000000-0000-4000-8000-000000000005'
+    const newAttachmentId = '00000000-0000-4000-8000-000000000006'
+    const responseA = response(responseAId, 'completed')
+    responseA.input = [{ role: 'user', content: [
+      { type: 'input_text', text: 'one prompt' },
+      { type: 'input_file', attachment_id: oldAttachmentId },
+    ] }]
+    const initial = {
+      ...detail(responseAId, [responseA]),
+      attachments: [{ id: oldAttachmentId, originalName: 'old.png', mimeType: 'image/png', sizeBytes: 10 }],
+    }
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    const edit = useChat.getState().editUserMessage({
+      chatId,
+      messageId: `${responseAId}:input`,
+      content: 'one prompt',
+      modelId: 'test-model',
+      attachments: [{ id: newAttachmentId, name: 'new.pdf', mimeType: 'application/pdf', type: 'file', size: 20 }],
+      agentMode: true,
+    })
+
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const responseBId = optimistic.activeBranchLeafId!
+    const responseB = optimistic.responses!.find((item) => item.id === responseBId)!
+    expect(JSON.stringify(responseA.input)).toContain(oldAttachmentId)
+    expect(JSON.stringify(responseA.input)).not.toContain(newAttachmentId)
+    expect(JSON.stringify(responseB.input)).toContain(newAttachmentId)
+    expect(JSON.stringify(responseB.input)).not.toContain(oldAttachmentId)
+    expect(optimistic.attachments?.map((attachment) => attachment.id)).toEqual([oldAttachmentId, newAttachmentId])
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]?.body).toMatchObject({
+      attachmentIds: [newAttachmentId],
+      agentMode: true,
+    })
+    requests[0]!.resolve({ response: responseB.snapshot })
+    await edit
+    const completed = {
+      ...response(responseBId, 'completed'),
+      input: responseB.input,
+      userMessageId: responseB.userMessageId,
+      agentMode: true,
+    }
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    useChat.getState().setDetailedChat({
+      ...detail(responseBId, [responseA, completed]),
+      attachments: optimistic.attachments,
+    })
   })
 
   it('keeps one visible turn through regenerate, back, forward, stale detail, and completion', async () => {

@@ -4,7 +4,7 @@ import { Ghost, Loader2, Save } from 'lucide-react'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
-import { Composer } from '@/components/chat/Composer'
+import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
 import { MessageItem } from '@/components/chat/MessageItem'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
+import type { Message } from '@/lib/types'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
@@ -101,6 +102,8 @@ export function ChatPage() {
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
+  const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
+  const [composerEditActive, setComposerEditActive] = useState(false)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
     count: 4,
@@ -184,6 +187,20 @@ export function ChatPage() {
       observer.disconnect()
     }
   }, [chatId, chat?.id])
+
+  useEffect(() => {
+    setMessageEdit(null)
+    setComposerEditActive(false)
+  }, [chatId])
+
+  const beginMessageEdit = (message: Message) => {
+    setMessageEdit({
+      messageId: message.id,
+      content: message.content,
+      attachments: message.attachments ?? [],
+      agentMode: Boolean(message.agentMode),
+    })
+  }
 
   const isEmpty = !chat
   const suggestions = useMemo(
@@ -299,6 +316,9 @@ export function ChatPage() {
                   message={m}
                   streaming={m.role === 'assistant' && !m.done}
                   activeModelId={modelId}
+                  onEditUserMessage={beginMessageEdit}
+                  composerEditActive={composerEditActive || Boolean(messageEdit)}
+                  editDisabled={chat.messages.some((message) => message.role === 'assistant' && !message.done)}
                 />
               ))}
               <div className="h-px" />
@@ -315,7 +335,14 @@ export function ChatPage() {
                 This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.
               </div>
             ) : (
-              <Composer chatId={chat.id} modelId={modelId} temporary={chat.temporary} />
+              <Composer
+                chatId={chat.id}
+                modelId={modelId}
+                temporary={chat.temporary}
+                messageEdit={messageEdit}
+                onMessageEditComplete={() => setMessageEdit(null)}
+                onEditStateChange={setComposerEditActive}
+              />
             )}
           </div>
         </>

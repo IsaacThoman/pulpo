@@ -228,11 +228,18 @@ describe('optimistic response reconciliation', () => {
 
     cacheOptimisticBranch({
       queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId: 'response-2',
-      modelId: 'model-1', presetSelections: {}, editedInput: 'Edited prompt', createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
+      modelId: 'model-1', presetSelections: {}, editedInput: 'Edited prompt',
+      editedAttachments: [{ id: 'attachment-2', name: 'replacement.pdf', mimeType: 'application/pdf', sizeBytes: 24 }],
+      editedAgentMode: true,
+      createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
     })
     const userEdit = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.responses?.find((response) => response.id === 'response-2')
     expect(userEdit?.branches.user.ids).toEqual(['response-1', 'response-2'])
     expect(JSON.stringify(userEdit?.input)).toContain('Edited prompt')
+    expect(JSON.stringify(userEdit?.input)).toContain('attachment-2')
+    expect(userEdit?.agentMode).toBe(true)
+    expect(queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.attachments?.map((attachment) => attachment.id))
+      .toContain('attachment-2')
 
     cacheOptimisticBranch({
       queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-2', responseId: 'response-3',

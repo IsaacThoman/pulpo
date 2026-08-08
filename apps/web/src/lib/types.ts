@@ -32,6 +32,7 @@ export interface Model {
 export interface Attachment {
   id: string
   name: string
+  mimeType: string
   type: 'image' | 'file'
   size: number
 }

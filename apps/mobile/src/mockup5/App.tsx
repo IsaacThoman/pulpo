@@ -151,7 +151,7 @@ import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTu
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, deleteResponseCursor } from '../data/database';
 import { queryKeys } from '../data/queries';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { usePreferencesStore } from '../store/preferences';
@@ -390,6 +390,10 @@ type StreamingSession = {
   thinkSeconds: number;
 };
 type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean };
+type MessageEditSession = {
+  message: Message;
+  originalAttachmentIds: Set<string>;
+};
 
 const MODELS: Model[] = [
   { id: 'demo-claude', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
@@ -592,7 +596,9 @@ function AttachmentStrip({ attachments, onRemove, onRetry }: {
         <View key={attachment.localId} style={styles.attachmentFrame}>
           <View style={attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment}>
             {attachment.kind === 'image' ? (
-              <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.attachmentImage} />
+              attachment.uri
+                ? <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.attachmentImage} />
+                : <ResolvedAttachmentImage attachment={attachment} variant="composer" />
             ) : (
               <>
                 <View style={styles.fileAttachmentIcon}><Icon name="doc.fill" size={22} color={COLORS.muted} /></View>
@@ -1617,9 +1623,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
   }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, trackActiveResponse]);
 
-  const editMessage = useCallback((message: Message, content: string) => {
+  const editMessage = useCallback(async (
+    message: Message,
+    content: string,
+    attachments: PreparedAttachment[] = [],
+    agentMode = Boolean(message.agentMode),
+  ): Promise<boolean> => {
     const chatId = message.chatId ?? activeChatId;
-    if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
+    if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return false;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
@@ -1634,6 +1645,15 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       modelId,
       presetSelections: selections,
       ...(message.role === 'user' ? { editedInput: content } : { editedOutput: content }),
+      ...(message.role === 'user' ? {
+        editedAttachments: attachments.map((attachment) => ({
+          id: attachment.serverId,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.size ?? 0,
+        })),
+        editedAgentMode: agentMode,
+      } : {}),
       createdAt: Date.now(),
     });
     if (message.role === 'user') {
@@ -1641,19 +1661,30 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       if (optimistic) trackActiveResponse(optimistic.snapshot);
     }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    void editServerMessage(message.id, content, modelId, selections, responseId).then((response) => {
+    try {
+      const response = await editServerMessage({
+        id: message.id,
+        content,
+        modelId,
+        presetSelections: selections,
+        attachmentIds: message.role === 'user' ? attachments.map((attachment) => attachment.serverId) : undefined,
+        agentMode: message.role === 'user' ? agentMode : undefined,
+        clientId: responseId,
+      });
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) });
-    }).catch((error) => {
+      return true;
+    } catch (error) {
       activeResponseId.current = null;
       activeResponseSubscription.current?.();
       activeResponseSubscription.current = null;
       rejectOptimisticTurn({ queryClient, namespace, responseId, discardChat: false });
       setAssistantStatus('idle');
       Alert.alert(message.role === 'user' ? 'Couldn’t edit message' : 'Couldn’t edit response', error instanceof Error ? error.message : undefined);
-    });
+      return false;
+    }
   }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, trackActiveResponse]);
 
   const activateMessageBranch = useCallback(async (message: Message, branchId: string) => {
@@ -1829,10 +1860,14 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
     if (action === 'edit') {
       const chatId = message.chatId;
       if (!chatId) return;
+      if (message.role === 'user') {
+        onEdit(message, message.text);
+        return;
+      }
       if (Platform.OS === 'ios') {
-        Alert.prompt(message.role === 'user' ? 'Edit message' : 'Edit response', message.role === 'user' ? 'Saving resends from this point in the conversation.' : 'Saving creates a response branch.', (text) => {
+        Alert.prompt('Edit response', 'Saving creates a response branch.', (text) => {
           const trimmed = text.trim();
-          if (!trimmed && !(message.role === 'user' && (message.attachments?.length ?? 0) > 0)) return;
+          if (!trimmed) return;
           onEdit(message, trimmed);
         }, 'plain-text', message.text);
       }
@@ -1958,17 +1993,19 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   );
 }
 
-function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachment; variant: 'message' | 'preview' }) {
+function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachment; variant: 'message' | 'preview' | 'composer' }) {
   const [uri, setUri] = useState(attachment.uri);
   const [failed, setFailed] = useState(false);
-  const style = variant === 'preview' ? styles.attachmentContextImagePreview : styles.sentAttachmentImage;
+  const style = variant === 'preview'
+    ? styles.attachmentContextImagePreview
+    : variant === 'composer' ? styles.attachmentImage : styles.sentAttachmentImage;
 
   useEffect(() => {
     setUri(attachment.uri);
     setFailed(false);
     if (attachment.uri) return;
     let cancelled = false;
-    const resolve = variant === 'message'
+    const resolve = variant === 'message' || variant === 'composer'
       ? downloadAttachmentThumbnail(attachment.id)
       : downloadAttachment(attachment.id, attachment.name);
     void resolve.then((file) => {
@@ -2205,10 +2242,11 @@ function responseModel(message: Message, models: Model[], fallback: Model): Mode
   };
 }
 
-function BranchControls({ branches, activeIndex, onActivate }: {
+function BranchControls({ branches, activeIndex, onActivate, disabled = false }: {
   branches: ResponseBranch[];
   activeIndex: number;
   onActivate: (branchId: string) => Promise<void>;
+  disabled?: boolean;
 }) {
   const activate = useCallback((index: number) => {
     const branch = branches[index];
@@ -2219,9 +2257,9 @@ function BranchControls({ branches, activeIndex, onActivate }: {
   }, [branches, onActivate]);
   return (
     <View accessibilityLabel={`Version ${activeIndex + 1} of ${branches.length}`} style={styles.branchControls}>
-      <IconAction disabled={activeIndex <= 0} icon="chevron.left" label="Previous version" onPress={() => activate(activeIndex - 1)} />
+      <IconAction disabled={disabled || activeIndex <= 0} icon="chevron.left" label="Previous version" onPress={() => activate(activeIndex - 1)} />
       <Text style={styles.branchLabel}>{`${activeIndex + 1} / ${branches.length}`}</Text>
-      <IconAction disabled={activeIndex >= branches.length - 1} icon="chevron.right" label="Next version" onPress={() => activate(activeIndex + 1)} />
+      <IconAction disabled={disabled || activeIndex >= branches.length - 1} icon="chevron.right" label="Next version" onPress={() => activate(activeIndex + 1)} />
     </View>
   );
 }
@@ -2232,12 +2270,14 @@ const MessageRow = memo(function MessageRow({
   onEdit,
   onRegenerate,
   onActivateBranch,
+  editingLocked = false,
 }: {
   message: Message;
   model: Model;
   onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
+  editingLocked?: boolean;
 }) {
   const { showReasoning } = useAppPreferences();
   const branches = message.branches ?? [];
@@ -2354,7 +2394,7 @@ const MessageRow = memo(function MessageRow({
         </View>
       )}
       {branches.length > 1 && message.chatId ? (
-        <BranchControls activeIndex={branchIndex} branches={branches} onActivate={(branchId) => onActivateBranch(message, branchId)} />
+        <BranchControls activeIndex={branchIndex} branches={branches} disabled={editingLocked} onActivate={(branchId) => onActivateBranch(message, branchId)} />
       ) : null}
     </View>
   );
@@ -2605,7 +2645,7 @@ function ChatView({
   assistantStatus: 'idle' | 'thinking' | 'streaming';
   streamingSession: StreamingSession | null;
   onStreamingComplete: (session: StreamingSession) => void;
-  onEdit: (message: Message, content: string) => void;
+  onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onStop: () => void;
@@ -2642,6 +2682,14 @@ function ChatView({
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [messageEdit, setMessageEdit] = useState<MessageEditSession | null>(null);
+  const preservedComposerRef = useRef<{
+    input: string;
+    attachments: ComposerAttachment[];
+    agentEnabled: boolean;
+  } | null>(null);
+  const messageEditChatIdRef = useRef(chatId);
+  const composerInputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
@@ -2746,9 +2794,67 @@ function ChatView({
     if (!canUseAgent || !agentNamespace) return;
     const next = !activeAgentEnabled;
     setAgentEnabled(next);
-    void usePreferencesStore.getState().setNamespacedAgentMode(agentNamespace, next);
+    if (!messageEdit) void usePreferencesStore.getState().setNamespacedAgentMode(agentNamespace, next);
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, agentNamespace, canUseAgent]);
+  }, [activeAgentEnabled, agentNamespace, canUseAgent, messageEdit]);
+
+  const restoreComposer = useCallback(() => {
+    const preserved = preservedComposerRef.current;
+    preservedComposerRef.current = null;
+    setMessageEdit(null);
+    if (!preserved) return;
+    onChangeInput(preserved.input);
+    setAttachments(preserved.attachments);
+    setAgentEnabled(preserved.agentEnabled);
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }, [onChangeInput]);
+
+  const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
+    for (const attachment of values) {
+      if (!attachment.serverId || session.originalAttachmentIds.has(attachment.serverId)) continue;
+      void deleteUnreferencedAttachment(attachment.serverId).catch(() => undefined);
+    }
+  }, []);
+
+  const cancelMessageEdit = useCallback(() => {
+    if (!messageEdit || sending) return;
+    cleanupEditUploads(messageEdit, attachments);
+    restoreComposer();
+    Haptics.selectionAsync();
+  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending]);
+
+  useEffect(() => {
+    if (messageEditChatIdRef.current === chatId) return;
+    messageEditChatIdRef.current = chatId;
+    if (!messageEdit) return;
+    cleanupEditUploads(messageEdit, attachments);
+    restoreComposer();
+  }, [attachments, chatId, cleanupEditUploads, messageEdit, restoreComposer]);
+
+  const beginMessageEdit = useCallback((message: Message) => {
+    if (messageEdit || sending || assistantStatus !== 'idle') return;
+    preservedComposerRef.current = { input, attachments, agentEnabled };
+    const existing = message.attachments ?? [];
+    setMessageEdit({ message, originalAttachmentIds: new Set(existing.map((attachment) => attachment.id)) });
+    onChangeInput(message.text);
+    setAgentEnabled(Boolean(message.agentMode));
+    setAttachments(existing.map((attachment) => ({
+      ...attachment,
+      localId: `sent:${message.id}:${attachment.id}`,
+      serverId: attachment.id,
+      state: 'ready' as const,
+    })));
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, [agentEnabled, assistantStatus, attachments, input, messageEdit, onChangeInput, sending]);
+
+  const handleMessageEditAction = useCallback((message: Message, content: string) => {
+    if (message.role === 'user') {
+      beginMessageEdit(message);
+      return;
+    }
+    void onEdit(message, content);
+  }, [beginMessageEdit, onEdit]);
 
   const addAttachments = useCallback((incoming: ComposerAttachment[]) => {
     setAttachments((current) => {
@@ -2848,6 +2954,17 @@ function ChatView({
     if (attachment && attachment.state !== 'uploading') void uploadOne(attachment);
   }, [attachments, uploadOne]);
 
+  const removeComposerAttachment = useCallback((localId: string) => {
+    setAttachments((current) => {
+      const target = current.find((attachment) => attachment.localId === localId);
+      if (messageEdit && target?.serverId && !messageEdit.originalAttachmentIds.has(target.serverId)) {
+        void deleteUnreferencedAttachment(target.serverId).catch(() => undefined);
+      }
+      return current.filter((attachment) => attachment.localId !== localId);
+    });
+    Haptics.selectionAsync();
+  }, [messageEdit]);
+
   const submitMessage = useCallback(async () => {
     if (sending || attachments.some((attachment) => attachment.state === 'uploading')) return;
     setSending(true);
@@ -2855,6 +2972,16 @@ function ChatView({
       const prepared = await Promise.all(attachments.map(uploadOne));
       if (prepared.some((attachment) => attachment === null)) {
         Alert.alert('Some files couldn’t upload', 'Retry or remove the failed files, then send again.');
+        return;
+      }
+      if (messageEdit) {
+        const accepted = await onEdit(
+          messageEdit.message,
+          input.trim(),
+          prepared as PreparedAttachment[],
+          activeAgentEnabled,
+        );
+        if (accepted) restoreComposer();
         return;
       }
       const accepted = await onSend(input, prepared as PreparedAttachment[], { presetSelections, agentEnabled: activeAgentEnabled, temporary });
@@ -2867,7 +2994,7 @@ function ChatView({
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, attachments, followComposerGeneration, input, onChangeInput, onSend, presetSelections, sending, temporary, uploadOne]);
+  }, [activeAgentEnabled, attachments, followComposerGeneration, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, sending, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
     void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary }).then((accepted) => {
@@ -2984,13 +3111,14 @@ function ChatView({
     <MessageRow
       message={item}
       model={responseModel(item, models, model)}
-      onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onEdit}
+      onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
       onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
       onActivateBranch={expired
         ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
         : onActivateBranch}
+      editingLocked={Boolean(messageEdit)}
     />
-  ), [expired, model, models, onActivateBranch, onEdit, onRegenerate]);
+  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -3005,6 +3133,7 @@ function ChatView({
     && assistantStatus === 'idle'
     && !sending
     && !expired
+    && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
     && !attachments.some((attachment) => attachment.state === 'uploading');
 
   useEffect(() => {
@@ -3197,20 +3326,32 @@ function ChatView({
                 temporary && (colorScheme === 'dark' ? styles.temporaryComposerDark : styles.temporaryComposerLight),
               ]}
             >
+              {messageEdit ? (
+                <View style={styles.messageEditBanner}>
+                  <Icon name="pencil" size={12} color={COLORS.muted} />
+                  <Text style={styles.messageEditBannerText}>Editing message</Text>
+                  <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending} onPress={cancelMessageEdit}>
+                    <Text style={styles.messageEditCancel}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <AttachmentStrip
                 attachments={attachments}
                 onRetry={retryAttachment}
-                onRemove={(id) => {
-                  setAttachments((current) => current.filter((attachment) => attachment.localId !== id));
-                  Haptics.selectionAsync();
-                }}
+                onRemove={removeComposerAttachment}
               />
+              {attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent) ? (
+                <Text accessibilityRole="alert" style={styles.attachmentRestrictionText}>
+                  {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
+                </Text>
+              ) : null}
               <TextInput
+                ref={composerInputRef}
                 accessibilityLabel="Message"
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
-                placeholder={attachments.length > 0 ? 'Add a caption…' : temporary ? 'Temporary message…' : 'Message…'}
+                placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.dim}
                 style={styles.input}
                 value={input}
@@ -3292,7 +3433,7 @@ function ChatView({
                     </SwiftUIHost>
                     <NativeComposerIconButton
                       disabled={assistantStatus === 'idle' && !canSend}
-                      label={assistantStatus !== 'idle' ? 'Stop generating' : 'Send message'}
+                      label={assistantStatus !== 'idle' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
                       onPress={() => assistantStatus !== 'idle' ? onStop() : submitMessage()}
                       prominent
                       systemImage={assistantStatus !== 'idle' ? 'stop.fill' : 'arrow.up'}
@@ -3311,7 +3452,7 @@ function ChatView({
                       <Bot color={activeAgentEnabled ? COLORS.foregroundOnAccent : COLORS.muted} size={13} strokeWidth={2} />
                     </Pressable>
                     <Pressable
-                      accessibilityLabel={assistantStatus !== 'idle' ? 'Stop generating' : 'Send message'}
+                      accessibilityLabel={assistantStatus !== 'idle' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
                       accessibilityRole="button"
                       accessibilityState={{ disabled: assistantStatus === 'idle' && !canSend }}
                       disabled={assistantStatus === 'idle' && !canSend}
@@ -3979,6 +4120,10 @@ const styles = StyleSheet.create({
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   composerWrap: { paddingHorizontal: 12, paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4 },
+  messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
+  messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
+  messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
+  attachmentRestrictionText: { color: '#FF9F0A', fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
   temporaryComposer: { borderWidth: 1.25, borderStyle: 'dashed' },
   temporaryComposerLight: { backgroundColor: 'rgba(237,233,254,0.86)', borderColor: 'rgba(139,92,246,0.78)' },
   temporaryComposerDark: { backgroundColor: 'rgba(46,16,101,0.52)', borderColor: 'rgba(124,58,237,0.68)' },

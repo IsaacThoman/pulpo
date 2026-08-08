@@ -151,7 +151,14 @@ interface ChatState {
   updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
   deleteQueuedMessage: (chatId: string, messageId: string) => Promise<void>
   regenerate: (chatId: string, messageId: string, modelId: string) => void
-  editUserMessage: (chatId: string, messageId: string, content: string, modelId: string) => void
+  editUserMessage: (input: {
+    chatId: string
+    messageId: string
+    content: string
+    modelId: string
+    attachments: Attachment[]
+    agentMode: boolean
+  }) => Promise<void>
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
   deleteUserMessage: (chatId: string, messageId: string) => void
   activateBranch: (chatId: string, responseId: string) => void
@@ -239,6 +246,7 @@ function attachmentsFromOutput(output: unknown[], metadata: Map<string, ServerAt
     return [{
       id: value.attachment_id,
       name: stored?.originalName ?? value.name ?? 'attachment',
+      mimeType,
       type: mimeType.startsWith('image/') ? 'image' : 'file',
       size: stored?.sizeBytes ?? value.size_bytes ?? 0,
     }]
@@ -255,6 +263,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
       return attachment ? [{
         id: attachment.id,
         name: attachment.originalName,
+        mimeType: attachment.mimeType,
         type: attachment.mimeType.startsWith('image/') ? 'image' : 'file',
         size: attachment.sizeBytes,
       }] : []
@@ -263,6 +272,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
       {
         id: `${response.id}:input`, role: 'user' as const, content: inputText(response.input),
         timestamp, done: true, branch: response.branches.user, attachments: messageAttachments,
+        agentMode: response.agentMode,
       },
       {
         id: response.id, role: 'assistant' as const, content: outputText(response.output),
@@ -341,7 +351,11 @@ function currentUserId(): string | null { return useAuth.getState().user?.id ?? 
 function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
 function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
-const pendingOptimisticResponses = new Map<string, { chatId: string; response: ServerResponse }>()
+const pendingOptimisticResponses = new Map<string, {
+  chatId: string
+  response: ServerResponse
+  attachments: ServerAttachment[]
+}>()
 const pendingOptimisticQueuedMessages = new Map<string, QueuedMessage>()
 const branchSelectionIntents = new BranchSelectionIntents()
 
@@ -349,6 +363,8 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
   if (!row.responses) return row
   const responses = [...row.responses]
   const serverIds = new Set(responses.map((response) => response.id))
+  const attachmentRows = [...(row.attachments ?? [])]
+  const attachmentIds = new Set(attachmentRows.map((attachment) => attachment.id))
   let changed = false
   for (const [responseId, pending] of pendingOptimisticResponses) {
     if (pending.chatId !== row.id) continue
@@ -357,9 +373,20 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
       const pendingTerminal = !['queued', 'in_progress'].includes(pending.response.status)
       const serverTerminal = serverResponse && !['queued', 'in_progress'].includes(serverResponse.status)
       if (pendingTerminal && serverTerminal) pendingOptimisticResponses.delete(responseId)
+      for (const attachment of pending.attachments) {
+        if (attachmentIds.has(attachment.id)) continue
+        attachmentIds.add(attachment.id)
+        attachmentRows.push(attachment)
+        changed = true
+      }
       continue
     }
     responses.push(pending.response)
+    for (const attachment of pending.attachments) {
+      if (attachmentIds.has(attachment.id)) continue
+      attachmentIds.add(attachment.id)
+      attachmentRows.push(attachment)
+    }
     changed = true
   }
   const desiredLeaf = branchSelectionIntents.current(row.id)?.leafId
@@ -373,6 +400,7 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
     activeResponseId: activeLeaf,
     activeBranchLeafId: activeLeaf,
     responses: withBranchMetadata(responses),
+    attachments: attachmentRows,
   }
 }
 
@@ -419,7 +447,13 @@ function cacheOptimisticTurn(input: {
     },
     branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
   }
-  pendingOptimisticResponses.set(response.id, { chatId: input.chatId, response })
+  const attachmentRows = input.attachments.map((attachment) => ({
+    id: attachment.id,
+    originalName: attachment.name,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.size,
+  }))
+  pendingOptimisticResponses.set(response.id, { chatId: input.chatId, response, attachments: attachmentRows })
   const selectionIntent = branchSelectionIntents.select(input.chatId, response.id)
   const detail: ServerChat = existing
     ? {
@@ -433,12 +467,7 @@ function cacheOptimisticTurn(input: {
           : null,
         attachments: [
           ...(existing.attachments ?? []).filter((attachment) => !input.attachments.some((item) => item.id === attachment.id)),
-          ...input.attachments.map((attachment) => ({
-            id: attachment.id,
-            originalName: attachment.name,
-            mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
-            sizeBytes: attachment.size,
-          })),
+          ...attachmentRows,
         ],
         responses: withBranchMetadata([...(existing.responses ?? []), response]),
       }
@@ -455,12 +484,7 @@ function cacheOptimisticTurn(input: {
         updatedAt: createdAt,
         activeResponseId: input.responseId,
         activeBranchLeafId: input.responseId,
-        attachments: input.attachments.map((attachment) => ({
-          id: attachment.id,
-          originalName: attachment.name,
-          mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
-          sizeBytes: attachment.size,
-        })),
+        attachments: attachmentRows,
         responses: [response],
       }
   queryClient.setQueryData(chatKey(input.chatId), detail)
@@ -473,7 +497,7 @@ function cacheOptimisticTurn(input: {
   return selectionIntent.version
 }
 
-function replaceInputText(input: unknown[], content: string): unknown[] {
+function replaceInputUserContent(input: unknown[], content: string, attachments: Attachment[]): unknown[] {
   const lastUserIndex = input.reduce(
     (last, entry, index) => (entry as { role?: string }).role === 'user' ? index : last,
     -1,
@@ -483,16 +507,18 @@ function replaceInputText(input: unknown[], content: string): unknown[] {
     const typed = item as { role?: string; content?: unknown }
     if (typed.role !== 'user' || index !== lastUserIndex) return item
     replaced = true
-    if (!Array.isArray(typed.content)) return { ...typed, content }
-    let found = false
-    const parts = typed.content.map((part) => {
-      const value = part as { type?: string }
-      if (value.type !== 'input_text') return part
-      found = true
-      return { ...value, text: content }
-    })
-    return { ...typed, content: found ? parts : [{ type: 'input_text', text: content }, ...parts] }
-  }).concat(replaced ? [] : [{ role: 'user', content }])
+    const untouched = Array.isArray(typed.content)
+      ? typed.content.filter((part) => !['input_text', 'input_file'].includes((part as { type?: string }).type ?? ''))
+      : []
+    return { ...typed, content: [
+      { type: 'input_text', text: content },
+      ...attachments.map((attachment) => ({ type: 'input_file', attachment_id: attachment.id })),
+      ...untouched,
+    ] }
+  }).concat(replaced ? [] : [{ role: 'user', content: [
+    { type: 'input_text', text: content },
+    ...attachments.map((attachment) => ({ type: 'input_file', attachment_id: attachment.id })),
+  ] }])
 }
 
 function cacheOptimisticBranch(input: {
@@ -503,6 +529,8 @@ function cacheOptimisticBranch(input: {
   displayModelId: string
   presetSelections: Record<string, string>
   editedInput?: string
+  editedAttachments?: Attachment[]
+  editedAgentMode?: boolean
 }): { chat: ServerChat; selectionVersion: number } | undefined {
   const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
   const source = existing?.responses?.find((response) => response.id === input.sourceResponseId)
@@ -514,7 +542,9 @@ function cacheOptimisticBranch(input: {
     modelId: input.modelId,
     displayModelId: input.displayModelId,
     status: 'queued',
-    input: input.editedInput === undefined ? source.input : replaceInputText(source.input, input.editedInput),
+    input: input.editedInput === undefined
+      ? source.input
+      : replaceInputUserContent(source.input, input.editedInput, input.editedAttachments ?? []),
     output: [],
     presetSelections: input.presetSelections,
     usage: null,
@@ -532,8 +562,15 @@ function cacheOptimisticBranch(input: {
     },
     branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
     userMessageId: input.editedInput === undefined ? source.userMessageId : crypto.randomUUID(),
+    agentMode: input.editedAgentMode ?? source.agentMode,
   }
-  pendingOptimisticResponses.set(response.id, { chatId: input.chatId, response })
+  const attachmentRows = (input.editedAttachments ?? []).map((attachment) => ({
+    id: attachment.id,
+    originalName: attachment.name,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.size,
+  }))
+  pendingOptimisticResponses.set(response.id, { chatId: input.chatId, response, attachments: attachmentRows })
   const selectionIntent = branchSelectionIntents.select(input.chatId, response.id)
   const updated: ServerChat = {
     ...existing,
@@ -541,6 +578,10 @@ function cacheOptimisticBranch(input: {
     activeResponseId: response.id,
     activeBranchLeafId: response.id,
     responses: withBranchMetadata([...existing.responses, response]),
+    attachments: [
+      ...(existing.attachments ?? []).filter((attachment) => !attachmentRows.some((item) => item.id === attachment.id)),
+      ...attachmentRows,
+    ],
   }
   queryClient.setQueryData(chatKey(input.chatId), updated)
   return { chat: updated, selectionVersion: selectionIntent.version }
@@ -712,7 +753,11 @@ function failOptimisticResponse(
     })),
   }
   const failedResponse = updated.responses?.find((response) => response.id === responseId)
-  if (failedResponse) pendingOptimisticResponses.set(responseId, { chatId, response: failedResponse })
+  if (failedResponse) pendingOptimisticResponses.set(responseId, {
+    chatId,
+    response: failedResponse,
+    attachments: pendingOptimisticResponses.get(responseId)?.attachments ?? [],
+  })
   if (restoreFallback) branchSelectionIntents.select(chatId, fallbackResponseId)
   queryClient.setQueryData(chatKey(chatId), updated)
   return updated
@@ -1316,7 +1361,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       attachments: messageAttachments.map((attachment) => ({
         id: attachment.id,
         name: attachment.name,
-        mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
+        mimeType: attachment.mimeType,
         sizeBytes: attachment.size,
       })),
       createdAt: now,
@@ -1376,7 +1421,7 @@ export const useChat = create<ChatState>()((set, get) => ({
             attachments: messageAttachments.map((attachment) => ({
               id: attachment.id,
               name: attachment.name,
-              mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
+              mimeType: attachment.mimeType,
               sizeBytes: attachment.size,
             })),
             status: 'pending' as const,
@@ -1464,7 +1509,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (expired) get().markTemporaryExpired(chatId)
     })
   },
-  editUserMessage: (chatId, messageId, content, modelId) => {
+  editUserMessage: async ({ chatId, messageId, content, modelId, attachments: editedAttachments, agentMode }) => {
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
       useSettings.getState().generation[modelId],
@@ -1480,20 +1525,25 @@ export const useChat = create<ChatState>()((set, get) => ({
       displayModelId: modelId,
       presetSelections: generation.selections,
       editedInput: content,
+      editedAttachments,
+      editedAgentMode: agentMode,
     })
     const selectionVersion = optimistic?.selectionVersion
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
-    void enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, {
+    try {
+      const result = await enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, {
       clientId: responseId,
       content,
       modelId,
       presetSelections: generation.selections,
-    }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
+      attachmentIds: editedAttachments.map((attachment) => attachment.id),
+      agentMode,
+    }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) }))
       if (result === undefined) return
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
-    }).catch((error: unknown) => {
+    } catch (error: unknown) {
       const expired = error instanceof ApiError
         && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === chatId && chat.temporary)))
       const message = expired
@@ -1502,7 +1552,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       const failed = failOptimisticResponse(chatId, responseId, sourceResponseId, selectionVersion, message)
       if (failed) get().setDetailedChat(failed)
       if (expired) get().markTemporaryExpired(chatId)
-    })
+      throw error
+    }
   },
   editAssistantMessage: (chatId, messageId, content) => {
     void enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, { content }, {

@@ -230,6 +230,7 @@ export function PendingImageChip({
   name,
   size,
   previewUrl,
+  attachmentId,
   uploading,
   error,
   onDownload,
@@ -238,11 +239,14 @@ export function PendingImageChip({
   name: string
   size: number
   previewUrl?: string | null
+  attachmentId?: string
   uploading?: boolean
   error?: string | null
   onDownload: () => void
   onRemove: () => void
 }) {
+  const remotePreview = useAttachmentPreviewUrl(attachmentId, !previewUrl, 'thumbnail')
+  const resolvedPreviewUrl = previewUrl ?? remotePreview.url
   return (
     <div
       className={cn(
@@ -250,8 +254,8 @@ export function PendingImageChip({
         error && 'border-destructive/50',
       )}
     >
-      {previewUrl ? (
-        <img src={previewUrl} alt={name} className="size-full object-cover" draggable={false} />
+      {resolvedPreviewUrl ? (
+        <img src={resolvedPreviewUrl} alt={name} className="size-full object-cover" draggable={false} />
       ) : (
         <div className="flex size-full flex-col items-center justify-center gap-1 p-1 text-muted-foreground">
           <ImageIcon className="size-5" />

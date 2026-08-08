@@ -389,4 +389,17 @@ describe('response snapshot accumulation', () => {
     expect(() => updateQueuedMessageSchema.parse({ action: 'save_edit', input: '', modelId: 'model-1' })).toThrow()
   })
 
+  it('accepts attachment-aware message edits and rejects duplicate references', async () => {
+    const { editMessageSchema } = await import('./index.js')
+    const attachmentId = '00000000-0000-4000-8000-000000000004'
+
+    expect(editMessageSchema.parse({
+      content: '', attachmentIds: [attachmentId], agentMode: true,
+    })).toMatchObject({ attachmentIds: [attachmentId], agentMode: true })
+    expect(editMessageSchema.parse({ content: 'legacy client' })).toEqual({ content: 'legacy client' })
+    expect(() => editMessageSchema.parse({
+      content: 'duplicate', attachmentIds: [attachmentId, attachmentId],
+    })).toThrow(/unique/i)
+  })
+
 })

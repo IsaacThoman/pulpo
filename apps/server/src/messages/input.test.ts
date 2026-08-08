@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { replaceResponseInputText, responseAttachmentIds, responseInputText } from './input.js'
+import {
+  replaceResponseInputText,
+  replaceResponseUserInput,
+  responseAttachmentIds,
+  responseInputText,
+  responseUserAttachmentIds,
+} from './input.js'
 
 const storedInput = [
   { role: 'developer', content: 'instructions' },
@@ -21,5 +27,25 @@ describe('stored message input', () => {
     expect(responseInputText(edited)).toBe('edited')
     expect(responseAttachmentIds(edited)).toEqual(['00000000-0000-4000-8000-000000000001'])
     expect(edited[0]).toEqual(storedInput[0])
+  })
+
+  it('replaces only the final user attachment set and preserves unknown parts', () => {
+    const input = [
+      { role: 'user', content: [{ type: 'input_file', attachment_id: 'older' }] },
+      { role: 'developer', content: 'instructions' },
+      { role: 'user', content: [
+        { type: 'input_text', text: 'original' },
+        { type: 'input_file', attachment_id: 'old-file' },
+        { type: 'custom_part', value: true },
+      ] },
+    ]
+
+    const edited = replaceResponseUserInput(input, 'edited', ['new-file'])
+    expect(responseUserAttachmentIds(edited)).toEqual(['new-file'])
+    expect(responseAttachmentIds(edited)).toEqual(['older', 'new-file'])
+    expect(responseInputText(edited)).toBe('edited')
+    expect(JSON.stringify(edited)).toContain('custom_part')
+    expect(edited[0]).toEqual(input[0])
+    expect(edited[1]).toEqual(input[1])
   })
 })

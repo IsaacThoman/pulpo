@@ -45,6 +45,7 @@ import {
 import { useAuth } from '@/stores/auth'
 import { shouldSubmitComposerKey } from '@/components/chat/composer-keyboard'
 import { composerPrimaryAction, shouldQueueComposerMessage } from '@/components/chat/composer-queue'
+import type { Attachment } from '@/lib/types'
 
 interface PendingAttachment {
   localId: string
@@ -56,6 +57,13 @@ interface PendingAttachment {
   status: 'uploading' | 'ready' | 'error'
   error?: string
   file?: File
+}
+
+export interface ComposerMessageEdit {
+  messageId: string
+  content: string
+  attachments: Attachment[]
+  agentMode: boolean
 }
 
 const EMPTY_QUEUE: never[] = []
@@ -71,14 +79,12 @@ function downloadComposerAttachment(attachment: PendingAttachment): void {
     return
   }
   const userId = useAuth.getState().user?.id
-  if (userId && attachment.id) {
-    void downloadAttachment(userId, {
-      id: attachment.id,
-      originalName: attachment.name,
-      mimeType: attachment.mimeType,
-      sizeBytes: attachment.size,
-    }, useSettings.getState().localAttachmentCacheMb)
-  }
+  if (userId && attachment.id) void downloadAttachment(userId, {
+    id: attachment.id,
+    originalName: attachment.name,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.size,
+  }, useSettings.getState().localAttachmentCacheMb)
 }
 
 export function Composer({
@@ -86,11 +92,17 @@ export function Composer({
   modelId,
   centered,
   temporary = false,
+  messageEdit = null,
+  onMessageEditComplete,
+  onEditStateChange,
 }: {
   chatId: string | null
   modelId: string
   centered?: boolean
   temporary?: boolean
+  messageEdit?: ComposerMessageEdit | null
+  onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
+  onEditStateChange?: (active: boolean) => void
 }) {
   const navigate = useNavigate()
   const [value, setValue] = useState('')
@@ -104,6 +116,7 @@ export function Composer({
   const dragDepth = useRef(0)
   const attachmentsRef = useRef(attachments)
   const preservedDraftRef = useRef<{ value: string; attachments: PendingAttachment[] } | null>(null)
+  const activeMessageEditIdRef = useRef<string | null>(null)
   attachmentsRef.current = attachments
 
   const sendMessage = useChat((s) => s.sendMessage)
@@ -123,6 +136,7 @@ export function Composer({
   const enqueueMessage = useChat((s) => s.enqueueMessage)
   const updateQueuedMessage = useChat((s) => s.updateQueuedMessage)
   const deleteQueuedMessage = useChat((s) => s.deleteQueuedMessage)
+  const editUserMessage = useChat((s) => s.editUserMessage)
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const setPresetChoice = useSettings((s) => s.setPresetChoice)
@@ -136,12 +150,14 @@ export function Composer({
   const selections = resolveSelections(options, generation[modelId])
   const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
+  const [editAgentMode, setEditAgentMode] = useState(false)
+  const activeAgentMode = messageEdit ? editAgentMode : agentModeEnabled
   const uploading = attachments.some((a) => a.status === 'uploading')
   const uploadFailed = attachments.some((a) => a.status === 'error')
   const hasNonImage = attachments.some((a) => !isSupportedImageMime(a.mimeType))
   const attachmentRestriction = nonImageAttachmentRestriction({
     hasNonImage,
-    agentModeEnabled,
+    agentModeEnabled: activeAgentMode,
     agentAvailable,
     agentCapable,
   })
@@ -153,6 +169,10 @@ export function Composer({
   useEffect(() => {
     ref.current?.focus()
   }, [chatId])
+
+  useEffect(() => {
+    onEditStateChange?.(Boolean(editingQueueId || messageEdit))
+  }, [editingQueueId, messageEdit, onEditStateChange])
 
   useEffect(() => () => {
     for (const attachment of attachmentsRef.current) {
@@ -170,13 +190,27 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
 
+  const updateAttachment = useCallback((localId: string, update: (attachment: PendingAttachment) => PendingAttachment) => {
+    setAttachments((current) => current.map((item) => item.localId === localId ? update(item) : item))
+    const preserved = preservedDraftRef.current
+    if (preserved) {
+      preserved.attachments = preserved.attachments.map((item) => item.localId === localId ? update(item) : item)
+    }
+  }, [])
+
+  const cleanupAttachment = useCallback((attachment: PendingAttachment) => {
+    if (!attachment.id || !attachment.file) return
+    void apiRequest(`/api/attachments/${attachment.id}`, { method: 'DELETE' }).catch(() => undefined)
+  }, [])
+
   const removeAttachment = useCallback((localId: string) => {
     setAttachments((current) => {
       const target = current.find((item) => item.localId === localId)
       if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
+      if (target) cleanupAttachment(target)
       return current.filter((item) => item.localId !== localId)
     })
-  }, [])
+  }, [cleanupAttachment])
 
   const uploadFiles = useCallback(async (incoming: File[]) => {
     if (!incoming.length) return
@@ -221,23 +255,17 @@ export function Composer({
             sizeBytes: file.size,
           }, file, useSettings.getState().localAttachmentCacheMb).catch(() => false)
         }
-        setAttachments((current) => current.map((item) => (
-          item.localId === pending.localId
-            ? { ...item, id: created.attachment.id, mimeType, status: 'ready' as const }
-            : item
-        )))
+        updateAttachment(pending.localId, (item) => ({
+          ...item, id: created.attachment.id, mimeType, status: 'ready' as const,
+        }))
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Upload failed'
-        setAttachments((current) => current.map((item) => (
-          item.localId === pending.localId
-            ? { ...item, status: 'error' as const, error: message }
-            : item
-        )))
+        updateAttachment(pending.localId, (item) => ({ ...item, status: 'error' as const, error: message }))
       }
     }))
 
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [chatId, temporary])
+  }, [chatId, temporary, updateAttachment])
 
   const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
     void uploadFiles(collectUploadFiles(list))
@@ -256,6 +284,7 @@ export function Composer({
     const preserved = preservedDraftRef.current
     preservedDraftRef.current = null
     setEditingQueueId(null)
+    activeMessageEditIdRef.current = null
     if (!preserved) return
     const preservedIds = new Set(preserved.attachments.map((attachment) => attachment.localId))
     for (const attachment of attachments) {
@@ -267,6 +296,41 @@ export function Composer({
   }, [attachments, autosize])
 
   useEffect(() => {
+    if (!messageEdit || editingQueueId || activeMessageEditIdRef.current === messageEdit.messageId) return
+    preservedDraftRef.current = { value, attachments }
+    activeMessageEditIdRef.current = messageEdit.messageId
+    setValue(messageEdit.content)
+    setEditAgentMode(messageEdit.agentMode)
+    setQueueError(null)
+    setAttachments(messageEdit.attachments.map((attachment) => ({
+      localId: `sent:${messageEdit.messageId}:${attachment.id}`,
+      id: attachment.id,
+      name: attachment.name,
+      size: attachment.size,
+      mimeType: attachment.mimeType,
+      previewUrl: null,
+      status: 'ready' as const,
+    })))
+    requestAnimationFrame(() => {
+      autosize()
+      ref.current?.focus()
+    })
+  }, [attachments, autosize, editingQueueId, messageEdit, value])
+
+  const cancelMessageEdit = useCallback(() => {
+    if (!messageEdit) return
+    for (const attachment of attachments) cleanupAttachment(attachment)
+    restorePreservedDraft()
+    onMessageEditComplete?.('cancelled')
+  }, [attachments, cleanupAttachment, messageEdit, onMessageEditComplete, restorePreservedDraft])
+
+  useEffect(() => {
+    if (messageEdit || !activeMessageEditIdRef.current) return
+    for (const attachment of attachments) cleanupAttachment(attachment)
+    restorePreservedDraft()
+  }, [attachments, cleanupAttachment, messageEdit, restorePreservedDraft])
+
+  useEffect(() => {
     if (!editingQueueId || queuedMessages.some((message) => message.id === editingQueueId)) return
     restorePreservedDraft()
   }, [editingQueueId, queuedMessages, restorePreservedDraft])
@@ -274,6 +338,7 @@ export function Composer({
   const queuePayload = () => readyAttachments.map((attachment) => ({
     id: attachment.id!,
     name: attachment.name,
+    mimeType: attachment.mimeType,
     type: (isSupportedImageMime(attachment.mimeType) ? 'image' : 'file') as 'image' | 'file',
     size: attachment.size,
   }))
@@ -288,9 +353,29 @@ export function Composer({
       modelId,
       presetSelections: selections,
       attachmentIds: payload.map((attachment) => attachment.id),
-      agentMode: agentModeEnabled && canUseAgent,
+      agentMode: activeAgentMode && canUseAgent,
     }
     setQueueError(null)
+    if (messageEdit && chatId) {
+      setSubmitting(true)
+      try {
+        await editUserMessage({
+          chatId,
+          messageId: messageEdit.messageId,
+          content: text,
+          modelId,
+          attachments: payload,
+          agentMode: activeAgentMode && canUseAgent,
+        })
+        restorePreservedDraft()
+        onMessageEditComplete?.('saved')
+      } catch (error) {
+        setQueueError(error instanceof Error ? error.message : 'Unable to save and resend the message')
+      } finally {
+        setSubmitting(false)
+      }
+      return
+    }
     if (editingQueueId && chatId) {
       setSubmitting(true)
       try {
@@ -321,7 +406,7 @@ export function Composer({
   }
 
   const beginQueueEdit = async (messageId: string) => {
-    if (!chatId || submitting) return
+    if (!chatId || submitting || messageEdit) return
     if (editingQueueId === messageId) {
       setSubmitting(true)
       try {
@@ -415,8 +500,25 @@ export function Composer({
 
   return (
     <div className={cn('w-full', centered && 'px-2')}>
+      {messageEdit && (
+        <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 py-2 text-sm shadow-sm">
+          <Pencil className="size-3.5 text-muted-foreground" />
+          <span className="flex-1 font-medium">Editing message</span>
+          <button
+            type="button"
+            onClick={cancelMessageEdit}
+            disabled={submitting}
+            className="cursor-pointer text-xs text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
       {queuedMessages.length > 0 && (
-        <div className="max-h-48 overflow-y-auto rounded-t-2xl border border-b-0 bg-card px-2 pt-2 pb-1 shadow-sm">
+        <div className={cn(
+          'max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-1 shadow-sm',
+          messageEdit ? 'rounded-none' : 'rounded-t-2xl',
+        )}>
           {queuedMessages.map((message) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
@@ -456,7 +558,7 @@ export function Composer({
                 <button
                   type="button"
                   onClick={() => void beginQueueEdit(message.id)}
-                  disabled={submitting || anotherEditing || message.status === 'dispatching'}
+                  disabled={submitting || Boolean(messageEdit) || anotherEditing || message.status === 'dispatching'}
                   className={cn(
                     'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
                     editing && 'bg-accent text-foreground',
@@ -473,7 +575,7 @@ export function Composer({
       <div
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
-          queuedMessages.length > 0 && '-mt-px rounded-t-xl',
+          (queuedMessages.length > 0 || messageEdit) && '-mt-px rounded-t-xl',
           temporary && 'border-violet-500/70 bg-violet-100/80 dark:border-violet-600/60 dark:bg-violet-950/45',
           temporary && 'border-dashed',
           dragging && 'border-primary ring-2 ring-primary/25',
@@ -500,6 +602,7 @@ export function Composer({
                 name={attachment.name}
                 size={attachment.size}
                 previewUrl={attachment.previewUrl}
+                attachmentId={isSupportedImageMime(attachment.mimeType) ? attachment.id : undefined}
                 uploading={attachment.status === 'uploading'}
                 error={attachment.status === 'error' ? attachment.error : null}
                 onDownload={() => downloadComposerAttachment(attachment)}
@@ -537,6 +640,11 @@ export function Composer({
             autosize()
           }}
           onKeyDown={(e) => {
+            if (e.key === 'Escape' && messageEdit && !e.nativeEvent.isComposing) {
+              e.preventDefault()
+              cancelMessageEdit()
+              return
+            }
             if (e.key === 'Escape' && editingQueueId && !e.nativeEvent.isComposing) {
               e.preventDefault()
               void beginQueueEdit(editingQueueId)
@@ -631,10 +739,14 @@ export function Composer({
           <button
             type="button"
             disabled={!canUseAgent}
-            onClick={() => canUseAgent && setSetting('agentModeEnabled', !agentModeEnabled)}
-            aria-label={agentModeEnabled && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
-            aria-pressed={agentModeEnabled && canUseAgent}
-            className={cn('flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', agentModeEnabled && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
+            onClick={() => {
+              if (!canUseAgent) return
+              if (messageEdit) setEditAgentMode((value) => !value)
+              else setSetting('agentModeEnabled', !agentModeEnabled)
+            }}
+            aria-label={activeAgentMode && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
+            aria-pressed={activeAgentMode && canUseAgent}
+            className={cn('flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
           >
             <Bot className="size-4" />
             <span>Agent</span>
@@ -654,7 +766,7 @@ export function Composer({
             <TooltipContent side="top">Dictate</TooltipContent>
           </Tooltip>
 
-          {composerPrimaryAction(Boolean(streamingResponseId), hasDraft || Boolean(editingQueueId)) === 'stop' ? (
+          {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
             <Button
               size="icon-sm"
               className="rounded-full"
@@ -669,7 +781,7 @@ export function Composer({
               className="rounded-full"
               onClick={() => void submit()}
               disabled={!canSend}
-              aria-label="Send message"
+              aria-label={messageEdit ? 'Save and resend message' : 'Send message'}
             >
               {submitting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </Button>

@@ -47,6 +47,8 @@ interface CacheOptimisticBranchInput {
   presetSelections: Record<string, string>
   editedInput?: string
   editedOutput?: string
+  editedAttachments?: OptimisticAttachment[]
+  editedAgentMode?: boolean
   createdAt: number
 }
 
@@ -76,7 +78,7 @@ function responseFromSnapshot(response: ServerResponse, live: ResponseSnapshot |
   }
 }
 
-function replaceInputText(input: unknown[], content: string): unknown[] {
+function replaceInputUserContent(input: unknown[], content: string, attachments: OptimisticAttachment[]): unknown[] {
   const lastUserIndex = input.reduce((last, entry, index) => (
     (entry as { role?: string }).role === 'user' ? index : last
   ), -1)
@@ -85,17 +87,19 @@ function replaceInputText(input: unknown[], content: string): unknown[] {
     const typed = item as { role?: string; content?: unknown }
     if (typed.role !== 'user' || index !== lastUserIndex) return item
     replaced = true
-    if (!Array.isArray(typed.content)) return { ...typed, content }
-    let found = false
-    const parts = typed.content.map((part) => {
-      const value = part as { type?: string }
-      if (value.type !== 'input_text') return part
-      found = true
-      return { ...value, text: content }
-    })
-    return { ...typed, content: found ? parts : [{ type: 'input_text', text: content }, ...parts] }
+    const untouched = Array.isArray(typed.content)
+      ? typed.content.filter((part) => !['input_text', 'input_file'].includes((part as { type?: string }).type ?? ''))
+      : []
+    return { ...typed, content: [
+      { type: 'input_text', text: content },
+      ...attachments.map((attachment) => ({ type: 'input_file', attachment_id: attachment.id })),
+      ...untouched,
+    ] }
   })
-  return replaced ? updated : [...updated, { role: 'user', content }]
+  return replaced ? updated : [...updated, { role: 'user', content: [
+    { type: 'input_text', text: content },
+    ...attachments.map((attachment) => ({ type: 'input_file', attachment_id: attachment.id })),
+  ] }]
 }
 
 function userBranchKey(response: ServerResponse): string {
@@ -233,6 +237,12 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
   if (!existing?.responses || !source) return undefined
   const createdAt = new Date(input.createdAt).toISOString()
   const isAssistantEdit = input.editedOutput !== undefined
+  const attachmentRows: ServerAttachment[] = (input.editedAttachments ?? []).map((attachment) => ({
+    id: attachment.id,
+    originalName: attachment.name,
+    mimeType: attachment.mimeType,
+    sizeBytes: attachment.sizeBytes,
+  }))
   const output = isAssistantEdit ? [{
     id: `msg_${input.responseId}`,
     type: 'message',
@@ -257,7 +267,9 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
     modelId: input.modelId,
     displayModelId: input.modelId,
     status: snapshot.status,
-    input: input.editedInput === undefined ? source.input : replaceInputText(source.input, input.editedInput),
+    input: input.editedInput === undefined
+      ? source.input
+      : replaceInputUserContent(source.input, input.editedInput, input.editedAttachments ?? []),
     output,
     presetSelections: input.presetSelections,
     usage: null,
@@ -269,13 +281,14 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
       user: { ids: [input.responseId], index: 0 },
       assistant: { ids: [input.responseId], index: 0 },
     },
+    agentMode: input.editedAgentMode ?? source.agentMode,
   }
   pendingResponses.set(pendingKey(input.namespace, input.responseId), {
     namespace: input.namespace,
     chatId: input.chatId,
     response,
     rollbackResponseId: source.id,
-    attachments: [],
+    attachments: attachmentRows,
     chatListed: false,
     terminalDetailSeen: false,
   })
@@ -286,6 +299,10 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
     activeResponseId: response.id,
     activeBranchLeafId: response.id,
     responses: withBranchMetadata([...existing.responses, response]),
+    attachments: [
+      ...(existing.attachments ?? []).filter((attachment) => !attachmentRows.some((item) => item.id === attachment.id)),
+      ...attachmentRows,
+    ],
   })
   useRealtimeStore.getState().receiveSnapshot(snapshot)
   return response

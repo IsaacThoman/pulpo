@@ -623,6 +623,11 @@ export const createChatSchema = z.object({
   temporary: z.boolean().default(false),
 })
 
+const attachmentIdListSchema = z.array(idSchema).refine(
+  (ids) => new Set(ids).size === ids.length,
+  { message: 'Attachment ids must be unique' },
+)
+
 export const createChatResponseSchema = z.object({
   clientId: idSchema.optional(),
   parentResponseId: idSchema.nullable().optional(),
@@ -631,13 +636,23 @@ export const createChatResponseSchema = z.object({
   executionMode: executionModeSchema.optional(),
   maxOutputTokens: z.number().int().positive().optional(),
   presetSelections: z.record(z.string(), z.string()).default({}),
-  attachmentIds: z.array(idSchema).default([]),
+  attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],
 })
 export type CreateChatResponseInput = z.infer<typeof createChatResponseSchema>
+
+export const editMessageSchema = z.object({
+  clientId: idSchema.optional(),
+  content: z.string().trim().max(1_000_000),
+  modelId: z.string().trim().min(1).optional(),
+  presetSelections: z.record(z.string(), z.string()).optional(),
+  attachmentIds: attachmentIdListSchema.optional(),
+  agentMode: z.boolean().optional(),
+})
+export type EditMessageInput = z.infer<typeof editMessageSchema>
 
 export const queuedMessageStatusSchema = z.enum(['pending', 'editing', 'dispatching', 'failed'])
 export type QueuedMessageStatus = z.infer<typeof queuedMessageStatusSchema>
@@ -670,7 +685,7 @@ export const createQueuedMessageSchema = z.object({
   input: z.string().trim().max(1_000_000).default(''),
   modelId: z.string().min(1),
   presetSelections: z.record(z.string(), z.string()).default({}),
-  attachmentIds: z.array(idSchema).default([]),
+  attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
@@ -686,7 +701,7 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
     input: z.string().trim().max(1_000_000).default(''),
     modelId: z.string().min(1),
     presetSelections: z.record(z.string(), z.string()).default({}),
-    attachmentIds: z.array(idSchema).default([]),
+    attachmentIds: attachmentIdListSchema.default([]),
     agentMode: z.boolean().default(false),
   }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
     message: 'Message must include text or attachments',

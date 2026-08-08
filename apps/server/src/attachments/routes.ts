@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { attachments, chats } from '../database/schema.js'
+import { attachments, chats, queuedMessages, responses } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
@@ -13,6 +13,7 @@ import { getStorageUsage, reserveAttachment } from './storage-quota.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
+import { attachmentReferenceIsLive } from './references.js'
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
@@ -176,6 +177,22 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const { id } = request.params as { id: string }
     const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1)
     if (!attachment) throw notFound('Attachment')
+    if (attachment.origin !== 'user') {
+      throw new AppError(409, 'attachment_in_use', 'Generated attachments cannot be removed this way')
+    }
+    const responseRows = await db.select({ input: responses.input }).from(responses).where(and(
+      eq(responses.userId, user.id),
+      isNull(responses.deletedAt),
+    ))
+    const queueRows = await db.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages).where(
+      eq(queuedMessages.userId, user.id),
+    )
+    const referenced = attachmentReferenceIsLive(
+      id,
+      responseRows.map((row) => row.input),
+      queueRows.map((row) => row.attachmentIds),
+    )
+    if (referenced) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
     await getBlobStore().delete(attachment.objectKey)
     await db.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))
     reply.code(204).send()

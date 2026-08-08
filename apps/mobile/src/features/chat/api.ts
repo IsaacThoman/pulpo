@@ -223,14 +223,33 @@ export async function regenerateResponse(id: string, modelId?: string, presetSel
   return result.response
 }
 
-export async function editMessage(id: string, content: string, modelId?: string, presetSelections?: Record<string, string>, clientId?: string): Promise<ResponseSnapshot> {
-  const responseId = clientId ?? Crypto.randomUUID()
-  const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${id}`, {
+export async function editMessage(input: {
+  id: string
+  content: string
+  modelId?: string
+  presetSelections?: Record<string, string>
+  attachmentIds?: string[]
+  agentMode?: boolean
+  clientId?: string
+}): Promise<ResponseSnapshot> {
+  const responseId = input.clientId ?? Crypto.randomUUID()
+  const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${input.id}`, {
     method: 'PATCH', idempotencyKey: responseId,
-    body: { clientId: responseId, content, modelId, presetSelections },
+    body: {
+      clientId: responseId,
+      content: input.content,
+      modelId: input.modelId,
+      presetSelections: input.presetSelections,
+      attachmentIds: input.attachmentIds,
+      agentMode: input.agentMode,
+    },
   })
   useRealtimeStore.getState().receiveSnapshot(result.response)
   return result.response
+}
+
+export async function deleteUnreferencedAttachment(id: string): Promise<void> {
+  await apiRequest(`/api/attachments/${id}`, { method: 'DELETE' })
 }
 
 export async function activateBranch(id: string): Promise<{ activeBranchLeafId: string }> {

@@ -37,7 +37,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { persistChat, sendMessage, startChat } from './api'
+import { editMessage, persistChat, sendMessage, startChat } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
@@ -74,5 +74,26 @@ describe('temporary chat promotion', () => {
     await expect(persistChat('chat-1')).resolves.toMatchObject({ temporary: false, expiresAt: null })
     expect(mocks.apiRequest).toHaveBeenCalledWith('/api/chats/chat-1/persist', { method: 'POST' })
     expect(mocks.queueOfflineMutation).not.toHaveBeenCalled()
+  })
+})
+
+describe('message edits', () => {
+  it('sends attachment and Agent settings for a user branch edit', async () => {
+    const snapshot = {
+      responseId: 'response-2', status: 'queued', sequence: 0, output: [], usage: null, error: null,
+      updatedAt: '2026-08-08T00:00:00.000Z',
+    }
+    mocks.apiRequest.mockResolvedValueOnce({ response: snapshot })
+
+    await editMessage({
+      id: 'response-1:input', content: '', modelId: 'model-1', clientId: 'response-2',
+      attachmentIds: ['attachment-2'], agentMode: true, presetSelections: {},
+    })
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/messages/response-1:input', expect.objectContaining({
+      method: 'PATCH',
+      idempotencyKey: 'response-2',
+      body: expect.objectContaining({ attachmentIds: ['attachment-2'], agentMode: true }),
+    }))
   })
 })

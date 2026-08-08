@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { idSchema } from '@pulpo/contracts'
+import { editMessageSchema, idSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, users } from '../database/schema.js'
@@ -10,7 +10,7 @@ import { newId } from '../lib/ids.js'
 import { cascadeDeletionIds, newestDescendantId } from './branching.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
-import { replaceResponseInputText, responseAttachmentIds, responseInputText } from './input.js'
+import { replaceResponseUserInput, responseAttachmentIds, responseInputText, responseUserAttachmentIds } from './input.js'
 import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/temporary.js'
 
 async function ownedResponse(userId: string, id: string) {
@@ -108,20 +108,26 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const original = await ownedResponse(user.id, id)
-    const { clientId, content, modelId: selectedModelId, presetSelections } = generationSelectionSchema.extend({
-      content: z.string().trim().max(1_000_000),
-    }).parse(request.body)
+    const {
+      clientId,
+      content,
+      modelId: selectedModelId,
+      presetSelections,
+      attachmentIds: selectedAttachmentIds,
+      agentMode: selectedAgentMode,
+    } = editMessageSchema.parse(request.body)
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     if (id.endsWith(':input')) {
       const modelId = selectedModelId ?? await requestedModelId(original.id, original.modelId)
-      const attachmentIds = responseAttachmentIds(original.input)
+      const attachmentIds = selectedAttachmentIds ?? responseUserAttachmentIds(original.input)
+      const agentMode = selectedAgentMode ?? original.agentMode
       if (!content && attachmentIds.length === 0) {
         throw new AppError(400, 'empty_message', 'Message must include text or attachments')
       }
       const created = await createResponse({
         userId: user.id,
         chatId: original.chatId,
-        rawInput: replaceResponseInputText(original.input, content),
+        rawInput: replaceResponseUserInput(original.input, content, attachmentIds),
         parentResponseId: original.parentResponseId,
         branchReason: 'user_edit',
         idempotencyKey,
@@ -133,7 +139,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
             ? presetSelections ?? {}
             : original.presetSelections as Record<string, string>,
           attachmentIds,
-          agentMode: original.agentMode,
+          agentMode,
         },
       })
       await bumpRevision(user.id, original.chatId)
@@ -142,6 +148,9 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     }
     if (!content) {
       throw new AppError(400, 'empty_message', 'Message must include text')
+    }
+    if (selectedAttachmentIds !== undefined || selectedAgentMode !== undefined) {
+      throw new AppError(400, 'assistant_edit_attachments_unsupported', 'Assistant response attachments cannot be edited')
     }
     if (idempotencyKey) {
       const [existing] = await db.select().from(responses).where(and(

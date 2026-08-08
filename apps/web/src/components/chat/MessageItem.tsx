@@ -96,9 +96,11 @@ function CopyButton({ text }: { text: string }) {
 function BranchControls({
   chatId,
   branch,
+  disabled = false,
 }: {
   chatId: string
   branch?: Message['branch']
+  disabled?: boolean
 }) {
   const activateBranch = useChat((state) => state.activateBranch)
   if (!branch || branch.ids.length < 2) return null
@@ -113,7 +115,7 @@ function BranchControls({
       <ActionButton
         label="Previous branch"
         onClick={() => activate(branch.index - 1)}
-        disabled={branch.index === 0}
+        disabled={disabled || branch.index === 0}
       >
         <ChevronLeft className="size-3.5" />
       </ActionButton>
@@ -123,7 +125,7 @@ function BranchControls({
       <ActionButton
         label="Next branch"
         onClick={() => activate(branch.index + 1)}
-        disabled={branch.index === branch.ids.length - 1}
+        disabled={disabled || branch.index === branch.ids.length - 1}
       >
         <ChevronRight className="size-3.5" />
       </ActionButton>
@@ -491,14 +493,19 @@ export const MessageItem = memo(function MessageItem({
   message,
   streaming,
   activeModelId,
+  onEditUserMessage = () => undefined,
+  composerEditActive = false,
+  editDisabled = false,
 }: {
   chat: Chat
   message: Message
   streaming: boolean
   activeModelId: string
+  onEditUserMessage?: (message: Message) => void
+  composerEditActive?: boolean
+  editDisabled?: boolean
 }) {
   const regenerate = useChat((state) => state.regenerate)
-  const editUserMessage = useChat((state) => state.editUserMessage)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
@@ -555,20 +562,14 @@ export const MessageItem = memo(function MessageItem({
     ))
   }, [activityFinishedDuringStream, message.timestamp, streaming])
 
-  const hasAttachments = Boolean(message.attachments?.length)
   const submitEdit = () => {
     const content = draft.trim()
     if (!canSubmitMessageEdit({
       role: message.role,
       draft,
       originalContent: message.content,
-      hasAttachments,
+      hasAttachments: false,
     })) return
-    if (message.role === 'user') {
-      setEditing(false)
-      editUserMessage(chat.id, message.id, content, activeModelId)
-      return
-    }
     setEditing(false)
     editAssistantMessage(chat.id, message.id, content)
   }
@@ -582,72 +583,27 @@ export const MessageItem = memo(function MessageItem({
   if (message.role === 'user') {
     return (
       <div className="group flex flex-col items-end gap-1">
-        {editing ? (
-          <div className="w-full max-w-xl rounded-2xl border bg-card p-3">
-            {message.attachments && message.attachments.length > 0 && (
-              <div className="mb-3">
-                <MessageAttachmentList attachments={message.attachments} align="start" />
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  Attachments stay with this message when you edit.
-                </p>
-              </div>
-            )}
-            <textarea
-              className="w-full resize-none bg-transparent text-sm outline-none"
-              rows={Math.min(10, Math.max(2, draft.split('\n').length + 1))}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={handleEditKeyDown}
-              placeholder={hasAttachments ? 'Add a caption…' : 'Message…'}
-              autoFocus
-            />
-            <div className="mt-2 flex justify-end gap-2">
-              <Button size="sm" variant="ghost" onClick={() => {
-                setDraft(message.content)
-                setEditing(false)
-              }}>
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={submitEdit}
-                disabled={!canSubmitMessageEdit({
-                  role: 'user',
-                  draft,
-                  originalContent: message.content,
-                  hasAttachments,
-                })}
-              >
-                Save & resend
-              </Button>
+        <div className={cn(
+          'max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7',
+          message.content ? 'px-4 py-2.5' : 'p-2',
+        )}>
+          {message.attachments && message.attachments.length > 0 && (
+            <div className={cn(message.content ? 'mb-2' : undefined)}>
+              <MessageAttachmentList attachments={message.attachments} />
             </div>
-          </div>
-        ) : (
-          <div className={cn(
-            'max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7',
-            message.content ? 'px-4 py-2.5' : 'p-2',
-          )}>
-            {message.attachments && message.attachments.length > 0 && (
-              <div className={cn(message.content ? 'mb-2' : undefined)}>
-                <MessageAttachmentList attachments={message.attachments} />
-              </div>
-            )}
-            {message.content ? <Markdown content={message.content} /> : null}
-          </div>
-        )}
-        {!editing && (
-          <div className="flex items-center gap-1">
-            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
+          )}
+          {message.content ? <Markdown content={message.content} /> : null}
+        </div>
+        <div className="flex items-center gap-1">
+            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {message.content ? <CopyButton text={message.content} /> : null}
               {!chat.expired && (
                 <>
                   <ActionButton
                     label="Edit"
-                    onClick={() => {
-                      setDraft(message.content)
-                      setEditing(true)
-                    }}
+                    onClick={() => onEditUserMessage(message)}
+                    disabled={composerEditActive || editDisabled}
                   >
                     <Pencil className="size-3.5" />
                   </ActionButton>
@@ -658,8 +614,7 @@ export const MessageItem = memo(function MessageItem({
               )}
             </div>
           </div>
-        )}
-      </div>
+        </div>
     )
   }
 
