@@ -22,3 +22,9 @@ export function isNearChatBottom(
 export function shouldFollowChatContent(nearBottom: boolean, readerInteracting: boolean): boolean {
   return nearBottom && !readerInteracting
 }
+
+/** Keep background chat chrome at its resting position while another surface owns the keyboard. */
+export function resolveKeyboardLayoutProgress(progress: number, enabled: boolean): number {
+  'worklet'
+  return enabled ? progress : 0
+}

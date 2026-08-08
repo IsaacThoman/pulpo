@@ -110,8 +110,8 @@ import {
   Wrench,
   XCircle,
 } from 'lucide-react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { KeyboardProvider, KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Reanimated, {
   cancelAnimation,
   FadeInUp,
@@ -128,7 +128,7 @@ import Reanimated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthExperience } from './src/screens/AuthExperience';
 import {
   AccountScreen,
@@ -162,7 +162,7 @@ import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { visibleHistoryChats } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
-import { isNearChatBottom, shouldFollowChatContent } from '../features/chat/viewport';
+import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 import { TemporaryChatHeaderView as PersistentNativeTemporaryChatHeaderView } from '../native/TemporaryChatHeaderView';
@@ -981,17 +981,11 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <GestureHandlerRootView style={styles.flex}>
-      <KeyboardProvider>
-        <SafeAreaProvider>
-          <AppPreferencesProvider>
-            <AccessibilityPreferencesProvider>
-              <PrototypeRoot />
-            </AccessibilityPreferencesProvider>
-          </AppPreferencesProvider>
-        </SafeAreaProvider>
-      </KeyboardProvider>
-    </GestureHandlerRootView>
+    <AppPreferencesProvider>
+      <AccessibilityPreferencesProvider>
+        <PrototypeRoot />
+      </AccessibilityPreferencesProvider>
+    </AppPreferencesProvider>
   );
 }
 
@@ -1732,6 +1726,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             messages={messages}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            keyboardLayoutEnabled={!panelOpen}
             model={selectedModel}
             models={availableModels}
             prototypeModel={selectedPrototypeModel}
@@ -2562,7 +2557,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
     : undefined;
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
+      <SwiftUIHost ignoreSafeArea="keyboard" style={[styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible]}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -2593,12 +2588,13 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
+  messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
   onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, temporary, expired, savingTemporary, onTemporaryChange,
 }: {
   messages: Message[];
   chatId: string | null;
   chatLoaded: boolean;
+  keyboardLayoutEnabled: boolean;
   model: Model;
   models: Model[];
   prototypeModel?: PrototypeModel;
@@ -2690,19 +2686,22 @@ function ChatView({
   );
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
-      translateY: -keyboardProgress.value * (
+      translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
         Math.min(64, windowHeight * 0.065) + suggestionGridHeight.value * 0.5
       ),
     }],
-  }));
-  const suggestionsAnimatedStyle = useAnimatedStyle(() => ({
-    height: suggestionGridHeight.value > 0
-      ? suggestionGridHeight.value * (1 - keyboardProgress.value)
-      : undefined,
-    marginTop: interpolate(keyboardProgress.value, [0, 1], [30, 0]),
-    opacity: interpolate(keyboardProgress.value, [0, 0.65], [1, 0]),
-    transform: [{ translateY: interpolate(keyboardProgress.value, [0, 1], [0, -14]) }],
-  }));
+  }), [keyboardLayoutEnabled]);
+  const suggestionsAnimatedStyle = useAnimatedStyle(() => {
+    const progress = resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled);
+    return {
+      height: suggestionGridHeight.value > 0
+        ? suggestionGridHeight.value * (1 - progress)
+        : undefined,
+      marginTop: interpolate(progress, [0, 1], [30, 0]),
+      opacity: interpolate(progress, [0, 0.65], [1, 0]),
+      transform: [{ translateY: interpolate(progress, [0, 1], [0, -14]) }],
+    };
+  }, [keyboardLayoutEnabled]);
   const temporarySurfaceAnimatedStyle = useAnimatedStyle(() => ({
     backgroundColor: interpolateColor(
       temporaryProgress.value,
@@ -3188,7 +3187,7 @@ function ChatView({
         />
       )}
 
-      <KeyboardStickyView offset={keyboardOffset} style={styles.composerSticky}>
+      <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
         <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <Glass
               interactive

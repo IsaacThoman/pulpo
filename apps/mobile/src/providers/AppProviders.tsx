@@ -1,10 +1,10 @@
 import { useEffect, useMemo } from 'react'
-import { AppState, View } from 'react-native'
+import { AppState, Keyboard, View } from 'react-native'
 import { QueryClient, QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query'
 import * as Network from 'expo-network'
 import * as SplashScreen from 'expo-splash-screen'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { KeyboardProvider } from 'react-native-keyboard-controller'
+import { KeyboardProvider, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { usePreferencesStore } from '../store/preferences'
@@ -13,8 +13,25 @@ import { isNetworkError } from '../api/client'
 import { useAppTheme } from '../theme'
 import { purgeLegacyPrototypeSnapshots } from '../mockup5/src/store/prototypeStore'
 import { RealtimeProvider } from './RealtimeProvider'
+import { startKeyboardStateReconciliation } from './keyboardStateReconciliation'
 
 void SplashScreen.preventAutoHideAsync()
+
+function KeyboardStateReconciler({ children }: { children: React.ReactNode }) {
+  const { height, progress } = useReanimatedKeyboardAnimation()
+
+  useEffect(() => startKeyboardStateReconciliation({
+    addAppStateChangeListener: (listener) => AppState.addEventListener('change', listener),
+    addKeyboardDidHideListener: (listener) => Keyboard.addListener('keyboardDidHide', listener),
+    isKeyboardVisible: () => Keyboard.isVisible(),
+    reset: () => {
+      height.value = 0
+      progress.value = 0
+    },
+  }), [height, progress])
+
+  return children
+}
 
 function Bootstrap({ children }: { children: React.ReactNode }) {
   const hydrateSession = useSessionStore((state) => state.hydrate)
@@ -77,11 +94,13 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   }), [])
   return <GestureHandlerRootView style={{ flex: 1 }}>
     <KeyboardProvider>
-      <SafeAreaProvider>
-        <QueryClientProvider client={queryClient}>
-          <Bootstrap><RealtimeProvider>{children}</RealtimeProvider></Bootstrap>
-        </QueryClientProvider>
-      </SafeAreaProvider>
+      <KeyboardStateReconciler>
+        <SafeAreaProvider>
+          <QueryClientProvider client={queryClient}>
+            <Bootstrap><RealtimeProvider>{children}</RealtimeProvider></Bootstrap>
+          </QueryClientProvider>
+        </SafeAreaProvider>
+      </KeyboardStateReconciler>
     </KeyboardProvider>
   </GestureHandlerRootView>
 }

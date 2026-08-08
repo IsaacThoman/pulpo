@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isNearChatBottom, shouldFollowChatContent } from './viewport'
+import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from './viewport'
 
 describe('chat viewport following', () => {
   it('follows short transcripts and readers already near the end', () => {
@@ -15,5 +15,11 @@ describe('chat viewport following', () => {
     expect(shouldFollowChatContent(true, true)).toBe(false)
     expect(shouldFollowChatContent(true, false)).toBe(true)
     expect(shouldFollowChatContent(false, false)).toBe(false)
+  })
+
+  it('freezes keyboard-responsive chat layout while another surface owns the keyboard', () => {
+    expect(resolveKeyboardLayoutProgress(1, false)).toBe(0)
+    expect(resolveKeyboardLayoutProgress(0.45, false)).toBe(0)
+    expect(resolveKeyboardLayoutProgress(0.45, true)).toBe(0.45)
   })
 })
