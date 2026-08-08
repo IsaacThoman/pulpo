@@ -151,7 +151,7 @@ import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTu
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, deleteResponseCursor } from '../data/database';
 import { queryKeys } from '../data/queries';
-import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { usePreferencesStore } from '../store/preferences';
@@ -1973,13 +1973,16 @@ function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachme
     setFailed(false);
     if (attachment.uri) return;
     let cancelled = false;
-    void downloadAttachment(attachment.id, attachment.name).then((file) => {
+    const resolve = variant === 'message'
+      ? downloadAttachmentThumbnail(attachment.id)
+      : downloadAttachment(attachment.id, attachment.name);
+    void resolve.then((file) => {
       if (!cancelled) setUri(file.uri);
     }).catch(() => {
       if (!cancelled) setFailed(true);
     });
     return () => { cancelled = true; };
-  }, [attachment.id, attachment.name, attachment.uri]);
+  }, [attachment.id, attachment.name, attachment.uri, variant]);
 
   if (uri) return <Image accessibilityLabel={attachment.name} source={{ uri }} style={style} />;
   return (

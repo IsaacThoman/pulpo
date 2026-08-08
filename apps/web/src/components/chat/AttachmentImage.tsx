@@ -10,7 +10,11 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { formatBytes } from '@/lib/attachments'
 
-function useAttachmentPreviewUrl(attachmentId: string | undefined, enabled = true): {
+function useAttachmentPreviewUrl(
+  attachmentId: string | undefined,
+  enabled = true,
+  variant: 'thumbnail' | 'full' = 'full',
+): {
   url: string | null
   loading: boolean
 } {
@@ -38,6 +42,10 @@ function useAttachmentPreviewUrl(attachmentId: string | undefined, enabled = tru
           setUrl(objectUrl)
           return
         }
+        if (variant === 'thumbnail') {
+          setUrl(`/api/attachments/${attachmentId}/thumbnail`)
+          return
+        }
         const { url: remote } = await apiRequest<{ url: string }>(`/api/attachments/${attachmentId}/download`)
         if (cancelled) return
         setUrl(remote)
@@ -52,7 +60,7 @@ function useAttachmentPreviewUrl(attachmentId: string | undefined, enabled = tru
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [attachmentId, enabled, userId])
+  }, [attachmentId, enabled, userId, variant])
 
   return { url, loading }
 }
@@ -108,9 +116,10 @@ export function MessageAttachmentList({
 }
 
 function MessageImagePreview({ attachment }: { attachment: Attachment }) {
-  const { url, loading } = useAttachmentPreviewUrl(attachment.id)
+  const { url, loading } = useAttachmentPreviewUrl(attachment.id, true, 'thumbnail')
   const userId = useAuth((s) => s.user?.id)
   const [previewOpen, setPreviewOpen] = useState(false)
+  const { url: fullUrl } = useAttachmentPreviewUrl(attachment.id, previewOpen, 'full')
 
   const handleDownload = () => {
     if (userId) void downloadAttachment(userId, {
@@ -177,9 +186,9 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
               </Button>
             </DialogClose>
           </div>
-          {url && (
+          {(fullUrl ?? url) && (
             <img
-              src={url}
+              src={fullUrl ?? url ?? undefined}
               alt={attachment.name}
               className="min-h-0 max-h-[calc(100dvh-7rem)] max-w-full object-contain"
               draggable={false}

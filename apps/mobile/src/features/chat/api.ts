@@ -281,6 +281,7 @@ function safeFilename(name: string): string {
 }
 
 const activeAttachmentDownloads = new Map<string, Promise<File>>()
+const activeAttachmentThumbnails = new Map<string, Promise<File>>()
 
 export function downloadAttachment(id: string, name: string): Promise<File> {
   const key = `${apiOrigin()}:${id}`
@@ -327,6 +328,27 @@ async function downloadAttachmentOnce(id: string, name: string): Promise<File> {
     }
   }
   return file
+}
+
+export function downloadAttachmentThumbnail(id: string): Promise<File> {
+  const key = `${apiOrigin()}:${id}`
+  const existing = activeAttachmentThumbnails.get(key)
+  if (existing) return existing
+  const pending = (async () => {
+    const destination = new File(Paths.cache, safeFilename(`${id}-thumbnail.webp`))
+    if (destination.exists) return destination
+    const url = apiUrl(`/api/attachments/${id}/thumbnail`)
+    return File.downloadFileAsync(url, destination, {
+      idempotent: true,
+      headers: nativeAuthorizationHeaders(url),
+    })
+  })()
+  activeAttachmentThumbnails.set(key, pending)
+  void pending.then(
+    () => activeAttachmentThumbnails.delete(key),
+    () => activeAttachmentThumbnails.delete(key),
+  )
+  return pending
 }
 
 export async function shareAttachment(id: string, name: string, mimeType?: string): Promise<void> {

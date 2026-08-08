@@ -11,7 +11,8 @@ import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { getStorageUsage, reserveAttachment } from './storage-quota.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
-import { canonicalUploadedMimeType } from './policy.js'
+import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
+import { createAttachmentThumbnail } from './thumbnail.js'
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
@@ -35,6 +36,18 @@ export function attachmentStorageErrorCode(cause: unknown): string {
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
+
+  const readyAttachment = async (userId: string, id: string) => {
+    const [result] = await db.select({ attachment: attachments }).from(attachments)
+      .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .where(and(
+        eq(attachments.id, id),
+        eq(attachments.userId, userId),
+        eq(attachments.status, 'ready'),
+        accessibleAttachmentCondition(),
+      )).limit(1)
+    return result?.attachment
+  }
 
   app.get('/api/attachments/usage', async (request) => {
     const user = requireUser(request)
@@ -118,17 +131,26 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.get('/api/attachments/:id/download', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [result] = await db.select({ attachment: attachments }).from(attachments)
-      .leftJoin(chats, eq(chats.id, attachments.chatId))
-      .where(and(
-        eq(attachments.id, id),
-        eq(attachments.userId, user.id),
-        eq(attachments.status, 'ready'),
-        accessibleAttachmentCondition(),
-      )).limit(1)
-    const attachment = result?.attachment
+    const attachment = await readyAttachment(user.id, id)
     if (!attachment) throw notFound('Attachment')
     return { url: await getBlobStore().createDownloadUrl(attachment.objectKey, 300) }
+  })
+
+  app.get('/api/attachments/:id/thumbnail', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const attachment = await readyAttachment(user.id, id)
+    if (!attachment || !isConfirmedRasterImage(attachment.mimeType)) throw notFound('Image preview')
+    const etag = `"thumbnail-v1-${attachment.checksum ?? attachment.updatedAt.getTime()}"`
+    reply.header('cache-control', 'private, max-age=31536000, immutable').header('etag', etag)
+    if (request.headers['if-none-match'] === etag) return reply.code(304).send()
+    try {
+      const thumbnail = await createAttachmentThumbnail(await getBlobStore().get(attachment.objectKey))
+      return reply.type('image/webp').send(thumbnail)
+    } catch (cause) {
+      request.log.warn({ err: cause, attachmentId: attachment.id }, 'Attachment thumbnail failed')
+      throw new AppError(422, 'attachment_thumbnail_failed', 'Image preview could not be generated')
+    }
   })
 
   app.get('/api/attachments/local-download/:key', async (request, reply) => {
