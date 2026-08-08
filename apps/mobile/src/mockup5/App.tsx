@@ -667,7 +667,8 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
 
 function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size = 44 }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; size?: number }) {
   const colorScheme = useColorScheme();
-  const ghostColor = selected ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const ghostColor = selectedForeground;
   if (Platform.OS === 'ios') {
     return (
       <SwiftUIHost key={selected ? 'selected' : 'default'} matchContents style={{ width: size, height: size }}>
@@ -677,7 +678,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size
             buttonStyle(selected ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
-            ...(selected ? [tint('rgba(175,82,222,0.22)'), foregroundStyle('#ffffff')] : []),
+            ...(selected ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(selectedForeground)] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
           ]}
         >
@@ -741,7 +742,7 @@ function FallbackTemporaryChatHeaderControl({
 }: TemporaryChatHeaderControlProps) {
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
-  const iconColor = active ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const iconColor = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const expansion = useSharedValue(expanded ? 1 : 0);
   const containerStyle = useAnimatedStyle(() => ({
@@ -2446,6 +2447,7 @@ const StreamingResponse = memo(function StreamingResponse({
 });
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, temporary = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; temporary?: boolean }) {
+  const colorScheme = useColorScheme();
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
   const prototypeModels = usePrototypeStore((state) => state.models);
@@ -2486,7 +2488,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           buttonStyle(temporary ? 'glassProminent' : 'glass'),
           buttonBorderShape('capsule'),
           controlSize('regular'),
-          ...(temporary ? [tint('rgba(175,82,222,0.22)'), foregroundStyle('#ffffff')] : []),
+          ...(temporary ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e')] : []),
           swiftUIAccessibilityLabel(`Model, ${model.name}`),
           swiftUIAccessibilityHint('Opens models and lab sections'),
         ]}

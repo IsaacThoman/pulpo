@@ -59,7 +59,7 @@ private struct TemporaryChatHeaderContent: View {
   }
 
   private var iconColor: Color {
-    model.active || colorScheme == .dark ? .white : .black
+    colorScheme == .dark ? .white : .black
   }
 
   var body: some View {
