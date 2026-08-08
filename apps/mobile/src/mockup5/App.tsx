@@ -3320,11 +3320,8 @@ function ChatView({
         <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
             <Glass
               interactive
-              style={[
-                styles.composer,
-                temporary && styles.temporaryComposer,
-                temporary && (colorScheme === 'dark' ? styles.temporaryComposerDark : styles.temporaryComposerLight),
-              ]}
+              style={styles.composer}
+              tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
             >
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
@@ -4124,9 +4121,6 @@ const styles = StyleSheet.create({
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: '#FF9F0A', fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
-  temporaryComposer: { borderWidth: 1.25, borderStyle: 'dashed' },
-  temporaryComposerLight: { backgroundColor: 'rgba(237,233,254,0.86)', borderColor: 'rgba(139,92,246,0.78)' },
-  temporaryComposerDark: { backgroundColor: 'rgba(46,16,101,0.52)', borderColor: 'rgba(124,58,237,0.68)' },
   attachmentStrip: { maxHeight: 112, marginBottom: 8 },
   attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 17, paddingRight: 17 },
