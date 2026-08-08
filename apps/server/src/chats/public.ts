@@ -1,6 +1,6 @@
 import type { EmbeddedResponseSnapshot, ResponseSnapshot } from '@pulpo/contracts'
 import type { chats, responses } from '../database/schema.js'
-import { metadataForTurn } from '../messages/branching.js'
+import { lineageFromLeaf, metadataForTurn } from '../messages/branching.js'
 import { toSnapshot } from '../responses/service.js'
 import { responseDisplayModelId } from './modelIdentity.js'
 
@@ -72,6 +72,19 @@ export function toPublicChatResponseStub(
     error: null,
     detailAvailable: false,
   }
+}
+
+export function toPublicChatResponses(
+  allTurns: ResponseRow[],
+  activeLeafId: string | null,
+  options: { compact?: boolean; activeOnly?: boolean } = {},
+): PublicChatResponse[] {
+  const activeIds = options.activeOnly
+    ? new Set(lineageFromLeaf(allTurns, activeLeafId ?? allTurns.at(-1)?.id ?? null).map((response) => response.id))
+    : undefined
+  return allTurns.map((response) => activeIds && !activeIds.has(response.id)
+    ? toPublicChatResponseStub(response, allTurns)
+    : toPublicChatResponse(response, allTurns, { compact: options.compact }))
 }
 
 export function toPublicChat(chat: ChatRow) {

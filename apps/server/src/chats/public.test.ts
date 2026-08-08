@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toPublicChat, toPublicChatResponse, toPublicChatResponseStub } from './public.js'
+import { toPublicChat, toPublicChatResponse, toPublicChatResponses, toPublicChatResponseStub } from './public.js'
 
 const date = new Date('2026-08-07T12:00:00.000Z')
 
@@ -86,5 +86,34 @@ describe('public chat DTOs', () => {
     expect(stub.input).toEqual([])
     expect(stub.output).toEqual([])
     expect(JSON.stringify(stub)).not.toContain('large inactive')
+  })
+
+  it('bounds a three-edit bundle that repeats the same multi-megabyte image context', () => {
+    const imageData = 'A'.repeat(3 * 1024 * 1024)
+    const rows = [0, 1, 2].map((index) => ({
+      id: `00000000-0000-4000-8000-00000000000${index + 2}`,
+      chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
+      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      openaiResponseId: null, previousResponseId: null, parentResponseId: null,
+      userMessageId: `00000000-0000-4000-8000-00000000001${index}`, branchReason: 'message',
+      status: 'completed' as const, executionMode: 'stream' as const, agentMode: true,
+      agentCapacityAction: null, input: [{ role: 'user', content: 'edit' }], instructions: null,
+      presetSelections: {}, parameters: {},
+      output: [
+        {
+          id: `compact-${index}`, type: 'pulpo_compaction', status: 'completed',
+          retained_context: [{ role: 'user', content: [{ type: 'image', data: imageData, mimeType: 'image/png' }] }],
+        },
+        { id: `tool-${index}`, type: 'pulpo_tool', output: index === 0 ? 'active tool' : `inactive-${index}-${'x'.repeat(512 * 1024)}` },
+      ],
+      usage: null, error: null, lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      startedAt: date, completedAt: date, deletedAt: null, createdAt: new Date(date.getTime() + index), updatedAt: date,
+    }))
+
+    const payload = JSON.stringify(toPublicChatResponses(rows, rows[0]!.id, { compact: true, activeOnly: true }))
+
+    expect(payload).not.toContain(imageData.slice(0, 1_000))
+    expect(payload).not.toContain('inactive-1-')
+    expect(payload.length).toBeLessThan(20_000)
   })
 })
