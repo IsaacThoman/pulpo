@@ -71,7 +71,14 @@ function downloadComposerAttachment(attachment: PendingAttachment): void {
     return
   }
   const userId = useAuth.getState().user?.id
-  if (userId && attachment.id) void downloadAttachment(userId, attachment.id, attachment.name)
+  if (userId && attachment.id) {
+    void downloadAttachment(userId, {
+      id: attachment.id,
+      originalName: attachment.name,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.size,
+    }, useSettings.getState().localAttachmentCacheMb)
+  }
 }
 
 export function Composer({

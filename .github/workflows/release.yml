@@ -155,13 +155,17 @@ jobs:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+          IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
+          IOS_DEVELOPMENT_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
 
           for variable in \
             APP_STORE_CONNECT_API_ISSUER_ID \
             APP_STORE_CONNECT_API_KEY_ID \
-            APP_STORE_CONNECT_API_PRIVATE_KEY; do
+            APP_STORE_CONNECT_API_PRIVATE_KEY \
+            IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 \
+            IOS_DEVELOPMENT_CERTIFICATE_PASSWORD; do
             if [[ -z "${!variable}" ]]; then
               echo "The ${variable} GitHub environment secret is not configured." >&2
               exit 1
@@ -169,9 +173,37 @@ jobs:
           done
 
           auth_key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          certificate_path="${RUNNER_TEMP}/Pulpo-CI.p12"
+          keychain_path="${RUNNER_TEMP}/pulpo-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          trap 'security delete-keychain "${keychain_path}" 2>/dev/null || true; rm -f "${auth_key_path}" "${certificate_path}"' EXIT
+
           printf '%s' "${APP_STORE_CONNECT_API_PRIVATE_KEY}" > "${auth_key_path}"
+          printf '%s' "${IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64}" | base64 --decode > "${certificate_path}"
           chmod 600 "${auth_key_path}"
-          trap 'rm -f "${auth_key_path}"' EXIT
+          chmod 600 "${certificate_path}"
+
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${certificate_path}" \
+            -k "${keychain_path}" \
+            -P "${IOS_DEVELOPMENT_CERTIFICATE_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -s \
+            -k "${keychain_password}" \
+            "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security default-keychain -d user -s "${keychain_path}"
+
+          if ! security find-identity -v -p codesigning "${keychain_path}" | grep -q 'Apple Development'; then
+            echo 'The imported PKCS#12 does not contain a valid Apple Development signing identity.' >&2
+            exit 1
+          fi
 
           archive_path="${RUNNER_TEMP}/Pulpo.xcarchive"
           export_options_path="${RUNNER_TEMP}/ExportOptions.plist"
