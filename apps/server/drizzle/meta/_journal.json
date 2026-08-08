@@ -162,6 +162,13 @@
       "when": 1785977850663,
       "tag": "0022_wild_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786152279825,
+      "tag": "0023_daffy_marvel_zombies",
+      "breakpoints": true
     }
   ]
 }

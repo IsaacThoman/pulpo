@@ -639,6 +639,62 @@ export const createChatResponseSchema = z.object({
 })
 export type CreateChatResponseInput = z.infer<typeof createChatResponseSchema>
 
+export const queuedMessageStatusSchema = z.enum(['pending', 'editing', 'dispatching', 'failed'])
+export type QueuedMessageStatus = z.infer<typeof queuedMessageStatusSchema>
+
+export const queuedMessageAttachmentSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+})
+export type QueuedMessageAttachment = z.infer<typeof queuedMessageAttachmentSchema>
+
+export const queuedMessageSchema = z.object({
+  id: idSchema,
+  chatId: idSchema,
+  content: z.string(),
+  modelId: z.string(),
+  presetSelections: z.record(z.string(), z.string()),
+  agentMode: z.boolean(),
+  position: z.number().int().nonnegative(),
+  status: queuedMessageStatusSchema,
+  error: z.string().nullable(),
+  attachments: z.array(queuedMessageAttachmentSchema),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+})
+export type QueuedMessage = z.infer<typeof queuedMessageSchema>
+
+export const createQueuedMessageSchema = z.object({
+  input: z.string().trim().max(1_000_000).default(''),
+  modelId: z.string().min(1),
+  presetSelections: z.record(z.string(), z.string()).default({}),
+  attachmentIds: z.array(idSchema).default([]),
+  agentMode: z.boolean().default(false),
+}).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
+  message: 'Message must include text or attachments',
+  path: ['input'],
+})
+export type CreateQueuedMessageInput = z.infer<typeof createQueuedMessageSchema>
+
+export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('begin_edit') }),
+  z.object({ action: z.literal('cancel_edit') }),
+  z.object({
+    action: z.literal('save_edit'),
+    input: z.string().trim().max(1_000_000).default(''),
+    modelId: z.string().min(1),
+    presetSelections: z.record(z.string(), z.string()).default({}),
+    attachmentIds: z.array(idSchema).default([]),
+    agentMode: z.boolean().default(false),
+  }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
+    message: 'Message must include text or attachments',
+    path: ['input'],
+  }),
+])
+export type UpdateQueuedMessageInput = z.infer<typeof updateQueuedMessageSchema>
+
 export const startChatSchema = z.object({
   chat: createChatSchema.extend({ clientId: idSchema }),
   response: createChatResponseSchema.safeExtend({ clientId: idSchema }),

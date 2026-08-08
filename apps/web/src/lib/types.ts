@@ -1,4 +1,4 @@
-import type { ChatPreset } from '@pulpo/contracts'
+import type { ChatPreset, QueuedMessage } from '@pulpo/contracts'
 
 export type { ChatPreset, ChatPresetAction, ChatPresetChoice, ChatPresetIcon } from '@pulpo/contracts'
 
@@ -62,6 +62,7 @@ export interface Chat {
   title: string
   modelId: string
   messages: Message[]
+  queuedMessages?: QueuedMessage[]
   createdAt: number
   updatedAt: number
   pinned: boolean

@@ -376,4 +376,17 @@ describe('response snapshot accumulation', () => {
     })).toThrow()
   })
 
+  it('validates queued messages and queue edit actions', async () => {
+    const { createQueuedMessageSchema, updateQueuedMessageSchema } = await import('./index.js')
+    const attachmentId = '00000000-0000-4000-8000-000000000004'
+    expect(createQueuedMessageSchema.parse({
+      input: '', modelId: 'model-1', attachmentIds: [attachmentId], agentMode: true,
+    })).toMatchObject({ attachmentIds: [attachmentId], agentMode: true })
+    expect(updateQueuedMessageSchema.parse({
+      action: 'save_edit', input: 'updated', modelId: 'model-2',
+    })).toMatchObject({ action: 'save_edit', input: 'updated', attachmentIds: [] })
+    expect(() => createQueuedMessageSchema.parse({ input: '', modelId: 'model-1' })).toThrow()
+    expect(() => updateQueuedMessageSchema.parse({ action: 'save_edit', input: '', modelId: 'model-1' })).toThrow()
+  })
+
 })

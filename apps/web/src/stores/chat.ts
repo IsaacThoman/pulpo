@@ -1,5 +1,13 @@
 import { create } from 'zustand'
-import { mergeResponseSnapshots, type EmbeddedResponseSnapshot, type ResponseEvent, type ResponseSnapshot } from '@pulpo/contracts'
+import {
+  mergeResponseSnapshots,
+  type CreateQueuedMessageInput,
+  type EmbeddedResponseSnapshot,
+  type QueuedMessage,
+  type ResponseEvent,
+  type ResponseSnapshot,
+  type UpdateQueuedMessageInput,
+} from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
 import type { Attachment, Chat, Folder, Message } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
@@ -93,6 +101,7 @@ export interface ServerChat {
   inFlightResponseIds?: string[]
   attachments?: ServerAttachment[]
   responses?: ServerResponse[]
+  queuedMessages?: QueuedMessage[]
 }
 
 export interface ServerFolder {
@@ -138,6 +147,9 @@ interface ChatState {
   reorderFolders: (fromId: string, toId: string, edge: 'before' | 'after') => void
   deleteFolder: (id: string) => void
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean) => string
+  enqueueMessage: (chatId: string, input: CreateQueuedMessageInput, attachments: Attachment[]) => Promise<void>
+  updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
+  deleteQueuedMessage: (chatId: string, messageId: string) => Promise<void>
   regenerate: (chatId: string, messageId: string, modelId: string) => void
   editUserMessage: (chatId: string, messageId: string, content: string, modelId: string) => void
   editAssistantMessage: (chatId: string, messageId: string, content: string) => void
@@ -299,11 +311,18 @@ function toChat(
       ...(row.responses?.map((response) => response.id) ?? []),
     ]),
   )
+  const queuedMessages = [...(row.queuedMessages ?? current?.queuedMessages ?? [])]
+  const queuedIds = new Set(queuedMessages.map((message) => message.id))
+  for (const message of pendingOptimisticQueuedMessages.values()) {
+    if (message.chatId === row.id && !queuedIds.has(message.id)) queuedMessages.push(message)
+  }
+  queuedMessages.sort((left, right) => left.position - right.position || left.createdAt.localeCompare(right.createdAt))
   return {
     id: row.id,
     title: row.title,
     modelId: row.modelId,
     messages,
+    queuedMessages,
     createdAt: Date.parse(row.createdAt),
     updatedAt: Date.parse(row.updatedAt),
     pinned: row.pinned,
@@ -323,6 +342,7 @@ function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
 function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
 const pendingOptimisticResponses = new Map<string, { chatId: string; response: ServerResponse }>()
+const pendingOptimisticQueuedMessages = new Map<string, QueuedMessage>()
 const branchSelectionIntents = new BranchSelectionIntents()
 
 function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
@@ -1278,6 +1298,133 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (expired) get().markTemporaryExpired(id)
     })
     return id
+  },
+
+  enqueueMessage: async (chatId, input, messageAttachments) => {
+    const now = new Date().toISOString()
+    const currentQueue = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
+    const optimistic: QueuedMessage = {
+      id: crypto.randomUUID(),
+      chatId,
+      content: input.input,
+      modelId: input.modelId,
+      presetSelections: input.presetSelections,
+      agentMode: input.agentMode,
+      position: Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
+      status: 'pending',
+      error: null,
+      attachments: messageAttachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
+        sizeBytes: attachment.size,
+      })),
+      createdAt: now,
+      updatedAt: now,
+    }
+    pendingOptimisticQueuedMessages.set(optimistic.id, optimistic)
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+        ...chat,
+        queuedMessages: [...(chat.queuedMessages ?? []), optimistic],
+      }),
+    }))
+    try {
+      const result = await apiRequest<{ queuedMessage: QueuedMessage | null }>(`/api/chats/${chatId}/queued-messages`, {
+        method: 'POST', body: input,
+      })
+      pendingOptimisticQueuedMessages.delete(optimistic.id)
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+          ...chat,
+          queuedMessages: (chat.queuedMessages ?? []).flatMap((message) => {
+            if (message.id !== optimistic.id) return [message]
+            return result.queuedMessage ? [result.queuedMessage] : []
+          }),
+        }),
+      }))
+      await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+      await queryClient.invalidateQueries({ queryKey: chatsKey() })
+    } catch (error) {
+      pendingOptimisticQueuedMessages.delete(optimistic.id)
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+          ...chat,
+          queuedMessages: (chat.queuedMessages ?? []).filter((message) => message.id !== optimistic.id),
+        }),
+      }))
+      throw error
+    }
+  },
+
+  updateQueuedMessage: async (chatId, messageId, input, messageAttachments = []) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
+    const updatedAt = new Date().toISOString()
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+        ...chat,
+        queuedMessages: (chat.queuedMessages ?? []).map((message) => {
+          if (message.id !== messageId) return message
+          if (input.action === 'begin_edit') return { ...message, status: 'editing' as const, error: null, updatedAt }
+          if (input.action === 'cancel_edit') return { ...message, status: 'pending' as const, error: null, updatedAt }
+          return {
+            ...message,
+            content: input.input,
+            modelId: input.modelId,
+            presetSelections: input.presetSelections,
+            agentMode: input.agentMode,
+            attachments: messageAttachments.map((attachment) => ({
+              id: attachment.id,
+              name: attachment.name,
+              mimeType: attachment.type === 'image' ? 'image/*' : 'application/octet-stream',
+              sizeBytes: attachment.size,
+            })),
+            status: 'pending' as const,
+            error: null,
+            updatedAt,
+          }
+        }),
+      }),
+    }))
+    try {
+      const result = await apiRequest<{ queuedMessage: QueuedMessage | null }>(`/api/chats/${chatId}/queued-messages/${messageId}`, {
+        method: 'PATCH', body: input,
+      })
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+          ...chat,
+          queuedMessages: (chat.queuedMessages ?? []).flatMap((message) => {
+            if (message.id !== messageId) return [message]
+            return result.queuedMessage ? [result.queuedMessage] : []
+          }),
+        }),
+      }))
+      await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+    } catch (error) {
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: previous }),
+      }))
+      throw error
+    }
+  },
+
+  deleteQueuedMessage: async (chatId, messageId) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+        ...chat,
+        queuedMessages: (chat.queuedMessages ?? []).filter((message) => message.id !== messageId),
+      }),
+    }))
+    try {
+      await apiRequest(`/api/chats/${chatId}/queued-messages/${messageId}`, { method: 'DELETE' })
+      await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+    } catch (error) {
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: previous }),
+      }))
+      throw error
+    }
   },
 
   regenerate: (chatId, messageId, modelId) => {

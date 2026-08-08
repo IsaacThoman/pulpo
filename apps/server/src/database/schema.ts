@@ -270,6 +270,25 @@ export const responses = pgTable('responses', {
   uniqueIndex('responses_user_idempotency_unique').on(table.userId, table.idempotencyKey),
 ])
 
+export const queuedMessages = pgTable('queued_messages', {
+  id: uuid('id').primaryKey(),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  content: text('content').notNull().default(''),
+  modelId: text('model_id').notNull().references(() => models.id),
+  presetSelections: jsonb('preset_selections').$type<Record<string, string>>().notNull().default({}),
+  agentMode: boolean('agent_mode').notNull().default(false),
+  attachmentIds: jsonb('attachment_ids').$type<string[]>().notNull().default([]),
+  position: integer('position').notNull(),
+  status: text('status').notNull().default('pending'),
+  error: text('error'),
+  dispatchResponseId: uuid('dispatch_response_id').notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('queued_messages_chat_position_unique').on(table.chatId, table.position),
+  index('queued_messages_chat_status_idx').on(table.chatId, table.status, table.position),
+])
+
 export const responseItems = pgTable('response_items', {
   id: uuid('id').primaryKey(),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),

@@ -53,6 +53,17 @@ async function loadPresetModel(modelId: string): Promise<PresetResolutionModel |
   return { id: model.id, enabled: model.enabled, allowedParameters: model.allowedParameters as string[], presets }
 }
 
+export async function resolveResponseGeneration(modelId: string, presetSelections: Record<string, string>) {
+  try {
+    return await resolvePresetActions(modelId, presetSelections, loadPresetModel)
+  } catch (error) {
+    if (!(error instanceof PresetResolutionError)) throw error
+    if (error.code === 'conflicting_redirects') throw new AppError(400, 'conflicting_model_redirects', error.message)
+    if (error.code === 'redirect_cycle') throw new AppError(409, 'preset_redirect_cycle', error.message)
+    throw new AppError(400, 'model_not_found', error.message, 'invalid_request_error', 'model')
+  }
+}
+
 export async function createResponse(options: CreateResponseOptions) {
   if (options.idempotencyKey) {
     const [existing] = await db
@@ -89,15 +100,7 @@ export async function createResponse(options: CreateResponseOptions) {
     }
     throw notFound('Chat')
   }
-  let resolved
-  try {
-    resolved = await resolvePresetActions(options.input.modelId, options.input.presetSelections, loadPresetModel)
-  } catch (error) {
-    if (!(error instanceof PresetResolutionError)) throw error
-    if (error.code === 'conflicting_redirects') throw new AppError(400, 'conflicting_model_redirects', error.message)
-    if (error.code === 'redirect_cycle') throw new AppError(409, 'preset_redirect_cycle', error.message)
-    throw new AppError(400, 'model_not_found', error.message, 'invalid_request_error', 'model')
-  }
+  const resolved = await resolveResponseGeneration(options.input.modelId, options.input.presetSelections)
   const [model] = await db.select().from(models).where(and(eq(models.id, resolved.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
   if (options.input.agentMode) {

@@ -10,6 +10,8 @@ import { createFullBackup, restoreFullBackup } from './admin/backup.js'
 import { expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { parseAgentSettings } from './settings/application-settings.js'
 import { accessibleChatCondition } from './chats/temporary.js'
+import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
+import { isTerminalResponseStatus } from './chats/message-queue-policy.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -27,7 +29,15 @@ console.info(JSON.stringify({
 }))
 
 const generationWorker = new Worker<GenerationJob>('generation', async (job) => {
-  await processGeneration(job.data.responseId)
+  try {
+    await processGeneration(job.data.responseId)
+  } finally {
+    const [response] = await db.select({ chatId: responses.chatId, status: responses.status })
+      .from(responses).where(eq(responses.id, job.data.responseId)).limit(1)
+    if (response && isTerminalResponseStatus(response.status)) {
+      await advanceMessageQueue(response.chatId)
+    }
+  }
 }, {
   connection: { url: config.REDIS_URL },
   concurrency: initialGenerationConcurrency,
@@ -95,6 +105,7 @@ for (const response of recoverable) {
   const existing = await generationQueue.getJob(response.id)
   if (!existing) await generationQueue.add('recover', { responseId: response.id }, { jobId: response.id })
 }
+await recoverMessageQueues()
 
 const shutdown = async (signal: string) => {
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))

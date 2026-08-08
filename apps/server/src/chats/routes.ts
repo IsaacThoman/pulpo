@@ -1,9 +1,9 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, startChatSchema } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, startChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chatImportSources, chats, folders, models, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
+import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -21,6 +21,7 @@ import {
   temporaryChatExpiresAt,
   temporaryChatIsExpired,
 } from './temporary.js'
+import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, updateQueuedMessage } from './message-queue.js'
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string) => {
@@ -483,9 +484,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(attachments.status, 'ready'),
       inArray(attachments.id, referencedAttachmentIds),
     )) : []
+    const queue = await listQueuedMessages(id, user.id)
     return {
       ...toPublicChat(chat),
       attachments: attachmentRows,
+      queuedMessages: queue,
       responses: toPublicChatResponses(
         allTurns,
         chat.activeBranchLeafId ?? chat.activeResponseId,
@@ -528,6 +531,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: now,
     }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
+    await db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, id), eq(queuedMessages.userId, user.id)))
     await cancelChatWork([id])
     if (retention === 'instant') {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
@@ -591,6 +595,29 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return { response: toSnapshot(response) }
   })
 
+  app.post('/api/chats/:id/queued-messages', async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = request.params as { id: string }
+    const input = createQueuedMessageSchema.parse(request.body)
+    const result = await createQueuedMessage(user.id, id, input)
+    reply.code(202)
+    return result
+  })
+
+  app.patch('/api/chats/:id/queued-messages/:messageId', async (request) => {
+    const user = requireUser(request)
+    const { id, messageId } = request.params as { id: string; messageId: string }
+    const input = updateQueuedMessageSchema.parse(request.body)
+    return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input) }
+  })
+
+  app.delete('/api/chats/:id/queued-messages/:messageId', async (request, reply) => {
+    const user = requireUser(request)
+    const { id, messageId } = request.params as { id: string; messageId: string }
+    await deleteQueuedMessage(user.id, id, messageId)
+    reply.code(204).send()
+  })
+
   app.get('/api/responses/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
@@ -628,6 +655,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [log] = await db.update(requestLogs).set({ status: 'cancelled', errorCategory: 'cancellation', completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.responseId, id)).returning({ id: requestLogs.id })
     if (log) await publishAdminUsage(log.id, true)
     const [cancelled] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
+    await advanceMessageQueue(response.chatId)
     return toSnapshot(cancelled!)
   })
 
