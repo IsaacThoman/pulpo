@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { shouldPersistQuery } from './query'
+import { shouldPersistQuery } from './query-persistence'
 
 describe('query persistence', () => {
   it('never dehydrates temporary chat details or summaries', () => {

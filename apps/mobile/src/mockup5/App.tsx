@@ -2669,6 +2669,8 @@ function ChatView({
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
+    // Re-roll when opening a new empty chat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [chatId, isEmptyConversation, promptConfig],
   );
 

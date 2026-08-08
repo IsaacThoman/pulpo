@@ -58,7 +58,7 @@ export function SettingsBridge() {
   const modelsHydrated = useRef(false)
   const modelsDirty = useRef(false)
   const applyingRemote = useRef(false)
-  const query = useQuery({
+  const { data, refetch } = useQuery({
     queryKey: ['settings', userId],
     queryFn: () => apiRequest<{ values: Record<string, unknown> }>('/api/settings'),
     enabled: Boolean(userId),
@@ -79,11 +79,11 @@ export function SettingsBridge() {
   }, [userId, attachmentCacheMb])
 
   useEffect(() => {
-    if (!query.data || !userId) return
+    if (!data || !userId) return
     applyingRemote.current = true
     try {
-      useSettings.setState({ ...DEFAULT_SETTINGS, ...query.data.values, ownerUserId: userId })
-      const modelPreferences = modelPreferencesSchema.parse(query.data.values)
+      useSettings.setState({ ...DEFAULT_SETTINGS, ...data.values, ownerUserId: userId })
+      const modelPreferences = modelPreferencesSchema.parse(data.values)
       const local = modelPreferencesSnapshot()
       const matchesLocal = JSON.stringify(modelPreferences) === JSON.stringify(local)
       if (!modelsDirty.current || matchesLocal) {
@@ -95,7 +95,7 @@ export function SettingsBridge() {
     }
     hydrated.current = true
     modelsHydrated.current = true
-  }, [query.data, userId])
+  }, [data, userId])
 
   useEffect(() => {
     if (!userId) return
@@ -128,7 +128,7 @@ export function SettingsBridge() {
           const current = modelPreferencesSnapshot()
           if (saved && JSON.stringify(current) === JSON.stringify(body)) {
             modelsDirty.current = false
-            void query.refetch()
+            void refetch()
           }
         })
       }, 500)
@@ -139,7 +139,7 @@ export function SettingsBridge() {
       modelsHydrated.current = false
       modelsDirty.current = false
     }
-  }, [query.refetch, userId])
+  }, [refetch, userId])
 
   return null
 }

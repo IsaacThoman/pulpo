@@ -187,5 +187,3 @@ const styles = StyleSheet.create({
   nativeSegmented: { width: '100%', height: 38 }, nativeSwitch: { width: 52, height: 34 }, nativeColorPicker: { width: '100%', height: 48 }, colorFallback: { width: 44, height: 44, borderRadius: 22 }, segmented: { flexDirection: 'row', borderRadius: 11, padding: 3 }, segment: { flex: 1, alignItems: 'center', justifyContent: 'center', minHeight: 34, borderRadius: 8 }, segmentText: { fontSize: 12, fontWeight: '700' }, badge: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999 }, badgeText: { fontSize: 11, fontWeight: '700' },
   empty: { paddingVertical: 58, alignItems: 'center', paddingHorizontal: 24 }, emptyIcon: { width: 58, height: 58, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginBottom: 15 }, emptyTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' }, emptyDetail: { fontSize: 14, lineHeight: 20, textAlign: 'center', marginTop: 6, marginBottom: 18, maxWidth: 300 },
 });
-
-export const uiStyles = styles;

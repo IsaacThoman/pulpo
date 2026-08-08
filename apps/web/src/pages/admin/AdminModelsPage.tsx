@@ -24,7 +24,8 @@ import {
 import { useCatalog } from '@/stores/catalog'
 import { AI_ICONS, isAiIconAvailable, type AiIconKind } from '@/lib/ai-icons'
 import { AiLogo } from '@/components/ProviderLogo'
-import { PRESET_ICON_OPTIONS, PresetIcon } from '@/components/chat/PresetIcon'
+import { PresetIcon } from '@/components/chat/PresetIcon'
+import { PRESET_ICON_OPTIONS } from '@/components/chat/preset-icon-options'
 import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 
 interface AdminModel {
