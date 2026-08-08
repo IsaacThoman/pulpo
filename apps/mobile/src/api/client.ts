@@ -111,7 +111,7 @@ export const mobileApi = {
   trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),
-  chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact`),
+  chat: (id: string) => apiRequest<ServerChat>(`/api/chats/${id}?format=compact&scope=active`),
   models: () => apiRequest<{ agentAvailable: boolean; data: MobileModel[] }>('/api/models'),
   folders: () => apiRequest<{ data: ServerFolder[] }>('/api/folders'),
   settings: () => apiRequest<{ values: Record<string, unknown>; updatedAt: string | null }>('/api/settings'),

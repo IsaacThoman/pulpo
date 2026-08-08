@@ -13,8 +13,9 @@ import { publishAdminUsage } from '../admin/usage-events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
-import { toPublicChat, toPublicChatResponse } from './public.js'
+import { toPublicChat, toPublicChatResponse, toPublicChatResponseStub } from './public.js'
 import { responseAttachmentIds } from '../messages/input.js'
+import { lineageFromLeaf } from '../messages/branching.js'
 import {
   accessibleChatCondition,
   scheduleTemporaryChatExpiry,
@@ -450,7 +451,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const compact = (request.query as { format?: string }).format === 'compact'
+    const query = request.query as { format?: string; scope?: string }
+    const compact = query.format === 'compact'
+    const activeScope = query.scope === 'active'
     const now = new Date()
     const [chat] = await db.select().from(chats).where(and(
       eq(chats.id, id),
@@ -470,6 +473,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .from(responses)
       .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
       .orderBy(asc(responses.createdAt), asc(responses.id))
+    const activeIds = activeScope
+      ? new Set(lineageFromLeaf(
+        allTurns,
+        chat.activeBranchLeafId ?? chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,
+      ).map((response) => response.id))
+      : undefined
     const referencedAttachmentIds = [...new Set(allTurns.flatMap((response) => responseAttachmentIds(response.input)))]
     const attachmentRows = referencedAttachmentIds.length ? await db.select({
       id: attachments.id,
@@ -484,7 +493,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     return {
       ...toPublicChat(chat),
       attachments: attachmentRows,
-      responses: allTurns.map((response) => toPublicChatResponse(response, allTurns, { compact })),
+      responses: allTurns.map((response) => activeIds && !activeIds.has(response.id)
+        ? toPublicChatResponseStub(response, allTurns)
+        : toPublicChatResponse(response, allTurns, { compact })),
     }
   })
 

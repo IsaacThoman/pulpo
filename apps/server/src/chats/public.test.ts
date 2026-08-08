@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toPublicChat, toPublicChatResponse } from './public.js'
+import { toPublicChat, toPublicChatResponse, toPublicChatResponseStub } from './public.js'
 
 const date = new Date('2026-08-07T12:00:00.000Z')
 
@@ -63,5 +63,28 @@ describe('public chat DTOs', () => {
     expect('output' in compact.snapshot).toBe(false)
     expect(JSON.stringify(legacy).split('unique-output-sentinel')).toHaveLength(3)
     expect(JSON.stringify(compact).split('unique-output-sentinel')).toHaveLength(2)
+  })
+
+  it('keeps inactive branch topology without transferring its body', () => {
+    const row = {
+      id: '00000000-0000-4000-8000-000000000002',
+      chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
+      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      openaiResponseId: null, previousResponseId: null, parentResponseId: null,
+      userMessageId: '00000000-0000-4000-8000-000000000003', branchReason: 'message', status: 'completed' as const,
+      executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null,
+      input: [{ role: 'user', content: 'large inactive prompt' }], instructions: null,
+      presetSelections: { style: 'long' }, parameters: {},
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'large inactive answer' }] }],
+      usage: { inputTokens: 1, outputTokens: 1 }, error: { message: 'hidden with body' },
+      lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
+    }
+    const stub = toPublicChatResponseStub(row, [row])
+
+    expect(stub).toMatchObject({ id: row.id, parentResponseId: null, detailAvailable: false })
+    expect(stub.input).toEqual([])
+    expect(stub.output).toEqual([])
+    expect(JSON.stringify(stub)).not.toContain('large inactive')
   })
 })

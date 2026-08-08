@@ -62,6 +62,9 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
   const leafId = selectedExists && responses
     ? newestDescendantId(responses, input.selectedResponseId)
     : input.selectedResponseId
+  const selectedDetailAvailable = Boolean(responses?.some((response) => (
+    response.id === leafId && response.detailAvailable !== false
+  )))
   const version = (selectionVersions.get(key) ?? 0) + 1
   selectionVersions.set(key, version)
   selections.set(key, {
@@ -71,7 +74,7 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
     previousLeafId,
     version,
   })
-  if (selectedExists) setActiveLeaf(input.queryClient, input.namespace, input.chatId, leafId)
+  if (selectedDetailAvailable) setActiveLeaf(input.queryClient, input.namespace, input.chatId, leafId)
 
   try {
     const result = await enqueueBranchMutation(key, () => input.request(input.selectedResponseId))
@@ -83,6 +86,13 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
       return
     }
     selections.delete(key)
+    const currentResult = input.queryClient.getQueryData<ServerChat>(detailKey(input.namespace, input.chatId))
+    if (!currentResult?.responses?.some((response) => (
+      response.id === result.activeBranchLeafId && response.detailAvailable !== false
+    ))) {
+      await input.queryClient.invalidateQueries({ queryKey: detailKey(input.namespace, input.chatId) })
+      return
+    }
     setActiveLeaf(input.queryClient, input.namespace, input.chatId, result.activeBranchLeafId)
   } catch (error) {
     const current = selections.get(key)
@@ -101,7 +111,9 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
 /** Keep a pending local selection visible if an older transcript refetch lands. */
 export function reconcileOptimisticBranchSelection(namespace: string, chat: ServerChat): ServerChat {
   const selection = selections.get(selectionKey(namespace, chat.id))
-  if (!selection || !chat.responses?.some((response) => response.id === selection.leafId)) return chat
+  if (!selection || !chat.responses?.some((response) => (
+    response.id === selection.leafId && response.detailAvailable !== false
+  ))) return chat
   if (chat.activeResponseId === selection.leafId && chat.activeBranchLeafId === selection.leafId) return chat
   return {
     ...chat,

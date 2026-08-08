@@ -56,7 +56,7 @@ export function ChatDataBridge() {
   })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
-    queryFn: () => apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact`),
+    queryFn: () => apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`),
     enabled: Boolean(userId && chatId),
     retry: false,
     refetchOnWindowFocus: false,

@@ -25,6 +25,7 @@ export interface PublicChatResponse {
   agentMode: boolean
   snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
   branches: ReturnType<typeof metadataForTurn>
+  detailAvailable: boolean
 }
 
 export function toPublicChatResponse(
@@ -52,6 +53,24 @@ export function toPublicChatResponse(
     agentMode: response.agentMode,
     snapshot: options.compact ? snapshotMarker : snapshot,
     branches: metadataForTurn(allTurns, response),
+    detailAvailable: true,
+  }
+}
+
+/** Preserve branch topology without transferring inactive response bodies. */
+export function toPublicChatResponseStub(
+  response: ResponseRow,
+  allTurns: ResponseRow[],
+): PublicChatResponse {
+  const full = toPublicChatResponse(response, allTurns, { compact: true })
+  return {
+    ...full,
+    input: [],
+    output: [],
+    presetSelections: {},
+    usage: null,
+    error: null,
+    detailAvailable: false,
   }
 }
 

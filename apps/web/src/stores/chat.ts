@@ -67,6 +67,7 @@ export interface ServerResponse {
     user: { ids: string[]; index: number }
     assistant: { ids: string[]; index: number }
   }
+  detailAvailable?: boolean
 }
 
 export interface ServerAttachment {
@@ -342,7 +343,7 @@ function mergePendingOptimisticResponses(row: ServerChat): ServerChat {
     changed = true
   }
   const desiredLeaf = branchSelectionIntents.current(row.id)?.leafId
-  const activeLeaf = desiredLeaf && responses.some((response) => response.id === desiredLeaf)
+  const activeLeaf = desiredLeaf && responses.some((response) => response.id === desiredLeaf && response.detailAvailable !== false)
     ? desiredLeaf
     : row.activeBranchLeafId
   if (activeLeaf !== row.activeBranchLeafId || activeLeaf !== row.activeResponseId) changed = true
@@ -1376,7 +1377,10 @@ export const useChat = create<ChatState>()((set, get) => ({
       ? newestDescendantId(cached.responses, responseId)
       : responseId
     const selectionIntent = branchSelectionIntents.select(chatId, intendedLeafId)
-    if (cached?.responses?.some((response) => response.id === responseId)) {
+    const intendedLeafAvailable = cached?.responses?.some((response) => (
+      response.id === intendedLeafId && response.detailAvailable !== false
+    ))
+    if (cached && intendedLeafAvailable) {
       const updated = { ...cached, activeResponseId: intendedLeafId, activeBranchLeafId: intendedLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
@@ -1390,6 +1394,12 @@ export const useChat = create<ChatState>()((set, get) => ({
       const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
       if (!current) return
       branchSelectionIntents.clear(chatId, selectionIntent.version)
+      if (!current.responses?.some((response) => (
+        response.id === activeBranchLeafId && response.detailAvailable !== false
+      ))) {
+        void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+        return
+      }
       const updated = { ...current, activeResponseId: activeBranchLeafId, activeBranchLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)

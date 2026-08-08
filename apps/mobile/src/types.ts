@@ -82,6 +82,7 @@ export interface ServerResponse {
     user: { ids: string[]; index: number }
     assistant: { ids: string[]; index: number }
   }
+  detailAvailable?: boolean
 }
 
 export interface AttachmentDraft {

@@ -128,6 +128,26 @@ describe('optimistic branch activation', () => {
     expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('a')
   })
 
+  it('keeps the current transcript visible while an inactive branch body refetches', async () => {
+    const queryClient = new QueryClient()
+    const initial = { ...chat(), activeResponseId: 'a', activeBranchLeafId: 'a' }
+    initial.responses = initial.responses?.map((item) => ({
+      ...item,
+      detailAvailable: item.id === 'a',
+    }))
+    queryClient.setQueryData(key, initial)
+
+    await activateOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId,
+      selectedResponseId: 'b',
+      request: async () => ({ activeBranchLeafId: 'c' }),
+    })
+
+    expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('a')
+  })
+
   it('rolls back the latest selection when activation fails', async () => {
     const queryClient = new QueryClient()
     queryClient.setQueryData(key, chat())
