@@ -2,7 +2,7 @@ import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem } from '@pulpo/contracts'
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
@@ -35,6 +35,9 @@ import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
+import { lineageFromLeaf } from '../messages/branching.js'
+import { responseUserAttachmentIds } from '../messages/input.js'
+import { messagesFromAgentContext, resolveAgentParentMessages } from './history.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -55,12 +58,6 @@ function nonNegativeMicros(value: unknown): number {
   return Number.isSafeInteger(amount) && amount > 0 ? amount : 0
 }
 
-function initialMessages(context: unknown): AgentMessage[] {
-  if (!context || typeof context !== 'object') return []
-  const messages = (context as { messages?: unknown }).messages
-  return Array.isArray(messages) ? messages as AgentMessage[] : []
-}
-
 export async function processAgentGeneration(responseId: string): Promise<void> {
   const startedAt = Date.now()
   const config = getConfig()
@@ -75,12 +72,29 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
-  const [parentRun] = record.response.parentResponseId
-    ? await db.select({ context: agentRuns.context }).from(agentRuns).innerJoin(responses, eq(agentRuns.responseId, responses.id)).where(eq(responses.id, record.response.parentResponseId)).limit(1)
+  const allHistory = await db.select().from(responses).where(and(
+    eq(responses.chatId, record.response.chatId),
+    isNull(responses.deletedAt),
+  )).orderBy(asc(responses.createdAt), asc(responses.id))
+  const lineage = lineageFromLeaf(allHistory, record.response.parentResponseId)
+  const lineageIds = lineage.map((response) => response.id)
+  const runContexts = lineageIds.length
+    ? await db.select({ responseId: agentRuns.responseId, context: agentRuns.context })
+      .from(agentRuns).where(inArray(agentRuns.responseId, lineageIds))
     : []
+  const historyAttachmentIds = [...new Set(lineage.flatMap((response) => responseUserAttachmentIds(response.input)))]
+  const historyAttachments = historyAttachmentIds.length
+    ? await db.select({ id: attachments.id, originalName: attachments.originalName, mimeType: attachments.mimeType, sizeBytes: attachments.sizeBytes })
+      .from(attachments).where(and(eq(attachments.userId, record.response.userId), inArray(attachments.id, historyAttachmentIds), eq(attachments.status, 'ready')))
+    : []
+  const parentMessages = resolveAgentParentMessages(
+    lineage,
+    new Map(runContexts.map((run) => [run.responseId, run.context])),
+    new Map(historyAttachments.map((attachment) => [attachment.id, attachment])),
+  )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
-  let resumedMessages = initialMessages(existingRun?.context ?? parentRun?.context)
+  let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
@@ -150,7 +164,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   ))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
-  let skipMessageCount = initialMessages(parentRun?.context).length
+  let skipMessageCount = parentMessages.length
   const archivedDisplayMessages: AgentMessage[] = []
   let lastSnapshotAt = 0
   const emit = async (type: string, payload: Record<string, unknown>) => {
@@ -507,7 +521,7 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
         }
       }
     }
-    if (existingRun && resumedMessages.length > initialMessages(parentRun?.context).length) await agent.continue()
+    if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
     else await agent.prompt(initialPrompt)
     let last = agent.state.messages.at(-1)
     let overflowRetried = false

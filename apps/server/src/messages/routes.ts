@@ -12,6 +12,7 @@ import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { replaceResponseUserInput, responseAttachmentIds, responseInputText, responseUserAttachmentIds } from './input.js'
 import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/temporary.js'
+import { assistantEditInheritedValues } from './assistant-edit.js'
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
@@ -170,18 +171,9 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         id: createdId,
         chatId: original.chatId,
         userId: user.id,
-        modelId: original.modelId,
-        pricingVersionId: original.pricingVersionId,
-        previousResponseId: original.parentResponseId,
-        parentResponseId: original.parentResponseId,
-        userMessageId: original.userMessageId,
+        ...assistantEditInheritedValues(original),
         branchReason: 'assistant_edit',
         status: 'completed',
-        executionMode: original.executionMode,
-        input: original.input,
-        instructions: original.instructions,
-        presetSelections: original.presetSelections,
-        parameters: original.parameters,
         idempotencyKey,
         output,
         completedAt: createdAt,
