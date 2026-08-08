@@ -361,6 +361,19 @@ type ComposerAttachment = Attachment & {
   error?: string;
 };
 type PreparedAttachment = ComposerAttachment & { serverId: string; state: 'ready' };
+
+const SUPPORTED_RASTER_IMAGE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif',
+]);
+
+function attachmentKind(mimeType: string): Attachment['kind'] {
+  return SUPPORTED_RASTER_IMAGE_MIME_TYPES.has(mimeType.toLowerCase()) ? 'image' : 'file';
+}
+
 type Message = {
   id: string;
   chatId?: string;
@@ -2896,14 +2909,14 @@ function ChatView({
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
         multiple: true,
-        type: ['application/pdf', 'text/*', 'image/*', 'application/json', 'application/vnd.openxmlformats-officedocument.*'],
+        type: '*/*',
       });
       if (result.canceled) return;
       const batchId = Date.now();
       addAttachments(result.assets.map((asset, index) => ({
         id: `file-${batchId}-${index}`,
         localId: `file-${batchId}-${index}`,
-        kind: asset.mimeType?.startsWith('image/') ? 'image' as const : 'file' as const,
+        kind: attachmentKind(asset.mimeType ?? 'application/octet-stream'),
         mimeType: asset.mimeType ?? 'application/octet-stream',
         name: asset.name,
         size: asset.size,
@@ -2939,7 +2952,14 @@ function ChatView({
         sizeBytes: attachment.size ?? 0,
         state: 'uploading',
       }, chatId);
-      const ready: PreparedAttachment = { ...attachment, serverId: uploaded.id, state: 'ready', error: undefined };
+      const ready: PreparedAttachment = {
+        ...attachment,
+        serverId: uploaded.id,
+        mimeType: uploaded.mimeType,
+        kind: attachmentKind(uploaded.mimeType),
+        state: 'ready',
+        error: undefined,
+      };
       setAttachments((current) => current.map((item) => item.localId === attachment.localId ? ready : item));
       return ready;
     } catch (error) {

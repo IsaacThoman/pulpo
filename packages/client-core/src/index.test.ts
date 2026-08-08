@@ -71,6 +71,12 @@ describe('client core', () => {
 
   it('validates native attachments', () => {
     expect(attachmentValidationError({ name: 'notes.md', mimeType: 'text/markdown', sizeBytes: 10 })).toBeNull()
-    expect(attachmentValidationError({ name: 'page.html', mimeType: 'text/html', sizeBytes: 10 })).toMatch(/not supported/)
+    expect(attachmentValidationError({ name: 'page.html', mimeType: 'text/html', sizeBytes: 10 })).toBeNull()
+    expect(attachmentValidationError({ name: 'drawing.svg', mimeType: 'image/svg+xml', sizeBytes: 10 })).toBeNull()
+    expect(attachmentValidationError({ name: 'archive.custom', mimeType: 'application/octet-stream', sizeBytes: 10 })).toBeNull()
+    expect(attachmentValidationError({ name: 'LICENSE', mimeType: 'application/octet-stream', sizeBytes: 10 })).toBeNull()
+    expect(attachmentValidationError({ name: ' ', mimeType: 'text/plain', sizeBytes: 10 })).toBe('Attachment name is required')
+    expect(attachmentValidationError({ name: 'empty.txt', mimeType: 'text/plain', sizeBytes: 0 })).toBe('Attachment is empty')
+    expect(attachmentValidationError({ name: 'large.bin', mimeType: 'application/octet-stream', sizeBytes: 25 * 1024 * 1024 + 1 })).toBe('Attachment exceeds the 25 MB limit')
   })
 })

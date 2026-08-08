@@ -161,11 +161,6 @@ export function normalizeInstanceUrl(value: string, allowLocalhost = false): str
   return url.origin + (url.pathname === '/' ? '' : url.pathname)
 }
 
-const SUPPORTED_EXTENSIONS = new Set([
-  '.pdf', '.txt', '.md', '.csv', '.json', '.png', '.jpg', '.jpeg', '.webp', '.gif',
-  '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx',
-])
-
 export interface AttachmentCandidate {
   name: string
   mimeType: string
@@ -176,8 +171,5 @@ export function attachmentValidationError(candidate: AttachmentCandidate): strin
   if (!candidate.name.trim()) return 'Attachment name is required'
   if (!Number.isFinite(candidate.sizeBytes) || candidate.sizeBytes <= 0) return 'Attachment is empty'
   if (candidate.sizeBytes > 25 * 1024 * 1024) return 'Attachment exceeds the 25 MB limit'
-  if (['text/html', 'image/svg+xml'].includes(candidate.mimeType.toLowerCase())) return 'This file type is not supported'
-  const dot = candidate.name.lastIndexOf('.')
-  if (dot < 0 || !SUPPORTED_EXTENSIONS.has(candidate.name.slice(dot).toLowerCase())) return 'This file type is not supported'
   return null
 }
