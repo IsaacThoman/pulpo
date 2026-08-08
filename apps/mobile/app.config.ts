@@ -27,6 +27,7 @@ const config: ExpoConfig = {
     infoPlist: {
       CFBundleDisplayName: 'Pulpo',
       ITSAppUsesNonExemptEncryption: false,
+      NSCameraUsageDescription: 'Allow Pulpo to take photos to attach to your chats.',
       NSPhotoLibraryUsageDescription: 'Allow Pulpo to attach photos to your chats.',
     },
     privacyManifests: {
@@ -85,7 +86,11 @@ const config: ExpoConfig = {
     ['react-native-enriched-markdown', { enableMath: true }],
     [
       'expo-image-picker',
-      { photosPermission: 'Allow Pulpo to attach photos to your chats.', cameraPermission: false },
+      {
+        photosPermission: 'Allow Pulpo to attach photos to your chats.',
+        cameraPermission: 'Allow Pulpo to take photos to attach to your chats.',
+        microphonePermission: false,
+      },
     ],
     [
       'expo-splash-screen',

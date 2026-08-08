@@ -22,6 +22,7 @@ import {
   FlatList,
   Image,
   Keyboard,
+  Linking,
   Modal,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -571,7 +572,11 @@ function NativeComposerIconButton({
   );
 }
 
-function NativeAttachmentMenu({ onPickPhotos, onPickFiles }: { onPickPhotos: () => void; onPickFiles: () => void }) {
+function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
+  onTakePhoto: () => void;
+  onPickPhotos: () => void;
+  onPickFiles: () => void;
+}) {
   return (
     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
       <SwiftUIMenu
@@ -585,6 +590,7 @@ function NativeAttachmentMenu({ onPickPhotos, onPickFiles }: { onPickPhotos: () 
           swiftUIAccessibilityLabel('Add attachment'),
         ]}
       >
+        <SwiftUIButton label="Take Photo" systemImage="camera" onPress={onTakePhoto} />
         <SwiftUIButton label="Photo Library" systemImage="photo.on.rectangle" onPress={onPickPhotos} />
         <SwiftUIButton label="Choose Files" systemImage="doc" onPress={onPickFiles} />
       </SwiftUIMenu>
@@ -2904,6 +2910,41 @@ function ChatView({
     }
   }, [addAttachments]);
 
+  const takePhoto = useCallback(async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          'Camera access is required',
+          'Allow Pulpo to use the camera to capture an attachment.',
+          permission.canAskAgain
+            ? [{ text: 'OK' }]
+            : [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+              ],
+        );
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
+      const asset = result.canceled ? null : result.assets[0];
+      if (!asset) return;
+      const id = `camera-${Date.now()}`;
+      addAttachments([{
+        id,
+        localId: id,
+        kind: 'image',
+        mimeType: asset.mimeType ?? 'image/jpeg',
+        name: asset.fileName ?? `Photo ${new Date().toISOString().replace(/[:.]/g, '-')}.jpg`,
+        size: asset.fileSize,
+        uri: asset.uri,
+        state: 'local',
+      }]);
+    } catch {
+      Alert.alert('Camera unavailable', 'Pulpo could not open the camera on this device.');
+    }
+  }, [addAttachments]);
+
   const pickFiles = useCallback(async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -3377,7 +3418,7 @@ function ChatView({
               />
               <View style={styles.composerBar}>
                 {Platform.OS === 'ios' ? (
-                  <NativeAttachmentMenu onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
+                  <NativeAttachmentMenu onTakePhoto={takePhoto} onPickFiles={pickFiles} onPickPhotos={pickPhotos} />
                 ) : (
                   <Pressable
                     accessibilityLabel="Add attachment"
