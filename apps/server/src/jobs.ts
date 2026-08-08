@@ -6,7 +6,7 @@ export interface GenerationJob {
 }
 
 export interface MaintenanceJob {
-  type: 'cleanup' | 'purge-chats' | 'expire-temporary-chat' | 'rollup' | 'export' | 'backup' | 'restore'
+  type: 'cleanup' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'rollup' | 'export' | 'backup' | 'restore'
   payload?: Record<string, unknown>
 }
 

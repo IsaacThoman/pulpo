@@ -23,6 +23,7 @@ import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
 import { ensureBuiltinLabs } from './catalog/defaults.js'
 import { registerMobileRoutes } from './mobile/routes.js'
+import { registerResponseCompression } from './compression.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -33,6 +34,7 @@ export async function buildApp() {
     requestIdHeader: 'x-request-id',
   })
 
+  await registerResponseCompression(app)
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(cookie)
   await app.register(cors, {

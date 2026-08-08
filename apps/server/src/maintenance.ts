@@ -1,4 +1,4 @@
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
 import {
@@ -8,6 +8,47 @@ import {
 } from './database/schema.js'
 import { getBlobStore } from './storage/index.js'
 import { markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
+import { sanitizeContextForStorage } from './responses/public-output.js'
+import { persistResponseItems } from './responses/storage.js'
+
+const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
+
+export async function scrubPersistedResponseBinaryContext(): Promise<{ scanned: number; updated: number }> {
+  let cursor: string | undefined
+  let scanned = 0
+  let updated = 0
+  while (true) {
+    const binaryCandidate = sql<boolean>`(
+      ${responses.output}::text like '%data:image/%'
+      or (${responses.output}::text like '%"type": "image"%' and ${responses.output}::text like '%"data":%')
+    )`
+    const rows = await db.select({ id: responses.id, output: responses.output })
+      .from(responses)
+      .where(and(
+        inArray(responses.status, ['completed', 'failed', 'cancelled', 'incomplete']),
+        binaryCandidate,
+        cursor ? gt(responses.id, cursor) : undefined,
+      ))
+      .orderBy(asc(responses.id))
+      .limit(RESPONSE_CONTEXT_SCRUB_BATCH_SIZE)
+    if (!rows.length) break
+    for (const row of rows) {
+      scanned += 1
+      const output = sanitizeContextForStorage(row.output as unknown[])
+      if (JSON.stringify(output) === JSON.stringify(row.output)) continue
+      // Rebuild projections first so a partial failure leaves the source row eligible for a retry.
+      await persistResponseItems(row.id, output)
+      await db.update(responses).set({ output, updatedAt: new Date() }).where(eq(responses.id, row.id))
+      updated += 1
+    }
+    cursor = rows.at(-1)?.id
+    if (rows.length < RESPONSE_CONTEXT_SCRUB_BATCH_SIZE) break
+  }
+  console.info(JSON.stringify({
+    level: 'info', service: 'pulpo-worker', event: 'response_binary_context.scrubbed', scanned, updated,
+  }))
+  return { scanned, updated }
+}
 
 function csvCell(value: unknown): string {
   const text = value == null ? '' : String(value)

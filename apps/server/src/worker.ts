@@ -5,7 +5,7 @@ import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
 import { generationQueue, maintenanceQueue, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
-import { createExport, rebuildDailyRollups, runCleanup } from './maintenance.js'
+import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
 import { expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { parseAgentSettings } from './settings/application-settings.js'
@@ -54,6 +54,7 @@ concurrencyRefreshInterval.unref()
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'cleanup') await runCleanup()
+  if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
   if (job.data.type === 'purge-chats') {
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
     await markExpiredChatsForPurge(new Date(), userId)
@@ -72,6 +73,11 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
 await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })
+await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-response-binary-context' }, {
+  jobId: 'response-context-scrub-v1',
+  attempts: 3,
+  removeOnFail: true,
+})
 
 generationWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({
