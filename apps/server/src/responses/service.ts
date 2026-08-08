@@ -17,6 +17,7 @@ import {
   temporaryChatExpiresAt,
   temporaryChatIsExpired,
 } from '../chats/temporary.js'
+import { sanitizeOutputForClient } from './public-output.js'
 
 export interface CreateResponseOptions {
   userId: string
@@ -239,7 +240,7 @@ export function toSnapshot(response: typeof responses.$inferSelect): ResponseSna
     responseId: response.id,
     status: response.status,
     sequence: response.lastSequence,
-    output: response.output as unknown[],
+    output: sanitizeOutputForClient(response.output as unknown[]),
     usage: response.usage as ResponseSnapshot['usage'],
     error: response.error,
     updatedAt: response.updatedAt.toISOString(),

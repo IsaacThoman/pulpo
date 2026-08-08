@@ -1,5 +1,6 @@
 import type { CompactionItem, CompactionRetainedEntry } from '@pulpo/contracts'
 import { estimateInputTokens } from '../accounting/pricing.js'
+import { sanitizeContextForStorage } from './public-output.js'
 
 export const COMPACTION_PROMPT = 'Summarize this earlier conversation faithfully for context. Preserve decisions, facts, code constraints, and unresolved tasks.'
 
@@ -128,6 +129,8 @@ export async function compactConversation(options: {
   }
   const retainedChunks = retainable.slice(-options.retainedTurns)
   const retainedContext = retainedChunks.flatMap((chunk) => chunk.context)
+  const storedRetainedContext = sanitizeContextForStorage(retainedContext)
+  const storedRetainedTurns = sanitizeContextForStorage(retainedChunks.map((chunk) => chunk.context))
   const firstRetainedIndex = chunks.indexOf(retainedChunks[0]!)
   const olderChunks = chunks.slice(0, firstRetainedIndex)
   const olderContext = olderChunks.flatMap((chunk) => chunk.context)
@@ -141,8 +144,8 @@ export async function compactConversation(options: {
     estimated_tokens: estimatedTokens,
     threshold_tokens: options.thresholdTokens,
     retained_turns: contextEntries(retainedContext),
-    retained_context: retainedContext,
-    retained_context_turns: retainedChunks.map((chunk) => chunk.context),
+    retained_context: storedRetainedContext,
+    retained_context_turns: storedRetainedTurns,
     summary: '',
     started_at: new Date(started).toISOString(),
     covered_through_response_id: olderChunks.findLast((chunk) => chunk.responseId)?.responseId,

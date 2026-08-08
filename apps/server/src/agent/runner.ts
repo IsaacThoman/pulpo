@@ -33,6 +33,7 @@ import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
 import { trackInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
+import { sanitizeContextForStorage } from '../responses/public-output.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -219,6 +220,8 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     if (!active.model.compactionEnabled || (!options.force && estimatedTokens <= thresholdTokens) || cycles.length <= retainedTurnCount) return messages
     const retained = cycles.slice(-retainedTurnCount).flat()
     const older = cycles.slice(0, -retainedTurnCount).flat()
+    const storedRetained = sanitizeContextForStorage(retained)
+    const storedRetainedTurns = sanitizeContextForStorage(cycles.slice(-retainedTurnCount)) as unknown[][]
     const id = `${responseId}:compaction:${phase}:${beforeAgentTurn ?? 0}`
     const started = Date.now()
     const base: CompactionItem = {
@@ -230,8 +233,8 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       estimated_tokens: estimatedTokens,
       threshold_tokens: thresholdTokens,
       retained_turns: retainedEntries(retained),
-      retained_context: retained,
-      retained_context_turns: cycles.slice(-retainedTurnCount) as unknown[][],
+      retained_context: storedRetained,
+      retained_context_turns: storedRetainedTurns,
       summary: '',
       started_at: new Date(started).toISOString(),
       ...(beforeAgentTurn ? { before_agent_turn: beforeAgentTurn } : {}),
