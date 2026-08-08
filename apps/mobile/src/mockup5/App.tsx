@@ -745,16 +745,16 @@ function FallbackTemporaryChatHeaderControl({
     opacity: 1 - expansion.value,
     transform: [{ scale: interpolate(expansion.value, [0, 1], [1, 0.72]) }],
   }));
-  const saveStyle = useAnimatedStyle(() => ({
+  const bookmarkStyle = useAnimatedStyle(() => ({
     opacity: expansion.value,
-    transform: [{ scale: interpolate(expansion.value, [0, 1], [0.72, 1]) }],
+    transform: [
+      { translateX: interpolate(expansion.value, [0, 1], [10, 0]) },
+      { scale: interpolate(expansion.value, [0, 1], [0.82, 1]) },
+    ],
   }));
   const newChatStyle = useAnimatedStyle(() => ({
     opacity: expansion.value,
-    transform: [
-      { translateX: interpolate(expansion.value, [0, 1], [-10, 0]) },
-      { scale: interpolate(expansion.value, [0, 1], [0.82, 1]) },
-    ],
+    transform: [{ scale: interpolate(expansion.value, [0, 1], [0.72, 1]) }],
   }));
 
   useEffect(() => {
@@ -816,21 +816,21 @@ function FallbackTemporaryChatHeaderControl({
         style={styles.temporaryHeaderActions}
         tintColor={active ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
       >
-        <View style={[styles.temporaryHeaderAction, styles.temporaryHeaderPrimaryAction]}>
-          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, ghostStyle]}>
-            <Ghost color={iconColor} size={18} strokeWidth={2} />
-          </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, saveStyle]}>
+        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderPrimaryAction, bookmarkStyle]}>
+          <View style={styles.temporaryHeaderAction}>
             {saving
               ? <ActivityIndicator color={iconColor} size="small" />
               : <HeaderActionGlyph name="bookmark" />}
-          </Reanimated.View>
-        </View>
-        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderNewChatAction, newChatStyle]}>
-          <View style={styles.temporaryHeaderAction}>
-            <HeaderActionGlyph name="square.and.pencil" />
           </View>
         </Reanimated.View>
+        <View style={[styles.temporaryHeaderAction, styles.temporaryHeaderNewChatAction]}>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, ghostStyle]}>
+            <Ghost color={iconColor} size={18} strokeWidth={2} />
+          </Reanimated.View>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, newChatStyle]}>
+            <HeaderActionGlyph name="square.and.pencil" />
+          </Reanimated.View>
+        </View>
       </Glass>
     </Reanimated.View>
   );
@@ -843,7 +843,7 @@ function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
       <PersistentNativeTemporaryChatHeaderView
         {...props}
         reduceMotion={reduceMotion}
-        style={{ width: props.expanded ? 88 : 44, height: 44 }}
+        style={{ width: 88, height: 44 }}
       />
     )
     : <FallbackTemporaryChatHeaderControl {...props} />;

@@ -65,48 +65,50 @@ private struct TemporaryChatHeaderContent: View {
   var body: some View {
     GlassEffectContainer(spacing: 8) {
       HStack(spacing: 0) {
-        Button(action: model.expanded ? onSave : onToggleTemporary) {
+        Button(action: onSave) {
           ZStack {
-            PulpoGhostShape()
-              .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-              .frame(width: 18, height: 18)
-              .opacity(model.expanded || model.saving ? 0 : 1)
-              .scaleEffect(model.expanded || model.saving ? 0.72 : 1)
-
             Image(systemName: "bookmark")
               .font(.system(size: 18))
-              .opacity(model.expanded && !model.saving ? 1 : 0)
-              .scaleEffect(model.expanded && !model.saving ? 1 : 0.72)
+              .opacity(model.saving ? 0 : 1)
 
             ProgressView()
               .controlSize(.small)
               .opacity(model.saving ? 1 : 0)
-              .scaleEffect(model.saving ? 1 : 0.72)
           }
           .frame(width: 44, height: 44)
           .foregroundStyle(iconColor)
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(model.expanded && (model.saveDisabled || model.saving))
-        .accessibilityLabel(model.expanded ? (model.saving ? "Saving chat" : "Save chat") : (model.active ? "Disable temporary chat" : "Enable temporary chat"))
-
-        Button(action: onNewChat) {
-          Image(systemName: "square.and.pencil")
-            .font(.system(size: 18))
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
         .frame(width: model.expanded ? 44 : 0, height: 44)
         .opacity(model.expanded ? 1 : 0)
         .scaleEffect(model.expanded ? 1 : 0.78)
         .clipped()
-        .disabled(!model.expanded)
+        .disabled(!model.expanded || model.saveDisabled || model.saving)
         .accessibilityHidden(!model.expanded)
-        .accessibilityLabel("New temporary chat")
+        .accessibilityLabel(model.saving ? "Saving chat" : "Save chat")
+
+        Button(action: model.expanded ? onNewChat : onToggleTemporary) {
+          ZStack {
+            PulpoGhostShape()
+              .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+              .frame(width: 18, height: 18)
+              .opacity(model.expanded ? 0 : 1)
+              .scaleEffect(model.expanded ? 0.72 : 1)
+
+            Image(systemName: "square.and.pencil")
+              .font(.system(size: 18))
+              .opacity(model.expanded ? 1 : 0)
+              .scaleEffect(model.expanded ? 1 : 0.72)
+          }
+          .frame(width: 44, height: 44)
+          .foregroundStyle(iconColor)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(model.expanded ? "New temporary chat" : (model.active ? "Disable temporary chat" : "Enable temporary chat"))
       }
-      .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .leading)
+      .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .trailing)
       .glassEffect(.regular.tint(glassTint).interactive(), in: Capsule())
       .glassEffectID("temporary-chat-header", in: glassNamespace)
       .animation(spring, value: model.expanded)
