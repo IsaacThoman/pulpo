@@ -7,14 +7,13 @@ import { attachments, chatImportSources, chats, folders, models, requestLogs, re
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { metadataForTurn } from '../messages/branching.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { cancelChatWork, getTrashRetention, markChatsForPurge, purgeAtFor } from './trash.js'
 import { planDuplicateTree } from './duplicate.js'
-import { responseDisplayModelId } from './modelIdentity.js'
+import { toPublicChat, toPublicChatResponse } from './public.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import {
   accessibleChatCondition,
@@ -481,15 +480,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(attachments.status, 'ready'),
       inArray(attachments.id, referencedAttachmentIds),
     )) : []
-    return { ...chat, attachments: attachmentRows, responses: allTurns.map((response) => ({
-      ...response,
-      // The message header describes the model that actually produced the
-      // output, including fallback/forwarding, rather than today's picker or
-      // merely the originally requested route.
-      displayModelId: responseDisplayModelId(response),
-      snapshot: toSnapshot(response),
-      branches: metadataForTurn(allTurns, response),
-    })) }
+    return {
+      ...toPublicChat(chat),
+      attachments: attachmentRows,
+      responses: allTurns.map((response) => toPublicChatResponse(response, allTurns)),
+    }
   })
 
   app.patch('/api/chats/:id', async (request) => {
