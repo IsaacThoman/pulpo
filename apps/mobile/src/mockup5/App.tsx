@@ -536,7 +536,7 @@ function NativeComposerIconButton({
 }) {
   const colorScheme = useColorScheme();
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
-  const prominentForeground = colorScheme === 'dark' ? '#1c1c1e' : '#ffffff';
+  const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
   return (
     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
       <SwiftUIButton
