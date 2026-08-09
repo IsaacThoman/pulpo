@@ -195,7 +195,7 @@ async function findResource(client: PulpoManagementClient, path: string, id: str
 function registerFileCrud(
   program: Command,
   io: CliIo,
-  input: { name: string; pluralPath: string; create?: boolean; update?: boolean; remove?: boolean },
+  input: { name: string; pluralPath: string; create?: boolean; update?: boolean; remove?: boolean; deleteWarning?: string },
 ): Command {
   const group = program.command(input.name)
   group.command('list').action(async (_options, command) => {
@@ -217,7 +217,9 @@ function registerFileCrud(
     emit(io, command, await client.request(`${input.pluralPath}/${encodeURIComponent(id)}`, { method: 'PATCH', body }))
   })
   if (input.remove !== false) group.command('delete <id>').action(async (id, _options, command) => {
-    await confirmExact(io, id, Boolean(globalOptions(command).yes), Boolean(globalOptions(command).json))
+    const options = globalOptions(command)
+    if (input.deleteWarning && !options.yes && !options.json) io.stderr.write(`${input.deleteWarning}\n`)
+    await confirmExact(io, id, Boolean(options.yes), Boolean(options.json))
     const { client } = await clientFor(command)
     await client.request(`${input.pluralPath}/${encodeURIComponent(id)}`, { method: 'DELETE' })
     emit(io, command, { id, deleted: true })
@@ -426,7 +428,11 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     const { client } = await clientFor(command)
     emit(io, command, await client.request(`/api/management/v1/labs/${encodeURIComponent(id)}/models/order`, { method: 'PUT', body: await jsonFile(options.file) }))
   })
-  registerFileCrud(program, io, { name: 'model', pluralPath: '/api/management/v1/models' })
+  registerFileCrud(program, io, {
+    name: 'model',
+    pluralPath: '/api/management/v1/models',
+    deleteWarning: 'Historical references will be permanently reassigned to “unknown model”.',
+  })
 
   const user = registerFileCrud(program, io, { name: 'user', pluralPath: '/api/management/v1/users' })
   for (const [action, patch] of [['approve', { role: 'user' }], ['block', { blocked: true }], ['unblock', { blocked: false }]] as const) {

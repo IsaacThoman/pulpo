@@ -5,6 +5,10 @@ const booleanString = z
   .default('false')
   .transform((value) => value === 'true')
 
+function optionalEnvironmentValue<T extends z.ZodType>(schema: T) {
+  return z.preprocess((value) => value === '' ? undefined : value, schema.optional())
+}
+
 const configSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().default('0.0.0.0'),
@@ -40,17 +44,21 @@ const configSchema = z.object({
   RESPONSE_EVENT_RETENTION_SECONDS: z.coerce.number().int().positive().default(86_400),
   RESPONSE_SNAPSHOT_INTERVAL_MS: z.coerce.number().int().positive().default(1_500),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
-  WORKSPACE_CONTROLLER_URL: z.url().optional(),
-  WORKSPACE_CONTROLLER_TOKEN: z.string().min(32).optional(),
-  WORKSPACE_CONTROLLER_CA_CERT_BASE64: z.string().min(1).optional(),
+  WORKSPACE_CONTROLLER_URL: optionalEnvironmentValue(z.url()),
+  WORKSPACE_CONTROLLER_TOKEN: optionalEnvironmentValue(z.string().min(32)),
+  WORKSPACE_CONTROLLER_CA_CERT_BASE64: optionalEnvironmentValue(z.string().min(1)),
 })
 
 export type Config = z.infer<typeof configSchema>
 
 let cached: Config | undefined
 
+export function parseConfig(environment: NodeJS.ProcessEnv): Config {
+  return configSchema.parse(environment)
+}
+
 export function getConfig(): Config {
-  cached ??= configSchema.parse(process.env)
+  cached ??= parseConfig(process.env)
   return cached
 }
 

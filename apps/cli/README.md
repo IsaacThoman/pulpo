@@ -39,3 +39,7 @@ Management token scopes are `account:read`, `account:write`, `instance:read`,
 Administrator scopes continue to require the token owner's current administrator
 role. Tokens are shown only once when created and only work below
 `/api/management/v1`.
+
+Deleting a model permanently reassigns its historical chats and usage to the
+hidden `unknown model` placeholder while retaining recorded token and cost
+totals. Active or queued model work must finish before deletion can proceed.

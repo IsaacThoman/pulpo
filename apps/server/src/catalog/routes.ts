@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { chatPresetsSchema, createModelSchema, createProviderSchema, type ChatPreset } from '@pulpo/contracts'
@@ -21,7 +21,8 @@ import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
-import { INTERNAL_LAB_ID } from './defaults.js'
+import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
+import { deleteCatalogModel } from './model-deletion.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 
 type PresetInput = ChatPreset[]
@@ -84,6 +85,9 @@ async function validatePresets(modelId: string, presets: PresetInput, allowedPar
     }
   }
   for (const preset of presets) for (const choice of preset.choices) if (choice.action.type === 'redirect') {
+    if (choice.action.modelId === UNKNOWN_MODEL_ID) {
+      throw new AppError(400, 'redirect_model_missing', `Redirect model ${choice.action.modelId} does not exist`)
+    }
     const [target] = await db.select({ id: models.id }).from(models).where(eq(models.id, choice.action.modelId)).limit(1)
     if (!target && choice.action.modelId !== modelId) throw new AppError(400, 'redirect_model_missing', `Redirect model ${choice.action.modelId} does not exist`)
     const edges = graph.get(modelId) ?? new Set<string>(); edges.add(choice.action.modelId); graph.set(modelId, edges)
@@ -173,7 +177,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/admin/providers', async (request) => {
     requireAdmin(request)
-    const rows = await db.select().from(providerConnections)
+    const rows = await db.select().from(providerConnections).where(ne(providerConnections.id, INTERNAL_PROVIDER_ID))
     return { data: rows.map(({ encryptedApiKey: _, ...row }) => ({ ...row, hasApiKey: true })) }
   })
 
@@ -203,6 +207,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/providers/:id', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
     const body = request.body as { name?: string; baseUrl?: string; apiKey?: string; organizationId?: string | null; projectId?: string | null; requestTimeoutMs?: number; enabled?: boolean }
     if (body.requestTimeoutMs !== undefined && (body.requestTimeoutMs < 1_000 || body.requestTimeoutMs > 900_000)) throw new AppError(400, 'validation_error', 'Invalid provider configuration')
     if (body.baseUrl) await assertSafeProviderUrl(body.baseUrl)
@@ -221,6 +226,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/providers/:id/health', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
     const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
     await assertSafeProviderUrl(provider.baseUrl)
@@ -248,6 +254,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/admin/providers/:id/models', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
     const [provider] = await db.select({
       id: providerConnections.id,
       upstreamModelsSyncedAt: providerConnections.upstreamModelsSyncedAt,
@@ -266,6 +273,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/providers/:id/models/refresh', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
     const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
     await assertSafeProviderUrl(provider.baseUrl)
@@ -309,6 +317,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/admin/providers/:id', async (request, reply) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
     const used = await db.select({ id: models.id }).from(models).where(eq(models.providerConnectionId, id)).limit(1)
     if (used.length) throw new AppError(409, 'provider_in_use', 'Delete or move this provider’s models first')
     const deleted = await db.delete(providerConnections).where(eq(providerConnections.id, id)).returning({ id: providerConnections.id })
@@ -328,7 +337,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         enabled: models.enabled,
         visible: models.visible,
         sortOrder: models.sortOrder,
-      }).from(models).orderBy(asc(models.sortOrder), asc(models.createdAt)),
+      }).from(models).where(ne(models.id, UNKNOWN_MODEL_ID)).orderBy(asc(models.sortOrder), asc(models.createdAt)),
     ])
     return { data: labRows.map((lab) => {
       const labModels = modelRows.filter((model) => model.labId === lab.id)
@@ -367,7 +376,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (new Set(modelIds).size !== modelIds.length) {
       throw new AppError(400, 'validation_error', 'Model order cannot contain duplicates')
     }
-    const existing = await db.select({ id: models.id }).from(models).where(eq(models.labId, id))
+    const existing = await db.select({ id: models.id }).from(models).where(and(eq(models.labId, id), ne(models.id, UNKNOWN_MODEL_ID)))
     const existingIds = new Set(existing.map((model) => model.id))
     if (modelIds.length !== existingIds.size || modelIds.some((modelId) => !existingIds.has(modelId))) {
       throw new AppError(400, 'validation_error', 'Model order must contain every model in the lab exactly once')
@@ -401,6 +410,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     requireAdmin(request)
     const rows = await db.select({ model: models, pricing: modelPricingVersions }).from(models)
       .leftJoin(modelPricingVersions, and(eq(models.id, modelPricingVersions.modelId), isNull(modelPricingVersions.effectiveTo)))
+      .where(ne(models.id, UNKNOWN_MODEL_ID))
       .orderBy(asc(models.sortOrder), asc(models.createdAt))
     return { data: await Promise.all(rows.map(async ({ model, pricing }) => ({
       ...model,
@@ -423,6 +433,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const admin = requireAdmin(request)
     const raw = z.object({ presets: chatPresetsSchema.default([]) }).passthrough().parse(request.body)
     const input = createModelSchema.parse(raw)
+    if (input.id === UNKNOWN_MODEL_ID) throw new AppError(409, 'reserved_model', 'This model ID is reserved by Pulpo')
     validateDefaultParameters(input.defaultParameters, input.allowedParameters)
     await validateFallback(input.id, input.fallbackModelId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
@@ -486,6 +497,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/models/:id', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (id === UNKNOWN_MODEL_ID) throw notFound('Model')
     const body = request.body as Record<string, unknown>
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
@@ -555,10 +567,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   })
 
   app.delete('/api/admin/models/:id', async (request, reply) => {
-    requireAdmin(request)
+    const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
-    const deleted = await db.delete(models).where(eq(models.id, id)).returning({ id: models.id })
-    if (!deleted.length) throw notFound('Model')
+    await deleteCatalogModel(id, admin.id)
     reply.code(204).send()
   })
 }

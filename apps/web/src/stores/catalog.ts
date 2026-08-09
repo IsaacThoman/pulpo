@@ -1,3 +1,4 @@
+import { UNKNOWN_MODEL_ID } from '@pulpo/contracts'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { Model } from '@/lib/types'
@@ -74,6 +75,18 @@ export function getCatalogModel(id: string): Model {
   const model = findCatalogModel(models, id)
   if (model) return model
   if (!id) return models[0] ?? EMPTY_MODEL
+  if (id === UNKNOWN_MODEL_ID) {
+    return {
+      ...EMPTY_MODEL,
+      id,
+      name: 'unknown model',
+      provider: 'Pulpo',
+      inferenceProvider: 'Pulpo',
+      labLogo: 'pulpo',
+      modelLogo: 'pulpo',
+      description: 'The original model was deleted from this Pulpo instance.',
+    }
+  }
   return {
     ...EMPTY_MODEL,
     id,

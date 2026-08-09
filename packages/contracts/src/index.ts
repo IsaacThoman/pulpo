@@ -461,6 +461,8 @@ export type ChatPresetAction = z.infer<typeof chatPresetChoiceSchema>['action']
 export type ChatPresetChoice = z.infer<typeof chatPresetChoiceSchema>
 export type ChatPreset = z.infer<typeof chatPresetSchema>
 
+export const UNKNOWN_MODEL_ID = 'pulpo-unknown-model'
+
 export const createModelSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,119}$/),
   providerConnectionId: idSchema,

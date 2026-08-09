@@ -183,6 +183,13 @@
       "when": 1786257038201,
       "tag": "0025_charming_demogoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786260057374,
+      "tag": "0026_panoramic_switch",
+      "breakpoints": true
     }
   ]
 }
