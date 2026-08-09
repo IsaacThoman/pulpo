@@ -13,8 +13,9 @@ import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashCh
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
 import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
 import { useSessionStore } from '../../../store/session'
-import type { MobileModel, ServerChat, ServerFolder } from '../../../types'
-import type { ActivityStep, PrototypeAttachment, PrototypeChat, PrototypeMessage, PrototypeModel } from '../domain'
+import type { ServerChat, ServerFolder } from '../../../types'
+import type { ActivityStep, PrototypeAttachment, PrototypeChat, PrototypeMessage } from '../domain'
+import { mapModel } from '../modelIdentity'
 import { usePrototypeStore } from '../store/prototypeStore'
 import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
@@ -29,43 +30,6 @@ import {
   clearOptimisticBranchSelections,
   reconcileOptimisticBranchSelection,
 } from './optimisticBranches'
-
-function modelAsset(model: MobileModel): PrototypeModel['asset'] {
-  const value = `${model.provider.name} ${model.name}`.toLowerCase()
-  if (value.includes('anthropic') || value.includes('claude')) return 'claude'
-  if (value.includes('google') || value.includes('gemini')) return 'gemini'
-  if (value.includes('deepseek')) return 'deepseek'
-  return 'openai'
-}
-
-function mapModel(model: MobileModel, favorites: string[]): PrototypeModel {
-  const asset = modelAsset(model)
-  return {
-    id: model.id,
-    name: model.name,
-    providerGroupId: model.lab?.id ?? 'internal',
-    provider: model.provider.name,
-    lab: model.lab?.name ?? 'Internal',
-    description: model.description,
-    contextWindow: model.tags.find((tag) => /context/i.test(tag)) ?? `${Math.round(model.maxOutputTokens / 1000)}K max output`,
-    pricing: 'Managed by this Pulpo instance',
-    tags: model.tags,
-    enabled: true,
-    agentEnabled: model.agentEnabled,
-    favorite: favorites.includes(model.id),
-    tint: asset === 'claude' ? '#E8794A' : asset === 'gemini' ? '#6EA8FF' : asset === 'deepseek' ? '#5B8CFF' : '#D9D9D9',
-    asset,
-    modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
-    labLogo: model.lab?.logo ?? 'pulpo',
-    presets: model.presets.map((preset) => ({
-      id: preset.id,
-      name: preset.name,
-      icon: preset.icon,
-      selectedId: preset.defaultChoiceId ?? preset.choices[0]?.id ?? '',
-      choices: preset.choices.map((option) => ({ id: option.id, label: option.displayName, icon: option.icon ?? preset.icon })),
-    })),
-  }
-}
 
 function mapAttachment(attachment: DisplayMessage['attachments'][number]): PrototypeAttachment {
   return {

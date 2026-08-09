@@ -151,6 +151,7 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { chatRemovalBehavior } from './src/chatRemoval';
+import { resolveDisplayModel } from './src/modelIdentity';
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
@@ -384,7 +385,7 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { id: string; name: string; providerGroupId: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
+type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
 type ModelSection = string;
 type Attachment = {
   id: string;
@@ -484,7 +485,7 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
     ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
     ?? MODELS[1];
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark);
-  return { ...template, id: model.id, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined, agentEnabled: model.agentEnabled };
+  return { ...template, id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined, agentEnabled: model.agentEnabled };
 }
 
 const REASONING_SAMPLE =
@@ -2329,18 +2330,14 @@ function outputItemTitle(item: Record<string, unknown>): string {
 function responseModel(message: Message, models: Model[], fallback: Model): Model {
   const modelId = message.modelId ?? message.chatModelId;
   if (!modelId) return fallback;
-  const known = models.find((candidate) => candidate.id === modelId);
-  if (known) return known;
-  // Do not silently relabel an older/forwarded response with the current
-  // composer selection when its catalogue entry is unavailable.
-  return {
+  return resolveDisplayModel(models, modelId, (unavailableModelId) => ({
     ...MODELS[1],
-    id: modelId,
-    name: modelId,
+    id: unavailableModelId,
+    name: unavailableModelId,
     lab: 'Model',
     detail: 'No longer available in this instance',
     agentEnabled: false,
-  };
+  }));
 }
 
 function BranchControls({ branches, activeIndex, onActivate, disabled = false }: {
