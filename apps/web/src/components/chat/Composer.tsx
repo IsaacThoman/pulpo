@@ -500,6 +500,25 @@ export function Composer({
 
   return (
     <div className={cn('w-full', centered && 'px-2')}>
+      {attachmentRestriction && (
+        <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
+          <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+          <span className="flex-1">
+            {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
+            {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
+            {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
+          </span>
+          {attachmentRestriction === 'enable_agent' && (
+            <button
+              type="button"
+              onClick={() => setSetting('agentModeEnabled', true)}
+              className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
+            >
+              Enable Agent
+            </button>
+          )}
+        </div>
+      )}
       {messageEdit && (
         <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 py-2 text-sm shadow-sm">
           <Pencil className="size-3.5 text-muted-foreground" />
@@ -609,26 +628,6 @@ export function Composer({
                 onRemove={() => removeAttachment(attachment.localId)}
               />
             ))}
-          </div>
-        )}
-
-        {attachmentRestriction && (
-          <div role="status" className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-            <AlertCircle className="size-4 shrink-0" />
-            <span className="flex-1">
-              {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
-              {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
-              {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
-            </span>
-            {attachmentRestriction === 'enable_agent' && (
-              <button
-                type="button"
-                onClick={() => setSetting('agentModeEnabled', true)}
-                className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
-              >
-                Enable Agent
-              </button>
-            )}
           </div>
         )}
 
