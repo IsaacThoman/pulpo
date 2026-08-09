@@ -39,6 +39,8 @@ export interface GenerationPreset {
 
 export interface PrototypeModel {
   id: string;
+  /** Hidden model IDs reached through this visible model's preset redirects. */
+  redirectTargetModelIds?: string[];
   name: string;
   providerGroupId: string;
   provider: string;
