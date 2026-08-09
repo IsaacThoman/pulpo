@@ -898,6 +898,8 @@ function IconSelect({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  // Keep the portal inside Radix Dialog's scroll-lock boundary so its viewport receives wheel events.
+  const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(null)
   const selected = value ?? (allowDefault ? null : 'circle')
   const options = useMemo(() => filterPresetIconOptions(query), [query])
 
@@ -920,7 +922,10 @@ function IconSelect({
           aria-expanded={open}
           aria-label="Choose preset icon"
           className="h-8 w-full justify-between px-2 font-normal"
-          onClick={() => setOpen((current) => !current)}
+          onClick={(event) => {
+            setPortalContainer(event.currentTarget.closest<HTMLElement>('[data-slot="dialog-content"]'))
+            setOpen((current) => !current)
+          }}
         >
           <span className="flex min-w-0 items-center gap-2">
             {selected ? <PresetIcon name={selected} /> : <CircleIconPlaceholder />}
@@ -931,6 +936,8 @@ function IconSelect({
       </PopoverAnchor>
       <PopoverContent
         align="start"
+        container={portalContainer}
+        sideOffset={2}
         className="w-[min(22rem,var(--radix-popper-available-width))] p-0"
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
