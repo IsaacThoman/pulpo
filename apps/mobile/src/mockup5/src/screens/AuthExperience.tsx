@@ -191,7 +191,7 @@ export function AuthExperience() {
   </AuthShell>;
 
   if (page === 'two-factor') return <AuthShell colors={colors} title="Verify your identity" subtitle={recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.'}>
-    <AuthField colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : 6} returnKeyType="go" onSubmitEditing={submitTwoFactor} />
+    <AuthField colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : 6} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Verify and sign in" colors={colors} loading={loading} disabled={recoveryMode ? twoFactorCode.trim().length < 12 : twoFactorCode.length !== 6} onPress={submitTwoFactor} />
     <BackToSignIn colors={colors} label={recoveryMode ? 'Use an authenticator code' : 'Use a recovery code'} onPress={() => { setRecoveryMode((value) => !value); setTwoFactorCode(''); setError(''); }} />

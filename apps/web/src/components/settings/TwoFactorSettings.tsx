@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Check, Copy, Download, Loader2, RefreshCw, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Check, Copy, Download, Loader2, RefreshCw, ShieldOff } from 'lucide-react'
 import type { TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -83,7 +83,7 @@ export function TwoFactorSettings() {
   return <>
     <div className="flex min-w-0 items-center justify-between gap-4 py-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2 text-sm font-medium"><ShieldCheck className="size-4" />Two-factor authentication</div>
+        <div className="text-sm font-medium">Two-factor authentication</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           {status === null ? 'Checking status…' : status.enabled ? `Enabled · ${status.recoveryCodesRemaining} recovery codes remaining` : 'Add an authenticator app to protect your account.'}
         </div>
