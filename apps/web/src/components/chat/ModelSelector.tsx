@@ -97,7 +97,7 @@ export function ModelSelector({
   }
 
   return (
-    <div className="relative">
+    <div className="relative min-w-0">
       <DropdownMenu
         open={open}
         onOpenChange={(v) => {
@@ -110,16 +110,16 @@ export function ModelSelector({
         }}
       >
       <DropdownMenuTrigger asChild>
-        <button className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
+        <button className="flex max-w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
           <ProviderLogo
             provider={selected.provider}
             icon={selected.labLogo}
-            className="size-5"
+            className="size-5 shrink-0"
           />
-          <span>{selected.name}</span>
+          <span className="min-w-0 truncate">{selected.name}</span>
           <ChevronDown
             className={cn(
-              'size-3.5 text-muted-foreground transition-transform duration-200',
+              'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
               open && 'rotate-180'
             )}
           />

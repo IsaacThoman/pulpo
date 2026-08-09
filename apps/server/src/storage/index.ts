@@ -1,4 +1,4 @@
-import { getConfig } from '../config.js'
+import { getConfig, getStorageCorsOrigins } from '../config.js'
 import type { BlobStore } from './blob-store.js'
 import { LocalBlobStore } from './local.js'
 import { S3BlobStore } from './s3.js'
@@ -16,7 +16,7 @@ export function getBlobStore(): BlobStore {
         accessKeyId: config.S3_ACCESS_KEY_ID,
         secretAccessKey: config.S3_SECRET_ACCESS_KEY,
         forcePathStyle: config.S3_FORCE_PATH_STYLE,
-        corsOrigin: config.S3_CONFIGURE_CORS ? new URL(config.PUBLIC_URL).origin : undefined,
+        corsOrigins: config.S3_CONFIGURE_CORS ? getStorageCorsOrigins(config) : undefined,
       })
     : new LocalBlobStore(config.STORAGE_LOCAL_PATH)
   return store

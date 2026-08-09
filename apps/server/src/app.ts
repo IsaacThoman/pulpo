@@ -5,7 +5,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import { ZodError } from 'zod'
-import { getAllowedOrigins, getConfig } from './config.js'
+import { getConfig, isAllowedOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
 import { authenticateSession } from './auth/service.js'
 import { registerAuthRoutes } from './auth/routes.js'
@@ -28,7 +28,6 @@ import { registerManagementRoutes } from './management/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
-  const allowedOrigins = getAllowedOrigins(config)
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
     bodyLimit: 2 * 1024 * 1024,
@@ -39,7 +38,7 @@ export async function buildApp() {
   await app.register(helmet, { contentSecurityPolicy: false })
   await app.register(cookie)
   await app.register(cors, {
-    origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)),
+    origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
     credentials: true,
   })
   await app.register(rateLimit, { max: 300, timeWindow: '1 minute' })
@@ -60,7 +59,7 @@ export async function buildApp() {
     const hasSession = Boolean(request.cookies[config.SESSION_COOKIE_NAME])
     if (!hasSession) return
     const origin = request.headers.origin
-    if (origin && !allowedOrigins.has(new URL(origin).origin)) {
+    if (origin && !isAllowedOrigin(origin, config)) {
       throw new AppError(403, 'origin_mismatch', 'Request origin is not allowed', 'permission_error')
     }
   })

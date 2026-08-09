@@ -57,7 +57,7 @@ function Placeholder({
         <div
           aria-hidden={!showTemporaryLabel}
           data-visible={showTemporaryLabel}
-          className="temporary-label-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 whitespace-nowrap text-xs font-medium text-violet-700 dark:text-violet-300"
+          className="temporary-label-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-violet-700 dark:text-violet-300"
         >
           <Ghost className="size-3.5" />
           Temporary
@@ -244,11 +244,11 @@ export function ChatPage() {
 
   return (
     <div className={cn(
-      'flex h-full flex-col transition-colors duration-200',
+      'flex h-full min-w-0 flex-col transition-colors duration-200',
       temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
     )}>
       {/* header */}
-      <header className="flex h-12 shrink-0 items-center gap-1 px-3">
+      <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />
         <div className="flex-1" />
         {showTemporaryControl && (
@@ -305,7 +305,7 @@ export function ChatPage() {
             <div
               ref={contentRef}
               className={cn(
-                'mx-auto flex flex-col gap-7 px-4 py-6',
+                'mx-auto flex w-full min-w-0 flex-col gap-7 px-4 py-6',
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >
