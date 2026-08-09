@@ -95,7 +95,7 @@ export function ListRow({ icon, iconColor, leading, title, detail, value, onPres
 
 export function Field({ label, error, ...props }: TextInputProps & { label?: string; error?: string }) {
   const theme = useAppTheme();
-  return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} /> : <TextInput placeholderTextColor={theme.tertiary} {...props} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
+  return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} /> : <TextInput placeholderTextColor={theme.secondary} {...props} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
 }
 
 export function PasswordField({ label, value, onChangeText, placeholder, revealed, onToggleVisibility }: {
@@ -127,7 +127,7 @@ export function PasswordField({ label, value, onChangeText, placeholder, reveale
   </View>;
   return <View style={styles.fieldWrap}>
     <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text>
-    <View><TextInput secureTextEntry={!revealed} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={theme.tertiary} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: theme.separator, paddingRight: 54 }]} /><Pressable accessibilityRole="button" accessibilityLabel={revealed ? 'Hide password' : 'Show password'} onPress={onToggleVisibility} style={styles.passwordEye}><SymbolView name={revealed ? 'eye.slash' : 'eye'} size={17} tintColor={theme.secondary} /></Pressable></View>
+    <View><TextInput secureTextEntry={!revealed} value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={theme.secondary} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: theme.separator, paddingRight: 54 }]} /><Pressable accessibilityRole="button" accessibilityLabel={revealed ? 'Hide password' : 'Show password'} onPress={onToggleVisibility} style={styles.passwordEye}><SymbolView name={revealed ? 'eye.slash' : 'eye'} size={17} tintColor={theme.secondary} /></Pressable></View>
   </View>;
 }
 

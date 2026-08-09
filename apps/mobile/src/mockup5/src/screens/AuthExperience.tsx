@@ -18,7 +18,7 @@ const mockupOneDark = {
 
 const mockupOneLight = {
   background: '#FFFFFF', surface: '#F8F8FA', border: '#E2E2E7', text: '#18181B',
-  textMuted: '#64646D', textFaint: '#6E6E73', accent: '#18181B', accentText: '#FFFFFF', destructive: '#FF3B30',
+  textMuted: '#64646D', textFaint: '#6E6E73', accent: '#18181B', accentText: '#FFFFFF', destructive: '#C5221F',
 };
 
 type AuthColors = Record<keyof typeof mockupOneDark, string>;
@@ -62,8 +62,11 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   icon?: Parameters<typeof SymbolView>[0]['name'];
   onPress: () => void;
 }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled || loading} onPress={onPress} style={[styles.primaryButton, { backgroundColor: colors.accent, opacity: disabled || loading ? 0.45 : 1 }]}>
-    {loading ? <ActivityIndicator color={colors.accentText} /> : <><Text style={[styles.primaryButtonText, { color: colors.accentText }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={colors.accentText} size={16} weight="semibold" /> : null}</>}
+  const inactive = disabled || loading;
+  const backgroundColor = inactive ? colors.border : colors.accent;
+  const foregroundColor = inactive ? colors.textMuted : colors.accentText;
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.primaryButton, { backgroundColor }]}>
+    {loading ? <ActivityIndicator color={foregroundColor} /> : <><Text style={[styles.primaryButtonText, { color: foregroundColor }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={foregroundColor} size={16} weight="semibold" /> : null}</>}
   </Pressable>;
 }
 
