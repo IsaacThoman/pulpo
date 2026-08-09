@@ -245,8 +245,10 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
   commandClientFactory.set(program, dependencies.createClient)
 
   const contexts = program.command('context').description('Manage Pulpo instance contexts')
-  contexts.command('add <name>').requiredOption('--url <url>').action(async (name, options, command) => {
-    const config = await addContext(name, options.url)
+  contexts.command('add <name>').action(async (name, _options, command) => {
+    const url = globalOptions(command).url
+    if (!url) throw new Error('Context URL is required; pass --url <url>')
+    const config = await addContext(name, url)
     emit(io, command, { name, ...config.contexts[name], current: config.currentContext === name })
   })
   contexts.command('list').action(async (_options, command) => {

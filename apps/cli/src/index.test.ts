@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createProgram } from './index.js'
-import { addContext, resolveConnection } from './config.js'
+import { addContext, loadConfig, resolveConnection } from './config.js'
 import { confirmExact, readSecret } from './io.js'
 
 function commandNames(program: ReturnType<typeof createProgram>, group: string): string[] {
@@ -29,6 +29,25 @@ describe('Pulpo CLI command surface', () => {
     const program = createProgram({ stdin: new PassThrough() as never, stdout: new PassThrough(), stderr: new PassThrough() })
     const flags = program.options.map((option) => option.long)
     expect(flags).toEqual(expect.arrayContaining(['--context', '--url', '--json', '--no-color', '--yes', '--verbose']))
+  })
+
+  it('accepts the global URL option after context add', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pulpo-cli-context-test-'))
+    const previous = process.env.XDG_CONFIG_HOME
+    const io = { stdin: new PassThrough() as never, stdout: new PassThrough(), stderr: new PassThrough() }
+    try {
+      process.env.XDG_CONFIG_HOME = root
+      const program = createProgram(io)
+      await program.parseAsync(['node', 'pulpo', 'context', 'add', 'production', '--url', 'https://pulpo.baby'])
+      expect(await loadConfig()).toEqual({
+        currentContext: 'production',
+        contexts: { production: { url: 'https://pulpo.baby' } },
+      })
+    } finally {
+      if (previous === undefined) delete process.env.XDG_CONFIG_HOME
+      else process.env.XDG_CONFIG_HOME = previous
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it('reads noninteractive secrets from injected stdin and requires --yes in machine mode', async () => {
