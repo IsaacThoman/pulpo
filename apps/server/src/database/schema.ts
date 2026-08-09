@@ -493,7 +493,7 @@ export const chatImportSources = pgTable('chat_import_sources', {
 
 export const backupJobs = pgTable('backup_jobs', {
   id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   operation: text('operation').notNull(),
   status: text('status').notNull().default('queued'),
   progress: integer('progress').notNull().default(0),
@@ -551,7 +551,7 @@ export const apiKeyModelPermissions = pgTable('api_key_model_permissions', {
 
 export const budgetReservations = pgTable('budget_reservations', {
   id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
@@ -563,7 +563,7 @@ export const budgetReservations = pgTable('budget_reservations', {
 
 export const creditLedger = pgTable('credit_ledger', {
   id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   type: text('type').notNull(),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
@@ -574,7 +574,7 @@ export const creditLedger = pgTable('credit_ledger', {
 
 export const usageEvents = pgTable('usage_events', {
   id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
   responseId: uuid('response_id').references(() => responses.id, { onDelete: 'set null' }),
   modelId: text('model_id').notNull().references(() => models.id),
@@ -590,7 +590,7 @@ export const usageEvents = pgTable('usage_events', {
 
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {
   day: timestamp('day', { withTimezone: true }).notNull(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   modelId: text('model_id').notNull().references(() => models.id),
   calls: integer('calls').notNull(),
   inputTokens: bigint('input_tokens', { mode: 'number' }).notNull(),
@@ -617,7 +617,7 @@ export const banners = pgTable('banners', {
 
 export const exportJobs = pgTable('export_jobs', {
   id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
   status: text('status').notNull().default('queued'),
   objectKey: text('object_key'),
