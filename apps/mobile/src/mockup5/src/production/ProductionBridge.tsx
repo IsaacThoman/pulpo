@@ -400,6 +400,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   useEffect(() => {
     if (!detail.data) return
     for (const response of detail.data.responses ?? []) {
+      if (response.detailAvailable === false) continue
       useRealtimeStore.getState().receiveSnapshot(hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
     }
   }, [detail.data])

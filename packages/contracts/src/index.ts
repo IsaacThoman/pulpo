@@ -353,8 +353,19 @@ export function mergeResponseSnapshots(current: ResponseSnapshot, incoming: Resp
     const currentTerminal = current.status !== 'queued' && current.status !== 'in_progress'
     const incomingTerminal = incoming.status !== 'queued' && incoming.status !== 'in_progress'
     if (currentTerminal && !incomingTerminal) return current
-    if (incomingTerminal && !currentTerminal) return incoming
-    if (incoming.updatedAt <= current.updatedAt) return current
+    if (incomingTerminal && !currentTerminal) {
+      return incoming.output.length === 0 && current.output.length > 0
+        ? { ...incoming, output: current.output }
+        : incoming
+    }
+    if (incoming.updatedAt < current.updatedAt) return current
+    if (incoming.updatedAt === current.updatedAt) {
+      if (current.output.length === 0 && incoming.output.length > 0) return incoming
+      return current
+    }
+    if (incoming.output.length === 0 && current.output.length > 0) {
+      return { ...incoming, output: current.output }
+    }
   }
   const incomingIsActive = incoming.status === 'queued' || incoming.status === 'in_progress'
   if (incomingIsActive && incoming.output.length === 0 && current.output.length > 0) {

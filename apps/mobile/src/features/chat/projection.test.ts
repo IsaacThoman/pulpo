@@ -101,6 +101,42 @@ describe('projectChat branch variants', () => {
     ])
   })
 
+  it('does not let an equal-version empty cached snapshot hide a fetched branch body', () => {
+    const branchIds = ['response-a', 'response-b']
+    const responses = [
+      response({ id: branchIds[0]!, text: 'Prompt', output: 'First generation', branchIds, branchIndex: 0 }),
+      response({ id: branchIds[1]!, text: 'Prompt', output: 'Fetched second generation', branchIds, branchIndex: 1 }),
+    ]
+    const fetched = responses[1]!
+    fetched.detailAvailable = true
+    fetched.snapshot = {
+      responseId: fetched.id,
+      sequence: 1,
+      status: 'completed',
+      output: fetched.output,
+      usage: null,
+      error: null,
+      updatedAt: fetched.createdAt,
+    }
+    const live = {
+      [fetched.id]: {
+        ...fetched.snapshot,
+        output: [],
+      } as ResponseSnapshot,
+    }
+    const chat = {
+      id: 'chat-1', title: 'Branches', modelId: 'model-1', pinned: false, folderId: null,
+      sortOrder: 0, temporary: false, activeResponseId: fetched.id, activeBranchLeafId: fetched.id,
+      createdAt: '2026-08-04T12:00:00.000Z', updatedAt: '2026-08-04T12:00:01.000Z', responses,
+    } satisfies ServerChat
+
+    const assistant = projectChat(chat, live).find((message) => message.role === 'assistant')
+
+    expect(assistant?.text).toBe('Fetched second generation')
+    expect(assistant?.branch.index).toBe(1)
+    expect(assistant?.branch.variants[1]?.text).toBe('Fetched second generation')
+  })
+
   it('preserves the producing model for every regeneration branch', () => {
     const branchIds = ['response-a', 'response-b']
     const responses = [
