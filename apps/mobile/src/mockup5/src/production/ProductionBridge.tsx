@@ -171,7 +171,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
   const preferenceHydration = (async () => {
     const store = usePreferencesStore.getState()
     if (store.synchronizedOwnerNamespace !== namespace) {
-      await store.resetSynchronizedModelPreferences(namespace)
+      await store.resetSynchronizedPreferences(namespace)
     }
     await usePreferencesStore.getState().activateAgentNamespace(namespace)
     return usePreferencesStore.getState()
@@ -239,7 +239,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const status = useSessionStore((state) => state.status)
   const instanceUrl = useSessionStore((state) => state.instanceUrl)
   const userId = useSessionStore((state) => state.user?.id)
-  // Keep local-only composer changes (notably per-model preset selections) from
+  // Keep composer-only changes (notably per-model preset selections) from
   // rebuilding the model catalogue and every native model control.
   const preferences = usePreferencesStore(useShallow((state) => ({
     theme: state.theme,
@@ -305,7 +305,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
 
   useEffect(() => {
     if (!userId || usePreferencesStore.getState().synchronizedOwnerNamespace === namespace) return
-    void usePreferencesStore.getState().resetSynchronizedModelPreferences(namespace)
+    void usePreferencesStore.getState().resetSynchronizedPreferences(namespace)
   }, [namespace, userId])
 
   useEffect(() => {
@@ -334,8 +334,8 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           namespace, entityKey: `setting:${serverKey}`, method: 'PATCH', path: '/api/settings', body,
           request: () => mobileApi.updateSettings(body),
         })
-        if (saved && (key === 'favoriteModelIds' || key === 'providerOrder')) {
-          await usePreferencesStore.getState().markModelPreferenceSynced(key, value as string[])
+        if (saved && (key === 'favoriteModelIds' || key === 'providerOrder' || key === 'generation')) {
+          await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
         }
       },
       toggleFavoriteModel: async (modelId: string, favorite: boolean) => {
@@ -352,7 +352,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           body: { favoriteModelIds: next },
           request: () => mobileApi.updateSettings({ favoriteModelIds: next }),
         })
-        if (saved) await usePreferencesStore.getState().markModelPreferenceSynced('favoriteModelIds', next)
+        if (saved) await usePreferencesStore.getState().markSynchronizedPreferenceSynced('favoriteModelIds', next)
       },
     })
   }, [namespace])
