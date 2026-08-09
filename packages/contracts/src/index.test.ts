@@ -3,6 +3,7 @@ import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
   chatSummarySchema,
+  CHAT_PRESET_ICON_NAMES,
   chatPresetsSchema,
   createModelSchema,
   createChatResponseSchema,
@@ -11,6 +12,7 @@ import {
   managementInfoSchema,
   managementSettingsDocumentSchema,
   managementTokenSchema,
+  isChatPresetIcon,
   createManagementTokenSchema,
   mobileConfigSchema,
   modelPreferencesPatchSchema,
@@ -136,6 +138,27 @@ describe('shared contracts', () => {
       ],
     }])
     expect(presets[0]?.defaultChoiceId).toBe('medium')
+  })
+
+  it('accepts every canonical Lucide preset icon and rejects unknown names', () => {
+    const presets = chatPresetsSchema.parse([{
+      id: 'media', name: 'Media', icon: 'camera',
+      choices: [{ id: 'chart', displayName: 'Chart', icon: 'chart-no-axes-column', action: { type: 'none' } }],
+    }])
+    expect(presets[0]?.icon).toBe('camera')
+    expect(isChatPresetIcon('scan-qr-code')).toBe(true)
+    expect(isChatPresetIcon('alarm-check')).toBe(false)
+    expect(chatPresetsSchema.safeParse([{
+      id: 'bad', name: 'Bad', icon: 'not-a-lucide-icon', choices: [{ id: 'on', displayName: 'On', action: { type: 'none' } }],
+    }]).error?.issues[0]?.message).toContain('pulpo model icons')
+  })
+
+  it('keeps the generated preset icon catalog sorted, unique, and backwards compatible', () => {
+    expect(CHAT_PRESET_ICON_NAMES).toEqual([...CHAT_PRESET_ICON_NAMES].sort((left, right) => left.localeCompare(right)))
+    expect(new Set(CHAT_PRESET_ICON_NAMES).size).toBe(CHAT_PRESET_ICON_NAMES.length)
+    expect(CHAT_PRESET_ICON_NAMES).toEqual(expect.arrayContaining([
+      'brain', 'zap', 'zap-off', 'gauge', 'sparkles', 'rocket', 'circle', 'flame', 'timer',
+    ]))
   })
 
   it('normalizes ordered account model preferences', () => {

@@ -7,6 +7,8 @@ import { Command, CommanderError } from 'commander'
 import { z } from 'zod'
 import { ManagementApiError, PulpoManagementClient } from '@pulpo/client-core'
 import {
+  CHAT_PRESET_ICON_NAMES,
+  chatPresetsSchema,
   managementAccountSettingsDocumentSchema,
   managementInstanceSettingsDocumentSchema,
   managementSettingsDocumentSchema,
@@ -195,7 +197,15 @@ async function findResource(client: PulpoManagementClient, path: string, id: str
 function registerFileCrud(
   program: Command,
   io: CliIo,
-  input: { name: string; pluralPath: string; create?: boolean; update?: boolean; remove?: boolean; deleteWarning?: string },
+  input: {
+    name: string
+    pluralPath: string
+    create?: boolean
+    update?: boolean
+    remove?: boolean
+    deleteWarning?: string
+    preflightBody?: (body: unknown) => unknown
+  },
 ): Command {
   const group = program.command(input.name)
   group.command('list').action(async (_options, command) => {
@@ -207,13 +217,15 @@ function registerFileCrud(
     emit(io, command, await findResource(client, input.pluralPath, id))
   })
   if (input.create !== false) group.command('create').requiredOption('-f, --file <path>', 'JSON input file').action(async (options, command) => {
+    const rawBody = resolveEnvironmentReferences(await jsonFile(options.file))
+    const body = input.preflightBody?.(rawBody) ?? rawBody
     const { client } = await clientFor(command)
-    const body = resolveEnvironmentReferences(await jsonFile(options.file))
     emit(io, command, await client.request(input.pluralPath, { method: 'POST', body }))
   })
   if (input.update !== false) group.command('update <id>').requiredOption('-f, --file <path>', 'JSON patch file').action(async (id, options, command) => {
+    const rawBody = resolveEnvironmentReferences(await jsonFile(options.file))
+    const body = input.preflightBody?.(rawBody) ?? rawBody
     const { client } = await clientFor(command)
-    const body = resolveEnvironmentReferences(await jsonFile(options.file))
     emit(io, command, await client.request(`${input.pluralPath}/${encodeURIComponent(id)}`, { method: 'PATCH', body }))
   })
   if (input.remove !== false) group.command('delete <id>').action(async (id, _options, command) => {
@@ -225,6 +237,14 @@ function registerFileCrud(
     emit(io, command, { id, deleted: true })
   })
   return group
+}
+
+export function preflightModelBody(body: unknown): unknown {
+  if (body && typeof body === 'object' && !Array.isArray(body) && 'presets' in body) {
+    const presets = (body as Record<string, unknown>).presets
+    if (presets !== undefined) chatPresetsSchema.parse(presets)
+  }
+  return body
 }
 
 export function createProgram(io: CliIo = processIo, dependencies: CliDependencies = {}): Command {
@@ -428,10 +448,18 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     const { client } = await clientFor(command)
     emit(io, command, await client.request(`/api/management/v1/labs/${encodeURIComponent(id)}/models/order`, { method: 'PUT', body: await jsonFile(options.file) }))
   })
-  registerFileCrud(program, io, {
+  const model = registerFileCrud(program, io, {
     name: 'model',
     pluralPath: '/api/management/v1/models',
     deleteWarning: 'Historical references will be permanently reassigned to “unknown model”.',
+    preflightBody: preflightModelBody,
+  })
+  model.command('icons [query]').description('List canonical Lucide names for chat presets').action((query, _options, command) => {
+    const normalized = typeof query === 'string' ? query.trim().toLowerCase() : ''
+    const icons = CHAT_PRESET_ICON_NAMES
+      .filter((name) => !normalized || name.includes(normalized))
+      .map((name) => ({ name }))
+    emit(io, command, icons)
   })
 
   const user = registerFileCrud(program, io, { name: 'user', pluralPath: '/api/management/v1/users' })
