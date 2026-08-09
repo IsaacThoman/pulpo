@@ -7,6 +7,7 @@ import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
+import { FORM_CONTENT_MAX } from '../../../responsive';
 
 type AuthPage = 'login' | 'signup' | 'forgot' | 'instance';
 
@@ -228,7 +229,7 @@ export function AuthExperience() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  content: { flexGrow: 1, paddingHorizontal: 22 },
+  content: { flexGrow: 1, width: '100%', maxWidth: FORM_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 22 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logo: { width: 42, height: 42, borderRadius: 13 },
   brandName: { fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
