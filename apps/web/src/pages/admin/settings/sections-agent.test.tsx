@@ -5,6 +5,12 @@ import { AgentSection } from './sections-agent'
 import { moveWebProvider, webToolsPatchBody } from './web-tools-form'
 
 describe('agent web-tool settings', () => {
+  it('renders workspace controller health inside the Pi agent mode section', () => {
+    const markup = renderToStaticMarkup(<AgentSection />)
+    expect(markup.indexOf('Pi agent mode')).toBeLessThan(markup.indexOf('Controller URL and token'))
+    expect(markup.indexOf('Controller URL and token')).toBeLessThan(markup.indexOf('Web tools'))
+  })
+
   it('renders global web settings before both provider sections', () => {
     const markup = renderToStaticMarkup(<AgentSection />)
     expect(markup.indexOf('Web tools')).toBeGreaterThan(-1)

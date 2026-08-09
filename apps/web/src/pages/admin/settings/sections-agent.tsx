@@ -131,6 +131,10 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>Command timeout (seconds)</span>{number('commandTimeoutSeconds', 1)}</label>
         <label className="space-y-1 text-xs"><span>Retained tool output (bytes)</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
+      <div className="flex items-center gap-2 text-sm">
+        {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}
+        <span>{health.healthy ? 'Workspace controller is healthy' : health.configured ? health.detail ?? 'Workspace controller is unavailable' : 'Controller URL and token are not configured in deployment secrets'}</span>
+      </div>
     </Section>
     <Section title="Web tools" hint="Control agent web capabilities, user billing, and the order in which enabled providers are attempted.">
       <Toggle label="Enable web search" hint="Adds the web_search tool when at least one search provider is available." checked={web.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, searchEnabled })} />
@@ -159,10 +163,6 @@ export function AgentSection() {
       <NumField label="Effective cost per credit" hint="Used for operator cost reporting; 0 leaves dollar cost untracked." value={web.firecrawl.costPerCreditMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, costPerCreditMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.000001} decimals={6} suffix="USD" />
       {((web.searchEnabled && web.firecrawl.searchEnabled) || (web.extractEnabled && web.firecrawl.extractEnabled)) && !firecrawlAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Firecrawl Cloud is enabled but will be skipped until an API key is configured.</div>}
     </Section>
-    <div className="mb-4 flex items-center gap-2 rounded-lg border p-3 text-sm">
-      {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}
-      <span>{health.healthy ? 'Workspace controller is healthy' : health.configured ? health.detail ?? 'Workspace controller is unavailable' : 'Controller URL and token are not configured in deployment secrets'}</span>
-    </div>
     <SaveBar onSave={async () => {
       const [, savedWeb] = await Promise.all([
         apiRequest('/api/admin/settings', { method: 'PATCH', body: { agent: value } }),
