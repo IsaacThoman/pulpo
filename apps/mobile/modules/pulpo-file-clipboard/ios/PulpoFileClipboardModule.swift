@@ -47,5 +47,28 @@ public final class PulpoFileClipboardModule: Module {
         view.setReduceMotion(value)
       }
     }
+
+    View(HistoryChatContextMenuView.self) {
+      Events("onAction", "onPress")
+
+      Prop("pinned") { (view, value: Bool) in
+        view.setPinned(value)
+      }
+      Prop("removeChatLabel") { (view, value: String) in
+        view.setRemoveChatLabel(value)
+      }
+      Prop("previewTitle") { (view, value: String) in
+        view.setPreviewTitle(value)
+      }
+      Prop("previewBody") { (view, value: String) in
+        view.setPreviewBody(value)
+      }
+      Prop("previewMetadata") { (view, value: String) in
+        view.setPreviewMetadata(value)
+      }
+      Prop("previewImageURI") { (view, value: String) in
+        view.setPreviewImageURI(value)
+      }
+    }
   }
 }
