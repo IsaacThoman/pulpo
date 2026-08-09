@@ -33,6 +33,7 @@ import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImag
 import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
+import { resolveModelParameters } from './model-parameters.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -191,14 +192,6 @@ async function contextualInput(
     if (updated) await publishSnapshot(toSnapshot(updated))
   }
   return { input: [...context, ...compacted.conversation, ...(record.response.input as unknown[])], compactionItems: compacted.item ? [compacted.item] : [] }
-}
-
-async function resolvedParameters(record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect }): Promise<Record<string, unknown>> {
-  const allowed = new Set(record.model.allowedParameters as string[])
-  const reserved = new Set(['model', 'input', 'stream', 'store', 'metadata'])
-  const result = Object.fromEntries(Object.entries(record.model.defaultParameters as Record<string, unknown>).filter(([key]) => allowed.has(key) && !reserved.has(key)))
-  for (const [key, value] of Object.entries(record.response.parameters as Record<string, unknown>)) if (allowed.has(key) && !reserved.has(key)) result[key] = value
-  return result
 }
 
 class GenerationAttemptError extends Error {
@@ -371,7 +364,7 @@ async function processGenerationAttempt(
   if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
-    const parameters = await resolvedParameters(record)
+    const parameters = resolveModelParameters(record.model, record.response.parameters)
     const upstreamPayload = {
       ...(parameters as Record<string, never>),
       model: record.model.upstreamModelId,

@@ -39,6 +39,8 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { messagesFromAgentContext, resolveAgentParentMessages } from './history.js'
+import { resolveModelParameters } from '../responses/model-parameters.js'
+import { agentThinkingLevel } from './model-parameters.js'
 
 function assistantText(message: AssistantMessage): string {
   return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
@@ -363,13 +365,14 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   }
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
+  const initialParameters = resolveModelParameters(active.model, record.response.parameters)
   agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(record.model.systemPrompt, record.model.agentInstructions),
       model: active.piModel,
       tools: [...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile), ...configuredWebTools],
       messages: resumedMessages,
-      thinkingLevel: 'medium',
+      thinkingLevel: agentThinkingLevel(initialParameters),
     },
     streamFn: async (model, context, options) => {
       const thresholdTokens = effectiveAgentCompactionThreshold(
@@ -397,10 +400,19 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
         throw new Error('Agent context remains above the model context window after compaction')
       }
+      const parameters = resolveModelParameters(active.model, record.response.parameters)
       return streams.streamSimple(
         model as Model<'openai-responses'>,
         preparedContext,
-        { ...options, apiKey: active.apiKey, maxTokens: active.model.maxOutputTokens, timeoutMs: active.provider.requestTimeoutMs, maxRetries: active.model.maxRetries },
+        {
+          ...options,
+          apiKey: active.apiKey,
+          reasoning: agentThinkingLevel(parameters, options?.reasoning),
+          samplingParams: { ...options?.samplingParams, ...parameters },
+          maxTokens: active.model.maxOutputTokens,
+          timeoutMs: active.provider.requestTimeoutMs,
+          maxRetries: active.model.maxRetries,
+        },
       )
     },
     toolExecution: 'sequential',
