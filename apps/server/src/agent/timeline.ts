@@ -70,9 +70,11 @@ function pushAssistantParts(
 
   for (const [contentIndex, part] of content.entries()) {
     if (part.type === 'thinking') {
+      const thinking = part.thinking ?? ''
+      if (!thinking.trim()) continue
       const durationMs = pendingReasoningDuration
       pendingReasoningDuration = undefined
-      output.push(reasoningItem(part.thinking ?? '', status, durationMs, turn, contentIndex))
+      output.push(reasoningItem(thinking, status, durationMs, turn, contentIndex))
       continue
     }
     if (part.type === 'text') {

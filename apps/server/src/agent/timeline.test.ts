@@ -82,6 +82,28 @@ describe('buildAgentOutput', () => {
     expect((output[1] as { status?: string }).status).toBe('in_progress')
   })
 
+  it('omits empty thinking placeholders while preserving emitted reasoning', () => {
+    const output = buildAgentOutput({
+      skipMessageCount: 0,
+      toolItems: new Map(),
+      streaming: true,
+      turnDurationsMs: new Map([[1, 750]]),
+      messages: [{
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: '   ' },
+          { type: 'thinking', thinking: 'Actual reasoning' },
+          { type: 'text', text: 'Answer' },
+        ],
+      } as never],
+    })
+
+    expect(output).toMatchObject([
+      { type: 'reasoning', summary: [{ text: 'Actual reasoning' }], durationMs: 750 },
+      { type: 'message', content: [{ text: 'Answer' }] },
+    ])
+  })
+
   it('places an attached file immediately after its tool call', () => {
     const output = buildAgentOutput({
       skipMessageCount: 0,

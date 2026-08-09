@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest'
 import { buildLegacyMessageTimeline, buildMessageTimeline } from './timeline'
 
 describe('buildMessageTimeline', () => {
+  it('ignores empty active reasoning while ordinary answer text streams', () => {
+    expect(buildMessageTimeline([
+      { type: 'reasoning', status: 'in_progress', summary: [{ text: '   ' }] },
+      { type: 'message', status: 'in_progress', content: [{ text: 'Answer in progress' }] },
+    ], true)).toEqual([{ kind: 'text', text: 'Answer in progress' }])
+  })
+
+  it('shows active reasoning after reasoning text is emitted', () => {
+    expect(buildMessageTimeline([
+      { type: 'reasoning', status: 'in_progress', summary: [{ text: 'Checking constraints' }] },
+    ], true)).toMatchObject([{
+      kind: 'activity',
+      active: true,
+      steps: [{ kind: 'reasoning', text: 'Checking constraints', active: true }],
+    }])
+  })
+
   it('preserves reasoning, tools, and assistant turns in server order', () => {
     const timeline = buildMessageTimeline([
       { type: 'reasoning', status: 'completed', summary: [{ text: 'Plan **A**' }], durationMs: 800 },
@@ -59,16 +76,25 @@ describe('buildLegacyMessageTimeline', () => {
     })).toEqual([])
   })
 
-  it('shows an active reasoning item only after reasoning actually starts', () => {
+  it('ignores an empty legacy reasoning placeholder', () => {
     expect(buildLegacyMessageTimeline({
       reasoning: '',
+      text: '',
+      streaming: true,
+      showReasoning: true,
+    })).toEqual([])
+  })
+
+  it('shows legacy reasoning once text is emitted', () => {
+    expect(buildLegacyMessageTimeline({
+      reasoning: 'Checking constraints',
       text: '',
       streaming: true,
       showReasoning: true,
     })).toMatchObject([{
       kind: 'activity',
       active: true,
-      steps: [{ kind: 'reasoning', text: '', active: true }],
+      steps: [{ kind: 'reasoning', text: 'Checking constraints', active: true }],
     }])
   })
 

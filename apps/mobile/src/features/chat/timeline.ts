@@ -56,7 +56,7 @@ export function buildLegacyMessageTimeline({
   reasoningDurationMs,
 }: LegacyMessageTimelineInput): TimelineSegment[] {
   const segments: TimelineSegment[] = []
-  if (showReasoning && reasoning !== undefined && (reasoning || streaming)) {
+  if (showReasoning && reasoning?.trim()) {
     segments.push({
       kind: 'activity',
       active: streaming && !text,
@@ -119,16 +119,16 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
       continue
     }
     if (value.type === 'reasoning') {
-      activity ??= { kind: 'activity', steps: [], active: false }
       const text = textFromParts(value.summary)
       const active = value.status === 'in_progress'
-      if (text || active) {
+      if (text.trim()) {
+        activity ??= { kind: 'activity', steps: [], active: false }
         activity.steps.push({
           kind: 'reasoning', text, active,
           durationMs: typeof value.durationMs === 'number' ? value.durationMs : undefined,
         })
+        if (active) activity.active = true
       }
-      if (active) activity.active = true
       continue
     }
     if (value.type === 'pulpo_tool') {
