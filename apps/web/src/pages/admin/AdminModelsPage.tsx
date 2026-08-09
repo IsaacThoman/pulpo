@@ -181,7 +181,7 @@ export function AdminModelsPage() {
                 className="hover:text-destructive"
                 title="Delete"
                 onClick={() => {
-                  if (confirm(`Delete ${model.name}?`)) {
+                  if (confirm(`Delete ${model.name}? Historical references will be permanently reassigned to “unknown model”.`)) {
                     void apiRequest(`/api/admin/models/${model.id}`, { method: 'DELETE' }).then(() => Promise.all([load(), useCatalog.getState().load()]))
                   }
                 }}

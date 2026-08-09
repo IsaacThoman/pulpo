@@ -39,7 +39,7 @@ export function ModelSelector({
   const catalogModels = useCatalog((state) => state.models)
   const defaultModelId = useSettings((state) => state.defaultModelId)
   const setSetting = useSettings((state) => state.set)
-  const selected = catalogModels.find((m) => m.id === value) ?? catalogModels[0] ?? getCatalogModel(value)
+  const selected = catalogModels.find((m) => m.id === value) ?? getCatalogModel(value)
 
   const enabled = useMemo(() => catalogModels.filter((m) => m.enabled), [catalogModels])
   const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.providerGroupId))], [enabled])
