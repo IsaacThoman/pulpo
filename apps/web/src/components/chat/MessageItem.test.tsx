@@ -82,3 +82,75 @@ describe('assistant terminal error rendering', () => {
     expect(markup).toContain('role="alert"')
   })
 })
+
+describe('assistant streaming caret', () => {
+  it('shows the caret when streaming text is the timeline frontier', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Writing the answer',
+        outputItems: [
+          { type: 'message', content: [{ type: 'output_text', text: 'Writing the answer' }] },
+        ],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('stream-caret')
+  })
+
+  it('hides the caret when running tool activity follows text', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Let me check that.',
+        outputItems: [
+          { type: 'message', content: [{ type: 'output_text', text: 'Let me check that.' }] },
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'search', status: 'running', output: '' },
+        ],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).not.toContain('stream-caret')
+  })
+
+  it('shows the caret on text emitted after tool activity', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Here is what I found.',
+        outputItems: [
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'search', status: 'completed', output: 'result' },
+          { type: 'message', content: [{ type: 'output_text', text: 'Here is what I found.' }] },
+        ],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('stream-caret')
+  })
+
+  it('hides the caret when the response is complete', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'The answer is complete.',
+        outputItems: [
+          { type: 'message', content: [{ type: 'output_text', text: 'The answer is complete.' }] },
+        ],
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(markup).not.toContain('stream-caret')
+  })
+})
