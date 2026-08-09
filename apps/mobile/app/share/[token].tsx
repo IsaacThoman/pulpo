@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { GlassIconButton } from '@/components/GlassIconButton'
 import { SafeMarkdown } from '@/components/SafeMarkdown'
 import { useAppTheme } from '@/theme'
+import { CHAT_CONTENT_MAX } from '@/responsive'
 
 interface SharedResponse { id: string; input: unknown[]; output: unknown[]; modelId: string }
 interface SharedChat { chat: { title: string; modelId: string; createdAt: string }; responses: SharedResponse[] }
@@ -48,5 +49,5 @@ export default function SharedChatRoute() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 }, header: { height: 62, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }, headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700' }, content: { paddingHorizontal: 18, paddingBottom: 40 }, center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30 }, errorTitle: { fontSize: 20, fontWeight: '700' }, error: { textAlign: 'center', marginTop: 8, lineHeight: 20 }, intro: { alignItems: 'center', paddingVertical: 30 }, logo: { width: 50, height: 50, borderRadius: 16, marginBottom: 13 }, eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8 }, title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.6, textAlign: 'center', marginTop: 11 }, meta: { fontSize: 12, marginTop: 6 }, message: { maxWidth: '90%', borderRadius: 19, padding: 13, marginBottom: 16 }, role: { fontSize: 11, fontWeight: '800', marginBottom: 6 }, text: { fontSize: 16, lineHeight: 23 }, privacy: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginVertical: 20 },
+  root: { flex: 1 }, header: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 62, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', gap: 8 }, headerTitle: { flex: 1, textAlign: 'center', fontSize: 17, fontWeight: '700' }, content: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 18, paddingBottom: 40 }, center: { flex: 1, maxWidth: CHAT_CONTENT_MAX, width: '100%', alignSelf: 'center', alignItems: 'center', justifyContent: 'center', padding: 30 }, errorTitle: { fontSize: 20, fontWeight: '700' }, error: { textAlign: 'center', marginTop: 8, lineHeight: 20 }, intro: { alignItems: 'center', paddingVertical: 30 }, logo: { width: 50, height: 50, borderRadius: 16, marginBottom: 13 }, eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8 }, title: { fontSize: 24, fontWeight: '800', letterSpacing: -0.6, textAlign: 'center', marginTop: 11 }, meta: { fontSize: 12, marginTop: 6 }, message: { maxWidth: 720, borderRadius: 19, padding: 13, marginBottom: 16 }, role: { fontSize: 11, fontWeight: '800', marginBottom: 6 }, text: { fontSize: 16, lineHeight: 23 }, privacy: { fontSize: 11, lineHeight: 16, textAlign: 'center', marginVertical: 20 },
 })

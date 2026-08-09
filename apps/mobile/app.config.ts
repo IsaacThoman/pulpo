@@ -12,7 +12,7 @@ const config: ExpoConfig = {
   slug: 'pulpo',
   owner: 'isaacthoman',
   version: appVersion,
-  orientation: 'portrait',
+  orientation: 'default',
   scheme: 'pulpo',
   icon: './assets/pulpo-app-icon.png',
   userInterfaceStyle: 'automatic',
@@ -20,7 +20,8 @@ const config: ExpoConfig = {
   ios: {
     bundleIdentifier: 'com.isaacthoman.pulpo',
     buildNumber: iosBuildNumber,
-    supportsTablet: false,
+    supportsTablet: true,
+    requireFullScreen: false,
     appleTeamId: 'PX72AL9366',
     icon: './assets/pulpo-app-icon.png',
     associatedDomains: ['applinks:pulpo.baby'],

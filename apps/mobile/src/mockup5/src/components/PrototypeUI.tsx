@@ -39,6 +39,7 @@ import {
   tint,
 } from '@expo/ui/swift-ui/modifiers';
 import { useAppTheme } from '../theme';
+import { SETTINGS_CONTENT_MAX } from '../../../responsive';
 
 export function Screen({ children, scroll = true, style }: { children: ReactNode; scroll?: boolean; style?: ViewStyle }) {
   const theme = useAppTheme();
@@ -179,7 +180,7 @@ export function EmptyState({ icon, title, detail, action }: { icon: string; titl
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 }, screenContent: { paddingHorizontal: 18, paddingBottom: 32 }, header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }, iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, iconButtonPlaceholder: { width: 44 }, headerCenter: { flex: 1, alignItems: 'center' }, headerTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.35 }, headerSubtitle: { fontSize: 11, marginTop: 1 }, headerRight: { width: 44, alignItems: 'flex-end' },
+  flex: { flex: 1 }, screenContent: { width: '100%', maxWidth: SETTINGS_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 18, paddingBottom: 32 }, header: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }, iconButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' }, iconButtonPlaceholder: { width: 44 }, headerCenter: { flex: 1, alignItems: 'center' }, headerTitle: { fontSize: 18, fontWeight: '700', letterSpacing: -0.35 }, headerSubtitle: { fontSize: 11, marginTop: 1 }, headerRight: { width: 44, alignItems: 'flex-end' },
   glassFill: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }, pressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
   card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 20, overflow: 'hidden', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } }, sectionTitleRow: { marginTop: 22, marginBottom: 8, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, sectionTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase' },
   row: { minHeight: 60, paddingHorizontal: 14, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 11 }, rowIcon: { width: 30, height: 30, borderRadius: 9, alignItems: 'center', justifyContent: 'center' }, rowText: { minWidth: 0, flex: 1 }, rowTitle: { fontSize: 15, fontWeight: '600' }, rowDetail: { fontSize: 12, marginTop: 2, lineHeight: 16 }, rowValue: { fontSize: 14 },

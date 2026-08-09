@@ -174,6 +174,14 @@ import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatConten
 import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 import { TemporaryChatHeaderView as PersistentNativeTemporaryChatHeaderView } from '../native/TemporaryChatHeaderView';
+import {
+  CHAT_CONTENT_MAX,
+  DRAWER_MAX_WIDTH,
+  DRAWER_TRAILING_PEEK,
+  responsiveHorizontalPadding,
+  SIDEBAR_WIDTH,
+  usesPersistentSidebar,
+} from '../responsive';
 
 type ChatScrollViewProps = ScrollViewProps & {
   freezeKeyboardLayout: boolean;
@@ -1137,8 +1145,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const { width } = useWindowDimensions();
   const isDark = useColorScheme() === 'dark';
   const { reduceMotion } = useAccessibilityPreferences();
-  const peek = 64;
-  const openOffset = width - peek;
+  const persistentSidebar = usesPersistentSidebar(width);
+  const drawerWidth = Math.min(Math.max(width - DRAWER_TRAILING_PEEK, 0), DRAWER_MAX_WIDTH);
+  const openOffset = drawerWidth;
 
   const slideX = useSharedValue(0);
   const gestureStartX = useSharedValue(0);
@@ -1195,6 +1204,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, []);
 
   useEffect(() => {
+    if (!persistentSidebar) return;
+    setPanelOpen(false);
+    slideX.value = 0;
+  }, [persistentSidebar, slideX]);
+
+  useEffect(() => {
     if (prototypeModels.some((model) => model.id === selectedModelId)) return;
     setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
   }, [defaultModelId, prototypeModels, selectedModelId]);
@@ -1232,6 +1247,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [navigation, route.params?.chatId, storedChats]);
 
   const animatePanel = useCallback((open: boolean, velocity = 0) => {
+    if (persistentSidebar) return;
     setPanelOpen(open);
     if (open) Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1243,7 +1259,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       mass: 0.9,
       overshootClamping: true,
     });
-  }, [openOffset, reduceMotion, slideX]);
+  }, [openOffset, persistentSidebar, reduceMotion, slideX]);
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
@@ -1273,7 +1289,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [finishPanelGesture, openOffset, reduceMotion, slideX]);
 
   const openPanelGesture = useMemo(() => Gesture.Pan()
-    .enabled(!panelOpen)
+    .enabled(!persistentSidebar && !panelOpen)
     .activeOffsetX(10)
     .failOffsetY([-12, 12])
     .onStart(() => {
@@ -1288,12 +1304,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       gestureStartX,
       openOffset,
       panelOpen,
+      persistentSidebar,
       settlePanelGesture,
       slideX,
     ]);
 
   const closePanelGesture = useMemo(() => Gesture.Pan()
-    .enabled(panelOpen)
+    .enabled(!persistentSidebar && panelOpen)
     .activeOffsetX([-10, 10])
     .failOffsetY([-12, 12])
     .onStart(() => {
@@ -1306,6 +1323,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       gestureStartX,
       openOffset,
       panelOpen,
+      persistentSidebar,
       settlePanelGesture,
       slideX,
     ]);
@@ -1316,6 +1334,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 
   const mainAnimatedStyle = useAnimatedStyle(() => {
+    if (persistentSidebar) {
+      return { transform: [{ translateX: 0 }, { scale: 1 }] };
+    }
     const progress = openOffset > 0 ? slideX.value / openOffset : 0;
     return {
       transform: [
@@ -1323,10 +1344,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         { scale: reduceMotion ? 1 : interpolate(progress, [0, 1], [1, 0.965]) },
       ],
     };
-  }, [openOffset, reduceMotion]);
+  }, [openOffset, persistentSidebar, reduceMotion]);
   const panelAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
-  }), [openOffset, reduceMotion]);
+    transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
+  }), [openOffset, persistentSidebar, reduceMotion]);
   const legacyChats = useMemo(() => visibleHistoryChats(storedChats).map(prototypeChatToLegacy), [storedChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
@@ -1787,15 +1808,18 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
         {/* History page, revealed underneath as the chat view slides right */}
         <Reanimated.View
-          accessibilityElementsHidden={!panelOpen}
-          importantForAccessibility={!panelOpen ? 'no-hide-descendants' : 'auto'}
-          style={[StyleSheet.absoluteFill, panelAnimatedStyle]}
+          accessibilityElementsHidden={!persistentSidebar && !panelOpen}
+          importantForAccessibility={!persistentSidebar && !panelOpen ? 'no-hide-descendants' : 'auto'}
+          style={persistentSidebar
+            ? [styles.persistentPanel, panelAnimatedStyle]
+            : [styles.drawerPanel, { width: drawerWidth }, panelAnimatedStyle]}
         >
           <HistoryPanel
             chats={legacyChats}
             activeChatId={activeChatId}
             drawerOpen={panelOpen}
             loading={!productionScopeReady}
+            persistent={persistentSidebar}
             onSelectChat={selectChat}
             onNewChat={() => { newChat(); animatePanel(false); }}
             onOpenSettings={() => {
@@ -1808,9 +1832,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
         {/* Main chat view sliding over to the right */}
         <Reanimated.View
-          accessibilityElementsHidden={panelOpen}
-          importantForAccessibility={panelOpen ? 'no-hide-descendants' : 'auto'}
-          style={[styles.mainView, mainAnimatedStyle]}
+          accessibilityElementsHidden={!persistentSidebar && panelOpen}
+          importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'}
+          style={[persistentSidebar ? styles.persistentMainView : styles.mainView, mainAnimatedStyle]}
         >
           <ChatView
             messages={messages}
@@ -1833,6 +1857,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
             onOpenPanel={() => animatePanel(true)}
+            persistentSidebar={persistentSidebar}
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
@@ -1846,7 +1871,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             }}
           />
           {/* Tap catcher while the panel is open */}
-          {panelOpen && (
+          {!persistentSidebar && panelOpen && (
             <Pressable accessibilityLabel="Close chats" accessibilityRole="button" style={StyleSheet.absoluteFill} onPress={() => animatePanel(false)} />
           )}
         </Reanimated.View>
@@ -2722,7 +2747,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
           ]}
         >
           <SwiftUIRNHostView matchContents>
-            <Text pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
+            <Text maxFontSizeMultiplier={1.6} pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
           </SwiftUIRNHostView>
         </SwiftUIButton>
       </SwiftUIHost>
@@ -2735,14 +2760,14 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
       onPress={onPress}
       style={({ pressed }) => [styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
     >
-      <Text style={styles.suggestionLabel}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.6} style={styles.suggestionLabel}>{label}</Text>
     </Pressable>
   );
 }
 
 function ChatView({
   messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, temporary, expired, savingTemporary, onTemporaryChange,
+  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, temporary, expired, savingTemporary, onTemporaryChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -2763,6 +2788,7 @@ function ChatView({
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onStop: () => void;
   onOpenPanel: () => void;
+  persistentSidebar: boolean;
   onOpenModelPicker: () => void;
   onSelectModel: (model: Model) => void;
   onSelectPreset: (presetId: string, choiceId: string) => void;
@@ -2776,7 +2802,8 @@ function ChatView({
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
-  const { fontScale, height: windowHeight } = useWindowDimensions();
+  const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
+  const horizontalPadding = responsiveHorizontalPadding(windowWidth);
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -3360,6 +3387,47 @@ function ChatView({
       : withSpring(target, { damping: 18, stiffness: 220, mass: 0.8 });
   }, [headerAction, headerExpansionProgress, reduceMotion]);
 
+  const emptyLandingContent = (
+    <View style={styles.emptyState}>
+      <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
+        <View style={styles.emptyModelLineWrap}>
+          <Reanimated.View
+            accessibilityElementsHidden={!temporary}
+            accessibilityLabel="Temporary chat"
+            pointerEvents="none"
+            style={[styles.temporaryLabel, temporaryLabelAnimatedStyle]}
+          >
+            <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
+            <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
+          </Reanimated.View>
+          <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
+            <ModelMark model={model} size={48} />
+            <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
+          </View>
+        </View>
+        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{model.lab}</Text>
+      </Reanimated.View>
+      <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+        <View
+          onLayout={(event) => {
+            suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
+          }}
+          style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
+        >
+          {suggestions.map((suggestion, index) => (
+            <SuggestedPromptButton
+              accessible={accessibilityLayout}
+              key={`${suggestion.id}:${index}`}
+              label={suggestion.label}
+              onPress={() => submitSuggestion(suggestion.message)}
+              temporary={temporary}
+            />
+          ))}
+        </View>
+      </Reanimated.View>
+    </View>
+  );
+
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
       <View
@@ -3372,9 +3440,11 @@ function ChatView({
       >
         {/* Header */}
         <AppHeader>
-          <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} selected={temporary} />
+          {persistentSidebar
+            ? <View accessibilityElementsHidden importantForAccessibility="no" style={styles.headerButtonPlaceholder} />
+            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} selected={temporary} />}
           <Reanimated.View style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
-            {Platform.OS === 'ios' ? (
+            {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} temporary={temporary} />
             ) : (
               <Pressable
@@ -3445,60 +3515,36 @@ function ChatView({
         <View
           accessibilityLabel="Loading conversation"
           accessibilityRole="progressbar"
-          style={[styles.emptyConversation, { paddingTop: headerOverlayHeight + 16 }]}
+          style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
         >
           <ActivityIndicator color={COLORS.muted} />
         </View>
       ) : empty ? (
-        // The landing surface is intentionally not a scroll view. Keeping it
-        // outside FlatList prevents iOS keyboard focus from retaining a stale
-        // content offset and clipping the identity above its resting position.
-        <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, { paddingTop: headerOverlayHeight + 16 }]}>
-          <View style={styles.emptyState}>
-            <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
-              <View style={styles.emptyModelLineWrap}>
-                <Reanimated.View
-                  accessibilityElementsHidden={!temporary}
-                  accessibilityLabel="Temporary chat"
-                  pointerEvents="none"
-                  style={[styles.temporaryLabel, temporaryLabelAnimatedStyle]}
-                >
-                  <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
-                  <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
-                </Reanimated.View>
-                <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
-                  <ModelMark model={model} size={48} />
-                  <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
-                </View>
-              </View>
-              <Text style={styles.emptyProvider}>{model.lab}</Text>
-            </Reanimated.View>
-            <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
-              <View
-                onLayout={(event) => {
-                  suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
-                }}
-                style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
-              >
-                {suggestions.map((suggestion, index) => (
-                  <SuggestedPromptButton
-                    accessible={accessibilityLayout}
-                    key={`${suggestion.id}:${index}`}
-                    label={suggestion.label}
-                    onPress={() => submitSuggestion(suggestion.message)}
-                    temporary={temporary}
-                  />
-                ))}
-              </View>
-            </Reanimated.View>
+        accessibilityLayout ? (
+          <ScrollView
+            alwaysBounceVertical
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onTouchStart={Keyboard.dismiss}
+            showsVerticalScrollIndicator={false}
+            style={[styles.flex, styles.chatContent]}
+          >
+            {emptyLandingContent}
+          </ScrollView>
+        ) : (
+          // Normal-size landing stays outside a scroll view so keyboard focus
+          // cannot retain a stale offset and clip the identity.
+          <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}>
+            {emptyLandingContent}
           </View>
-        </View>
+        )
       ) : (
         /* The full-screen transcript scrolls beneath the transparent status/header overlay. */
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, { paddingTop: headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
           initialNumToRender={10}
@@ -3535,7 +3581,7 @@ function ChatView({
       )}
 
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
-        <View style={[styles.composerWrap, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+        <View style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}>
             <Glass
               interactive
               style={styles.composer}
@@ -3563,6 +3609,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
+                maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
@@ -3841,11 +3888,12 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   </Reanimated.View>;
 }
 
-function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings }: {
+function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings }: {
   chats: Chat[];
   activeChatId: string | null;
   drawerOpen: boolean;
   loading: boolean;
+  persistent: boolean;
   onSelectChat: (chat: Chat) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
@@ -3877,8 +3925,8 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
     void nativeSearchRef.current?.blur();
   }, []);
   useEffect(() => {
-    if (!drawerOpen) dismissSearch();
-  }, [dismissSearch, drawerOpen]);
+    if (!drawerOpen && !persistent) dismissSearch();
+  }, [dismissSearch, drawerOpen, persistent]);
   useEffect(() => {
     searchQueryProgress.value = withTiming(search.length > 0 ? 1 : 0, { duration: 180 });
   }, [search, searchQueryProgress]);
@@ -3974,7 +4022,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, 
 
   return (
     <View style={styles.panelRoot}>
-      <SafeAreaView style={[styles.flex, styles.panelContent]} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
         <AppHeader>
           <View style={styles.profileChip}>
             <PulpoMark size={38} />
@@ -4197,7 +4245,9 @@ function NativeModelSheet({ visible, selected, models: availableModels, onClose,
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  root: { flex: 1, backgroundColor: COLORS.panel },
+  root: { flex: 1, flexDirection: 'row', backgroundColor: COLORS.panel },
+  drawerPanel: { position: 'absolute', top: 0, bottom: 0, left: 0 },
+  persistentPanel: { width: SIDEBAR_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: COLORS.lineSoft },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -4212,9 +4262,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: -10, height: 0 },
     backgroundColor: COLORS.background,
   },
+  persistentMainView: { flex: 1, minWidth: 0, overflow: 'hidden', backgroundColor: COLORS.background },
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
   chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
-  appHeader: { height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  headerButtonPlaceholder: { width: 44, height: 44 },
   headerActionExpanded: { width: 88, height: 44, alignItems: 'flex-end' },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
@@ -4236,9 +4288,11 @@ const styles = StyleSheet.create({
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
-  conversation: { paddingHorizontal: 18, paddingBottom: 156 },
-  emptyConversation: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingBottom: 156 },
-  emptyState: { alignItems: 'center' },
+  chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
+  conversation: { paddingBottom: 156 },
+  emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
+  emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
+  emptyState: { width: '100%', maxWidth: 720, alignSelf: 'center', alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
   emptyModelLineWrap: { position: 'relative', alignItems: 'center' },
   temporaryLabel: { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
@@ -4333,7 +4387,7 @@ const styles = StyleSheet.create({
   suggestionLabel: { color: COLORS.textSoft, fontSize: 13, lineHeight: 18 },
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
-  composerWrap: { paddingHorizontal: 12, paddingTop: 6 },
+  composerWrap: { paddingTop: 6 },
   composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
@@ -4369,7 +4423,7 @@ const styles = StyleSheet.create({
   sendDisabled: { backgroundColor: COLORS.secondary },
 
   optionModal: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000044' },
-  optionSheet: { backgroundColor: COLORS.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 20, paddingBottom: 28 },
+  optionSheet: { width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: COLORS.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 20, paddingBottom: 28 },
   optionTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.4 },
   optionSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: 14 },
   optionRow: { minHeight: 52, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -4377,7 +4431,6 @@ const styles = StyleSheet.create({
 
   // History panel
   panelRoot: { flex: 1, backgroundColor: COLORS.panel },
-  panelContent: { paddingRight: 72 },
   profileChip: { flexDirection: 'row', alignItems: 'center', gap: 11 },
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
@@ -4418,7 +4471,7 @@ const styles = StyleSheet.create({
   nativeModalAnchorHost: { position: 'absolute', width: 1, height: 1, right: 0, top: 0 },
   nativeModelAssetHost: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   sheet: { flex: 1, backgroundColor: COLORS.background },
-  sheetSafe: { flex: 1, paddingHorizontal: 18 },
+  sheetSafe: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: 18 },
   sheetGrabber: { width: 36, height: 5, borderRadius: 3, backgroundColor: COLORS.fillStrong, alignSelf: 'center', marginTop: 8, marginBottom: 18 },
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   sheetTitle: { color: COLORS.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
