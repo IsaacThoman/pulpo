@@ -110,7 +110,7 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     const configured = Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN)
     let controller: { configured: boolean; healthy: boolean; warmCapacity: number; active: number; detail?: string } = { configured, healthy: false, warmCapacity: settings.warmCapacity, active: 0 }
     let controllerWorkspaces: Array<{
-      id: string; name: string; leaseId: string | null; chatId: string | null; lifecycleState: string; phase: string; ready: boolean; activeOperations: number
+      id: string; name: string; leaseId: string | null; instanceId: string | null; chatId: string | null; lifecycleState: string; phase: string; ready: boolean; activeOperations: number
       createdAt: string; lastUsedAt: string | null; idleExpiresAt: string | null; hardExpiresAt: string | null; deletionStartedAt: string | null
       imageDigest: string | null; restartCount: number
     }> = []

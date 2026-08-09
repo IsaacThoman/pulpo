@@ -48,6 +48,7 @@ const configSchema = z.object({
   WORKSPACE_CONTROLLER_URL: optionalEnvironmentValue(z.url()),
   WORKSPACE_CONTROLLER_TOKEN: optionalEnvironmentValue(z.string().min(32)),
   WORKSPACE_CONTROLLER_CA_CERT_BASE64: optionalEnvironmentValue(z.string().min(1)),
+  PULPO_INSTANCE_ID: optionalEnvironmentValue(z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/)),
 })
 
 export type Config = z.infer<typeof configSchema>
@@ -61,6 +62,23 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
 export function getConfig(): Config {
   cached ??= parseConfig(process.env)
   return cached
+}
+
+function fqdnHostname(value: string | undefined): string | undefined {
+  const first = value?.split(',')[0]?.trim()
+  if (!first) return undefined
+  try {
+    return new URL(first.includes('://') ? first : `https://${first}`).hostname
+  } catch {
+    return undefined
+  }
+}
+
+export function getWorkspaceInstanceId(config = getConfig(), environment: NodeJS.ProcessEnv = process.env): string {
+  return config.PULPO_INSTANCE_ID
+    ?? fqdnHostname(environment.SERVICE_FQDN_WEB)
+    ?? fqdnHostname(environment.COOLIFY_FQDN)
+    ?? new URL(config.PUBLIC_URL).hostname
 }
 
 export function getAllowedOrigins(config = getConfig()): Set<string> {

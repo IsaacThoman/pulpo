@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getStorageCorsOrigins, isAllowedOrigin, parseConfig } from './config.js'
+import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, parseConfig } from './config.js'
 
 describe('server configuration', () => {
   it('treats empty optional workspace controller values as unset', () => {
@@ -19,6 +19,17 @@ describe('server configuration', () => {
       WORKSPACE_CONTROLLER_URL: 'not-a-url',
       WORKSPACE_CONTROLLER_TOKEN: 'short',
     })).toThrow()
+  })
+
+  it('resolves an explicit workspace instance id before deployment metadata', () => {
+    const config = parseConfig({ PUBLIC_URL: 'https://pulpo.example.com', PULPO_INSTANCE_ID: 'production' })
+    expect(getWorkspaceInstanceId(config, { SERVICE_FQDN_WEB: '42.preview.example.com' })).toBe('production')
+  })
+
+  it('uses a Coolify service FQDN as the preview workspace instance id', () => {
+    const config = parseConfig({ PUBLIC_URL: 'https://pulpo.example.com' })
+    expect(getWorkspaceInstanceId(config, { SERVICE_FQDN_WEB: 'https://42.preview.example.com' })).toBe('42.preview.example.com')
+    expect(getWorkspaceInstanceId(config, {})).toBe('pulpo.example.com')
   })
 
   it('keeps arbitrary localhost ports disabled by default', () => {

@@ -23,6 +23,9 @@ x-server: &server
     STORAGE_LOCAL_PATH: /app/data/objects
     S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
     S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
+    # Coolify generates this URL per production/preview deployment. Explicit
+    # S3_PUBLIC_ENDPOINT values still take precedence.
+    S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${SERVICE_URL_S3_8333:-http://localhost:8333}}
   volumes:
     - object_data:/app/data/objects
 
@@ -44,6 +47,12 @@ services:
       - api
     expose:
       - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
     restart: unless-stopped
 
   api:
@@ -119,6 +128,7 @@ services:
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
+      SERVICE_URL_S3_8333:
     expose:
       - "8333"
     depends_on:

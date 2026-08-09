@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
   workflow_dispatch:
 
 permissions:
@@ -13,11 +14,16 @@ concurrency:
   # Serialize main releases without cancelling the run that currently owns the
   # lock. A queued run refreshes main again in the release job below.
   group: ci-release-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
     name: Checks / ${{ matrix.name }}
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.action != 'closed' &&
+       github.event.action != 'unlabeled' &&
+       (github.event.action != 'labeled' || github.event.label.name == 'deploy-preview'))
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -47,6 +53,11 @@ jobs:
 
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.action != 'closed' &&
+       github.event.action != 'unlabeled' &&
+       (github.event.action != 'labeled' || github.event.label.name == 'deploy-preview'))
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -118,6 +129,122 @@ jobs:
           # the version for that exact main snapshot.
           git pull --ff-only origin main
           npm run release
+
+  deploy-preview:
+    name: Deploy Coolify preview
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'deploy-preview')
+    needs: [checks, cli-package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_APP_UUID }}
+      PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Coolify CLI
+        run: bash .github/scripts/setup-coolify.sh
+
+      - name: Deploy preview
+        id: deploy
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_APP_UUID:?COOLIFY_PULPO_APP_UUID repository variable is required}"
+          : "${PULL_REQUEST_ID:?pull request id is required}"
+          response="$(coolify deploy uuid "${COOLIFY_APP_UUID}" --pull-request-id "${PULL_REQUEST_ID}" --format json)"
+          deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
+          if [[ -z "${deployment_uuid}" ]]; then
+            echo "Coolify did not return a deployment UUID." >&2
+            exit 1
+          fi
+          echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
+          echo "Queued Coolify preview deployment ${deployment_uuid} for PR ${PULL_REQUEST_ID}."
+
+      - name: Wait for healthy preview
+        run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
+
+  cleanup-preview:
+    name: Delete Coolify preview
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action == 'closed' ||
+       (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview')) &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_APP_UUID }}
+      PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Coolify CLI
+        run: bash .github/scripts/setup-coolify.sh
+
+      - name: Delete preview
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_APP_UUID:?COOLIFY_PULPO_APP_UUID repository variable is required}"
+          : "${PULL_REQUEST_ID:?pull request id is required}"
+          if output="$(coolify app previews delete "${COOLIFY_APP_UUID}" "${PULL_REQUEST_ID}" --force --format json 2>&1)"; then
+            echo "Deleted Coolify preview for PR ${PULL_REQUEST_ID}."
+          elif grep -Eqi 'not found|404|does not exist' <<< "${output}"; then
+            echo "Coolify preview for PR ${PULL_REQUEST_ID} was already absent."
+          else
+            printf '%s\n' "${output}" >&2
+            exit 1
+          fi
+
+  deploy-production:
+    name: Deploy Coolify production
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.release.outputs.version != ''
+    needs: release
+    runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+    env:
+      COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_APP_UUID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Coolify CLI
+        run: bash .github/scripts/setup-coolify.sh
+
+      - name: Deploy production
+        id: deploy
+        run: |
+          set -euo pipefail
+          : "${COOLIFY_APP_UUID:?COOLIFY_PULPO_APP_UUID repository variable is required}"
+          response="$(coolify deploy uuid "${COOLIFY_APP_UUID}" --format json)"
+          deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
+          if [[ -z "${deployment_uuid}" ]]; then
+            echo "Coolify did not return a deployment UUID." >&2
+            exit 1
+          fi
+          echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
+          echo "Queued Coolify production deployment ${deployment_uuid}."
+
+      - name: Wait for healthy production
+        run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
 
   testflight:
     name: Build and submit iOS to TestFlight

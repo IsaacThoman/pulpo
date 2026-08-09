@@ -95,8 +95,9 @@ In Coolify:
 1. Assign the Pulpo application domain to the `web` service on port `80`.
    Its nginx gateway routes `/api`, `/v1`, `/health`, and `/socket.io` to the
    API and serves the React application for other requests.
-2. Assign a separate HTTPS object-storage domain to `seaweed-s3` on port
-   `8333` when using the bundled SeaweedFS profile.
+2. Coolify generates an HTTPS object-storage domain for `seaweed-s3` on port
+   `8333` through `SERVICE_URL_S3_8333`. You may replace it with a custom
+   domain in production.
 3. Set `PUBLIC_URL` to the Pulpo application origin, `S3_PUBLIC_ENDPOINT` to
    the object-storage origin, and `COOKIE_SECURE=true`.
 4. Configure strong values for `POSTGRES_PASSWORD`, `ENCRYPTION_KEY`,
@@ -107,6 +108,15 @@ In Coolify:
    `PULPO_ENV_FILE=.env.example`; Coolify injects configured values at runtime.
 5. Configure the health check on the `web` service as HTTP port `80`, path
    `/health`, expected status `200`.
+6. When agent mode is enabled, configure `WORKSPACE_CONTROLLER_URL` and
+   `WORKSPACE_CONTROLLER_TOKEN`. `PULPO_INSTANCE_ID` may be left empty because
+   Pulpo derives a stable owner id from Coolify's deployment-specific web FQDN;
+   set it explicitly to `production` if you prefer a fixed production label.
+
+Coolify preview deployments can use the same controller and Kubernetes stack.
+Give previews their own controller credential when they are not in the same
+trust domain as production, and configure preview agent settings with zero warm
+workspaces plus shorter idle and hard timeouts.
 
 No Pulpo service should publish `5432`, `6379`, `8080`, or `8333`
 directly on the Coolify host.

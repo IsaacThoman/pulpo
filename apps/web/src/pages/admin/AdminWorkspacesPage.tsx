@@ -15,7 +15,7 @@ interface WorkspaceRow {
   run: { status: string; modelTurns: number; toolCalls: number; startedAt: string | null } | null
 }
 interface OpenWorkspace {
-  id: string; name: string; leaseId: string | null; chatId: string | null; lifecycleState: string; phase: string; ready: boolean; activeOperations: number
+  id: string; name: string; leaseId: string | null; instanceId: string | null; chatId: string | null; lifecycleState: string; phase: string; ready: boolean; activeOperations: number
   createdAt: string; lastUsedAt: string | null; idleExpiresAt: string | null; hardExpiresAt: string | null; deletionStartedAt: string | null
   imageDigest: string | null; restartCount: number
   user: WorkspaceRow['user'] | null; chat: WorkspaceRow['chat'] | null; response: WorkspaceRow['response'] | null; run: WorkspaceRow['run']
@@ -105,7 +105,7 @@ export function AdminWorkspacesPage() {
           const warmPool = ['warm', 'warming'].includes(workspace.lifecycleState)
           return <tr key={workspace.id} className="border-b align-top hover:bg-muted/30">
             <td className="p-3"><Badge variant={workspace.lifecycleState === 'active' ? 'secondary' : workspace.lifecycleState === 'shutting_down' ? 'destructive' : 'outline'}>{stateLabel(workspace.lifecycleState)}</Badge></td>
-            <td className="max-w-40">{workspace.user ? <><div className="truncate font-medium">{workspace.user.name || workspace.user.email}</div><div className="truncate text-muted-foreground">{workspace.user.email}</div></> : <span className="text-muted-foreground">{warmPool ? 'Warm pool' : 'Unassigned'}</span>}</td>
+            <td className="max-w-40">{workspace.user ? <><div className="truncate font-medium">{workspace.user.name || workspace.user.email}</div><div className="truncate text-muted-foreground">{workspace.user.email}</div></> : <><span className="text-muted-foreground">{warmPool ? 'Warm pool' : 'Unassigned'}</span>{workspace.instanceId && <div className="truncate font-mono text-[10px] text-muted-foreground" title={workspace.instanceId}>{workspace.instanceId}</div>}</>}</td>
             <td className="max-w-48">{workspace.chat ? <><div className="truncate">{workspace.chat.title}</div><div className="truncate text-muted-foreground">{workspace.response?.modelId ?? 'Waiting for workspace'}</div></> : '—'}</td>
             <td className="max-w-44 font-mono text-[11px]"><div className="truncate" title={workspace.name}>{workspace.name}</div><div className="truncate text-muted-foreground" title={workspace.imageDigest ?? undefined}>{workspace.imageDigest?.split('@')[1]?.slice(0, 15) ?? workspace.leaseId?.slice(0, 12) ?? '—'}</div></td>
             <td className="tabular-nums">{duration(now - new Date(workspace.createdAt).getTime())}</td>
