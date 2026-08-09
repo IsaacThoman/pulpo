@@ -172,11 +172,20 @@ import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
-import { visibleHistoryChats } from '../features/chat/history';
+import {
+  historyChatSummary,
+  reuseHistoryChatSummaries,
+  visibleHistoryChats,
+  type HistoryChatSummary,
+} from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
+import {
+  HistoryChatContextMenuView,
+  type HistoryChatContextMenuAction,
+} from '../native/HistoryChatContextMenuView';
 import { TemporaryChatHeaderView as PersistentNativeTemporaryChatHeaderView } from '../native/TemporaryChatHeaderView';
 import {
   CHAT_CONTENT_MAX,
@@ -502,14 +511,6 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
 const REASONING_SAMPLE =
   'The user wants a practical answer, not an architecture lecture. Lead with the state boundary: durable messages in the store, transient tokens in the view. Mention the commit-once pattern and why it keeps rendering cheap.';
 
-function prototypeSection(updatedAt: number) {
-  const days = Math.floor((Date.now() - updatedAt) / 86_400_000);
-  if (days < 1) return 'Today';
-  if (days < 2) return 'Yesterday';
-  if (days < 7) return 'Previous 7 Days';
-  return 'Previous 30 Days';
-}
-
 const legacyMessageCache = new WeakMap<PrototypeMessage, { chatId: string; chatModelId: string; value: Message }>();
 const legacyChatCache = new WeakMap<PrototypeChat, Chat>();
 
@@ -554,14 +555,13 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
 function prototypeChatToLegacy(chat: PrototypeChat): Chat {
   const cached = legacyChatCache.get(chat);
   if (cached) return cached;
+  const summary = historyChatSummary(chat);
   const value = {
     id: chat.id,
     title: chat.title,
     modelId: chat.modelId,
-    time: chat.updatedAt > Date.now() - 86_400_000
-      ? new Date(chat.updatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-      : new Date(chat.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
-    section: chat.pinned ? 'Pinned' : prototypeSection(chat.updatedAt),
+    time: summary.time,
+    section: summary.section,
     messages: chat.messages.map((message) => prototypeMessageToLegacy(message, chat.id, chat.modelId)),
   };
   legacyChatCache.set(chat, value);
@@ -717,12 +717,15 @@ function formatAttachmentSize(size?: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
+const PULPO_MARK_URI = Image.resolveAssetSource(PULPO_MARK_SOURCE).uri;
+
 function PulpoMark({ size = 40 }: { size?: number }) {
   return (
     <Image
       accessibilityIgnoresInvertColors
       accessibilityLabel="Pulpo"
-      source={require('./assets/pulpo-smiley.png')}
+      source={PULPO_MARK_SOURCE}
       style={[styles.pulpoMark, { width: size, height: size, borderRadius: size / 2 }]}
     />
   );
@@ -1203,6 +1206,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeResponseId = useRef<string | null>(null);
   const activeResponseSubscription = useRef<(() => void) | null>(null);
+  const previousHistoryChats = useRef<HistoryChatSummary[]>([]);
   const pendingTemporaryStart = useRef<{
     chatId: string;
     promise: ReturnType<typeof startServerChat>;
@@ -1362,7 +1366,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, persistentSidebar, reduceMotion]);
-  const legacyChats = useMemo(() => visibleHistoryChats(storedChats).map(prototypeChatToLegacy), [storedChats]);
+  const historyChats = useMemo(() => {
+    const now = Date.now();
+    const projected = visibleHistoryChats(storedChats).map((chat) => historyChatSummary(chat, now));
+    return reuseHistoryChatSummaries(previousHistoryChats.current, projected);
+  }, [storedChats]);
+  useEffect(() => {
+    previousHistoryChats.current = historyChats;
+  }, [historyChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
   const messages = activeChat?.messages ?? [];
@@ -1373,21 +1384,23 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       : 'idle';
   const effectiveAssistantStatus = assistantStatus === 'idle' ? remoteAssistantStatus : assistantStatus;
 
-  const abandonActiveTemporaryChat = () => {
-    if (!activePrototypeChat?.temporary) return;
-    discardStoredChat(activePrototypeChat.id);
+  const abandonActiveTemporaryChat = useCallback(() => {
+    if (!activeChatId) return;
+    const chat = usePrototypeStore.getState().chats.find((candidate) => candidate.id === activeChatId);
+    if (!chat?.temporary) return;
+    discardStoredChat(chat.id);
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
-    discardOptimisticChat(namespace, activePrototypeChat.id);
-    queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, activePrototypeChat.id), exact: true });
-    for (const message of activePrototypeChat.messages) {
+    discardOptimisticChat(namespace, chat.id);
+    queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, chat.id), exact: true });
+    for (const message of chat.messages) {
       if (message.role !== 'assistant') continue;
       useRealtimeStore.getState().removeSnapshot(message.id);
       void deleteResponseCursor(namespace, message.id);
     }
-  };
+  }, [activeChatId, discardStoredChat, productionInstanceUrl, productionUserId, queryClient]);
 
-  const selectChat = (chat: Chat) => {
+  const selectChat = useCallback((chat: HistoryChatSummary) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
@@ -1396,9 +1409,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setAssistantStatus('idle');
     setStreamingSession(null);
     animatePanel(false);
-  };
+  }, [abandonActiveTemporaryChat, animatePanel]);
 
-  const newChat = (temporaryByDefault = false) => {
+  const newChat = useCallback((temporaryByDefault = false) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
@@ -1408,7 +1421,18 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setNewChatTemporary(temporaryByDefault);
     setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
     setInput('');
-  };
+  }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
+
+  const newChatFromHistory = useCallback(() => {
+    newChat();
+    animatePanel(false);
+  }, [animatePanel, newChat]);
+
+  const openSettingsFromHistory = useCallback(() => {
+    abandonActiveTemporaryChat();
+    Keyboard.dismiss();
+    navigation.navigate('Settings');
+  }, [abandonActiveTemporaryChat, navigation]);
 
   const saveActiveTemporaryChat = useCallback(async () => {
     if (!activeChatId || savingTemporaryChatId) return;
@@ -1834,18 +1858,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             : [styles.drawerPanel, { width: drawerWidth }, panelAnimatedStyle]}
         >
           <HistoryPanel
-            chats={legacyChats}
+            chats={historyChats}
             activeChatId={activeChatId}
             drawerOpen={panelOpen}
             loading={!productionScopeReady}
             persistent={persistentSidebar}
             onSelectChat={selectChat}
-            onNewChat={() => { newChat(); animatePanel(false); }}
-            onOpenSettings={() => {
-              abandonActiveTemporaryChat();
-              Keyboard.dismiss();
-              navigation.navigate('Settings');
-            }}
+            onNewChat={newChatFromHistory}
+            onOpenSettings={openSettingsFromHistory}
           />
         </Reanimated.View>
 
@@ -3843,9 +3863,9 @@ function NativeDrawerAction({ icon, label, value, onPress }: { icon: NativeButto
 }
 
 function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
-  folders: Array<{ id: string; name: string; chats: Chat[] }>;
+  folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
   onCreate: () => void;
-  onSelectChat: (chat: Chat) => void;
+  onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
@@ -3903,18 +3923,71 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   </Reanimated.View>;
 }
 
-function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings }: {
-  chats: Chat[];
+type HistoryChatAction = HistoryChatContextMenuAction;
+const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
+
+const HistoryChatRow = memo(function HistoryChatRow({ active, chat, previewText, removeChatLabel, onChatAction, onOpenActions, onSelectChat }: {
+  active: boolean;
+  chat: HistoryChatSummary;
+  previewText: string;
+  removeChatLabel: string;
+  onChatAction: (chat: HistoryChatSummary, action: HistoryChatAction) => void;
+  onOpenActions: (chat: HistoryChatSummary) => void;
+  onSelectChat: (chat: HistoryChatSummary) => void;
+}) {
+  const rowContent = <>
+    <View style={styles.flex}>
+      <Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text>
+    </View>
+    <Text style={styles.chatTime}>{chat.time}</Text>
+  </>;
+  if (Platform.OS === 'ios') return (
+    <HistoryChatContextMenuView
+      accessibilityLabel={chat.title}
+      accessibilityHint="Double tap to open. Long press for more actions."
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      pinned={chat.pinned}
+      removeChatLabel={removeChatLabel}
+      previewTitle={chat.title}
+      previewBody={previewText}
+      previewMetadata={`${chat.section} · ${chat.time}`}
+      previewImageURI={PULPO_MARK_URI}
+      onAction={(action) => onChatAction(chat, action)}
+      onPress={() => onSelectChat(chat)}
+      style={styles.chatContextMenuHost}
+    >
+      <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>
+        {rowContent}
+      </View>
+    </HistoryChatContextMenuView>
+  );
+  return (
+    <Pressable
+      accessibilityHint="Double tap to open. Long press for more actions."
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      delayLongPress={350}
+      onLongPress={() => onOpenActions(chat)}
+      onPress={() => onSelectChat(chat)}
+      style={({ pressed }) => [styles.chatRow, active && styles.chatRowActive, pressed && styles.navRowPressed]}
+    >
+      {rowContent}
+    </Pressable>
+  );
+});
+
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings }: {
+  chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
   loading: boolean;
   persistent: boolean;
-  onSelectChat: (chat: Chat) => void;
+  onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
 }) {
   const folders = usePrototypeStore((state) => state.folders);
-  const storedChats = usePrototypeStore((state) => state.chats);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const togglePin = usePrototypeStore((state) => state.togglePin);
@@ -3925,13 +3998,12 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const folderItems = useMemo(() => {
-    const folderIdByChat = new Map(storedChats.map((chat) => [chat.id, chat.folderId]));
     return folders.map((folder) => ({
       id: folder.id,
       name: folder.name,
-      chats: chats.filter((chat) => folderIdByChat.get(chat.id) === folder.id),
+      chats: chats.filter((chat) => chat.folderId === folder.id),
     }));
-  }, [chats, folders, storedChats]);
+  }, [chats, folders]);
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const searchQueryProgress = useSharedValue(search.length > 0 ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
@@ -3959,13 +4031,13 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
     [chats, search],
   );
   const sections = useMemo(() => {
-    const grouped = new Map<string, Chat[]>();
+    const grouped = new Map<string, HistoryChatSummary[]>();
     filtered.forEach((chat) => grouped.set(chat.section, [...(grouped.get(chat.section) ?? []), chat]));
     return Array.from(grouped, ([title, data]) => ({ title, data }));
   }, [filtered]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
-  const runChatAction = (chat: Chat, action: 'share' | 'move' | 'delete' | 'pin' | 'rename' | 'duplicate' | 'archive') => {
+  const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
     if (action === 'delete') {
       if (!requiresConfirmation) {
         Haptics.selectionAsync();
@@ -4006,26 +4078,13 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
     }
     if (action === 'duplicate') {
       void duplicateServerChat(chat.id).then((copy) => {
-        const source = storedChats.find((item) => item.id === chat.id);
+        const source = usePrototypeStore.getState().chats.find((item) => item.id === chat.id);
         upsertChat({ id: copy.id, title: copy.title, modelId: copy.modelId, pinned: copy.pinned, folderId: copy.folderId, temporary: copy.temporary, createdAt: Date.parse(copy.createdAt), updatedAt: Date.parse(copy.updatedAt), deletedAt: null, purgeAt: null, messages: source?.messages ?? [] });
       }).catch((error) => Alert.alert('Couldn’t duplicate chat', error instanceof Error ? error.message : undefined));
-      return;
     }
-    if (action === 'archive') {
-      trashChat(chat.id);
-      return;
-    }
-    const labels = {
-      move: 'Move to folder',
-      pin: 'Pin chat',
-      rename: 'Rename chat',
-      duplicate: 'Duplicate chat',
-      archive: 'Archive chat',
-    } as const;
-    Alert.alert(labels[action], `“${chat.title}”`);
-  };
+  }, [folders, moveChat, renameChat, requiresConfirmation, togglePin, trashChat, upsertChat]);
 
-  const fallbackChatActions = (chat: Chat) => {
+  const showChatActions = useCallback((chat: HistoryChatSummary) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Alert.alert(chat.title, undefined, [
       { text: 'Rename', onPress: () => runChatAction(chat, 'rename') },
@@ -4033,7 +4092,26 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
       { text: removeChatLabel, style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  };
+  }, [removeChatLabel, runChatAction]);
+
+  const selectHistoryChat = useCallback((chat: HistoryChatSummary) => {
+    dismissSearch();
+    onSelectChat(chat);
+  }, [dismissSearch, onSelectChat]);
+
+  const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
+    const source = usePrototypeStore.getState().chats.find((chat) => chat.id === item.id);
+    const previewText = source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+    return <HistoryChatRow
+      active={activeChatId === item.id}
+      chat={item}
+      previewText={previewText}
+      removeChatLabel={removeChatLabel}
+      onChatAction={runChatAction}
+      onOpenActions={showChatActions}
+      onSelectChat={selectHistoryChat}
+    />;
+  }, [activeChatId, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>
@@ -4070,7 +4148,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
             <Icon name="square.and.pencil" size={17} color={COLORS.textSoft} />
             <Text style={styles.navText}>New chat</Text>
           </Pressable>}
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={(chat) => { dismissSearch(); onSelectChat(chat); }} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
             style={styles.folderContextMenuHost}
             preview={(
               <View style={styles.folderContextPreview}>
@@ -4114,71 +4192,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
               <Text style={styles.noResults}>Loading chats…</Text>
             </View>
           ) : <Text style={styles.noResults}>{search ? `No chats match “${search}”` : 'No chats yet'}</Text>}
-          renderItem={({ item: chat }) => Platform.OS === 'ios' ? (
-            <SwiftUIHost ignoreSafeArea="all" matchContents style={styles.chatContextMenuHost}>
-              <SwiftUIContextMenu>
-                <SwiftUIContextMenu.Trigger>
-                  <SwiftUIRNHostView matchContents>
-                    <Pressable
-                      accessibilityHint="Double tap to open. Long press for more actions."
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: activeChatId === chat.id }}
-                      onPress={() => { dismissSearch(); onSelectChat(chat); }}
-                      style={({ pressed }) => [styles.chatRow, activeChatId === chat.id && styles.chatRowActive, pressed && styles.navRowPressed]}
-                    >
-                      <View style={styles.flex}>
-                        <Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text>
-                      </View>
-                      <Text style={styles.chatTime}>{chat.time}</Text>
-                    </Pressable>
-                  </SwiftUIRNHostView>
-                </SwiftUIContextMenu.Trigger>
-                <SwiftUIContextMenu.Preview>
-                  <SwiftUIRNHostView matchContents>
-                    <View style={styles.chatContextPreview}>
-                      <View style={styles.chatContextPreviewHeader}>
-                        <PulpoMark size={32} />
-                        <View style={styles.flex}>
-                          <Text style={styles.chatContextPreviewEyebrow}>PULPO CHAT</Text>
-                          <Text numberOfLines={1} style={styles.chatContextPreviewTitle}>{chat.title}</Text>
-                        </View>
-                      </View>
-                      <Text numberOfLines={4} style={styles.chatContextPreviewBody}>
-                        {chat.messages.at(-1)?.text || 'Start a new conversation with your selected model.'}
-                      </Text>
-                      <Text style={styles.chatContextPreviewMeta}>{chat.section} · {chat.time}</Text>
-                    </View>
-                  </SwiftUIRNHostView>
-                </SwiftUIContextMenu.Preview>
-                <SwiftUIContextMenu.Items>
-                  <SwiftUIControlGroup>
-                    <SwiftUIButton label="Share" systemImage="square.and.arrow.up" onPress={() => runChatAction(chat, 'share')} />
-                    <SwiftUIButton label="Move" systemImage="folder" onPress={() => runChatAction(chat, 'move')} />
-                    <SwiftUIButton label={removeChatLabel} role="destructive" systemImage="trash" onPress={() => runChatAction(chat, 'delete')} />
-                  </SwiftUIControlGroup>
-                  <SwiftUIDivider />
-                  <SwiftUIButton label="Pin chat" systemImage="pin" onPress={() => runChatAction(chat, 'pin')} />
-                  <SwiftUIButton label="Rename chat" systemImage="pencil" onPress={() => runChatAction(chat, 'rename')} />
-                  <SwiftUIButton label="Duplicate chat" systemImage="plus.square.on.square" onPress={() => runChatAction(chat, 'duplicate')} />
-                </SwiftUIContextMenu.Items>
-              </SwiftUIContextMenu>
-            </SwiftUIHost>
-          ) : (
-            <Pressable
-              accessibilityHint="Double tap to open. Long press for more actions."
-              accessibilityRole="button"
-              accessibilityState={{ selected: activeChatId === chat.id }}
-              delayLongPress={350}
-              onLongPress={() => fallbackChatActions(chat)}
-              onPress={() => { dismissSearch(); onSelectChat(chat); }}
-              style={({ pressed }) => [styles.chatRow, activeChatId === chat.id && styles.chatRowActive, pressed && styles.navRowPressed]}
-            >
-              <View style={styles.flex}>
-                <Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text>
-              </View>
-              <Text style={styles.chatTime}>{chat.time}</Text>
-            </Pressable>
-          )}
+          renderItem={renderHistoryChat}
           renderSectionHeader={({ section }) => <Text style={styles.sectionLabel}>{section.title}</Text>}
           sections={sections}
           showsVerticalScrollIndicator={false}
@@ -4189,7 +4203,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
       </SafeAreaView>
     </View>
   );
-}
+});
 
 function ModelSheet({ visible, selected, models, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
   if (Platform.OS === 'ios') return <NativeModelSheet visible={visible} selected={selected} models={models} onClose={onClose} onSelect={onSelect} />;
@@ -4475,12 +4489,6 @@ const styles = StyleSheet.create({
   chatRowActive: { backgroundColor: COLORS.secondary },
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
   chatTime: { color: COLORS.muted, fontSize: 12 },
-  chatContextPreview: { width: 320, minHeight: 176, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20, justifyContent: 'space-between', overflow: 'hidden' },
-  chatContextPreviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  chatContextPreviewEyebrow: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8 },
-  chatContextPreviewTitle: { color: COLORS.text, fontSize: 18, fontWeight: '600', letterSpacing: -0.35, marginTop: 2 },
-  chatContextPreviewBody: { color: COLORS.textSoft, fontSize: 14.5, lineHeight: 20, marginTop: 18 },
-  chatContextPreviewMeta: { color: COLORS.muted, fontSize: 11.5, marginTop: 16 },
   noResults: { color: COLORS.muted, fontSize: 13.5, textAlign: 'center', marginTop: 30 },
   // Model sheet
   nativeModalAnchorHost: { position: 'absolute', width: 1, height: 1, right: 0, top: 0 },
