@@ -33,5 +33,9 @@ describe('mobile theme contrast', () => {
     it(`${name} keeps accent button labels above 4.5:1`, () => {
       expect(contrastRatio(palette.accentText, palette.accent)).toBeGreaterThanOrEqual(4.5);
     });
+
+    it(`${name} keeps disabled button labels above 4.5:1`, () => {
+      expect(contrastRatio(palette.disabledText, palette.disabledBackground)).toBeGreaterThanOrEqual(4.5);
+    });
   }
 });
