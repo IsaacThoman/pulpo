@@ -14,15 +14,16 @@ x-server: &server
       condition: service_healthy
   restart: unless-stopped
   environment:
-    POSTGRES_HOST: postgres
+    POSTGRES_HOST: ${SERVICE_NAME_POSTGRES:-postgres}
     POSTGRES_PORT: 5432
     POSTGRES_USER: ${POSTGRES_USER:-pulpo}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulpo}
     POSTGRES_DATABASE: ${POSTGRES_DATABASE:-pulpo}
-    REDIS_URL: redis://redis:6379
+    REDIS_URL: redis://${SERVICE_NAME_REDIS:-redis}:6379
     STORAGE_LOCAL_PATH: /app/data/objects
     S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
     S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
+    S3_ENDPOINT: http://${SERVICE_NAME_SEAWEED_S3:-seaweed-s3}:8333
     # Coolify generates this URL per production/preview deployment. Explicit
     # S3_PUBLIC_ENDPOINT values still take precedence.
     S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${SERVICE_URL_S3_8333:-http://localhost:8333}}
@@ -45,6 +46,9 @@ services:
       dockerfile: Dockerfile.web
     depends_on:
       - api
+    environment:
+      API_HOST: ${SERVICE_NAME_API:-api}
+      NGINX_ENVSUBST_FILTER: ^API_HOST$
     expose:
       - "80"
     healthcheck:
@@ -108,14 +112,14 @@ services:
 
   seaweed-master:
     image: chrislusf/seaweedfs:4.29
-    command: ["master", "-ip=seaweed-master", "-mdir=/data"]
+    command: ["master", "-ip=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}", "-mdir=/data"]
     volumes:
       - seaweed_master_data:/data
     restart: unless-stopped
 
   seaweed-volume:
     image: chrislusf/seaweedfs:4.29
-    command: ["volume", "-mserver=seaweed-master:9333", "-ip=seaweed-volume", "-dir=/data", "-max=0"]
+    command: ["volume", "-mserver=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333", "-ip=${SERVICE_NAME_SEAWEED_VOLUME:-seaweed-volume}", "-dir=/data", "-max=0"]
     depends_on:
       - seaweed-master
     volumes:
@@ -124,7 +128,7 @@ services:
 
   seaweed-filer:
     image: chrislusf/seaweedfs:4.29
-    command: ["filer", "-master=seaweed-master:9333", "-ip=seaweed-filer"]
+    command: ["filer", "-master=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333", "-ip=${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}"]
     depends_on:
       - seaweed-master
       - seaweed-volume
@@ -134,7 +138,7 @@ services:
 
   seaweed-s3:
     image: chrislusf/seaweedfs:4.29
-    command: ["s3", "-filer=seaweed-filer:8888", "-ip.bind=0.0.0.0"]
+    command: ["s3", "-filer=${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}:8888", "-ip.bind=0.0.0.0"]
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
