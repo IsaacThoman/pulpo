@@ -113,7 +113,6 @@ export function Composer({
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const dragDepth = useRef(0)
   const attachmentsRef = useRef(attachments)
   const preservedDraftRef = useRef<{ value: string; attachments: PendingAttachment[] } | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
@@ -270,6 +269,44 @@ export function Composer({
   const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
     void uploadFiles(collectUploadFiles(list))
   }, [uploadFiles])
+
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) => event.dataTransfer?.types.includes('Files') ?? false
+    const showDropTarget = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      setDragging(true)
+    }
+    const allowDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+      setDragging(true)
+    }
+    const hideDropTarget = (event: DragEvent) => {
+      if (event.relatedTarget !== null) return
+      setDragging(false)
+    }
+    const dropFiles = (event: DragEvent) => {
+      if (!hasFiles(event)) return
+      event.preventDefault()
+      setDragging(false)
+      addFiles(event.dataTransfer?.files)
+    }
+
+    window.addEventListener('dragenter', showDropTarget)
+    window.addEventListener('dragover', allowDrop)
+    window.addEventListener('dragleave', hideDropTarget)
+    window.addEventListener('drop', dropFiles)
+    window.addEventListener('dragend', hideDropTarget)
+    return () => {
+      window.removeEventListener('dragenter', showDropTarget)
+      window.removeEventListener('dragover', allowDrop)
+      window.removeEventListener('dragleave', hideDropTarget)
+      window.removeEventListener('drop', dropFiles)
+      window.removeEventListener('dragend', hideDropTarget)
+    }
+  }, [addFiles])
 
   const clearDraft = () => {
     setValue('')
@@ -460,34 +497,6 @@ export function Composer({
     }
   }
 
-  const onDragEnter = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes('Files')) return
-    event.preventDefault()
-    dragDepth.current += 1
-    setDragging(true)
-  }
-
-  const onDragLeave = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes('Files')) return
-    event.preventDefault()
-    dragDepth.current = Math.max(0, dragDepth.current - 1)
-    if (dragDepth.current === 0) setDragging(false)
-  }
-
-  const onDragOver = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes('Files')) return
-    event.preventDefault()
-    event.dataTransfer.dropEffect = 'copy'
-  }
-
-  const onDrop = (event: React.DragEvent) => {
-    if (!event.dataTransfer.types.includes('Files')) return
-    event.preventDefault()
-    dragDepth.current = 0
-    setDragging(false)
-    addFiles(event.dataTransfer.files)
-  }
-
   const onPaste = (event: React.ClipboardEvent) => {
     let files = collectImageFiles(event.clipboardData?.items)
     if (!files.length) files = collectImageFiles(event.clipboardData?.files)
@@ -500,6 +509,33 @@ export function Composer({
 
   return (
     <div className={cn('w-full', centered && 'px-2')}>
+      {dragging && (
+        <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/35 backdrop-grayscale" role="status">
+          <div className="flex flex-col items-center gap-3 text-center text-white drop-shadow-sm">
+            <ImagePlus className="size-8" aria-hidden="true" />
+            <p className="text-base font-medium">Drop files to attach</p>
+          </div>
+        </div>
+      )}
+      {attachmentRestriction && (
+        <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
+          <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+          <span className="flex-1">
+            {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
+            {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
+            {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
+          </span>
+          {attachmentRestriction === 'enable_agent' && (
+            <button
+              type="button"
+              onClick={() => setSetting('agentModeEnabled', true)}
+              className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
+            >
+              Enable Agent
+            </button>
+          )}
+        </div>
+      )}
       {messageEdit && (
         <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 py-2 text-sm shadow-sm">
           <Pencil className="size-3.5 text-muted-foreground" />
@@ -578,22 +614,8 @@ export function Composer({
           (queuedMessages.length > 0 || messageEdit) && '-mt-px rounded-t-xl',
           temporary && 'border-violet-500/70 bg-violet-100/80 dark:border-violet-600/60 dark:bg-violet-950/45',
           temporary && 'border-dashed',
-          dragging && 'border-primary ring-2 ring-primary/25',
         )}
-        onDragEnter={onDragEnter}
-        onDragLeave={onDragLeave}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
       >
-        {dragging && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-primary/5 backdrop-blur-[1px]">
-            <div className="flex items-center gap-2 rounded-full border border-primary/30 bg-card px-3 py-1.5 text-sm font-medium text-foreground shadow-sm">
-              <ImagePlus className="size-4 text-primary" />
-              Drop files to attach
-            </div>
-          </div>
-        )}
-
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
             {attachments.map((attachment) => (
@@ -609,26 +631,6 @@ export function Composer({
                 onRemove={() => removeAttachment(attachment.localId)}
               />
             ))}
-          </div>
-        )}
-
-        {attachmentRestriction && (
-          <div role="status" className="mx-3 mt-2 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
-            <AlertCircle className="size-4 shrink-0" />
-            <span className="flex-1">
-              {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
-              {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
-              {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
-            </span>
-            {attachmentRestriction === 'enable_agent' && (
-              <button
-                type="button"
-                onClick={() => setSetting('agentModeEnabled', true)}
-                className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
-              >
-                Enable Agent
-              </button>
-            )}
           </div>
         )}
 
