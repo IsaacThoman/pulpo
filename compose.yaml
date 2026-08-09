@@ -87,6 +87,13 @@ services:
     command: ["sh", "-c", "node apps/server/dist/database/migrate.js && npm run start:api -w @pulpo/server"]
     expose:
       - "3000"
+    networks:
+      default:
+        aliases:
+          # Coolify suffixes Compose service names for pull request stacks.
+          # Keep a stable alias inside the preview's isolated network so the
+          # web proxy can use the same API_HOST in production and previews.
+          - api
 
   worker:
     <<: *server
@@ -107,6 +114,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      default:
+        aliases:
+          - postgres
     restart: unless-stopped
 
   redis:
@@ -121,6 +132,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      default:
+        aliases:
+          - redis
     restart: unless-stopped
 
   seaweed-master:
@@ -128,6 +143,10 @@ services:
     command: ["master", "-ip=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}", "-mdir=/data"]
     volumes:
       - seaweed_master_data:/data
+    networks:
+      default:
+        aliases:
+          - seaweed-master
     restart: unless-stopped
 
   seaweed-volume:
@@ -137,6 +156,10 @@ services:
       - seaweed-master
     volumes:
       - seaweed_volume_data:/data
+    networks:
+      default:
+        aliases:
+          - seaweed-volume
     restart: unless-stopped
 
   seaweed-filer:
@@ -147,6 +170,10 @@ services:
       - seaweed-volume
     volumes:
       - seaweed_filer_data:/data
+    networks:
+      default:
+        aliases:
+          - seaweed-filer
     restart: unless-stopped
 
   seaweed-s3:
@@ -160,6 +187,10 @@ services:
       - "8333"
     depends_on:
       - seaweed-filer
+    networks:
+      default:
+        aliases:
+          - seaweed-s3
     restart: unless-stopped
 
 volumes:
