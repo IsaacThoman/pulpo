@@ -13,6 +13,7 @@
     "dev:api": "npm run dev:api -w @pulpo/server",
     "dev:worker": "npm run dev:worker -w @pulpo/server",
     "dev:mobile": "npm run start -w @pulpo/mobile",
+    "deploy:iphone": "npm run --silent deploy:iphone -w @pulpo/mobile",
     "build": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/web && npm run build -w @pulpo/server && npm run typecheck -w @pulpo/mobile",
     "build:web": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @pulpo/web",
     "db:generate": "npm run db:generate -w @pulpo/server",

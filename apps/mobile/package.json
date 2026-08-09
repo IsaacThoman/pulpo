@@ -6,6 +6,7 @@
   "scripts": {
     "start": "expo start",
     "ios": "expo run:ios",
+    "deploy:iphone": "bash ./scripts/deploy-iphone.sh",
     "prebuild": "expo prebuild",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

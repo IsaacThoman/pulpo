@@ -45,6 +45,19 @@ npx expo-doctor@latest apps/mobile
 To regenerate native projects for inspection, run `npm run prebuild -w
 @pulpo/mobile`. Do not commit the generated directories.
 
+## Quiet device deployment
+
+From the repository root, build, install, and launch an optimized Release build
+on Isaac's iPhone with:
+
+```bash
+npm run deploy:iphone
+```
+
+Routine Expo and Xcode output is written to `/tmp/pulpo-ios-deploy.log`. A
+failed deployment prints only the final 80 lines. Override the defaults with
+`PULPO_IOS_DEVICE`, `PULPO_INSTANCE_URL`, or `PULPO_IOS_DEPLOY_LOG`.
+
 ## EAS and TestFlight
 
 The app identity is `isaacthoman/pulpo`, its bundle identifier is
