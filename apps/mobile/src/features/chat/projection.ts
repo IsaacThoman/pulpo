@@ -1,5 +1,5 @@
-import { lineageFromLeaf } from '@pulpo/client-core'
-import type { ResponseSnapshot } from '@pulpo/contracts'
+import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-core'
+import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
 
 export interface DisplayAttachment {
@@ -138,9 +138,13 @@ function generatedAttachments(output: unknown[]): DisplayAttachment[] {
   })
 }
 
-function responseOutput(response: ServerResponse, liveSnapshots: Record<string, ResponseSnapshot>): unknown[] {
+function resolvedResponseSnapshot(
+  response: ServerResponse,
+  liveSnapshots: Record<string, ResponseSnapshot>,
+): ResponseSnapshot {
+  const embedded = hydrateEmbeddedResponseSnapshot(response.snapshot, response.output)
   const live = liveSnapshots[response.id]
-  return live && live.sequence >= response.snapshot.sequence ? live.output : response.output
+  return live ? mergeResponseSnapshots(embedded, live) : embedded
 }
 
 function branchVariants(
@@ -155,7 +159,7 @@ function branchVariants(
     if (!response) return []
     return [{
       id,
-      text: role === 'user' ? inputText(response.input) : outputText(responseOutput(response, liveSnapshots)),
+      text: role === 'user' ? inputText(response.input) : outputText(resolvedResponseSnapshot(response, liveSnapshots).output),
       modelId: response.displayModelId ?? response.modelId,
       createdAt: response.createdAt,
     }]
@@ -167,10 +171,10 @@ export function projectChat(chat: ServerChat, liveSnapshots: Record<string, Resp
   const selected = lineageFromLeaf(responses, chat.activeBranchLeafId ?? chat.activeResponseId ?? responses.at(-1)?.id ?? null)
   const attachmentById = new Map((chat.attachments ?? []).map((attachment) => [attachment.id, attachment]))
   return selected.flatMap((response): DisplayMessage[] => {
-    const live = liveSnapshots[response.id]
-    const output = responseOutput(response, liveSnapshots)
-    const status = live && live.sequence >= response.snapshot.sequence ? live.status : response.status
-    const error = live && live.sequence >= response.snapshot.sequence ? live.error : response.error
+    const snapshot = resolvedResponseSnapshot(response, liveSnapshots)
+    const output = snapshot.output
+    const status = snapshot.status
+    const error = snapshot.error
     const inputAttachments = inputAttachmentIds(response.input).flatMap((id) => {
       const attachment = attachmentById.get(id)
       return attachment ? [{

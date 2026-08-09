@@ -300,6 +300,22 @@ describe('response snapshot accumulation', () => {
     expect(mergeResponseSnapshots(terminal, current)).toBe(terminal)
   })
 
+  it('upgrades equal-version empty output without allowing a later downgrade', () => {
+    const empty = {
+      ...streamingSnapshot,
+      status: 'completed' as const,
+      sequence: 3,
+      output: [],
+      updatedAt: '2026-07-31T00:00:03.000Z',
+    }
+    const full = { ...empty, output: [{ type: 'message', content: [{ text: 'Fetched branch' }] }] }
+    const newerEmpty = { ...empty, updatedAt: '2026-07-31T00:00:04.000Z' }
+
+    expect(mergeResponseSnapshots(empty, full)).toBe(full)
+    expect(mergeResponseSnapshots(full, empty)).toBe(full)
+    expect(mergeResponseSnapshots(full, newerEmpty)).toEqual({ ...newerEmpty, output: full.output })
+  })
+
   it('keeps reasoning separate from assistant output', () => {
     const reasoned = applyResponseEventToSnapshot(streamingSnapshot, delta('response.reasoning_summary_text.delta', 'Think', 1))
     const answered = applyResponseEventToSnapshot(reasoned, delta('response.output_text.delta', 'Answer', 2))
