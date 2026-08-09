@@ -697,13 +697,13 @@ export const MessageItem = memo(function MessageItem({
                     />
                   )
                 }
-                const isLastText = !timeline.slice(index + 1).some((entry) => entry.kind === 'text')
+                const textIsStreaming = streaming && index === timeline.length - 1
                 return (
                   <div
                     key={`text:${index}`}
-                    className={cn('text-[15px]', streaming && isLastText && 'stream-caret')}
+                    className={cn('text-[15px]', textIsStreaming && 'stream-caret')}
                   >
-                    <Markdown content={segment.text} streaming={streaming && isLastText} />
+                    <Markdown content={segment.text} streaming={textIsStreaming} />
                   </div>
                 )
               })}
