@@ -442,7 +442,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     <Input
                       value={s.nickname}
                       onChange={(e) => s.set('nickname', e.target.value)}
-                      placeholder="e.g. deathgrips_fan"
+                      placeholder="e.g. crazy_hamburger"
                       className="w-52"
                     />
                   </Row>
