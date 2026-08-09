@@ -185,11 +185,13 @@ Implemented endpoints:
 - `POST /v1/responses/:id/cancel`
 - `GET /v1/models`
 
-## Optional Kagi web tools
+## Optional web tools
 
-Agent mode can expose `web_search` and `web_fetch` tools backed by Kagi's v1 Search and Extract APIs. Configure an API key and enable either tool independently under Admin → Settings → Agent. The key is encrypted with `ENCRYPTION_KEY` and is used only by the Pulpo worker; it is never copied into disposable workspaces or returned by the settings API.
+Agent mode can expose `web_search` and `web_fetch` tools backed by ordered Kagi and Firecrawl provider chains. Configure global tool availability and billing, enable each capability per provider, and arrange independent search and extraction fallback orders under Admin → Settings → Agent. Provider API keys are encrypted with `ENCRYPTION_KEY`, used only by the Pulpo worker, never copied into disposable workspaces, and never returned by the settings API.
 
-Administrators may bill users independently for searches and page extracts at configurable per-operation prices. Pulpo reserves each enabled charge before contacting Kagi, records provider and billed costs on the tool execution, and settles successful charges together with all model turns as one usage event for the agent response. When billing is disabled, Kagi usage remains an operator expense and is not deducted from user balances.
+Kagi uses the v1 Search and Extract APIs. Firecrawl uses its v2 Search and Scrape APIs and can target Firecrawl Cloud or a compatible self-hosted base URL. Private self-hosted URLs require `ALLOW_PRIVATE_PROVIDER_URLS=true`. Firecrawl scrape freshness and effective cost per credit are configurable; Pulpo records each provider attempt, the winning provider, credits, upstream costs, and billed cost on the tool execution.
+
+Administrators may bill users independently for searches and page extracts at configurable global per-operation prices. Pulpo reserves the charge once before starting the provider chain and settles it only when one provider succeeds. Provider costs may accumulate across fallback attempts, but users are never charged per attempt. When billing is disabled, provider usage remains an operator expense and is not deducted from user balances.
 
 Streaming uses standard Responses SSE events. Background requests return immediately and support retrieval and cancellation. Keys can be restricted by scope, model, monthly budget, and lifetime budget.
 

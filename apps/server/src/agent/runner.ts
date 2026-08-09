@@ -26,7 +26,8 @@ import { basename } from 'node:path'
 import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
 import { KagiClient } from './kagi.js'
-import { createWebTools } from './web-tools.js'
+import { createWebTools, type WebProviderExecution } from './web-tools.js'
+import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
 import { estimateInputTokens } from '../accounting/pricing.js'
 import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
@@ -322,15 +323,25 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await emit('pulpo.agent.tool.started', item)
     await snapshotIfDue()
   }
-  const configuredWebTools = webToolsSettings.encryptedApiKey && (webToolsSettings.searchEnabled || webToolsSettings.extractEnabled)
-    ? createWebTools({
-      client: new KagiClient(decryptSecret(webToolsSettings.encryptedApiKey, config.ENCRYPTION_KEY)),
-      settings: webToolsSettings,
-      maxOutputBytes: settings.maxToolOutputBytes,
-      onOperationStarted: markToolStarted,
-      reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
-    })
-    : []
+  const webProviderExecutions = new Map<string, WebProviderExecution>()
+  const firecrawlApiKey = webToolsSettings.encryptedFirecrawlApiKey
+    ? decryptSecret(webToolsSettings.encryptedFirecrawlApiKey, config.ENCRYPTION_KEY)
+    : undefined
+  const configuredWebTools = createWebTools({
+    clients: {
+      ...(webToolsSettings.encryptedKagiApiKey ? {
+        kagi: new KagiClient(decryptSecret(webToolsSettings.encryptedKagiApiKey, config.ENCRYPTION_KEY)),
+      } : {}),
+      ...((firecrawlApiKey || !firecrawlCloudRequiresApiKey(webToolsSettings.firecrawl.baseUrl)) ? {
+        firecrawl: new FirecrawlClient(webToolsSettings.firecrawl.baseUrl, firecrawlApiKey),
+      } : {}),
+    },
+    settings: webToolsSettings,
+    maxOutputBytes: settings.maxToolOutputBytes,
+    onOperationStarted: markToolStarted,
+    onProviderAttempts: (operationId, execution) => { webProviderExecutions.set(operationId, execution) },
+    reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
+  })
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -482,7 +493,8 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     } else if (event.type === 'tool_execution_end') {
       const output = truncateUtf8(toolResultText(event.result), settings.maxToolOutputBytes)
       const details = toolResultDetails(event.result)
-      const providerCostMicros = event.isError ? 0 : nonNegativeMicros(details.providerCostMicros)
+      const providerExecution = webProviderExecutions.get(event.toolCallId)
+      const providerCostMicros = nonNegativeMicros(details.providerCostMicros ?? providerExecution?.providerCostMicros)
       const billedCostMicros = event.isError ? 0 : nonNegativeMicros(details.billedCostMicros)
       accruedWebToolCostMicros += billedCostMicros
       const item = toolItems.get(event.toolCallId)
@@ -490,7 +502,18 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
         const durationMs = item.startedAt ? Math.max(0, Date.now() - Date.parse(item.startedAt)) : undefined
         Object.assign(item, { output, status: event.isError ? 'failed' : 'completed', isError: event.isError, ...(durationMs !== undefined ? { durationMs } : {}) })
       }
-      await db.update(toolExecutions).set({ workspaceLeaseId: manager.leaseId, status: event.isError ? 'failed' : 'completed', output, providerCostMicros, billedCostMicros, completedAt: new Date(), updatedAt: new Date() }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
+      await db.update(toolExecutions).set({
+        workspaceLeaseId: manager.leaseId,
+        status: event.isError ? 'failed' : 'completed',
+        output,
+        provider: typeof details.provider === 'string' ? details.provider : providerExecution?.provider,
+        providerAttempts: Array.isArray(details.providerAttempts) ? details.providerAttempts : providerExecution?.attempts ?? [],
+        providerCostMicros,
+        billedCostMicros,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.operationId, event.toolCallId)))
+      webProviderExecutions.delete(event.toolCallId)
       await emit('pulpo.agent.tool.completed', { id: event.toolCallId, output, isError: event.isError, durationMs: item?.durationMs })
       if (manager.continuedWithoutAgent) agent.state.tools = []
       await snapshotIfDue()

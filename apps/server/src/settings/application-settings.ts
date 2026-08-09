@@ -29,7 +29,8 @@ export const ocrSettingsSchema = instanceOcrSettingsSchema.extend({
 })
 
 export const storedWebToolsSettingsSchema = webToolsSettingsSchema.extend({
-  encryptedApiKey: z.string().nullable().default(null),
+  encryptedKagiApiKey: z.string().nullable().default(null),
+  encryptedFirecrawlApiKey: z.string().nullable().default(null),
 })
 
 export type AuthSettings = z.infer<typeof authSettingsSchema>
@@ -57,8 +58,21 @@ export function parseAgentSettings(value: unknown): z.infer<typeof agentSettings
 }
 
 export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebToolsSettingsSchema> {
-  const parsed = storedWebToolsSettingsSchema.safeParse(value)
+  const legacy = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const parsed = storedWebToolsSettingsSchema.safeParse({
+    ...legacy,
+    encryptedKagiApiKey: legacy.encryptedKagiApiKey ?? legacy.encryptedApiKey ?? null,
+  })
   return parsed.success ? parsed.data : storedWebToolsSettingsSchema.parse({})
+}
+
+export function publicWebToolsSettings(value: z.infer<typeof storedWebToolsSettingsSchema>) {
+  const { encryptedKagiApiKey, encryptedFirecrawlApiKey, ...safe } = value
+  return {
+    ...safe,
+    kagi: { ...safe.kagi, hasApiKey: Boolean(encryptedKagiApiKey) },
+    firecrawl: { ...safe.firecrawl, hasApiKey: Boolean(encryptedFirecrawlApiKey) },
+  }
 }
 
 export function parseInterfaceSettings(value: unknown): InterfaceSettings {

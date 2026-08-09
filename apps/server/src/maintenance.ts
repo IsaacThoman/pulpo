@@ -10,6 +10,7 @@ import { getBlobStore } from './storage/index.js'
 import { markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
+import { parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
 
@@ -71,10 +72,7 @@ export async function createExport(exportId: string): Promise<void> {
     if (job.type === 'config') {
       const settings = await db.select().from(applicationSettings)
       const safeSettings = settings.filter((row) => row.key !== 'publicUrl').map((row) => {
-        if (row.key === 'webTools' && row.value && typeof row.value === 'object') {
-          const { encryptedApiKey, ...safe } = row.value as Record<string, unknown>
-          return [row.key, { ...safe, ...(encryptedApiKey ? { apiKey: { configured: true } } : {}) }] as const
-        }
+        if (row.key === 'webTools') return [row.key, publicWebToolsSettings(parseWebToolsSettings(row.value))] as const
         if (row.key === 'ocr' && row.value && typeof row.value === 'object') {
           const { encryptedCustomApiKey, ...safe } = row.value as Record<string, unknown>
           return [row.key, { ...safe, ...(encryptedCustomApiKey ? { customApiKey: { configured: true } } : {}) }] as const

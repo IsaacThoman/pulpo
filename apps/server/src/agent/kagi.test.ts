@@ -33,6 +33,15 @@ describe('Kagi client', () => {
     expect(result.output).toContain('Content truncated at 5 bytes')
   })
 
+  it('marks a successful empty extraction as fallback-worthy', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      meta: { trace: 'trace-empty' }, data: [{ url: 'https://example.com/new', markdown: null, error: 'Page unavailable' }],
+    }), { status: 200 })))
+    await expect(new KagiClient('secret').extract('https://example.com/new', 100)).resolves.toMatchObject({
+      output: '', trace: 'trace-empty', emptyReason: 'Page unavailable',
+    })
+  })
+
   it('rejects non-HTTPS extraction URLs before calling Kagi', async () => {
     const fetch = vi.fn()
     vi.stubGlobal('fetch', fetch)

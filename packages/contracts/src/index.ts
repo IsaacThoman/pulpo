@@ -558,6 +558,27 @@ export const agentSettingsSchema = z.object({
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
+export const webToolProviderSchema = z.enum(['kagi', 'firecrawl'])
+export type WebToolProvider = z.infer<typeof webToolProviderSchema>
+
+const webToolProviderOrderSchema = z.array(webToolProviderSchema).length(2).refine(
+  (value) => new Set(value).size === 2,
+  'Provider order must contain Kagi and Firecrawl exactly once',
+)
+
+export const kagiWebProviderSettingsSchema = z.object({
+  searchEnabled: z.boolean().default(true),
+  extractEnabled: z.boolean().default(true),
+})
+
+export const firecrawlWebProviderSettingsSchema = z.object({
+  searchEnabled: z.boolean().default(false),
+  extractEnabled: z.boolean().default(false),
+  baseUrl: z.url().default('https://api.firecrawl.dev/v2'),
+  maxAgeSeconds: z.number().int().min(0).max(31_536_000).default(0),
+  costPerCreditMicros: z.number().int().min(0).max(1_000_000_000).default(0),
+})
+
 export const webToolsSettingsSchema = z.object({
   searchEnabled: z.boolean().default(false),
   extractEnabled: z.boolean().default(false),
@@ -565,6 +586,16 @@ export const webToolsSettingsSchema = z.object({
   billExtracts: z.boolean().default(false),
   searchPriceMicros: z.number().int().min(0).max(1_000_000_000).default(12_000),
   extractPriceMicros: z.number().int().min(0).max(1_000_000_000).default(4_000),
+  searchProviderOrder: webToolProviderOrderSchema.default(['kagi', 'firecrawl']),
+  extractProviderOrder: webToolProviderOrderSchema.default(['kagi', 'firecrawl']),
+  kagi: kagiWebProviderSettingsSchema.default({ searchEnabled: true, extractEnabled: true }),
+  firecrawl: firecrawlWebProviderSettingsSchema.default({
+    searchEnabled: false,
+    extractEnabled: false,
+    baseUrl: 'https://api.firecrawl.dev/v2',
+    maxAgeSeconds: 0,
+    costPerCreditMicros: 0,
+  }),
 })
 export type WebToolsSettings = z.infer<typeof webToolsSettingsSchema>
 

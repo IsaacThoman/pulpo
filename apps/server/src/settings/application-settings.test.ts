@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -75,8 +75,39 @@ describe('web tool application settings', () => {
       billExtracts: false,
       searchPriceMicros: 12_000,
       extractPriceMicros: 4_000,
-      encryptedApiKey: null,
+      searchProviderOrder: ['kagi', 'firecrawl'],
+      extractProviderOrder: ['kagi', 'firecrawl'],
+      kagi: { searchEnabled: true, extractEnabled: true },
+      firecrawl: {
+        searchEnabled: false,
+        extractEnabled: false,
+        baseUrl: 'https://api.firecrawl.dev/v2',
+        maxAgeSeconds: 0,
+        costPerCreditMicros: 0,
+      },
+      encryptedKagiApiKey: null,
+      encryptedFirecrawlApiKey: null,
     })
+  })
+
+  it('maps the legacy Kagi secret while adding provider defaults', () => {
+    expect(parseWebToolsSettings({ searchEnabled: true, encryptedApiKey: 'encrypted-legacy' })).toMatchObject({
+      searchEnabled: true,
+      kagi: { searchEnabled: true, extractEnabled: true },
+      firecrawl: { searchEnabled: false, extractEnabled: false },
+      encryptedKagiApiKey: 'encrypted-legacy',
+      encryptedFirecrawlApiKey: null,
+    })
+  })
+
+  it('reports configured secrets without exposing encrypted values', () => {
+    const output = publicWebToolsSettings(parseWebToolsSettings({
+      encryptedKagiApiKey: 'encrypted-kagi', encryptedFirecrawlApiKey: 'encrypted-firecrawl',
+    }))
+    expect(output.kagi.hasApiKey).toBe(true)
+    expect(output.firecrawl.hasApiKey).toBe(true)
+    expect(JSON.stringify(output)).not.toContain('encrypted-kagi')
+    expect(JSON.stringify(output)).not.toContain('encrypted-firecrawl')
   })
 })
 

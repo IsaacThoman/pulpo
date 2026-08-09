@@ -382,6 +382,8 @@ export const toolExecutions = pgTable('tool_executions', {
   output: text('output'),
   exitCode: integer('exit_code'),
   error: text('error'),
+  provider: text('provider'),
+  providerAttempts: jsonb('provider_attempts').notNull().default([]),
   providerCostMicros: bigint('provider_cost_micros', { mode: 'number' }).notNull().default(0),
   billedCostMicros: bigint('billed_cost_micros', { mode: 'number' }).notNull().default(0),
   startedAt: timestamp('started_at', { withTimezone: true }),

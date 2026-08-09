@@ -19,6 +19,7 @@ export interface KagiSearchInput {
 export interface KagiResult {
   output: string
   trace?: string
+  emptyReason?: string
 }
 
 function errorMessage(status: number, payload: unknown): string {
@@ -72,7 +73,7 @@ export class KagiClient {
     const results = Object.entries(payload.data ?? {}).flatMap(([kind, rows]) => (
       Array.isArray(rows) ? rows.map((row) => ({ kind, ...row })) : []
     )).filter((row) => row.url && row.title).slice(0, limit)
-    if (!results.length) return { output: 'No Kagi search results found.', trace: payload.meta?.trace }
+    if (!results.length) return { output: '', trace: payload.meta?.trace, emptyReason: 'no search results' }
     const output = results.map((row, index) => [
       `${index + 1}. [${row.title}](${row.url})`,
       `   Type: ${row.kind}${row.time ? ` · Date: ${row.time}` : ''}`,
@@ -89,7 +90,11 @@ export class KagiClient {
       format: 'json',
     }, signal)
     const page = payload.data?.[0]
-    if (!page?.markdown) throw new Error(page?.error || errorMessage(502, payload))
+    if (!page?.markdown) return {
+      output: '',
+      trace: payload.meta?.trace,
+      emptyReason: page?.error || errorMessage(502, payload),
+    }
     const bytes = Buffer.from(page.markdown, 'utf8')
     const truncated = bytes.byteLength > maxBytes
     const markdown = truncated ? bytes.subarray(0, maxBytes).toString('utf8').replace(/\uFFFD$/u, '') : page.markdown

@@ -19,6 +19,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { publishStateChange } from '../responses/events.js'
 import {
   parseAgentSettings,
@@ -81,7 +82,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
     agent: parseAgentSettings(byKey.get('agent')),
     webTools: {
       ...webToolsSettingsSchema.parse(storedWebTools),
-      ...(storedWebTools.encryptedApiKey ? { apiKey: { configured: true as const } } : {}),
+      ...(storedWebTools.encryptedKagiApiKey ? { apiKey: { configured: true as const } } : {}),
     },
     logging: parseLoggingSettings(byKey.get('logging')),
   }
@@ -178,6 +179,9 @@ export async function applyManagementSettings(
   const webTools = managementWebToolsSettingsSchema.parse(document.instance.webTools)
   const logging = loggingSettingsSchema.parse(document.instance.logging)
   const { apiKey: _apiKey, ...publicWebTools } = webTools
+  if (mode !== 'account' && webTools.firecrawl.baseUrl !== current.instance.webTools.firecrawl.baseUrl) {
+    await assertSafeProviderUrl(webTools.firecrawl.baseUrl)
+  }
   const previousTrashRetention = current.account.trashRetention
   const changedPaths = (await planManagementSettings(userId, document, secrets, mode)).changes.map((change) => change.path)
   if (!changedPaths.length) return current
@@ -203,18 +207,19 @@ export async function applyManagementSettings(
     if (mode !== 'account') {
       const [existingWebTools] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
       const storedWebTools = parseWebToolsSettings(existingWebTools?.value)
-      const encryptedApiKey = secrets.webToolsApiKey === undefined
-        ? storedWebTools.encryptedApiKey
+      const encryptedKagiApiKey = secrets.webToolsApiKey === undefined
+        ? storedWebTools.encryptedKagiApiKey
         : secrets.webToolsApiKey === null ? null : encryptSecret(secrets.webToolsApiKey, getConfig().ENCRYPTION_KEY)
-      if ((webTools.searchEnabled || webTools.extractEnabled) && !encryptedApiKey) {
-        throw new AppError(400, 'web_tools_api_key_required', 'Configure the Kagi API key before enabling web tools')
-      }
       const groups: Record<string, unknown> = {
         auth,
         interface: iface,
         ocr,
         agent,
-        webTools: { ...publicWebTools, encryptedApiKey },
+        webTools: {
+          ...publicWebTools,
+          encryptedKagiApiKey,
+          encryptedFirecrawlApiKey: storedWebTools.encryptedFirecrawlApiKey,
+        },
         logging,
       }
       for (const [key, value] of Object.entries(groups)) {

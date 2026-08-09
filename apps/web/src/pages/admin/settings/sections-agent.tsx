@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
-import { AlertCircle, CheckCircle2 } from 'lucide-react'
-import type { AgentSettings, WebToolsSettings } from '@pulpo/contracts'
+import { AlertCircle, ArrowDown, ArrowUp, CheckCircle2 } from 'lucide-react'
+import type { AgentSettings, WebToolProvider } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { Input } from '@/components/ui/input'
-import { NumField, SaveBar, SecretField, Section, Toggle } from '@/components/admin/kit'
+import { Button } from '@/components/ui/button'
+import { NumField, SaveBar, SecretField, Section, TextField, Toggle } from '@/components/admin/kit'
+import { moveWebProvider, webToolsPatchBody, type WebToolsForm } from './web-tools-form'
 
 const defaults: AgentSettings = {
   enabled: false,
@@ -14,10 +16,41 @@ const defaults: AgentSettings = {
   responseTimeoutSeconds: 1800, commandTimeoutSeconds: 600, maxToolOutputBytes: 100000,
 }
 
-type WebToolsForm = WebToolsSettings & { hasApiKey: boolean }
 const webDefaults: WebToolsForm = {
   searchEnabled: false, extractEnabled: false, billSearches: false, billExtracts: false,
-  searchPriceMicros: 12_000, extractPriceMicros: 4_000, hasApiKey: false,
+  searchPriceMicros: 12_000, extractPriceMicros: 4_000,
+  searchProviderOrder: ['kagi', 'firecrawl'], extractProviderOrder: ['kagi', 'firecrawl'],
+  kagi: { searchEnabled: true, extractEnabled: true, hasApiKey: false },
+  firecrawl: {
+    searchEnabled: false, extractEnabled: false, baseUrl: 'https://api.firecrawl.dev/v2',
+    maxAgeSeconds: 0, costPerCreditMicros: 0, hasApiKey: false,
+  },
+}
+
+const providerLabel: Record<WebToolProvider, string> = { kagi: 'Kagi', firecrawl: 'Firecrawl' }
+
+function ProviderOrder({ label, hint, value, onChange }: {
+  label: string
+  hint: string
+  value: WebToolProvider[]
+  onChange: (value: WebToolProvider[]) => void
+}) {
+  return <div className="flex items-start justify-between gap-6">
+    <div className="min-w-0"><div className="text-sm">{label}</div><div className="mt-0.5 text-xs text-muted-foreground">{hint}</div></div>
+    <div className="w-56 space-y-2">
+      {value.map((provider, index) => <div key={provider} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-sm">
+        <span><span className="mr-2 text-xs tabular-nums text-muted-foreground">{index + 1}</span>{providerLabel[provider]}</span>
+        <div className="flex gap-1">
+          <Button type="button" variant="ghost" size="icon-sm" disabled={index === 0} aria-label={`Move ${providerLabel[provider]} earlier`} onClick={() => onChange(moveWebProvider(value, index, -1))}><ArrowUp /></Button>
+          <Button type="button" variant="ghost" size="icon-sm" disabled={index === value.length - 1} aria-label={`Move ${providerLabel[provider]} later`} onClick={() => onChange(moveWebProvider(value, index, 1))}><ArrowDown /></Button>
+        </div>
+      </div>)}
+    </div>
+  </div>
+}
+
+function firecrawlCloudRequiresKey(baseUrl: string): boolean {
+  try { return new URL(baseUrl).hostname.toLowerCase() === 'api.firecrawl.dev' } catch { return true }
 }
 
 function memoryMiB(quantity: string): number {
@@ -43,6 +76,7 @@ export function AgentSection() {
   const [value, setValue] = useState(defaults)
   const [web, setWeb] = useState(webDefaults)
   const [kagiApiKey, setKagiApiKey] = useState('')
+  const [firecrawlApiKey, setFirecrawlApiKey] = useState('')
   const [health, setHealth] = useState<{ configured: boolean; healthy: boolean; detail?: string }>({ configured: false, healthy: false })
   useEffect(() => { void Promise.all([
     apiRequest<{ values: { agent?: Partial<AgentSettings> } }>('/api/admin/settings'),
@@ -57,9 +91,20 @@ export function AgentSection() {
       ephemeralStorage: `${diskGiB(loaded.ephemeralStorage)}Gi`,
     })
     setHealth(status)
-    setWeb({ ...webDefaults, ...webSettings })
+    setWeb({
+      ...webDefaults,
+      ...webSettings,
+      kagi: { ...webDefaults.kagi, ...webSettings.kagi },
+      firecrawl: { ...webDefaults.firecrawl, ...webSettings.firecrawl },
+    })
   }) }, [])
   const number = (key: keyof AgentSettings, min = 0) => <Input type="number" min={min} value={String(value[key])} onChange={(event) => setValue({ ...value, [key]: Number(event.target.value) })} />
+  const kagiAvailable = web.kagi.hasApiKey || Boolean(kagiApiKey.trim())
+  const firecrawlAvailable = !firecrawlCloudRequiresKey(web.firecrawl.baseUrl) || web.firecrawl.hasApiKey || Boolean(firecrawlApiKey.trim())
+  const capabilityAvailable = (capability: 'search' | 'extract') => web[capability === 'search' ? 'searchProviderOrder' : 'extractProviderOrder'].some((provider) => (
+    web[provider][capability === 'search' ? 'searchEnabled' : 'extractEnabled']
+    && (provider === 'kagi' ? kagiAvailable : firecrawlAvailable)
+  ))
   return <div>
     <Section title="Pi agent mode" hint="The Pulpo worker runs Pi; an external Kubernetes controller owns Kata workspaces and credentials.">
       <Toggle label="Enable agent mode" hint="Models must also be opted in individually." checked={value.enabled} onChange={(enabled) => setValue({ ...value, enabled })} />
@@ -87,27 +132,53 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>Retained tool output (bytes)</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
     </Section>
-    <Section title="Kagi web tools" hint="Give agents access to Kagi Search and clean Markdown page extraction. The API key stays encrypted on the Pulpo server.">
-      <SecretField label="Kagi API key" hint={web.hasApiKey ? 'Configured — leave blank to keep' : 'Required before either tool can run'} value={kagiApiKey} onChange={setKagiApiKey} />
-      <Toggle label="Enable web search" hint="Adds a web_search tool backed by Kagi Search." checked={web.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, searchEnabled })} />
+    <Section title="Web tools" hint="Control agent web capabilities, user billing, and the order in which enabled providers are attempted.">
+      <Toggle label="Enable web search" hint="Adds the web_search tool when at least one search provider is available." checked={web.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, searchEnabled })} />
       <Toggle label="Bill users for searches" checked={web.billSearches} onChange={(billSearches) => setWeb({ ...web, billSearches })} indent />
       {web.billSearches && <NumField label="Price per search" value={web.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, searchPriceMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
-      <Toggle label="Enable page extraction" hint="Adds a web_fetch tool that returns clean page content as Markdown." checked={web.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, extractEnabled })} />
+      <ProviderOrder label="Search fallback order" hint="The first enabled provider returning results wins." value={web.searchProviderOrder} onChange={(searchProviderOrder) => setWeb({ ...web, searchProviderOrder })} />
+      <Toggle label="Enable page extraction" hint="Adds the web_fetch tool when at least one extraction provider is available." checked={web.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, extractEnabled })} />
       <Toggle label="Bill users for page extracts" checked={web.billExtracts} onChange={(billExtracts) => setWeb({ ...web, billExtracts })} indent />
       {web.billExtracts && <NumField label="Price per extracted page" value={web.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, extractPriceMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
+      <ProviderOrder label="Extraction fallback order" hint="Empty content and provider failures advance to the next provider." value={web.extractProviderOrder} onChange={(extractProviderOrder) => setWeb({ ...web, extractProviderOrder })} />
+      {web.searchEnabled && !capabilityAvailable('search') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Web search is enabled, but no usable search provider is configured.</div>}
+      {web.extractEnabled && !capabilityAvailable('extract') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Page extraction is enabled, but no usable extraction provider is configured.</div>}
+    </Section>
+    <Section title="Kagi" hint="Use Kagi Search and Extract as one provider in the web-tool fallback chains.">
+      <SecretField label="Kagi API key" hint={web.kagi.hasApiKey ? 'Configured — leave blank to keep' : 'Required before Kagi can run'} value={kagiApiKey} onChange={setKagiApiKey} />
+      <Toggle label="Use for web search" checked={web.kagi.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, kagi: { ...web.kagi, searchEnabled } })} />
+      <Toggle label="Use for page extraction" checked={web.kagi.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, kagi: { ...web.kagi, extractEnabled } })} />
+      {((web.searchEnabled && web.kagi.searchEnabled) || (web.extractEnabled && web.kagi.extractEnabled)) && !kagiAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Kagi is enabled but will be skipped until an API key is configured.</div>}
+    </Section>
+    <Section title="Firecrawl" hint="Use Firecrawl Cloud or a v2-compatible self-hosted endpoint. Secrets remain encrypted on the Pulpo server.">
+      <TextField label="API base URL" hint="Private endpoints require ALLOW_PRIVATE_PROVIDER_URLS=true." value={web.firecrawl.baseUrl} onChange={(baseUrl) => setWeb({ ...web, firecrawl: { ...web.firecrawl, baseUrl } })} mono />
+      <SecretField label="Firecrawl API key" hint={web.firecrawl.hasApiKey ? 'Configured — leave blank to keep' : firecrawlCloudRequiresKey(web.firecrawl.baseUrl) ? 'Required for Firecrawl Cloud' : 'Optional for this custom endpoint'} value={firecrawlApiKey} onChange={setFirecrawlApiKey} />
+      <Toggle label="Use for web search" checked={web.firecrawl.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchEnabled } })} />
+      <Toggle label="Use for page extraction" checked={web.firecrawl.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractEnabled } })} />
+      <NumField label="Maximum scrape cache age" hint="0 always requests fresh content." value={web.firecrawl.maxAgeSeconds} onChange={(maxAgeSeconds) => setWeb({ ...web, firecrawl: { ...web.firecrawl, maxAgeSeconds: Math.round(maxAgeSeconds) } })} min={0} max={31_536_000} step={60} suffix="seconds" />
+      <NumField label="Effective cost per credit" hint="Used for operator cost reporting; 0 leaves dollar cost untracked." value={web.firecrawl.costPerCreditMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, costPerCreditMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.000001} decimals={6} suffix="USD" />
+      {((web.searchEnabled && web.firecrawl.searchEnabled) || (web.extractEnabled && web.firecrawl.extractEnabled)) && !firecrawlAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Firecrawl Cloud is enabled but will be skipped until an API key is configured.</div>}
     </Section>
     <div className="mb-4 flex items-center gap-2 rounded-lg border p-3 text-sm">
       {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}
       <span>{health.healthy ? 'Workspace controller is healthy' : health.configured ? health.detail ?? 'Workspace controller is unavailable' : 'Controller URL and token are not configured in deployment secrets'}</span>
     </div>
     <SaveBar onSave={async () => {
-      const { hasApiKey: _hasApiKey, ...webSettings } = web
-      await Promise.all([
+      const [, savedWeb] = await Promise.all([
         apiRequest('/api/admin/settings', { method: 'PATCH', body: { agent: value } }),
-        apiRequest('/api/admin/settings/web-tools', { method: 'PATCH', body: { ...webSettings, apiKey: kagiApiKey || undefined } }),
+        apiRequest<WebToolsForm>('/api/admin/settings/web-tools', {
+          method: 'PATCH',
+          body: webToolsPatchBody(web, kagiApiKey, firecrawlApiKey),
+        }),
       ])
-      if (kagiApiKey) setWeb((current) => ({ ...current, hasApiKey: true }))
+      setWeb({
+        ...webDefaults,
+        ...savedWeb,
+        kagi: { ...webDefaults.kagi, ...savedWeb.kagi },
+        firecrawl: { ...webDefaults.firecrawl, ...savedWeb.firecrawl },
+      })
       setKagiApiKey('')
+      setFirecrawlApiKey('')
     }} />
   </div>
 }

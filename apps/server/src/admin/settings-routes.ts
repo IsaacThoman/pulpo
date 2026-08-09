@@ -9,11 +9,12 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
+import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
 import { encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { resolveLegacyOcrCatalogModel } from '../responses/catalog-model-runtime.js'
+import { assertSafeProviderUrl } from '../lib/url-security.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -93,30 +94,50 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     requireAdmin(request)
     const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
     const value = parseWebToolsSettings(row?.value)
-    const { encryptedApiKey, ...safe } = value
-    return { ...safe, hasApiKey: Boolean(encryptedApiKey) }
+    return publicWebToolsSettings(value)
   })
 
   app.patch('/api/admin/settings/web-tools', async (request) => {
     const admin = requireAdmin(request)
-    const input = webToolsSettingsSchema.extend({ apiKey: z.string().trim().min(1).optional() }).parse(request.body)
-    let value: z.infer<typeof storedWebToolsSettingsSchema> | undefined
-    await db.transaction(async (tx) => {
+    const input = webToolsSettingsSchema.extend({
+      apiKey: z.string().trim().min(1).optional(),
+      kagiApiKey: z.string().trim().min(1).optional(),
+      firecrawlApiKey: z.string().trim().min(1).optional(),
+    }).parse(request.body)
+    const [before] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
+    if (input.firecrawl.baseUrl !== parseWebToolsSettings(before?.value).firecrawl.baseUrl) await assertSafeProviderUrl(input.firecrawl.baseUrl)
+    const value = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       const [existing] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
       const old = parseWebToolsSettings(existing?.value)
-      value = storedWebToolsSettingsSchema.parse({
+      const kagiApiKey = input.kagiApiKey ?? input.apiKey
+      const next = storedWebToolsSettingsSchema.parse({
         ...input,
-        encryptedApiKey: input.apiKey ? encryptSecret(input.apiKey, getConfig().ENCRYPTION_KEY) : old.encryptedApiKey,
+        encryptedKagiApiKey: kagiApiKey
+          ? encryptSecret(kagiApiKey, getConfig().ENCRYPTION_KEY)
+          : old.encryptedKagiApiKey,
+        encryptedFirecrawlApiKey: input.firecrawlApiKey
+          ? encryptSecret(input.firecrawlApiKey, getConfig().ENCRYPTION_KEY)
+          : old.encryptedFirecrawlApiKey,
       })
-      await tx.insert(applicationSettings).values({ key: 'webTools', value, updatedBy: admin.id })
-        .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
+      await tx.insert(applicationSettings).values({ key: 'webTools', value: next, updatedBy: admin.id })
+        .onConflictDoUpdate({ target: applicationSettings.key, set: { value: next, updatedBy: admin.id, updatedAt: new Date() } })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'settings.web_tools.update', targetType: 'application',
-        metadata: { searchEnabled: value.searchEnabled, extractEnabled: value.extractEnabled, billSearches: value.billSearches, billExtracts: value.billExtracts },
+        metadata: {
+          searchEnabled: next.searchEnabled,
+          extractEnabled: next.extractEnabled,
+          billSearches: next.billSearches,
+          billExtracts: next.billExtracts,
+          searchProviderOrder: next.searchProviderOrder,
+          extractProviderOrder: next.extractProviderOrder,
+          kagi: next.kagi,
+          firecrawl: next.firecrawl,
+        },
       })
+      return next
     })
-    return { ...input, apiKey: undefined, hasApiKey: Boolean(value?.encryptedApiKey) }
+    return publicWebToolsSettings(value)
   })
 
   app.get('/api/admin/settings/ocr', async (request) => {
