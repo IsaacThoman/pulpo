@@ -34,6 +34,16 @@ import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { resolveModelParameters } from './model-parameters.js'
+import {
+  GenerationAttemptError,
+  MAX_MODEL_CHAIN_LENGTH,
+  canFallbackAfterGenerationError,
+  classifyGenerationError,
+  completionTokensPerSecond,
+  isModelSticky,
+  isSlowCompletion,
+  markModelSticky,
+} from './fallback-policy.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -192,10 +202,6 @@ async function contextualInput(
     if (updated) await publishSnapshot(toSnapshot(updated))
   }
   return { input: [...context, ...compacted.conversation, ...(record.response.input as unknown[])], compactionItems: compacted.item ? [compacted.item] : [] }
-}
-
-class GenerationAttemptError extends Error {
-  constructor(message: string, readonly outputStarted: boolean) { super(message) }
 }
 
 async function processGenerationAttempt(
@@ -460,18 +466,6 @@ async function processGenerationAttempt(
   }
 }
 
-function classifyError(error: unknown): string {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
-  if (message.includes('compaction')) return 'worker'
-  if (message.includes('rate') || message.includes('429')) return 'rate_limit'
-  if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout'
-  if (message.includes('budget') || message.includes('balance')) return 'budget'
-  if (message.includes('validation') || message.includes('invalid')) return 'validation'
-  if (/\b5\d\d\b/.test(message) || message.includes('fetch') || message.includes('network') || message.includes('connect')) return 'provider_http'
-  if (message.includes('cancel')) return 'cancellation'
-  return 'worker'
-}
-
 export async function processGeneration(responseId: string): Promise<void> {
   const [base] = await db.select({
     response: responses,
@@ -504,9 +498,9 @@ export async function processGeneration(responseId: string): Promise<void> {
   let lastError: unknown
   const visited = new Set<string>()
 
-  while (model && visited.size < 8 && !visited.has(model.id)) {
+  while (model && visited.size < MAX_MODEL_CHAIN_LENGTH && !visited.has(model.id)) {
     visited.add(model.id)
-    if (await redis.get(`pulpo:model-sticky:${model.id}`) && model.fallbackModelId) {
+    if (await isModelSticky(redis, model.id) && model.fallbackModelId) {
       fallbackFrom = model.id
       ;[model] = await db.select().from(models).where(and(eq(models.id, model.fallbackModelId), eq(models.enabled, true))).limit(1)
       await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: model?.id ?? null, updatedAt: new Date() }).where(eq(requestLogs.id, base.log.id))
@@ -540,26 +534,24 @@ export async function processGeneration(responseId: string): Promise<void> {
             inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0,
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), durationMs,
-            tokensPerSecond: durationMs > 0 ? ((usage?.outputTokens ?? 0) * 1000) / durationMs : null,
+            tokensPerSecond: durationMs > 0 ? completionTokensPerSecond(durationMs, usage?.outputTokens ?? 0) : null,
             responsePayload: logging.logDetailedPayloads ? { output: completed?.output ?? [], usage } : null,
             completedAt: new Date(), updatedAt: new Date(),
           }).where(eq(requestLogs.id, base.log.id))
         })
-        if (model.slowStickyEnabled && model.stickyFallbackSeconds > 0 && durationMs >= model.slowStickyMinCompletionSeconds * 1000 && ((usage?.outputTokens ?? 0) * 1000) / Math.max(durationMs, 1) < model.slowStickyMinTokensPerSecond) {
-          await redis.set(`pulpo:model-sticky:${model.id}`, 'slow_completion', 'EX', model.stickyFallbackSeconds)
-        }
+        if (isSlowCompletion(model, durationMs, usage?.outputTokens ?? 0)) await markModelSticky(redis, model, 'slow_completion')
         await publishAdminUsage(base.log.id, true)
         return
       } catch (error) {
         lastError = error
-        const category = classifyError(error)
+        const category = classifyGenerationError(error)
         await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: error instanceof Error ? error.message : String(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
-        if ((error instanceof GenerationAttemptError && error.outputStarted) || !['provider_http', 'rate_limit', 'timeout', 'worker'].includes(category)) { model = undefined; break }
+        if (!canFallbackAfterGenerationError(error)) { model = undefined; break }
         if (attempt < model.maxRetries && model.retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, model!.retryDelaySeconds * 1000))
       }
     }
     if (!model) break
-    if (model.stickyFallbackSeconds > 0) await redis.set(`pulpo:model-sticky:${model.id}`, classifyError(lastError), 'EX', model.stickyFallbackSeconds)
+    await markModelSticky(redis, model, classifyGenerationError(lastError))
     fallbackFrom = model.id
     if (!model.fallbackModelId) { model = undefined; break }
     ;[model] = await db.select().from(models).where(and(eq(models.id, model.fallbackModelId), eq(models.enabled, true))).limit(1)
@@ -568,7 +560,7 @@ export async function processGeneration(responseId: string): Promise<void> {
   }
 
   const message = lastError instanceof Error ? lastError.message : 'Generation failed'
-  const category = classifyError(lastError)
+  const category = classifyGenerationError(lastError)
   const completedAt = new Date()
   await db.transaction(async (tx) => {
     await tx.update(responses).set({ status: 'failed', error: { message, category }, completedAt, updatedAt: completedAt }).where(eq(responses.id, responseId))
