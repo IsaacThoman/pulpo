@@ -1334,6 +1334,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
 
   const mainAnimatedStyle = useAnimatedStyle(() => {
+    if (persistentSidebar) {
+      return { transform: [{ translateX: 0 }, { scale: 1 }] };
+    }
     const progress = openOffset > 0 ? slideX.value / openOffset : 0;
     return {
       transform: [
@@ -1341,10 +1344,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         { scale: reduceMotion ? 1 : interpolate(progress, [0, 1], [1, 0.965]) },
       ],
     };
-  }, [openOffset, reduceMotion]);
+  }, [openOffset, persistentSidebar, reduceMotion]);
   const panelAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
-  }), [openOffset, reduceMotion]);
+    transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
+  }), [openOffset, persistentSidebar, reduceMotion]);
   const legacyChats = useMemo(() => visibleHistoryChats(storedChats).map(prototypeChatToLegacy), [storedChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
@@ -1808,7 +1811,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           accessibilityElementsHidden={!persistentSidebar && !panelOpen}
           importantForAccessibility={!persistentSidebar && !panelOpen ? 'no-hide-descendants' : 'auto'}
           style={persistentSidebar
-            ? styles.persistentPanel
+            ? [styles.persistentPanel, panelAnimatedStyle]
             : [styles.drawerPanel, { width: drawerWidth }, panelAnimatedStyle]}
         >
           <HistoryPanel
@@ -1831,7 +1834,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         <Reanimated.View
           accessibilityElementsHidden={!persistentSidebar && panelOpen}
           importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'}
-          style={[persistentSidebar ? styles.persistentMainView : styles.mainView, !persistentSidebar && mainAnimatedStyle]}
+          style={[persistentSidebar ? styles.persistentMainView : styles.mainView, mainAnimatedStyle]}
         >
           <ChatView
             messages={messages}
@@ -2744,7 +2747,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
           ]}
         >
           <SwiftUIRNHostView matchContents>
-            <Text pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
+            <Text maxFontSizeMultiplier={1.6} pointerEvents="none" style={styles.suggestionLabel}>{label}</Text>
           </SwiftUIRNHostView>
         </SwiftUIButton>
       </SwiftUIHost>
@@ -2757,7 +2760,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
       onPress={onPress}
       style={({ pressed }) => [styles.suggestionCard, temporaryStyle, accessible && styles.suggestionCardAccessible, pressed && styles.navRowPressed]}
     >
-      <Text style={styles.suggestionLabel}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.6} style={styles.suggestionLabel}>{label}</Text>
     </Pressable>
   );
 }
@@ -3384,6 +3387,47 @@ function ChatView({
       : withSpring(target, { damping: 18, stiffness: 220, mass: 0.8 });
   }, [headerAction, headerExpansionProgress, reduceMotion]);
 
+  const emptyLandingContent = (
+    <View style={styles.emptyState}>
+      <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
+        <View style={styles.emptyModelLineWrap}>
+          <Reanimated.View
+            accessibilityElementsHidden={!temporary}
+            accessibilityLabel="Temporary chat"
+            pointerEvents="none"
+            style={[styles.temporaryLabel, temporaryLabelAnimatedStyle]}
+          >
+            <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
+            <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
+          </Reanimated.View>
+          <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
+            <ModelMark model={model} size={48} />
+            <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
+          </View>
+        </View>
+        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{model.lab}</Text>
+      </Reanimated.View>
+      <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
+        <View
+          onLayout={(event) => {
+            suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
+          }}
+          style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
+        >
+          {suggestions.map((suggestion, index) => (
+            <SuggestedPromptButton
+              accessible={accessibilityLayout}
+              key={`${suggestion.id}:${index}`}
+              label={suggestion.label}
+              onPress={() => submitSuggestion(suggestion.message)}
+              temporary={temporary}
+            />
+          ))}
+        </View>
+      </Reanimated.View>
+    </View>
+  );
+
   return (
     <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
       <View
@@ -3400,7 +3444,7 @@ function ChatView({
             ? <View accessibilityElementsHidden importantForAccessibility="no" style={styles.headerButtonPlaceholder} />
             : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} selected={temporary} />}
           <Reanimated.View style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
-            {Platform.OS === 'ios' ? (
+            {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} temporary={temporary} />
             ) : (
               <Pressable
@@ -3476,49 +3520,25 @@ function ChatView({
           <ActivityIndicator color={COLORS.muted} />
         </View>
       ) : empty ? (
-        // The landing surface is intentionally not a scroll view. Keeping it
-        // outside FlatList prevents iOS keyboard focus from retaining a stale
-        // content offset and clipping the identity above its resting position.
-        <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}>
-          <View style={styles.emptyState}>
-            <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
-              <View style={styles.emptyModelLineWrap}>
-                <Reanimated.View
-                  accessibilityElementsHidden={!temporary}
-                  accessibilityLabel="Temporary chat"
-                  pointerEvents="none"
-                  style={[styles.temporaryLabel, temporaryLabelAnimatedStyle]}
-                >
-                  <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
-                  <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
-                </Reanimated.View>
-                <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
-                  <ModelMark model={model} size={48} />
-                  <Text maxFontSizeMultiplier={2} style={styles.emptyTitle}>{model.name}</Text>
-                </View>
-              </View>
-              <Text style={styles.emptyProvider}>{model.lab}</Text>
-            </Reanimated.View>
-            <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
-              <View
-                onLayout={(event) => {
-                  suggestionGridHeight.value = Math.max(suggestionGridHeight.value, event.nativeEvent.layout.height);
-                }}
-                style={[styles.suggestionGrid, accessibilityLayout && styles.suggestionGridAccessible]}
-              >
-                {suggestions.map((suggestion, index) => (
-                  <SuggestedPromptButton
-                    accessible={accessibilityLayout}
-                    key={`${suggestion.id}:${index}`}
-                    label={suggestion.label}
-                    onPress={() => submitSuggestion(suggestion.message)}
-                    temporary={temporary}
-                  />
-                ))}
-              </View>
-            </Reanimated.View>
+        accessibilityLayout ? (
+          <ScrollView
+            alwaysBounceVertical
+            contentContainerStyle={[styles.emptyConversationAccessible, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onTouchStart={Keyboard.dismiss}
+            showsVerticalScrollIndicator={false}
+            style={[styles.flex, styles.chatContent]}
+          >
+            {emptyLandingContent}
+          </ScrollView>
+        ) : (
+          // Normal-size landing stays outside a scroll view so keyboard focus
+          // cannot retain a stale offset and clip the identity.
+          <View onTouchStart={Keyboard.dismiss} style={[styles.emptyConversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}>
+            {emptyLandingContent}
           </View>
-        </View>
+        )
       ) : (
         /* The full-screen transcript scrolls beneath the transparent status/header overlay. */
         <FlatList
@@ -3589,6 +3609,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
+                maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
@@ -4270,6 +4291,7 @@ const styles = StyleSheet.create({
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   conversation: { paddingBottom: 156 },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
+  emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
   emptyState: { width: '100%', maxWidth: 720, alignSelf: 'center', alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
   emptyModelLineWrap: { position: 'relative', alignItems: 'center' },
