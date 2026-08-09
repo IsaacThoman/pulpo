@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     synchronizedOwnerNamespace: null as string | null,
     favoriteModelIds: [] as string[],
     defaultModelId: null as string | null,
-    resetSynchronizedModelPreferences: vi.fn(async () => undefined),
+    resetSynchronizedPreferences: vi.fn(async () => undefined),
     activateAgentNamespace: vi.fn(async () => undefined),
   },
 }))
@@ -82,7 +82,7 @@ beforeEach(() => {
   mocks.preferences.synchronizedOwnerNamespace = null
   mocks.preferences.favoriteModelIds = []
   mocks.preferences.defaultModelId = null
-  mocks.preferences.resetSynchronizedModelPreferences.mockClear()
+  mocks.preferences.resetSynchronizedPreferences.mockClear()
   mocks.preferences.activateAgentNamespace.mockClear()
   usePrototypeStore.setState({
     ...createSeedState(), models: [], defaultModelId: '', chats: [], folders: [],

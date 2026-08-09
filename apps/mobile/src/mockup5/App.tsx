@@ -155,6 +155,7 @@ import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
 import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
+import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
 import { cacheNamespace, deleteResponseCursor } from '../data/database';
@@ -1456,9 +1457,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const selectPreset = useCallback((presetId: string, choiceId: string) => {
     const store = usePreferencesStore.getState();
     const generation = store.generation;
-    void store.setPreference('generation', {
+    const next = {
       ...generation,
       [selectedModelId]: { ...generation[selectedModelId], [presetId]: choiceId },
+    };
+    runProductionAction(productionActions.setPreference('generation', next), {
+      onError: (error) => {
+        useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The preset choice could not be synced.');
+      },
     });
     Haptics.selectionAsync();
   }, [selectedModelId]);

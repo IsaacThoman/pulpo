@@ -33,6 +33,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   const result: Partial<Preferences> = {
     favoriteModelIds: validOrderedIds(values.favoriteModelIds),
     providerOrder: validOrderedIds(values.providerOrder),
+    generation: validGenerationPreferences(values.generation),
   }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
@@ -56,9 +57,20 @@ function validOrderedIds(value: unknown): string[] {
   return [...new Set(value.filter((id): id is string => typeof id === 'string' && id.trim().length > 0))]
 }
 
+function validGenerationPreferences(value: unknown): Preferences['generation'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).flatMap(([modelId, selections]) => {
+    if (!selections || typeof selections !== 'object' || Array.isArray(selections)) return []
+    const validSelections = Object.fromEntries(
+      Object.entries(selections).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    )
+    return [[modelId, validSelections]]
+  }))
+}
+
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId', 'favoriteModelIds', 'providerOrder'].includes(key)
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation'].includes(key)
       ? key
       : null
   return serverKey ? { [serverKey]: value } : null

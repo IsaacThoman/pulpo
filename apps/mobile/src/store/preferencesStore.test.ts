@@ -11,13 +11,22 @@ vi.mock('../data/database', () => ({
 }))
 
 import { usePreferencesStore } from './preferences'
+import { defaultPreferences } from './preferenceMapping'
+
+beforeEach(() => {
+  mocks.values.clear()
+  usePreferencesStore.setState({
+    ...defaultPreferences,
+    hydrated: true,
+    activeAgentNamespace: null,
+    agentModeHydrated: false,
+    synchronizedOwnerNamespace: null,
+    modelPreferencesDirty: false,
+    generationPreferenceDirty: false,
+  })
+})
 
 describe('namespaced agent preference', () => {
-  beforeEach(() => {
-    mocks.values.clear()
-    usePreferencesStore.setState({ activeAgentNamespace: null, agentMode: false, agentModeHydrated: false })
-  })
-
   it('survives scope changes without leaking to another account', async () => {
     await usePreferencesStore.getState().activateAgentNamespace('instance-a|user-a')
     await usePreferencesStore.getState().setNamespacedAgentMode('instance-a|user-a', true)
@@ -25,5 +34,81 @@ describe('namespaced agent preference', () => {
     expect(usePreferencesStore.getState().agentMode).toBe(false)
     await usePreferencesStore.getState().activateAgentNamespace('instance-a|user-a')
     expect(usePreferencesStore.getState().agentMode).toBe(true)
+  })
+})
+
+describe('synchronized generation preference', () => {
+  const local = { 'model-a': { reasoning: 'low' } }
+  const account = { 'model-a': { reasoning: 'high' } }
+
+  it('replaces legacy local choices with account choices on first sync', async () => {
+    usePreferencesStore.setState({ generation: local })
+
+    await usePreferencesStore.getState().applyServerPreferences({ generation: account })
+
+    expect(usePreferencesStore.getState()).toMatchObject({
+      generation: account,
+      generationPreferenceDirty: false,
+    })
+  })
+
+  it('clears choices and dirty state when another account takes ownership', async () => {
+    usePreferencesStore.setState({
+      synchronizedOwnerNamespace: 'instance|user-a',
+      generation: local,
+      generationPreferenceDirty: true,
+    })
+
+    await usePreferencesStore.getState().resetSynchronizedPreferences('instance|user-b')
+
+    expect(usePreferencesStore.getState()).toMatchObject({
+      synchronizedOwnerNamespace: 'instance|user-b',
+      generation: {},
+      generationPreferenceDirty: false,
+    })
+  })
+
+  it('keeps a dirty local choice when stale account settings arrive', async () => {
+    await usePreferencesStore.getState().setPreference('generation', local)
+
+    await usePreferencesStore.getState().applyServerPreferences({ generation: account })
+
+    expect(usePreferencesStore.getState()).toMatchObject({
+      generation: local,
+      generationPreferenceDirty: true,
+    })
+  })
+
+  it('clears dirty state when account settings match the local choice', async () => {
+    await usePreferencesStore.getState().setPreference('generation', local)
+
+    await usePreferencesStore.getState().applyServerPreferences({ generation: local })
+
+    expect(usePreferencesStore.getState().generationPreferenceDirty).toBe(false)
+  })
+
+  it('matches synchronized choices regardless of record key order', async () => {
+    const selected = {
+      'model-a': { reasoning: 'low', style: 'concise' },
+      'model-b': { speed: 'fast' },
+    }
+    await usePreferencesStore.getState().setPreference('generation', selected)
+
+    await usePreferencesStore.getState().applyServerPreferences({
+      generation: {
+        'model-b': { speed: 'fast' },
+        'model-a': { style: 'concise', reasoning: 'low' },
+      },
+    })
+
+    expect(usePreferencesStore.getState().generationPreferenceDirty).toBe(false)
+  })
+
+  it('clears dirty state after the current local value is saved', async () => {
+    await usePreferencesStore.getState().setPreference('generation', local)
+
+    await usePreferencesStore.getState().markSynchronizedPreferenceSynced('generation', local)
+
+    expect(usePreferencesStore.getState().generationPreferenceDirty).toBe(false)
   })
 })
