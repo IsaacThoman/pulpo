@@ -118,6 +118,32 @@ Give previews their own controller credential when they are not in the same
 trust domain as production, and configure preview agent settings with zero warm
 workspaces plus shorter idle and hard timeouts.
 
+### Trusted preview bootstrap
+
+Fresh CI previews at `pulpo-pr-<number>.deathgrips.org` can be provisioned with
+the built-in `ci-preview` preset. Set the following as preview-only, runtime-only
+Coolify environment variables:
+
+```dotenv
+PULPO_BOOTSTRAP_PRESET=ci-preview
+PULPO_PREVIEW_ADMIN_EMAIL=preview@example.com
+PULPO_PREVIEW_ADMIN_PASSWORD=replace-with-a-strong-preview-password
+PULPO_PREVIEW_PROVIDER_API_KEY=sk-pulpo-...
+PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST=ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:...
+ENCRYPTION_KEY=replace-with-a-strong-preview-encryption-key
+```
+
+`WORKSPACE_CONTROLLER_URL`, `WORKSPACE_CONTROLLER_TOKEN`, and the optional
+controller CA must also be available to previews. The preset verifies that the
+Pulpo Baby key can access `gpt-5.6-luna`, then creates a Preview Admin account,
+the Pulpo Baby provider, the OpenAI lab, the Luna model, default account
+preferences, and conservative agent settings. A database marker makes the
+bootstrap create-once: later restarts preserve manual preview changes.
+
+Only trusted same-repository pull requests may receive these secrets. Do not
+make the preset variables available to fork previews, and do not reuse a
+production provider key.
+
 No Pulpo service should publish `5432`, `6379`, `8080`, or `8333`
 directly on the Coolify host.
 

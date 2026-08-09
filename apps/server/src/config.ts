@@ -49,6 +49,13 @@ const configSchema = z.object({
   WORKSPACE_CONTROLLER_TOKEN: optionalEnvironmentValue(z.string().min(32)),
   WORKSPACE_CONTROLLER_CA_CERT_BASE64: optionalEnvironmentValue(z.string().min(1)),
   PULPO_INSTANCE_ID: optionalEnvironmentValue(z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/)),
+  PULPO_BOOTSTRAP_PRESET: optionalEnvironmentValue(z.literal('ci-preview')),
+  PULPO_PREVIEW_ADMIN_EMAIL: optionalEnvironmentValue(z.email()),
+  PULPO_PREVIEW_ADMIN_PASSWORD: optionalEnvironmentValue(z.string().min(8).max(1024)),
+  PULPO_PREVIEW_PROVIDER_API_KEY: optionalEnvironmentValue(z.string().min(1)),
+  PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: optionalEnvironmentValue(
+    z.string().regex(/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/),
+  ),
 })
 
 export type Config = z.infer<typeof configSchema>

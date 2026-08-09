@@ -172,6 +172,27 @@ jobs:
       - name: Wait for healthy preview
         run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
 
+      - name: Smoke-test preview bootstrap
+        env:
+          PREVIEW_URL: https://pulpo-pr-${{ github.event.pull_request.number }}.deathgrips.org
+        run: |
+          set -euo pipefail
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error --max-time 10 "${PREVIEW_URL}/health" >/dev/null; then
+              break
+            fi
+            if [[ "${attempt}" == 30 ]]; then
+              echo "Preview health endpoint did not become ready: ${PREVIEW_URL}" >&2
+              exit 1
+            fi
+            sleep 2
+          done
+          setup_status="$(curl --fail --silent --show-error --max-time 10 "${PREVIEW_URL}/api/auth/setup-status")"
+          jq -e '.required == false' <<< "${setup_status}" >/dev/null || {
+            echo "Preview bootstrap did not create the initial administrator." >&2
+            exit 1
+          }
+
   cleanup-preview:
     name: Delete Coolify preview
     if: >-

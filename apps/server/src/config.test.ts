@@ -21,6 +21,26 @@ describe('server configuration', () => {
     })).toThrow()
   })
 
+  it('parses optional ci-preview bootstrap values and validates their shape', () => {
+    const digest = `ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:${'a'.repeat(64)}`
+    const config = parseConfig({
+      PULPO_BOOTSTRAP_PRESET: 'ci-preview',
+      PULPO_PREVIEW_ADMIN_EMAIL: 'preview@example.com',
+      PULPO_PREVIEW_ADMIN_PASSWORD: 'preview-password',
+      PULPO_PREVIEW_PROVIDER_API_KEY: 'sk-preview',
+      PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: digest,
+    })
+
+    expect(config).toMatchObject({
+      PULPO_BOOTSTRAP_PRESET: 'ci-preview',
+      PULPO_PREVIEW_ADMIN_EMAIL: 'preview@example.com',
+      PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: digest,
+    })
+    expect(() => parseConfig({ PULPO_BOOTSTRAP_PRESET: 'production' })).toThrow()
+    expect(() => parseConfig({ PULPO_PREVIEW_ADMIN_EMAIL: 'not-an-email' })).toThrow()
+    expect(() => parseConfig({ PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: 'ghcr.io/example/workspace:latest' })).toThrow()
+  })
+
   it('resolves an explicit workspace instance id before deployment metadata', () => {
     const config = parseConfig({ PUBLIC_URL: 'https://pulpo.example.com', PULPO_INSTANCE_ID: 'production' })
     expect(getWorkspaceInstanceId(config, { SERVICE_FQDN_WEB: '42.preview.example.com' })).toBe('production')

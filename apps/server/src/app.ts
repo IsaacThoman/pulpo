@@ -25,6 +25,7 @@ import { ensureBuiltinCatalog } from './catalog/defaults.js'
 import { registerMobileRoutes } from './mobile/routes.js'
 import { registerResponseCompression } from './compression.js'
 import { registerManagementRoutes } from './management/routes.js'
+import { ensureBootstrapPreset } from './bootstrap/ci-preview.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -93,6 +94,7 @@ export async function buildApp() {
 
   app.get('/health', async () => ({ status: 'ok', service: 'pulpo-api' }))
   await ensureBuiltinCatalog()
+  await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
   await registerCatalogRoutes(app)
