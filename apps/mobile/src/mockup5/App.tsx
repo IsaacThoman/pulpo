@@ -4401,7 +4401,7 @@ const styles = StyleSheet.create({
   sendDisabled: { backgroundColor: COLORS.secondary },
 
   optionModal: { flex: 1, justifyContent: 'flex-end', backgroundColor: '#00000044' },
-  optionSheet: { backgroundColor: COLORS.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 20, paddingBottom: 28 },
+  optionSheet: { width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: COLORS.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 18, paddingTop: 20, paddingBottom: 28 },
   optionTitle: { color: COLORS.text, fontSize: 20, fontWeight: '700', letterSpacing: -0.4 },
   optionSubtitle: { color: COLORS.muted, fontSize: 13, lineHeight: 18, marginTop: 4, marginBottom: 14 },
   optionRow: { minHeight: 52, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
@@ -4449,7 +4449,7 @@ const styles = StyleSheet.create({
   nativeModalAnchorHost: { position: 'absolute', width: 1, height: 1, right: 0, top: 0 },
   nativeModelAssetHost: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   sheet: { flex: 1, backgroundColor: COLORS.background },
-  sheetSafe: { flex: 1, paddingHorizontal: 18 },
+  sheetSafe: { flex: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingHorizontal: 18 },
   sheetGrabber: { width: 36, height: 5, borderRadius: 3, backgroundColor: COLORS.fillStrong, alignSelf: 'center', marginTop: 8, marginBottom: 18 },
   sheetHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   sheetTitle: { color: COLORS.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
