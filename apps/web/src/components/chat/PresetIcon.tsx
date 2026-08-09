@@ -1,29 +1,8 @@
-import {
-  Brain,
-  Circle,
-  Flame,
-  Gauge,
-  Rocket,
-  Sparkles,
-  Timer,
-  Zap,
-  ZapOff,
-  type LucideIcon,
-} from 'lucide-react'
-import type { ChatPresetIcon } from '@/lib/types'
+import type { ChatPresetIcon } from '@pulpo/contracts'
+import { Circle } from 'lucide-react'
+import { DynamicIcon } from 'lucide-react/dynamic.js'
 import { cn } from '@/lib/utils'
-
-const ICONS: Record<ChatPresetIcon, LucideIcon> = {
-  brain: Brain,
-  zap: Zap,
-  'zap-off': ZapOff,
-  gauge: Gauge,
-  sparkles: Sparkles,
-  rocket: Rocket,
-  circle: Circle,
-  flame: Flame,
-  timer: Timer,
-}
+import { resolvePresetIconName } from './preset-icon-options'
 
 export function PresetIcon({
   name,
@@ -32,6 +11,8 @@ export function PresetIcon({
   name?: ChatPresetIcon | string
   className?: string
 }) {
-  const Icon = (name && ICONS[name as ChatPresetIcon]) || Circle
-  return <Icon className={cn('size-3.5', className)} />
+  const resolvedName = resolvePresetIconName(name)
+  const iconClassName = cn('size-3.5', className)
+  const Fallback = () => <Circle className={iconClassName} />
+  return <DynamicIcon name={resolvedName} fallback={Fallback} className={iconClassName} />
 }

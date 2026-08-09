@@ -32,7 +32,7 @@
     "clsx": "^2.1.1",
     "dexie": "^4.4.4",
     "katex": "^0.16.47",
-    "lucide-react": "^1.27.0",
+    "lucide-react": "1.27.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-markdown": "^10.1.0",

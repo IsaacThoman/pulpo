@@ -1,4 +1,7 @@
 import { z } from 'zod'
+import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
+
+export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export const idSchema = z.uuid()
 export const isoDateSchema = z.iso.datetime()
@@ -402,17 +405,18 @@ export const createProviderSchema = z.object({
   requestTimeoutMs: z.number().int().min(1_000).max(900_000).default(120_000),
 })
 
-export const chatPresetIconSchema = z.enum([
-  'brain',
-  'zap',
-  'zap-off',
-  'gauge',
-  'sparkles',
-  'rocket',
-  'circle',
-  'flame',
-  'timer',
-])
+export type ChatPresetIcon = (typeof CHAT_PRESET_ICON_NAMES)[number]
+
+const chatPresetIconNames = new Set<string>(CHAT_PRESET_ICON_NAMES)
+
+export function isChatPresetIcon(value: unknown): value is ChatPresetIcon {
+  return typeof value === 'string' && chatPresetIconNames.has(value)
+}
+
+export const chatPresetIconSchema = z.custom<ChatPresetIcon>(
+  isChatPresetIcon,
+  'Unknown chat preset icon; run `pulpo model icons [query]` to list valid names',
+)
 
 const chatPresetPublicIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/)
 
@@ -456,7 +460,6 @@ export const chatPresetsSchema = z.array(chatPresetSchema).max(10).superRefine((
   }
 })
 
-export type ChatPresetIcon = z.infer<typeof chatPresetIconSchema>
 export type ChatPresetAction = z.infer<typeof chatPresetChoiceSchema>['action']
 export type ChatPresetChoice = z.infer<typeof chatPresetChoiceSchema>
 export type ChatPreset = z.infer<typeof chatPresetSchema>

@@ -11,6 +11,12 @@ pulpo settings export --output pulpo-settings.json
 
 Use `pulpo help` or `pulpo <command> --help` for the complete command reference.
 
+Model create and update files may configure chat preset and choice icons with any
+canonical [Lucide](https://lucide.dev/icons/) name. Discover available names with
+`pulpo model icons`, or filter them locally with a query such as
+`pulpo model icons camera`. Invalid names are rejected before the model request is
+sent. Add `--json` for stable `{ "name": "..." }` rows in scripts.
+
 The major command groups are `context`, `auth`, `token`, `instance`, `settings`,
 `provider`, `lab`, `model`, `user`, `usage`, `audit`, `workspace`, `banner`,
 `job`, `export`, and `backup`. There is intentionally no restore command.

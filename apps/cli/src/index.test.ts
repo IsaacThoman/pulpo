@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createProgram } from './index.js'
+import { createProgram, preflightModelBody } from './index.js'
 import { addContext, loadConfig, macosKeychainWriteCommand, resolveConnection } from './config.js'
 import { confirmExact, readSecret } from './io.js'
 
@@ -19,6 +19,7 @@ describe('Pulpo CLI command surface', () => {
       'usage', 'audit', 'workspace', 'banner', 'job', 'export', 'backup',
     ]))
     expect(commandNames(program, 'settings')).toEqual(expect.arrayContaining(['get', 'set', 'edit', 'schema', 'export', 'diff', 'apply']))
+    expect(commandNames(program, 'model')).toContain('icons')
     expect(commandNames(program, 'backup')).not.toContain('restore')
     expect(commandNames(program, 'user')).toEqual(expect.arrayContaining([
       'approve', 'role', 'block', 'unblock', 'balance', 'storage', 'reset-link', 'delete',
@@ -29,6 +30,35 @@ describe('Pulpo CLI command surface', () => {
     const program = createProgram({ stdin: new PassThrough() as never, stdout: new PassThrough(), stderr: new PassThrough() })
     const flags = program.options.map((option) => option.long)
     expect(flags).toEqual(expect.arrayContaining(['--context', '--url', '--json', '--no-color', '--yes', '--verbose']))
+  })
+
+  it('lists and filters canonical preset icons locally in machine mode', async () => {
+    const stdout = new PassThrough()
+    let createdClient = false
+    const program = createProgram(
+      { stdin: new PassThrough() as never, stdout, stderr: new PassThrough() },
+      { createClient: () => { createdClient = true; throw new Error('unexpected client') } },
+    )
+    await program.parseAsync(['node', 'pulpo', 'model', 'icons', 'CAMERA', '--json'])
+    const rows = JSON.parse(stdout.read().toString()) as Array<{ name: string }>
+    expect(rows).toContainEqual({ name: 'camera' })
+    expect(rows.every(({ name }) => name.includes('camera'))).toBe(true)
+    expect(createdClient).toBe(false)
+  })
+
+  it('preflights model preset and choice icons', () => {
+    expect(preflightModelBody({
+      presets: [{
+        id: 'media', name: 'Media', icon: 'camera',
+        choices: [{ id: 'chart', displayName: 'Chart', icon: 'chart-no-axes-column', action: { type: 'none' } }],
+      }],
+    })).toBeTruthy()
+    expect(() => preflightModelBody({
+      presets: [{
+        id: 'bad', name: 'Bad', icon: 'not-a-lucide-icon',
+        choices: [{ id: 'on', displayName: 'On', action: { type: 'none' } }],
+      }],
+    })).toThrow('pulpo model icons')
   })
 
   it('accepts the global URL option after context add', async () => {

@@ -13,12 +13,14 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "generate:chat-preset-icons": "node scripts/generate-chat-preset-icons.mjs",
     "test": "vitest run"
   },
   "dependencies": {
     "zod": "^4.0.5"
   },
   "devDependencies": {
+    "lucide-react": "1.27.0",
     "typescript": "~6.0.2",
     "vitest": "^3.2.4"
   }
