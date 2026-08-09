@@ -25,7 +25,7 @@ import {
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { buttonStyle, contentShape, disabled as swiftUIDisabled, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
+import { accessibilityHint, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import { Badge, Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
 import { usePrototypeStore } from '../store/prototypeStore';
@@ -118,12 +118,14 @@ export function ChangePasswordScreen({ navigation }: NativeStackScreenProps<Root
   const [next, setNext] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const valid = Boolean(current && next.length >= 8 && next === confirmation);
+  const buttonBackground = valid ? theme.blue : theme.disabledBackground;
+  const buttonForeground = valid ? theme.accentText : theme.disabledText;
   const submit = () => {
     if (!valid) return;
     void mobileApi.changePassword(current, next).then(() => Alert.alert('Password updated', 'Your other sessions remain signed in.', [{ text: 'Done', onPress: () => navigation.goBack() }])).catch((error) => Alert.alert('Couldn’t update password', error instanceof Error ? error.message : undefined));
   };
 
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Password" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Use at least 8 characters. Other signed-in devices will remain active.</SwiftUIText>}><NativePasswordField placeholder="Current password" value={current} onChange={setCurrent} /><NativePasswordField placeholder="New password" value={next} onChange={setNext} /><NativePasswordField placeholder="Confirm new password" value={confirmation} onChange={setConfirmation} /></SwiftUISection><SwiftUISection><SwiftUIButton label="Update Password" systemImage="checkmark" onPress={submit} modifiers={[buttonStyle('borderedProminent'), frame({ maxWidth: Infinity }), swiftUIDisabled(!valid)]} /></SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Password" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Use at least 8 characters. Other signed-in devices will remain active.</SwiftUIText>}><NativePasswordField placeholder="Current password" value={current} onChange={setCurrent} /><NativePasswordField placeholder="New password" value={next} onChange={setNext} /><NativePasswordField placeholder="Confirm new password" value={confirmation} onChange={setConfirmation} /></SwiftUISection><SwiftUISection><SwiftUIButton onPress={valid ? submit : undefined} modifiers={[buttonStyle('plain'), frame({ maxWidth: Infinity, minHeight: 44 }), background(buttonBackground, shapes.capsule()), contentShape(shapes.capsule()), accessibilityValue(valid ? 'Enabled' : 'Disabled'), accessibilityHint(valid ? 'Updates your password' : 'Enter your current password and matching new passwords to enable')]}><SwiftUIText modifiers={[foregroundStyle(buttonForeground), font({ textStyle: 'body', weight: 'semibold' })]}>Update Password</SwiftUIText></SwiftUIButton></SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Change Password" onBack={() => navigation.goBack()} /><Field label="Current password" secureTextEntry value={current} onChangeText={setCurrent} /><Field label="New password" secureTextEntry value={next} onChangeText={setNext} /><Field label="Confirm new password" secureTextEntry value={confirmation} onChangeText={setConfirmation} /><PrimaryButton label="Update password" disabled={!valid} onPress={submit} /></Screen>;
 }
 
