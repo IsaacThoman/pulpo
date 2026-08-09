@@ -5,7 +5,7 @@ import { createAdapter } from '@socket.io/redis-streams-adapter'
 import type { ClientToServerEvents, ResponseSnapshot, ServerToClientEvents, SyncResult } from '@pulpo/contracts'
 import { idSchema, syncRequestSchema } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
-import { getAllowedOrigins, getConfig } from '../config.js'
+import { getConfig, isAllowedOrigin } from '../config.js'
 import { authenticateSessionToken, type AuthenticatedUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, responses, users } from '../database/schema.js'
@@ -59,12 +59,14 @@ function snapshotPreview(snapshot: ResponseSnapshot): string {
 
 export async function createSocketServer(httpServer: HttpServer) {
   const config = getConfig()
-  const allowedOrigins = getAllowedOrigins(config)
   const adapterRedis = createRedis()
   const subscriber = createRedis()
   const io = new Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>(httpServer, {
     path: '/socket.io',
-    cors: { origin: [...allowedOrigins], credentials: true },
+    cors: {
+      origin: (origin, callback) => callback(null, !origin || isAllowedOrigin(origin, config)),
+      credentials: true,
+    },
     connectionStateRecovery: {
       maxDisconnectionDuration: 120_000,
       skipMiddlewares: false,

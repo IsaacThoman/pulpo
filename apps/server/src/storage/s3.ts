@@ -10,7 +10,7 @@ export interface S3BlobStoreOptions {
   accessKeyId: string
   secretAccessKey: string
   forcePathStyle: boolean
-  corsOrigin?: string
+  corsOrigins?: string[]
 }
 
 export class S3BlobStore implements BlobStore {
@@ -42,11 +42,11 @@ export class S3BlobStore implements BlobStore {
       .then(() => undefined)
       .catch(async () => { await this.client.send(new CreateBucketCommand({ Bucket: this.options.bucket })) })
       .then(async () => {
-        if (!this.options.corsOrigin) return
+        if (!this.options.corsOrigins) return
         await this.client.send(new PutBucketCorsCommand({
           Bucket: this.options.bucket,
           CORSConfiguration: { CORSRules: [{
-            AllowedOrigins: [this.options.corsOrigin], AllowedMethods: ['GET', 'PUT', 'HEAD'],
+            AllowedOrigins: this.options.corsOrigins, AllowedMethods: ['GET', 'PUT', 'HEAD'],
             AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3_600,
           }] },
         }))

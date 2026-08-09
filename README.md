@@ -125,6 +125,7 @@ npm run dev
 ```
 
 The Vite server runs at `http://127.0.0.1:5173` and proxies API and Socket.IO traffic to port 3000.
+The local Compose override sets `NODE_ENV=development` and `ALLOW_ANY_LOCALHOST_PORT=true` on the server containers, allowing credentialed HTTP, Socket.IO, and object-storage requests from any `localhost`, `127.0.0.1`, or `[::1]` port. Production ignores this flag even if it is set.
 
 Validation commands:
 

@@ -30,6 +30,7 @@ const configSchema = z.object({
   SMTP_URL: z.string().optional(),
   SMTP_FROM: z.string().default('Pulpo <noreply@pulpo.local>'),
   COOKIE_SECURE: booleanString,
+  ALLOW_ANY_LOCALHOST_PORT: booleanString,
   ALLOW_PRIVATE_PROVIDER_URLS: booleanString,
   STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
   STORAGE_LOCAL_PATH: z.string().default('./data/objects'),
@@ -67,6 +68,37 @@ export function getAllowedOrigins(config = getConfig()): Set<string> {
   if (config.NODE_ENV === 'development') {
     origins.add('http://localhost:5173')
     origins.add('http://127.0.0.1:5173')
+  }
+  return origins
+}
+
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+
+export function isAllowedOrigin(origin: string, config = getConfig()): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(origin)
+  } catch {
+    return false
+  }
+  if (getAllowedOrigins(config).has(parsed.origin)) return true
+  return config.NODE_ENV === 'development'
+    && config.ALLOW_ANY_LOCALHOST_PORT
+    && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+    && LOOPBACK_HOSTS.has(parsed.hostname)
+}
+
+export function getStorageCorsOrigins(config = getConfig()): string[] {
+  const origins = [new URL(config.PUBLIC_URL).origin]
+  if (config.NODE_ENV === 'development' && config.ALLOW_ANY_LOCALHOST_PORT) {
+    origins.push(
+      'http://localhost:*',
+      'https://localhost:*',
+      'http://127.0.0.1:*',
+      'https://127.0.0.1:*',
+      'http://[::1]:*',
+      'https://[::1]:*',
+    )
   }
   return origins
 }

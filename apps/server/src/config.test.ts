@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseConfig } from './config.js'
+import { getStorageCorsOrigins, isAllowedOrigin, parseConfig } from './config.js'
 
 describe('server configuration', () => {
   it('treats empty optional workspace controller values as unset', () => {
@@ -19,5 +19,63 @@ describe('server configuration', () => {
       WORKSPACE_CONTROLLER_URL: 'not-a-url',
       WORKSPACE_CONTROLLER_TOKEN: 'short',
     })).toThrow()
+  })
+
+  it('keeps arbitrary localhost ports disabled by default', () => {
+    const config = parseConfig({
+      NODE_ENV: 'development',
+      PUBLIC_URL: 'https://pulpo.example.com',
+    })
+
+    expect(config.ALLOW_ANY_LOCALHOST_PORT).toBe(false)
+    expect(isAllowedOrigin('http://localhost:5173', config)).toBe(true)
+    expect(isAllowedOrigin('http://127.0.0.1:5173', config)).toBe(true)
+    expect(isAllowedOrigin('http://localhost:4173', config)).toBe(false)
+  })
+
+  it('allows any loopback port only when explicitly enabled in development', () => {
+    const config = parseConfig({
+      NODE_ENV: 'development',
+      PUBLIC_URL: 'https://pulpo.example.com',
+      ALLOW_ANY_LOCALHOST_PORT: 'true',
+    })
+
+    expect(isAllowedOrigin('http://localhost:4173', config)).toBe(true)
+    expect(isAllowedOrigin('https://localhost:9443', config)).toBe(true)
+    expect(isAllowedOrigin('http://127.0.0.1:8081', config)).toBe(true)
+    expect(isAllowedOrigin('http://[::1]:6006', config)).toBe(true)
+    expect(isAllowedOrigin('http://localhost.evil.example:4173', config)).toBe(false)
+    expect(isAllowedOrigin('ftp://localhost:4173', config)).toBe(false)
+    expect(isAllowedOrigin('not an origin', config)).toBe(false)
+  })
+
+  it('ignores the localhost-port flag outside development', () => {
+    const config = parseConfig({
+      NODE_ENV: 'production',
+      PUBLIC_URL: 'https://pulpo.example.com',
+      ALLOW_ANY_LOCALHOST_PORT: 'true',
+    })
+
+    expect(isAllowedOrigin('https://pulpo.example.com', config)).toBe(true)
+    expect(isAllowedOrigin('http://localhost:4173', config)).toBe(false)
+    expect(getStorageCorsOrigins(config)).toEqual(['https://pulpo.example.com'])
+  })
+
+  it('adds loopback wildcard origins to development object-storage CORS', () => {
+    const config = parseConfig({
+      NODE_ENV: 'development',
+      PUBLIC_URL: 'http://localhost:8080',
+      ALLOW_ANY_LOCALHOST_PORT: 'true',
+    })
+
+    expect(getStorageCorsOrigins(config)).toEqual([
+      'http://localhost:8080',
+      'http://localhost:*',
+      'https://localhost:*',
+      'http://127.0.0.1:*',
+      'https://127.0.0.1:*',
+      'http://[::1]:*',
+      'https://[::1]:*',
+    ])
   })
 })
