@@ -439,6 +439,13 @@ type MessageEditSession = {
   message: Message;
   originalAttachmentIds: Set<string>;
 };
+type ChatFollowSnapshot = {
+  nearBottom: boolean;
+  autoFollow: boolean;
+  readerInteracting: boolean;
+  tailPending: boolean;
+  revision: number;
+};
 
 const MODELS: Model[] = [
   { id: 'demo-claude', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
@@ -2778,6 +2785,7 @@ function ChatView({
   const chatTailPending = useRef(true);
   const pendingFollowFrame = useRef<number | null>(null);
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentMode);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
@@ -3062,13 +3070,48 @@ function ChatView({
     }
   }, [addAttachments]);
 
-  const followComposerGeneration = useCallback(() => {
-    // A send is an explicit request to see the new turn. Reset any stale
-    // proximity left over from the previously-short transcript so the first
-    // content-size update follows the optimistic user/assistant rows.
+  const armSubmittedTurnFollow = useCallback((): ChatFollowSnapshot => {
+    submittedTurnFollowRevision.current += 1;
+    const snapshot = {
+      nearBottom: isNearBottom.current,
+      autoFollow: shouldAutoFollow.current,
+      readerInteracting: readerInteracting.current,
+      tailPending: chatTailPending.current,
+      revision: submittedTurnFollowRevision.current,
+    };
+    if (pendingFollowFrame.current !== null) {
+      cancelAnimationFrame(pendingFollowFrame.current);
+      pendingFollowFrame.current = null;
+    }
+    if (tailSettleTimer.current !== null) {
+      clearTimeout(tailSettleTimer.current);
+      tailSettleTimer.current = null;
+    }
+    // Sending explicitly asks to see the optimistic user row and the queued
+    // assistant row. Hold this intent across keyboard/layout scroll events
+    // until their final measured content height has settled.
     readerInteracting.current = false;
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
+    chatTailPending.current = true;
+    return snapshot;
+  }, []);
+
+  const restoreSubmittedTurnFollow = useCallback((snapshot: ChatFollowSnapshot) => {
+    // Direct reader interaction or navigation supersedes the send-time intent.
+    if (snapshot.revision !== submittedTurnFollowRevision.current) return;
+    if (pendingFollowFrame.current !== null) {
+      cancelAnimationFrame(pendingFollowFrame.current);
+      pendingFollowFrame.current = null;
+    }
+    if (tailSettleTimer.current !== null) {
+      clearTimeout(tailSettleTimer.current);
+      tailSettleTimer.current = null;
+    }
+    isNearBottom.current = snapshot.nearBottom;
+    shouldAutoFollow.current = snapshot.autoFollow;
+    readerInteracting.current = snapshot.readerInteracting;
+    chatTailPending.current = snapshot.tailPending;
   }, []);
 
   const uploadOne = useCallback(async (attachment: ComposerAttachment): Promise<PreparedAttachment | null> => {
@@ -3124,6 +3167,7 @@ function ChatView({
   const submitMessage = useCallback(async () => {
     if (sending || attachments.some((attachment) => attachment.state === 'uploading')) return;
     setSending(true);
+    let followSnapshot: ChatFollowSnapshot | null = null;
     try {
       const prepared = await Promise.all(attachments.map(uploadOne));
       if (prepared.some((attachment) => attachment === null)) {
@@ -3140,23 +3184,35 @@ function ChatView({
         if (accepted) restoreComposer();
         return;
       }
+      // Arm before invoking onSend: it inserts the optimistic rows before its
+      // first network await, so arming after the promise resolves is too late.
+      followSnapshot = armSubmittedTurnFollow();
       const accepted = await onSend(input, prepared as PreparedAttachment[], { presetSelections, agentEnabled: activeAgentEnabled, temporary });
-      if (!accepted) return;
-      followComposerGeneration();
+      if (!accepted) {
+        restoreSubmittedTurnFollow(followSnapshot);
+        followSnapshot = null;
+        return;
+      }
+      followSnapshot = null;
       onChangeInput('');
       setAttachments([]);
     } catch (error) {
+      if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your draft was kept. Please try again.');
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, attachments, followComposerGeneration, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, sending, temporary, uploadOne]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
+    const followSnapshot = armSubmittedTurnFollow();
     void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary }).then((accepted) => {
-      if (accepted) followComposerGeneration();
-    }).catch((error) => Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined));
-  }, [activeAgentEnabled, followComposerGeneration, onSend, presetSelections, temporary]);
+      if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
+    }).catch((error) => {
+      restoreSubmittedTurnFollow(followSnapshot);
+      Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
+    });
+  }, [activeAgentEnabled, armSubmittedTurnFollow, onSend, presetSelections, restoreSubmittedTurnFollow, temporary]);
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
@@ -3213,6 +3269,7 @@ function ChatView({
   }, [cancelTailSettle, scrollToMeasuredTail]);
 
   const beginReaderInteraction = useCallback(() => {
+    submittedTurnFollowRevision.current += 1;
     readerInteracting.current = true;
     chatTailPending.current = false;
     shouldAutoFollow.current = false;
@@ -3228,15 +3285,18 @@ function ChatView({
 
   const followContentIfNeeded = useCallback(() => {
     const establishingChatTail = chatTailPending.current;
-    if ((!establishingChatTail
-      && !shouldFollowChatContent(shouldAutoFollow.current && isNearBottom.current, readerInteracting.current))
-      || readerInteracting.current
-      || pendingFollowFrame.current !== null) return;
+    if (!shouldFollowChatContent(
+      shouldAutoFollow.current && isNearBottom.current,
+      readerInteracting.current,
+      establishingChatTail,
+    ) || pendingFollowFrame.current !== null) return;
     pendingFollowFrame.current = requestAnimationFrame(() => {
       pendingFollowFrame.current = null;
-      if ((!chatTailPending.current
-        && !shouldFollowChatContent(shouldAutoFollow.current && isNearBottom.current, readerInteracting.current))
-        || readerInteracting.current) return;
+      if (!shouldFollowChatContent(
+        shouldAutoFollow.current && isNearBottom.current,
+        readerInteracting.current,
+        chatTailPending.current,
+      )) return;
       scrollToMeasuredTail(chatTailPending.current ? false : assistantStatus === 'idle');
     });
   }, [assistantStatus, scrollToMeasuredTail]);
@@ -3249,6 +3309,7 @@ function ChatView({
   }, [followContentIfNeeded, scheduleTailSettle]);
 
   useEffect(() => {
+    submittedTurnFollowRevision.current += 1;
     isNearBottom.current = true;
     shouldAutoFollow.current = true;
     readerInteracting.current = false;

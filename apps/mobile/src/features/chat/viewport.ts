@@ -18,9 +18,16 @@ export function isNearChatBottom(
   return metrics.offsetY + metrics.viewportHeight >= metrics.contentHeight - threshold
 }
 
-/** Never move the reader while a drag or its momentum is still in progress. */
-export function shouldFollowChatContent(nearBottom: boolean, readerInteracting: boolean): boolean {
-  return nearBottom && !readerInteracting
+/**
+ * Never move the reader during direct interaction. An explicit tail request,
+ * such as submitting a new turn, may override stale proximity measurements.
+ */
+export function shouldFollowChatContent(
+  nearBottom: boolean,
+  readerInteracting: boolean,
+  forceTail = false,
+): boolean {
+  return !readerInteracting && (forceTail || nearBottom)
 }
 
 /** Keep background chat chrome at its resting position while another surface owns the keyboard. */

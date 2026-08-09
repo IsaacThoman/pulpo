@@ -17,6 +17,11 @@ describe('chat viewport following', () => {
     expect(shouldFollowChatContent(false, false)).toBe(false)
   })
 
+  it('lets an explicit send override stale proximity without overriding the reader', () => {
+    expect(shouldFollowChatContent(false, false, true)).toBe(true)
+    expect(shouldFollowChatContent(false, true, true)).toBe(false)
+  })
+
   it('freezes keyboard-responsive chat layout while another surface owns the keyboard', () => {
     expect(resolveKeyboardLayoutProgress(1, false)).toBe(0)
     expect(resolveKeyboardLayoutProgress(0.45, false)).toBe(0)
