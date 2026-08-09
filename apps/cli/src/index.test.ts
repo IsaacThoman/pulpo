@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createProgram } from './index.js'
-import { addContext, loadConfig, resolveConnection } from './config.js'
+import { addContext, loadConfig, macosKeychainWriteCommand, resolveConnection } from './config.js'
 import { confirmExact, readSecret } from './io.js'
 
 function commandNames(program: ReturnType<typeof createProgram>, group: string): string[] {
@@ -48,6 +48,13 @@ describe('Pulpo CLI command surface', () => {
       else process.env.XDG_CONFIG_HOME = previous
       await rm(root, { recursive: true, force: true })
     }
+  })
+
+  it('keeps macOS Keychain secret data out of process arguments', () => {
+    const invocation = macosKeychainWriteCommand('production')
+    expect(invocation.command).toBe('/usr/bin/expect')
+    expect(invocation.args.join(' ')).not.toContain('production')
+    expect(invocation.env.PULPO_CLI_KEYCHAIN_CONTEXT).toBe('production')
   })
 
   it('reads noninteractive secrets from injected stdin and requires --yes in machine mode', async () => {

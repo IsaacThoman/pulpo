@@ -7,6 +7,35 @@ import { normalizeInstanceUrl } from '@pulpo/client-core'
 
 const execFileAsync = promisify(execFile)
 const KEYCHAIN_SERVICE = 'Pulpo CLI'
+const MACOS_KEYCHAIN_WRITE_SCRIPT = String.raw`
+log_user 0
+set timeout 15
+set secret [gets stdin]
+set context $env(PULPO_CLI_KEYCHAIN_CONTEXT)
+spawn /usr/bin/security add-generic-password -U -s "Pulpo CLI" -a $context -w
+expect {
+  -re {password data for .*item:} { send -- "$secret\r" }
+  timeout { exit 124 }
+  eof { set result [wait]; exit [lindex $result 3] }
+}
+expect {
+  -re {retype password for .*item:} { send -- "$secret\r"; exp_continue }
+  timeout { exit 124 }
+  eof { set result [wait]; exit [lindex $result 3] }
+}
+`
+
+export function macosKeychainWriteCommand(context: string): {
+  command: string
+  args: string[]
+  env: NodeJS.ProcessEnv
+} {
+  return {
+    command: '/usr/bin/expect',
+    args: ['-c', MACOS_KEYCHAIN_WRITE_SCRIPT],
+    env: { ...process.env, PULPO_CLI_KEYCHAIN_CONTEXT: context },
+  }
+}
 
 export interface CliContext {
   url: string
@@ -92,11 +121,16 @@ async function keychainGet(context: string): Promise<string | null> {
 async function keychainSet(context: string, token: string): Promise<boolean> {
   try {
     if (process.platform === 'darwin') {
+      if (!await commandExists('expect') || token.includes('\n')) return false
+      const invocation = macosKeychainWriteCommand(context)
       await new Promise<void>((resolve, reject) => {
-        const child = spawn('security', ['add-generic-password', '-U', '-s', KEYCHAIN_SERVICE, '-a', context, '-w'], { stdio: ['pipe', 'ignore', 'ignore'] })
+        const child = spawn(invocation.command, invocation.args, {
+          env: invocation.env,
+          stdio: ['pipe', 'ignore', 'ignore'],
+        })
         child.once('error', reject)
-        child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`security exited ${code}`)))
-        child.stdin.end(token)
+        child.once('exit', (code) => code === 0 ? resolve() : reject(new Error(`expect exited ${code}`)))
+        child.stdin.end(`${token}\n`)
       })
       return true
     }
