@@ -199,7 +199,7 @@ export async function createSocketServer(httpServer: HttpServer) {
     return pending
   }
 
-  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:admin-usage')
+  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage')
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
@@ -222,6 +222,14 @@ export async function createSocketServer(httpServer: HttpServer) {
           })
         }
       })
+    } else if (channel === 'pulpo:session-revocations') {
+      const event = JSON.parse(message) as { userId: string }
+      const room = io.of('/').adapter.rooms.get(`user:${event.userId}`)
+      for (const socketId of room ?? []) {
+        // Closing the transport is reconnectable. The preserved session succeeds;
+        // sockets using one of the deleted sessions fail the authentication middleware.
+        io.of('/').sockets.get(socketId)?.conn.close()
+      }
     } else {
       const change = JSON.parse(message) as { userId: string; revision: number; chatId?: string }
       io.to(`user:${change.userId}`).emit('account.revision', { revision: change.revision })

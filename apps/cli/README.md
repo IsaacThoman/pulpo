@@ -6,6 +6,9 @@ Operator-first command-line client for a Pulpo instance.
 npm install --global @isaacthoman/pulpo
 pulpo context add production --url https://pulpo.example.com
 pulpo auth login --email admin@example.com
+pulpo auth 2fa status
+pulpo auth 2fa setup
+pulpo auth 2fa confirm
 pulpo settings export --output pulpo-settings.json
 ```
 
@@ -32,6 +35,9 @@ lives in the platform config directory. Session tokens use Keychain on macOS or
 Secret Service on Linux when available, with a mode-`0600` file and warning as
 the fallback. Passwords are read from a hidden prompt, stdin, or
 `PULPO_PASSWORD`; no secret-bearing password/token option is accepted.
+Authenticator and recovery codes use the hidden prompt or `PULPO_2FA_CODE`.
+Enrollment secrets and recovery codes are printed only when created; store them
+securely before continuing.
 
 Settings exports use `apiVersion: pulpo.dev/management/v1` and carry an opaque
 revision. `settings diff` exits with status 2 when changes exist. A stale

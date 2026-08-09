@@ -188,6 +188,19 @@ describe('shared contracts', () => {
         publicSharing: true, attachments: true, folders: true,
       },
     }).success).toBe(true)
+    expect(nativeLoginInputSchema.parse({
+      email: 'member@example.com', password: 'password', deviceLabel: 'Pulpo CLI', twoFactorCode: '123456',
+    }).twoFactorCode).toBe('123456')
+    expect(mobileConfigSchema.parse({
+      mobileApiVersion: 1,
+      instance: { name: 'Pulpo', version: '1.0.0', publicUrl: 'https://pulpo.baby' },
+      setupRequired: false,
+      auth: { signupEnabled: true, pendingDetails: true, adminEmail: '', pendingMessage: 'Pending' },
+      capabilities: {
+        bearerSessions: true, realtime: true, chatDuplication: true,
+        publicSharing: true, attachments: true, folders: true,
+      },
+    }).capabilities.twoFactorAuth).toBe(false)
   })
 
   it('normalizes a complete management settings document', () => {

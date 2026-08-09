@@ -145,6 +145,7 @@ async function clientFor(command: Command, authenticated = true): Promise<{
   client: PulpoManagementClient
   contextName: string | null
   context: { url: string; email?: string } | null
+  info: Awaited<ReturnType<PulpoManagementClient['info']>>
 }> {
   const options = globalOptions(command)
   const connection = await resolveConnection({ context: options.context, url: options.url })
@@ -175,7 +176,35 @@ async function clientFor(command: Command, authenticated = true): Promise<{
   if (capability && !info.capabilities.includes(capability)) {
     throw new Error(`The selected Pulpo instance does not advertise the ${capability} capability`)
   }
-  return { client, contextName: connection.contextName, context: connection.context }
+  return { client, contextName: connection.contextName, context: connection.context, info }
+}
+
+async function twoFactorSecret(io: CliIo, json: boolean, prompt = 'Authenticator or recovery code: '): Promise<string> {
+  const value = process.env.PULPO_2FA_CODE
+  if (value !== undefined) return value
+  if (!io.stdin.isTTY) throw new Error('Noninteractive two-factor verification requires PULPO_2FA_CODE')
+  if (json) throw new Error('Machine-mode two-factor verification requires PULPO_2FA_CODE')
+  return readSecret(io, prompt)
+}
+
+async function currentPassword(io: CliIo, json: boolean): Promise<string> {
+  const value = process.env.PULPO_PASSWORD
+  if (value !== undefined) return value
+  if (!io.stdin.isTTY) throw new Error('Noninteractive account security changes require PULPO_PASSWORD')
+  if (json) throw new Error('Machine-mode account security changes require PULPO_PASSWORD')
+  return readSecret(io, 'Current password: ')
+}
+
+function requireTwoFactorCapability(info: Awaited<ReturnType<PulpoManagementClient['info']>>): void {
+  if (!info.capabilities.includes('twoFactor')) throw new Error('The selected Pulpo instance does not support two-factor authentication')
+}
+
+function emitRecoveryCodes(io: CliIo, command: Command, recoveryCodes: string[]): void {
+  io.stderr.write('Save these recovery codes now. They will not be shown again.\n')
+  if (globalOptions(command).json) emit(io, command, { recoveryCodes })
+  else {
+    writeOutput(io, recoveryCodes.map((recoveryCode) => ({ recoveryCode })), false)
+  }
 }
 
 function emit(io: CliIo, command: Command, value: unknown): void {
@@ -304,7 +333,14 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
       throw new Error('Machine-mode login requires the password on stdin or in PULPO_PASSWORD')
     }
     const password = process.env.PULPO_PASSWORD ?? await readSecret(io, 'Password: ')
-    const result = await client.login(email, password)
+    let result
+    try {
+      result = await client.login(email, password)
+    } catch (error) {
+      if (!(error instanceof ManagementApiError) || error.code !== 'two_factor_required') throw error
+      const code = await twoFactorSecret(io, Boolean(globalOptions(command).json))
+      result = await client.login(email, password, 'Pulpo CLI', code)
+    }
     await setCredential(contextName, result.session.token, (message) => io.stderr.write(`${message}\n`))
     const config = await loadConfig()
     config.contexts[contextName] = { ...config.contexts[contextName]!, email }
@@ -320,6 +356,51 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
   auth.command('status').action(async (_options, command) => {
     const { client } = await clientFor(command)
     emit(io, command, await client.me())
+  })
+
+  const twoFactor = auth.command('2fa').description('Manage authenticator-app two-factor authentication')
+  twoFactor.command('status').action(async (_options, command) => {
+    const { client, info } = await clientFor(command)
+    requireTwoFactorCapability(info)
+    emit(io, command, await client.twoFactorStatus())
+  })
+  twoFactor.command('setup').description('Start or replace authenticator enrollment').action(async (_options, command) => {
+    const { client, info } = await clientFor(command)
+    requireTwoFactorCapability(info)
+    const status = await client.twoFactorStatus()
+    const password = await currentPassword(io, Boolean(globalOptions(command).json))
+    const verificationCode = status.enabled
+      ? await twoFactorSecret(io, Boolean(globalOptions(command).json), 'Current authenticator or recovery code: ')
+      : undefined
+    const enrollment = await client.beginTwoFactorEnrollment({ currentPassword: password, verificationCode })
+    io.stderr.write('Save this enrollment secret now. It will not be shown again.\n')
+    if (globalOptions(command).json) emit(io, command, enrollment)
+    else {
+      io.stderr.write('Add this account to your authenticator, then run `pulpo auth 2fa confirm`.\n')
+      writeOutput(io, [{ manualKey: enrollment.manualKey, otpauthUri: enrollment.otpauthUri, expiresAt: enrollment.expiresAt }], false)
+    }
+  })
+  twoFactor.command('confirm').description('Confirm a pending enrollment').action(async (_options, command) => {
+    const { client, info } = await clientFor(command)
+    requireTwoFactorCapability(info)
+    const code = await twoFactorSecret(io, Boolean(globalOptions(command).json), 'New six-digit authenticator code: ')
+    emitRecoveryCodes(io, command, (await client.confirmTwoFactorEnrollment(code)).recoveryCodes)
+  })
+  twoFactor.command('regenerate-recovery-codes').description('Replace all recovery codes').action(async (_options, command) => {
+    const { client, info } = await clientFor(command)
+    requireTwoFactorCapability(info)
+    const password = await currentPassword(io, Boolean(globalOptions(command).json))
+    const verificationCode = await twoFactorSecret(io, Boolean(globalOptions(command).json))
+    emitRecoveryCodes(io, command, (await client.regenerateTwoFactorRecoveryCodes({ currentPassword: password, verificationCode })).recoveryCodes)
+  })
+  twoFactor.command('disable').description('Disable two-factor authentication').action(async (_options, command) => {
+    await confirmExact(io, 'DISABLE', Boolean(globalOptions(command).yes), Boolean(globalOptions(command).json))
+    const { client, info } = await clientFor(command)
+    requireTwoFactorCapability(info)
+    const password = await currentPassword(io, Boolean(globalOptions(command).json))
+    const verificationCode = await twoFactorSecret(io, Boolean(globalOptions(command).json))
+    await client.disableTwoFactor({ currentPassword: password, verificationCode })
+    emit(io, command, { enabled: false })
   })
 
   const token = program.command('token').description('Manage scoped automation tokens')

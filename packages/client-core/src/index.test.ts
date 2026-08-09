@@ -101,4 +101,34 @@ describe('client core', () => {
     expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer mt-pulpo-prefix.secret')
     await expect(client.me()).rejects.toEqual(expect.objectContaining<Partial<ManagementApiError>>({ status: 403, code: 'forbidden' }))
   })
+
+  it('uses the shared account endpoints for full two-factor management', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname
+      if (path.endsWith('/two-factor/enrollment/confirm') || path.endsWith('/two-factor/recovery-codes')) {
+        return new Response(JSON.stringify({ recoveryCodes: Array.from({ length: 10 }, (_, index) => `CODE-${index}`) }), { status: 200 })
+      }
+      if (path.endsWith('/two-factor/enrollment')) {
+        return new Response(JSON.stringify({
+          manualKey: 'ABCDEFGHIJKLMNOP', otpauthUri: 'otpauth://totp/Pulpo:test',
+          qrCodeDataUrl: 'data:image/png;base64,abc', expiresAt: '2026-08-09T12:00:00.000Z',
+        }), { status: 201 })
+      }
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return new Response(JSON.stringify({ enabled: true, recoveryCodesRemaining: 10 }), { status: 200 })
+    })
+    const client = new PulpoManagementClient('https://pulpo.example.com', 'session-token', fetcher as typeof fetch)
+
+    expect(await client.twoFactorStatus()).toEqual({ enabled: true, recoveryCodesRemaining: 10 })
+    await client.beginTwoFactorEnrollment({ currentPassword: 'password', verificationCode: '123456' })
+    await client.confirmTwoFactorEnrollment('654321')
+    await client.regenerateTwoFactorRecoveryCodes({ currentPassword: 'password', verificationCode: '123456' })
+    await client.disableTwoFactor({ currentPassword: 'password', verificationCode: '123456' })
+
+    expect(fetcher.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
+      '/api/me/two-factor', '/api/me/two-factor/enrollment', '/api/me/two-factor/enrollment/confirm',
+      '/api/me/two-factor/recovery-codes', '/api/me/two-factor',
+    ])
+    expect(fetcher.mock.calls.at(-1)?.[1]?.method).toBe('DELETE')
+  })
 })

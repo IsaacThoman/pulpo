@@ -35,7 +35,9 @@
     "ioredis": "^5.7.0",
     "nodemailer": "^9.0.3",
     "openai": "^7.3.0",
+    "otpauth": "^9.5.1",
     "postgres": "^3.4.7",
+    "qrcode": "^1.5.4",
     "sharp": "^0.34.5",
     "socket.io": "^4.8.1",
     "tar-stream": "^3.2.0",
@@ -46,6 +48,7 @@
   "devDependencies": {
     "@types/node": "^24.2.1",
     "@types/nodemailer": "^6.4.17",
+    "@types/qrcode": "^1.5.6",
     "@types/tar-stream": "^3.1.4",
     "drizzle-kit": "^0.31.4",
     "tsx": "^4.20.3",

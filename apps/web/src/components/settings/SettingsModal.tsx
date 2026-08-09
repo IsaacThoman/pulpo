@@ -40,6 +40,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
+import { TwoFactorSettings } from './TwoFactorSettings'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -425,6 +426,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </div>
                   <Row label="Display name"><Input defaultValue={user?.name ?? ''} className="w-52" /></Row>
                   <Row label="Password"><Button variant="outline" size="sm">Change password</Button></Row>
+                  <TwoFactorSettings />
                   <Separator className="my-3" />
                   <Row label="Sign out" hint="End this session on this device.">
                     <Button variant="outline" size="sm" onClick={() => { onClose(); logout(); navigate('/login') }}>Sign out</Button>
