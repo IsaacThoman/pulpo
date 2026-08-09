@@ -1,6 +1,6 @@
 import argon2 from 'argon2'
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { and, eq, gt } from 'drizzle-orm'
+import { and, eq, gt, ne } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { User } from '@pulpo/contracts'
 import { db } from '../database/client.js'
@@ -9,6 +9,7 @@ import { getConfig } from '../config.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
 import { forbidden, unauthorized } from '../lib/errors.js'
+import { publishSessionRevocation } from '../responses/events.js'
 
 export interface AuthenticatedUser extends User {}
 
@@ -118,6 +119,16 @@ export async function destroySession(request: FastifyRequest, reply: FastifyRepl
 export async function destroyNativeSession(request: FastifyRequest): Promise<void> {
   const token = bearerSessionToken(request.headers.authorization)
   if (token) await db.delete(sessions).where(eq(sessions.tokenHash, hashToken(token)))
+}
+
+export async function revokeOtherSessions(request: FastifyRequest, userId: string): Promise<void> {
+  const currentToken = requestSessionToken(request)
+  if (!currentToken) throw unauthorized()
+  await db.delete(sessions).where(and(
+    eq(sessions.userId, userId),
+    ne(sessions.tokenHash, hashToken(currentToken)),
+  ))
+  await publishSessionRevocation(userId)
 }
 
 export async function authenticateSession(request: FastifyRequest): Promise<AuthenticatedUser | null> {

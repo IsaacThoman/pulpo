@@ -1,10 +1,10 @@
 import { LegalPage } from './LegalPage'
 
 export function PrivacyPage() {
-  return <LegalPage title="Privacy policy" updated="August 3, 2026">
+  return <LegalPage title="Privacy policy" updated="August 9, 2026">
     <section>
       <h2>What Pulpo stores</h2>
-      <p>Pulpo stores the account information you provide, including your name, email address, and account identifier. It also stores content you choose to create or upload, such as conversations, prompts, generated responses, files, photos, folder organization, model preferences, and public-share settings.</p>
+      <p>Pulpo stores the account information you provide, including your name, email address, account identifier, and optional two-factor authentication configuration. Authenticator secrets are encrypted and recovery codes are stored as one-way hashes. It also stores content you choose to create or upload, such as conversations, prompts, generated responses, files, photos, folder organization, model preferences, and public-share settings.</p>
     </section>
     <section>
       <h2>Where your data goes</h2>

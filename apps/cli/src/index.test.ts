@@ -11,6 +11,11 @@ function commandNames(program: ReturnType<typeof createProgram>, group: string):
   return program.commands.find((command) => command.name() === group)?.commands.map((command) => command.name()) ?? []
 }
 
+function nestedCommandNames(program: ReturnType<typeof createProgram>, group: string, child: string): string[] {
+  return program.commands.find((command) => command.name() === group)?.commands
+    .find((command) => command.name() === child)?.commands.map((command) => command.name()) ?? []
+}
+
 describe('Pulpo CLI command surface', () => {
   it('exposes the operator command groups and omits restore', () => {
     const program = createProgram({ stdin: new PassThrough() as never, stdout: new PassThrough(), stderr: new PassThrough() })
@@ -19,6 +24,10 @@ describe('Pulpo CLI command surface', () => {
       'usage', 'audit', 'workspace', 'banner', 'job', 'export', 'backup',
     ]))
     expect(commandNames(program, 'settings')).toEqual(expect.arrayContaining(['get', 'set', 'edit', 'schema', 'export', 'diff', 'apply']))
+    expect(commandNames(program, 'auth')).toContain('2fa')
+    expect(nestedCommandNames(program, 'auth', '2fa')).toEqual(expect.arrayContaining([
+      'status', 'setup', 'confirm', 'regenerate-recovery-codes', 'disable',
+    ]))
     expect(commandNames(program, 'model')).toContain('icons')
     expect(commandNames(program, 'backup')).not.toContain('restore')
     expect(commandNames(program, 'user')).toEqual(expect.arrayContaining([

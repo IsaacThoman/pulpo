@@ -1,15 +1,18 @@
 import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
+  beginTwoFactorEnrollmentInputSchema,
   changePasswordInputSchema,
+  confirmTwoFactorEnrollmentInputSchema,
   loginInputSchema,
   setupInputSchema,
   signupInputSchema,
   updateProfileInputSchema,
+  verifyTwoFactorChangeInputSchema,
 } from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
-import { applicationSettings, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
+import { applicationSettings, auditEvents, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
@@ -21,9 +24,39 @@ import {
   createSession,
   destroySession,
   requireUser,
+  revokeOtherSessions,
   serializeUser,
   verifyPassword,
 } from './service.js'
+import {
+  beginTwoFactorEnrollment,
+  clearTwoFactor,
+  confirmTwoFactorEnrollment,
+  hasTwoFactor,
+  replaceRecoveryCodes,
+  requireLoginSecondFactor,
+  twoFactorStatus,
+  verifySecondFactor,
+} from './two-factor.js'
+
+async function requireCurrentPassword(userId: string, password: string): Promise<void> {
+  const [credential] = await db.select().from(passwordCredentials)
+    .where(eq(passwordCredentials.userId, userId)).limit(1)
+  if (!credential || !(await verifyPassword(credential.passwordHash, password))) {
+    throw unauthorized('Current password is incorrect')
+  }
+}
+
+async function recordTwoFactorChange(
+  request: Parameters<typeof revokeOtherSessions>[0],
+  userId: string,
+  action: string,
+): Promise<void> {
+  await db.insert(auditEvents).values({
+    id: newId(), actorUserId: userId, action, targetType: 'user', targetId: userId,
+  })
+  await revokeOtherSessions(request, userId)
+}
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/auth/settings', async () => {
@@ -74,6 +107,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     if (!row || row.user.blocked || !(await verifyPassword(row.credential.passwordHash, input.password))) {
       throw unauthorized('Invalid email or password')
     }
+    await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
     await createSession(row.user.id, request, reply)
     return { user: serializeUser(row.user) }
   })
@@ -168,6 +202,58 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       passwordHash: await createPasswordHash(input.newPassword),
       changedAt: new Date(),
     }).where(eq(passwordCredentials.userId, user.id))
+    reply.code(204).send()
+  })
+
+  app.get('/api/me/two-factor', async (request) => {
+    const user = requireUser(request)
+    return twoFactorStatus(user.id)
+  })
+
+  app.post('/api/me/two-factor/enrollment', async (request, reply) => {
+    const user = requireUser(request)
+    const input = beginTwoFactorEnrollmentInputSchema.parse(request.body)
+    await requireCurrentPassword(user.id, input.currentPassword)
+    if (await hasTwoFactor(user.id)) {
+      if (!input.verificationCode) {
+        throw new AppError(400, 'two_factor_code_required', 'Enter your current authenticator or recovery code.')
+      }
+      await verifySecondFactor(user.id, input.verificationCode)
+    }
+    reply.header('cache-control', 'no-store').code(201)
+    return beginTwoFactorEnrollment(user)
+  })
+
+  app.post('/api/me/two-factor/enrollment/confirm', async (request, reply) => {
+    const user = requireUser(request)
+    const input = confirmTwoFactorEnrollmentInputSchema.parse(request.body)
+    const replacing = await hasTwoFactor(user.id)
+    const recoveryCodes = await confirmTwoFactorEnrollment(user.id, input.code)
+    await recordTwoFactorChange(request, user.id, replacing ? 'account.two_factor.replace' : 'account.two_factor.enable')
+    reply.header('cache-control', 'no-store')
+    return { recoveryCodes }
+  })
+
+  app.post('/api/me/two-factor/recovery-codes', async (request, reply) => {
+    const user = requireUser(request)
+    const input = verifyTwoFactorChangeInputSchema.parse(request.body)
+    await requireCurrentPassword(user.id, input.currentPassword)
+    if (!(await hasTwoFactor(user.id))) throw new AppError(409, 'two_factor_not_enabled', 'Two-factor authentication is not enabled.')
+    await verifySecondFactor(user.id, input.verificationCode)
+    const recoveryCodes = await replaceRecoveryCodes(user.id)
+    await recordTwoFactorChange(request, user.id, 'account.two_factor.recovery_codes.regenerate')
+    reply.header('cache-control', 'no-store')
+    return { recoveryCodes }
+  })
+
+  app.delete('/api/me/two-factor', async (request, reply) => {
+    const user = requireUser(request)
+    const input = verifyTwoFactorChangeInputSchema.parse(request.body)
+    await requireCurrentPassword(user.id, input.currentPassword)
+    if (!(await hasTwoFactor(user.id))) throw new AppError(409, 'two_factor_not_enabled', 'Two-factor authentication is not enabled.')
+    await verifySecondFactor(user.id, input.verificationCode)
+    await clearTwoFactor(user.id)
+    await recordTwoFactorChange(request, user.id, 'account.two_factor.disable')
     reply.code(204).send()
   })
 }

@@ -40,6 +40,10 @@ export async function publishStateChange(input: { userId: string; revision: numb
   await redis.publish('pulpo:state-changes', JSON.stringify(input))
 }
 
+export async function publishSessionRevocation(userId: string): Promise<void> {
+  await redis.publish('pulpo:session-revocations', JSON.stringify({ userId }))
+}
+
 export async function requestCancellation(responseId: string): Promise<void> {
   await redis.set(`pulpo:response:${responseId}:cancel`, '1', 'EX', 3_600)
 }

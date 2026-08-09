@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   token: 'session-token' as string | null,
   config: vi.fn(),
   me: vi.fn(),
+  login: vi.fn(),
   configureApi: vi.fn(),
   deleteToken: vi.fn(async () => undefined),
 }))
@@ -41,13 +42,14 @@ vi.mock('../api/client', () => {
     mobileApi: {
       config: mocks.config,
       me: mocks.me,
-      login: vi.fn(),
+      login: mocks.login,
       signup: vi.fn(),
       logout: vi.fn(async () => undefined),
     },
   }
 })
 
+import { ApiError } from '../api/client'
 import { useSessionStore } from './session'
 
 const instanceUrl = 'https://pulpo.test'
@@ -81,6 +83,7 @@ beforeEach(() => {
   mocks.token = 'session-token'
   mocks.config.mockReset().mockResolvedValue(null)
   mocks.me.mockReset()
+  mocks.login.mockReset()
   mocks.configureApi.mockReset()
   mocks.deleteToken.mockClear()
   useSessionStore.setState({
@@ -159,5 +162,25 @@ describe('local-first session hydration', () => {
 
     expect(mocks.values.get('global:activeSessionNamespace')).toBeNull()
     expect(useSessionStore.getState()).toMatchObject({ status: 'anonymous', token: null, user: null })
+  })
+})
+
+describe('two-factor login', () => {
+  it('returns a challenge result without creating a session', async () => {
+    mocks.token = null
+    mocks.login.mockRejectedValue(new ApiError(401, 'two_factor_required', 'Enter your code'))
+
+    await expect(useSessionStore.getState().login('member@example.com', 'password')).resolves.toBe('two-factor-required')
+    expect(useSessionStore.getState()).toMatchObject({ status: 'hydrating', token: null, user: null })
+  })
+
+  it('forwards the factor and persists the resulting native session', async () => {
+    mocks.token = null
+    const signedIn = user('44444444-4444-4444-8444-444444444444', 'Two Factor User')
+    mocks.login.mockResolvedValue({ user: signedIn, session: { token: 'new-session-token', expiresAt: '2026-09-01T00:00:00.000Z' } })
+
+    await expect(useSessionStore.getState().login('member@example.com', 'password', '123456')).resolves.toBe('authenticated')
+    expect(mocks.login).toHaveBeenCalledWith('member@example.com', 'password', 'Test iPhone', '123456')
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'new-session-token', user: signedIn })
   })
 })

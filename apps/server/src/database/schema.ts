@@ -53,6 +53,32 @@ export const passwordCredentials = pgTable('password_credentials', {
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const userTotpCredentials = pgTable('user_totp_credentials', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  encryptedSecret: text('encrypted_secret').notNull(),
+  lastUsedCounter: bigint('last_used_counter', { mode: 'number' }).notNull().default(-1),
+  enabledAt: timestamp('enabled_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const userTotpEnrollments = pgTable('user_totp_enrollments', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  encryptedSecret: text('encrypted_secret').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const twoFactorRecoveryCodes = pgTable('two_factor_recovery_codes', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  codeHash: text('code_hash').notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('two_factor_recovery_codes_hash_unique').on(table.codeHash),
+  index('two_factor_recovery_codes_user_idx').on(table.userId),
+])
+
 export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

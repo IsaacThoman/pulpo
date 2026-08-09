@@ -13,6 +13,9 @@ import {
   type NativeAuthResponse,
   type ResponseEvent,
   type ResponseSnapshot,
+  type TwoFactorEnrollment,
+  type TwoFactorRecoveryCodes,
+  type TwoFactorStatus,
   type User,
 } from '@pulpo/contracts'
 
@@ -268,8 +271,8 @@ export class PulpoManagementClient {
     return this.request('/api/management/v1/info')
   }
 
-  login(email: string, password: string, deviceLabel = 'Pulpo CLI'): Promise<NativeAuthResponse> {
-    return this.request('/api/management/v1/auth/login', { method: 'POST', body: { email, password, deviceLabel } })
+  login(email: string, password: string, deviceLabel = 'Pulpo CLI', twoFactorCode?: string): Promise<NativeAuthResponse> {
+    return this.request('/api/management/v1/auth/login', { method: 'POST', body: { email, password, deviceLabel, twoFactorCode } })
   }
 
   logout(): Promise<void> {
@@ -278,6 +281,26 @@ export class PulpoManagementClient {
 
   me(): Promise<{ user: User }> {
     return this.request('/api/management/v1/auth/me')
+  }
+
+  twoFactorStatus(): Promise<TwoFactorStatus> {
+    return this.request('/api/me/two-factor')
+  }
+
+  beginTwoFactorEnrollment(input: { currentPassword: string; verificationCode?: string }): Promise<TwoFactorEnrollment> {
+    return this.request('/api/me/two-factor/enrollment', { method: 'POST', body: input })
+  }
+
+  confirmTwoFactorEnrollment(code: string): Promise<TwoFactorRecoveryCodes> {
+    return this.request('/api/me/two-factor/enrollment/confirm', { method: 'POST', body: { code } })
+  }
+
+  regenerateTwoFactorRecoveryCodes(input: { currentPassword: string; verificationCode: string }): Promise<TwoFactorRecoveryCodes> {
+    return this.request('/api/me/two-factor/recovery-codes', { method: 'POST', body: input })
+  }
+
+  disableTwoFactor(input: { currentPassword: string; verificationCode: string }): Promise<void> {
+    return this.request('/api/me/two-factor', { method: 'DELETE', body: input })
   }
 
   tokens(): Promise<{ data: ManagementToken[] }> {

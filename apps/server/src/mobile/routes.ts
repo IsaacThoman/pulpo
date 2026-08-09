@@ -19,6 +19,7 @@ import {
   serializeUser,
   verifyPassword,
 } from '../auth/service.js'
+import { requireLoginSecondFactor } from '../auth/two-factor.js'
 
 export async function registerMobileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/mobile/config', async () => {
@@ -46,6 +47,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         publicSharing: true,
         attachments: true,
         folders: true,
+        twoFactorAuth: true,
       },
     })
   })
@@ -61,6 +63,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
     if (!row || row.user.blocked || !(await verifyPassword(row.credential.passwordHash, input.password))) {
       throw unauthorized('Invalid email or password')
     }
+    await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
     const session = await createNativeSession(row.user.id, input.deviceLabel, request)
     return { user: serializeUser(row.user), session }
   })

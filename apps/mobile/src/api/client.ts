@@ -1,4 +1,4 @@
-import type { MobileConfig, NativeAuthResponse, User } from '@pulpo/contracts'
+import type { MobileConfig, NativeAuthResponse, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -91,9 +91,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
 export const mobileApi = {
   config: () => apiRequest<MobileConfig>('/api/mobile/config', { auth: false }),
-  login: (email: string, password: string, deviceLabel: string) =>
+  login: (email: string, password: string, deviceLabel: string, twoFactorCode?: string) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/login', {
-      method: 'POST', auth: false, body: { email, password, deviceLabel },
+      method: 'POST', auth: false, body: { email, password, deviceLabel, twoFactorCode },
     }),
   signup: (name: string, email: string, password: string, deviceLabel: string) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', {
@@ -104,6 +104,21 @@ export const mobileApi = {
   updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
   changePassword: (currentPassword: string, newPassword: string) =>
     apiRequest<void>('/api/me/password', { method: 'POST', body: { currentPassword, newPassword } }),
+  twoFactorStatus: () => apiRequest<TwoFactorStatus>('/api/me/two-factor'),
+  beginTwoFactorEnrollment: (currentPassword: string, verificationCode?: string) =>
+    apiRequest<TwoFactorEnrollment>('/api/me/two-factor/enrollment', {
+      method: 'POST', body: { currentPassword, verificationCode },
+    }),
+  confirmTwoFactorEnrollment: (code: string) => apiRequest<TwoFactorRecoveryCodes>('/api/me/two-factor/enrollment/confirm', {
+    method: 'POST', body: { code },
+  }),
+  regenerateTwoFactorRecoveryCodes: (currentPassword: string, verificationCode: string) =>
+    apiRequest<TwoFactorRecoveryCodes>('/api/me/two-factor/recovery-codes', {
+      method: 'POST', body: { currentPassword, verificationCode },
+    }),
+  disableTwoFactor: (currentPassword: string, verificationCode: string) => apiRequest<void>('/api/me/two-factor', {
+    method: 'DELETE', body: { currentPassword, verificationCode },
+  }),
   forgotPassword: (email: string) => apiRequest<{ accepted: true }>('/api/auth/forgot-password', {
     method: 'POST', auth: false, body: { email },
   }),

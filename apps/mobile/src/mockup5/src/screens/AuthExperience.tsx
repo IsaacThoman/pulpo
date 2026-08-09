@@ -9,7 +9,7 @@ import { mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
-type AuthPage = 'login' | 'signup' | 'forgot' | 'instance';
+type AuthPage = 'login' | 'two-factor' | 'signup' | 'forgot' | 'instance';
 
 const mockupOneDark = {
   background: '#101014', surface: '#18181C', border: '#303036', text: '#FAFAFA',
@@ -99,6 +99,8 @@ export function AuthExperience() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [instanceUrl, setInstanceUrl] = useState(productionInstanceUrl);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -124,7 +126,14 @@ export function AuthExperience() {
   const submitLogin = () => {
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid email address.');
     if (password.length < 8) return setError('Password must be at least 8 characters.');
-    void run(() => login(email.trim(), password));
+    void run(async () => {
+      const result = await login(email.trim(), password);
+      if (result === 'two-factor-required') { setTwoFactorCode(''); setPage('two-factor'); }
+    });
+  };
+  const submitTwoFactor = () => {
+    if (recoveryMode ? twoFactorCode.trim().length < 12 : !/^\d{6}$/.test(twoFactorCode)) return setError('Enter a valid code.');
+    void run(async () => { await login(email.trim(), password, twoFactorCode.trim()); });
   };
   const submitSignup = () => {
     if (name.trim().length < 2) return setError('Enter your full name.');
@@ -179,6 +188,14 @@ export function AuthExperience() {
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Refresh status" colors={colors} loading={loading} onPress={() => { void refreshApproval(); }} />
     <Pressable accessibilityRole="button" onPress={() => { void logout(); }} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.text }]}>Back to sign in</Text></Pressable>
+  </AuthShell>;
+
+  if (page === 'two-factor') return <AuthShell colors={colors} title="Verify your identity" subtitle={recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.'}>
+    <AuthField colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : 6} returnKeyType="go" onSubmitEditing={submitTwoFactor} />
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+    <PrimaryAuthButton label="Verify and sign in" colors={colors} loading={loading} disabled={recoveryMode ? twoFactorCode.trim().length < 12 : twoFactorCode.length !== 6} onPress={submitTwoFactor} />
+    <BackToSignIn colors={colors} label={recoveryMode ? 'Use an authenticator code' : 'Use a recovery code'} onPress={() => { setRecoveryMode((value) => !value); setTwoFactorCode(''); setError(''); }} />
+    <BackToSignIn colors={colors} onPress={() => { setPassword(''); goTo('login'); }} />
   </AuthShell>;
 
   if (page === 'signup') {

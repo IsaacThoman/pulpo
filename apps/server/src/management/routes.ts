@@ -12,6 +12,7 @@ import { db } from '../database/client.js'
 import { auditEvents, managementTokens, passwordCredentials, users } from '../database/schema.js'
 import { getConfig } from '../config.js'
 import { createNativeSession, destroyNativeSession, runWithAuthenticatedUser, serializeUser, verifyPassword } from '../auth/service.js'
+import { requireLoginSecondFactor } from '../auth/two-factor.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -97,7 +98,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
           workspaceControllerConfigured: Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN),
         },
         capabilities: [
-          'settings', 'managementTokens', 'catalog', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations',
+          'settings', 'managementTokens', 'catalog', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
         ],
       }
     })
@@ -110,6 +111,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
       if (!row || row.user.blocked || !(await verifyPassword(row.credential.passwordHash, input.password))) {
         throw unauthorized('Invalid email or password')
       }
+      await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
       return { user: serializeUser(row.user), session: await createNativeSession(row.user.id, input.deviceLabel, request) }
     })
 
