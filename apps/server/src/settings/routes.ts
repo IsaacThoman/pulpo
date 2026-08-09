@@ -43,31 +43,39 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('trashRetention' in patch && !trashRetentionValues.includes(patch.trashRetention as typeof trashRetentionValues[number])) {
       throw new AppError(400, 'invalid_trash_retention', 'Choose a valid trash retention period')
     }
-    const [existing] = await db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
-    const previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
-    const insertValues = preferencesWithModelDefaults(patch)
-    const defaults = JSON.stringify(preferencesWithModelDefaults())
-    const patchJson = JSON.stringify(patch)
-    const [saved] = await db.insert(userPreferences).values({ userId: user.id, values: insertValues })
-      .onConflictDoUpdate({
-        target: userPreferences.userId,
-        set: {
-          // One SQL expression prevents concurrent PATCH requests from losing unrelated fields.
-          values: sql`${defaults}::jsonb || ${userPreferences.values} || ${patchJson}::jsonb`,
-          updatedAt: new Date(),
-        },
-      }).returning()
     const nickname = typeof patch.nickname === 'string'
       ? patch.nickname.trim() || null
       : patch.nickname === null ? null : undefined
     const leaderboardVisible = typeof patch.leaderboardVisible === 'boolean' ? patch.leaderboardVisible : undefined
     const leaderboardColor = typeof patch.leaderboardColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(patch.leaderboardColor) ? patch.leaderboardColor : undefined
-    const [revision] = await db.update(users).set({
-      nickname, leaderboardVisible, leaderboardColor,
-      stateRevision: sql`${users.stateRevision} + 1`,
+    let previousTrashRetention = DEFAULT_TRASH_RETENTION
+    let saved: typeof userPreferences.$inferSelect | undefined
+    let stateRevision: number | undefined
+    await db.transaction(async (tx) => {
+      // Share the management-settings lock so a stale full-document apply can
+      // never overwrite a concurrent account PATCH.
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      const [existing] = await tx.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
+      previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
+      const insertValues = preferencesWithModelDefaults(patch)
+      const defaults = JSON.stringify(preferencesWithModelDefaults())
+      const patchJson = JSON.stringify(patch)
+      ;[saved] = await tx.insert(userPreferences).values({ userId: user.id, values: insertValues })
+        .onConflictDoUpdate({
+          target: userPreferences.userId,
+          set: {
+            // One SQL expression prevents concurrent PATCH requests from losing unrelated fields.
+            values: sql`${defaults}::jsonb || ${userPreferences.values} || ${patchJson}::jsonb`,
+            updatedAt: new Date(),
+          },
+        }).returning()
+      const [revision] = await tx.update(users).set({
+        nickname, leaderboardVisible, leaderboardColor,
+        stateRevision: sql`${users.stateRevision} + 1`,
+      }).where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
+      stateRevision = revision?.revision
     })
-      .where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
-    if (revision) await publishStateChange({ userId: user.id, revision: revision.revision })
+    if (stateRevision !== undefined) await publishStateChange({ userId: user.id, revision: stateRevision })
     if ('trashRetention' in patch && parseTrashRetention(patch.trashRetention) !== previousTrashRetention) {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
         jobId: `purge-chats-settings-${user.id}-${Date.now()}`,

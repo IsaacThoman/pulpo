@@ -526,6 +526,22 @@ export const apiKeys = pgTable('api_keys', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('api_key_prefix_unique').on(table.prefix)])
 
+export const managementTokens = pgTable('management_tokens', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  prefix: text('prefix').notNull(),
+  secretHash: text('secret_hash').notNull(),
+  scopes: jsonb('scopes').$type<string[]>().notNull().default([]),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('management_token_prefix_unique').on(table.prefix),
+  index('management_tokens_user_idx').on(table.userId),
+])
+
 export const apiKeyModelPermissions = pgTable('api_key_model_permissions', {
   apiKeyId: uuid('api_key_id').notNull().references(() => apiKeys.id, { onDelete: 'cascade' }),
   modelId: text('model_id').notNull().references(() => models.id, { onDelete: 'cascade' }),

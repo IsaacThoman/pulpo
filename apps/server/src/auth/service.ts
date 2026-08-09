@@ -1,4 +1,5 @@
 import argon2 from 'argon2'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { and, eq, gt } from 'drizzle-orm'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import type { User } from '@pulpo/contracts'
@@ -10,6 +11,8 @@ import { newId } from '../lib/ids.js'
 import { forbidden, unauthorized } from '../lib/errors.js'
 
 export interface AuthenticatedUser extends User {}
+
+const internalAuthenticatedUser = new AsyncLocalStorage<AuthenticatedUser>()
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -118,7 +121,13 @@ export async function destroyNativeSession(request: FastifyRequest): Promise<voi
 }
 
 export async function authenticateSession(request: FastifyRequest): Promise<AuthenticatedUser | null> {
+  const internal = internalAuthenticatedUser.getStore()
+  if (internal) return internal
   return authenticateSessionToken(requestSessionToken(request))
+}
+
+export function runWithAuthenticatedUser<T>(user: AuthenticatedUser, operation: () => T): T {
+  return internalAuthenticatedUser.run(user, operation)
 }
 
 export async function authenticateSessionToken(token: string | undefined): Promise<AuthenticatedUser | null> {

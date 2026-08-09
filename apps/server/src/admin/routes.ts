@@ -1,9 +1,9 @@
-import { and, desc, eq, ne, sql } from 'drizzle-orm'
+import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, creditLedger, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -93,6 +93,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       if (updated!.blocked) {
         await tx.delete(sessions).where(eq(sessions.userId, id))
         await tx.update(apiKeys).set({ status: 'revoked', revokedAt: new Date() }).where(and(eq(apiKeys.userId, id), ne(apiKeys.status, 'revoked')))
+        await tx.update(managementTokens).set({ revokedAt: new Date() }).where(and(eq(managementTokens.userId, id), isNull(managementTokens.revokedAt)))
       }
       if (password) {
         const passwordHash = await createPasswordHash(password)
@@ -101,7 +102,8 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         await tx.delete(sessions).where(eq(sessions.userId, id))
       }
       await tx.insert(auditEvents).values({
-        id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id, metadata: patch,
+        id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id,
+        metadata: { ...userPatch, ...(password ? { passwordChanged: true } : {}) },
       })
     })
     const [updated] = await db.select().from(users).where(eq(users.id, id)).limit(1)

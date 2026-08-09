@@ -24,6 +24,7 @@ import { registerAttachmentRoutes } from './attachments/routes.js'
 import { ensureBuiltinLabs } from './catalog/defaults.js'
 import { registerMobileRoutes } from './mobile/routes.js'
 import { registerResponseCompression } from './compression.js'
+import { registerManagementRoutes } from './management/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -46,6 +47,8 @@ export async function buildApp() {
 
   app.decorateRequest('user', null)
   app.decorateRequest('apiKeyId', null)
+  app.decorateRequest('managementTokenId', null)
+  app.decorateRequest('managementScopes', null)
 
   app.addHook('onRequest', async (request) => {
     request.user = await authenticateSession(request)
@@ -105,6 +108,7 @@ export async function buildApp() {
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerPublicApiRoutes(app)
+  await registerManagementRoutes(app)
 
   return app
 }

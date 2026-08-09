@@ -11,7 +11,7 @@ const TABLES = [
   'labs', 'provider_connections', 'users', 'password_credentials', 'user_preferences', 'audit_events',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories', 'api_keys',
-  'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
+  'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
   'workspace_leases', 'agent_runs', 'tool_executions',
 ] as const
@@ -76,6 +76,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     const database = JSON.parse(Buffer.from(files.get('database.json') ?? []).toString()) as Record<string, Array<Record<string, unknown>>>
     if (manifest.format !== 'pulpo-instance-backup' || manifest.version !== 1) throw new Error('Unsupported backup manifest')
     if (!(database.users ?? []).some((user) => user.role === 'admin')) throw new Error('Backup must contain at least one administrator')
+    // Backups created before management tokens were introduced remain valid;
+    // they restore with no automation credentials.
+    database.management_tokens ??= []
     for (const table of TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
     for (const [index, blob] of manifest.blobs.entries()) {
       const body = files.get(blob.entry); if (!body || checksum(body) !== blob.checksum) throw new Error(`Attachment checksum failed: ${blob.objectKey}`)

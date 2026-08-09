@@ -8,6 +8,10 @@ import {
   createChatResponseSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
+  managementInfoSchema,
+  managementSettingsDocumentSchema,
+  managementTokenSchema,
+  createManagementTokenSchema,
   mobileConfigSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
@@ -160,6 +164,50 @@ describe('shared contracts', () => {
         bearerSessions: true, realtime: true, chatDuplication: true,
         publicSharing: true, attachments: true, folders: true,
       },
+    }).success).toBe(true)
+  })
+
+  it('normalizes a complete management settings document', () => {
+    const document = managementSettingsDocumentSchema.parse({
+      apiVersion: 'pulpo.dev/management/v1',
+      kind: 'Settings',
+      revision: 'revision-1',
+      account: {},
+      instance: {},
+    })
+    expect(document.account).toMatchObject({ theme: 'system', trashRetention: '30d', favoriteModelIds: [] })
+    expect(document.instance).toMatchObject({
+      auth: { signupEnabled: true },
+      interface: { localTask: 'current' },
+      ocr: { enabled: false, modelId: null },
+      webTools: { searchEnabled: false },
+      logging: { payloadRetention: '7d' },
+    })
+  })
+
+  it('bounds management tokens and secret references', () => {
+    expect(createManagementTokenSchema.parse({ name: 'automation', scopes: ['instance:read', 'instance:read'] }))
+      .toMatchObject({ scopes: ['instance:read'], expiresInDays: 90 })
+    expect(createManagementTokenSchema.safeParse({ name: 'too long', scopes: ['instance:read'], expiresInDays: 366 }).success).toBe(false)
+    expect(managementSettingsDocumentSchema.safeParse({
+      apiVersion: 'pulpo.dev/management/v1', kind: 'Settings', revision: 'revision', account: {},
+      instance: { webTools: { apiKey: { fromEnv: 'PULPO_KAGI_KEY' } } },
+    }).success).toBe(true)
+  })
+
+  it('validates public management metadata and redacted token rows', () => {
+    expect(managementInfoSchema.safeParse({
+      managementApiVersion: 1,
+      instance: { name: 'Pulpo', version: '1.0.0', publicUrl: 'https://pulpo.example.com' },
+      deployment: {
+        storageDriver: 's3', databaseConfigured: true, redisConfigured: true, s3Configured: true,
+        encryptionConfigured: true, cookieSecure: true, smtpConfigured: true, workspaceControllerConfigured: false,
+      },
+      capabilities: ['settings'],
+    }).success).toBe(true)
+    expect(managementTokenSchema.safeParse({
+      id: crypto.randomUUID(), name: 'CI', prefix: 'mt-pulpo-prefix', scopes: ['instance:read'],
+      expiresAt: new Date().toISOString(), lastUsedAt: null, revokedAt: null, createdAt: new Date().toISOString(),
     }).success).toBe(true)
   })
 

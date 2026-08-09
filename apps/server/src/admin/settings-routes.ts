@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, lt, or } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { agentSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
@@ -49,6 +49,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/settings', async (request) => {
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
+    if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
     if (values.auth !== undefined) values.auth = authSettingsSchema.parse(values.auth)
     if (values.logging !== undefined) values.logging = loggingSettingsSchema.parse(values.logging)
     if (values.interface !== undefined) {
@@ -66,6 +67,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       for (const [key, value] of Object.entries(values)) {
         await tx.insert(applicationSettings).values({ key, value, updatedBy: admin.id })
           .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
@@ -98,13 +100,15 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/settings/web-tools', async (request) => {
     const admin = requireAdmin(request)
     const input = webToolsSettingsSchema.extend({ apiKey: z.string().trim().min(1).optional() }).parse(request.body)
-    const [existing] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
-    const old = parseWebToolsSettings(existing?.value)
-    const value = storedWebToolsSettingsSchema.parse({
-      ...input,
-      encryptedApiKey: input.apiKey ? encryptSecret(input.apiKey, getConfig().ENCRYPTION_KEY) : old.encryptedApiKey,
-    })
+    let value: z.infer<typeof storedWebToolsSettingsSchema> | undefined
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      const [existing] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
+      const old = parseWebToolsSettings(existing?.value)
+      value = storedWebToolsSettingsSchema.parse({
+        ...input,
+        encryptedApiKey: input.apiKey ? encryptSecret(input.apiKey, getConfig().ENCRYPTION_KEY) : old.encryptedApiKey,
+      })
       await tx.insert(applicationSettings).values({ key: 'webTools', value, updatedBy: admin.id })
         .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
       await tx.insert(auditEvents).values({
@@ -112,7 +116,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
         metadata: { searchEnabled: value.searchEnabled, extractEnabled: value.extractEnabled, billSearches: value.billSearches, billExtracts: value.billExtracts },
       })
     })
-    return { ...input, apiKey: undefined, hasApiKey: Boolean(value.encryptedApiKey) }
+    return { ...input, apiKey: undefined, hasApiKey: Boolean(value?.encryptedApiKey) }
   })
 
   app.get('/api/admin/settings/ocr', async (request) => {
@@ -145,6 +149,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       ...input,
     })
     await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       await tx.insert(applicationSettings).values({ key: 'ocr', value, updatedBy: admin.id }).onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'settings.ocr.update', targetType: 'application', metadata: { enabled: value.enabled, modelId: value.modelId } })
     })
@@ -157,21 +162,40 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   })
 
   app.post('/api/admin/banners', async (request, reply) => {
-    requireAdmin(request)
+    const admin = requireAdmin(request)
     const input = z.object({
       type: z.enum(['info', 'warning', 'error']).default('info'), content: z.string().trim().min(1).max(2_000),
       dismissible: z.boolean().default(true), startsAt: z.iso.datetime().nullable().default(null), endsAt: z.iso.datetime().nullable().default(null),
     }).parse(request.body)
     const [created] = await db.insert(banners).values({ id: newId(), ...input, startsAt: input.startsAt ? new Date(input.startsAt) : null, endsAt: input.endsAt ? new Date(input.endsAt) : null }).returning()
+    await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'banner.create', targetType: 'banner', targetId: created!.id })
     reply.code(201)
     return created
   })
 
+  app.patch('/api/admin/banners/:id', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const input = z.object({
+      type: z.enum(['info', 'warning', 'error']).optional(), content: z.string().trim().min(1).max(2_000).optional(),
+      dismissible: z.boolean().optional(), startsAt: z.iso.datetime().nullable().optional(), endsAt: z.iso.datetime().nullable().optional(),
+    }).parse(request.body)
+    const [updated] = await db.update(banners).set({
+      ...input,
+      startsAt: input.startsAt === undefined ? undefined : input.startsAt ? new Date(input.startsAt) : null,
+      endsAt: input.endsAt === undefined ? undefined : input.endsAt ? new Date(input.endsAt) : null,
+    }).where(eq(banners.id, id)).returning()
+    if (!updated) throw notFound('Banner')
+    await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'banner.update', targetType: 'banner', targetId: id })
+    return updated
+  })
+
   app.delete('/api/admin/banners/:id', async (request, reply) => {
-    requireAdmin(request)
+    const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
     const deleted = await db.delete(banners).where(eq(banners.id, id)).returning({ id: banners.id })
     if (!deleted.length) throw notFound('Banner')
+    await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'banner.delete', targetType: 'banner', targetId: id })
     reply.code(204).send()
   })
 

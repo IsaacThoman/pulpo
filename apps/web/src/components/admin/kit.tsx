@@ -92,6 +92,7 @@ export function TextField({
   placeholder,
   indent,
   mono,
+  disabled,
 }: {
   label: string
   hint?: string
@@ -100,6 +101,7 @@ export function TextField({
   placeholder?: string
   indent?: boolean
   mono?: boolean
+  disabled?: boolean
 }) {
   return (
     <Field label={label} hint={hint} indent={indent}>
@@ -108,6 +110,7 @@ export function TextField({
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
       />
     </Field>
   )
