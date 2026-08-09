@@ -20,6 +20,7 @@ import {
   Animated,
   Appearance,
   type ColorValue,
+  DynamicColorIOS,
   FlatList,
   Image,
   Keyboard,
@@ -145,6 +146,7 @@ import {
   InstanceDetailsScreen,
   MemberSettingsScreen,
   SettingsDetailScreen,
+  TwoFactorScreen,
   TrashScreen,
 } from './src/screens/MemberScreens';
 import type { RootStackParamList } from './src/navigation';
@@ -214,6 +216,12 @@ function systemColor(ios: string, android: string, fallback: string): ColorValue
   return fallback;
 }
 
+function readableColor(light: string, dark: string, android: string, fallback = light): ColorValue {
+  if (Platform.OS === 'ios') return DynamicColorIOS({ light, dark });
+  if (Platform.OS === 'android') return PlatformColor(android);
+  return fallback;
+}
+
 // Native semantic colors automatically follow the device's appearance and contrast settings.
 const COLORS = {
   background: systemColor('systemBackground', '?attr/colorBackground', '#ffffff'),
@@ -225,12 +233,15 @@ const COLORS = {
   lineSoft: systemColor('opaqueSeparator', '?attr/colorControlNormal', '#c6c6c8'),
   text: systemColor('label', '?attr/textColorPrimary', '#000000'),
   textSoft: systemColor('label', '?attr/textColorPrimary', '#000000'),
-  muted: systemColor('secondaryLabel', '?attr/textColorSecondary', '#3c3c4399'),
+  muted: readableColor('#68686F', '#A1A1A8', '?attr/textColorSecondary'),
   dim: systemColor('tertiaryLabel', '?attr/textColorSecondary', '#3c3c434d'),
   fill: systemColor('tertiarySystemFill', '?attr/colorControlHighlight', '#7676801f'),
   fillStrong: systemColor('secondarySystemFill', '?attr/colorControlHighlight', '#78788029'),
   accent: systemColor('systemBlue', '?attr/colorAccent', '#007aff'),
   positive: systemColor('systemGreen', '?attr/colorAccent', '#34c759'),
+  critical: readableColor('#C5221F', '#FF8A84', '?attr/colorError'),
+  criticalAction: readableColor('#A91511', '#FFB0AB', '?attr/colorError'),
+  warning: readableColor('#A24B00', '#FFB15A', '?attr/colorAccent'),
   foregroundOnAccent: '#ffffff',
   mono: Platform.select({ ios: 'Menlo', default: 'monospace' }) as string,
 };
@@ -1132,6 +1143,7 @@ function PrototypeRoot() {
         <RootStack.Screen name="Account" component={AccountScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Account', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: Platform.OS === 'ios', presentation: 'formSheet', title: 'Edit Profile' }} />
         <RootStack.Screen name="ChangePassword" component={ChangePasswordScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Change Password', headerBackTitle: 'Account' }} />
+        <RootStack.Screen name="TwoFactor" component={TwoFactorScreen} options={{ headerShown: false }} />
         <RootStack.Screen name="InstanceDetails" component={InstanceDetailsScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Pulpo Instance', headerBackTitle: 'Account' }} />
         <RootStack.Screen name="SettingsDetail" component={SettingsDetailScreen} options={{ headerShown: Platform.OS === 'ios', headerBackTitle: 'Settings' }} />
         <RootStack.Screen name="Trash" component={TrashScreen} options={{ headerShown: Platform.OS === 'ios', title: 'Trash', headerBackTitle: 'Settings' }} />
@@ -2141,12 +2153,12 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   const compaction = steps.find((step) => step.kind === 'compaction');
   if (compaction?.kind === 'compaction') {
     if (compaction.compaction.status === 'in_progress') return <Loader2 color={COLORS.muted} size={14} />;
-    if (compaction.compaction.status === 'failed') return <XCircle color="#FF6961" size={14} />;
+    if (compaction.compaction.status === 'failed') return <XCircle color={COLORS.critical} size={14} />;
     return <Minimize2 color={COLORS.muted} size={14} />;
   }
   const workspace = steps.find((step) => step.kind === 'workspace');
   if (workspace?.kind === 'workspace') {
-    if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color="#FF6961" size={14} />;
+    if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return <XCircle color={COLORS.critical} size={14} />;
     if (workspaceIsActive(workspace.workspace.state)) return <Server color={COLORS.muted} size={14} />;
   }
   const tools = steps.filter((step) => step.kind === 'tool');
@@ -2232,7 +2244,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
         {running
           ? <Loader2 color={COLORS.muted} size={13} />
           : failed
-            ? <XCircle color="#FF6961" size={13} />
+            ? <XCircle color={COLORS.critical} size={13} />
             : <ToolIcon color={COLORS.muted} size={13} />}
         <Text style={styles.workToolName}>{step.tool.tool ?? 'Tool'}</Text>
         <Text numberOfLines={1} style={styles.workToolSummary}>{toolStepSummary(step.tool)}</Text>
@@ -2301,7 +2313,7 @@ function WorkBlock({ steps, active, durationMs }: { steps: TimelineStep[]; activ
             if (step.kind === 'workspace') {
               const detail = step.workspace.error ?? step.workspace.state?.replaceAll('_', ' ') ?? 'Workspace';
               const failed = ['expired', 'unavailable'].includes(step.workspace.state ?? '');
-              return <View key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color="#FF6961" size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
+              return <View key={`workspace:${index}`} style={styles.workRow}>{failed ? <XCircle color={COLORS.critical} size={13} /> : <Server color={COLORS.muted} size={13} />}<Text style={styles.workRowText}>{detail}</Text></View>;
             }
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
@@ -2487,7 +2499,7 @@ const MessageRow = memo(function MessageRow({
             </MessageContextMenu>
           ) : message.error ? (
             <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
-              <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
+              <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
             </MessageContextMenu>
           ) : streaming ? <ResponsePendingIndicator /> : null}
           {extraOutput.map((item, index) => {
@@ -2513,7 +2525,7 @@ const MessageRow = memo(function MessageRow({
               ))}
             </View>
           )}
-          {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color="#FF6961" /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
+          {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
           {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
           {message.agentMode && streaming && capacityWorkspace && (
             <Pressable
@@ -3501,7 +3513,7 @@ function ChatView({
 
         {showConnectionBanner && (
           <View style={[styles.connectionBanner, (connectionState === 'offline' || syncError) && styles.connectionBannerOffline]}>
-            <Icon name={syncError ? 'exclamationmark.triangle' : connectionState === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={connectionState === 'offline' || syncError ? '#FFB15A' : COLORS.muted} />
+            <Icon name={syncError ? 'exclamationmark.triangle' : connectionState === 'offline' ? 'wifi.slash' : 'arrow.triangle.2.circlepath'} size={12} color={connectionState === 'offline' || syncError ? COLORS.warning : COLORS.muted} />
             <Text style={styles.connectionBannerText}>{syncError ?? (connectionState === 'offline' ? 'Offline · messages will send when Pulpo reconnects' : 'Reconnecting to Pulpo…')}</Text>
           </View>
         )}
@@ -3617,7 +3629,7 @@ function ChatView({
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                placeholderTextColor={COLORS.dim}
+                placeholderTextColor={COLORS.muted}
                 style={styles.input}
                 value={input}
               />
@@ -4043,7 +4055,7 @@ function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, on
             onBlur={() => setSearchFocused(false)}
             onFocus={() => setSearchFocused(true)}
             placeholder="Search chats"
-            placeholderTextColor={searchFocused ? COLORS.dim : COLORS.textSoft}
+            placeholderTextColor={searchFocused ? COLORS.muted : COLORS.textSoft}
             style={styles.searchInput}
           />
           {search.length > 0 && (
@@ -4324,7 +4336,7 @@ const styles = StyleSheet.create({
   messageText: { color: COLORS.text, fontSize: 15.5, lineHeight: 22.5 },
   messageContextPreview: { width: 320, maxHeight: 360, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
   messageContextPreviewUser: { backgroundColor: COLORS.secondary },
-  messageContextPreviewRole: { color: COLORS.dim, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 },
+  messageContextPreviewRole: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 },
   messageContextPreviewText: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
   attachmentContextImagePreview: { width: 320, height: 320, borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
@@ -4333,7 +4345,7 @@ const styles = StyleSheet.create({
   assistantRow: { marginBottom: 32 },
   assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 11 },
   assistantName: { color: COLORS.textSoft, fontSize: 13.5, fontWeight: '600' },
-  messageTime: { color: COLORS.dim, fontSize: 11.5 },
+  messageTime: { color: COLORS.muted, fontSize: 11.5 },
   assistantContent: { width: '100%', gap: 4 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   draftText: { marginTop: 10 },
@@ -4352,31 +4364,31 @@ const styles = StyleSheet.create({
   compactionDetail: { gap: 12 },
   compactionSection: { gap: 6 },
   compactionSectionTitle: { color: COLORS.textSoft, fontSize: 12, fontWeight: '600' },
-  compactionError: { color: '#FF6961', fontSize: 12, lineHeight: 17 },
+  compactionError: { color: COLORS.critical, fontSize: 12, lineHeight: 17 },
   compactionTurn: { borderRadius: 8, backgroundColor: COLORS.fill, paddingHorizontal: 9, paddingVertical: 7, gap: 3 },
   compactionRole: { color: COLORS.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.7, textTransform: 'uppercase' },
   compactionContent: { color: COLORS.textSoft, fontSize: 12, lineHeight: 18 },
   workToolTrigger: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
   workToolName: { color: COLORS.textSoft, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   workToolSummary: { color: COLORS.muted, fontSize: 11, lineHeight: 16, fontFamily: COLORS.mono, flex: 1 },
-  workToolDuration: { color: COLORS.dim, fontSize: 10.5, fontVariant: ['tabular-nums'] },
-  workRunning: { color: COLORS.dim, fontSize: 11, marginLeft: 19 },
+  workToolDuration: { color: COLORS.muted, fontSize: 10.5, fontVariant: ['tabular-nums'] },
+  workRunning: { color: COLORS.muted, fontSize: 11, marginLeft: 19 },
   workDetailScroller: { maxHeight: 250, borderRadius: 9, backgroundColor: COLORS.fill },
   workDetail: { color: COLORS.muted, fontSize: 11.5, lineHeight: 17, fontFamily: COLORS.mono, paddingHorizontal: 9, paddingVertical: 7 },
   reasoningText: { color: COLORS.muted, fontSize: 13, lineHeight: 19 },
-  reasoningDuration: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
+  reasoningDuration: { color: COLORS.muted, fontSize: 11, fontVariant: ['tabular-nums'] },
   reasoningContextPreview: { width: 320, minHeight: 180, maxHeight: 380, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
-  reasoningContextPreviewTitle: { color: COLORS.dim, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 12 },
+  reasoningContextPreviewTitle: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 12 },
   reasoningContextPreviewText: { color: COLORS.textSoft, fontSize: 14.5, lineHeight: 21 },
-  messageMeta: { color: COLORS.dim, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
+  messageMeta: { color: COLORS.muted, fontSize: 11, marginTop: 12, fontFamily: COLORS.mono, letterSpacing: -0.2 },
   responseError: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,92,92,0.35)', backgroundColor: 'rgba(255,92,92,0.10)', borderRadius: 12, padding: 11, marginTop: 6 },
-  responseErrorText: { color: '#FF8A84', flex: 1, fontSize: 12.5, lineHeight: 18 },
-  tryAgainText: { color: '#FFB0AB', fontSize: 12.5, fontWeight: '700', lineHeight: 18 },
+  responseErrorText: { color: COLORS.critical, flex: 1, fontSize: 12.5, lineHeight: 18 },
+  tryAgainText: { color: COLORS.criticalAction, fontSize: 12.5, fontWeight: '700', lineHeight: 18 },
   otherOutput: { borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, borderRadius: 12, padding: 10, gap: 7, marginTop: 6 },
   continueButton: { alignSelf: 'stretch', minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: COLORS.fillStrong, marginTop: 8 },
   continueButtonText: { color: COLORS.text, fontSize: 13, fontWeight: '700' },
   branchControls: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 5 },
-  branchLabel: { color: COLORS.dim, fontSize: 11, fontVariant: ['tabular-nums'] },
+  branchLabel: { color: COLORS.muted, fontSize: 11, fontVariant: ['tabular-nums'] },
   iconAction: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   disabledIconAction: { opacity: 0.35 },
 
@@ -4395,12 +4407,12 @@ const styles = StyleSheet.create({
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
-  attachmentRestrictionText: { color: '#FF9F0A', fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
+  attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
   attachmentStrip: { maxHeight: 112, marginBottom: 8 },
   attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 17, paddingRight: 17 },
   attachmentUploadStatus: { color: COLORS.muted, fontSize: 10, marginTop: 3, maxWidth: 148 },
-  attachmentUploadFailed: { color: '#FF8A84', fontWeight: '600' },
+  attachmentUploadFailed: { color: COLORS.critical, fontWeight: '600' },
   imageAttachment: { width: 72, height: 72, borderRadius: 14, overflow: 'visible', backgroundColor: COLORS.fill },
   attachmentImage: { width: 72, height: 72, borderRadius: 14 },
   fileAttachment: { width: 174, height: 72, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11, backgroundColor: COLORS.fill },
@@ -4455,21 +4467,21 @@ const styles = StyleSheet.create({
   folderContextPreviewMeta: { color: COLORS.muted, fontSize: 12.5, textAlign: 'center', marginTop: 6 },
   navRowPressed: { backgroundColor: COLORS.fill },
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
-  navMeta: { color: COLORS.dim, fontSize: 12.5, marginLeft: 'auto' },
+  navMeta: { color: COLORS.muted, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
-  sectionLabel: { color: COLORS.dim, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
+  sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
   chatContextMenuHost: { width: '100%', height: 44 },
   chatRow: { minHeight: 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
   chatRowActive: { backgroundColor: COLORS.secondary },
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
-  chatTime: { color: COLORS.dim, fontSize: 12 },
+  chatTime: { color: COLORS.muted, fontSize: 12 },
   chatContextPreview: { width: 320, minHeight: 176, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20, justifyContent: 'space-between', overflow: 'hidden' },
   chatContextPreviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 11 },
-  chatContextPreviewEyebrow: { color: COLORS.dim, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8 },
+  chatContextPreviewEyebrow: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8 },
   chatContextPreviewTitle: { color: COLORS.text, fontSize: 18, fontWeight: '600', letterSpacing: -0.35, marginTop: 2 },
   chatContextPreviewBody: { color: COLORS.textSoft, fontSize: 14.5, lineHeight: 20, marginTop: 18 },
   chatContextPreviewMeta: { color: COLORS.muted, fontSize: 11.5, marginTop: 16 },
-  noResults: { color: COLORS.dim, fontSize: 13.5, textAlign: 'center', marginTop: 30 },
+  noResults: { color: COLORS.muted, fontSize: 13.5, textAlign: 'center', marginTop: 30 },
   // Model sheet
   nativeModalAnchorHost: { position: 'absolute', width: 1, height: 1, right: 0, top: 0 },
   nativeModelAssetHost: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
@@ -4480,12 +4492,12 @@ const styles = StyleSheet.create({
   sheetTitle: { color: COLORS.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
   sheetSubtitle: { color: COLORS.muted, fontSize: 13, marginTop: 4 },
   sheetClose: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center' },
-  sheetSection: { color: COLORS.dim, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.7, marginTop: 24, marginBottom: 6, marginLeft: 3 },
+  sheetSection: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.7, marginTop: 24, marginBottom: 6, marginLeft: 3 },
   modelRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: COLORS.lineSoft, borderRadius: 8, paddingHorizontal: 3 },
   modelRowTitle: { color: COLORS.text, fontSize: 15.5, fontWeight: '600', letterSpacing: -0.2 },
   modelRowDetail: { color: COLORS.muted, fontSize: 12, marginTop: 4 },
   sheetFootnote: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 18, paddingHorizontal: 3 },
-  sheetFootnoteText: { color: COLORS.dim, fontSize: 11.5, flex: 1, lineHeight: 16 },
+  sheetFootnoteText: { color: COLORS.muted, fontSize: 11.5, flex: 1, lineHeight: 16 },
 
   smallIconButton: { width: 44, height: 44, marginRight: -12, alignItems: 'center', justifyContent: 'center' },
 });

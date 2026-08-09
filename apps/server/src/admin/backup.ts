@@ -8,7 +8,7 @@ import { getBlobStore } from '../storage/index.js'
 import { redis } from '../redis.js'
 
 const TABLES = [
-  'labs', 'provider_connections', 'users', 'password_credentials', 'user_preferences', 'audit_events',
+  'labs', 'provider_connections', 'users', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories', 'api_keys',
   'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
@@ -79,6 +79,9 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     // Backups created before management tokens were introduced remain valid;
     // they restore with no automation credentials.
     database.management_tokens ??= []
+    // Older backups predate optional per-user two-factor authentication.
+    database.user_totp_credentials ??= []
+    database.two_factor_recovery_codes ??= []
     for (const table of TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
     for (const [index, blob] of manifest.blobs.entries()) {
       const body = files.get(blob.entry); if (!body || checksum(body) !== blob.checksum) throw new Error(`Attachment checksum failed: ${blob.objectKey}`)

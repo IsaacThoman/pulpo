@@ -25,6 +25,7 @@ export type User = z.infer<typeof userSchema>
 export const loginInputSchema = z.object({
   email: z.email(),
   password: z.string().min(1).max(1024),
+  twoFactorCode: z.string().trim().min(6).max(32).optional(),
 })
 
 export const signupInputSchema = z.object({
@@ -75,9 +76,43 @@ export const mobileConfigSchema = z.object({
     publicSharing: z.literal(true),
     attachments: z.literal(true),
     folders: z.literal(true),
+    twoFactorAuth: z.boolean().optional().default(false),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>
+
+export const twoFactorStatusSchema = z.object({
+  enabled: z.boolean(),
+  recoveryCodesRemaining: z.number().int().nonnegative(),
+})
+export type TwoFactorStatus = z.infer<typeof twoFactorStatusSchema>
+
+export const beginTwoFactorEnrollmentInputSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  verificationCode: z.string().trim().min(6).max(32).optional(),
+})
+
+export const twoFactorEnrollmentSchema = z.object({
+  manualKey: z.string().min(16),
+  otpauthUri: z.string().startsWith('otpauth://totp/'),
+  qrCodeDataUrl: z.string().startsWith('data:image/'),
+  expiresAt: isoDateSchema,
+})
+export type TwoFactorEnrollment = z.infer<typeof twoFactorEnrollmentSchema>
+
+export const confirmTwoFactorEnrollmentInputSchema = z.object({
+  code: z.string().trim().regex(/^\d{6}$/, 'Enter a six-digit authenticator code'),
+})
+
+export const verifyTwoFactorChangeInputSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  verificationCode: z.string().trim().min(6).max(32),
+})
+
+export const twoFactorRecoveryCodesSchema = z.object({
+  recoveryCodes: z.array(z.string()).length(10),
+})
+export type TwoFactorRecoveryCodes = z.infer<typeof twoFactorRecoveryCodesSchema>
 
 export const updateProfileInputSchema = z.object({
   name: z.string().trim().min(1).max(120),

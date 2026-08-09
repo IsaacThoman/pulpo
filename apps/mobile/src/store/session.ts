@@ -24,7 +24,7 @@ interface SessionState {
   error: string | null
   hydrate: () => Promise<void>
   discover: (url?: string) => Promise<MobileConfig>
-  login: (email: string, password: string) => Promise<void>
+  login: (email: string, password: string, twoFactorCode?: string) => Promise<'authenticated' | 'two-factor-required'>
   signup: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshSession: () => Promise<void>
@@ -174,12 +174,19 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return config
   },
 
-  login: async (email, password) => {
+  login: async (email, password, twoFactorCode) => {
     configureApi({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
-    const result = await mobileApi.login(email.trim(), password, await deviceLabel())
+    let result
+    try {
+      result = await mobileApi.login(email.trim(), password, await deviceLabel(), twoFactorCode)
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'two_factor_required') return 'two-factor-required'
+      throw error
+    }
     await persistSession(get().instanceUrl, result.user, result.session.token)
     configureApi({ instanceUrl: get().instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
+    return 'authenticated'
   },
 
   signup: async (name, email, password) => {

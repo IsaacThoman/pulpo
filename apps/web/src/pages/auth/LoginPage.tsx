@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,6 +16,9 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorStep, setTwoFactorStep] = useState(false)
+  const [recoveryMode, setRecoveryMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -27,9 +30,14 @@ export function LoginPage() {
     e.preventDefault()
     setError(null)
     setLoading(true)
-    const res = await login(email, password)
+    const res = await login(email, password, twoFactorStep ? twoFactorCode : undefined)
     setLoading(false)
     if (!res.ok) {
+      if ('twoFactorRequired' in res) {
+        setTwoFactorStep(true)
+        setTwoFactorCode('')
+        return
+      }
       setError(res.error)
       return
     }
@@ -40,12 +48,14 @@ export function LoginPage() {
   return (
     <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold">Welcome back</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Sign in to your Pulpo account.</p>
+        <h1 className="text-lg font-semibold">{twoFactorStep ? 'Verify your identity' : 'Welcome back'}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {twoFactorStep ? (recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.') : 'Sign in to your Pulpo account.'}
+        </p>
       </div>
 
       <form onSubmit={submit} className="space-y-4">
-        <div className="space-y-2">
+        {!twoFactorStep && <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
             id="email"
@@ -56,8 +66,8 @@ export function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
-        </div>
-        <div className="space-y-2">
+        </div>}
+        {!twoFactorStep && <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="password">Password</Label>
             <Link
@@ -87,7 +97,29 @@ export function LoginPage() {
               {showPw ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           </div>
-        </div>
+        </div>}
+
+        {twoFactorStep && <div className="space-y-2">
+          <Label htmlFor="two-factor-code">{recoveryMode ? 'Recovery code' : 'Authenticator code'}</Label>
+          <div className="relative">
+            <ShieldCheck className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              id="two-factor-code"
+              autoFocus
+              autoComplete="one-time-code"
+              inputMode={recoveryMode ? 'text' : 'numeric'}
+              maxLength={recoveryMode ? 14 : 6}
+              placeholder={recoveryMode ? 'XXXX-XXXX-XXXX' : '000000'}
+              value={twoFactorCode}
+              onChange={(event) => setTwoFactorCode(recoveryMode ? event.target.value.toUpperCase() : event.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="pl-9 font-mono tracking-widest"
+              required
+            />
+          </div>
+          <button type="button" onClick={() => { setRecoveryMode((value) => !value); setTwoFactorCode(''); setError(null) }} className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            {recoveryMode ? 'Use an authenticator code' : 'Use a recovery code'}
+          </button>
+        </div>}
 
         {error && (
           <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
@@ -97,11 +129,14 @@ export function LoginPage() {
 
         <Button type="submit" className="w-full" disabled={loading}>
           {loading && <Loader2 className="animate-spin" />}
-          Sign in
+          {twoFactorStep ? 'Verify and sign in' : 'Sign in'}
         </Button>
+        {twoFactorStep && <Button type="button" variant="ghost" className="w-full" onClick={() => { setTwoFactorStep(false); setTwoFactorCode(''); setError(null) }}>
+          <ArrowLeft /> Back
+        </Button>}
       </form>
 
-      {signupEnabled && (
+      {!twoFactorStep && signupEnabled && (
         <p className="mt-6 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{' '}
           <Link to="/signup" className="font-medium text-foreground underline-offset-4 hover:underline">

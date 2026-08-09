@@ -28,6 +28,7 @@ interface PublicAuthSettings {
   apiKeysEnabled: boolean
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
+export type LoginResult = AuthResult | { ok: false; twoFactorRequired: true }
 
 interface AuthState {
   user: AuthUser | null
@@ -39,7 +40,7 @@ interface AuthState {
   pendingMessage: string
   apiKeysEnabled: boolean
   bootstrap: () => Promise<void>
-  login: (email: string, password: string) => Promise<AuthResult>
+  login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
   signup: (name: string, email: string, password: string) => Promise<AuthResult>
   setup: (name: string, email: string, password: string) => Promise<AuthResult>
   logout: () => Promise<void>
@@ -111,16 +112,19 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
   },
 
-  login: async (email, password) => {
+  login: async (email, password, twoFactorCode) => {
     try {
       const response = await apiRequest<AuthResponse>('/api/auth/login', {
-        method: 'POST', body: { email, password },
+        method: 'POST', body: { email, password, twoFactorCode },
       })
       const user = normalizeUser(response.user)
       cacheProfile(user)
       set({ user, checkingSession: false })
       return { ok: true }
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'two_factor_required') {
+        return { ok: false, twoFactorRequired: true }
+      }
       return { ok: false, error: error instanceof Error ? error.message : 'Unable to sign in.' }
     }
   },

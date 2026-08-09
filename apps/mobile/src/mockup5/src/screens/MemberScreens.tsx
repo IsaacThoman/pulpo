@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button as RNButton, Platform, StyleSheet, Text, View,
+  Alert, Button as RNButton, Image, Platform, StyleSheet, Text, View,
 } from 'react-native';
 import * as Network from 'expo-network';
+import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { TwoFactorEnrollment, TwoFactorStatus } from '@pulpo/contracts';
 import { useQuery } from '@tanstack/react-query';
 import {
   Button as SwiftUIButton,
@@ -23,7 +25,7 @@ import {
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
-import { buttonStyle, contentShape, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
+import { buttonStyle, contentShape, disabled as swiftUIDisabled, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
 import { Badge, Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
 import { useAppTheme } from '../theme';
 import { usePrototypeStore } from '../store/prototypeStore';
@@ -55,22 +57,23 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
   const session = usePrototypeStore((state) => state.session);
   const instance = usePrototypeStore((state) => state.instance);
   const signOut = useSessionStore((state) => state.logout);
+  const twoFactorSupported = useSessionStore((state) => state.config?.capabilities.twoFactorAuth ?? false);
   const user = session.user;
   const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: signOut }]);
 
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm>
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Profile">
       <SwiftUILabeledContent label="Name"><SwiftUIText>{user?.name ?? 'Pulpo Member'}</SwiftUIText></SwiftUILabeledContent>
       <SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent>
       <SwiftUILabeledContent label="Role"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>Member</SwiftUIText></SwiftUILabeledContent>
       <NativeDestinationRow icon="person.crop.circle" title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
     </SwiftUISection>
-    <SwiftUISection title="Security"><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} /></SwiftUISection>
+    <SwiftUISection title="Security"><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} />{twoFactorSupported ? <NativeDestinationRow icon="checkmark.shield" title="Two-Factor Authentication" onPress={() => navigation.navigate('TwoFactor')} /> : null}</SwiftUISection>
     <SwiftUISection title="Server"><NativeDestinationRow icon="network" title="Pulpo Instance" detail={instance.version} onPress={() => navigation.navigate('InstanceDetails')} /></SwiftUISection>
     <SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
-  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow title="Role" value="Member" /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last onPress={() => navigation.navigate('ChangePassword')} /></Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
+  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow title="Role" value="Member" /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
 }
 
 export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'EditProfile'>) {
@@ -96,14 +99,17 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
     });
   }, [name, navigation, save]);
 
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>This is the name shown on your Pulpo account.</SwiftUIText>}><NativeFormTextField title="Name" value={name} onChange={setName} /><SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>This is the name shown on your Pulpo account.</SwiftUIText>}><NativeFormTextField title="Name" value={name} onChange={setName} /><SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><Field label="Display name" value={name} onChangeText={setName} /><PrimaryButton label="Save" onPress={save} /></Screen>;
 }
 
 function NativePasswordField({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }) {
+  const theme = useAppTheme();
   const nativeText = useNativeState(value);
   useEffect(() => { if (nativeText.get() !== value) nativeText.set(value); }, [nativeText, value]);
-  return <SwiftUISecureField placeholder={placeholder} text={nativeText} onTextChange={onChange} />;
+  return <SwiftUISecureField text={nativeText} onTextChange={onChange}>
+    <SwiftUISecureField.Placeholder><SwiftUIText modifiers={[foregroundStyle(theme.secondary)]}>{placeholder}</SwiftUIText></SwiftUISecureField.Placeholder>
+  </SwiftUISecureField>;
 }
 
 export function ChangePasswordScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'ChangePassword'>) {
@@ -117,8 +123,54 @@ export function ChangePasswordScreen({ navigation }: NativeStackScreenProps<Root
     void mobileApi.changePassword(current, next).then(() => Alert.alert('Password updated', 'Your other sessions remain signed in.', [{ text: 'Done', onPress: () => navigation.goBack() }])).catch((error) => Alert.alert('Couldn’t update password', error instanceof Error ? error.message : undefined));
   };
 
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Password" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Use at least 8 characters. Other signed-in devices will remain active.</SwiftUIText>}><NativePasswordField placeholder="Current password" value={current} onChange={setCurrent} /><NativePasswordField placeholder="New password" value={next} onChange={setNext} /><NativePasswordField placeholder="Confirm new password" value={confirmation} onChange={setConfirmation} /></SwiftUISection><SwiftUISection><SwiftUIButton label="Update Password" systemImage="checkmark" onPress={submit} modifiers={[buttonStyle('borderedProminent'), frame({ maxWidth: Infinity })]} /></SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Password" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Use at least 8 characters. Other signed-in devices will remain active.</SwiftUIText>}><NativePasswordField placeholder="Current password" value={current} onChange={setCurrent} /><NativePasswordField placeholder="New password" value={next} onChange={setNext} /><NativePasswordField placeholder="Confirm new password" value={confirmation} onChange={setConfirmation} /></SwiftUISection><SwiftUISection><SwiftUIButton label="Update Password" systemImage="checkmark" onPress={submit} modifiers={[buttonStyle('borderedProminent'), frame({ maxWidth: Infinity }), swiftUIDisabled(!valid)]} /></SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Change Password" onBack={() => navigation.goBack()} /><Field label="Current password" secureTextEntry value={current} onChangeText={setCurrent} /><Field label="New password" secureTextEntry value={next} onChangeText={setNext} /><Field label="Confirm new password" secureTextEntry value={confirmation} onChangeText={setConfirmation} /><PrimaryButton label="Update password" disabled={!valid} onPress={submit} /></Screen>;
+}
+
+type TwoFactorAction = 'idle' | 'setup' | 'enroll' | 'recovery' | 'regenerate' | 'disable';
+
+export function TwoFactorScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'TwoFactor'>) {
+  const theme = useAppTheme();
+  const [status, setStatus] = useState<TwoFactorStatus | null>(null);
+  const [action, setAction] = useState<TwoFactorAction>('idle');
+  const [enrollment, setEnrollment] = useState<TwoFactorEnrollment | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [confirmationCode, setConfirmationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const refresh = useCallback(() => mobileApi.twoFactorStatus().then(setStatus).catch((next) => setError(next instanceof Error ? next.message : 'Could not load two-factor status.')), []);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const reset = () => { setAction('idle'); setEnrollment(null); setRecoveryCodes([]); setCurrentPassword(''); setVerificationCode(''); setConfirmationCode(''); setError(''); };
+  const fail = (next: unknown) => setError(next instanceof Error ? next.message : 'Could not update two-factor authentication.');
+  const begin = () => {
+    setLoading(true); setError('');
+    void mobileApi.beginTwoFactorEnrollment(currentPassword, status?.enabled ? verificationCode : undefined)
+      .then((value) => { setEnrollment(value); setVerificationCode(''); setAction('enroll'); })
+      .catch(fail).finally(() => setLoading(false));
+  };
+  const confirm = () => {
+    setLoading(true); setError('');
+    void mobileApi.confirmTwoFactorEnrollment(confirmationCode)
+      .then((value) => { setRecoveryCodes(value.recoveryCodes); setEnrollment(null); setAction('recovery'); return refresh(); })
+      .catch(fail).finally(() => setLoading(false));
+  };
+  const change = () => {
+    setLoading(true); setError('');
+    const request = action === 'regenerate'
+      ? mobileApi.regenerateTwoFactorRecoveryCodes(currentPassword, verificationCode).then((value) => { setRecoveryCodes(value.recoveryCodes); setAction('recovery'); })
+      : mobileApi.disableTwoFactor(currentPassword, verificationCode).then(reset);
+    void request.then(refresh).catch(fail).finally(() => setLoading(false));
+  };
+  const copyCodes = () => { void Clipboard.setStringAsync(recoveryCodes.join('\n')).then(() => Alert.alert('Copied', 'Store the recovery codes somewhere secure.')); };
+
+  return <Screen><PageHeader title="Two-Factor Authentication" onBack={() => action === 'idle' ? navigation.goBack() : reset()} />
+    {action === 'idle' && <><SectionTitle>Status</SectionTitle><Card><ListRow icon={status?.enabled ? 'checkmark.shield.fill' : 'shield'} title={status?.enabled ? 'Enabled' : status ? 'Not enabled' : 'Loading…'} detail={status?.enabled ? `${status.recoveryCodesRemaining} recovery codes remaining` : 'Use an authenticator app for six-digit sign-in codes.'} last /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="qrcode" title={status?.enabled ? 'Replace authenticator app' : 'Set up authenticator app'} onPress={() => setAction('setup')} last={!status?.enabled} />{status?.enabled ? <><ListRow icon="arrow.clockwise" title="Generate new recovery codes" onPress={() => setAction('regenerate')} /><ListRow icon="shield.slash" iconColor={theme.red} title="Disable two-factor authentication" destructive last onPress={() => setAction('disable')} /></> : null}</Card>{error ? <Text style={[styles.twoFactorError, { color: theme.red }]}>{error}</Text> : null}</>}
+    {(action === 'setup' || action === 'regenerate' || action === 'disable') && <><SectionTitle>Confirm security change</SectionTitle><Field label="Current password" secureTextEntry autoComplete="current-password" value={currentPassword} onChangeText={setCurrentPassword} />{status?.enabled ? <Field label="Authenticator or recovery code" autoCapitalize="characters" autoComplete="one-time-code" value={verificationCode} onChangeText={(value) => setVerificationCode(value.toUpperCase())} /> : null}{error ? <Text style={[styles.twoFactorError, { color: theme.red }]}>{error}</Text> : null}<PrimaryButton label={action === 'disable' ? 'Disable two-factor authentication' : action === 'regenerate' ? 'Generate recovery codes' : 'Continue'} variant={action === 'disable' ? 'destructive' : 'primary'} loading={loading} disabled={!currentPassword || (Boolean(status?.enabled) && verificationCode.length < 6)} onPress={action === 'setup' ? begin : change} /></>}
+    {action === 'enroll' && enrollment && <><Text style={[styles.twoFactorHelp, { color: theme.secondary }]}>Scan this QR code in your authenticator app, or copy the manual key.</Text><Image source={{ uri: enrollment.qrCodeDataUrl }} accessibilityLabel="Authenticator enrollment QR code" style={styles.twoFactorQr} /><Card style={styles.twoFactorKey}><Text selectable style={[styles.twoFactorKeyText, { color: theme.text }]}>{enrollment.manualKey}</Text><PrimaryButton label="Copy manual key" variant="secondary" icon="doc.on.doc" onPress={() => { void Clipboard.setStringAsync(enrollment.manualKey); }} /></Card><Field label="Six-digit authenticator code" autoComplete="one-time-code" keyboardType="number-pad" maxLength={6} value={confirmationCode} onChangeText={(value) => setConfirmationCode(value.replace(/\D/g, '').slice(0, 6))} />{error ? <Text style={[styles.twoFactorError, { color: theme.red }]}>{error}</Text> : null}<PrimaryButton label="Confirm and enable" loading={loading} disabled={confirmationCode.length !== 6} onPress={confirm} /></>}
+    {action === 'recovery' && <><Text style={[styles.twoFactorHelp, { color: theme.secondary }]}>Save these codes now. Each can be used once and they will not be shown again.</Text><Card style={styles.twoFactorCodes}>{recoveryCodes.map((code) => <Text key={code} selectable style={[styles.twoFactorCode, { color: theme.text }]}>{code}</Text>)}</Card><PrimaryButton label="Copy recovery codes" variant="secondary" icon="doc.on.doc" onPress={copyCodes} /><PrimaryButton label="Done" onPress={reset} /></>}
+  </Screen>;
 }
 
 export function InstanceDetailsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'InstanceDetails'>) {
@@ -130,7 +182,7 @@ export function InstanceDetailsScreen({ navigation }: NativeStackScreenProps<Roo
     ? 'Offline'
     : realtimeConnectionPhase === 'connected' ? 'Connected'
       : realtimeConnectionPhase === 'reconnecting' ? 'Reconnecting' : 'Connecting';
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Connection"><SwiftUILabeledContent label="Status"><SwiftUIText>{connectionLabel}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Name"><SwiftUIText>{instance.name}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Version"><SwiftUIText>{instance.version}</SwiftUIText></SwiftUILabeledContent></SwiftUISection><SwiftUISection title="Endpoints"><SwiftUILabeledContent label="Server"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{instance.url}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="API"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{`${instance.url}/v1`}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Connection"><SwiftUILabeledContent label="Status"><SwiftUIText>{connectionLabel}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Name"><SwiftUIText>{instance.name}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="Version"><SwiftUIText>{instance.version}</SwiftUIText></SwiftUILabeledContent></SwiftUISection><SwiftUISection title="Endpoints"><SwiftUILabeledContent label="Server"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{instance.url}</SwiftUIText></SwiftUILabeledContent><SwiftUILabeledContent label="API"><SwiftUIText modifiers={[foregroundStyle('secondary'), font({ textStyle: 'footnote' })]}>{`${instance.url}/v1`}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Pulpo Instance" onBack={() => navigation.goBack()} /><Card><ListRow title="Status" value={connectionLabel} /><ListRow title="Name" value={instance.name} /><ListRow title="Version" value={instance.version} /><ListRow title="Server" detail={instance.url} /><ListRow title="API" detail={`${instance.url}/v1`} last /></Card></Screen>;
 }
 
@@ -146,7 +198,7 @@ const settingsSections: { id: SettingsDestination; title: string; detail: string
 export function MemberSettingsScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Settings'>) {
   const theme = useAppTheme(); const session = usePrototypeStore((state) => state.session); const instance = usePrototypeStore((state) => state.instance);
   const open = (section: SettingsDestination) => section === 'trash' ? navigation.navigate('Trash') : navigation.navigate('SettingsDetail', { section });
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName="person.crop.circle.fill" size={42} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''} · Member</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Member settings">{settingsSections.slice(0, 2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName="person.crop.circle.fill" size={42} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''} · Member</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Member settings">{settingsSections.slice(0, 2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Settings" subtitle={new URL(instance.url).hostname} onBack={() => navigation.goBack()} />
     <Card style={styles.profileCard}><View style={[styles.profileAvatar, { backgroundColor: theme.text }]}><Text style={[styles.profileInitials, { color: theme.background }]}>{session.user?.initials ?? '?'}</Text></View><View style={styles.flex}><Text style={[styles.profileName, { color: theme.text }]}>{session.user?.name ?? 'Pulpo Member'}</Text><Text style={[styles.profileEmail, { color: theme.secondary }]}>{session.user?.email}</Text></View><Badge label="Member" color={theme.green} /></Card>
     <SectionTitle>Member settings</SectionTitle><Card>{settingsSections.slice(0, 2).map((section, index) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === 1} onPress={() => open(section.id)} />)}</Card>
@@ -196,7 +248,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   useLayoutEffect(() => {
     if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section] });
   }, [navigation, section]);
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm>
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     {section === 'general' && <>
       <SwiftUISection title="Appearance">
         <NativeChoiceRow icon="circle.lefthalf.filled" title="Theme" value={preferences.theme} options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} onChange={(value) => setPreference('theme', value)} />
@@ -243,7 +295,7 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
     if (Platform.OS !== 'ios') return;
     navigation.setOptions({ headerRight: chats.length ? () => <RNButton title="Empty" color={theme.red} onPress={confirmEmpty} /> : undefined });
   }, [chats.length, confirmEmpty, navigation, theme.red]);
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.text)]} style={styles.flex}><SwiftUIForm>
+  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     <SwiftUISection title="Retention" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Chats are permanently removed after this period.</SwiftUIText>}>
       <NativeChoiceRow title="Keep trashed chats" value={retention} options={[{ value: 'instant', label: 'No retention' }, { value: '24h', label: '24 hours' }, { value: '7d', label: '7 days' }, { value: '30d', label: '30 days' }, { value: '90d', label: '90 days' }, { value: 'indefinite', label: 'Indefinitely' }] as const} onChange={(value) => setPreference('trashRetention', value)} />
     </SwiftUISection>
@@ -260,4 +312,5 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
 const styles = StyleSheet.create({
   flex: { flex: 1 }, helper: { fontSize: 12, lineHeight: 18 },
   profileCard: { flexDirection: 'row', alignItems: 'center', padding: 15, gap: 12 }, profileAvatar: { width: 48, height: 48, borderRadius: 17, alignItems: 'center', justifyContent: 'center' }, profileInitials: { fontSize: 15, fontWeight: '900' }, profileName: { fontSize: 16, fontWeight: '700' }, profileEmail: { fontSize: 12, marginTop: 3 }, storage: { padding: 15 }, storageLine: { flexDirection: 'row', justifyContent: 'space-between' }, storageTitle: { fontSize: 14, fontWeight: '700' }, storagePercent: { fontSize: 12 }, storageTrack: { height: 8, borderRadius: 4, overflow: 'hidden', marginVertical: 11 }, storageBar: { height: 8, borderRadius: 4 },
+  twoFactorHelp: { fontSize: 14, lineHeight: 20, marginVertical: 12 }, twoFactorError: { fontSize: 13, lineHeight: 18, marginVertical: 8 }, twoFactorQr: { width: 240, height: 240, alignSelf: 'center', borderRadius: 16, backgroundColor: '#ffffff', marginBottom: 16 }, twoFactorKey: { padding: 14, gap: 12, marginBottom: 16 }, twoFactorKeyText: { fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 13, textAlign: 'center' }, twoFactorCodes: { padding: 18, flexDirection: 'row', flexWrap: 'wrap', marginVertical: 14 }, twoFactorCode: { width: '50%', fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 14, lineHeight: 28, textAlign: 'center' },
 });
