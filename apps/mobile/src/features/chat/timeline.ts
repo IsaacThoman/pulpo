@@ -31,6 +31,31 @@ export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
   | { kind: 'text'; text: string }
 
+/**
+ * Resolve an activity's visible state from its position in the response.
+ * Item statuses can remain in progress until the next snapshot, but visible
+ * assistant text is an authoritative boundary for all preceding activity.
+ */
+export function timelineActivityIsActive(
+  timeline: TimelineSegment[],
+  index: number,
+  responseStreaming: boolean,
+): boolean {
+  const segment = timeline[index]
+  if (segment?.kind !== 'activity') return false
+  const following = timeline.slice(index + 1)
+  if (following.some((entry) => entry.kind === 'text' && Boolean(entry.text.trim()))) return false
+  const isLastActivity = !following.some((entry) => entry.kind === 'activity')
+  return segment.active || (responseStreaming && isLastActivity)
+}
+
+export function completedActivityLabel(steps: TimelineStep[], durationMs?: number): string {
+  const resolvedDurationMs = durationMs ?? activityDurationMs(steps)
+  const seconds = resolvedDurationMs === undefined ? null : Math.max(0, Math.round(resolvedDurationMs / 1000))
+  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
+  return `${worked ? 'Worked' : 'Thought'}${seconds === null ? '' : ` for ${seconds}s`}`
+}
+
 type LegacyMessageTimelineInput = {
   reasoning: string | undefined
   text: string

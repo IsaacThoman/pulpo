@@ -63,6 +63,7 @@ describe('projectChat branch variants', () => {
     const assistant = projected.find((message) => message.role === 'assistant')
 
     expect(assistant?.text).toBe('Second generation')
+    expect(assistant?.latencyMs).toBe(1_000)
     expect(assistant?.branch.index).toBe(1)
     expect(assistant?.branch.variants.map((branch) => branch.text)).toEqual([
       'First generation',

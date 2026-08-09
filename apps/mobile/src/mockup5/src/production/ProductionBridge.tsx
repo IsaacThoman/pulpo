@@ -102,6 +102,7 @@ function mapMessage(message: DisplayMessage): PrototypeMessage {
     role: message.role,
     text: message.text,
     createdAt: Date.parse(message.createdAt),
+    latencyMs: message.latencyMs,
     modelId: message.modelId,
     attachments: message.attachments.map(mapAttachment),
     activity,

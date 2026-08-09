@@ -41,7 +41,7 @@ function sameOutput(left?: unknown[], right?: unknown[]): boolean {
 
 export function projectedMessageUnchanged(left: PrototypeMessage, right: PrototypeMessage): boolean {
   return left.id === right.id && left.role === right.role && left.text === right.text
-    && left.createdAt === right.createdAt && left.modelId === right.modelId
+    && left.createdAt === right.createdAt && left.latencyMs === right.latencyMs && left.modelId === right.modelId
     && left.status === right.status && left.error === right.error && left.meta === right.meta
     && left.feedback === right.feedback && left.activeBranch === right.activeBranch
     && left.agentMode === right.agentMode

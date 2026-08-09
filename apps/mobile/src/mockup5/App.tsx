@@ -169,7 +169,7 @@ import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { visibleHistoryChats } from '../features/chat/history';
-import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
@@ -412,6 +412,7 @@ type Message = {
   role: 'user' | 'assistant';
   text: string;
   createdAt?: number;
+  latencyMs?: number;
   modelId?: string;
   attachments?: Attachment[];
   thinkSeconds?: number;
@@ -495,6 +496,7 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
     role: message.role,
     text: message.branches?.[message.activeBranch ?? 0]?.text ?? message.text,
     createdAt: message.createdAt,
+    latencyMs: message.latencyMs,
     modelId: message.modelId,
     attachments: message.attachments?.map((attachment) => ({
       id: attachment.id,
@@ -2121,7 +2123,20 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   return <Brain color={COLORS.muted} size={14} />;
 }
 
-function workLabel(steps: TimelineStep[], active: boolean): string {
+function useElapsedMs(startTs: number, active: boolean, finalMs?: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [active, startTs]);
+  if (finalMs !== undefined) return finalMs;
+  if (!active) return 0;
+  return Math.max(0, now - startTs);
+}
+
+function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number): string {
   const compaction = steps.find((step) => step.kind === 'compaction');
   if (compaction?.kind === 'compaction') {
     if (compaction.compaction.status === 'in_progress') return 'Compacting context…';
@@ -2137,10 +2152,7 @@ function workLabel(steps: TimelineStep[], active: boolean): string {
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
   if (runningTool?.kind === 'tool') return `Running ${runningTool.tool.tool ?? 'tool'}…`;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
-  const duration = activityDurationMs(steps);
-  const seconds = duration === undefined ? null : Math.max(0, Math.round(duration / 1000));
-  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace');
-  return `${worked ? 'Worked' : 'Thought'}${seconds === null ? '' : ` for ${seconds}s`}`;
+  return completedActivityLabel(steps, durationMs);
 }
 
 function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']): string {
@@ -2224,20 +2236,21 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
   );
 }
 
-function WorkBlock({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
+function WorkBlock({ steps, active, durationMs }: { steps: TimelineStep[]; active: boolean; durationMs?: number }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
+  const label = workLabel(steps, active, durationMs);
   return (
     <View style={styles.workBlock}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={workLabel(steps, active)}
+        accessibilityLabel={label}
         onPress={() => setOpen((value) => !value)}
         style={styles.reasoningTrigger}
       >
         <WorkTriggerIcon active={active} steps={steps} />
-        <Text style={styles.reasoningLabel}>{workLabel(steps, active)}</Text>
+        <Text style={styles.reasoningLabel}>{label}</Text>
         <Icon name={open ? 'chevron.down' : 'chevron.right'} size={10} color={COLORS.dim} weight="semibold" />
       </Pressable>
       {open && (
@@ -2333,7 +2346,9 @@ const MessageRow = memo(function MessageRow({
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
   const [capacityPending, setCapacityPending] = useState(false);
+  const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>();
   const streaming = message.status === 'streaming' || message.status === 'queued';
+  const responseStartedAt = useMemo(() => message.createdAt ?? Date.now(), [message.createdAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
   const capacityWorkspace = useMemo(() => (message.outputItems ?? []).some((item) => {
     const value = item as { type?: string; state?: string };
@@ -2350,6 +2365,31 @@ const MessageRow = memo(function MessageRow({
       reasoningDurationMs: message.thinkSeconds === undefined ? undefined : message.thinkSeconds * 1000,
     });
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
+  const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
+  const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
+  const lastActivityTimelineIndex = timeline.reduce(
+    (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
+    -1,
+  );
+  const lastActivitySegment = timeline[lastActivityTimelineIndex];
+  const hasTextAfterLastActivity = timeline
+    .slice(lastActivityTimelineIndex + 1)
+    .some((segment) => segment.kind === 'text');
+  const activityFinishedDuringStream = streaming
+    && activitySegments.length === 1
+    && lastActivitySegment?.kind === 'activity'
+    && hasTextAfterLastActivity;
+
+  useEffect(() => {
+    if (!streaming) return;
+    if (!activityFinishedDuringStream) {
+      setStreamingFallbackDurationMs(undefined);
+      return;
+    }
+    setStreamingFallbackDurationMs((duration) => (
+      duration ?? Math.max(0, Date.now() - responseStartedAt)
+    ));
+  }, [activityFinishedDuringStream, responseStartedAt, streaming]);
   return (
     <View style={message.role === 'user' ? styles.userRow : styles.assistantRow}>
       {message.role === 'user' ? (
@@ -2390,9 +2430,24 @@ const MessageRow = memo(function MessageRow({
           {timeline.length ? (
             <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.assistantContent}>
-                {timeline.map((segment, index) => segment.kind === 'activity'
-                  ? <WorkBlock active={segment.active || (streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text'))} key={`activity:${index}`} steps={segment.steps} />
-                  : <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>)}
+                {timeline.map((segment, index) => {
+                  if (segment.kind === 'activity') {
+                    const active = timelineActivityIsActive(timeline, index, streaming);
+                    const segmentDurationMs = activityDurationMs(segment.steps);
+                    const useResponseDurationFallback = activitySegments.length === 1
+                      && index === lastActivityTimelineIndex
+                      && (!streaming || activityFinishedDuringStream);
+                    return <WorkBlock
+                      active={active}
+                      durationMs={segmentDurationMs ?? (useResponseDurationFallback
+                        ? streamingFallbackDurationMs ?? elapsedMs
+                        : undefined)}
+                      key={`activity:${index}`}
+                      steps={segment.steps}
+                    />;
+                  }
+                  return <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
+                })}
               </View>
             </MessageContextMenu>
           ) : message.error ? (

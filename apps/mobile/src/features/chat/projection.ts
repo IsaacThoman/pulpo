@@ -35,6 +35,7 @@ export interface DisplayMessage {
   modelId: string
   status: ServerResponse['status']
   createdAt: string
+  latencyMs?: number
   attachments: DisplayAttachment[]
   activity: ActivityItem[]
   branch: { ids: string[]; index: number; variants: DisplayBranch[] }
@@ -190,6 +191,9 @@ export function projectChat(chat: ServerChat, liveSnapshots: Record<string, Resp
     }, {
       id: response.id, responseId: response.id, role: 'assistant', text: outputText(output), reasoning: reasoningText(output),
       modelId: response.displayModelId ?? response.modelId, status, createdAt: response.createdAt,
+      latencyMs: response.completedAt
+        ? Math.max(0, Date.parse(response.completedAt) - Date.parse(response.createdAt))
+        : undefined,
       attachments: generatedAttachments(output), activity: activities(output), branch: {
         ...response.branches.assistant,
         variants: branchVariants(responses, response.branches.assistant.ids, 'assistant', liveSnapshots),

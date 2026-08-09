@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildLegacyMessageTimeline, buildMessageTimeline } from './timeline'
+import { buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
 
 describe('buildMessageTimeline', () => {
   it('ignores empty active reasoning while ordinary answer text streams', () => {
@@ -10,13 +10,66 @@ describe('buildMessageTimeline', () => {
   })
 
   it('shows active reasoning after reasoning text is emitted', () => {
-    expect(buildMessageTimeline([
+    const timeline = buildMessageTimeline([
       { type: 'reasoning', status: 'in_progress', summary: [{ text: 'Checking constraints' }] },
-    ], true)).toMatchObject([{
+    ], true)
+    expect(timeline).toMatchObject([{
       kind: 'activity',
       active: true,
       steps: [{ kind: 'reasoning', text: 'Checking constraints', active: true }],
     }])
+    expect(timelineActivityIsActive(timeline, 0, true)).toBe(true)
+  })
+
+  it('ends stale reasoning activity as soon as streamed answer text is visible', () => {
+    const timeline = buildMessageTimeline([
+      { type: 'reasoning', status: 'in_progress', summary: [{ text: 'Finished thinking' }] },
+      { type: 'message', status: 'in_progress', content: [{ text: 'Answer in progress' }] },
+    ], true)
+
+    expect(timeline).toMatchObject([
+      { kind: 'activity', active: true },
+      { kind: 'text', text: 'Answer in progress' },
+    ])
+    expect(timelineActivityIsActive(timeline, 0, true)).toBe(false)
+  })
+
+  it('only lets trailing work remain active across multiple agent phases', () => {
+    const timeline = buildMessageTimeline([
+      { type: 'reasoning', status: 'in_progress', summary: [{ text: 'First thought' }] },
+      { type: 'message', status: 'in_progress', content: [{ text: 'Interim answer' }] },
+      { type: 'reasoning', status: 'in_progress', summary: [{ text: 'Follow-up thought' }] },
+    ], true)
+
+    expect(timeline.map((segment) => segment.kind)).toEqual(['activity', 'text', 'activity'])
+    expect(timelineActivityIsActive(timeline, 0, true)).toBe(false)
+    expect(timelineActivityIsActive(timeline, 2, true)).toBe(true)
+  })
+
+  it('applies response streaming only as a fallback for the final activity', () => {
+    const timeline = buildMessageTimeline([
+      { type: 'reasoning', status: 'completed', summary: [{ text: 'First thought' }] },
+      {
+        id: 'compact-1', type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
+        model_id: 'gpt-5', estimated_tokens: 120_000, threshold_tokens: 100_000,
+        retained_turns: [], retained_context: [], retained_context_turns: [], summary: 'Summary',
+        started_at: '2026-08-04T12:00:00.000Z', duration_ms: 900,
+      },
+    ], true)
+
+    expect(timeline.map((segment) => segment.kind)).toEqual(['activity', 'activity'])
+    expect(timelineActivityIsActive(timeline, 0, true)).toBe(false)
+    expect(timelineActivityIsActive(timeline, 1, true)).toBe(true)
+  })
+
+  it('matches desktop labels for completed thought and work durations', () => {
+    expect(completedActivityLabel([
+      { kind: 'reasoning', text: 'Checked constraints', active: false },
+    ], 2_400)).toBe('Thought for 2s')
+    expect(completedActivityLabel([
+      { kind: 'reasoning', text: 'Planned work', active: false, durationMs: 1_000 },
+      { kind: 'tool', tool: { type: 'pulpo_tool', status: 'completed', durationMs: 2_500 } },
+    ])).toBe('Worked for 4s')
   })
 
   it('preserves reasoning, tools, and assistant turns in server order', () => {

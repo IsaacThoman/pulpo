@@ -20,4 +20,11 @@ describe('reuseProjectedMessages', () => {
     expect(next[0]).toBe(previous[0])
     expect(next[1]).not.toBe(previous[1])
   })
+
+  it('publishes terminal latency when it becomes available', () => {
+    const previous = [message('one', 'done')]
+    const next = reuseProjectedMessages(previous, [{ ...message('one', 'done'), latencyMs: 1_250 }])
+    expect(next[0]).not.toBe(previous[0])
+    expect(next[0]?.latencyMs).toBe(1_250)
+  })
 })

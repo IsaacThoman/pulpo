@@ -89,6 +89,7 @@ export interface PrototypeMessage {
   role: 'user' | 'assistant';
   text: string;
   createdAt: number;
+  latencyMs?: number;
   modelId?: string;
   attachments?: PrototypeAttachment[];
   activity?: ActivityStep[];
