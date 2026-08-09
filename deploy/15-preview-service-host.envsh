@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# Coolify renames Docker Compose services in pull request stacks. Its branch
+# metadata is available to every container, so derive the matching API alias
+# before the nginx image renders default.conf.template.
+coolify_branch=${COOLIFY_BRANCH:-}
+coolify_branch=${coolify_branch#\"}
+coolify_branch=${coolify_branch%\"}
+
+case "$coolify_branch" in
+  pull/*/head)
+    preview_id=${coolify_branch#pull/}
+    preview_id=${preview_id%/head}
+    case "$preview_id" in
+      ''|*[!0-9]*) ;;
+      *) export API_HOST="api-pr-$preview_id" ;;
+    esac
+    ;;
+esac

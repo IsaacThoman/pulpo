@@ -41,6 +41,25 @@ describe('server configuration', () => {
     expect(() => parseConfig({ PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: 'ghcr.io/example/workspace:latest' })).toThrow()
   })
 
+  it('resolves Coolify preview service names from pull request metadata', () => {
+    expect(parseConfig({
+      COOLIFY_BRANCH: '"pull/48/head"',
+      POSTGRES_HOST: 'postgres',
+      REDIS_URL: 'redis://redis:6379',
+      S3_ENDPOINT: 'http://seaweed-s3:8333',
+    })).toMatchObject({
+      POSTGRES_HOST: 'postgres-pr-48',
+      REDIS_URL: 'redis://redis-pr-48:6379',
+      S3_ENDPOINT: 'http://seaweed-s3-pr-48:8333',
+    })
+
+    expect(parseConfig({ COOLIFY_BRANCH: 'main' })).toMatchObject({
+      POSTGRES_HOST: 'localhost',
+      REDIS_URL: 'redis://localhost:6379',
+      S3_ENDPOINT: 'http://localhost:8333',
+    })
+  })
+
   it('resolves an explicit workspace instance id before deployment metadata', () => {
     const config = parseConfig({ PUBLIC_URL: 'https://pulpo.example.com', PULPO_INSTANCE_ID: 'production' })
     expect(getWorkspaceInstanceId(config, { SERVICE_FQDN_WEB: '42.preview.example.com' })).toBe('production')

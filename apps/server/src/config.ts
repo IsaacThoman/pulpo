@@ -62,8 +62,21 @@ export type Config = z.infer<typeof configSchema>
 
 let cached: Config | undefined
 
+export function getCoolifyPreviewId(environment: NodeJS.ProcessEnv): string | undefined {
+  const branch = environment.COOLIFY_BRANCH?.trim().replace(/^['"]|['"]$/g, '')
+  return branch?.match(/^pull\/([1-9]\d*)\/head$/)?.[1]
+}
+
 export function parseConfig(environment: NodeJS.ProcessEnv): Config {
-  return configSchema.parse(environment)
+  const previewId = getCoolifyPreviewId(environment)
+  return configSchema.parse({
+    ...environment,
+    ...(previewId ? {
+      POSTGRES_HOST: `postgres-pr-${previewId}`,
+      REDIS_URL: `redis://redis-pr-${previewId}:6379`,
+      S3_ENDPOINT: `http://seaweed-s3-pr-${previewId}:8333`,
+    } : {}),
+  })
 }
 
 export function getConfig(): Config {
