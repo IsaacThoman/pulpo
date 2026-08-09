@@ -508,7 +508,7 @@ export function Composer({
   }
 
   return (
-    <div className={cn('w-full', centered && 'px-2')}>
+    <div className={cn('w-full min-w-0', centered && 'px-2')}>
       {dragging && (
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/35 backdrop-grayscale" role="status">
           <div className="flex flex-col items-center gap-3 text-center text-white drop-shadow-sm">
@@ -520,7 +520,7 @@ export function Composer({
       {attachmentRestriction && (
         <div role="status" className="flex items-center gap-2 px-3 pb-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-          <span className="flex-1">
+          <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">
             {attachmentRestriction === 'enable_agent' && 'Non-image files require Agent mode.'}
             {attachmentRestriction === 'model_not_capable' && 'Switch to an Agent-capable model or remove non-image files.'}
             {attachmentRestriction === 'agent_unavailable' && 'Agent mode is unavailable. Remove non-image files to send.'}
@@ -562,7 +562,7 @@ export function Composer({
               <div
                 key={message.id}
                 className={cn(
-                  'flex min-h-8 items-start gap-2 rounded-lg px-2 py-1.5 text-sm',
+                  'flex min-h-8 min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 text-sm',
                   editing && 'bg-accent ring-1 ring-border',
                   message.status === 'failed' && 'bg-destructive/5',
                 )}
@@ -667,7 +667,7 @@ export function Composer({
           placeholder={attachments.length ? 'Add a caption…' : temporary ? 'Temporary message…' : 'Message…'}
           className="max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
         />
-        <div className="flex items-center gap-1 px-2.5 pb-2.5">
+        <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
           <input
             ref={fileInputRef}
             type="file"
@@ -680,7 +680,7 @@ export function Composer({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label="Attach files"
               >
                 {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4.5" />}
@@ -694,21 +694,21 @@ export function Composer({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  className="flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   aria-label="Generation options"
                 >
                   {activePresets.map((preset, i) => {
                     const choice = preset.choices.find((c) => c.id === selections[preset.id])
                     const icon = choice?.icon ?? preset.icon
                     return (
-                      <span key={preset.id} className="flex items-center gap-1">
+                      <span key={preset.id} className="flex min-w-0 items-center gap-1">
                         {i > 0 && <span className="text-border">·</span>}
                         <PresetIcon name={icon} />
-                        {choice && <span>{choice.displayName}</span>}
+                        {choice && <span className="min-w-0 truncate">{choice.displayName}</span>}
                       </span>
                     )
                   })}
-                  <ChevronDown className="size-3 opacity-60" />
+                  <ChevronDown className="size-3 shrink-0 opacity-60" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="top" className="w-48">
@@ -748,7 +748,7 @@ export function Composer({
             }}
             aria-label={activeAgentMode && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
             aria-pressed={activeAgentMode && canUseAgent}
-            className={cn('flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
+            className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
           >
             <Bot className="size-4" />
             <span>Agent</span>
@@ -759,7 +759,7 @@ export function Composer({
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label="Voice input"
               >
                 <Mic className="size-4" />

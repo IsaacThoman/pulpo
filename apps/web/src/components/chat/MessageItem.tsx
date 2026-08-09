@@ -259,7 +259,7 @@ function CompactionStepRow({ item }: { item: CompactionItem }) {
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-[12px] text-muted-foreground hover:text-foreground">
         {active ? <Loader2 className="size-3 shrink-0 animate-spin" /> : failed ? <XCircle className="size-3 shrink-0 text-destructive" /> : <Minimize2 className="size-3 shrink-0" />}
-        <span className="flex-1 font-medium text-foreground/80">{active ? 'Compacting context…' : failed ? 'Context compaction failed' : 'Compacted context'}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">{active ? 'Compacting context…' : failed ? 'Context compaction failed' : 'Compacted context'}</span>
         <StepDuration ms={active ? undefined : item.duration_ms} live={active} />
         <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
       </CollapsibleTrigger>
@@ -443,11 +443,11 @@ function ActivityBlock({
 
   return (
     <div className="space-y-1.5">
-      <Collapsible open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
+      <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
+        <CollapsibleTrigger className="flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground">
           {triggerIcon}
-          <span>{label}</span>
-          <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
+          <span className="min-w-0 truncate">{label}</span>
+          <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 space-y-1.5 border-l-2 border-muted py-0.5 pl-2.5">
@@ -582,9 +582,9 @@ export const MessageItem = memo(function MessageItem({
 
   if (message.role === 'user') {
     return (
-      <div className="group flex flex-col items-end gap-1">
+      <div className="group flex min-w-0 max-w-full flex-col items-end gap-1">
         <div className={cn(
-          'max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7',
+          'min-w-0 max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7 [overflow-wrap:anywhere]',
           message.content ? 'px-4 py-2.5' : 'p-2',
         )}>
           {message.attachments && message.attachments.length > 0 && (
@@ -629,12 +629,12 @@ export const MessageItem = memo(function MessageItem({
   let activityOrdinal = -1
 
   return (
-    <div className="group flex gap-3">
+    <div className="group flex min-w-0 max-w-full gap-3">
       <ModelIcon model={model} className="mt-1 size-7 rounded-[4px]" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="text-sm font-semibold">{model.name}</span>
-          <span className="text-xs text-muted-foreground">{timeAgo(message.timestamp)}</span>
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="min-w-0 truncate text-sm font-semibold">{model.name}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(message.timestamp)}</span>
         </div>
 
         <div className="mt-1 flex flex-col gap-1.5">
@@ -701,7 +701,7 @@ export const MessageItem = memo(function MessageItem({
                 return (
                   <div
                     key={`text:${index}`}
-                    className={cn('text-[15px]', textIsStreaming && 'stream-caret')}
+                    className={cn('min-w-0 max-w-full text-[15px]', textIsStreaming && 'stream-caret')}
                   >
                     <Markdown content={segment.text} streaming={textIsStreaming} />
                   </div>
@@ -726,10 +726,10 @@ export const MessageItem = memo(function MessageItem({
             return (
               <details
                 key={`${type}:${index}`}
-                className="rounded-lg border bg-muted/20 px-3 py-2 text-xs"
+                className="min-w-0 max-w-full rounded-lg border bg-muted/20 px-3 py-2 text-xs"
               >
                 <summary className="cursor-pointer font-medium">{type.replaceAll('_', ' ')}</summary>
-                <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-[11px] text-muted-foreground">
+                <pre className="mt-2 max-h-64 max-w-full overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
                   {JSON.stringify(item, null, 2)}
                 </pre>
               </details>
@@ -744,10 +744,10 @@ export const MessageItem = memo(function MessageItem({
         </div>
 
         {(message.done || hasMultipleBranches(message.branch)) && (
-          <div className="mt-1.5 flex items-center gap-1">
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
             {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
             {message.done && (
-              <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="flex min-w-0 flex-wrap items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                 <CopyButton text={message.content} />
                 {!chat.expired && (
                   <>
@@ -766,7 +766,7 @@ export const MessageItem = memo(function MessageItem({
                   </>
                 )}
                 {(message.tokensIn !== undefined || message.cost !== undefined) && (
-                  <span className="ml-1 text-[11px] text-muted-foreground">
+                  <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&
                       `${message.tokensIn.toLocaleString()}→${(message.tokensOut ?? 0).toLocaleString()} tok`}
                     {message.tokensOut !== undefined &&
