@@ -162,7 +162,8 @@ jobs:
           response="$(coolify deploy uuid "${COOLIFY_APP_UUID}" --pull-request-id "${PULL_REQUEST_ID}" --format json)"
           deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
           if [[ -z "${deployment_uuid}" ]]; then
-            echo "Coolify did not return a deployment UUID." >&2
+            message="$(jq -r '.deployments[0].message // .[0].message // .message // "Coolify did not return a deployment UUID."' <<< "${response}")"
+            echo "${message}" >&2
             exit 1
           fi
           echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
@@ -237,7 +238,8 @@ jobs:
           response="$(coolify deploy uuid "${COOLIFY_APP_UUID}" --format json)"
           deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
           if [[ -z "${deployment_uuid}" ]]; then
-            echo "Coolify did not return a deployment UUID." >&2
+            message="$(jq -r '.deployments[0].message // .[0].message // .message // "Coolify did not return a deployment UUID."' <<< "${response}")"
+            echo "${message}" >&2
             exit 1
           fi
           echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
