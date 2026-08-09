@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { chatPresetsSchema, createModelSchema, createProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
+import { hasDatabaseErrorCode } from '../database/errors.js'
 import {
   auditEvents,
   labs,
@@ -557,7 +558,15 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/admin/models/:id', async (request, reply) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    const deleted = await db.delete(models).where(eq(models.id, id)).returning({ id: models.id })
+    let deleted: Array<{ id: string }>
+    try {
+      deleted = await db.delete(models).where(eq(models.id, id)).returning({ id: models.id })
+    } catch (cause) {
+      if (hasDatabaseErrorCode(cause, '23503')) {
+        throw new AppError(409, 'model_in_use', 'This model has conversation or usage history; disable it instead')
+      }
+      throw cause
+    }
     if (!deleted.length) throw notFound('Model')
     reply.code(204).send()
   })
