@@ -3644,6 +3644,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
+                autoFocus
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
