@@ -127,8 +127,6 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
         metadata: {
           searchEnabled: next.searchEnabled,
           extractEnabled: next.extractEnabled,
-          billSearches: next.billSearches,
-          billExtracts: next.billExtracts,
           searchProviderOrder: next.searchProviderOrder,
           extractProviderOrder: next.extractProviderOrder,
           kagi: next.kagi,

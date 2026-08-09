@@ -1,7 +1,7 @@
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { WebToolProvider, WebToolsSettings } from '@pulpo/contracts'
-import { FirecrawlClient, FirecrawlError, type FirecrawlResult } from './firecrawl.js'
+import { FirecrawlClient } from './firecrawl.js'
 import { KAGI_EXTRACT_COST_MICROS, KAGI_SEARCH_COST_MICROS, KagiClient, type KagiResult, type KagiSearchInput } from './kagi.js'
 
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -12,7 +12,6 @@ export interface WebProviderAttempt {
   outcome: 'success' | 'empty' | 'error'
   durationMs: number
   providerCostMicros: number
-  creditsUsed?: number
   trace?: string
   requestId?: string
   error?: string
@@ -24,18 +23,17 @@ export interface WebProviderExecution {
   attempts: WebProviderAttempt[]
 }
 
-interface ProviderResult extends KagiResult {
-  creditsUsed?: number
-  requestId?: string
-}
+interface ProviderResult extends KagiResult { requestId?: string }
 
 function sanitizedError(value: unknown): string {
   const message = value instanceof Error ? value.message : String(value)
   return message.replace(/\s+/g, ' ').trim().slice(0, 300) || 'Unknown provider error'
 }
 
-function firecrawlCost(result: Pick<FirecrawlResult, 'creditsUsed'>, settings: WebToolsSettings): number {
-  return result.creditsUsed * settings.firecrawl.costPerCreditMicros
+function billedPrice(provider: WebToolProvider, capability: 'search' | 'extract', settings: WebToolsSettings): number {
+  const providerSettings = settings[provider]
+  if (capability === 'search') return providerSettings.billSearches ? providerSettings.searchPriceMicros : 0
+  return providerSettings.billExtracts ? providerSettings.extractPriceMicros : 0
 }
 
 function enabledProviders(
@@ -60,26 +58,27 @@ export function createWebTools(input: {
   reserveBillableCost?: (amountMicros: number) => Promise<void>
 }): AgentTool[] {
   const tools: AgentTool[] = []
-  const start = async (id: string, billedCostMicros: number) => {
-    await input.onOperationStarted?.(id)
-    if (billedCostMicros > 0) await input.reserveBillableCost?.(billedCostMicros)
-  }
 
   const run = async (
     id: string,
     capability: 'search' | 'extract',
     values: Record<string, unknown>,
     signal: AbortSignal | undefined,
-    billedCostMicros: number,
   ) => {
-    await start(id, billedCostMicros)
+    await input.onOperationStarted?.(id)
     const providers = enabledProviders(capability, input.settings, input.clients)
     const attempts: WebProviderAttempt[] = []
     let providerCostMicros = 0
+    let reservedBillingMicros = 0
     let winner: WebToolProvider | undefined
     try {
       for (const provider of providers) {
         if (signal?.aborted) throw signal.reason
+        const providerBilledCostMicros = billedPrice(provider, capability, input.settings)
+        if (providerBilledCostMicros > reservedBillingMicros) {
+          await input.reserveBillableCost?.(providerBilledCostMicros - reservedBillingMicros)
+          reservedBillingMicros = providerBilledCostMicros
+        }
         const startedAt = Date.now()
         try {
           let result: ProviderResult
@@ -95,13 +94,13 @@ export function createWebTools(input: {
                 : undefined,
             }
             result = await input.clients[provider]!.search(searchInput, signal)
-            attemptCost = provider === 'kagi' ? KAGI_SEARCH_COST_MICROS : firecrawlCost(result as FirecrawlResult, input.settings)
+            attemptCost = provider === 'kagi' ? KAGI_SEARCH_COST_MICROS : 0
           } else {
             const url = String(values.url ?? '')
             result = provider === 'kagi'
               ? await input.clients.kagi!.extract(url, input.maxOutputBytes, signal)
               : await input.clients.firecrawl!.extract(url, input.maxOutputBytes, input.settings.firecrawl.maxAgeSeconds, signal)
-            attemptCost = provider === 'kagi' ? KAGI_EXTRACT_COST_MICROS : firecrawlCost(result as FirecrawlResult, input.settings)
+            attemptCost = provider === 'kagi' ? KAGI_EXTRACT_COST_MICROS : 0
           }
           providerCostMicros += attemptCost
           if (!result.output.trim()) {
@@ -110,7 +109,6 @@ export function createWebTools(input: {
               outcome: 'empty',
               durationMs: Date.now() - startedAt,
               providerCostMicros: attemptCost,
-              ...(result.creditsUsed !== undefined ? { creditsUsed: result.creditsUsed } : {}),
               ...(result.trace ? { trace: result.trace } : {}),
               ...(result.requestId ? { requestId: result.requestId } : {}),
               error: sanitizedError(result.emptyReason ?? 'empty output'),
@@ -123,24 +121,19 @@ export function createWebTools(input: {
             outcome: 'success',
             durationMs: Date.now() - startedAt,
             providerCostMicros: attemptCost,
-            ...(result.creditsUsed !== undefined ? { creditsUsed: result.creditsUsed } : {}),
             ...(result.trace ? { trace: result.trace } : {}),
             ...(result.requestId ? { requestId: result.requestId } : {}),
           })
           return {
             content: [{ type: 'text' as const, text: result.output }],
-            details: { provider, providerAttempts: attempts, providerCostMicros, billedCostMicros },
+            details: { provider, providerAttempts: attempts, providerCostMicros, billedCostMicros: providerBilledCostMicros },
           }
         } catch (error) {
-          const creditsUsed = error instanceof FirecrawlError ? error.creditsUsed : 0
-          const attemptCost = provider === 'firecrawl' ? creditsUsed * input.settings.firecrawl.costPerCreditMicros : 0
-          providerCostMicros += attemptCost
           attempts.push({
             provider,
             outcome: 'error',
             durationMs: Date.now() - startedAt,
-            providerCostMicros: attemptCost,
-            ...(creditsUsed > 0 ? { creditsUsed } : {}),
+            providerCostMicros: 0,
             error: sanitizedError(error),
           })
           if (signal?.aborted) throw error
@@ -173,7 +166,6 @@ export function createWebTools(input: {
       'search',
       record(args),
       signal,
-      input.settings.billSearches ? input.settings.searchPriceMicros : 0,
     ),
   })
   if (input.settings.extractEnabled && enabledProviders('extract', input.settings, input.clients).length) tools.push({
@@ -185,7 +177,6 @@ export function createWebTools(input: {
       'extract',
       record(args),
       signal,
-      input.settings.billExtracts ? input.settings.extractPriceMicros : 0,
     ),
   })
   return tools

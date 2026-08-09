@@ -15,7 +15,8 @@ describe('Firecrawl client', () => {
     const result = await new FirecrawlClient('https://api.firecrawl.dev/v2/', 'secret').search({
       query: 'pulpo', limit: 1, includeDomains: ['Docs.Example'], excludeDomains: ['bad.example'], timeRelative: 'week',
     })
-    expect(result).toMatchObject({ requestId: 'search-id', creditsUsed: 2 })
+    expect(result).toMatchObject({ requestId: 'search-id' })
+    expect(result).not.toHaveProperty('creditsUsed')
     expect(result.output).toContain('[Result](https://docs.example/page)')
     const init = fetch.mock.calls[0]![1]
     expect(fetch.mock.calls[0]![0]).toBe('https://api.firecrawl.dev/v2/search')
@@ -45,22 +46,23 @@ describe('Firecrawl client', () => {
     })
   })
 
-  it('returns empty content with consumed credits for fallback', async () => {
+  it('ignores credits when returning empty content for fallback', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true, creditsUsed: 3, data: { markdown: '', metadata: { error: 'No content' } },
     }), { status: 200 })))
     await expect(new FirecrawlClient('https://api.firecrawl.dev/v2', 'secret').extract('https://example.com', 100, 60)).resolves.toMatchObject({
-      output: '', creditsUsed: 3, emptyReason: 'No content',
+      output: '', emptyReason: 'No content',
     })
   })
 
-  it('surfaces API errors and reported credits', async () => {
+  it('surfaces API errors without credit metadata', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: false, error: 'Rate limited', creditsUsed: 1,
     }), { status: 429 })))
     const error = await new FirecrawlClient('https://api.firecrawl.dev/v2', 'secret').search({ query: 'pulpo' }).catch((cause) => cause)
     expect(error).toBeInstanceOf(FirecrawlError)
-    expect(error).toMatchObject({ message: 'Rate limited', creditsUsed: 1 })
+    expect(error).toMatchObject({ message: 'Rate limited' })
+    expect(error).not.toHaveProperty('creditsUsed')
   })
 
   it('only requires a key for the hosted Firecrawl endpoint', () => {

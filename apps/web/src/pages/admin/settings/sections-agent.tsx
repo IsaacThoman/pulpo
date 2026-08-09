@@ -17,13 +17,16 @@ const defaults: AgentSettings = {
 }
 
 const webDefaults: WebToolsForm = {
-  searchEnabled: false, extractEnabled: false, billSearches: false, billExtracts: false,
-  searchPriceMicros: 12_000, extractPriceMicros: 4_000,
+  searchEnabled: false, extractEnabled: false,
   searchProviderOrder: ['kagi', 'firecrawl'], extractProviderOrder: ['kagi', 'firecrawl'],
-  kagi: { searchEnabled: true, extractEnabled: true, hasApiKey: false },
+  kagi: {
+    searchEnabled: true, billSearches: false, searchPriceMicros: 12_000,
+    extractEnabled: true, billExtracts: false, extractPriceMicros: 4_000, hasApiKey: false,
+  },
   firecrawl: {
-    searchEnabled: false, extractEnabled: false, baseUrl: 'https://api.firecrawl.dev/v2',
-    maxAgeSeconds: 0, costPerCreditMicros: 0, hasApiKey: false,
+    searchEnabled: false, billSearches: false, searchPriceMicros: 12_000,
+    extractEnabled: false, billExtracts: false, extractPriceMicros: 4_000,
+    baseUrl: 'https://api.firecrawl.dev/v2', maxAgeSeconds: 0, hasApiKey: false,
   },
 }
 
@@ -136,14 +139,10 @@ export function AgentSection() {
         <span>{health.healthy ? 'Workspace controller is healthy' : health.configured ? health.detail ?? 'Workspace controller is unavailable' : 'Controller URL and token are not configured in deployment secrets'}</span>
       </div>
     </Section>
-    <Section title="Web tools" hint="Control agent web capabilities, user billing, and the order in which enabled providers are attempted.">
+    <Section title="Web tools" hint="Control global agent web capabilities and the order in which enabled providers are attempted.">
       <Toggle label="Enable web search" hint="Adds the web_search tool when at least one search provider is available." checked={web.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, searchEnabled })} />
-      <Toggle label="Bill users for searches" checked={web.billSearches} onChange={(billSearches) => setWeb({ ...web, billSearches })} indent />
-      {web.billSearches && <NumField label="Price per search" value={web.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, searchPriceMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
       <ProviderOrder label="Search fallback order" hint="The first enabled provider returning results wins." value={web.searchProviderOrder} onChange={(searchProviderOrder) => setWeb({ ...web, searchProviderOrder })} />
       <Toggle label="Enable page extraction" hint="Adds the web_fetch tool when at least one extraction provider is available." checked={web.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, extractEnabled })} />
-      <Toggle label="Bill users for page extracts" checked={web.billExtracts} onChange={(billExtracts) => setWeb({ ...web, billExtracts })} indent />
-      {web.billExtracts && <NumField label="Price per extracted page" value={web.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, extractPriceMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
       <ProviderOrder label="Extraction fallback order" hint="Empty content and provider failures advance to the next provider." value={web.extractProviderOrder} onChange={(extractProviderOrder) => setWeb({ ...web, extractProviderOrder })} />
       {web.searchEnabled && !capabilityAvailable('search') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Web search is enabled, but no usable search provider is configured.</div>}
       {web.extractEnabled && !capabilityAvailable('extract') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Page extraction is enabled, but no usable extraction provider is configured.</div>}
@@ -151,16 +150,23 @@ export function AgentSection() {
     <Section title="Kagi" hint="Use Kagi Search and Extract as one provider in the web-tool fallback chains.">
       <SecretField label="Kagi API key" hint={web.kagi.hasApiKey ? 'Configured — leave blank to keep' : 'Required before Kagi can run'} value={kagiApiKey} onChange={setKagiApiKey} />
       <Toggle label="Use for web search" checked={web.kagi.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, kagi: { ...web.kagi, searchEnabled } })} />
+      <Toggle label="Bill users for Kagi searches" checked={web.kagi.billSearches} onChange={(billSearches) => setWeb({ ...web, kagi: { ...web.kagi, billSearches } })} indent />
+      {web.kagi.billSearches && <NumField label="Price per Kagi search" value={web.kagi.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
       <Toggle label="Use for page extraction" checked={web.kagi.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, kagi: { ...web.kagi, extractEnabled } })} />
+      <Toggle label="Bill users for Kagi page extracts" checked={web.kagi.billExtracts} onChange={(billExtracts) => setWeb({ ...web, kagi: { ...web.kagi, billExtracts } })} indent />
+      {web.kagi.billExtracts && <NumField label="Price per Kagi page extract" value={web.kagi.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, extractPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
       {((web.searchEnabled && web.kagi.searchEnabled) || (web.extractEnabled && web.kagi.extractEnabled)) && !kagiAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Kagi is enabled but will be skipped until an API key is configured.</div>}
     </Section>
     <Section title="Firecrawl" hint="Use Firecrawl Cloud or a v2-compatible self-hosted endpoint. Secrets remain encrypted on the Pulpo server.">
       <TextField label="API base URL" hint="Private endpoints require ALLOW_PRIVATE_PROVIDER_URLS=true." value={web.firecrawl.baseUrl} onChange={(baseUrl) => setWeb({ ...web, firecrawl: { ...web.firecrawl, baseUrl } })} mono />
       <SecretField label="Firecrawl API key" hint={web.firecrawl.hasApiKey ? 'Configured — leave blank to keep' : firecrawlCloudRequiresKey(web.firecrawl.baseUrl) ? 'Required for Firecrawl Cloud' : 'Optional for this custom endpoint'} value={firecrawlApiKey} onChange={setFirecrawlApiKey} />
       <Toggle label="Use for web search" checked={web.firecrawl.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchEnabled } })} />
+      <Toggle label="Bill users for Firecrawl searches" checked={web.firecrawl.billSearches} onChange={(billSearches) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billSearches } })} indent />
+      {web.firecrawl.billSearches && <NumField label="Price per Firecrawl search" value={web.firecrawl.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
       <Toggle label="Use for page extraction" checked={web.firecrawl.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractEnabled } })} />
+      <Toggle label="Bill users for Firecrawl page extracts" checked={web.firecrawl.billExtracts} onChange={(billExtracts) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billExtracts } })} indent />
+      {web.firecrawl.billExtracts && <NumField label="Price per Firecrawl page extract" value={web.firecrawl.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
       <NumField label="Maximum scrape cache age" hint="0 always requests fresh content." value={web.firecrawl.maxAgeSeconds} onChange={(maxAgeSeconds) => setWeb({ ...web, firecrawl: { ...web.firecrawl, maxAgeSeconds: Math.round(maxAgeSeconds) } })} min={0} max={31_536_000} step={60} suffix="seconds" />
-      <NumField label="Effective cost per credit" hint="Used for operator cost reporting; 0 leaves dollar cost untracked." value={web.firecrawl.costPerCreditMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, costPerCreditMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.000001} decimals={6} suffix="USD" />
       {((web.searchEnabled && web.firecrawl.searchEnabled) || (web.extractEnabled && web.firecrawl.extractEnabled)) && !firecrawlAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Firecrawl Cloud is enabled but will be skipped until an API key is configured.</div>}
     </Section>
     <SaveBar onSave={async () => {

@@ -71,22 +71,41 @@ describe('web tool application settings', () => {
     expect(parseWebToolsSettings(undefined)).toMatchObject({
       searchEnabled: false,
       extractEnabled: false,
-      billSearches: false,
-      billExtracts: false,
-      searchPriceMicros: 12_000,
-      extractPriceMicros: 4_000,
       searchProviderOrder: ['kagi', 'firecrawl'],
       extractProviderOrder: ['kagi', 'firecrawl'],
-      kagi: { searchEnabled: true, extractEnabled: true },
+      kagi: {
+        searchEnabled: true,
+        billSearches: false,
+        searchPriceMicros: 12_000,
+        extractEnabled: true,
+        billExtracts: false,
+        extractPriceMicros: 4_000,
+      },
       firecrawl: {
         searchEnabled: false,
+        billSearches: false,
+        searchPriceMicros: 12_000,
         extractEnabled: false,
+        billExtracts: false,
+        extractPriceMicros: 4_000,
         baseUrl: 'https://api.firecrawl.dev/v2',
         maxAgeSeconds: 0,
-        costPerCreditMicros: 0,
       },
       encryptedKagiApiKey: null,
       encryptedFirecrawlApiKey: null,
+    })
+  })
+
+  it('copies legacy global billing into both providers without overriding provider values', () => {
+    expect(parseWebToolsSettings({
+      billSearches: true,
+      billExtracts: true,
+      searchPriceMicros: 21_000,
+      extractPriceMicros: 8_000,
+      kagi: { billSearches: false, searchPriceMicros: 9_000 },
+    })).toMatchObject({
+      kagi: { billSearches: false, searchPriceMicros: 9_000, billExtracts: true, extractPriceMicros: 8_000 },
+      firecrawl: { billSearches: true, searchPriceMicros: 21_000, billExtracts: true, extractPriceMicros: 8_000 },
     })
   })
 

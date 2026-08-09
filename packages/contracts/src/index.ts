@@ -568,33 +568,46 @@ const webToolProviderOrderSchema = z.array(webToolProviderSchema).length(2).refi
 
 export const kagiWebProviderSettingsSchema = z.object({
   searchEnabled: z.boolean().default(true),
+  billSearches: z.boolean().default(false),
+  searchPriceMicros: z.number().int().min(0).max(1_000_000_000).default(12_000),
   extractEnabled: z.boolean().default(true),
+  billExtracts: z.boolean().default(false),
+  extractPriceMicros: z.number().int().min(0).max(1_000_000_000).default(4_000),
 })
 
 export const firecrawlWebProviderSettingsSchema = z.object({
   searchEnabled: z.boolean().default(false),
+  billSearches: z.boolean().default(false),
+  searchPriceMicros: z.number().int().min(0).max(1_000_000_000).default(12_000),
   extractEnabled: z.boolean().default(false),
+  billExtracts: z.boolean().default(false),
+  extractPriceMicros: z.number().int().min(0).max(1_000_000_000).default(4_000),
   baseUrl: z.url().default('https://api.firecrawl.dev/v2'),
   maxAgeSeconds: z.number().int().min(0).max(31_536_000).default(0),
-  costPerCreditMicros: z.number().int().min(0).max(1_000_000_000).default(0),
 })
 
 export const webToolsSettingsSchema = z.object({
   searchEnabled: z.boolean().default(false),
   extractEnabled: z.boolean().default(false),
-  billSearches: z.boolean().default(false),
-  billExtracts: z.boolean().default(false),
-  searchPriceMicros: z.number().int().min(0).max(1_000_000_000).default(12_000),
-  extractPriceMicros: z.number().int().min(0).max(1_000_000_000).default(4_000),
   searchProviderOrder: webToolProviderOrderSchema.default(['kagi', 'firecrawl']),
   extractProviderOrder: webToolProviderOrderSchema.default(['kagi', 'firecrawl']),
-  kagi: kagiWebProviderSettingsSchema.default({ searchEnabled: true, extractEnabled: true }),
+  kagi: kagiWebProviderSettingsSchema.default({
+    searchEnabled: true,
+    billSearches: false,
+    searchPriceMicros: 12_000,
+    extractEnabled: true,
+    billExtracts: false,
+    extractPriceMicros: 4_000,
+  }),
   firecrawl: firecrawlWebProviderSettingsSchema.default({
     searchEnabled: false,
+    billSearches: false,
+    searchPriceMicros: 12_000,
     extractEnabled: false,
+    billExtracts: false,
+    extractPriceMicros: 4_000,
     baseUrl: 'https://api.firecrawl.dev/v2',
     maxAgeSeconds: 0,
-    costPerCreditMicros: 0,
   }),
 })
 export type WebToolsSettings = z.infer<typeof webToolsSettingsSchema>

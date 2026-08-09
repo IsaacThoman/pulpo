@@ -187,11 +187,11 @@ Implemented endpoints:
 
 ## Optional web tools
 
-Agent mode can expose `web_search` and `web_fetch` tools backed by ordered Kagi and Firecrawl provider chains. Configure global tool availability and billing, enable each capability per provider, and arrange independent search and extraction fallback orders under Admin → Settings → Agent. Provider API keys are encrypted with `ENCRYPTION_KEY`, used only by the Pulpo worker, never copied into disposable workspaces, and never returned by the settings API.
+Agent mode can expose `web_search` and `web_fetch` tools backed by ordered Kagi and Firecrawl provider chains. Configure global tool availability, enable and price each capability per provider, and arrange independent search and extraction fallback orders under Admin → Settings → Agent. Provider API keys are encrypted with `ENCRYPTION_KEY`, used only by the Pulpo worker, never copied into disposable workspaces, and never returned by the settings API.
 
-Kagi uses the v1 Search and Extract APIs. Firecrawl uses its v2 Search and Scrape APIs and can target Firecrawl Cloud or a compatible self-hosted base URL. Private self-hosted URLs require `ALLOW_PRIVATE_PROVIDER_URLS=true`. Firecrawl scrape freshness and effective cost per credit are configurable; Pulpo records each provider attempt, the winning provider, credits, upstream costs, and billed cost on the tool execution.
+Kagi uses the v1 Search and Extract APIs. Firecrawl uses its v2 Search and Scrape APIs and can target Firecrawl Cloud or a compatible self-hosted base URL. Private self-hosted URLs require `ALLOW_PRIVATE_PROVIDER_URLS=true`. Firecrawl scrape freshness is configurable; Pulpo records each provider attempt, the winning provider, known upstream costs, and billed cost on the tool execution.
 
-Administrators may bill users independently for searches and page extracts at configurable global per-operation prices. Pulpo reserves the charge once before starting the provider chain and settles it only when one provider succeeds. Provider costs may accumulate across fallback attempts, but users are never charged per attempt. When billing is disabled, provider usage remains an operator expense and is not deducted from user balances.
+Administrators may configure separate per-search and per-page-extract user prices for Kagi and Firecrawl. Pulpo reserves enough balance before each provider attempt and settles only the successful provider's configured charge. Empty results and failed attempts are never billed. When billing is disabled for the winning provider, its usage is not deducted from the user's balance.
 
 Streaming uses standard Responses SSE events. Background requests return immediately and support retrieval and cancellation. Keys can be restricted by scope, model, monthly budget, and lifetime budget.
 

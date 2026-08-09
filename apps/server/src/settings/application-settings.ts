@@ -59,8 +59,18 @@ export function parseAgentSettings(value: unknown): z.infer<typeof agentSettings
 
 export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebToolsSettingsSchema> {
   const legacy = value && typeof value === 'object' ? value as Record<string, unknown> : {}
+  const legacyKagi = legacy.kagi && typeof legacy.kagi === 'object' ? legacy.kagi as Record<string, unknown> : {}
+  const legacyFirecrawl = legacy.firecrawl && typeof legacy.firecrawl === 'object' ? legacy.firecrawl as Record<string, unknown> : {}
+  const providerBilling = (provider: Record<string, unknown>) => ({
+    billSearches: provider.billSearches ?? legacy.billSearches,
+    searchPriceMicros: provider.searchPriceMicros ?? legacy.searchPriceMicros,
+    billExtracts: provider.billExtracts ?? legacy.billExtracts,
+    extractPriceMicros: provider.extractPriceMicros ?? legacy.extractPriceMicros,
+  })
   const parsed = storedWebToolsSettingsSchema.safeParse({
     ...legacy,
+    kagi: { ...legacyKagi, ...providerBilling(legacyKagi) },
+    firecrawl: { ...legacyFirecrawl, ...providerBilling(legacyFirecrawl) },
     encryptedKagiApiKey: legacy.encryptedKagiApiKey ?? legacy.encryptedApiKey ?? null,
   })
   return parsed.success ? parsed.data : storedWebToolsSettingsSchema.parse({})

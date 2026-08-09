@@ -13,7 +13,6 @@ type FirecrawlSearchResponse = {
   success?: boolean
   data?: { web?: FirecrawlSearchResult[] }
   id?: string
-  creditsUsed?: number
   error?: string
   message?: string
 }
@@ -25,18 +24,16 @@ type FirecrawlScrapeResponse = {
     metadata?: { sourceURL?: string; url?: string; error?: string }
   }
   id?: string
-  creditsUsed?: number
   error?: string
   message?: string
 }
 
 export interface FirecrawlResult extends KagiResult {
   requestId?: string
-  creditsUsed: number
 }
 
 export class FirecrawlError extends Error {
-  constructor(message: string, readonly creditsUsed = 0) {
+  constructor(message: string) {
     super(message)
     this.name = 'FirecrawlError'
   }
@@ -45,11 +42,6 @@ export class FirecrawlError extends Error {
 function combineSignals(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs)
   return signal ? AbortSignal.any([signal, timeout]) : timeout
-}
-
-function credits(value: unknown): number {
-  const parsed = Number(value ?? 0)
-  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 0
 }
 
 function cleanDomains(value: string[] | undefined): string[] | undefined {
@@ -84,7 +76,7 @@ export class FirecrawlClient {
       signal: combineSignals(signal, this.timeoutMs),
     })
     const payload = await response.json().catch(() => null) as T | null
-    if (!response.ok || payload?.success === false) throw new FirecrawlError(apiError(payload, response.status), credits(payload?.creditsUsed))
+    if (!response.ok || payload?.success === false) throw new FirecrawlError(apiError(payload, response.status))
     if (!payload) throw new FirecrawlError('Firecrawl API returned an empty response')
     return payload
   }
@@ -109,7 +101,7 @@ export class FirecrawlClient {
       typeof row.title === 'string' && Boolean(row.title.trim()) && typeof row.url === 'string' && Boolean(row.url.trim())
     )).slice(0, limit)
     if (!rows.length) return {
-      output: '', requestId: payload.id, creditsUsed: credits(payload.creditsUsed), emptyReason: 'no search results',
+      output: '', requestId: payload.id, emptyReason: 'no search results',
     }
     return {
       output: rows.map((row, index) => [
@@ -118,7 +110,6 @@ export class FirecrawlClient {
         ...(row.description ? [`   ${row.description.replace(/\s+/g, ' ').trim()}`] : []),
       ].join('\n')).join('\n\n'),
       requestId: payload.id,
-      creditsUsed: credits(payload.creditsUsed),
     }
   }
 
@@ -138,7 +129,6 @@ export class FirecrawlClient {
     if (!markdown?.trim()) return {
       output: '',
       requestId: payload.id,
-      creditsUsed: credits(payload.creditsUsed),
       emptyReason: payload.data?.metadata?.error || 'missing page content',
     }
     const truncated = Buffer.byteLength(markdown, 'utf8') > maxBytes
@@ -147,7 +137,6 @@ export class FirecrawlClient {
     return {
       output: [`Source: ${sourceUrl}`, '', content, ...(truncated ? ['', `[Content truncated at ${maxBytes} bytes]`] : [])].join('\n'),
       requestId: payload.id,
-      creditsUsed: credits(payload.creditsUsed),
     }
   }
 }
