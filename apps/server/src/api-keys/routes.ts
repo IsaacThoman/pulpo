@@ -3,7 +3,7 @@ import { and, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { createApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { apiKeyModelPermissions, apiKeys, applicationSettings, usageEvents, users } from '../database/schema.js'
+import { apiKeyModelPermissions, apiKeys, applicationSettings, modelPresetChoices, modelPresets, models, usageEvents, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { randomToken } from '../lib/crypto.js'
@@ -12,6 +12,7 @@ import { requireUser, serializeUser } from '../auth/service.js'
 import { createRedis } from '../redis.js'
 import { getConfig } from '../config.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { modelPermissionAllows } from './model-permissions.js'
 
 async function assertApiKeysEnabled(): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
@@ -40,8 +41,21 @@ export async function authenticateApiKey(request: FastifyRequest, requiredScope:
 }
 
 export async function assertApiKeyModelAllowed(apiKeyId: string, modelId: string): Promise<void> {
-  const permissions = await db.select().from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, apiKeyId))
-  if (permissions.length > 0 && !permissions.some((permission) => permission.modelId === modelId)) {
+  const permissions = await db.select({ modelId: apiKeyModelPermissions.modelId }).from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, apiKeyId))
+  const permittedModelIds = permissions.map((permission) => permission.modelId)
+  if (permittedModelIds.length === 0 || permittedModelIds.includes(modelId)) return
+  const [catalog, redirectRows] = await Promise.all([
+    db.select({ id: models.id, enabled: models.enabled, visible: models.visible, fallbackModelId: models.fallbackModelId }).from(models),
+    db.select({ modelId: modelPresets.modelId, action: modelPresetChoices.action })
+      .from(modelPresetChoices)
+      .innerJoin(modelPresets, eq(modelPresets.id, modelPresetChoices.presetId))
+      .where(eq(modelPresetChoices.actionType, 'redirect')),
+  ])
+  const redirects = redirectRows.flatMap((row) => {
+    const targetModelId = (row.action as { modelId?: unknown }).modelId
+    return typeof targetModelId === 'string' ? [{ modelId: row.modelId, targetModelId }] : []
+  })
+  if (!modelPermissionAllows(modelId, permittedModelIds, catalog, redirects)) {
     throw new AppError(403, 'model_not_allowed', 'This API key cannot use the selected model', 'permission_error')
   }
 }

@@ -39,12 +39,17 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { messagesFromAgentContext, resolveAgentParentMessages } from './history.js'
-import { resolveModelParameters } from '../responses/model-parameters.js'
-import { agentThinkingLevel } from './model-parameters.js'
-
-function assistantText(message: AssistantMessage): string {
-  return message.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('')
-}
+import { resolveAgentModelParameters } from './model-parameters.js'
+import { redis } from '../redis.js'
+import {
+  MAX_MODEL_CHAIN_LENGTH,
+  classifyGenerationError,
+  completionTokensPerSecond,
+  isModelSticky,
+  isSlowCompletion,
+  markModelSticky,
+} from '../responses/fallback-policy.js'
+import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -130,12 +135,26 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   })
   const runtimes = [runtime(record.model, record.provider)]
   const visited = new Set([record.model.id]); let fallbackId = record.model.fallbackModelId
-  while (fallbackId && runtimes.length < 8 && !visited.has(fallbackId)) {
+  while (fallbackId && runtimes.length < MAX_MODEL_CHAIN_LENGTH && !visited.has(fallbackId)) {
     const [next] = await db.select({ model: models, provider: providerConnections }).from(models).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id)).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
     if (!next) break
     visited.add(next.model.id); runtimes.push(runtime(next.model, next.provider)); fallbackId = next.model.fallbackModelId
   }
-  let activeIndex = 0; let active = runtimes[0]!
+  const resolveStickyRuntimeIndex = async (startingIndex: number): Promise<{ index: number; stickyUsed: boolean }> => {
+    return resolveStickyFallbackIndex(
+      runtimes.map((candidate) => candidate.model.id),
+      startingIndex,
+      (modelId) => isModelSticky(redis, modelId),
+    )
+  }
+  const initialRuntime = await resolveStickyRuntimeIndex(0)
+  let activeIndex = initialRuntime.index; let active = runtimes[activeIndex]!
+  if (initialRuntime.stickyUsed) {
+    const pricing = await getActivePricing(active.model.id)
+    await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
+    await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await publishAdminUsage(requestLog.id, true)
+  }
   const streams = openAIResponsesApi()
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
@@ -152,6 +171,12 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   const billingTurns: Array<Record<string, unknown>> = []
   const modelTurnStartedAt = new Map<number, number>()
   const turnDurationsMs = new Map<number, number>()
+  const turnRuntime = new Map<number, { runtime: RuntimeModel; index: number }>()
+  const turnAttemptIds = new Map<number, string>()
+  const turnOutputStarted = new Set<number>()
+  type ActivePricing = Awaited<ReturnType<typeof getActivePricing>>
+  const turnPricing = new Map<number, ActivePricing>()
+  let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
   const toolItems = new Map<string, ToolTimelineItem>()
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
     eq(attachments.sourceResponseId, responseId), eq(attachments.origin, 'assistant'), eq(attachments.status, 'ready'),
@@ -175,6 +200,23 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await publishResponseEvent({ responseId, sequence, type, payload, emittedAt: new Date().toISOString() })
   }
   let agent!: Agent
+  const activateFallbackRuntime = async (fromIndex: number): Promise<boolean> => {
+    if (fromIndex + 1 >= runtimes.length) return false
+    const resolved = await resolveStickyRuntimeIndex(fromIndex + 1)
+    activeIndex = resolved.index
+    active = runtimes[activeIndex]!
+    if (agent) agent.state.model = active.piModel
+    const pricing = await getActivePricing(active.model.id)
+    await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
+    await db.update(requestLogs).set({
+      fallbackUsed: true,
+      stickyFallbackUsed: resolved.stickyUsed ? true : undefined,
+      currentModelId: active.model.id,
+      updatedAt: new Date(),
+    }).where(eq(requestLogs.id, requestLog.id))
+    await publishAdminUsage(requestLog.id, true)
+    return true
+  }
   const snapshot = async (terminal?: 'completed' | 'failed' | 'cancelled', errorMessage?: string) => {
     const state = agent?.state
     const streamingMessage = state?.streamingMessage
@@ -365,16 +407,16 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
   }
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
-  const initialParameters = resolveModelParameters(active.model, record.response.parameters)
+  const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
   agent = new Agent({
     initialState: {
       systemPrompt: buildAgentSystemPrompt(record.model.systemPrompt, record.model.agentInstructions),
       model: active.piModel,
       tools: [...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile), ...configuredWebTools],
       messages: resumedMessages,
-      thinkingLevel: agentThinkingLevel(initialParameters),
+      thinkingLevel: initialParameters.reasoning,
     },
-    streamFn: async (model, context, options) => {
+    streamFn: async (_model, context, options) => {
       const thresholdTokens = effectiveAgentCompactionThreshold(
         active.model.agentCompactionThresholdTokens,
         active.model.contextWindow,
@@ -400,15 +442,16 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
         throw new Error('Agent context remains above the model context window after compaction')
       }
-      const parameters = resolveModelParameters(active.model, record.response.parameters)
+      const resolvedParameters = resolveAgentModelParameters(active.model, record.response.parameters, options?.reasoning)
+      modelTurnStartedAt.set(modelTurns, Date.now())
       return streams.streamSimple(
-        model as Model<'openai-responses'>,
+        active.piModel,
         preparedContext,
         {
           ...options,
           apiKey: active.apiKey,
-          reasoning: agentThinkingLevel(parameters, options?.reasoning),
-          samplingParams: { ...options?.samplingParams, ...parameters },
+          reasoning: resolvedParameters.reasoning,
+          samplingParams: { ...options?.samplingParams, ...resolvedParameters.parameters },
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: active.model.maxRetries,
@@ -445,12 +488,18 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
         pricing: await getActivePricing(active.model.id),
       })
     } else if (event.type === 'message_start' && event.message.role === 'assistant') {
-      modelTurnStartedAt.set(modelTurns, Date.now())
-      await db.insert(generationAttempts).values({ id: newId(), requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: 1, turnNumber: modelTurns, status: 'in_progress' })
-      await db.update(responses).set({ actualModelId: active.model.id }).where(eq(responses.id, responseId))
+      if (!modelTurnStartedAt.has(modelTurns)) modelTurnStartedAt.set(modelTurns, Date.now())
+      const attemptId = newId()
+      const pricing = await getActivePricing(active.model.id)
+      turnRuntime.set(modelTurns, { runtime: active, index: activeIndex })
+      turnAttemptIds.set(modelTurns, attemptId)
+      turnPricing.set(modelTurns, pricing)
+      await db.insert(generationAttempts).values({ id: attemptId, requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: 1, turnNumber: modelTurns, status: 'in_progress' })
+      await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
+      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') turnOutputStarted.add(modelTurns)
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
         delta: update.delta,
         item_id: `agent:${modelTurns}:${update.contentIndex}:message`,
@@ -469,19 +518,43 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
       ) await snapshot()
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
       const message = event.message as AssistantMessage
+      const completedTurnNumber = modelTurns
+      const completedRuntime = turnRuntime.get(completedTurnNumber) ?? { runtime: active, index: activeIndex }
       const turnUsage = { inputTokens: message.usage.input, cachedInputTokens: message.usage.cacheRead, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
-      const pricing = await getActivePricing(active.model.id); const turnCost = calculateCostMicros(turnUsage, pricing)
-      accruedCostMicros += turnCost; billingTurns.push({ modelId: active.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
-      const turnDurationMs = Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now())
-      turnDurationsMs.set(modelTurns, turnDurationMs)
+      const pricing = turnPricing.get(completedTurnNumber) ?? await getActivePricing(completedRuntime.runtime.model.id)
+      const turnCost = calculateCostMicros(turnUsage, pricing)
+      accruedCostMicros += turnCost
+      billingTurns.push({ modelId: completedRuntime.runtime.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
+      const turnDurationMs = Date.now() - (modelTurnStartedAt.get(completedTurnNumber) ?? Date.now())
+      turnDurationsMs.set(completedTurnNumber, turnDurationMs)
+      const outputStarted = turnOutputStarted.has(completedTurnNumber) || assistantMessageHasOutput(message)
+      if (outputStarted) turnOutputStarted.add(completedTurnNumber)
+      const failed = message.stopReason === 'error' || message.stopReason === 'aborted'
+      if (!failed || outputStarted) lastResponder = { runtime: completedRuntime.runtime, pricing }
+      const errorCategory = failed
+        ? message.stopReason === 'aborted' ? 'cancellation' : classifyGenerationError(new Error(message.errorMessage || 'Agent model turn failed'))
+        : undefined
       await db.update(generationAttempts).set({
-        status: message.stopReason === 'error' ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorMessage: message.errorMessage,
+        status: failed ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorCategory, errorMessage: message.errorMessage,
         inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, outputTokens: turnUsage.outputTokens,
         reasoningTokens: turnUsage.reasoningTokens, costMicros: turnCost,
         durationMs: turnDurationMs, completedAt: new Date(),
-      }).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.turnNumber, modelTurns), eq(generationAttempts.source, 'agent')))
-      await db.update(requestLogs).set({ inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, eventCount: sql`${requestLogs.eventCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+      }).where(eq(generationAttempts.id, turnAttemptIds.get(completedTurnNumber)!))
+      await db.update(requestLogs).set({
+        actualModelId: lastResponder?.runtime.model.id,
+        inputTokens: usage.inputTokens,
+        cachedInputTokens: usage.cachedInputTokens,
+        outputTokens: usage.outputTokens,
+        reasoningTokens: usage.reasoningTokens,
+        costMicros: accruedCostMicros + accruedWebToolCostMicros,
+        eventCount: sql`${requestLogs.eventCount} + 1`,
+        updatedAt: new Date(),
+      }).where(eq(requestLogs.id, requestLog.id))
+      if (!failed && isSlowCompletion(completedRuntime.runtime.model, turnDurationMs, turnUsage.outputTokens)) {
+        await markModelSticky(redis, completedRuntime.runtime.model, 'slow_completion')
+        if (completedRuntime.index === activeIndex) await activateFallbackRuntime(completedRuntime.index)
+      }
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_start') {
       toolCalls += 1
@@ -537,31 +610,26 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
     if (!existingRun) {
-      while (true) {
-        try {
-          resumedMessages = await compactAgentContext(
-            resumedMessages,
-            effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
-            'pre_response',
-            undefined,
-            [initialPrompt],
-          )
-          agent.state.messages = resumedMessages
-          agent.state.model = active.piModel
-          skipMessageCount = resumedMessages.length
-          break
-        } catch (error) {
-          if (activeIndex + 1 >= runtimes.length) throw error
-          active = runtimes[++activeIndex]!
-        }
-      }
+      resumedMessages = await compactAgentContext(
+        resumedMessages,
+        effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+        'pre_response',
+        undefined,
+        [initialPrompt],
+      )
+      agent.state.messages = resumedMessages
+      agent.state.model = active.piModel
+      skipMessageCount = resumedMessages.length
     }
     if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
     else await agent.prompt(initialPrompt)
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
-    while (last?.role === 'assistant' && last.stopReason === 'error' && !assistantText(last)) {
-      if (shouldRetryContextOverflow(last, active.model.contextWindow, overflowRetried)) {
+    while (last?.role === 'assistant' && last.stopReason === 'error') {
+      const failedTurnNumber = modelTurns
+      const failedRuntime = turnRuntime.get(failedTurnNumber) ?? { runtime: active, index: activeIndex }
+      const outputStarted = turnOutputStarted.has(failedTurnNumber) || assistantMessageHasOutput(last)
+      if (!outputStarted && shouldRetryContextOverflow(last, active.model.contextWindow, overflowRetried)) {
         const failedMessage = last
         const originalMessages = agent.state.messages.slice(0, -1)
         agent.state.messages = originalMessages
@@ -587,28 +655,29 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
         last = agent.state.messages.at(-1)
         continue
       }
-      if (activeIndex + 1 >= runtimes.length || overflowRetried) break
+      const cancellationRequested = await isCancellationRequested(responseId)
+      if (!canFallbackAgentTurn({ message: last, outputStarted, cancellationRequested, contextRetryAttempted: overflowRetried })) break
+      if (failedRuntime.index !== activeIndex || activeIndex + 1 >= runtimes.length) break
+      await markModelSticky(redis, failedRuntime.runtime.model, classifyGenerationError(new Error(last.errorMessage || 'Agent model turn failed')))
       agent.state.messages = agent.state.messages.slice(0, -1)
-      active = runtimes[++activeIndex]!
-      agent.state.model = active.piModel
-      const pricing = await getActivePricing(active.model.id)
-      await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
-      await db.update(requestLogs).set({ fallbackUsed: true, currentModelId: active.model.id, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-      await publishAdminUsage(requestLog.id, true)
+      if (!await activateFallbackRuntime(failedRuntime.index)) break
       await agent.continue()
       last = agent.state.messages.at(-1)
     }
-    if (last?.role === 'assistant' && last.stopReason === 'error') throw new Error(last.errorMessage || 'Agent model turn failed')
+    if (last?.role === 'assistant' && (last.stopReason === 'error' || last.stopReason === 'aborted')) throw new Error(last.errorMessage || 'Agent model turn failed')
     const cancelled = await isCancellationRequested(responseId)
     if (cancelled) throw new Error('Generation cancelled')
     await snapshot('completed')
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
     await db.update(agentRuns).set({ status: 'completed', context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
+    await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
-    await db.update(requestLogs).set({ status: 'completed', actualModelId: active.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: Date.now() - startedAt, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    const totalDurationMs = Date.now() - startedAt
+    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
-    await runPostResponseTasks(record, active, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
+    await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
     })
   } catch (error) {
@@ -616,8 +685,11 @@ export async function processAgentGeneration(responseId: string): Promise<void> 
     const status = cancelled ? 'cancelled' : 'failed'
     await snapshot(status, error instanceof Error ? error.message : String(error))
     await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
+    await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
-    await db.update(requestLogs).set({ status, actualModelId: active.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorMessage: error instanceof Error ? error.message : String(error), durationMs: Date.now() - startedAt, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    const totalDurationMs = Date.now() - startedAt
+    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw error
   } finally {
