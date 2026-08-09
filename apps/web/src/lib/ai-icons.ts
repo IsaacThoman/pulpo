@@ -34,7 +34,14 @@ export const AI_ICONS = [
     color: false,
     file: 'moonshot.svg',
   },
-  { id: 'openai', label: 'OpenAI', kind: 'lab', color: false, file: 'openai.svg' },
+  {
+    id: 'openai',
+    label: 'OpenAI',
+    kind: 'lab',
+    contexts: ['lab', 'model'],
+    color: false,
+    file: 'openai.svg',
+  },
   {
     id: 'pulpo',
     label: 'Pulpo',
