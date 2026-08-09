@@ -70,7 +70,18 @@ export async function createExport(exportId: string): Promise<void> {
     let contentType: string
     if (job.type === 'config') {
       const settings = await db.select().from(applicationSettings)
-      content = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings: Object.fromEntries(settings.map((row) => [row.key, row.value])) }, null, 2)
+      const safeSettings = settings.filter((row) => row.key !== 'publicUrl').map((row) => {
+        if (row.key === 'webTools' && row.value && typeof row.value === 'object') {
+          const { encryptedApiKey, ...safe } = row.value as Record<string, unknown>
+          return [row.key, { ...safe, ...(encryptedApiKey ? { apiKey: { configured: true } } : {}) }] as const
+        }
+        if (row.key === 'ocr' && row.value && typeof row.value === 'object') {
+          const { encryptedCustomApiKey, ...safe } = row.value as Record<string, unknown>
+          return [row.key, { ...safe, ...(encryptedCustomApiKey ? { customApiKey: { configured: true } } : {}) }] as const
+        }
+        return [row.key, row.value] as const
+      })
+      content = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings: Object.fromEntries(safeSettings) }, null, 2)
       contentType = 'application/json'
     } else if (job.type === 'chats') {
       const chatRows = await db.select().from(chats)

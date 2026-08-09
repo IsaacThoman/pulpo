@@ -5,6 +5,19 @@ export default {
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     [
+      "@semantic-release/exec",
+      {
+        prepareCmd:
+          "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && PULPO_CLI_VERSION=${nextRelease.version} npm run build -w @isaacthoman/pulpo",
+      },
+    ],
+    [
+      "@semantic-release/npm",
+      {
+        pkgRoot: "apps/cli",
+      },
+    ],
+    [
       "@semantic-release/github",
       {
         successComment: false,

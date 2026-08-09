@@ -169,6 +169,13 @@
       "when": 1786152279825,
       "tag": "0023_daffy_marvel_zombies",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786245827583,
+      "tag": "0024_amazing_lifeguard",
+      "breakpoints": true
     }
   ]
 }

@@ -568,6 +568,204 @@ export const webToolsSettingsSchema = z.object({
 })
 export type WebToolsSettings = z.infer<typeof webToolsSettingsSchema>
 
+export const managementScopeSchema = z.enum([
+  'account:read',
+  'account:write',
+  'instance:read',
+  'instance:write',
+  'catalog:read',
+  'catalog:write',
+  'users:read',
+  'users:write',
+  'usage:read',
+  'audit:read',
+  'operations:read',
+  'operations:write',
+])
+export type ManagementScope = z.infer<typeof managementScopeSchema>
+
+export const createManagementTokenSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  scopes: z.array(managementScopeSchema).min(1).transform((scopes) => [...new Set(scopes)]),
+  expiresInDays: z.number().int().min(1).max(365).default(90),
+})
+
+export const managementTokenSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  prefix: z.string(),
+  scopes: z.array(managementScopeSchema),
+  expiresAt: isoDateSchema,
+  lastUsedAt: isoDateSchema.nullable(),
+  revokedAt: isoDateSchema.nullable(),
+  createdAt: isoDateSchema,
+})
+export type ManagementToken = z.infer<typeof managementTokenSchema>
+
+export const authSettingsSchema = z.object({
+  signupEnabled: z.boolean().default(true),
+  defaultBalanceMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000_000),
+  defaultStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000 * 1024 * 1024),
+  pendingDetails: z.boolean().default(true),
+  adminEmail: z.union([z.literal(''), z.email()]).default(''),
+  pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
+  defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
+  apiKeysEnabled: z.boolean().default(true),
+})
+
+export const DEFAULT_TITLE_PROMPT = `### Task:
+Generate a concise, 3-5 word title with an emoji summarizing the chat history.
+### Guidelines:
+- The title should clearly represent the main theme or subject of the conversation.
+- Use emojis that enhance understanding of the topic, but avoid quotation marks or special formatting.
+- Use an emoji as the first character of the title
+- Write the title in the chat's primary language; default to English if multilingual.
+- Prioritize accuracy over excessive creativity; keep it clear and simple.
+### Output:
+JSON format: { "title": "your concise title here" }
+### Examples:
+- { "title": "📉 Stock Market Trends" },
+- { "title": "🍪 Perfect Chocolate Chip Recipe" },
+- { "title": "🎶 Evolution of Music Streaming" },
+- { "title": "💻 Remote Work Productivity Tips" },
+- { "title": "👀 Artificial Intelligence in Healthcare" },
+- { "title": "🎮 Video Game Development Insights" }`
+
+export const suggestedPromptItemSchema = z.object({
+  id: z.string().min(1).max(64),
+  label: z.string().trim().min(1).max(200),
+  message: z.string().trim().min(1).max(4_000),
+})
+
+export const DEFAULT_SUGGESTED_PROMPTS = [
+  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
+  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
+] as const
+
+export const interfaceSettingsSchema = z.object({
+  localTask: z.string().min(1).max(200).default('current'),
+  title: z.boolean().default(true),
+  titlePrompt: z.string().max(10_000).default(DEFAULT_TITLE_PROMPT),
+  titleIncludeFirstCharacters: z.number().int().min(0).max(1_000_000).default(8_000),
+  titleIncludeLastCharacters: z.number().int().min(0).max(1_000_000).default(8_000),
+  followUp: z.boolean().default(true),
+  suggestedPromptsEnabled: z.boolean().default(true),
+  suggestedPromptsCount: z.number().int().min(0).max(12).default(4),
+  suggestedPrompts: z.array(suggestedPromptItemSchema).max(50).default([...DEFAULT_SUGGESTED_PROMPTS]),
+})
+
+export const instanceOcrSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  cacheEnabled: z.boolean().default(true),
+  cacheTtlSeconds: z.number().int().min(60).max(31_536_000).default(3_600),
+  modelId: z.string().min(1).max(200).nullable().default(null),
+  systemPrompt: z.string().max(100_000).default(DEFAULT_OCR_SYSTEM_PROMPT),
+})
+
+const accountPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).max(500)
+  .transform((ids) => [...new Set(ids)])
+
+export const managementAccountSettingsSchema = z.object({
+  theme: z.enum(['light', 'dark', 'system']).default('system'),
+  language: z.string().min(1).max(32).default('en-US'),
+  sendWithEnter: z.boolean().default(true),
+  streamResponses: z.boolean().default(true),
+  showReasoning: z.boolean().default(true),
+  chatWidth: z.enum(['full', 'narrow']).default('narrow'),
+  customInstructions: z.string().max(100_000).default(''),
+  nickname: z.string().max(80).default(''),
+  memoryEnabled: z.boolean().default(false),
+  agentModeEnabled: z.boolean().default(true),
+  leaderboardVisible: z.boolean().default(false),
+  leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
+  localChatLimit: z.number().int().min(0).max(500).default(50),
+  localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
+  trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
+  defaultModelId: z.string().max(120).nullable().default(null),
+  generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
+  favoriteModelIds: accountPreferenceIdsSchema.default([]),
+  providerOrder: accountPreferenceIdsSchema.default([]),
+})
+
+export const managementWebToolsSettingsSchema = webToolsSettingsSchema.extend({
+  apiKey: z.union([
+    z.object({ configured: z.literal(true) }),
+    z.object({ fromEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/) }),
+    z.object({ clear: z.literal(true) }),
+  ]).optional(),
+})
+
+export const managementInstanceSettingsSchema = z.object({
+  auth: authSettingsSchema.default(() => authSettingsSchema.parse({})),
+  interface: interfaceSettingsSchema.default(() => interfaceSettingsSchema.parse({})),
+  ocr: instanceOcrSettingsSchema.default(() => instanceOcrSettingsSchema.parse({})),
+  agent: agentSettingsSchema.default(() => agentSettingsSchema.parse({})),
+  webTools: managementWebToolsSettingsSchema.default(() => managementWebToolsSettingsSchema.parse({})),
+  logging: loggingSettingsSchema.default(() => loggingSettingsSchema.parse({})),
+})
+
+export const managementSettingsDocumentSchema = z.object({
+  apiVersion: z.literal('pulpo.dev/management/v1'),
+  kind: z.literal('Settings'),
+  revision: z.string().min(1),
+  account: managementAccountSettingsSchema,
+  instance: managementInstanceSettingsSchema,
+})
+export type ManagementSettingsDocument = z.infer<typeof managementSettingsDocumentSchema>
+
+export const managementAccountSettingsDocumentSchema = z.object({
+  apiVersion: z.literal('pulpo.dev/management/v1'),
+  kind: z.literal('AccountSettings'),
+  revision: z.string().min(1),
+  account: managementAccountSettingsSchema,
+})
+export type ManagementAccountSettingsDocument = z.infer<typeof managementAccountSettingsDocumentSchema>
+
+export const managementInstanceSettingsDocumentSchema = z.object({
+  apiVersion: z.literal('pulpo.dev/management/v1'),
+  kind: z.literal('InstanceSettings'),
+  revision: z.string().min(1),
+  instance: managementInstanceSettingsSchema,
+})
+export type ManagementInstanceSettingsDocument = z.infer<typeof managementInstanceSettingsDocumentSchema>
+
+export const managementSettingsChangeSchema = z.object({
+  path: z.string().min(1),
+  before: z.unknown(),
+  after: z.unknown(),
+})
+export type ManagementSettingsChange = z.infer<typeof managementSettingsChangeSchema>
+
+export const managementSettingsPlanSchema = z.object({
+  revision: z.string().min(1),
+  changes: z.array(managementSettingsChangeSchema),
+  document: managementSettingsDocumentSchema,
+})
+export type ManagementSettingsPlan = z.infer<typeof managementSettingsPlanSchema>
+
+export const managementInfoSchema = z.object({
+  managementApiVersion: z.literal(1),
+  instance: z.object({
+    name: z.string(),
+    version: z.string(),
+    publicUrl: z.url(),
+  }),
+  deployment: z.object({
+    storageDriver: z.enum(['local', 's3']),
+    databaseConfigured: z.boolean(),
+    redisConfigured: z.boolean(),
+    s3Configured: z.boolean(),
+    encryptionConfigured: z.boolean(),
+    cookieSecure: z.boolean(),
+    smtpConfigured: z.boolean(),
+    workspaceControllerConfigured: z.boolean(),
+  }),
+  capabilities: z.array(z.string()),
+})
+export type ManagementInfo = z.infer<typeof managementInfoSchema>
+
 export const adminUsageStatusSchema = z.enum(['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'])
 export const adminUsageEventSchema = z.object({
   requestId: idSchema,

@@ -18,6 +18,7 @@ The repository is organized as an npm-workspaces monorepo:
 apps/web/src/         React web application
 apps/server/src/      API, worker, storage, accounting, and realtime services
 apps/mobile/          Expo Router iPhone application
+apps/cli/             Published Node.js management CLI
 apps/server/drizzle/  ordered PostgreSQL migrations
 packages/contracts/   shared Zod and Socket.IO contracts
 packages/client-core/ platform-neutral chat and client behavior
@@ -38,6 +39,25 @@ docker compose ps
 
 Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users.
 
+## Management CLI
+
+`@isaacthoman/pulpo` is the Node.js 22+ operator client for contexts, scoped automation tokens,
+settings, catalog resources, users, usage/audit data, workspaces, banners, exports,
+and backups. It deliberately does not expose restore or deployment mutation.
+
+```bash
+npm install --global @isaacthoman/pulpo
+pulpo context add production --url https://pulpo.example.com
+pulpo auth login --email admin@example.com
+pulpo settings export --output pulpo-settings.json
+pulpo --yes settings apply --file pulpo-settings.json
+```
+
+Use `--json` for scripting. `PULPO_CONTEXT`, `PULPO_URL`, and `PULPO_TOKEN`
+override stored configuration; secrets in JSON inputs can use
+`{ "fromEnv": "ENVIRONMENT_VARIABLE" }`. See `apps/cli/README.md` for the
+complete command and credential-storage notes.
+
 SeaweedFS is the default Compose storage backend. For a small single-host install, set:
 
 ```dotenv
@@ -57,9 +77,9 @@ determine the next version: `fix:` and `perf:` create a patch, `feat:` creates a
 minor, and a breaking change creates a major release. Other commit types do not
 publish a release.
 
-Semantic Release creates the Git tag and GitHub Release, then dispatches the
-agent workspace workflow for that exact tag. The existing `v0.1.0` tag is the
-release baseline. Pulpo is not published as an npm package.
+Semantic Release creates the Git tag and GitHub Release, publishes `@isaacthoman/pulpo`
+at the same version, then dispatches the agent workspace workflow for that exact
+tag. The existing `v0.1.0` tag is the release baseline.
 
 ## Coolify deployment
 

@@ -64,7 +64,11 @@ function useAdminSetting<T>(key: string, initial: T) {
 }
 
 export function GeneralSection() {
-  const [publicUrl, setPublicUrl, save] = useAdminSetting('publicUrl', location.origin)
+  const [publicUrl, setPublicUrl] = useState(location.origin)
+  useEffect(() => {
+    void apiRequest<{ instance: { publicUrl: string } }>('/api/management/v1/info')
+      .then((result) => setPublicUrl(result.instance.publicUrl))
+  }, [])
 
   return (
     <div>
@@ -77,10 +81,8 @@ export function GeneralSection() {
       </Section>
 
       <Section title="General">
-        <TextField label="Public URL" value={publicUrl} onChange={setPublicUrl} mono />
+        <TextField label="Public URL" hint="Managed by the PUBLIC_URL deployment setting." value={publicUrl} mono disabled />
       </Section>
-
-      <SaveBar onSave={save} />
     </div>
   )
 }

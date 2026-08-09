@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   attachmentValidationError,
   hydrateEmbeddedResponseSnapshot,
   lineageFromLeaf,
   mergeRevisionInvalidation,
   normalizeInstanceUrl,
+  ManagementApiError,
+  PulpoManagementClient,
   reconcileResponseEvents,
   resolvePresetActions,
 } from './index.js'
@@ -78,5 +80,25 @@ describe('client core', () => {
     expect(attachmentValidationError({ name: ' ', mimeType: 'text/plain', sizeBytes: 10 })).toBe('Attachment name is required')
     expect(attachmentValidationError({ name: 'empty.txt', mimeType: 'text/plain', sizeBytes: 0 })).toBe('Attachment is empty')
     expect(attachmentValidationError({ name: 'large.bin', mimeType: 'application/octet-stream', sizeBytes: 25 * 1024 * 1024 + 1 })).toBe('Attachment exceeds the 25 MB limit')
+  })
+
+  it('sends management bearer tokens and parses API errors', async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        managementApiVersion: 1,
+        instance: { name: 'Pulpo', version: '1.0.0', publicUrl: 'https://pulpo.example.com' },
+        deployment: {
+          storageDriver: 's3', databaseConfigured: true, redisConfigured: true, s3Configured: true,
+          encryptionConfigured: true, cookieSecure: true, smtpConfigured: false, workspaceControllerConfigured: false,
+        },
+        capabilities: ['settings'],
+      }), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 'forbidden', message: 'No access' } }), {
+        status: 403, headers: { 'content-type': 'application/json' },
+      }))
+    const client = new PulpoManagementClient('https://pulpo.example.com', 'mt-pulpo-prefix.secret', fetcher)
+    expect((await client.info()).managementApiVersion).toBe(1)
+    expect(new Headers(fetcher.mock.calls[0]?.[1]?.headers).get('authorization')).toBe('Bearer mt-pulpo-prefix.secret')
+    await expect(client.me()).rejects.toEqual(expect.objectContaining<Partial<ManagementApiError>>({ status: 403, code: 'forbidden' }))
   })
 })

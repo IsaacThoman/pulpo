@@ -45,16 +45,50 @@ jobs:
       - name: ${{ matrix.name }}
         run: ${{ matrix.command }}
 
+  cli-package:
+    name: CLI package / Node ${{ matrix.node }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22.22.0, 24.18.1]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Build and smoke-test packed CLI
+        run: |
+          set -euo pipefail
+          npm run build -w @pulpo/contracts
+          npm run build -w @pulpo/client-core
+          npm run build -w @isaacthoman/pulpo
+          tarball="$(npm pack ./apps/cli --pack-destination "${RUNNER_TEMP}" --silent)"
+          smoke_dir="$(mktemp -d "${RUNNER_TEMP}/pulpo-cli-smoke.XXXXXX")"
+          trap 'rm -rf "${smoke_dir}"' EXIT
+          npm install --prefix "${smoke_dir}" "${RUNNER_TEMP}/${tarball}"
+          "${smoke_dir}/node_modules/.bin/pulpo" --version
+          "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
+
   release:
     name: Semantic release
     if: github.event_name != 'pull_request'
-    needs: checks
+    needs: [checks, cli-package]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release.outputs.version }}
     permissions:
       actions: write
       contents: write
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,6 +101,7 @@ jobs:
         with:
           node-version: 24.18.1
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm clean-install
@@ -76,6 +111,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           # main can advance while this run waits for the workflow concurrency
           # lock. Refresh once, then let semantic-release calculate and publish

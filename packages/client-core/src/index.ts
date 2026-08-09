@@ -3,8 +3,17 @@ import {
   mergeResponseSnapshots,
   type ChatPreset,
   type EmbeddedResponseSnapshot,
+  type ManagementInfo,
+  type ManagementAccountSettingsDocument,
+  type ManagementInstanceSettingsDocument,
+  type ManagementSettingsChange,
+  type ManagementSettingsDocument,
+  type ManagementSettingsPlan,
+  type ManagementToken,
+  type NativeAuthResponse,
   type ResponseEvent,
   type ResponseSnapshot,
+  type User,
 } from '@pulpo/contracts'
 
 export function hydrateEmbeddedResponseSnapshot(
@@ -172,4 +181,162 @@ export function attachmentValidationError(candidate: AttachmentCandidate): strin
   if (!Number.isFinite(candidate.sizeBytes) || candidate.sizeBytes <= 0) return 'Attachment is empty'
   if (candidate.sizeBytes > 25 * 1024 * 1024) return 'Attachment exceeds the 25 MB limit'
   return null
+}
+
+export class ManagementApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly body?: unknown,
+  ) {
+    super(message)
+    this.name = 'ManagementApiError'
+  }
+}
+
+export interface ManagementRequestOptions extends Omit<RequestInit, 'body'> {
+  body?: unknown
+  timeoutMs?: number
+}
+
+export class PulpoManagementClient {
+  private token: string | null
+
+  constructor(
+    readonly baseUrl: string,
+    token: string | null = null,
+    private readonly fetchImpl: typeof fetch = fetch,
+  ) {
+    this.token = token
+  }
+
+  setToken(token: string | null): void {
+    this.token = token
+  }
+
+  async request<T>(path: string, options: ManagementRequestOptions = {}): Promise<T> {
+    const headers = new Headers(options.headers)
+    if (options.body !== undefined) headers.set('content-type', 'application/json')
+    if (this.token) headers.set('authorization', `Bearer ${this.token}`)
+    const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
+      ...options,
+      headers,
+      signal: options.signal ?? AbortSignal.timeout(options.timeoutMs ?? 30_000),
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    })
+    if (response.status === 204) return undefined as T
+    const body = await response.json().catch(() => undefined) as {
+      error?: { code?: string; message?: string }
+    } | undefined
+    if (!response.ok) {
+      throw new ManagementApiError(
+        response.status,
+        body?.error?.code ?? 'request_failed',
+        body?.error?.message ?? `Request failed (${response.status})`,
+        body,
+      )
+    }
+    return body as T
+  }
+
+  async download(path: string, timeoutMs = 300_000): Promise<{ bytes: Uint8Array; contentType: string | null; filename: string | null }> {
+    const headers = new Headers()
+    if (this.token) headers.set('authorization', `Bearer ${this.token}`)
+    const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    if (!response.ok) {
+      const body = await response.json().catch(() => undefined) as { error?: { code?: string; message?: string } } | undefined
+      throw new ManagementApiError(
+        response.status,
+        body?.error?.code ?? 'download_failed',
+        body?.error?.message ?? `Download failed (${response.status})`,
+        body,
+      )
+    }
+    const disposition = response.headers.get('content-disposition')
+    return {
+      bytes: new Uint8Array(await response.arrayBuffer()),
+      contentType: response.headers.get('content-type'),
+      filename: /filename="?([^";]+)"?/i.exec(disposition ?? '')?.[1] ?? null,
+    }
+  }
+
+  info(): Promise<ManagementInfo> {
+    return this.request('/api/management/v1/info')
+  }
+
+  login(email: string, password: string, deviceLabel = 'Pulpo CLI'): Promise<NativeAuthResponse> {
+    return this.request('/api/management/v1/auth/login', { method: 'POST', body: { email, password, deviceLabel } })
+  }
+
+  logout(): Promise<void> {
+    return this.request('/api/management/v1/auth/logout', { method: 'POST' })
+  }
+
+  me(): Promise<{ user: User }> {
+    return this.request('/api/management/v1/auth/me')
+  }
+
+  tokens(): Promise<{ data: ManagementToken[] }> {
+    return this.request('/api/management/v1/tokens')
+  }
+
+  createToken(input: { name: string; scopes: string[]; expiresInDays?: number }): Promise<ManagementToken & { secret: string }> {
+    return this.request('/api/management/v1/tokens', { method: 'POST', body: input })
+  }
+
+  revokeToken(id: string): Promise<ManagementToken> {
+    return this.request(`/api/management/v1/tokens/${encodeURIComponent(id)}/revoke`, { method: 'POST' })
+  }
+
+  settings(): Promise<ManagementSettingsDocument> {
+    return this.request('/api/management/v1/settings')
+  }
+
+  accountSettings(): Promise<ManagementAccountSettingsDocument> {
+    return this.request('/api/management/v1/settings/account')
+  }
+
+  instanceSettings(): Promise<ManagementInstanceSettingsDocument> {
+    return this.request('/api/management/v1/settings/instance')
+  }
+
+  planAccountSettings(document: ManagementAccountSettingsDocument): Promise<{
+    revision: string
+    changes: ManagementSettingsChange[]
+    document: ManagementAccountSettingsDocument
+  }> {
+    return this.request('/api/management/v1/settings/account/plan', { method: 'POST', body: { document } })
+  }
+
+  applyAccountSettings(document: ManagementAccountSettingsDocument, revision: string): Promise<ManagementAccountSettingsDocument> {
+    return this.request('/api/management/v1/settings/account/apply', { method: 'POST', body: { document, revision } })
+  }
+
+  planInstanceSettings(document: ManagementInstanceSettingsDocument, secrets?: { webToolsApiKey?: string | null }): Promise<{
+    revision: string
+    changes: ManagementSettingsChange[]
+    document: ManagementInstanceSettingsDocument
+  }> {
+    return this.request('/api/management/v1/settings/instance/plan', { method: 'POST', body: { document, secrets } })
+  }
+
+  applyInstanceSettings(
+    document: ManagementInstanceSettingsDocument,
+    revision: string,
+    secrets?: { webToolsApiKey?: string | null },
+  ): Promise<ManagementInstanceSettingsDocument> {
+    return this.request('/api/management/v1/settings/instance/apply', { method: 'POST', body: { document, revision, secrets } })
+  }
+
+  planSettings(document: ManagementSettingsDocument, secrets?: { webToolsApiKey?: string | null }): Promise<ManagementSettingsPlan> {
+    return this.request('/api/management/v1/settings/plan', { method: 'POST', body: { document, secrets } })
+  }
+
+  applySettings(document: ManagementSettingsDocument, revision: string, secrets?: { webToolsApiKey?: string | null }): Promise<ManagementSettingsDocument> {
+    return this.request('/api/management/v1/settings/apply', { method: 'POST', body: { document, revision, secrets } })
+  }
 }

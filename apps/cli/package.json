@@ -1,0 +1,45 @@
+{
+  "name": "@isaacthoman/pulpo",
+  "version": "0.1.0",
+  "description": "Operator-first command-line client for Pulpo",
+  "type": "module",
+  "bin": {
+    "pulpo": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IsaacThoman/pulpo.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/IsaacThoman/pulpo#readme",
+  "bugs": {
+    "url": "https://github.com/IsaacThoman/pulpo/issues"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && node scripts/build.mjs",
+    "test": "vitest run",
+    "pack:check": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "commander": "^14.0.2"
+  },
+  "devDependencies": {
+    "@pulpo/client-core": "0.1.0",
+    "@pulpo/contracts": "0.1.0",
+    "@types/node": "^24.13.2",
+    "esbuild": "^0.25.0",
+    "typescript": "~6.0.2",
+    "vitest": "^3.2.7",
+    "zod": "^4.0.5"
+  }
+}
