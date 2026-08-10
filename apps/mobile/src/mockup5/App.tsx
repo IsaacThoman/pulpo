@@ -104,7 +104,6 @@ import {
   Brain,
   FilePenLine,
   FileText,
-  FlaskConical,
   FolderSearch,
   Ghost,
   List,
@@ -2686,17 +2685,12 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           label={(
             <SwiftUILabel
               title="Labs"
-              icon={(
-                <SwiftUIRNHostView matchContents>
-                  <View pointerEvents="none" style={styles.modelMenuCustomIcon}>
-                    <FlaskConical
-                      color={temporary || colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e'}
-                      size={20}
-                      strokeWidth={2}
-                    />
-                  </View>
-                </SwiftUIRNHostView>
-              )}
+              icon={<SwiftUIImage
+                assetName={temporary || colorScheme === 'dark'
+                  ? 'LucideFlaskConicalWhite'
+                  : 'LucideFlaskConical'}
+                modifiers={[resizable(), frame({ width: 20, height: 20 })]}
+              />}
             />
           )}
         >
@@ -2745,7 +2739,7 @@ function NativeModelSectionRow({ label, section, models, selected = false, white
         title={label}
         icon={labModel
           ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 }), ...(whiteIcons ? [grayscale(1), brightness(1)] : [])]} />
-          : <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="star.fill" size={18} />}
+          : <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 })]} />}
       />
       <SwiftUISpacer />
       {selected && <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="checkmark" size={15} />}
@@ -4303,7 +4297,6 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.75 },
   modelTriggerWrap: { flex: 1, alignItems: 'center' },
   modelMenuHost: { minHeight: 44, maxWidth: 230, justifyContent: 'center' },
-  modelMenuCustomIcon: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
   modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
