@@ -11,6 +11,7 @@ import { newId } from '../lib/ids.js'
 import { sendTwoFactorResetNotice } from '../lib/mail.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -36,10 +37,12 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     const id = newId()
     await db.transaction(async (tx) => {
       const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
-      const balanceMicros = input.balanceMicros ?? parseAuthSettings(setting?.value).defaultBalanceMicros
-      const storageLimitBytes = input.storageLimitBytes ?? parseAuthSettings(setting?.value).defaultStorageLimitBytes
+      const authSettings = parseAuthSettings(setting?.value)
+      const balanceMicros = input.balanceMicros ?? authSettings.defaultBalanceMicros
+      const storageLimitBytes = input.storageLimitBytes ?? authSettings.defaultStorageLimitBytes
       await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
+      await insertNewAccountPreferences(tx, id, authSettings)
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
     })
     const [created] = await db.select().from(users).where(eq(users.id, id)).limit(1)

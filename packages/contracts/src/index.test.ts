@@ -192,6 +192,22 @@ describe('shared contracts', () => {
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
+  it('normalizes new-account model defaults while preserving favorite order', () => {
+    expect(authSettingsSchema.parse({}).newAccountModelDefaults).toEqual({
+      defaultModelId: null,
+      favoriteModelIds: [],
+    })
+    expect(authSettingsSchema.parse({
+      newAccountModelDefaults: {
+        defaultModelId: ' model-a ',
+        favoriteModelIds: ['model-b', 'model-a', 'model-b'],
+      },
+    }).newAccountModelDefaults).toEqual({
+      defaultModelId: 'model-a',
+      favoriteModelIds: ['model-b', 'model-a'],
+    })
+  })
+
   it('validates native sessions and instance discovery', () => {
     expect(nativeLoginInputSchema.parse({
       email: 'member@example.com', password: 'password', deviceLabel: 'Isaac’s iPhone',
@@ -234,7 +250,10 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({ theme: 'system', trashRetention: '30d', favoriteModelIds: [] })
     expect(document.instance).toMatchObject({
-      auth: { signupEnabled: true },
+      auth: {
+        signupEnabled: true,
+        newAccountModelDefaults: { defaultModelId: null, favoriteModelIds: [] },
+      },
       interface: { localTask: 'current' },
       ocr: { enabled: false, modelId: null },
       webTools: { searchEnabled: false },

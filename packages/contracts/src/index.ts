@@ -459,6 +459,13 @@ export const modelPreferencesPatchSchema = z.object({
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
+/** Instance defaults copied into each account when it is created. */
+export const newAccountModelDefaultsSchema = z.object({
+  defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
+  favoriteModelIds: orderedPreferenceIdsSchema.default([]),
+})
+export type NewAccountModelDefaults = z.infer<typeof newAccountModelDefaultsSchema>
+
 export const createProviderSchema = z.object({
   name: z.string().trim().min(1).max(120),
   baseUrl: z.url().default('https://api.openai.com/v1'),
@@ -725,6 +732,7 @@ export const authSettingsSchema = z.object({
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
   defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
   apiKeysEnabled: z.boolean().default(true),
+  newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
 
 export const DEFAULT_TITLE_PROMPT = `### Task:
