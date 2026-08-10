@@ -1,0 +1,6 @@
+FROM chrislusf/seaweedfs:4.29
+
+COPY --chmod=755 deploy/seaweed-entrypoint.sh /pulpo-seaweed-entrypoint.sh
+
+ENTRYPOINT ["/pulpo-seaweed-entrypoint.sh"]
+CMD ["mini", "-dir=/data"]
