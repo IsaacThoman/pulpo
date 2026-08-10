@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { createProgram, preflightModelBody } from './index.js'
+import { catalogIconContentType, createProgram, preflightModelBody } from './index.js'
 import { addContext, loadConfig, macosKeychainWriteCommand, resolveConnection } from './config.js'
 import { confirmExact, readSecret } from './io.js'
 
@@ -40,6 +40,13 @@ describe('Pulpo CLI command surface', () => {
     const program = createProgram({ stdin: new PassThrough() as never, stdout: new PassThrough(), stderr: new PassThrough() })
     const flags = program.options.map((option) => option.long)
     expect(flags).toEqual(expect.arrayContaining(['--context', '--url', '--json', '--no-color', '--yes', '--verbose']))
+  })
+
+  it('recognizes supported catalog icon file types', () => {
+    expect(catalogIconContentType('brand.svg')).toBe('image/svg+xml')
+    expect(catalogIconContentType('brand.SVG')).toBe('image/svg+xml')
+    expect(catalogIconContentType('brand.webp')).toBe('image/webp')
+    expect(catalogIconContentType('brand.gif')).toBeNull()
   })
 
   it('lists and filters canonical preset icons locally in machine mode', async () => {

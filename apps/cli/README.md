@@ -10,7 +10,7 @@ pulpo auth 2fa status
 pulpo auth 2fa setup
 pulpo auth 2fa confirm
 pulpo settings export --output pulpo-settings.json
-pulpo icon upload ./acme.png --name Acme --mode monochrome
+pulpo icon upload ./acme.svg --name Acme --mode monochrome
 ```
 
 Use `pulpo help` or `pulpo <command> --help` for the complete command reference.

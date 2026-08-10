@@ -83,7 +83,7 @@ export function AdminIconsPage() {
         <Button size="sm" onClick={() => setUploadOpen(true)}><Upload />Upload icon</Button>
       </div>
       <p className="text-sm text-muted-foreground">
-        Reusable artwork for labs and models. Upload PNG, JPEG, or WebP images up to 2 MiB.
+        Reusable artwork for labs and models. Upload PNG, JPEG, WebP, or SVG images up to 2 MiB.
       </p>
       {error && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>}
 
@@ -103,11 +103,11 @@ export function AdminIconsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader><DialogTitle>Upload icon</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} />
+            <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} />
             <button type="button" className="flex w-full flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 hover:bg-accent/50" onClick={() => fileInput.current?.click()}>
               <Upload className="size-6 text-muted-foreground" />
               <span className="mt-2 text-sm font-medium">{uploadFile?.name ?? 'Choose an image'}</span>
-              <span className="mt-1 text-xs text-muted-foreground">The image is fitted into a transparent square.</span>
+              <span className="mt-1 text-xs text-muted-foreground">The image is safely rasterized and fitted into a transparent square.</span>
             </button>
             <div className="space-y-1.5"><Label htmlFor="icon-name">Name</Label><Input id="icon-name" value={uploadName} maxLength={120} onChange={(event) => setUploadName(event.target.value)} /></div>
             <ModeField value={uploadMode} onChange={setUploadMode} />
