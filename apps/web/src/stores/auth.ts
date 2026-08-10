@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData } from '@/lib/local-first/database'
 import { queryClient } from '@/lib/query-client'
+import { DEFAULT_MAX_ATTACHMENT_BYTES } from '@pulpo/contracts'
 
 export type AuthRole = 'pending' | 'user' | 'admin'
 
@@ -26,6 +27,7 @@ interface PublicAuthSettings {
   adminEmail: string
   pendingMessage: string
   apiKeysEnabled: boolean
+  maxAttachmentBytes: number
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
 export type LoginResult = AuthResult | { ok: false; twoFactorRequired: true }
@@ -39,6 +41,7 @@ interface AuthState {
   adminEmail: string
   pendingMessage: string
   apiKeysEnabled: boolean
+  maxAttachmentBytes: number
   bootstrap: () => Promise<void>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
   signup: (name: string, email: string, password: string) => Promise<AuthResult>
@@ -81,6 +84,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   adminEmail: '',
   pendingMessage: 'Your account is pending approval. An admin will review it shortly.',
   apiKeysEnabled: true,
+  maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
 
   bootstrap: async () => {
     if (!get().checkingSession) return
@@ -94,6 +98,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       adminEmail: get().adminEmail,
       pendingMessage: get().pendingMessage,
       apiKeysEnabled: get().apiKeysEnabled,
+      maxAttachmentBytes: get().maxAttachmentBytes,
     }
     try {
       const response = await apiRequest<AuthResponse>('/api/me')

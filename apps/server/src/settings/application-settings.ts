@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   agentSettingsSchema,
   authSettingsSchema,
+  DEFAULT_MAX_ATTACHMENT_BYTES,
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_SUGGESTED_PROMPTS,
   DEFAULT_TITLE_PROMPT,
@@ -12,7 +13,7 @@ import {
   webToolsSettingsSchema,
 } from '@pulpo/contracts'
 
-export { authSettingsSchema, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, interfaceSettingsSchema, loggingSettingsSchema }
+export { authSettingsSchema, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, interfaceSettingsSchema, loggingSettingsSchema }
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 export const DEFAULT_STORAGE_LIMIT_BYTES = 5_000 * 1024 * 1024

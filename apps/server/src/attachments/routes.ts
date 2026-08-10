@@ -1,7 +1,8 @@
-import { createHash } from 'node:crypto'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
+import { Readable } from 'node:stream'
 import { z } from 'zod'
+import { MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
@@ -14,8 +15,7 @@ import { accessibleChatCondition } from '../chats/temporary.js'
 import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
 import { attachmentReferenceIsLive } from './references.js'
-
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+import { AttachmentSizeMismatchError, exactSizeStream, inspectAttachmentStream } from './streams.js'
 
 function accessibleAttachmentCondition() {
   return or(
@@ -36,7 +36,7 @@ export function attachmentStorageErrorCode(cause: unknown): string {
 }
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
-  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
+  app.addContentTypeParser('application/octet-stream', (_request, body, done) => done(null, body))
 
   const readyAttachment = async (userId: string, id: string) => {
     const [result] = await db.select({ attachment: attachments }).from(attachments)
@@ -59,7 +59,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     const input = z.object({
       chatId: z.uuid().nullable().default(null), originalName: z.string().trim().min(1).max(255),
-      mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_BYTES),
+      mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES),
     }).parse(request.body)
     if (input.chatId) {
       const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
@@ -93,11 +93,21 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       )).limit(1)
     const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
-    const body = request.body as Buffer
-    if (!Buffer.isBuffer(body) || body.byteLength !== attachment.sizeBytes) throw new AppError(400, 'attachment_size_mismatch', 'Uploaded size does not match the declared size')
+    const contentLength = Number(request.headers['content-length'])
+    if (Number.isFinite(contentLength) && contentLength !== attachment.sizeBytes) {
+      throw new AppError(400, 'attachment_size_mismatch', 'Uploaded size does not match the declared size')
+    }
+    const body = request.body
+    if (!(body instanceof Readable)) throw new AppError(400, 'attachment_body_invalid', 'Attachment upload body is invalid')
     try {
-      await getBlobStore().put(key, body, { contentType: attachment.mimeType, contentLength: body.byteLength })
+      await getBlobStore().putStream(key, exactSizeStream(body, attachment.sizeBytes), {
+        contentType: attachment.mimeType,
+        contentLength: attachment.sizeBytes,
+      })
     } catch (cause) {
+      if (cause instanceof AttachmentSizeMismatchError) {
+        throw new AppError(400, 'attachment_size_mismatch', cause.message)
+      }
       request.log.error({ err: cause }, 'Attachment storage write failed')
       throw new AppError(500, attachmentStorageErrorCode(cause), 'Attachment storage write failed', 'server_error')
     }
@@ -117,10 +127,9 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
     try {
-      const body = await getBlobStore().get(attachment.objectKey)
-      if (body.byteLength !== attachment.sizeBytes) throw new Error('Uploaded size does not match')
-      const checksum = createHash('sha256').update(body).digest('base64url')
-      const mimeType = canonicalUploadedMimeType(attachment.mimeType, body)
+      const inspected = await inspectAttachmentStream(await getBlobStore().getStream(attachment.objectKey), attachment.sizeBytes)
+      const checksum = inspected.checksum
+      const mimeType = canonicalUploadedMimeType(attachment.mimeType, inspected.prefix)
       const [ready] = await db.update(attachments).set({ status: 'ready', checksum, mimeType, updatedAt: new Date() }).where(eq(attachments.id, id)).returning()
       return ready
     } catch (cause) {
@@ -146,7 +155,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     reply.header('cache-control', 'private, max-age=31536000, immutable').header('etag', etag)
     if (request.headers['if-none-match'] === etag) return reply.code(304).send()
     try {
-      const thumbnail = await createAttachmentThumbnail(await getBlobStore().get(attachment.objectKey))
+      const thumbnail = await createAttachmentThumbnail(await getBlobStore().getStream(attachment.objectKey))
       return reply.type('image/webp').send(thumbnail)
     } catch (cause) {
       request.log.warn({ err: cause, attachmentId: attachment.id }, 'Attachment thumbnail failed')
@@ -169,7 +178,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const attachment = result?.attachment
     if (!attachment) throw notFound('Attachment')
     reply.type(attachment.mimeType).header('content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(attachment.originalName)}`)
-    return Buffer.from(await getBlobStore().get(key))
+    return reply.send(await getBlobStore().getStream(key))
   })
 
   app.delete('/api/attachments/:id', async (request, reply) => {

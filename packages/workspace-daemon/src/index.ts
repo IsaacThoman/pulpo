@@ -1,9 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdir, open, readFile, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { createWriteStream } from 'node:fs'
+import { mkdir, open, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 
 const port = Number(process.env.PORT ?? 8787)
 const token = process.env.PULPO_WORKSPACE_TOKEN
@@ -11,6 +14,7 @@ const root = resolve(process.env.PULPO_WORKSPACE_ROOT ?? '/workspace')
 const maxBody = Number(process.env.PULPO_WORKSPACE_MAX_BODY ?? 20 * 1024 * 1024)
 const maxImageBytes = Number(process.env.PULPO_WORKSPACE_MAX_IMAGE_BYTES ?? 20 * 1024 * 1024)
 const maxExportBytes = Number(process.env.PULPO_WORKSPACE_MAX_EXPORT_BYTES ?? 25 * 1024 * 1024)
+const maxFileBytes = Number(process.env.PULPO_WORKSPACE_MAX_FILE_BYTES ?? 1_000 * 1024 * 1024)
 if (!token || token.length < 32) throw new Error('PULPO_WORKSPACE_TOKEN must contain at least 32 characters')
 
 type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; startedAt: string; completedAt?: string }
@@ -42,6 +46,32 @@ async function body(request: IncomingMessage): Promise<Buffer> {
     chunks.push(value)
   }
   return Buffer.concat(chunks)
+}
+
+async function writeRequestFile(request: IncomingMessage, target: string): Promise<void> {
+  const expectedBytes = Number(request.headers['content-length'])
+  if (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0 || expectedBytes > maxFileBytes) {
+    throw new Error('File size is missing or exceeds the workspace limit')
+  }
+  const temporary = `${target}.${randomUUID()}.upload`
+  let sizeBytes = 0
+  const meter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      sizeBytes += chunk.byteLength
+      callback(sizeBytes <= expectedBytes ? null : new Error('Uploaded file size does not match'), chunk)
+    },
+    flush(callback) {
+      callback(sizeBytes === expectedBytes ? null : new Error('Uploaded file size does not match'))
+    },
+  })
+  await mkdir(dirname(target), { recursive: true })
+  try {
+    await pipeline(request, meter, createWriteStream(temporary, { flags: 'wx' }))
+    await rename(temporary, target)
+  } catch (error) {
+    await rm(temporary, { force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 function workspacePath(value: unknown): string {
@@ -141,7 +171,7 @@ const server = createServer(async (request, response) => {
     if (request.headers.authorization !== `Bearer ${token}`) return json(response, 401, { error: 'unauthorized' })
     const url = new URL(request.url ?? '/', 'http://workspace')
     if (request.method === 'PUT' && url.pathname === '/v1/files') {
-      const path = workspacePath(url.searchParams.get('path')); await mkdir(dirname(path), { recursive: true }); await writeFile(path, await body(request)); return json(response, 201, { path })
+      const path = workspacePath(url.searchParams.get('path')); await writeRequestFile(request, path); return json(response, 201, { path })
     }
     if (request.method === 'GET' && url.pathname === '/v1/files') {
       const file = await exportPath(url.searchParams.get('path'))
@@ -149,10 +179,8 @@ const server = createServer(async (request, response) => {
       try {
         const metadata = await handle.stat()
         if (!metadata.isFile() || metadata.size > maxExportBytes) throw new Error('File is unavailable for export')
-        const contents = await handle.readFile()
-        if (contents.byteLength > maxExportBytes) throw new Error(`File exceeds the ${maxExportBytes} byte limit`)
-        response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': contents.byteLength })
-        response.end(contents)
+        response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': metadata.size })
+        await pipeline(handle.createReadStream({ autoClose: false }), response)
         return
       } finally {
         await handle.close()

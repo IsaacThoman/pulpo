@@ -1,6 +1,8 @@
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
 import { randomBytes, randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import * as k8s from '@kubernetes/client-node'
 import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 import { effectiveWarmTargets, instanceIdHash, normalizeInstanceId, WORKSPACE_INSTANCE_ANNOTATION, WORKSPACE_INSTANCE_HASH_LABEL, WORKSPACE_INSTANCE_HEADER, type WarmRequest } from './tenancy.js'
@@ -272,8 +274,17 @@ async function claim(instanceId: string, input: ClaimInput): Promise<Lease> {
 async function proxy(lease: Lease, request: IncomingMessage, pathname: string, search = ''): Promise<Response> {
   lease.lastUsedAt = Date.now()
   void core.patchNamespacedPod({ namespace, name: lease.podName, body: { metadata: { annotations: { 'pulpo.dev/last-used-at': String(lease.lastUsedAt) } } } }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch)).catch(() => undefined)
-  const payload = ['GET', 'HEAD'].includes(request.method ?? 'GET') ? undefined : new Uint8Array(await body(request))
-  const upstream = await fetch(`http://${lease.podIp}:8787${pathname}${search}`, { method: request.method, headers: { authorization: `Bearer ${lease.daemonToken}`, 'content-type': request.headers['content-type'] ?? 'application/json' }, body: payload })
+  const hasBody = !['GET', 'HEAD'].includes(request.method ?? 'GET')
+  const init = {
+    method: request.method,
+    headers: {
+      authorization: `Bearer ${lease.daemonToken}`,
+      'content-type': request.headers['content-type'] ?? 'application/json',
+      ...(request.headers['content-length'] ? { 'content-length': request.headers['content-length'] } : {}),
+    },
+    ...(hasBody ? { body: request, duplex: 'half' as const } : {}),
+  }
+  const upstream = await fetch(`http://${lease.podIp}:8787${pathname}${search}`, init as unknown as RequestInit)
   if (/^\/v1\/operations(?:\/[^/]+(?:\/cancel)?)?$/.test(pathname) && upstream.ok) {
     const operation = await upstream.clone().json().catch(() => null) as { id?: string; status?: string } | null
     if (operation?.id) {
@@ -372,8 +383,16 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     if (!lease || lease.instanceId !== instanceId) return json(response, 404, { error: 'lease_not_found' })
     if (request.method === 'DELETE' && !match?.[2]) { await core.deleteNamespacedPod({ namespace, name: lease.podName }); leases.delete(lease.id); activeOperations.delete(lease.id); return json(response, 200, { status: 'released' }) }
     const upstream = await proxy(lease, request, match?.[2] || '/', url.search)
-    response.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' }); response.end(Buffer.from(await upstream.arrayBuffer()))
-  } catch (error) { json(response, 503, { error: error instanceof Error ? error.message : String(error) }) }
+    response.writeHead(upstream.status, {
+      'content-type': upstream.headers.get('content-type') ?? 'application/json',
+      ...(upstream.headers.get('content-length') ? { 'content-length': upstream.headers.get('content-length')! } : {}),
+    })
+    if (!upstream.body) return response.end()
+    await pipeline(Readable.fromWeb(upstream.body as unknown as import('node:stream/web').ReadableStream), response)
+  } catch (error) {
+    if (response.headersSent) response.destroy(error instanceof Error ? error : new Error(String(error)))
+    else json(response, 503, { error: error instanceof Error ? error.message : String(error) })
+  }
 }
 const server = tlsCert && tlsKey ? createHttpsServer({ cert: tlsCert, key: tlsKey }, handler) : createHttpServer(handler)
 

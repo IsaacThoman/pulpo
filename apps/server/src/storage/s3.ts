@@ -1,5 +1,6 @@
 import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutBucketCorsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { Readable } from 'node:stream'
 import type { BlobMetadata, BlobStore } from './blob-store.js'
 
 export interface S3BlobStoreOptions {
@@ -67,11 +68,30 @@ export class S3BlobStore implements BlobStore {
     }))
   }
 
+  async putStream(key: string, body: Readable, metadata: BlobMetadata): Promise<void> {
+    await this.ensureReady()
+    await this.client.send(new PutObjectCommand({
+      Bucket: this.options.bucket,
+      Key: key,
+      Body: body,
+      ContentType: metadata.contentType,
+      ContentLength: metadata.contentLength,
+      ContentDisposition: metadata.contentDisposition,
+    }))
+  }
+
   async get(key: string): Promise<Uint8Array> {
     await this.ensureReady()
     const result = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: key }))
     if (!result.Body) throw new Error('Object body is empty')
     return result.Body.transformToByteArray()
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    await this.ensureReady()
+    const result = await this.client.send(new GetObjectCommand({ Bucket: this.options.bucket, Key: key }))
+    if (!result.Body) throw new Error('Object body is empty')
+    return Readable.from(result.Body as AsyncIterable<Uint8Array>, { objectMode: false })
   }
 
   async delete(key: string): Promise<void> {

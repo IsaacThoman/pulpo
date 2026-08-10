@@ -1,7 +1,9 @@
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, users } from '../database/schema.js'
+import { applicationSettings, attachments, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
+import { parseAuthSettings } from '../settings/application-settings.js'
+import { formatAttachmentSizeLimit } from '@pulpo/client-core'
 
 export interface StorageUsage {
   usedBytes: number
@@ -11,6 +13,12 @@ export interface StorageUsage {
 
 export function hasStorageCapacity(usedBytes: number, limitBytes: number, requestedBytes: number): boolean {
   return requestedBytes <= Math.max(0, limitBytes - usedBytes)
+}
+
+export function attachmentSizeError(sizeBytes: number, maxAttachmentBytes: number): string | null {
+  return sizeBytes > maxAttachmentBytes
+    ? `Attachment exceeds the ${formatAttachmentSizeLimit(maxAttachmentBytes)} limit`
+    : null
 }
 
 export async function getStorageUsage(userId: string): Promise<StorageUsage> {
@@ -38,8 +46,14 @@ export async function reserveAttachment(input: {
 }): Promise<typeof attachments.$inferSelect> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-storage:${input.userId}`}))`)
-    const [user] = await tx.select({ storageLimitBytes: users.storageLimitBytes }).from(users).where(eq(users.id, input.userId)).limit(1)
+    const [[user], [setting]] = await Promise.all([
+      tx.select({ storageLimitBytes: users.storageLimitBytes }).from(users).where(eq(users.id, input.userId)).limit(1),
+      tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1),
+    ])
     if (!user) throw notFound('User')
+    const maxAttachmentBytes = parseAuthSettings(setting?.value).maxAttachmentBytes
+    const sizeError = attachmentSizeError(input.sizeBytes, maxAttachmentBytes)
+    if (sizeError) throw new AppError(413, 'attachment_too_large', sizeError, 'invalid_request_error')
     const [usage] = await tx.select({
       usedBytes: sql<number>`coalesce(sum(${attachments.sizeBytes}), 0)::bigint`,
     }).from(attachments).where(and(eq(attachments.userId, input.userId), inArray(attachments.status, ['pending', 'ready'])))
