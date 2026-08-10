@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
@@ -14,8 +15,6 @@ import { accessibleChatCondition } from '../chats/temporary.js'
 import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
 import { attachmentReferenceIsLive } from './references.js'
-
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 function accessibleAttachmentCondition() {
   return or(
@@ -36,7 +35,7 @@ export function attachmentStorageErrorCode(cause: unknown): string {
 }
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
-  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
+  app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: MAX_CONFIGURABLE_ATTACHMENT_BYTES }, (_request, body, done) => done(null, body))
 
   const readyAttachment = async (userId: string, id: string) => {
     const [result] = await db.select({ attachment: attachments }).from(attachments)
@@ -59,7 +58,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     const input = z.object({
       chatId: z.uuid().nullable().default(null), originalName: z.string().trim().min(1).max(255),
-      mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_ATTACHMENT_BYTES),
+      mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES),
     }).parse(request.body)
     if (input.chatId) {
       const [chat] = await db.select({ id: chats.id }).from(chats).where(and(

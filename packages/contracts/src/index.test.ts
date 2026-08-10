@@ -211,7 +211,10 @@ describe('shared contracts', () => {
         bearerSessions: true, realtime: true, chatDuplication: true,
         publicSharing: true, attachments: true, folders: true,
       },
-    }).capabilities.twoFactorAuth).toBe(false)
+    })).toMatchObject({
+      limits: { maxAttachmentBytes: 25 * 1024 * 1024 },
+      capabilities: { twoFactorAuth: false },
+    })
   })
 
   it('normalizes a complete management settings document', () => {

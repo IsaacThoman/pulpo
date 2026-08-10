@@ -5,6 +5,8 @@ export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
 export const idSchema = z.uuid()
 export const isoDateSchema = z.iso.datetime()
+export const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 100 * 1024 * 1024
 
 export const roleSchema = z.enum(['pending', 'user', 'admin'])
 export type Role = z.infer<typeof roleSchema>
@@ -69,6 +71,9 @@ export const mobileConfigSchema = z.object({
     adminEmail: z.string(),
     pendingMessage: z.string(),
   }),
+  limits: z.object({
+    maxAttachmentBytes: z.number().int().nonnegative().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES),
+  }).default({ maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES }),
   capabilities: z.object({
     bearerSessions: z.literal(true),
     realtime: z.literal(true),
@@ -714,6 +719,7 @@ export const authSettingsSchema = z.object({
   signupEnabled: z.boolean().default(true),
   defaultBalanceMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000_000),
   defaultStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(5_000 * 1024 * 1024),
+  maxAttachmentBytes: z.number().int().nonnegative().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES).default(DEFAULT_MAX_ATTACHMENT_BYTES),
   pendingDetails: z.boolean().default(true),
   adminEmail: z.union([z.literal(''), z.email()]).default(''),
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),

@@ -8,7 +8,7 @@ import { agentRuns, applicationSettings, attachments, chats, generationAttempts,
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
-import { parseAgentSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { parseAgentSettings, parseAuthSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { isCancellationRequested, publishResponseEvent, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
 import { persistResponseItems } from '../responses/storage.js'
@@ -123,12 +123,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow] = await Promise.all([
+  const [settingsRow, webToolsRow, authRow] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
+    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
+  const authSettings = parseAuthSettings(authRow?.value)
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -387,7 +389,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     skipMessageCount = compactedMessages.length
     return true
   }
-  const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
+  const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, authSettings.maxAttachmentBytes, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
       workspaceStartedAtMs = Date.now()
     }

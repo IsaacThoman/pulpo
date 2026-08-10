@@ -80,6 +80,14 @@ describe('client core', () => {
     expect(attachmentValidationError({ name: ' ', mimeType: 'text/plain', sizeBytes: 10 })).toBe('Attachment name is required')
     expect(attachmentValidationError({ name: 'empty.txt', mimeType: 'text/plain', sizeBytes: 0 })).toBe('Attachment is empty')
     expect(attachmentValidationError({ name: 'large.bin', mimeType: 'application/octet-stream', sizeBytes: 25 * 1024 * 1024 + 1 })).toBe('Attachment exceeds the 25 MB limit')
+    expect(attachmentValidationError(
+      { name: 'larger.bin', mimeType: 'application/octet-stream', sizeBytes: 40 * 1024 * 1024 },
+      50 * 1024 * 1024,
+    )).toBeNull()
+    expect(attachmentValidationError(
+      { name: 'disabled.bin', mimeType: 'application/octet-stream', sizeBytes: 1 },
+      0,
+    )).toBe('Attachment exceeds the 0 MB limit')
   })
 
   it('sends management bearer tokens and parses API errors', async () => {

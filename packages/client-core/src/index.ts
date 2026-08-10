@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MAX_ATTACHMENT_BYTES,
   applyResponseEventToSnapshot,
   mergeResponseSnapshots,
   type ChatPreset,
@@ -179,10 +180,18 @@ export interface AttachmentCandidate {
   sizeBytes: number
 }
 
-export function attachmentValidationError(candidate: AttachmentCandidate): string | null {
+export function formatAttachmentSizeLimit(sizeBytes: number): string {
+  const sizeMb = sizeBytes / (1024 * 1024)
+  return `${Number.isInteger(sizeMb) ? sizeMb : sizeMb.toFixed(1)} MB`
+}
+
+export function attachmentValidationError(
+  candidate: AttachmentCandidate,
+  maxAttachmentBytes = DEFAULT_MAX_ATTACHMENT_BYTES,
+): string | null {
   if (!candidate.name.trim()) return 'Attachment name is required'
   if (!Number.isFinite(candidate.sizeBytes) || candidate.sizeBytes <= 0) return 'Attachment is empty'
-  if (candidate.sizeBytes > 25 * 1024 * 1024) return 'Attachment exceeds the 25 MB limit'
+  if (candidate.sizeBytes > maxAttachmentBytes) return `Attachment exceeds the ${formatAttachmentSizeLimit(maxAttachmentBytes)} limit`
   return null
 }
 

@@ -64,8 +64,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .from(applicationSettings)
       .where(eq(applicationSettings.key, 'auth'))
       .limit(1)
-    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled } = parseAuthSettings(setting?.value)
-    return { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled }
+    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes } = parseAuthSettings(setting?.value)
+    return { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes }
   })
 
   app.get('/api/auth/setup-status', async () => {
