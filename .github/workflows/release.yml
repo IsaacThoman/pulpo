@@ -175,6 +175,8 @@ jobs:
       - name: Smoke-test preview bootstrap
         env:
           PREVIEW_URL: https://pulpo-pr-${{ github.event.pull_request.number }}.deathgrips.org
+          PULPO_PREVIEW_SMOKE_EMAIL: ${{ secrets.PULPO_PREVIEW_SMOKE_EMAIL }}
+          PULPO_PREVIEW_SMOKE_PASSWORD: ${{ secrets.PULPO_PREVIEW_SMOKE_PASSWORD }}
         run: |
           set -euo pipefail
           for attempt in {1..30}; do
@@ -192,6 +194,7 @@ jobs:
             echo "Preview bootstrap did not create the initial administrator." >&2
             exit 1
           }
+          bash .github/scripts/smoke-preview-runtime.sh
 
   cleanup-preview:
     name: Delete Coolify preview

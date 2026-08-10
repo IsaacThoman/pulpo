@@ -16,7 +16,7 @@ import {
   userPreferences,
   users,
 } from '../database/schema.js'
-import { encryptSecret } from '../lib/crypto.js'
+import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
 
 export const CI_PREVIEW_BOOTSTRAP_MARKER = 'bootstrap:ci-preview'
@@ -86,6 +86,7 @@ export type CiPreviewSeed = {
 
 export interface LockedBootstrapStore {
   markerExists(): Promise<boolean>
+  seededProviderEncryptedApiKey(): Promise<string | undefined>
   userExists(): Promise<boolean>
   create(seed: CiPreviewSeed): Promise<void>
 }
@@ -99,6 +100,16 @@ export type BootstrapDependencies = {
   fetch: typeof globalThis.fetch
   hashPassword: typeof createPasswordHash
   encrypt: typeof encryptSecret
+  decrypt: typeof decryptSecret
+}
+
+function requirePreviewRuntimeConfig(config: Config): void {
+  if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) {
+    throw new Error('WORKSPACE_CONTROLLER_URL and WORKSPACE_CONTROLLER_TOKEN are required by the ci-preview preset')
+  }
+  if (config.ENCRYPTION_KEY === DEVELOPMENT_ENCRYPTION_KEY) {
+    throw new Error('A non-default ENCRYPTION_KEY is required by the ci-preview preset')
+  }
 }
 
 function requirePreviewSeedConfig(config: Config): {
@@ -111,12 +122,7 @@ function requirePreviewSeedConfig(config: Config): {
   if (!config.PULPO_PREVIEW_ADMIN_PASSWORD) throw new Error('PULPO_PREVIEW_ADMIN_PASSWORD is required by the ci-preview preset')
   if (!config.PULPO_PREVIEW_PROVIDER_API_KEY) throw new Error('PULPO_PREVIEW_PROVIDER_API_KEY is required by the ci-preview preset')
   if (!config.PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST) throw new Error('PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST is required by the ci-preview preset')
-  if (!config.WORKSPACE_CONTROLLER_URL || !config.WORKSPACE_CONTROLLER_TOKEN) {
-    throw new Error('WORKSPACE_CONTROLLER_URL and WORKSPACE_CONTROLLER_TOKEN are required by the ci-preview preset')
-  }
-  if (config.ENCRYPTION_KEY === DEVELOPMENT_ENCRYPTION_KEY) {
-    throw new Error('A non-default ENCRYPTION_KEY is required by the ci-preview preset')
-  }
+  requirePreviewRuntimeConfig(config)
   return {
     adminEmail: config.PULPO_PREVIEW_ADMIN_EMAIL,
     adminPassword: config.PULPO_PREVIEW_ADMIN_PASSWORD,
@@ -147,13 +153,28 @@ export async function runBootstrapPreset(
   instanceId: string,
   dependencies: BootstrapDependencies,
 ): Promise<'disabled' | 'existing' | 'created'> {
-  if (!config.PULPO_BOOTSTRAP_PRESET) return 'disabled'
+  if (!config.PULPO_BOOTSTRAP_PRESET) {
+    if (PREVIEW_HOST_PATTERN.test(instanceId)) {
+      throw new Error('PULPO_BOOTSTRAP_PRESET=ci-preview is required for Pulpo CI preview deployments')
+    }
+    return 'disabled'
+  }
   if (!PREVIEW_HOST_PATTERN.test(instanceId)) {
     throw new Error(`The ci-preview preset is not allowed for Pulpo instance ${instanceId}`)
   }
+  requirePreviewRuntimeConfig(config)
 
   return dependencies.store.withLock(async (store) => {
-    if (await store.markerExists()) return 'existing'
+    if (await store.markerExists()) {
+      const encryptedApiKey = await store.seededProviderEncryptedApiKey()
+      if (!encryptedApiKey) throw new Error('The ci-preview provider connection is missing from the seeded database')
+      try {
+        dependencies.decrypt(encryptedApiKey, config.ENCRYPTION_KEY)
+      } catch {
+        throw new Error('The ci-preview provider key cannot be decrypted with the configured ENCRYPTION_KEY')
+      }
+      return 'existing'
+    }
     if (await store.userExists()) throw new Error('The ci-preview preset requires an empty, unconfigured Pulpo database')
 
     const input = requirePreviewSeedConfig(config)
@@ -180,6 +201,11 @@ function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrap
       const [marker] = await transaction.select({ key: applicationSettings.key }).from(applicationSettings)
         .where(eq(applicationSettings.key, CI_PREVIEW_BOOTSTRAP_MARKER)).limit(1)
       return Boolean(marker)
+    },
+    async seededProviderEncryptedApiKey() {
+      const [provider] = await transaction.select({ encryptedApiKey: providerConnections.encryptedApiKey })
+        .from(providerConnections).where(eq(providerConnections.id, CI_PREVIEW_PROVIDER_ID)).limit(1)
+      return provider?.encryptedApiKey
     },
     async userExists() {
       const [user] = await transaction.select({ id: users.id }).from(users).limit(1)
@@ -273,5 +299,6 @@ export async function ensureBootstrapPreset(
     fetch: globalThis.fetch,
     hashPassword: createPasswordHash,
     encrypt: encryptSecret,
+    decrypt: decryptSecret,
   })
 }

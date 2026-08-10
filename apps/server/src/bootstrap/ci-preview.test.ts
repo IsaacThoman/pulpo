@@ -32,6 +32,7 @@ function previewConfig(overrides: NodeJS.ProcessEnv = {}) {
 class MemoryBootstrapStore implements BootstrapStore {
   marker = false
   hasUser = false
+  encryptedProviderApiKey: string | undefined = undefined
   seeds: CiPreviewSeed[] = []
   private tail: Promise<void> = Promise.resolve()
 
@@ -43,9 +44,11 @@ class MemoryBootstrapStore implements BootstrapStore {
     try {
       return await operation({
         markerExists: async () => this.marker,
+        seededProviderEncryptedApiKey: async () => this.encryptedProviderApiKey,
         userExists: async () => this.hasUser,
         create: async (seed) => {
           this.seeds.push(seed)
+          this.encryptedProviderApiKey = seed.encryptedProviderApiKey
           this.hasUser = true
           this.marker = true
         },
@@ -65,6 +68,7 @@ function dependencies(store: BootstrapStore, models = [CI_PREVIEW_MODEL_ID]): Bo
     })) as typeof fetch,
     hashPassword: vi.fn(async (password: string) => `hashed:${password}`),
     encrypt: vi.fn(() => 'encrypted-provider-key'),
+    decrypt: vi.fn(() => 'provider-key'),
   }
 }
 
@@ -88,13 +92,42 @@ describe('ci-preview bootstrap preset', () => {
     const store = new MemoryBootstrapStore()
     store.marker = true
     store.hasUser = true
+    store.encryptedProviderApiKey = 'encrypted-provider-key'
     const config = parseConfig({
       PUBLIC_URL: 'https://pulpo-pr-48.deathgrips.org',
+      ENCRYPTION_KEY: strongEncryptionKey,
+      WORKSPACE_CONTROLLER_URL: 'https://controller.example.com',
+      WORKSPACE_CONTROLLER_TOKEN: 'controller-token-that-is-at-least-32-characters',
       PULPO_BOOTSTRAP_PRESET: 'ci-preview',
     })
 
     await expect(runBootstrapPreset(config, 'pulpo-pr-48.deathgrips.org', dependencies(store))).resolves.toBe('existing')
     expect(store.seeds).toHaveLength(0)
+  })
+
+  it('rejects existing previews when the runtime encryption key cannot decrypt the seeded provider', async () => {
+    const store = new MemoryBootstrapStore()
+    store.marker = true
+    store.hasUser = true
+    store.encryptedProviderApiKey = 'encrypted-provider-key'
+    const deps = dependencies(store)
+    deps.decrypt = vi.fn(() => { throw new Error('unable to authenticate data') })
+
+    await expect(runBootstrapPreset(previewConfig(), 'pulpo-pr-48.deathgrips.org', deps))
+      .rejects.toThrow('cannot be decrypted')
+  })
+
+  it('rejects preview hosts when the preset or strong runtime encryption key is missing', async () => {
+    const store = new MemoryBootstrapStore()
+    const missingPreset = parseConfig({ PUBLIC_URL: 'https://pulpo-pr-48.deathgrips.org' })
+
+    await expect(runBootstrapPreset(missingPreset, 'pulpo-pr-48.deathgrips.org', dependencies(store)))
+      .rejects.toThrow('PULPO_BOOTSTRAP_PRESET=ci-preview')
+    await expect(runBootstrapPreset(
+      previewConfig({ ENCRYPTION_KEY: 'development-only-key-change-me-000000' }),
+      'pulpo-pr-48.deathgrips.org',
+      dependencies(store),
+    )).rejects.toThrow('non-default ENCRYPTION_KEY')
   })
 
   it('serializes concurrent startup attempts and creates the preset once', async () => {
