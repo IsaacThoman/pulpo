@@ -293,7 +293,7 @@ export function ChatPage() {
                   aria-label="New temporary chat"
                   onClick={startNewTemporaryChat}
                 >
-                  <SquarePen className="size-4" />
+                  <SquarePen className="size-4 text-primary" />
                 </button>
               </TooltipTrigger>
               <TooltipContent>New temporary chat</TooltipContent>
