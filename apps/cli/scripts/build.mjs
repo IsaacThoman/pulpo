@@ -11,7 +11,7 @@ await build({
   platform: 'node',
   target: 'node22',
   format: 'esm',
-  external: ['commander'],
+  external: ['commander', 'socket.io-client'],
   banner: { js: '#!/usr/bin/env node' },
   define: { __PULPO_CLI_VERSION__: JSON.stringify(version), __PULPO_CLI_BUNDLED__: 'true' },
 })

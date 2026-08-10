@@ -29,6 +29,7 @@ describe('Pulpo CLI command surface', () => {
       'status', 'setup', 'confirm', 'regenerate-recovery-codes', 'disable',
     ]))
     expect(commandNames(program, 'model')).toContain('icons')
+    expect(commandNames(program, 'model')).toContain('test')
     expect(commandNames(program, 'icon')).toEqual(expect.arrayContaining(['list', 'get', 'upload', 'update', 'delete']))
     expect(commandNames(program, 'backup')).not.toContain('restore')
     expect(commandNames(program, 'user')).toEqual(expect.arrayContaining([
