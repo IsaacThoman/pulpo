@@ -41,6 +41,7 @@ import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { PasswordSettings } from './PasswordSettings'
+import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
 
 const SECTIONS = [
@@ -427,6 +428,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </div>
                   <Row label="Display name"><Input defaultValue={user?.name ?? ''} className="w-52" /></Row>
                   <PasswordSettings />
+                  <PasskeySettings />
                   <TwoFactorSettings />
                   <Separator className="my-3" />
                   <Row label="Sign out" hint="End this session on this device.">

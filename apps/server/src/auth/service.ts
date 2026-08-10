@@ -124,9 +124,31 @@ export async function destroyNativeSession(request: FastifyRequest): Promise<voi
 export async function revokeOtherSessions(request: FastifyRequest, userId: string): Promise<void> {
   const currentToken = requestSessionToken(request)
   if (!currentToken) throw unauthorized()
+  const [current] = await db.select({ id: sessions.id }).from(sessions).where(and(
+    eq(sessions.userId, userId),
+    eq(sessions.tokenHash, hashToken(currentToken)),
+    gt(sessions.expiresAt, new Date()),
+  )).limit(1)
+  if (!current) throw unauthorized()
+  await revokeOtherSessionsById(userId, current.id)
+}
+
+export async function currentSessionId(request: FastifyRequest, userId: string): Promise<string> {
+  const token = requestSessionToken(request)
+  if (!token) throw unauthorized()
+  const [current] = await db.select({ id: sessions.id }).from(sessions).where(and(
+    eq(sessions.userId, userId),
+    eq(sessions.tokenHash, hashToken(token)),
+    gt(sessions.expiresAt, new Date()),
+  )).limit(1)
+  if (!current) throw unauthorized()
+  return current.id
+}
+
+export async function revokeOtherSessionsById(userId: string, currentSessionId: string): Promise<void> {
   await db.delete(sessions).where(and(
     eq(sessions.userId, userId),
-    ne(sessions.tokenHash, hashToken(currentToken)),
+    ne(sessions.id, currentSessionId),
   ))
   await publishSessionRevocation(userId)
 }

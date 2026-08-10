@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
+import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 
 export function LoginPage() {
   const user = useAuth((s) => s.user)
   const login = useAuth((s) => s.login)
+  const passkeyLogin = useAuth((s) => s.passkeyLogin)
   const signupEnabled = useAuth((s) => s.signupEnabled)
   const setupRequired = useAuth((s) => s.setupRequired)
   const navigate = useNavigate()
@@ -21,6 +23,21 @@ export function LoginPage() {
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [passkeyLoading, setPasskeyLoading] = useState(false)
+  const passkeySupported = browserSupportsWebAuthn()
+
+  useEffect(() => {
+    let active = true
+    if (!passkeySupported || user || setupRequired !== false) return
+    void browserSupportsWebAuthnAutofill().then(async (supported) => {
+      if (!active || !supported) return
+      const result = await passkeyLogin(true)
+      if (!active || !result.ok) return
+      const currentUser = useAuth.getState().user
+      navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+    })
+    return () => { active = false; cancelPasskeyCeremony() }
+  }, [navigate, passkeyLogin, passkeySupported, setupRequired, user])
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
   if (user) return <Navigate to="/" replace />
@@ -45,6 +62,19 @@ export function LoginPage() {
     navigate(currentUser?.role === 'pending' ? '/pending' : '/')
   }
 
+  const submitPasskey = async () => {
+    setError(null)
+    setPasskeyLoading(true)
+    const result = await passkeyLogin(false)
+    setPasskeyLoading(false)
+    if (!result.ok) {
+      if (result.error) setError(result.error)
+      return
+    }
+    const currentUser = useAuth.getState().user
+    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+  }
+
   return (
     <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
@@ -55,12 +85,21 @@ export function LoginPage() {
       </div>
 
       <form onSubmit={submit} className="space-y-4">
+        {!twoFactorStep && passkeySupported && <>
+          <Button type="button" variant="outline" className="w-full" disabled={passkeyLoading || loading} onClick={() => void submitPasskey()}>
+            {passkeyLoading ? <Loader2 className="animate-spin" /> : <KeyRound />}
+            Sign in with a passkey
+          </Button>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="h-px flex-1 bg-border" /><span>or use your password</span><div className="h-px flex-1 bg-border" />
+          </div>
+        </>}
         {!twoFactorStep && <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
             id="email"
             type="email"
-            autoComplete="email"
+            autoComplete="username webauthn"
             placeholder="jon@pulpo.baby"
             value={email}
             onChange={(e) => setEmail(e.target.value)}

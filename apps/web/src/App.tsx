@@ -30,6 +30,8 @@ const PendingPage = lazy(() => import('@/pages/auth/PendingPage').then((module) 
 const SharedChatPage = lazy(() => import('@/pages/SharedChatPage').then((module) => ({ default: module.SharedChatPage })))
 const PrivacyPage = lazy(() => import('@/pages/PrivacyPage').then((module) => ({ default: module.PrivacyPage })))
 const SupportPage = lazy(() => import('@/pages/SupportPage').then((module) => ({ default: module.SupportPage })))
+const MobilePasskeyPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyPage })))
+const MobilePasskeyEnrollmentPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyEnrollmentPage })))
 
 export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
@@ -50,6 +52,8 @@ export default function App() {
         <Route path="share/:token" element={<SharedChatPage />} />
         <Route path="privacy" element={<PrivacyPage />} />
         <Route path="support" element={<SupportPage />} />
+        <Route path="mobile/passkey" element={<MobilePasskeyPage />} />
+        <Route path="mobile/passkey/enroll" element={<MobilePasskeyEnrollmentPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>

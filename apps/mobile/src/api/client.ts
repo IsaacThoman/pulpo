@@ -1,4 +1,4 @@
-import type { MobileConfig, NativeAuthResponse, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
+import type { MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -99,6 +99,15 @@ export const mobileApi = {
     apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', {
       method: 'POST', auth: false, body: { name, email, password, deviceLabel },
     }),
+  passkeyOptions: () => apiRequest<PasskeyCeremony>('/api/mobile/auth/passkey/options', { method: 'POST', auth: false }),
+  verifyPasskey: (ceremonyToken: string, response: PasskeyAuthenticationResponse, deviceLabel: string) =>
+    apiRequest<NativeAuthResponse>('/api/mobile/auth/passkey/verify', {
+      method: 'POST', auth: false, body: { ceremonyToken, response, deviceLabel },
+    }),
+  exchangeBrowserPasskey: (code: string, codeVerifier: string, deviceLabel: string) =>
+    apiRequest<NativeAuthResponse>('/api/mobile/auth/passkey/browser/exchange', {
+      method: 'POST', auth: false, body: { code, codeVerifier, deviceLabel },
+    }),
   logout: () => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST' }),
   me: () => apiRequest<{ user: User }>('/api/mobile/me'),
   updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
@@ -117,6 +126,25 @@ export const mobileApi = {
       method: 'POST', body: { currentPassword, verificationCode },
     }),
   disableTwoFactor: (currentPassword: string, verificationCode: string) => apiRequest<void>('/api/me/two-factor', {
+    method: 'DELETE', body: { currentPassword, verificationCode },
+  }),
+  passkeys: () => apiRequest<PasskeyList>('/api/me/passkeys'),
+  beginPasskeyRegistration: (name: string, currentPassword: string, verificationCode?: string) =>
+    apiRequest<PasskeyCeremony>('/api/me/passkeys/registration/options', {
+      method: 'POST', body: { name, currentPassword, verificationCode },
+    }),
+  verifyPasskeyRegistration: (ceremonyToken: string, response: PasskeyRegistrationResponse) =>
+    apiRequest<{ passkey: PasskeySummary }>('/api/me/passkeys/registration/verify', {
+      method: 'POST', body: { ceremonyToken, response },
+    }),
+  beginBrowserPasskeyRegistration: (name: string, currentPassword: string, state: string, verificationCode?: string) =>
+    apiRequest<{ url: string }>('/api/me/passkeys/browser-registration', {
+      method: 'POST', body: { name, currentPassword, verificationCode, state },
+    }),
+  renamePasskey: (id: string, name: string) => apiRequest<{ passkey: PasskeySummary }>(`/api/me/passkeys/${id}`, {
+    method: 'PATCH', body: { name },
+  }),
+  deletePasskey: (id: string, currentPassword: string, verificationCode?: string) => apiRequest<void>(`/api/me/passkeys/${id}`, {
     method: 'DELETE', body: { currentPassword, verificationCode },
   }),
   forgotPassword: (email: string) => apiRequest<{ accepted: true }>('/api/auth/forgot-password', {
