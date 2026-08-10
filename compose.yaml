@@ -13,32 +13,16 @@ x-server: &server
     redis:
       condition: service_healthy
   restart: unless-stopped
+  # Coolify writes the selected production or preview configuration to this
+  # runtime env file. Do not repeat deployment-owned keys under `environment`:
+  # explicit Compose values override env_file values, including with an empty
+  # string, which would discard preview-only secrets and bootstrap settings.
   environment:
     POSTGRES_HOST: ${SERVICE_NAME_POSTGRES:-postgres}
     POSTGRES_PORT: 5432
-    POSTGRES_USER: ${POSTGRES_USER:-pulpo}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulpo}
-    POSTGRES_DATABASE: ${POSTGRES_DATABASE:-pulpo}
     REDIS_URL: redis://${SERVICE_NAME_REDIS:-redis}:6379
     STORAGE_LOCAL_PATH: /app/data/objects
-    S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
-    S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
     S3_ENDPOINT: http://${SERVICE_NAME_SEAWEED_S3:-seaweed-s3}:8333
-    ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-only-key-change-me-000000}
-    WORKSPACE_CONTROLLER_URL: ${WORKSPACE_CONTROLLER_URL:-}
-    WORKSPACE_CONTROLLER_TOKEN: ${WORKSPACE_CONTROLLER_TOKEN:-}
-    WORKSPACE_CONTROLLER_CA_CERT_BASE64: ${WORKSPACE_CONTROLLER_CA_CERT_BASE64:-}
-    PULPO_INSTANCE_ID: ${PULPO_INSTANCE_ID:-}
-    # Coolify generates this URL per production/preview deployment. Explicit
-    # S3_PUBLIC_ENDPOINT values still take precedence.
-    S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${SERVICE_URL_S3_8333:-http://localhost:8333}}
-    # Optional one-time bootstrap for trusted CI previews. Keep these unset in
-    # production and provide secret values as runtime-only Coolify variables.
-    PULPO_BOOTSTRAP_PRESET: ${PULPO_BOOTSTRAP_PRESET:-}
-    PULPO_PREVIEW_ADMIN_EMAIL: ${PULPO_PREVIEW_ADMIN_EMAIL:-}
-    PULPO_PREVIEW_ADMIN_PASSWORD: ${PULPO_PREVIEW_ADMIN_PASSWORD:-}
-    PULPO_PREVIEW_PROVIDER_API_KEY: ${PULPO_PREVIEW_PROVIDER_API_KEY:-}
-    PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: ${PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST:-}
   volumes:
     - object_data:/app/data/objects
 
@@ -69,17 +53,6 @@ services:
       timeout: 3s
       retries: 6
       start_period: 30s
-    labels:
-      # Coolify preview domains are stored as FQDNs. Its generated preview
-      # router is HTTP-only, so add a uniquely named TLS router for Cloudflare
-      # and other HTTPS origins. SERVICE_NAME_WEB includes the PR suffix.
-      - traefik.enable=true
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.entryPoints=https"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.rule=Host(`${SERVICE_FQDN_WEB:-localhost}`) && PathPrefix(`/`)"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.service=${SERVICE_NAME_WEB:-pulpo-web}-https"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls=true"
-      - "traefik.http.services.${SERVICE_NAME_WEB:-pulpo-web}-https.loadbalancer.server.port=80"
     restart: unless-stopped
 
   api:
