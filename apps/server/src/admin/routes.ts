@@ -2,11 +2,13 @@ import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
+import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, users } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, users, userTotpCredentials } from '../database/schema.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
+import { sendTwoFactorResetNotice } from '../lib/mail.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 
@@ -61,6 +63,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         from ${attachments}
         where ${attachments.userId} = ${users.id}
           and ${attachments.status} in ('pending', 'ready')
+      )`,
+      twoFactorEnabled: sql<boolean>`exists (
+        select 1 from ${userTotpCredentials}
+        where ${userTotpCredentials.userId} = ${users.id}
       )`,
     }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
     return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros), storageBytes: Number(row.storageBytes) })) }
@@ -121,6 +127,39 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     await db.insert(passwordResetTokens).values({ id: newId(), userId: id, tokenHash: hashToken(token), expiresAt })
     await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'password_reset.create', targetType: 'user', targetId: id })
     return { token, expiresAt: expiresAt.toISOString() }
+  })
+
+  app.post('/api/admin/users/:id/two-factor/reset', async (request, reply) => {
+    const admin = requireAdmin(request)
+    const { id } = request.params as { id: string }
+    const input = z.object({
+      verificationCode: z.string().trim().min(6).max(32).optional(),
+    }).parse(request.body ?? {})
+    if (id === admin.id) {
+      throw new AppError(409, 'cannot_reset_own_two_factor', 'You cannot reset your own two-factor authentication')
+    }
+    const [target] = await db.select({ id: users.id, email: users.email }).from(users).where(eq(users.id, id)).limit(1)
+    if (!target) throw notFound('User')
+    if (!(await hasTwoFactor(id))) {
+      throw new AppError(409, 'two_factor_not_enabled', 'Two-factor authentication is not enabled for this account')
+    }
+    if (await hasTwoFactor(admin.id)) {
+      if (!input.verificationCode) {
+        throw new AppError(400, 'two_factor_code_required', 'Enter your authenticator or recovery code')
+      }
+      await verifySecondFactor(admin.id, input.verificationCode)
+    }
+    await db.transaction(async (tx) => {
+      await clearTwoFactor(id, tx)
+      await tx.delete(sessions).where(eq(sessions.userId, id))
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'user.two_factor.admin_reset', targetType: 'user', targetId: id,
+      })
+    })
+    await sendTwoFactorResetNotice(target.email).catch(() => {
+      request.log.error('Two-factor reset email delivery failed')
+    })
+    reply.code(204).send()
   })
 
   app.delete('/api/admin/users/:id', async (request, reply) => {

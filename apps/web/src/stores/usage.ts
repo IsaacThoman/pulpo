@@ -12,6 +12,7 @@ interface AdminUserRow {
   }
   lastActiveAt: string | null
   storageBytes: number
+  twoFactorEnabled: boolean
 }
 
 interface UsageState {
@@ -36,6 +37,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     joinedAt: Date.parse(row.user.createdAt), blocked: row.user.blocked,
     showOnLeaderboard: row.user.leaderboardVisible, barColor: row.user.leaderboardColor,
     lastActiveAt: row.lastActiveAt ? Date.parse(row.lastActiveAt) : null,
+    twoFactorEnabled: row.twoFactorEnabled,
   }
 }
 

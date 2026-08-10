@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Plus, Search, Trash2 } from 'lucide-react'
+import { Pencil, Plus, Search, ShieldOff, Trash2 } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
 import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { apiRequest } from '@/lib/api'
+import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
@@ -30,6 +31,12 @@ export function AdminUsersPage() {
   const [query, setQuery] = useState('')
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<MonitorUser | null>(null)
+  const [promoteUser, setPromoteUser] = useState<MonitorUser | null>(null)
+  const [resetTwoFactorUser, setResetTwoFactorUser] = useState<MonitorUser | null>(null)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null)
+  const [resettingTwoFactor, setResettingTwoFactor] = useState(false)
+  const currentUserId = useAuth((state) => state.user?.id)
   const loadAdmin = useUsage((s) => s.loadAdmin)
   useEffect(() => { void loadAdmin() }, [loadAdmin])
 
@@ -43,6 +50,25 @@ export function AdminUsersPage() {
       u.name.toLowerCase().includes(query.toLowerCase()) ||
       u.email.toLowerCase().includes(query.toLowerCase())
   )
+  const adminTwoFactorEnabled = users.find((user) => user.id === currentUserId)?.twoFactorEnabled ?? false
+
+  const resetTwoFactor = async () => {
+    if (!resetTwoFactorUser) return
+    setResettingTwoFactor(true)
+    setTwoFactorError(null)
+    try {
+      await apiRequest(`/api/admin/users/${resetTwoFactorUser.id}/two-factor/reset`, {
+        method: 'POST', body: adminTwoFactorEnabled ? { verificationCode: twoFactorCode } : {},
+      })
+      setResetTwoFactorUser(null)
+      setTwoFactorCode('')
+      await loadAdmin()
+    } catch (error) {
+      setTwoFactorError(error instanceof Error ? error.message : 'Could not reset two-factor authentication.')
+    } finally {
+      setResettingTwoFactor(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -83,7 +109,10 @@ export function AdminUsersPage() {
               {filtered.map((u) => (
                 <tr key={u.id} className="border-b last:border-0">
                   <td className="px-5 py-2.5">
-                    <Select value={u.role} onValueChange={(role) => void patchUser(u.id, { role })}>
+                    <Select value={u.role} onValueChange={(role) => {
+                      if (role === 'admin' && u.role !== 'admin') setPromoteUser(u)
+                      else void patchUser(u.id, { role })
+                    }}>
                       <SelectTrigger className="h-7 w-24 text-xs">
                         <SelectValue />
                       </SelectTrigger>
@@ -117,6 +146,15 @@ export function AdminUsersPage() {
                   <td className="py-2.5 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-5 py-2.5">
                     <div className="flex justify-end gap-1">
+                      {u.twoFactorEnabled && u.id !== currentUserId && <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        title="Reset two-factor authentication"
+                        className="hover:text-destructive"
+                        onClick={() => { setTwoFactorError(null); setTwoFactorCode(''); setResetTwoFactorUser(u) }}
+                      >
+                        <ShieldOff className="size-3.5" />
+                      </Button>}
                       <Button
                         size="icon-sm"
                         variant="ghost"
@@ -191,6 +229,59 @@ export function AdminUsersPage() {
             <Button type="submit">Create</Button>
           </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!promoteUser} onOpenChange={(open) => !open && setPromoteUser(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Promote user to administrator?</DialogTitle>
+            <DialogDescription>
+              {promoteUser?.email} will gain full administrative access to this Pulpo instance.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPromoteUser(null)}>Cancel</Button>
+            <Button onClick={() => {
+              if (!promoteUser) return
+              void patchUser(promoteUser.id, { role: 'admin' }).then(() => setPromoteUser(null))
+            }}>Promote to admin</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!resetTwoFactorUser} onOpenChange={(open) => {
+        if (!open && !resettingTwoFactor) { setResetTwoFactorUser(null); setTwoFactorCode(''); setTwoFactorError(null) }
+      }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reset two-factor authentication?</DialogTitle>
+            <DialogDescription>
+              This will disable two-factor authentication for {resetTwoFactorUser?.email} and sign them out of all active sessions.
+            </DialogDescription>
+          </DialogHeader>
+          {adminTwoFactorEnabled && <div className="space-y-1.5">
+            <Label htmlFor="admin-two-factor-code">Your authenticator or recovery code</Label>
+            <Input
+              id="admin-two-factor-code"
+              autoFocus
+              autoComplete="one-time-code"
+              className="font-mono"
+              value={twoFactorCode}
+              onChange={(event) => setTwoFactorCode(event.target.value.toUpperCase())}
+            />
+          </div>}
+          {twoFactorError && <p className="text-sm text-destructive">{twoFactorError}</p>}
+          <DialogFooter>
+            <Button variant="outline" disabled={resettingTwoFactor} onClick={() => setResetTwoFactorUser(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={resettingTwoFactor || (adminTwoFactorEnabled && twoFactorCode.trim().length < 6)}
+              onClick={() => void resetTwoFactor()}
+            >
+              {resettingTwoFactor ? 'Resetting…' : 'Reset 2FA'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
