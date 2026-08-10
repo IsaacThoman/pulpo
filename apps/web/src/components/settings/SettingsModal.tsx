@@ -557,7 +557,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Data controls</h2>
                   <Separator className="my-3" />
-                  <Row label="Automatic chat expiration" hint="New normal chats start with this expiration selected.">
+                  <Row label="Automatic chat expiration" hint="Move chats to Trash automatically unless saved within the selected period.">
                     <Select
                       value={s.automaticChatExpiration}
                       onValueChange={(value) => s.set('automaticChatExpiration', value as AutomaticChatExpiration)}
