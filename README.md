@@ -37,7 +37,7 @@ docker compose up --build -d
 docker compose ps
 ```
 
-Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, create a lab and model, configure pricing, and approve pending users.
+Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, manage reusable lab/model artwork under Admin → Icons, create a lab and model, configure pricing, and approve pending users.
 
 ## Management CLI
 

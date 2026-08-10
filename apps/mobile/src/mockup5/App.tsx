@@ -504,8 +504,8 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
   const template = MODELS.find((candidate) => candidate.lab === model.lab)
     ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
     ?? MODELS[1];
-  const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark);
-  return { ...template, id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark), tintColor: undefined, agentEnabled: model.agentEnabled };
+  const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark, model.modelCustomIcon);
+  return { ...template, id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), tintColor: undefined, agentEnabled: model.agentEnabled };
 }
 
 const REASONING_SAMPLE =

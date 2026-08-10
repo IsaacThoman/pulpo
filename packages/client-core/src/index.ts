@@ -243,6 +243,40 @@ export class PulpoManagementClient {
     return body as T
   }
 
+  async upload<T>(path: string, input: {
+    bytes: Uint8Array
+    filename: string
+    contentType: string
+    fields?: Record<string, string>
+    timeoutMs?: number
+  }): Promise<T> {
+    const form = new FormData()
+    for (const [name, value] of Object.entries(input.fields ?? {})) form.append(name, value)
+    const copy = new ArrayBuffer(input.bytes.byteLength)
+    new Uint8Array(copy).set(input.bytes)
+    form.append('file', new Blob([copy], { type: input.contentType }), input.filename)
+    const headers = new Headers()
+    if (this.token) headers.set('authorization', `Bearer ${this.token}`)
+    const response = await this.fetchImpl(new URL(path, `${this.baseUrl.replace(/\/+$/, '')}/`), {
+      method: 'POST',
+      headers,
+      body: form,
+      signal: AbortSignal.timeout(input.timeoutMs ?? 30_000),
+    })
+    const body = await response.json().catch(() => undefined) as {
+      error?: { code?: string; message?: string }
+    } | undefined
+    if (!response.ok) {
+      throw new ManagementApiError(
+        response.status,
+        body?.error?.code ?? 'upload_failed',
+        body?.error?.message ?? `Upload failed (${response.status})`,
+        body,
+      )
+    }
+    return body as T
+  }
+
   async download(path: string, timeoutMs = 300_000): Promise<{ bytes: Uint8Array; contentType: string | null; filename: string | null }> {
     const headers = new Headers()
     if (this.token) headers.set('authorization', `Bearer ${this.token}`)

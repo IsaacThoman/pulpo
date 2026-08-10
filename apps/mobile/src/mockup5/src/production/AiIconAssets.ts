@@ -1,4 +1,6 @@
 import type { ImageSourcePropType } from 'react-native'
+import { apiUrl } from '../../../api/client'
+import type { MobileCatalogIcon } from '../../../types'
 
 const light: Record<string, ImageSourcePropType> = {
   alibaba: require('../../assets/ai-icons/qwen.png'),
@@ -48,7 +50,8 @@ const dark: Record<string, ImageSourcePropType> = {
   pulpo: require('../../assets/pulpo-smiley.png'),
 }
 
-export function aiIconSource(id: string | null | undefined, isDark: boolean): ImageSourcePropType {
+export function aiIconSource(id: string | null | undefined, isDark: boolean, customIcon?: MobileCatalogIcon | null): ImageSourcePropType {
+  if (customIcon) return { uri: apiUrl(isDark ? customIcon.darkUrl : customIcon.lightUrl) }
   const catalog = isDark ? dark : light
   return catalog[id ?? 'pulpo'] ?? catalog.pulpo
 }

@@ -22,23 +22,28 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useCatalog } from '@/stores/catalog'
+import { useCatalogIcons } from '@/stores/catalogIcons'
+import type { AdminCatalogIcon } from '@/lib/catalog-icons'
 
 type Draft = {
   id?: string
   name: string
   logo: string
+  customIconId: string | null
 }
 
 interface AdminLab {
   id: string
   name: string
   logo: string
+  customIconId: string | null
   modelCount: number
   builtin: boolean
   models: Array<{
     id: string
     name: string
     logo: string | null
+    customIconId: string | null
     enabled: boolean
     visible: boolean
     sortOrder: number
@@ -47,7 +52,8 @@ interface AdminLab {
 
 const emptyDraft = (): Draft => ({
   name: '',
-  logo: 'openai',
+  logo: 'pulpo',
+  customIconId: null,
 })
 
 const LAB_ICONS = AI_ICONS.filter((icon) => isAiIconAvailable(icon, 'lab') && !icon.color)
@@ -55,25 +61,27 @@ const LAB_ICONS = AI_ICONS.filter((icon) => isAiIconAvailable(icon, 'lab') && !i
 export function AdminLabsPage() {
   const [labs, setLabs] = useState<AdminLab[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
+  const customIcons = useCatalogIcons((state) => state.icons)
+  const loadIcons = useCatalogIcons((state) => state.load)
 
   const load = async () => {
     const result = await apiRequest<{ data: AdminLab[] }>('/api/admin/labs')
     setLabs(result.data)
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void Promise.all([load(), loadIcons()]) }, [loadIcons])
 
   const openAdd = () => setDraft(emptyDraft())
 
   const openEdit = (lab: AdminLab) => {
-    setDraft({ id: lab.id, name: lab.name, logo: lab.logo })
+    setDraft({ id: lab.id, name: lab.name, logo: lab.logo, customIconId: lab.customIconId })
   }
 
   const save = async () => {
     if (!draft?.name.trim()) return
     if (draft.id) {
-      await apiRequest(`/api/admin/labs/${draft.id}`, { method: 'PATCH', body: { name: draft.name.trim(), logo: draft.logo } })
+      await apiRequest(`/api/admin/labs/${draft.id}`, { method: 'PATCH', body: { name: draft.name.trim(), logo: draft.logo, customIconId: draft.customIconId } })
     } else {
-      await apiRequest('/api/admin/labs', { method: 'POST', body: { name: draft.name.trim(), logo: draft.logo } })
+      await apiRequest('/api/admin/labs', { method: 'POST', body: { name: draft.name.trim(), logo: draft.logo, customIconId: draft.customIconId } })
     }
     setDraft(null)
     await Promise.all([load(), useCatalog.getState().load()])
@@ -133,7 +141,7 @@ export function AdminLabsPage() {
                 <tr key={lab.id} className="border-b last:border-0">
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <AiLogo icon={lab.logo} className="size-5" />
+                      <AiLogo icon={lab.logo} customIcon={findCustomIcon(customIcons, lab.customIconId)} className="size-5" />
                       <span className="font-medium">{lab.name}</span>
                     </div>
                   </td>
@@ -147,7 +155,11 @@ export function AdminLabsPage() {
                       <div className="min-w-64 space-y-1">
                         {lab.models.map((model, index) => (
                           <div key={model.id} className="flex items-center gap-2 rounded-md border bg-muted/20 px-2 py-1.5">
-                            <AiLogo icon={model.logo ?? lab.logo} className="size-4" />
+                            <AiLogo
+                              icon={model.logo ?? lab.logo}
+                              customIcon={findCustomIcon(customIcons, model.customIconId) ?? (model.logo ? null : findCustomIcon(customIcons, lab.customIconId))}
+                              className="size-4"
+                            />
                             <span className="min-w-0 flex-1 truncate font-medium">{model.name}</span>
                             {(!model.enabled || !model.visible) && (
                               <Badge variant="outline" className="text-[10px] font-normal">
@@ -243,6 +255,7 @@ export function AdminLabsPage() {
                     >
                       <AiLogo
                         icon={draft.logo}
+                        customIcon={findCustomIcon(customIcons, draft.customIconId)}
                         className="size-14 transition-transform duration-150 group-hover/tile:scale-105"
                       />
                       <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">
@@ -262,21 +275,37 @@ export function AdminLabsPage() {
                         <button
                           key={icon.id}
                           type="button"
-                          onClick={() => setDraft({ ...draft, logo: icon.id })}
+                          onClick={() => setDraft({ ...draft, logo: icon.id, customIconId: null })}
                           className={cn(
                             'relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-2 text-[10px] transition-colors hover:bg-accent',
-                            draft.logo === icon.id && 'bg-accent ring-1 ring-border'
+                            !draft.customIconId && draft.logo === icon.id && 'bg-accent ring-1 ring-border'
                           )}
                           title={icon.label}
                         >
                           <AiLogo icon={icon.id} className="size-7" />
                           <span className="w-full truncate">{icon.label}</span>
-                          {draft.logo === icon.id && (
+                          {!draft.customIconId && draft.logo === icon.id && (
                             <Check className="absolute right-1 top-1 size-3 text-primary" />
                           )}
                         </button>
                       ))}
                     </div>
+                    {!!customIcons.length && <>
+                      <div className="mb-2 mt-3 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">Custom icons</div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {customIcons.map((icon) => <button
+                          key={icon.id}
+                          type="button"
+                          onClick={() => setDraft({ ...draft, logo: 'pulpo', customIconId: icon.id })}
+                          className={cn('relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-2 text-[10px] transition-colors hover:bg-accent', draft.customIconId === icon.id && 'bg-accent ring-1 ring-border')}
+                          title={icon.name}
+                        >
+                          <AiLogo icon="pulpo" customIcon={icon} className="size-7" />
+                          <span className="w-full truncate">{icon.name}</span>
+                          {draft.customIconId === icon.id && <Check className="absolute right-1 top-1 size-3 text-primary" />}
+                        </button>)}
+                      </div>
+                    </>}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
@@ -294,4 +323,8 @@ export function AdminLabsPage() {
       </Dialog>
     </div>
   )
+}
+
+function findCustomIcon(icons: AdminCatalogIcon[], id: string | null | undefined) {
+  return icons.find((icon) => icon.id === id) ?? null
 }

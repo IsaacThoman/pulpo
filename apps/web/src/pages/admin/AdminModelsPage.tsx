@@ -28,6 +28,8 @@ import { AiLogo } from '@/components/ProviderLogo'
 import { PresetIcon } from '@/components/chat/PresetIcon'
 import { filterPresetIconOptions, formatPresetIconLabel } from '@/components/chat/preset-icon-options'
 import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
+import { useCatalogIcons } from '@/stores/catalogIcons'
+import type { AdminCatalogIcon, CatalogIconReference } from '@/lib/catalog-icons'
 
 interface AdminModel {
   id: string
@@ -39,6 +41,7 @@ interface AdminModel {
   enabled: boolean
   visible: boolean
   logo: string | null
+  customIconId: string | null
   systemPrompt: string
   agentEnabled: boolean
   agentInstructions: string
@@ -70,10 +73,10 @@ interface AdminModel {
   slowStickyMinCompletionSeconds: number
 }
 interface Provider { id: string; name: string; baseUrl?: string }
-interface Lab { id: string; name: string; logo?: string }
+interface Lab { id: string; name: string; logo?: string; customIconId: string | null }
 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
-  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: 'openai', systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
+  id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, agentCompactionThresholdTokens: 180_000, compactionRetainedTurns: 4,
   useProviderCost: false,
@@ -93,6 +96,8 @@ export function AdminModelsPage() {
   const [creating, setCreating] = useState(false)
   const [presetEditorValid, setPresetEditorValid] = useState(true)
   const [paramsValid, setParamsValid] = useState(true)
+  const customIcons = useCatalogIcons((state) => state.icons)
+  const loadIcons = useCatalogIcons((state) => state.load)
 
   const load = async () => {
     const [modelResult, providerResult, labResult] = await Promise.all([
@@ -102,7 +107,7 @@ export function AdminModelsPage() {
     ])
     setModels(modelResult.data); setProviders(providerResult.data); setLabs(labResult.data)
   }
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void Promise.all([load(), loadIcons()]) }, [loadIcons])
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
   const filtered = useMemo(() => models.filter((model) => `${model.name} ${model.id} ${model.upstreamModelId}`.toLowerCase().includes(query.toLowerCase()) && (filter === 'all' || (filter === 'visible' ? model.visible : filter === 'hidden' ? !model.visible : filter === 'enabled' ? model.enabled : !model.enabled))), [models, query, filter])
   const presetErrors = draft ? validatePresetDrafts(draft.presets, draft.id, draft.allowedParameters, models) : []
@@ -158,7 +163,11 @@ export function AdminModelsPage() {
         {filtered.map((model) => (
           <Card key={model.id} className={cn('shadow-none', !model.enabled && 'opacity-55')}>
             <CardContent className="flex items-center gap-4 px-4 py-3">
-              <AiLogo icon={model.logo ?? 'openai'} className="size-8 rounded-[4px]" />
+              <AiLogo
+                icon={model.logo ?? labs.find((lab) => lab.id === model.labId)?.logo ?? 'pulpo'}
+                customIcon={effectiveModelCustomIcon(model, labs, customIcons)}
+                className="size-8 rounded-[4px]"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{model.name}</span>
@@ -202,7 +211,7 @@ export function AdminModelsPage() {
         <DialogContent className="flex h-[720px] max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle className="flex items-center gap-2.5">
-              {draft && <AiLogo icon={draft.logo ?? 'openai'} className="size-6 rounded-[3px]" />}
+              {draft && <AiLogo icon={draft.logo ?? labs.find((lab) => lab.id === draft.labId)?.logo ?? 'pulpo'} customIcon={effectiveModelCustomIcon(draft, labs, customIcons)} className="size-6 rounded-[3px]" />}
               {creating ? 'New model' : 'Edit model'}
               {draft?.id && <Badge variant="outline" className="font-mono font-normal">{draft.id}</Badge>}
             </DialogTitle>
@@ -217,6 +226,7 @@ export function AdminModelsPage() {
                 creating={creating}
                 providers={providers}
                 labs={labs}
+                customIcons={customIcons}
                 models={models}
                 presetErrors={presetErrors}
                 onPresetValidityChange={setPresetEditorValid}
@@ -241,6 +251,7 @@ function ModelEditorBody({
   creating,
   providers,
   labs,
+  customIcons,
   models,
   presetErrors,
   onPresetValidityChange,
@@ -251,6 +262,7 @@ function ModelEditorBody({
   creating: boolean
   providers: Provider[]
   labs: Lab[]
+  customIcons: AdminCatalogIcon[]
   models: AdminModel[]
   presetErrors: string[]
   onPresetValidityChange: (valid: boolean) => void
@@ -290,6 +302,7 @@ function ModelEditorBody({
       <div className="grid grid-cols-2 gap-4">
         <LabPickerTile
           labs={labs}
+          customIcons={customIcons}
           value={draft.labId}
           onChange={(labId) => setDraft({ ...draft, labId })}
         />
@@ -297,8 +310,14 @@ function ModelEditorBody({
           label="Model logo"
           helper="Product mark used in chat, favorites, and model lists."
           kind="model"
-          value={draft.logo ?? 'openai'}
-          onChange={(logo) => setDraft({ ...draft, logo })}
+          value={draft.logo}
+          customIconId={draft.customIconId}
+          customIcons={customIcons}
+          inheritedIcon={selectedLab ? {
+            logo: selectedLab.logo || 'pulpo',
+            customIcon: findCustomIcon(customIcons, selectedLab.customIconId),
+          } : { logo: 'pulpo', customIcon: null }}
+          onChange={({ logo, customIconId }) => setDraft({ ...draft, logo, customIconId })}
         />
       </div>
 
@@ -621,17 +640,29 @@ function LogoPickerTile({
   helper,
   kind,
   value,
+  customIconId,
+  customIcons,
+  inheritedIcon,
   onChange,
 }: {
   label: string
   helper: string
   kind: AiIconKind
-  value: string
-  onChange: (value: string) => void
+  value: string | null
+  customIconId: string | null
+  customIcons: AdminCatalogIcon[]
+  inheritedIcon: { logo: string; customIcon: CatalogIconReference | null }
+  onChange: (value: { logo: string | null; customIconId: string | null }) => void
 }) {
   const options = AI_ICONS.filter(
     (icon) => isAiIconAvailable(icon, kind) && (kind !== 'lab' || !icon.color),
   )
+  const selectedCustomIcon = findCustomIcon(customIcons, customIconId)
+  const displayed = selectedCustomIcon
+    ? { logo: 'pulpo', customIcon: selectedCustomIcon, label: 'custom' }
+    : value
+      ? { logo: value, customIcon: null, label: kind }
+      : { ...inheritedIcon, label: 'inherit' }
   return (
     <div>
       <Label className="text-xs">{label}</Label>
@@ -641,35 +672,48 @@ function LogoPickerTile({
             type="button"
             className="group/tile relative mt-1.5 flex aspect-[2/1] w-full cursor-pointer items-center justify-center overflow-hidden rounded-lg border bg-muted/25 transition-colors hover:bg-accent"
           >
-            <AiLogo icon={value} className="size-14 transition-transform duration-150 group-hover/tile:scale-105" />
-            <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">{kind}</Badge>
+            <AiLogo icon={displayed.logo} customIcon={displayed.customIcon} className="size-14 transition-transform duration-150 group-hover/tile:scale-105" />
+            <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">{displayed.label}</Badge>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
           className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-[336px] overflow-y-auto p-2"
         >
-          <div className="mb-2 px-1 text-xs font-medium text-muted-foreground">
-            {kind === 'lab' ? 'Choose an associated lab' : 'Choose a model logo'}
-          </div>
+          <button type="button" onClick={() => onChange({ logo: null, customIconId: null })} className={cn('mb-2 flex w-full items-center gap-2 rounded-md p-2 text-left text-xs hover:bg-accent', !value && !customIconId && 'bg-accent ring-1 ring-border')}>
+            <AiLogo icon={inheritedIcon.logo} customIcon={inheritedIcon.customIcon} className="size-6" />
+            <span className="flex-1"><span className="block font-medium">Inherit lab icon</span><span className="text-[10px] text-muted-foreground">Follow the associated lab</span></span>
+            {!value && !customIconId && <Check className="size-3 text-primary" />}
+          </button>
+          <div className="mb-2 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">Built-in icons</div>
           <div className="grid grid-cols-4 gap-1">
             {options.map((icon) => (
               <button
                 key={icon.id}
                 type="button"
-                onClick={() => onChange(icon.id)}
+                onClick={() => onChange({ logo: icon.id, customIconId: null })}
                 className={cn(
                   'relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-2 text-[10px] transition-colors hover:bg-accent',
-                  value === icon.id && 'bg-accent ring-1 ring-border',
+                  !customIconId && value === icon.id && 'bg-accent ring-1 ring-border',
                 )}
                 title={`${icon.label}${icon.color ? ' · color' : ' · monochrome'}`}
               >
                 <AiLogo icon={icon.id} className="size-7" />
                 <span className="w-full truncate">{icon.label}</span>
-                {value === icon.id && <Check className="absolute right-1 top-1 size-3 text-primary" />}
+                {!customIconId && value === icon.id && <Check className="absolute right-1 top-1 size-3 text-primary" />}
               </button>
             ))}
           </div>
+          {!!customIcons.length && <>
+            <div className="mb-2 mt-3 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">Custom icons</div>
+            <div className="grid grid-cols-4 gap-1">
+              {customIcons.map((icon) => <button key={icon.id} type="button" onClick={() => onChange({ logo: null, customIconId: icon.id })} className={cn('relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-2 text-[10px] transition-colors hover:bg-accent', customIconId === icon.id && 'bg-accent ring-1 ring-border')} title={icon.name}>
+                <AiLogo icon="pulpo" customIcon={icon} className="size-7" />
+                <span className="w-full truncate">{icon.name}</span>
+                {customIconId === icon.id && <Check className="absolute right-1 top-1 size-3 text-primary" />}
+              </button>)}
+            </div>
+          </>}
         </DropdownMenuContent>
       </DropdownMenu>
       <p className="mt-1.5 text-[11px] text-muted-foreground">{helper}</p>
@@ -679,10 +723,12 @@ function LogoPickerTile({
 
 function LabPickerTile({
   labs,
+  customIcons,
   value,
   onChange,
 }: {
   labs: Lab[]
+  customIcons: AdminCatalogIcon[]
   value: string | null
   onChange: (labId: string) => void
 }) {
@@ -698,6 +744,7 @@ function LabPickerTile({
           >
             <AiLogo
               icon={selected?.logo || 'pulpo'}
+              customIcon={findCustomIcon(customIcons, selected?.customIconId)}
               className="size-14 transition-transform duration-150 group-hover/tile:scale-105"
             />
             <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">lab</Badge>
@@ -720,7 +767,7 @@ function LabPickerTile({
                 )}
                 title={lab.name}
               >
-                <AiLogo icon={lab.logo || 'pulpo'} className="size-7" />
+                <AiLogo icon={lab.logo || 'pulpo'} customIcon={findCustomIcon(customIcons, lab.customIconId)} className="size-7" />
                 <span className="w-full truncate">{lab.name}</span>
                 {value === lab.id && <Check className="absolute right-1 top-1 size-3 text-primary" />}
               </button>
@@ -733,6 +780,17 @@ function LabPickerTile({
       </p>
     </div>
   )
+}
+
+function findCustomIcon(icons: AdminCatalogIcon[], id: string | null | undefined): AdminCatalogIcon | null {
+  return icons.find((icon) => icon.id === id) ?? null
+}
+
+function effectiveModelCustomIcon(model: AdminModel, labs: Lab[], icons: AdminCatalogIcon[]): AdminCatalogIcon | null {
+  const direct = findCustomIcon(icons, model.customIconId)
+  if (direct) return direct
+  if (model.logo) return null
+  return findCustomIcon(icons, labs.find((lab) => lab.id === model.labId)?.customIconId)
 }
 
 

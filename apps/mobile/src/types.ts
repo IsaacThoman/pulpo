@@ -2,6 +2,13 @@ import type { ChatPreset, EmbeddedResponseSnapshot, ResponseSnapshot, User } fro
 
 export type { User }
 
+export interface MobileCatalogIcon {
+  id: string
+  mode: 'original' | 'monochrome'
+  lightUrl: string
+  darkUrl: string
+}
+
 export interface MobileModel {
   id: string
   name: string
@@ -11,10 +18,11 @@ export interface MobileModel {
   agentEnabled: boolean
   tags: string[]
   logo: string | null
+  customIcon?: MobileCatalogIcon | null
   iconLight: string | null
   iconDark: string | null
   provider: { id: string; name: string }
-  lab: { id: string; name: string; logo: string } | null
+  lab: { id: string; name: string; logo: string; customIcon?: MobileCatalogIcon | null } | null
   presets: ChatPreset[]
 }
 

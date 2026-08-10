@@ -35,11 +35,20 @@ export interface CliDependencies {
   createClient?: (url: string, token: string | null, fetchImpl: typeof fetch) => PulpoManagementClient
 }
 
+export function catalogIconContentType(filename: string): string | null {
+  const extension = /\.([^.]+)$/.exec(filename)?.[1]?.toLowerCase()
+  return extension === 'png' ? 'image/png'
+    : extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
+      : extension === 'webp' ? 'image/webp'
+        : extension === 'svg' ? 'image/svg+xml' : null
+}
+
 const COMMAND_CAPABILITIES: Record<string, string> = {
   token: 'managementTokens',
   settings: 'settings',
   provider: 'catalog',
   lab: 'catalog',
+  icon: 'catalogIcons',
   model: 'catalog',
   user: 'users',
   usage: 'usage',
@@ -529,6 +538,24 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
     const { client } = await clientFor(command)
     emit(io, command, await client.request(`/api/management/v1/labs/${encodeURIComponent(id)}/models/order`, { method: 'PUT', body: await jsonFile(options.file) }))
   })
+  const icon = registerFileCrud(program, io, {
+    name: 'icon', pluralPath: '/api/management/v1/catalog-icons', create: false,
+  })
+  icon.command('upload <path>')
+    .option('-n, --name <name>', 'library name; defaults to the filename')
+    .option('-m, --mode <mode>', 'original or monochrome', 'original')
+    .action(async (path, options, command) => {
+      const mode = z.enum(['original', 'monochrome']).parse(options.mode)
+      const filename = basename(path)
+      const contentType = catalogIconContentType(filename)
+      if (!contentType) throw new Error('Icon files must be PNG, JPEG, WebP, or SVG')
+      const bytes = new Uint8Array(await readFile(path))
+      const { client } = await clientFor(command)
+      emit(io, command, await client.upload('/api/management/v1/catalog-icons', {
+        bytes, filename, contentType,
+        fields: { name: options.name ?? filename.replace(/\.[^.]+$/, ''), mode },
+      }))
+    })
   const model = registerFileCrud(program, io, {
     name: 'model',
     pluralPath: '/api/management/v1/models',

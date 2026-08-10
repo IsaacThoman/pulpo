@@ -48,6 +48,8 @@ export function mapModel(model: MobileModel, favorites: string[]): PrototypeMode
     asset,
     modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
     labLogo: model.lab?.logo ?? 'pulpo',
+    modelCustomIcon: model.customIcon ?? (model.logo ? null : model.lab?.customIcon ?? null),
+    labCustomIcon: model.lab?.customIcon ?? null,
     presets: model.presets.map((preset) => ({
       id: preset.id,
       name: preset.name,

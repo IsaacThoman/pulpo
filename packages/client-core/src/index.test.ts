@@ -102,6 +102,23 @@ describe('client core', () => {
     await expect(client.me()).rejects.toEqual(expect.objectContaining<Partial<ManagementApiError>>({ status: 403, code: 'forbidden' }))
   })
 
+  it('uploads catalog icon files as authenticated multipart data', async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      const form = init?.body as FormData
+      expect(new Headers(init?.headers).get('authorization')).toBe('Bearer token')
+      expect(form.get('name')).toBe('Acme')
+      expect(form.get('mode')).toBe('monochrome')
+      expect((form.get('file') as File).type).toBe('image/png')
+      return new Response(JSON.stringify({ id: 'icon-id' }), { status: 201 })
+    })
+    const client = new PulpoManagementClient('https://pulpo.example.com', 'token', fetcher as typeof fetch)
+
+    await expect(client.upload('/api/management/v1/catalog-icons', {
+      bytes: new Uint8Array([1, 2, 3]), filename: 'acme.png', contentType: 'image/png',
+      fields: { name: 'Acme', mode: 'monochrome' },
+    })).resolves.toEqual({ id: 'icon-id' })
+  })
+
   it('uses the shared account endpoints for full two-factor management', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const path = new URL(input instanceof Request ? input.url : String(input)).pathname

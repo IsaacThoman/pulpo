@@ -23,6 +23,7 @@ export function ModelIcon({
   const logo = (
     <AiLogo
       icon={model.modelLogo}
+      customIcon={model.modelCustomIcon}
       muted={variant === 'outline'}
       className={cn(boxed ? 'size-[65%]' : 'size-full', !boxed && className)}
     />

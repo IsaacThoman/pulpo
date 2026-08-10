@@ -4,10 +4,12 @@ import { persist } from 'zustand/middleware'
 import type { Model } from '@/lib/types'
 import { apiRequest } from '@/lib/api'
 import { findCatalogModel } from '@/lib/catalog-model'
+import type { CatalogIconReference } from '@/lib/catalog-icons'
 
 const EMPTY_MODEL: Model = {
   id: '', name: 'Configure a model', providerGroupId: 'internal', provider: 'OpenAI', inferenceProvider: 'Not configured',
   labLogo: 'openai', modelLogo: 'openai', description: 'An administrator needs to configure an OpenAI model.',
+  labCustomIcon: null, modelCustomIcon: null,
   contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
   outputPrice: 0, perMessagePrice: 0, enabled: false, agentEnabled: false, presets: [],
 }
@@ -24,10 +26,11 @@ interface ServerModel {
   enabled: boolean
   visible: boolean
   logo: string | null
+  customIcon?: CatalogIconReference | null
   iconLight: string | null
   iconDark: string | null
   provider: { id: string; name: string }
-  lab: { id: string; name: string; logo: string } | null
+  lab: { id: string; name: string; logo: string; customIcon?: CatalogIconReference | null } | null
   presets: Model['presets']
   agentEnabled: boolean
 }
@@ -38,6 +41,8 @@ function fromServer(model: ServerModel): Model {
     providerGroupId: model.lab?.id ?? 'internal',
     provider: model.lab?.name ?? 'Internal', inferenceProvider: model.provider.name,
     labLogo: model.lab?.logo ?? 'pulpo', modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
+    labCustomIcon: model.lab?.customIcon ?? null,
+    modelCustomIcon: model.customIcon ?? (model.logo ? null : model.lab?.customIcon ?? null),
     contextWindow: model.contextWindow,
     tags: model.tags.filter((tag): tag is Model['tags'][number] => ['vision', 'reasoning', 'tools', 'fast', 'code'].includes(tag)),
     iconLight: model.iconLight ?? '#18181b', iconDark: model.iconDark ?? '#fafafa',
@@ -84,6 +89,8 @@ export function getCatalogModel(id: string): Model {
       inferenceProvider: 'Pulpo',
       labLogo: 'pulpo',
       modelLogo: 'pulpo',
+      labCustomIcon: null,
+      modelCustomIcon: null,
       description: 'The original model was deleted from this Pulpo instance.',
     }
   }
