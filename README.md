@@ -154,6 +154,14 @@ Only trusted same-repository pull requests may receive these secrets. Do not
 make the preset variables available to fork previews, and do not reuse a
 production provider key.
 
+The GitHub Actions preview workflow also requires `COOLIFY_URL` and
+`COOLIFY_PULPO_APP_UUID` as repository variables, plus `COOLIFY_TOKEN` as a
+repository secret. Enable Coolify's **Preview Deployments**, keep **Allow Public
+PR Deployments** disabled, and keep main-branch **Auto Deploy** disabled.
+Coolify creates previews for trusted same-repository pull requests; the
+`deploy-preview` label gates CI health and bootstrap validation, not preview
+creation.
+
 No Pulpo service should publish `5432`, `6379`, `8080`, or `8333`
 directly on the Coolify host.
 
