@@ -114,6 +114,7 @@ export function ModelSelector({
           <ProviderLogo
             provider={selected.provider}
             icon={selected.labLogo}
+            customIcon={selected.labCustomIcon}
             className="size-5 shrink-0"
           />
           <span className="min-w-0 truncate">{selected.name}</span>
@@ -215,6 +216,7 @@ export function ModelSelector({
                       <ProviderLogo
                         provider={enabled.find((m) => m.providerGroupId === p)?.provider ?? p}
                         icon={enabled.find((m) => m.providerGroupId === p)?.labLogo}
+                        customIcon={enabled.find((m) => m.providerGroupId === p)?.labCustomIcon}
                         variant={active ? 'filled' : 'outline'}
                         className={cn(
                           'size-[18px] transition-opacity duration-150',

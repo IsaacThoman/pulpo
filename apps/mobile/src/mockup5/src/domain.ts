@@ -56,6 +56,8 @@ export interface PrototypeModel {
   asset: 'claude' | 'openai' | 'gemini' | 'deepseek';
   modelLogo?: string;
   labLogo?: string;
+  modelCustomIcon?: import('../../types').MobileCatalogIcon | null;
+  labCustomIcon?: import('../../types').MobileCatalogIcon | null;
   presets: GenerationPreset[];
 }
 

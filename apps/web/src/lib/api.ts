@@ -33,13 +33,14 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
+  const formBody = typeof FormData !== 'undefined' && options.body instanceof FormData
+  if (options.body !== undefined && !formBody) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   const response = await fetch(path, {
     ...options,
     headers,
     credentials: 'include',
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : formBody ? options.body as FormData : JSON.stringify(options.body),
   })
   if (response.status === 204) return undefined as T
   const body = await response.json().catch(() => undefined) as ApiErrorBody | undefined

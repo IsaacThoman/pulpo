@@ -141,10 +141,25 @@ export const providerUpstreamModels = pgTable('provider_upstream_models', {
   index('provider_upstream_models_provider_idx').on(table.providerConnectionId),
 ])
 
+export const catalogIcons = pgTable('catalog_icons', {
+  id: uuid('id').primaryKey(),
+  name: text('name').notNull(),
+  mode: text('mode').notNull().default('original'),
+  originalObjectKey: text('original_object_key').notNull(),
+  monochromeLightObjectKey: text('monochrome_light_object_key').notNull(),
+  monochromeDarkObjectKey: text('monochrome_dark_object_key').notNull(),
+  originalChecksum: text('original_checksum').notNull(),
+  monochromeLightChecksum: text('monochrome_light_checksum').notNull(),
+  monochromeDarkChecksum: text('monochrome_dark_checksum').notNull(),
+  createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+})
+
 export const labs = pgTable('labs', {
   id: uuid('id').primaryKey(),
   name: text('name').notNull(),
   logo: text('logo').notNull(),
+  customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
   ...timestamps,
 })
 
@@ -159,6 +174,7 @@ export const models = pgTable('models', {
   enabled: boolean('enabled').notNull().default(true),
   visible: boolean('visible').notNull().default(true),
   logo: text('logo'),
+  customIconId: uuid('custom_icon_id').references(() => catalogIcons.id),
   systemPrompt: text('system_prompt').notNull().default(''),
   agentEnabled: boolean('agent_enabled').notNull().default(false),
   agentInstructions: text('agent_instructions').notNull().default(''),

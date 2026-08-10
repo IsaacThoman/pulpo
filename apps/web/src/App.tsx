@@ -15,6 +15,7 @@ const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module)
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
 const AdminProvidersPage = lazy(() => import('@/pages/admin/AdminProvidersPage').then((module) => ({ default: module.AdminProvidersPage })))
 const AdminLabsPage = lazy(() => import('@/pages/admin/AdminLabsPage').then((module) => ({ default: module.AdminLabsPage })))
+const AdminIconsPage = lazy(() => import('@/pages/admin/AdminIconsPage').then((module) => ({ default: module.AdminIconsPage })))
 const AdminModelsPage = lazy(() => import('@/pages/admin/AdminModelsPage').then((module) => ({ default: module.AdminModelsPage })))
 const AdminUsagePage = lazy(() => import('@/pages/admin/AdminUsagePage').then((module) => ({ default: module.AdminUsagePage })))
 const AdminUsageLayout = lazy(() => import('@/pages/admin/AdminUsageLayout').then((module) => ({ default: module.AdminUsageLayout })))
@@ -65,6 +66,7 @@ export default function App() {
                 <Route path="users" element={<AdminUsersPage />} />
                 <Route path="providers" element={<AdminProvidersPage />} />
                 <Route path="labs" element={<AdminLabsPage />} />
+                <Route path="icons" element={<AdminIconsPage />} />
                 <Route path="models" element={<AdminModelsPage />} />
                 <Route path="usage" element={<AdminUsageLayout />}>
                   <Route index element={<AdminUsagePage />} />

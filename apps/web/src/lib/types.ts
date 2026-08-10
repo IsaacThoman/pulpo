@@ -1,4 +1,5 @@
 import type { ChatPreset, QueuedMessage } from '@pulpo/contracts'
+import type { CatalogIconReference } from '@/lib/catalog-icons'
 
 export type { ChatPreset, ChatPresetAction, ChatPresetChoice, ChatPresetIcon } from '@pulpo/contracts'
 
@@ -10,8 +11,10 @@ export interface Model {
   provider: string
   /** Monochrome company/lab mark used in the picker header and provider rail. */
   labLogo: string
+  labCustomIcon?: CatalogIconReference | null
   /** Model/product mark used in chat, favorites, and model lists. */
   modelLogo: string
+  modelCustomIcon?: CatalogIconReference | null
   inferenceProvider: string
   description: string
   contextWindow: number

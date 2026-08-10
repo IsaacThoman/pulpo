@@ -6,6 +6,7 @@ const TABS = [
   { to: '/admin/users', label: 'Users', end: false },
   { to: '/admin/providers', label: 'Providers', end: false },
   { to: '/admin/labs', label: 'Labs', end: false },
+  { to: '/admin/icons', label: 'Icons', end: false },
   { to: '/admin/models', label: 'Models', end: false },
   { to: '/admin/usage', label: 'Usage', end: false },
   { to: '/admin/settings', label: 'Settings', end: false },

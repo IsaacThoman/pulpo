@@ -26,6 +26,7 @@ import { registerMobileRoutes } from './mobile/routes.js'
 import { registerResponseCompression } from './compression.js'
 import { registerManagementRoutes } from './management/routes.js'
 import { ensureBootstrapPreset } from './bootstrap/ci-preview.js'
+import { registerCatalogIconRoutes } from './catalog/icon-routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -98,6 +99,7 @@ export async function buildApp() {
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
   await registerCatalogRoutes(app)
+  await registerCatalogIconRoutes(app)
   await registerChatRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)

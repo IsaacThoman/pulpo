@@ -51,4 +51,18 @@ describe('mobile model identity', () => {
 
     expect(mapModel(model, []).redirectTargetModelIds).toEqual(['gpt-5.6-luna-fast'])
   })
+
+  it('prefers a custom model icon and retains the custom lab icon', () => {
+    const labIcon = { id: '00000000-0000-7000-8000-000000000010', mode: 'monochrome' as const, lightUrl: '/lab-light.png', darkUrl: '/lab-dark.png' }
+    const modelIcon = { id: '00000000-0000-7000-8000-000000000011', mode: 'original' as const, lightUrl: '/model.png', darkUrl: '/model.png' }
+    const model: MobileModel = {
+      id: 'custom', name: 'Custom', description: '', executionMode: 'stream', maxOutputTokens: 1,
+      agentEnabled: false, tags: [], logo: null, customIcon: modelIcon, iconLight: null, iconDark: null,
+      provider: { id: 'provider', name: 'Provider' },
+      lab: { id: 'lab', name: 'Lab', logo: 'pulpo', customIcon: labIcon }, presets: [],
+    }
+
+    expect(mapModel(model, [])).toMatchObject({ modelCustomIcon: modelIcon, labCustomIcon: labIcon })
+    expect(mapModel({ ...model, logo: 'openai', customIcon: null }, [])).toMatchObject({ modelCustomIcon: null, labCustomIcon: labIcon })
+  })
 })

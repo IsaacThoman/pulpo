@@ -5,6 +5,7 @@ import { chatPresetsSchema, createModelSchema, createProviderSchema, type ChatPr
 import { db } from '../database/client.js'
 import {
   auditEvents,
+  catalogIcons,
   labs,
   modelPricingVersions,
   modelPresetChoices,
@@ -24,6 +25,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
 import { deleteCatalogModel } from './model-deletion.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
+import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
 
 type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
@@ -137,6 +139,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       .where(and(eq(models.enabled, true), eq(models.visible, true)))
       .orderBy(asc(models.sortOrder), asc(models.createdAt))
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
+    const iconRows = await db.select().from(catalogIcons)
+    const iconById = new Map(iconRows.map((icon) => [icon.id, icon]))
+    const customIcon = (id: string | null) => id && iconById.has(id) ? catalogIconUrls(iconById.get(id)!) : null
     const agentAvailable = parseAgentSettings(agentRow?.value).enabled && Boolean(getConfig().WORKSPACE_CONTROLLER_URL && getConfig().WORKSPACE_CONTROLLER_TOKEN)
     return { agentAvailable, data: await Promise.all(rows.map(async ({ model, pricing, lab, provider }) => ({
       id: model.id,
@@ -146,6 +151,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       enabled: model.enabled,
       visible: model.visible,
       logo: model.logo,
+      customIcon: customIcon(model.customIconId),
       executionMode: model.executionMode,
       contextWindow: model.contextWindow,
       maxOutputTokens: model.maxOutputTokens,
@@ -156,7 +162,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       tags: model.tags,
       agentEnabled: model.agentEnabled,
       provider: { id: provider.id, name: provider.name },
-      lab: lab ? { id: lab.id, name: lab.name, logo: lab.logo } : null,
+      lab: lab ? { id: lab.id, name: lab.name, logo: lab.logo, customIcon: customIcon(lab.customIconId) } : null,
       iconLight: model.iconLight,
       iconDark: model.iconDark,
       presets: await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => ({
@@ -334,6 +340,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         labId: models.labId,
         name: models.name,
         logo: models.logo,
+        customIconId: models.customIconId,
         enabled: models.enabled,
         visible: models.visible,
         sortOrder: models.sortOrder,
@@ -352,9 +359,13 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.post('/api/admin/labs', async (request, reply) => {
     requireAdmin(request)
-    const input = request.body as { name?: string; logo?: string }
-    if (!input.name?.trim() || !input.logo?.trim()) throw new AppError(400, 'validation_error', 'Lab name and logo are required')
-    const [created] = await db.insert(labs).values({ id: newId(), name: input.name.trim(), logo: input.logo.trim() }).returning()
+    const input = z.object({
+      name: z.string().trim().min(1).max(120),
+      logo: z.string().trim().min(1).max(120).default('pulpo'),
+      customIconId: z.uuid().nullable().default(null),
+    }).parse(request.body)
+    if (input.customIconId) await requireCatalogIcon(input.customIconId)
+    const [created] = await db.insert(labs).values({ id: newId(), ...input }).returning()
     reply.code(201)
     return created
   })
@@ -363,8 +374,13 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     requireAdmin(request)
     const { id } = request.params as { id: string }
     if (id === INTERNAL_LAB_ID) throw new AppError(409, 'builtin_lab', 'The Internal lab cannot be edited')
-    const body = request.body as { name?: string; logo?: string }
-    const [updated] = await db.update(labs).set({ name: body.name?.trim(), logo: body.logo?.trim(), updatedAt: new Date() }).where(eq(labs.id, id)).returning()
+    const body = z.object({
+      name: z.string().trim().min(1).max(120).optional(),
+      logo: z.string().trim().min(1).max(120).optional(),
+      customIconId: z.uuid().nullable().optional(),
+    }).parse(request.body)
+    if (body.customIconId) await requireCatalogIcon(body.customIconId)
+    const [updated] = await db.update(labs).set({ ...body, updatedAt: new Date() }).where(eq(labs.id, id)).returning()
     if (!updated) throw notFound('Lab')
     return updated
   })
@@ -436,6 +452,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     if (input.id === UNKNOWN_MODEL_ID) throw new AppError(409, 'reserved_model', 'This model ID is reserved by Pulpo')
     validateDefaultParameters(input.defaultParameters, input.allowedParameters)
     await validateFallback(input.id, input.fallbackModelId)
+    if (input.customIconId) await requireCatalogIcon(input.customIconId)
     await validatePresets(input.id, raw.presets, input.allowedParameters)
     const pricingId = newId()
     const labId = input.labId ?? INTERNAL_LAB_ID
@@ -452,6 +469,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         enabled: input.enabled,
         visible: input.visible,
         logo: input.logo,
+        customIconId: input.customIconId,
         systemPrompt: input.systemPrompt,
         agentEnabled: input.agentEnabled,
         agentInstructions: input.agentInstructions,
@@ -499,6 +517,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const { id } = request.params as { id: string }
     if (id === UNKNOWN_MODEL_ID) throw notFound('Model')
     const body = request.body as Record<string, unknown>
+    if (body.customIconId !== undefined && body.customIconId !== null) {
+      await requireCatalogIcon(z.uuid().parse(body.customIconId))
+    }
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
@@ -527,6 +548,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       enabled: typeof body.enabled === 'boolean' ? body.enabled : undefined,
       visible: typeof body.visible === 'boolean' ? body.visible : undefined,
       logo: typeof body.logo === 'string' ? body.logo : body.logo === null ? null : undefined,
+      customIconId: typeof body.customIconId === 'string' ? body.customIconId : body.customIconId === null ? null : undefined,
       systemPrompt: typeof body.systemPrompt === 'string' ? body.systemPrompt : undefined,
       agentEnabled: typeof body.agentEnabled === 'boolean' ? body.agentEnabled : undefined,
       agentInstructions: typeof body.agentInstructions === 'string' ? body.agentInstructions : undefined,

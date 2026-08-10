@@ -10,6 +10,7 @@ pulpo auth 2fa status
 pulpo auth 2fa setup
 pulpo auth 2fa confirm
 pulpo settings export --output pulpo-settings.json
+pulpo icon upload ./acme.png --name Acme --mode monochrome
 ```
 
 Use `pulpo help` or `pulpo <command> --help` for the complete command reference.
@@ -21,7 +22,7 @@ canonical [Lucide](https://lucide.dev/icons/) name. Discover available names wit
 sent. Add `--json` for stable `{ "name": "..." }` rows in scripts.
 
 The major command groups are `context`, `auth`, `token`, `instance`, `settings`,
-`provider`, `lab`, `model`, `user`, `usage`, `audit`, `workspace`, `banner`,
+`provider`, `lab`, `icon`, `model`, `user`, `usage`, `audit`, `workspace`, `banner`,
 `job`, `export`, and `backup`. There is intentionally no restore command.
 
 Human-readable tables are the default. `--json` reserves stdout for stable JSON;

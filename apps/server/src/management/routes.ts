@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
+import { z } from 'zod'
 import {
   createManagementTokenSchema,
   managementAccountSettingsDocumentSchema,
@@ -20,6 +21,9 @@ import { createRedis } from '../redis.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { authenticateManagementToken, requireInteractiveSession, requireManagementScope } from './auth.js'
 import { applyManagementSettings, loadManagementSettings, planManagementSettings } from './settings.js'
+import { readCatalogIconUpload } from '../catalog/icon-routes.js'
+import { createCatalogIcon, deleteCatalogIcon, listCatalogIcons, updateCatalogIcon } from '../catalog/icon-service.js'
+import { getBlobStore } from '../storage/index.js'
 
 function serializeToken(row: typeof managementTokens.$inferSelect) {
   return {
@@ -98,7 +102,7 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
           workspaceControllerConfigured: Boolean(config.WORKSPACE_CONTROLLER_URL && config.WORKSPACE_CONTROLLER_TOKEN),
         },
         capabilities: [
-          'settings', 'managementTokens', 'catalog', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
+          'settings', 'managementTokens', 'catalog', 'catalogIcons', 'users', 'usage', 'audit', 'workspaces', 'banners', 'exports', 'backups', 'operations', 'twoFactor',
         ],
       }
     })
@@ -285,6 +289,36 @@ export async function registerManagementRoutes(app: FastifyInstance): Promise<vo
         }
       }
       return { healthy: database && redisHealthy && (!controller.configured || controller.healthy), database, redis: redisHealthy, controller }
+    })
+
+    management.get('/api/management/v1/catalog-icons', async (request) => {
+      requireManagementScope(request, 'catalog:read', { admin: true })
+      return { data: await listCatalogIcons() }
+    })
+
+    management.post('/api/management/v1/catalog-icons', async (request, reply) => {
+      const admin = requireManagementScope(request, 'catalog:write', { admin: true })
+      const created = await createCatalogIcon({ actorUserId: admin.id, ...await readCatalogIconUpload(request) })
+      reply.code(201)
+      return created
+    })
+
+    management.patch('/api/management/v1/catalog-icons/:id', async (request) => {
+      const admin = requireManagementScope(request, 'catalog:write', { admin: true })
+      const { id } = z.object({ id: z.uuid() }).parse(request.params)
+      return updateCatalogIcon(id, admin.id, request.body)
+    })
+
+    management.delete('/api/management/v1/catalog-icons/:id', async (request, reply) => {
+      const admin = requireManagementScope(request, 'catalog:write', { admin: true })
+      const { id } = z.object({ id: z.uuid() }).parse(request.params)
+      const icon = await deleteCatalogIcon(id, admin.id)
+      await Promise.all([
+        getBlobStore().delete(icon.originalObjectKey).catch((cause) => request.log.warn({ err: cause, iconId: id }, 'Catalog icon cleanup failed')),
+        getBlobStore().delete(icon.monochromeLightObjectKey).catch((cause) => request.log.warn({ err: cause, iconId: id }, 'Catalog icon cleanup failed')),
+        getBlobStore().delete(icon.monochromeDarkObjectKey).catch((cause) => request.log.warn({ err: cause, iconId: id }, 'Catalog icon cleanup failed')),
+      ])
+      reply.code(204).send()
     })
 
     management.post('/api/management/v1/users/:id/reset-link', async (request, reply) => {

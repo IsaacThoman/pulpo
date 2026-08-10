@@ -409,6 +409,16 @@ export function mergeResponseSnapshots(current: ResponseSnapshot, incoming: Resp
   return incoming
 }
 
+export const catalogIconModeSchema = z.enum(['original', 'monochrome'])
+export const catalogIconReferenceSchema = z.object({
+  id: idSchema,
+  mode: catalogIconModeSchema,
+  lightUrl: z.string().startsWith('/api/catalog-icons/'),
+  darkUrl: z.string().startsWith('/api/catalog-icons/'),
+})
+export type CatalogIconMode = z.infer<typeof catalogIconModeSchema>
+export type CatalogIconReference = z.infer<typeof catalogIconReferenceSchema>
+
 export const modelSchema = z.object({
   id: z.string().min(1).max(120),
   upstreamModelId: z.string().min(1).max(200),
@@ -417,6 +427,8 @@ export const modelSchema = z.object({
   enabled: z.boolean(),
   visible: z.boolean(),
   logo: z.string().nullable(),
+  customIconId: idSchema.nullable().optional(),
+  customIcon: catalogIconReferenceSchema.nullable().optional(),
   executionMode: executionModeSchema,
   contextWindow: z.number().int().positive(),
   maxOutputTokens: z.number().int().positive(),
@@ -522,6 +534,7 @@ export const createModelSchema = z.object({
   enabled: z.boolean().default(true),
   visible: z.boolean().default(true),
   logo: z.string().max(120).nullable().default(null),
+  customIconId: idSchema.nullable().default(null),
   systemPrompt: z.string().max(100_000).default(''),
   agentEnabled: z.boolean().default(false),
   agentInstructions: z.string().max(100_000).default(''),

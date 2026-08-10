@@ -5,6 +5,7 @@ import {
   chatSummarySchema,
   CHAT_PRESET_ICON_NAMES,
   chatPresetsSchema,
+  catalogIconReferenceSchema,
   createModelSchema,
   createChatResponseSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
@@ -106,6 +107,16 @@ describe('shared contracts', () => {
     expect(policy.safeParse({ compactionThresholdTokens: 1_999 }).success).toBe(false)
     expect(policy.safeParse({ agentCompactionThresholdTokens: 1_000_001 }).success).toBe(false)
     expect(policy.safeParse({ compactionRetainedTurns: 33 }).success).toBe(false)
+  })
+
+  it('validates additive custom catalog icon references', () => {
+    const icon = {
+      id: '00000000-0000-7000-8000-000000000010', mode: 'monochrome',
+      lightUrl: '/api/catalog-icons/00000000-0000-7000-8000-000000000010/monochrome-light.png',
+      darkUrl: '/api/catalog-icons/00000000-0000-7000-8000-000000000010/monochrome-dark.png',
+    }
+    expect(catalogIconReferenceSchema.parse(icon)).toEqual(icon)
+    expect(catalogIconReferenceSchema.safeParse({ ...icon, lightUrl: 'https://example.com/icon.png' }).success).toBe(false)
   })
 
   it('rejects response events without a positive sequence', () => {

@@ -3,12 +3,13 @@ import { gzipSync, gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, backupJobs } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { redis } from '../redis.js'
 
 const TABLES = [
-  'labs', 'provider_connections', 'users', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
+  'users', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
+  'catalog_icons', 'labs', 'provider_connections',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories', 'api_keys',
   'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
@@ -18,6 +19,10 @@ const TABLES = [
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
+const checksumMatches = (value: Uint8Array, expected: string) => {
+  const hash = createHash('sha256').update(value)
+  return [hash.copy().digest('hex'), hash.copy().digest('base64url'), hash.digest('base64')].includes(expected)
+}
 
 async function tarBytes(entries: Array<{ name: string; body: Uint8Array }>): Promise<Uint8Array> {
   const pack = tar.pack(); const chunks: Buffer[] = []
@@ -45,7 +50,16 @@ export async function createFullBackup(jobId: string): Promise<void> {
       database[table] = [...await db.execute(sql.raw(`select * from ${table}`))] as unknown[]
       await db.update(backupJobs).set({ progress: Math.round(((index + 1) / TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
-    const blobRows = await db.select({ objectKey: attachments.objectKey, checksum: attachments.checksum }).from(attachments).where(eq(attachments.status, 'ready'))
+    const attachmentBlobRows = await db.select({ objectKey: attachments.objectKey, checksum: attachments.checksum }).from(attachments).where(eq(attachments.status, 'ready'))
+    const iconRows = await db.select().from(catalogIcons)
+    const blobRows = [
+      ...attachmentBlobRows,
+      ...iconRows.flatMap((icon) => [
+        { objectKey: icon.originalObjectKey, checksum: icon.originalChecksum },
+        { objectKey: icon.monochromeLightObjectKey, checksum: icon.monochromeLightChecksum },
+        { objectKey: icon.monochromeDarkObjectKey, checksum: icon.monochromeDarkChecksum },
+      ]),
+    ]
     const entries: Array<{ name: string; body: Uint8Array }> = []
     const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
     for (const [index, blob] of blobRows.entries()) {
@@ -79,18 +93,33 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     // Backups created before management tokens were introduced remain valid;
     // they restore with no automation credentials.
     database.management_tokens ??= []
+    database.catalog_icons ??= []
     // Older backups predate optional per-user two-factor authentication.
     database.user_totp_credentials ??= []
     database.two_factor_recovery_codes ??= []
     for (const table of TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
     for (const [index, blob] of manifest.blobs.entries()) {
-      const body = files.get(blob.entry); if (!body || checksum(body) !== blob.checksum) throw new Error(`Attachment checksum failed: ${blob.objectKey}`)
+      const body = files.get(blob.entry); if (!body || !checksumMatches(body, blob.checksum)) throw new Error(`Blob checksum failed: ${blob.objectKey}`)
       const staged = `restored/${jobId}/${Buffer.from(blob.objectKey).toString('base64url')}`
       await getBlobStore().put(staged, body, { contentType: 'application/octet-stream', contentLength: body.byteLength }); stagedKeys.push(staged)
       for (const attachment of database.attachments ?? []) if (attachment.object_key === blob.objectKey) attachment.object_key = staged
+      for (const icon of database.catalog_icons ?? []) {
+        for (const field of ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key']) {
+          if (icon[field] === blob.objectKey) icon[field] = staged
+        }
+      }
       await db.update(backupJobs).set({ progress: 5 + Math.round(((index + 1) / Math.max(manifest.blobs.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
-    const oldBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
+    const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
+    const oldIconRows = await db.select().from(catalogIcons)
+    const oldBlobs = [
+      ...oldAttachmentBlobs,
+      ...oldIconRows.flatMap((icon) => [
+        { key: icon.originalObjectKey },
+        { key: icon.monochromeLightObjectKey },
+        { key: icon.monochromeDarkObjectKey },
+      ]),
+    ]
     await db.transaction(async (tx) => {
       await tx.execute(sql.raw(`truncate table ${[...TABLES].reverse().join(', ')} restart identity cascade`))
       for (const [index, table] of TABLES.entries()) {
