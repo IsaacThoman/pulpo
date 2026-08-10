@@ -128,6 +128,7 @@ export interface MonitorUser {
   showOnLeaderboard: boolean
   barColor: string
   lastActiveAt?: number | null
+  twoFactorEnabled?: boolean
   usageCalls?: number
   usageTokens?: number
   usageCost?: number
