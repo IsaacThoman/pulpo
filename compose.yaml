@@ -125,47 +125,43 @@ services:
 
   seaweed-master:
     image: chrislusf/seaweedfs:4.29
-    command: ["master", "-ip=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}", "-mdir=/data"]
-    networks:
-      default:
-        # Coolify renames preview services but gives every preview its own
-        # network. Preserve the stable peer hostname inside that network.
-        aliases:
-          - seaweed-master
+    # Coolify rewrites preview service names after parsing Compose. Resolve its
+    # injected runtime service names only after the container starts.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh master -ip="$${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}" -mdir=/data'
     volumes:
       - seaweed_master_data:/data
     restart: unless-stopped
 
   seaweed-volume:
     image: chrislusf/seaweedfs:4.29
-    command: ["volume", "-mserver=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333", "-ip=${SERVICE_NAME_SEAWEED_VOLUME:-seaweed-volume}", "-dir=/data", "-max=0"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh volume -mserver="$${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333" -ip="$${SERVICE_NAME_SEAWEED_VOLUME:-seaweed-volume}" -dir=/data -max=0'
     depends_on:
       - seaweed-master
-    networks:
-      default:
-        aliases:
-          - seaweed-volume
     volumes:
       - seaweed_volume_data:/data
     restart: unless-stopped
 
   seaweed-filer:
     image: chrislusf/seaweedfs:4.29
-    command: ["filer", "-master=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333", "-ip=${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh filer -master="$${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333" -ip="$${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}"'
     depends_on:
       - seaweed-master
       - seaweed-volume
-    networks:
-      default:
-        aliases:
-          - seaweed-filer
     volumes:
       - seaweed_filer_data:/data
     restart: unless-stopped
 
   seaweed-s3:
     image: chrislusf/seaweedfs:4.29
-    command: ["s3", "-filer=${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}:8888", "-ip.bind=0.0.0.0"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh s3 -filer="$${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}:8888" -ip.bind=0.0.0.0'
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
@@ -174,10 +170,6 @@ services:
       - "8333"
     depends_on:
       - seaweed-filer
-    networks:
-      default:
-        aliases:
-          - seaweed-s3
     restart: unless-stopped
 
 volumes:
