@@ -1,6 +1,6 @@
 {
-  "id": "09121ce1-fc72-4f26-807a-cd659fc35ef4",
-  "prevId": "680f3784-0162-4cae-aa67-4e5f7c06ef1d",
+  "id": "4256c176-8437-43d2-8f3a-3f0dcadcf793",
+  "prevId": "09121ce1-fc72-4f26-807a-cd659fc35ef4",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5652,7 +5652,7 @@
           "name": "username",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "profile_color": {
           "name": "profile_color",
@@ -5715,7 +5715,6 @@
             }
           ],
           "isUnique": true,
-          "where": "\"users\".\"username\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

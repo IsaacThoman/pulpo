@@ -83,10 +83,14 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
       const [existing] = await tx.select({ id: users.id }).from(users)
         .where(sql`lower(${users.email}) = lower(${input.email})`).limit(1)
       if (existing) throw new AppError(409, 'email_taken', 'An account with this email already exists')
+      const [existingUsername] = await tx.select({ id: users.id }).from(users)
+        .where(sql`lower(${users.username}) = ${input.username}`).limit(1)
+      if (existingUsername) throw new AppError(409, 'username_taken', 'That username is already taken', 'invalid_request_error', 'username')
       await tx.insert(users).values({
         id: userId,
         email: input.email,
         name: input.name,
+        username: input.username,
         role: auth.defaultSignupRole,
         balanceMicros: auth.defaultBalanceMicros,
         storageLimitBytes: auth.defaultStorageLimitBytes,

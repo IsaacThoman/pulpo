@@ -25,7 +25,7 @@ interface SessionState {
   hydrate: () => Promise<void>
   discover: (url?: string) => Promise<MobileConfig>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<'authenticated' | 'two-factor-required'>
-  signup: (name: string, email: string, password: string) => Promise<void>
+  signup: (name: string, username: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshSession: () => Promise<void>
   switchInstance: (url: string) => Promise<MobileConfig>
@@ -189,9 +189,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return 'authenticated'
   },
 
-  signup: async (name, email, password) => {
+  signup: async (name, username, email, password) => {
     configureApi({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
-    const result = await mobileApi.signup(name.trim(), email.trim(), password, await deviceLabel())
+    const result = await mobileApi.signup(name.trim(), username.trim().toLowerCase(), email.trim(), password, await deviceLabel())
     await persistSession(get().instanceUrl, result.user, result.session.token)
     configureApi({ instanceUrl: get().instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })

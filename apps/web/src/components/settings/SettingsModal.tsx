@@ -42,6 +42,7 @@ import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { PasswordSettings } from './PasswordSettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
+import { UsernameSettings } from './UsernameSettings'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -179,7 +180,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [trashRetentionError, setTrashRetentionError] = useState('')
   const [trashNow, setTrashNow] = useState(() => Date.now())
   const [profileName, setProfileName] = useState(user?.name ?? '')
-  const [profileUsername, setProfileUsername] = useState(user?.username ?? '')
   const [profileColor, setProfileColor] = useState<string | null>(user?.profileColor ?? null)
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
@@ -200,7 +200,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   useEffect(() => {
     if (!open || !user) return
     setProfileName(user.name)
-    setProfileUsername(user.username ?? '')
     setProfileColor(user.profileColor ?? null)
     setProfileError('')
   }, [open, user])
@@ -211,7 +210,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const profileDirty = Boolean(user) && (
     profileName.trim() !== user!.name
-    || (profileUsername.trim().toLowerCase() || null) !== user!.username
     || profileColor !== user!.profileColor
   )
 
@@ -222,7 +220,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     try {
       const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me', {
         method: 'PATCH',
-        body: { name: profileName, username: profileUsername.trim() ? profileUsername.trim().toLowerCase() : null, profileColor },
+        body: { name: profileName, profileColor },
       })
       replaceUser(result.user)
       setProfileMessage('Profile saved.')
@@ -516,7 +514,10 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <div className="flex flex-wrap items-center gap-4 py-3">
                     <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
                     <div>
-                      <div className="font-medium">{user?.name}</div>
+                      <div className="flex flex-wrap items-baseline gap-x-2">
+                        <span className="font-medium">{user?.name}</span>
+                        {user?.username && <span className="text-sm text-muted-foreground">@{user.username}</span>}
+                      </div>
                       <div className="text-sm text-muted-foreground">{user?.email} · {user?.role}</div>
                     </div>
                     <div className="flex-1" />
@@ -535,7 +536,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     <div><div className="text-sm font-medium">Profile picture preview</div><p className="mt-1 text-xs text-muted-foreground">Pulpo will center-crop and resize this image.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div></div>
                   </div>}
                   <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
-                  <Row label="Username" hint="Optional. Friends use this exact username to find you."><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span><Input value={profileUsername} onChange={(event) => { setProfileMessage(''); setProfileUsername(event.target.value.replace(/^@/, '').toLowerCase()) }} maxLength={30} className="w-52 pl-7" placeholder="username" /></div></Row>
+                  <UsernameSettings />
                   <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2"><Button size="sm" variant={profileColor === null ? 'secondary' : 'outline'} onClick={() => { setProfileMessage(''); setProfileColor(null) }}>Automatic</Button>{PROFILE_COLORS.map((color) => <button key={color} type="button" aria-label={`Profile color ${color}`} className={cn('size-5 rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')} style={{ backgroundColor: color }} onClick={() => { setProfileMessage(''); setProfileColor(color) }} />)}</div></Row>
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}

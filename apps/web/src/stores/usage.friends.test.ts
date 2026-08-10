@@ -51,7 +51,7 @@ describe('friends usage store', () => {
     useUsage.setState({
       currentUserId: 'admin-view',
       users: [{
-        id: 'unrelated-user', name: 'Unrelated', username: null, avatarUrl: null, profileColor: null,
+        id: 'unrelated-user', name: 'Unrelated', username: 'unrelated', avatarUrl: null, profileColor: null,
         email: 'private@example.com', role: 'user', balance: 100, joinedAt: 0, blocked: false,
       }],
     })

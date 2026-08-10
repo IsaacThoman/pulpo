@@ -59,7 +59,7 @@ function user(id: string, name = id): User {
     id,
     email: `${id}@pulpo.test`,
     name,
-    username: null,
+    username: `pulpo_${id.replace(/[^a-z0-9]/gi, '_').toLowerCase()}`,
     avatarUrl: null,
     profileColor: null,
     role: 'user',

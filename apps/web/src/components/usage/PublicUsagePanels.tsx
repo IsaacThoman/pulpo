@@ -8,7 +8,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 export interface PublicUsageRecord {
   id: string
   createdAt: string
-  participant: { id: string; displayName: string; username: string | null; avatarUrl: string | null; profileColor: string | null }
+  participant: { id: string; displayName: string; username: string; avatarUrl: string | null; profileColor: string | null }
   model: { id: string; name: string; logo: string | null }
   inputTokens: number
   outputTokens: number

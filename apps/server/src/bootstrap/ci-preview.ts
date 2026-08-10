@@ -222,6 +222,7 @@ function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrap
         id: CI_PREVIEW_ADMIN_ID,
         email: seed.adminEmail,
         name: 'Preview Admin',
+        username: 'preview_admin',
         role: 'admin',
         balanceMicros: 100_000_000,
         storageLimitBytes: 5_000 * 1024 * 1024,

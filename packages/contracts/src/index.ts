@@ -19,7 +19,7 @@ export const userSchema = z.object({
   id: idSchema,
   email: z.email(),
   name: z.string().min(1).max(120),
-  username: usernameSchema.nullable(),
+  username: usernameSchema,
   avatarUrl: z.string().nullable(),
   profileColor: profileColorSchema.nullable(),
   role: roleSchema,
@@ -39,6 +39,7 @@ export const loginInputSchema = z.object({
 
 export const signupInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  username: usernameSchema,
   email: z.email(),
   password: z.string().min(8).max(1024),
 })
@@ -128,14 +129,14 @@ export type TwoFactorRecoveryCodes = z.infer<typeof twoFactorRecoveryCodesSchema
 
 export const updateProfileInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  username: usernameSchema.nullable().optional(),
+  username: usernameSchema.optional(),
   profileColor: profileColorSchema.nullable().optional(),
 }).refine((value) => Object.keys(value).length > 0, 'At least one profile field is required')
 
 export const friendProfileSchema = z.object({
   id: idSchema,
   displayName: z.string().min(1).max(120),
-  username: usernameSchema.nullable(),
+  username: usernameSchema,
   avatarUrl: z.string().nullable(),
   profileColor: profileColorSchema.nullable(),
 })
@@ -823,7 +824,7 @@ export const managementAccountSettingsSchema = z.object({
   showReasoning: z.boolean().default(true),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   customInstructions: z.string().max(100_000).default(''),
-  username: usernameSchema.nullable().default(null),
+  username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
   memoryEnabled: z.boolean().default(false),
   agentModeEnabled: z.boolean().default(true),

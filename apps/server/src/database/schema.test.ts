@@ -48,9 +48,10 @@ describe('user-owned operational records', () => {
     expect(blockConfig.checks.map((constraint) => constraint.name)).toContain('user_blocks_not_self_check')
   })
 
-  it('uses a case-insensitive partial unique index for optional usernames', () => {
+  it('requires usernames and uses a case-insensitive unique index', () => {
+    expect(getTableConfig(users).columns.find((column) => column.name === 'username')?.notNull).toBe(true)
     const usernameIndex = getTableConfig(users).indexes.find((item) => item.config.name === 'users_username_unique')
     expect(usernameIndex?.config.unique).toBe(true)
-    expect(usernameIndex?.config.where).toBeDefined()
+    expect(usernameIndex?.config.where).toBeUndefined()
   })
 })

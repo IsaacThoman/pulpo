@@ -69,7 +69,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const rawAccount = preferencesWithModelDefaults(preferenceRow?.values as Record<string, unknown> | undefined)
   const account = managementAccountSettingsSchema.parse({
     ...rawAccount,
-    username: profile?.username ?? null,
+    username: profile?.username,
     profileColor: profile?.profileColor ?? null,
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))

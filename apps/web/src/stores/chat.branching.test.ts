@@ -123,7 +123,7 @@ beforeEach(() => {
       id: userId,
       name: 'Test User',
       email: 'test@example.com',
-      username: null,
+      username: 'test_user',
       avatarUrl: null,
       profileColor: null,
       role: 'user',

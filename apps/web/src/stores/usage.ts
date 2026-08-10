@@ -5,7 +5,7 @@ import { useAuth } from '@/stores/auth'
 
 interface AdminUserRow {
   user: {
-    id: string; name: string; username: string | null; avatarUrl?: string | null; profileColor: string | null; email: string
+    id: string; name: string; username: string; avatarUrl?: string | null; profileColor: string | null; email: string
     role: 'pending' | 'user' | 'admin'; balanceMicros: number; createdAt: string
     storageLimitBytes: number
     blocked: boolean
@@ -65,7 +65,7 @@ export const useUsage = create<UsageState>()((set, get) => ({
     set({ users: [], currentUserId })
     const days = range === '24h' ? '1' : range === '7d' ? '7' : range === '30d' ? '30' : range === '90d' ? '90' : 'all'
     const result = await apiRequest<{ data: Array<{
-      userId: string; displayName: string; username: string | null; avatarUrl: string | null; profileColor: string | null; balanceMicros: number
+      userId: string; displayName: string; username: string; avatarUrl: string | null; profileColor: string | null; balanceMicros: number
       calls: number; tokens: number; costMicros: number
     }> }>(`/api/usage/leaderboard?days=${days}`)
     set((state) => ({ users: result.data.map((row) => ({

@@ -59,7 +59,7 @@ beforeEach(() => {
   requests.splice(0)
   queryClient.clear()
   useAuth.setState({ user: {
-    id: userId, name: 'Test', email: 'test@example.com', username: null, avatarUrl: null, profileColor: null, role: 'user', initials: 'T',
+    id: userId, name: 'Test', email: 'test@example.com', username: 'test_user', avatarUrl: null, profileColor: null, role: 'user', initials: 'T',
     balanceMicros: 1_000, storageLimitBytes: 1_000, blocked: false, stateRevision: 0, createdAt,
   } })
   useChat.setState({

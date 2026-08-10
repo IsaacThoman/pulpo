@@ -14,6 +14,7 @@ export function SignupPage() {
   const navigate = useNavigate()
 
   const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -48,7 +49,7 @@ export function SignupPage() {
       return
     }
     setLoading(true)
-    const res = await signup(name, email, password)
+    const res = await signup(name, username, email, password)
     setLoading(false)
     if (!res.ok) {
       setError(res.error)
@@ -90,6 +91,26 @@ export function SignupPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="username">Username</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+            <Input
+              id="username"
+              autoComplete="username"
+              placeholder="jon_arbuckle"
+              value={username}
+              onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())}
+              className="pl-7"
+              minLength={3}
+              maxLength={30}
+              pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]"
+              title="Use 3–30 letters, numbers, or underscores; begin and end with a letter or number"
+              required
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">Friends will use this exact username to find you.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>

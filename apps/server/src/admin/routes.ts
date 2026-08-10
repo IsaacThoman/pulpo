@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
@@ -21,7 +22,7 @@ const patchUserSchema = z.object({
   blocked: z.boolean().optional(),
   balanceMicros: z.number().int().nonnegative().optional(),
   storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-  username: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/).nullable().optional(),
+  username: usernameSchema.optional(),
   profileColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 })
 
@@ -29,7 +30,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/admin/users', async (request, reply) => {
     const admin = requireAdmin(request)
     const input = z.object({
-      name: z.string().trim().min(1).max(120), email: z.email(), password: z.string().min(8).max(1_000),
+      name: z.string().trim().min(1).max(120), username: usernameSchema, email: z.email(), password: z.string().min(8).max(1_000),
       role: z.enum(['pending', 'user', 'admin']).default('user'), balanceMicros: z.number().int().nonnegative().optional(),
       storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     }).parse(request.body)
@@ -38,7 +39,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
       const balanceMicros = input.balanceMicros ?? parseAuthSettings(setting?.value).defaultBalanceMicros
       const storageLimitBytes = input.storageLimitBytes ?? parseAuthSettings(setting?.value).defaultStorageLimitBytes
-      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
+      await tx.insert(users).values({ id, name: input.name, username: input.username, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
     })

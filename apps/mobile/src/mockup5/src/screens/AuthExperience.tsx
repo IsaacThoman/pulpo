@@ -96,6 +96,7 @@ export function AuthExperience() {
   };
   const [page, setPage] = useState<AuthPage>('login');
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -136,11 +137,12 @@ export function AuthExperience() {
     void run(async () => { await login(email.trim(), password, twoFactorCode.trim()); });
   };
   const submitSignup = () => {
-    if (name.trim().length < 2) return setError('Enter your full name.');
+    if (name.trim().length < 2) return setError('Enter your display name.');
+    if (!/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/.test(username)) return setError('Use 3–30 letters, numbers, or underscores for your username.');
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid email address.');
     if (password.length < 8) return setError('Use at least eight characters.');
     if (password !== confirmPassword) return setError('Passwords do not match.');
-    void run(() => signup(name.trim(), email.trim(), password));
+    void run(() => signup(name.trim(), username, email.trim(), password));
   };
   const submitForgotPassword = () => {
     if (!/^\S+@\S+\.\S+$/.test(email)) return setError('Enter a valid email address.');
@@ -199,9 +201,10 @@ export function AuthExperience() {
   </AuthShell>;
 
   if (page === 'signup') {
-    const valid = Boolean(name.trim() && email.trim() && password.length >= 8);
+    const valid = Boolean(name.trim() && /^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/.test(username) && email.trim() && password.length >= 8);
     return <AuthShell colors={colors} title="Create an account" subtitle="Join this Pulpo instance. Your administrator may need to approve new accounts.">
-      <AuthField colors={colors} icon="person" label="Name" value={name} onChangeText={setName} autoComplete="name" />
+      <AuthField colors={colors} icon="person" label="Display name" value={name} onChangeText={setName} autoComplete="name" />
+      <AuthField colors={colors} icon="at" label="Username" value={username} onChangeText={(value) => setUsername(value.replace(/^@/, '').toLowerCase())} autoComplete="username" maxLength={30} />
       <AuthField colors={colors} icon="envelope" label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" />
       <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="new-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitSignup} />
       <AuthField colors={colors} icon="lock" label="Confirm password" invalid={Boolean(confirmPassword && password !== confirmPassword)} value={confirmPassword} onChangeText={setConfirmPassword} autoComplete="new-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitSignup} />

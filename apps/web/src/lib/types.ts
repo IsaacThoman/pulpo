@@ -117,7 +117,7 @@ export interface UsageRecord {
 export interface MonitorUser {
   id: string
   name: string
-  username: string | null
+  username: string
   avatarUrl: string | null
   profileColor: string | null
   email: string

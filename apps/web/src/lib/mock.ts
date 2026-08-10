@@ -435,10 +435,10 @@ export function makeMockChats(): { chats: Chat[]; folders: Folder[] } {
 export const MONITOR_USERS: MonitorUser[] = [
   { id: 'u-isaac', name: 'Isaac Thoman', username: 'isaac', avatarUrl: null, profileColor: null, email: 'isaac@pulpo.dev', role: 'admin', balance: 84.12, joinedAt: Date.now() - 340 * 86_400_000, blocked: false },
   { id: 'u-maya', name: 'Maya Chen', username: 'myc', avatarUrl: null, profileColor: '#60a5fa', email: 'maya@pulpo.dev', role: 'user', balance: 31.77, joinedAt: Date.now() - 290 * 86_400_000, blocked: false },
-  { id: 'u-jonas', name: 'Jonas Weber', username: null, avatarUrl: null, profileColor: '#34d399', email: 'jonas@pulpo.dev', role: 'user', balance: 12.04, joinedAt: Date.now() - 210 * 86_400_000, blocked: false },
+  { id: 'u-jonas', name: 'Jonas Weber', username: 'jonas_weber', avatarUrl: null, profileColor: '#34d399', email: 'jonas@pulpo.dev', role: 'user', balance: 12.04, joinedAt: Date.now() - 210 * 86_400_000, blocked: false },
   { id: 'u-priya', name: 'Priya Nair', username: 'pri', avatarUrl: null, profileColor: '#f472b6', email: 'priya@pulpo.dev', role: 'user', balance: 55.9, joinedAt: Date.now() - 180 * 86_400_000, blocked: false },
-  { id: 'u-tom', name: 'Tom Alvarez', username: null, avatarUrl: null, profileColor: '#fbbf24', email: 'tom@pulpo.dev', role: 'user', balance: 0.42, joinedAt: Date.now() - 96 * 86_400_000, blocked: false },
-  { id: 'u-elena', name: 'Elena Rossi', username: null, avatarUrl: null, profileColor: '#a78bfa', email: 'elena@pulpo.dev', role: 'user', balance: 23.31, joinedAt: Date.now() - 64 * 86_400_000, blocked: true },
+  { id: 'u-tom', name: 'Tom Alvarez', username: 'tom_alvarez', avatarUrl: null, profileColor: '#fbbf24', email: 'tom@pulpo.dev', role: 'user', balance: 0.42, joinedAt: Date.now() - 96 * 86_400_000, blocked: false },
+  { id: 'u-elena', name: 'Elena Rossi', username: 'elena_rossi', avatarUrl: null, profileColor: '#a78bfa', email: 'elena@pulpo.dev', role: 'user', balance: 23.31, joinedAt: Date.now() - 64 * 86_400_000, blocked: true },
   { id: 'u-sam', name: 'Sam Okafor', username: 'sammo', avatarUrl: null, profileColor: '#fb923c', email: 'sam@pulpo.dev', role: 'user', balance: 47.65, joinedAt: Date.now() - 30 * 86_400_000, blocked: false },
 ]
 

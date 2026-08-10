@@ -48,6 +48,7 @@ export function AdminUsersPage() {
   const filtered = users.filter(
     (u) =>
       u.name.toLowerCase().includes(query.toLowerCase()) ||
+      u.username.toLowerCase().includes(query.replace(/^@/, '').toLowerCase()) ||
       u.email.toLowerCase().includes(query.toLowerCase())
   )
   const adminTwoFactorEnabled = users.find((user) => user.id === currentUserId)?.twoFactorEnabled ?? false
@@ -126,7 +127,7 @@ export function AdminUsersPage() {
                   <td className="py-2.5">
                     <span className="flex items-center gap-2">
                       <ProfileAvatar name={u.name} avatarUrl={u.avatarUrl} className="size-6" fallbackClassName="text-[9px]" />
-                      {u.name}
+                      <span>{u.name}<span className="ml-1.5 text-xs text-muted-foreground">@{u.username}</span></span>
                     </span>
                   </td>
                   <td className="py-2.5 text-muted-foreground">{u.email}</td>
@@ -188,7 +189,7 @@ export function AdminUsersPage() {
             event.preventDefault()
             const values = new FormData(event.currentTarget)
             void apiRequest('/api/admin/users', { method: 'POST', body: {
-              role: values.get('role'), name: values.get('name'), email: values.get('email'), password: values.get('password'),
+              role: values.get('role'), name: values.get('name'), username: values.get('username'), email: values.get('email'), password: values.get('password'),
             }}).then(() => { setAddOpen(false); return loadAdmin() })
           }} className="contents">
           <DialogHeader>
@@ -211,6 +212,10 @@ export function AdminUsersPage() {
             <div className="space-y-1.5">
               <Label>Display name</Label>
               <Input name="name" placeholder="Display name" required />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Username</Label>
+              <Input name="username" placeholder="username" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>
@@ -290,7 +295,7 @@ export function AdminUsersPage() {
             const values = new FormData(event.currentTarget)
             const password = String(values.get('password') ?? '')
             void patchUser(editUser.id, {
-              name: values.get('name'), email: values.get('email'), ...(password ? { password } : {}),
+              name: values.get('name'), username: values.get('username'), email: values.get('email'), ...(password ? { password } : {}),
             }).then(() => setEditUser(null))
           }} className="contents">
           <DialogHeader>
@@ -301,6 +306,10 @@ export function AdminUsersPage() {
             <div className="space-y-1.5">
               <Label>Display name</Label>
               <Input name="name" defaultValue={editUser?.name} required />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Username</Label>
+              <Input name="username" defaultValue={editUser?.username} minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>

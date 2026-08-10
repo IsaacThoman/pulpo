@@ -32,7 +32,7 @@ export function PersonalPage() {
   const userId = authUser?.id ?? usageUserId
   const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
-    username: authUser?.username ?? null, avatarUrl: authUser?.avatarUrl ?? null, profileColor: authUser?.profileColor ?? null,
+    username: authUser?.username ?? 'pulpo', avatarUrl: authUser?.avatarUrl ?? null, profileColor: authUser?.profileColor ?? null,
     role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
     joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
   }

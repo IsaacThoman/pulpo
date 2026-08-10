@@ -12,6 +12,7 @@ export function SetupPage() {
   const setup = useAuth((state) => state.setup)
   const navigate = useNavigate()
   const [name, setName] = useState('')
+  const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
@@ -30,7 +31,7 @@ export function SetupPage() {
       return
     }
     setLoading(true)
-    const result = await setup(name, email, password)
+    const result = await setup(name, username, email, password)
     setLoading(false)
     if (!result.ok) {
       setError(result.error)
@@ -55,6 +56,14 @@ export function SetupPage() {
         <div className="space-y-2">
           <Label htmlFor="setup-email">Email</Label>
           <Input id="setup-email" type="email" autoComplete="email" placeholder="jon@pulpo.baby" value={email} onChange={(event) => setEmail(event.target.value)} required />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="setup-username">Username</Label>
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
+            <Input id="setup-username" autoComplete="username" placeholder="ada_lovelace" value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" title="Use 3–30 letters, numbers, or underscores; begin and end with a letter or number" required />
+          </div>
+          <p className="text-xs text-muted-foreground">Friends will use this exact username to find you.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-password">Password</Label>

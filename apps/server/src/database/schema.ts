@@ -43,14 +43,14 @@ export const users = pgTable('users', {
   storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_242_880_000),
   blocked: boolean('blocked').notNull().default(false),
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
-  username: text('username'),
+  username: text('username').notNull(),
   profileColor: text('profile_color'),
   avatarObjectKey: text('avatar_object_key'),
   avatarVersion: integer('avatar_version').notNull().default(0),
   ...timestamps,
 }, (table) => [
   uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
-  uniqueIndex('users_username_unique').on(sql`lower(${table.username})`).where(sql`${table.username} is not null`),
+  uniqueIndex('users_username_unique').on(sql`lower(${table.username})`),
 ])
 
 export const friendships = pgTable('friendships', {

@@ -229,7 +229,7 @@ describe('shared contracts', () => {
       apiVersion: 'pulpo.dev/management/v1',
       kind: 'Settings',
       revision: 'revision-1',
-      account: {},
+      account: { username: 'pulpo_user' },
       instance: {},
     })
     expect(document.account).toMatchObject({ theme: 'system', trashRetention: '30d', favoriteModelIds: [] })
@@ -247,7 +247,7 @@ describe('shared contracts', () => {
       .toMatchObject({ scopes: ['instance:read'], expiresInDays: 90 })
     expect(createManagementTokenSchema.safeParse({ name: 'too long', scopes: ['instance:read'], expiresInDays: 366 }).success).toBe(false)
     expect(managementSettingsDocumentSchema.safeParse({
-      apiVersion: 'pulpo.dev/management/v1', kind: 'Settings', revision: 'revision', account: {},
+      apiVersion: 'pulpo.dev/management/v1', kind: 'Settings', revision: 'revision', account: { username: 'pulpo_user' },
       instance: { webTools: { apiKey: { fromEnv: 'PULPO_KAGI_KEY' } } },
     }).success).toBe(true)
   })
@@ -524,9 +524,12 @@ describe('response snapshot accumulation', () => {
   })
 
   it('normalizes usernames and validates partial profile updates', async () => {
-    const { updateProfileInputSchema, usernameSchema } = await import('./index.js')
+    const { signupInputSchema, updateProfileInputSchema, usernameSchema } = await import('./index.js')
     expect(usernameSchema.parse('  Isaac_2 ')).toBe('isaac_2')
-    expect(updateProfileInputSchema.parse({ username: null })).toEqual({ username: null })
+    expect(signupInputSchema.parse({ name: 'Isaac', username: 'Isaac_2', email: 'isaac@example.com', password: 'password' }).username).toBe('isaac_2')
+    expect(() => signupInputSchema.parse({ name: 'Isaac', email: 'isaac@example.com', password: 'password' })).toThrow()
+    expect(updateProfileInputSchema.parse({ username: 'Isaac_2' })).toEqual({ username: 'isaac_2' })
+    expect(() => updateProfileInputSchema.parse({ username: null })).toThrow()
     expect(updateProfileInputSchema.parse({ profileColor: '#10b981' })).toEqual({ profileColor: '#10b981' })
     expect(() => usernameSchema.parse('_isaac')).toThrow()
     expect(() => usernameSchema.parse('is')).toThrow()

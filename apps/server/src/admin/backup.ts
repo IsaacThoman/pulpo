@@ -6,6 +6,7 @@ import { db } from '../database/client.js'
 import { attachments, backupJobs, catalogIcons, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { redis } from '../redis.js'
+import { fillMissingUsernames } from '../profile/username.js'
 
 const TABLES = [
   'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
@@ -101,8 +102,8 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     database.two_factor_recovery_codes ??= []
     database.friendships ??= []
     database.user_blocks ??= []
+    fillMissingUsernames(database.users ?? [])
     for (const user of database.users ?? []) {
-      user.username ??= null
       user.profile_color ??= null
       user.avatar_object_key ??= null
       user.avatar_version ??= 0
