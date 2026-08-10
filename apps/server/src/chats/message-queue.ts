@@ -22,13 +22,7 @@ async function bumpQueueRevision(userId: string, chatId: string): Promise<void> 
 }
 
 async function validateQueueInput(userId: string, chatId: string, input: CreateQueuedMessageInput): Promise<void> {
-  const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
-    eq(chats.id, chatId),
-    eq(chats.userId, userId),
-    isNull(chats.deletedAt),
-    accessibleChatCondition(),
-  )).limit(1)
-  if (!chat) throw notFound('Chat')
+  await assertAccessibleChat(userId, chatId)
 
   const generation = await resolveResponseGeneration(input.modelId, input.presetSelections)
   const [model] = await db.select({ id: models.id, agentEnabled: models.agentEnabled })
@@ -54,6 +48,16 @@ async function validateQueueInput(userId: string, chatId: string, input: CreateQ
       .from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
     if (!parseAgentSettings(agentRow?.value).enabled) throw new AppError(503, 'agent_unavailable', 'Agent mode is not enabled')
   }
+}
+
+async function assertAccessibleChat(userId: string, chatId: string): Promise<void> {
+  const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
+    eq(chats.id, chatId),
+    eq(chats.userId, userId),
+    isNull(chats.deletedAt),
+    accessibleChatCondition(),
+  )).limit(1)
+  if (!chat) throw notFound('Chat')
 }
 
 export async function listQueuedMessages(chatId: string, userId: string): Promise<QueuedMessage[]> {
@@ -106,6 +110,10 @@ export async function createQueuedMessage(
   const id = newId()
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
+    const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
+      eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
+    )).limit(1)
+    if (!chat) throw notFound('Chat')
     const [positionRow] = await tx.select({ value: max(queuedMessages.position) })
       .from(queuedMessages).where(eq(queuedMessages.chatId, chatId))
     await tx.insert(queuedMessages).values({
@@ -133,6 +141,7 @@ export async function updateQueuedMessage(
   id: string,
   input: UpdateQueuedMessageInput,
 ): Promise<QueuedMessage | null> {
+  await assertAccessibleChat(userId, chatId)
   if (input.action === 'save_edit') {
     await validateQueueInput(userId, chatId, {
       input: input.input,
@@ -144,6 +153,10 @@ export async function updateQueuedMessage(
   }
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
+    const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
+      eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
+    )).limit(1)
+    if (!chat) throw notFound('Chat')
     const [current] = await tx.select().from(queuedMessages).where(and(
       eq(queuedMessages.id, id), eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId),
     )).limit(1)
@@ -180,8 +193,13 @@ export async function updateQueuedMessage(
 }
 
 export async function deleteQueuedMessage(userId: string, chatId: string, id: string): Promise<void> {
+  await assertAccessibleChat(userId, chatId)
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
+    const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
+      eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
+    )).limit(1)
+    if (!chat) throw notFound('Chat')
     const [current] = await tx.select({ status: queuedMessages.status }).from(queuedMessages).where(and(
       eq(queuedMessages.id, id), eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId),
     )).limit(1)

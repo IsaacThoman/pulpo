@@ -10,6 +10,7 @@ import { publishStateChange } from '../responses/events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
+import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -29,6 +30,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       values: {
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
+        automaticChatExpiration: parseAutomaticChatExpiration(values?.automaticChatExpiration),
         nickname: profile?.nickname ?? '',
         leaderboardVisible: profile?.leaderboardVisible ?? false,
         leaderboardColor: profile?.leaderboardColor ?? '#10b981',
@@ -42,6 +44,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     const patch = normalizedPreferencePatch(preferencesSchema.parse(request.body))
     if ('trashRetention' in patch && !trashRetentionValues.includes(patch.trashRetention as typeof trashRetentionValues[number])) {
       throw new AppError(400, 'invalid_trash_retention', 'Choose a valid trash retention period')
+    }
+    if ('automaticChatExpiration' in patch && !automaticChatExpirationValues.includes(patch.automaticChatExpiration as typeof automaticChatExpirationValues[number])) {
+      throw new AppError(400, 'invalid_chat_expiration', 'Choose a valid automatic chat expiration period')
     }
     const nickname = typeof patch.nickname === 'string'
       ? patch.nickname.trim() || null

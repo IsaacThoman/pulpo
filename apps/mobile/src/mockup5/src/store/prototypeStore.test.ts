@@ -24,7 +24,10 @@ import { useRealtimeStore } from '../../../providers/realtimeStore';
 beforeEach(() => {
   usePrototypeStore.setState({ ...createSeedState(), productionNamespace: null, agentAvailable: false });
   useRealtimeStore.getState().setSyncError(null);
-  configureProductionActions({ renameChat: async () => undefined });
+  configureProductionActions({
+    renameChat: async () => undefined,
+    setChatAutoExpiration: async () => undefined,
+  });
 });
 
 describe('prototype store', () => {
@@ -82,6 +85,29 @@ describe('prototype store', () => {
     expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe('Optimistic title');
     await vi.waitFor(() => expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe(original));
     expect(useRealtimeStore.getState().syncError).toBe('Rename rejected');
+    warning.mockRestore();
+  });
+
+  it('optimistically schedules expiration and restores the prior deadline on rejection', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let reject!: (error: Error) => void;
+    const request = new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; });
+    const setChatAutoExpiration = vi.fn(() => request);
+    configureProductionActions({ setChatAutoExpiration });
+    usePrototypeStore.setState((state) => ({
+      preferences: { ...state.preferences, automaticChatExpiration: '24h' },
+      chats: state.chats.map((chat) => chat.id === 'c-kv' ? { ...chat, expiresAt: null } : chat),
+    }));
+
+    usePrototypeStore.getState().setChatAutoExpiration('c-kv', true);
+    expect(setChatAutoExpiration).toHaveBeenCalledWith('c-kv', true);
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.expiresAt).not.toBeNull();
+
+    reject(new Error('Expiration rejected'));
+    await vi.waitFor(() => expect(
+      usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.expiresAt,
+    ).toBeNull());
+    expect(useRealtimeStore.getState().syncError).toBe('Expiration rejected');
     warning.mockRestore();
   });
 

@@ -1,0 +1,2 @@
+DROP INDEX "chats_temporary_expiry_idx";--> statement-breakpoint
+CREATE INDEX "chats_expiry_idx" ON "chats" USING btree ("expires_at") WHERE "chats"."expires_at" is not null and "chats"."deleted_at" is null and "chats"."purge_started_at" is null;

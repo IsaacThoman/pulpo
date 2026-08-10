@@ -2,6 +2,7 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 export type TextSizePreference = 'default' | 'large' | 'extra-large';
 export type ResponseScenario = 'success' | 'tool-heavy' | 'capacity' | 'failure';
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite';
+export type AutomaticChatExpiration = 'disabled' | '24h' | '7d';
 export type SessionStatus = 'signed-out' | 'signed-in' | 'pending';
 
 export interface InstanceProfile {
@@ -141,6 +142,7 @@ export interface AppPreferences {
   localChatLimit: number;
   attachmentCacheMb: number;
   trashRetention: TrashRetention;
+  automaticChatExpiration: AutomaticChatExpiration;
 }
 
 export interface DemoScenarios {

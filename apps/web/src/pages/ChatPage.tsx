@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Ghost, Loader2, Save, SquarePen } from 'lucide-react'
+import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
@@ -97,9 +97,14 @@ export function ChatPage() {
   const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
+  const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const [temporary, setTemporary] = useState(false)
+  const [autoExpire, setAutoExpire] = useState(
+    () => useSettings.getState().automaticChatExpiration !== 'disabled',
+  )
+  const autoExpireTouchedRef = useRef(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
@@ -135,11 +140,22 @@ export function ChatPage() {
     if (!resetDefaultToken || handledResetRef.current === resetDefaultToken) return
     handledResetRef.current = resetDefaultToken
     setTemporary(false)
+    autoExpireTouchedRef.current = false
+    setAutoExpire(automaticChatExpiration !== 'disabled')
     setTemporaryError(null)
     shouldApplyDefaultRef.current = true
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next) setModelId(next)
-  }, [defaultModelId, models, resetDefaultToken])
+  }, [automaticChatExpiration, defaultModelId, models, resetDefaultToken])
+
+  useEffect(() => {
+    if (chat || routeChatId) return
+    if (automaticChatExpiration === 'disabled') {
+      setAutoExpire(false)
+      return
+    }
+    if (!autoExpireTouchedRef.current) setAutoExpire(true)
+  }, [automaticChatExpiration, chat, routeChatId])
 
   useEffect(() => {
     if (!routeChatId || !chat?.temporary) return
@@ -212,7 +228,7 @@ export function ChatPage() {
   )
 
   const sendSuggestion = (s: string) => {
-    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary)
+    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary, autoExpire)
     if (!temporary) navigate(`/c/${id}`)
   }
 
@@ -244,6 +260,8 @@ export function ChatPage() {
       useChat.getState().abandonTemporaryChat(chat.id)
     }
     setTemporary(temporaryByDefault)
+    autoExpireTouchedRef.current = false
+    setAutoExpire(automaticChatExpiration !== 'disabled')
     setTemporaryError(null)
     setMessageEdit(null)
     setComposerEditActive(false)
@@ -255,6 +273,21 @@ export function ChatPage() {
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
   const showTemporaryControl = !routeChatId && (!chat || chat.temporary)
+  const expirationEnabled = chat ? chat.expiresAt !== null : autoExpire
+  const showExpirationControl = !temporaryMode && (chat
+    ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
+    : !routeChatId && automaticChatExpiration !== 'disabled')
+  const expirationPeriodLabel = automaticChatExpiration === '24h'
+    ? '24 hours'
+    : automaticChatExpiration === '7d' ? '7 days' : null
+  const toggleExpiration = () => {
+    if (chat) {
+      useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
+      return
+    }
+    autoExpireTouchedRef.current = true
+    setAutoExpire((value) => !value)
+  }
   const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
 
   if (legacyTemporaryRoute) {
@@ -270,6 +303,25 @@ export function ChatPage() {
       <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />
         <div className="flex-1" />
+        {showExpirationControl && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label={expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
+                aria-pressed={expirationEnabled}
+                onClick={toggleExpiration}
+              >
+                <Hourglass className={cn('size-4', expirationEnabled && 'text-teal-500 dark:text-teal-400')} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {expirationEnabled
+                ? expirationPeriodLabel ? `Automatic expiration enabled (${expirationPeriodLabel})` : 'Automatic expiration enabled'
+                : `Enable ${expirationPeriodLabel} expiration`}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {showTemporaryControl && (chat?.temporary ? (
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -354,7 +406,7 @@ export function ChatPage() {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} />
+            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={autoExpire} />
           </div>
         </>
       ) : (

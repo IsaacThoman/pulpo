@@ -25,6 +25,7 @@ type PrototypeActions = {
   renameChat: (id: string, title: string) => void;
   togglePin: (id: string) => void;
   moveChat: (id: string, folderId: string | null) => void;
+  setChatAutoExpiration: (id: string, enabled: boolean) => void;
   trashChat: (id: string) => void;
   trashAllChats: () => void;
   restoreChat: (id: string) => void;
@@ -60,8 +61,15 @@ const retentionMs: Record<AppPreferences['trashRetention'], number | null> = {
 
 const initialsFor = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 const id = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention']);
+const productionPreferenceKeys = new Set(['theme', 'textSize', 'streamResponses', 'showReasoning', 'haptics', 'sendWithEnter', 'attachmentCacheMb', 'localChatLimit', 'trashRetention', 'automaticChatExpiration']);
 const actionVersions = new Map<string, number>();
+
+function automaticExpirationDeadline(now = Date.now()): number | null {
+  const preference = usePrototypeStore.getState().preferences.automaticChatExpiration;
+  if (preference === '24h') return now + 86_400_000;
+  if (preference === '7d') return now + 604_800_000;
+  return null;
+}
 
 function runOptimisticAction(key: string, action: Promise<unknown>, rollback: () => void): void {
   const namespace = usePrototypeStore.getState().productionNamespace;
@@ -164,6 +172,21 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, folderId: previous } : chat) }));
     });
   },
+  setChatAutoExpiration: (chatId, enabled) => {
+    const current = get().chats.find((chat) => chat.id === chatId);
+    if (!current || current.temporary) return;
+    const previous = current.expiresAt ?? null;
+    const expiresAt = enabled ? automaticExpirationDeadline() : null;
+    if (enabled && expiresAt === null) return;
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id === chatId && !chat.temporary ? { ...chat, expiresAt } : chat),
+    }));
+    runOptimisticAction(`chat:${chatId}:expiration`, productionActions.setChatAutoExpiration(chatId, enabled), () => {
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, expiresAt: previous } : chat),
+      }));
+    });
+  },
   trashChat: (chatId) => {
     const previous = get().chats.find((chat) => chat.id === chatId);
     const previousIndex = get().chats.findIndex((chat) => chat.id === chatId);
@@ -171,7 +194,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
     const duration = retentionMs[state.preferences.trashRetention];
     if (duration === 0) return { chats: state.chats.filter((chat) => chat.id !== chatId) };
     const deletedAt = Date.now();
-    return { chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt, purgeAt: duration === null ? null : deletedAt + duration, pinned: false } : chat) };
+    return { chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt, expiresAt: null, purgeAt: duration === null ? null : deletedAt + duration, pinned: false } : chat) };
     });
     runOptimisticAction(`chat:${chatId}:deleted`, productionActions.trashChat(chatId), () => {
       if (!previous) return;
@@ -183,7 +206,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
           return { chats };
         }
         return { chats: state.chats.map((chat) => chat.id === chatId ? {
-          ...chat, deletedAt: previous.deletedAt, purgeAt: previous.purgeAt, pinned: previous.pinned,
+          ...chat, deletedAt: previous.deletedAt, expiresAt: previous.expiresAt, purgeAt: previous.purgeAt, pinned: previous.pinned,
         } : chat) };
       });
     });
@@ -197,6 +220,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
       return { chats: state.chats.map((chat) => chat.deletedAt === null ? {
         ...chat,
         deletedAt,
+        expiresAt: null,
         purgeAt: duration === null ? null : deletedAt + duration,
         pinned: false,
       } : chat) };
@@ -209,7 +233,7 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
           ...state.chats.map((chat) => {
             const before = previousById.get(chat.id);
             return before && before.deletedAt === null
-              ? { ...chat, deletedAt: before.deletedAt, purgeAt: before.purgeAt, pinned: before.pinned }
+              ? { ...chat, deletedAt: before.deletedAt, expiresAt: before.expiresAt, purgeAt: before.purgeAt, pinned: before.pinned }
               : chat;
           }),
           ...previous.filter((chat) => !currentIds.has(chat.id)),
@@ -219,11 +243,11 @@ export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
   },
   restoreChat: (chatId) => {
     const previous = get().chats.find((chat) => chat.id === chatId);
-    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, purgeAt: null, updatedAt: Date.now() } : chat) }));
+    set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, deletedAt: null, expiresAt: null, purgeAt: null, updatedAt: Date.now() } : chat) }));
     runOptimisticAction(`chat:${chatId}:deleted`, productionActions.restoreChat(chatId), () => {
       if (!previous) return;
       set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? {
-        ...chat, deletedAt: previous.deletedAt, purgeAt: previous.purgeAt, updatedAt: previous.updatedAt,
+        ...chat, deletedAt: previous.deletedAt, expiresAt: previous.expiresAt, purgeAt: previous.purgeAt, updatedAt: previous.updatedAt,
       } : chat) }));
     });
   },

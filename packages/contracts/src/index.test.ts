@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
+  automaticChatExpirationSchema,
   authSettingsSchema,
   chatSummarySchema,
   CHAT_PRESET_ICON_NAMES,
@@ -25,6 +26,7 @@ import {
   responseEventSchema,
   startChatSchema,
   syncRequestSchema,
+  updateChatSchema,
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
@@ -86,6 +88,16 @@ describe('shared contracts', () => {
     }
     expect(persistChatResponseSchema.parse(summary)).toMatchObject({ temporary: false, expiresAt: null })
     expect(() => persistChatResponseSchema.parse({ ...summary, temporary: true })).toThrow()
+  })
+
+  it('validates automatic chat expiration preferences and chat mutations', () => {
+    expect(automaticChatExpirationSchema.options).toEqual(['disabled', '24h', '7d'])
+    expect(startChatSchema.parse({
+      chat: { clientId: crypto.randomUUID(), modelId: 'model', autoExpire: true },
+      response: { clientId: crypto.randomUUID(), input: 'hello', modelId: 'model' },
+    }).chat.autoExpire).toBe(true)
+    expect(updateChatSchema.parse({ autoExpire: false })).toEqual({ autoExpire: false })
+    expect(updateChatSchema.safeParse({ autoExpire: 'yes' }).success).toBe(false)
   })
 
   it('uses the Pulpo Proxy OCR prompt by default', () => {
@@ -232,7 +244,9 @@ describe('shared contracts', () => {
       account: {},
       instance: {},
     })
-    expect(document.account).toMatchObject({ theme: 'system', trashRetention: '30d', favoriteModelIds: [] })
+    expect(document.account).toMatchObject({
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: 'disabled', favoriteModelIds: [],
+    })
     expect(document.instance).toMatchObject({
       auth: { signupEnabled: true },
       interface: { localTask: 'current' },

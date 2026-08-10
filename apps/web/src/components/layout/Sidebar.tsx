@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   BarChart3,
   ChevronRight,
   Folder as FolderIcon,
   FolderInput,
+  Hourglass,
   KeyRound,
   LogOut,
   Loader2,
@@ -369,7 +370,7 @@ function ChatRow({
               className={cn(
                 actionClassName,
                 'group/chat-action',
-                generating ? 'visible' : 'invisible group-hover:visible',
+                generating || chat.expiresAt !== null ? 'visible' : 'invisible group-hover:visible',
                 'data-[state=open]:visible',
               )}
               onClick={(e) => e.stopPropagation()}
@@ -386,6 +387,17 @@ function ChatRow({
                     </svg>
                     <Loader2 className="absolute inset-0 size-4 animate-spin motion-reduce:animate-none" />
                   </span>
+                  <MoreHorizontal
+                    aria-hidden="true"
+                    className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
+                  />
+                </>
+              ) : chat.expiresAt !== null ? (
+                <>
+                  <Hourglass
+                    aria-hidden="true"
+                    className="size-4 text-teal-500 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden dark:text-teal-400"
+                  />
                   <MoreHorizontal
                     aria-hidden="true"
                     className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
@@ -609,7 +621,6 @@ export function Sidebar({
   onOpenSettings: () => void
 }) {
   const navigate = useNavigate()
-  const location = useLocation()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
     `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
@@ -755,9 +766,7 @@ export function Sidebar({
   const startNewChat = () => {
     useChat.getState().abandonTemporaryChat()
     navigate('/', {
-      state: location.pathname === '/'
-        ? { resetDefaultModel: `${Date.now()}-${Math.random()}` }
-        : null,
+      state: { resetDefaultModel: `${Date.now()}-${Math.random()}` },
     })
     onNavigate()
   }
