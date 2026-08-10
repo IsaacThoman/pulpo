@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -11,6 +11,11 @@ describe('authentication application settings', () => {
     const settings = parseAuthSettings({ signupEnabled: false })
     expect(settings.defaultBalanceMicros).toBe(DEFAULT_BALANCE_MICROS)
     expect(settings.defaultStorageLimitBytes).toBe(DEFAULT_STORAGE_LIMIT_BYTES)
+    expect(settings.maxAttachmentBytes).toBe(DEFAULT_MAX_ATTACHMENT_BYTES)
+  })
+
+  it('accepts an instance attachment limit override', () => {
+    expect(parseAuthSettings({ maxAttachmentBytes: 50 * 1024 * 1024 }).maxAttachmentBytes).toBe(50 * 1024 * 1024)
   })
 })
 

@@ -174,7 +174,12 @@ export class WorkspaceManager {
     const rows = await db.select().from(attachments).where(and(eq(attachments.userId, this.userId), inArray(attachments.id, ids), eq(attachments.status, 'ready')))
     for (const attachment of rows) {
       const path = attachmentWorkspacePath(attachment.originalName, attachment.id)
-      await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(path)}`, { method: 'PUT', headers: { 'content-type': attachment.mimeType }, body: new Uint8Array(await getBlobStore().get(attachment.objectKey)) })
+      await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(path)}`, {
+        method: 'PUT',
+        headers: { 'content-type': attachment.mimeType, 'content-length': String(attachment.sizeBytes) },
+        body: await getBlobStore().getStream(attachment.objectKey),
+        duplex: 'half',
+      })
     }
     this.staged = true
   }

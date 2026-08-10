@@ -40,6 +40,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         adminEmail: auth.adminEmail,
         pendingMessage: auth.pendingMessage,
       },
+      limits: { maxAttachmentBytes: auth.maxAttachmentBytes },
       capabilities: {
         bearerSessions: true,
         realtime: true,

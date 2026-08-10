@@ -46,6 +46,7 @@ import { useAuth } from '@/stores/auth'
 import { shouldSubmitComposerKey } from '@/components/chat/composer-keyboard'
 import { composerPrimaryAction, shouldQueueComposerMessage } from '@/components/chat/composer-queue'
 import type { Attachment } from '@/lib/types'
+import { attachmentValidationError } from '@pulpo/client-core'
 
 interface PendingAttachment {
   localId: string
@@ -227,6 +228,12 @@ export function Composer({
     await Promise.all(staged.map(async (pending, index) => {
       const file = incoming[index]!
       try {
+        const validation = attachmentValidationError({
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          sizeBytes: file.size,
+        }, useAuth.getState().maxAttachmentBytes)
+        if (validation) throw new Error(validation)
         const created = await apiRequest<{ attachment: { id: string }; uploadUrl: string; uploadHeaders: Record<string, string> }>('/api/attachments', {
           method: 'POST',
           body: {
