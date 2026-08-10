@@ -77,6 +77,7 @@ const config: ExpoConfig = {
     blockedPermissions: ['android.permission.RECORD_AUDIO'],
   },
   plugins: [
+    './plugins/with-pulpo-icons',
     'expo-router',
     'expo-secure-store',
     'expo-sqlite',

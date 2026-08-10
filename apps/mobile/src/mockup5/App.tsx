@@ -63,7 +63,6 @@ import {
   Text as SwiftUIText,
   TextField as SwiftUITextField,
   type TextFieldRef as SwiftUITextFieldRef,
-  Toggle as SwiftUIToggle,
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
@@ -72,12 +71,14 @@ import {
   accessibilityLabel as swiftUIAccessibilityLabel,
   buttonBorderShape,
   buttonStyle,
+  brightness,
   contentShape,
   controlSize,
   disabled as swiftUIDisabled,
   foregroundStyle,
   font,
   frame,
+  grayscale,
   labelStyle,
   menuActionDismissBehavior,
   padding,
@@ -2621,13 +2622,8 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const colorScheme = useColorScheme();
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
-  const prototypeModels = usePrototypeStore((state) => state.models);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
   const providerOrder = usePreferencesStore((state) => state.providerOrder);
-  const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
-  const setDefaultModel = usePrototypeStore((state) => state.setDefaultModel);
-  const toggleFavoriteModel = usePrototypeStore((state) => state.toggleFavoriteModel);
-  const currentPrototypeModel = prototypeModels.find((candidate) => candidate.id === model.id);
   const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
   const modelSections = [
     { id: favoritesSection, label: 'Favorites' },
@@ -2650,7 +2646,11 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             icon={(
               <SwiftUIImage
                 uiImage={Image.resolveAssetSource(model.labIcon ?? model.icon).uri}
-                modifiers={[resizable(), frame({ width: 22, height: 22 })]}
+                modifiers={[
+                  resizable(),
+                  frame({ width: 22, height: 22 }),
+                  ...(temporary ? [grayscale(1), brightness(1)] : []),
+                ]}
               />
             )}
           />
@@ -2674,6 +2674,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 label={candidate.name}
                 model={candidate}
                 selected={candidate.id === model.id}
+                whiteIcons={temporary}
               />
             </SwiftUIButton>
           ))}
@@ -2681,8 +2682,17 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
         <SwiftUIDivider key="divider" />
         <SwiftUIMenu
           key="sections"
-          label={sectionLabel}
-          systemImage={section === favoritesSection ? 'star.fill' : 'square.grid.2x2'}
+          label={(
+            <SwiftUILabel
+              title="Labs"
+              icon={<SwiftUIImage
+                assetName={temporary || colorScheme === 'dark'
+                  ? 'LucideFlaskConicalWhite'
+                  : 'LucideFlaskConical'}
+                modifiers={[resizable(), frame({ width: 20, height: 20 })]}
+              />}
+            />
+          )}
         >
           {modelSections.map((candidateSection) => (
             <SwiftUIButton
@@ -2698,67 +2708,41 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 section={candidateSection.id}
                 models={models}
                 selected={candidateSection.id === section}
+                whiteIcons={temporary}
               />
             </SwiftUIButton>
           ))}
-        </SwiftUIMenu>
-        <SwiftUIMenu key="actions" label="Current model actions" systemImage="slider.horizontal.3">
-          <SwiftUIButton
-            key="default"
-            label="Set as default"
-            systemImage={defaultModelId === currentPrototypeModel?.id ? 'checkmark' : 'checkmark.circle'}
-            onPress={() => {
-              if (currentPrototypeModel) setDefaultModel(currentPrototypeModel.id);
-              Haptics.selectionAsync();
-            }}
-          />
-          <SwiftUIToggle
-            key="favorite"
-            isOn={Boolean(currentPrototypeModel?.favorite)}
-            label="Favorite"
-            systemImage="star"
-            onIsOnChange={(favorite) => {
-              if (currentPrototypeModel && favorite !== currentPrototypeModel.favorite) toggleFavoriteModel(currentPrototypeModel.id);
-              Haptics.selectionAsync();
-            }}
-          />
-          <SwiftUIButton
-            key="information"
-            label="Model information"
-            systemImage="info.circle"
-            onPress={() => Alert.alert(model.name, `${model.lab}\n${model.detail}`)}
-          />
         </SwiftUIMenu>
       </SwiftUIMenu>
     </SwiftUIHost>
   );
 });
 
-function NativeModelMenuRow({ label, model, selected = false }: { label: string; model: Model; selected?: boolean }) {
+function NativeModelMenuRow({ label, model, selected = false, whiteIcons = false }: { label: string; model: Model; selected?: boolean; whiteIcons?: boolean }) {
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
       <SwiftUILabel
         title={label}
-        icon={<SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
+        icon={<SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 }), ...(whiteIcons ? [grayscale(1), brightness(1)] : [])]} />}
       />
       <SwiftUISpacer />
-      {selected && <SwiftUIImage systemName="checkmark" size={15} />}
+      {selected && <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="checkmark" size={15} />}
     </SwiftUIHStack>
   );
 }
 
-function NativeModelSectionRow({ label, section, models, selected = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean }) {
+function NativeModelSectionRow({ label, section, models, selected = false, whiteIcons = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean; whiteIcons?: boolean }) {
   const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
       <SwiftUILabel
         title={label}
         icon={labModel
-          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
-          : <SwiftUIImage systemName="star.fill" size={18} />}
+          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 }), ...(whiteIcons ? [grayscale(1), brightness(1)] : [])]} />
+          : <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 })]} />}
       />
       <SwiftUISpacer />
-      {selected && <SwiftUIImage systemName="checkmark" size={15} />}
+      {selected && <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="checkmark" size={15} />}
     </SwiftUIHStack>
   );
 }
