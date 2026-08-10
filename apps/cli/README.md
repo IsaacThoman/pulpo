@@ -11,6 +11,7 @@ pulpo auth 2fa setup
 pulpo auth 2fa confirm
 pulpo settings export --output pulpo-settings.json
 pulpo icon upload ./acme.svg --name Acme --mode monochrome
+pulpo model test acme-model "Reply with a short greeting" --no-agent --preset reasoning=off
 ```
 
 Use `pulpo help` or `pulpo <command> --help` for the complete command reference.
@@ -20,6 +21,29 @@ canonical [Lucide](https://lucide.dev/icons/) name. Discover available names wit
 `pulpo model icons`, or filter them locally with a query such as
 `pulpo model icons camera`. Invalid names are rejected before the model request is
 sent. Add `--json` for stable `{ "name": "..." }` rows in scripts.
+
+Test a newly configured model with `pulpo model test <model-id> [prompt...]`.
+The command requires exactly one of `--agent` or `--no-agent`, plus one explicit
+`--preset <preset-id>=<choice-id>` for every preset exposed by the model. It
+does not silently apply preset defaults. For example:
+
+```bash
+pulpo model test acme-model "Investigate the failing build" \
+  --agent \
+  --preset reasoning=high \
+  --preset web-search=enabled
+
+git diff | pulpo model test acme-model \
+  --no-agent \
+  --preset reasoning=off \
+  --preset web-search=disabled
+```
+
+Model tests stream assistant text to stdout and use temporary chats by default.
+Pass `--keep` to retain the test in normal chat history, `--no-stream` to wait
+for the completed text, `--json` for one final result, or `--jsonl` for the
+replayable response event stream. Model testing requires a user session created
+by `pulpo auth login`; management tokens cannot access user chat endpoints.
 
 The major command groups are `context`, `auth`, `token`, `instance`, `settings`,
 `provider`, `lab`, `icon`, `model`, `user`, `usage`, `audit`, `workspace`, `banner`,

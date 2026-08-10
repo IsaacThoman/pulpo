@@ -31,7 +31,8 @@
     "pack:check": "npm pack --dry-run"
   },
   "dependencies": {
-    "commander": "^14.0.2"
+    "commander": "^14.0.2",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@pulpo/client-core": "0.1.0",
