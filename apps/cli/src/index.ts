@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Command, CommanderError } from 'commander'
+import { Command, CommanderError, Option } from 'commander'
 import { z } from 'zod'
 import { ManagementApiError, PulpoManagementClient } from '@pulpo/client-core'
 import {
@@ -23,6 +23,16 @@ import {
   setCredential,
 } from './config.js'
 import { confirmExact, processIo, readSecret, writeError, writeOutput, type CliIo } from './io.js'
+import {
+  explicitAgentMode,
+  followResponse,
+  readModelTestPrompt,
+  resolvePresetSelections,
+  responseText,
+  runModelTest,
+  type FollowResponse,
+  type ModelCatalog,
+} from './model-test.js'
 
 declare const __PULPO_CLI_VERSION__: string
 declare const __PULPO_CLI_BUNDLED__: boolean
@@ -31,8 +41,19 @@ const CLI_BUNDLED = typeof __PULPO_CLI_BUNDLED__ === 'boolean' && __PULPO_CLI_BU
 const commandIo = new WeakMap<Command, CliIo>()
 const commandClientFactory = new WeakMap<Command, CliDependencies['createClient']>()
 
+class NamedOption extends Option {
+  constructor(flags: string, private readonly optionAttribute: string, description?: string) {
+    super(flags, description)
+  }
+
+  override attributeName(): string {
+    return this.optionAttribute
+  }
+}
+
 export interface CliDependencies {
   createClient?: (url: string, token: string | null, fetchImpl: typeof fetch) => PulpoManagementClient
+  followResponse?: FollowResponse
 }
 
 export function catalogIconContentType(filename: string): string | null {
@@ -155,6 +176,8 @@ async function clientFor(command: Command, authenticated = true): Promise<{
   contextName: string | null
   context: { url: string; email?: string } | null
   info: Awaited<ReturnType<PulpoManagementClient['info']>>
+  token: string
+  url: string
 }> {
   const options = globalOptions(command)
   const connection = await resolveConnection({ context: options.context, url: options.url })
@@ -185,7 +208,14 @@ async function clientFor(command: Command, authenticated = true): Promise<{
   if (capability && !info.capabilities.includes(capability)) {
     throw new Error(`The selected Pulpo instance does not advertise the ${capability} capability`)
   }
-  return { client, contextName: connection.contextName, context: connection.context, info }
+  return {
+    client,
+    contextName: connection.contextName,
+    context: connection.context,
+    info,
+    token: connection.token ?? '',
+    url: connection.url,
+  }
 }
 
 async function twoFactorSecret(io: CliIo, json: boolean, prompt = 'Authenticator or recovery code: '): Promise<string> {
@@ -569,6 +599,54 @@ export function createProgram(io: CliIo = processIo, dependencies: CliDependenci
       .map((name) => ({ name }))
     emit(io, command, icons)
   })
+  model.command('test <id> [prompt...]')
+    .description('Send a model smoke-test message with explicit user-facing options')
+    .addOption(new NamedOption('--agent', 'agentEnabled', 'run with agent mode enabled').conflicts('agentDisabled'))
+    .addOption(new NamedOption('--no-agent', 'agentDisabled', 'run with agent mode disabled').default(undefined).conflicts('agentEnabled'))
+    .option('--preset <preset=choice>', 'explicit preset choice; repeat for every exposed preset', (value, previous: string[]) => [...previous, value], [])
+    .option('--keep', 'keep the test in normal chat history')
+    .option('--no-stream', 'wait and print only the completed response')
+    .option('--jsonl', 'stream response events as JSON Lines')
+    .action(async (id, promptParts: string[], options, command) => {
+      const globals = globalOptions(command)
+      if (globals.json && options.jsonl) throw new Error('--json and --jsonl cannot be used together')
+      if (options.jsonl && options.stream === false) throw new Error('--jsonl and --no-stream cannot be used together')
+      const agentMode = explicitAgentMode(options)
+      const prompt = await readModelTestPrompt(io, promptParts ?? [])
+      const { client, token, url } = await clientFor(command)
+      if (!token) throw new Error('Model tests require a logged-in session. Run `pulpo auth login`.')
+      const catalog = await client.request<ModelCatalog>('/api/models')
+      const selectedModel = catalog.data.find((candidate) => candidate.id === id)
+      if (!selectedModel) throw new Error(`Exposed model not found: ${id}`)
+      if (agentMode && !selectedModel.agentEnabled) throw new Error(`Model ${id} does not expose agent mode`)
+      if (agentMode && !catalog.agentAvailable) throw new Error('Agent mode is not available on the selected Pulpo instance')
+      const presetSelections = resolvePresetSelections(selectedModel, options.preset as string[])
+      const result = await runModelTest({
+        client,
+        baseUrl: url,
+        token,
+        model: selectedModel,
+        prompt,
+        agentMode,
+        presetSelections,
+        keep: Boolean(options.keep),
+        streamText: !globals.json && !options.jsonl && options.stream !== false,
+        jsonl: Boolean(options.jsonl),
+        io,
+        follow: dependencies.followResponse ?? followResponse,
+      })
+      if (globals.json) emit(io, command, result)
+      else if (!options.jsonl && options.stream === false) io.stdout.write(`${responseText(result.snapshot)}\n`)
+      if (!globals.json && !options.jsonl) {
+        io.stderr.write(`Chat ${result.chatId} · response ${result.responseId}${result.temporary ? ' · temporary' : ''}\n`)
+      }
+      if (!['completed', 'incomplete'].includes(result.snapshot.status)) {
+        const detail = result.snapshot.error && typeof result.snapshot.error === 'object'
+          ? (result.snapshot.error as { message?: unknown }).message
+          : result.snapshot.error
+        throw new Error(typeof detail === 'string' ? detail : `Response ended with status ${result.snapshot.status}`)
+      }
+    })
 
   const user = registerFileCrud(program, io, { name: 'user', pluralPath: '/api/management/v1/users' })
   for (const [action, patch] of [['approve', { role: 'user' }], ['block', { blocked: true }], ['unblock', { blocked: false }]] as const) {

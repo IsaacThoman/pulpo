@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
 import { modelOptionLabel, useAvailableModels } from './use-available-models'
+import { DEFAULT_MAX_ATTACHMENT_BYTES, MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
@@ -93,6 +94,7 @@ export function AuthenticationSection() {
     signupEnabled: auth.signupEnabled,
     defaultBalanceMicros: 5_000_000,
     defaultStorageLimitBytes: 5_000 * 1024 * 1024,
+    maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
     pendingDetails: auth.pendingDetails,
     adminEmail: auth.adminEmail,
     pendingMessage: auth.pendingMessage,
@@ -128,6 +130,16 @@ export function AuthenticationSection() {
           step={100}
           suffix="MiB"
         />
+        <NumField
+          label="Maximum attachment size"
+          hint={`Per-file upload limit, up to ${MAX_CONFIGURABLE_ATTACHMENT_BYTES / (1024 * 1024)} MiB. Set to 0 to disable attachments.`}
+          value={t.maxAttachmentBytes / (1024 * 1024)}
+          onChange={(value) => s('maxAttachmentBytes', Math.round(Math.max(0, value) * 1024 * 1024))}
+          min={0}
+          max={MAX_CONFIGURABLE_ATTACHMENT_BYTES / (1024 * 1024)}
+          step={5}
+          suffix="MiB"
+        />
         <SelectField label="Default user role" hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: 'Pending approval' }, { value: 'user', label: 'User' }]} />
         <Toggle label="Enable API keys" hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />
       </Section>
@@ -153,7 +165,7 @@ export function AuthenticationSection() {
         />
       </Section>
 
-      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled }) }} />
+      <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled, maxAttachmentBytes: t.maxAttachmentBytes }) }} />
     </div>
   )
 }

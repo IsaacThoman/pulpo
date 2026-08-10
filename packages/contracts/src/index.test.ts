@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
+  authSettingsSchema,
   chatSummarySchema,
   CHAT_PRESET_ICON_NAMES,
   chatPresetsSchema,
@@ -89,6 +90,12 @@ describe('shared contracts', () => {
 
   it('uses the Pulpo Proxy OCR prompt by default', () => {
     expect(ocrSettingsSchema.parse({}).systemPrompt).toBe(DEFAULT_OCR_SYSTEM_PROMPT)
+  })
+
+  it('allows attachment limits up to 1,000 MiB', () => {
+    expect(authSettingsSchema.parse({ maxAttachmentBytes: 1_000 * 1024 * 1024 }).maxAttachmentBytes)
+      .toBe(1_000 * 1024 * 1024)
+    expect(authSettingsSchema.safeParse({ maxAttachmentBytes: 1_000 * 1024 * 1024 + 1 }).success).toBe(false)
   })
 
   it('defaults and validates per-model compaction policy', () => {
@@ -211,7 +218,10 @@ describe('shared contracts', () => {
         bearerSessions: true, realtime: true, chatDuplication: true,
         publicSharing: true, attachments: true, folders: true,
       },
-    }).capabilities.twoFactorAuth).toBe(false)
+    })).toMatchObject({
+      limits: { maxAttachmentBytes: 25 * 1024 * 1024 },
+      capabilities: { twoFactorAuth: false },
+    })
   })
 
   it('normalizes a complete management settings document', () => {

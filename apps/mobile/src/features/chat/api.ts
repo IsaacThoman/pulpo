@@ -274,7 +274,11 @@ export async function shareChat(id: string): Promise<string> {
 }
 
 export async function uploadAttachment(draft: AttachmentDraft, chatId: string | null): Promise<ServerAttachment> {
-  const validation = attachmentValidationError({ name: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes })
+  const maxAttachmentBytes = useSessionStore.getState().config?.limits?.maxAttachmentBytes
+  const validation = attachmentValidationError(
+    { name: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
+    maxAttachmentBytes,
+  )
   if (validation) throw new Error(validation)
   const reservation = await apiRequest<{
     attachment: ServerAttachment
