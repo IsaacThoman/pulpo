@@ -63,7 +63,6 @@ import {
   Text as SwiftUIText,
   TextField as SwiftUITextField,
   type TextFieldRef as SwiftUITextFieldRef,
-  Toggle as SwiftUIToggle,
   VStack as SwiftUIVStack,
   useNativeState,
 } from '@expo/ui/swift-ui';
@@ -2621,13 +2620,8 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const colorScheme = useColorScheme();
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
-  const prototypeModels = usePrototypeStore((state) => state.models);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
   const providerOrder = usePreferencesStore((state) => state.providerOrder);
-  const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
-  const setDefaultModel = usePrototypeStore((state) => state.setDefaultModel);
-  const toggleFavoriteModel = usePrototypeStore((state) => state.toggleFavoriteModel);
-  const currentPrototypeModel = prototypeModels.find((candidate) => candidate.id === model.id);
   const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
   const modelSections = [
     { id: favoritesSection, label: 'Favorites' },
@@ -2701,33 +2695,6 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
               />
             </SwiftUIButton>
           ))}
-        </SwiftUIMenu>
-        <SwiftUIMenu key="actions" label="Current model actions" systemImage="slider.horizontal.3">
-          <SwiftUIButton
-            key="default"
-            label="Set as default"
-            systemImage={defaultModelId === currentPrototypeModel?.id ? 'checkmark' : 'checkmark.circle'}
-            onPress={() => {
-              if (currentPrototypeModel) setDefaultModel(currentPrototypeModel.id);
-              Haptics.selectionAsync();
-            }}
-          />
-          <SwiftUIToggle
-            key="favorite"
-            isOn={Boolean(currentPrototypeModel?.favorite)}
-            label="Favorite"
-            systemImage="star"
-            onIsOnChange={(favorite) => {
-              if (currentPrototypeModel && favorite !== currentPrototypeModel.favorite) toggleFavoriteModel(currentPrototypeModel.id);
-              Haptics.selectionAsync();
-            }}
-          />
-          <SwiftUIButton
-            key="information"
-            label="Model information"
-            systemImage="info.circle"
-            onPress={() => Alert.alert(model.name, `${model.lab}\n${model.detail}`)}
-          />
         </SwiftUIMenu>
       </SwiftUIMenu>
     </SwiftUIHost>
