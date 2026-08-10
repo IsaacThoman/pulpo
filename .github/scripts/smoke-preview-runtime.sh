@@ -7,7 +7,22 @@ set -euo pipefail
 : "${PULPO_PREVIEW_SMOKE_PASSWORD:?PULPO_PREVIEW_SMOKE_PASSWORD is required}"
 
 cookie_jar="$(mktemp)"
-trap 'rm -f "${cookie_jar}"' EXIT
+normal_chat_id=''
+agent_chat_id=''
+
+cleanup() {
+  local chat_id
+  for chat_id in "${normal_chat_id}" "${agent_chat_id}"; do
+    if [[ -n "${chat_id}" ]]; then
+      curl --silent --show-error \
+        --cookie "${cookie_jar}" \
+        --request DELETE \
+        "${PREVIEW_URL}/api/chats/${chat_id}" >/dev/null || true
+    fi
+  done
+  rm -f "${cookie_jar}"
+}
+trap cleanup EXIT
 
 curl --fail --silent --show-error \
   --cookie-jar "${cookie_jar}" \
@@ -55,7 +70,7 @@ start_response() {
     --header 'content-type: application/json' \
     --data "${payload}" \
     "${PREVIEW_URL}/api/chats/start")"
-  jq -er '.response.responseId' <<<"${result}"
+  printf '%s %s\n' "${chat_id}" "$(jq -er '.response.responseId' <<<"${result}")"
 }
 
 wait_for_response() {
@@ -83,14 +98,14 @@ wait_for_response() {
   return 1
 }
 
-normal_response_id="$(start_response 'Reply with exactly PREVIEW_OK.' false)"
+read -r normal_chat_id normal_response_id < <(start_response 'Reply with exactly PREVIEW_OK.' false)
 normal_snapshot="$(wait_for_response "${normal_response_id}" 60)"
 jq -e 'any(.output[]?; .type == "message" and .status == "completed")' <<<"${normal_snapshot}" >/dev/null || {
   echo 'Preview Luna smoke response completed without an assistant message.' >&2
   exit 1
 }
 
-agent_response_id="$(start_response 'Use the bash tool to run printf AGENT_WORKSPACE_OK, then reply with exactly AGENT_WORKSPACE_OK.' true)"
+read -r agent_chat_id agent_response_id < <(start_response 'Use the bash tool to run printf AGENT_WORKSPACE_OK, then reply with exactly AGENT_WORKSPACE_OK.' true)
 agent_snapshot="$(wait_for_response "${agent_response_id}" 180)"
 jq -e 'any(.output[]?; .type == "pulpo_workspace" and (.state == "ready" or .state == "released"))' <<<"${agent_snapshot}" >/dev/null || {
   echo 'Preview agent smoke response completed without a ready workspace.' >&2
