@@ -2675,8 +2675,8 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
         <SwiftUIDivider key="divider" />
         <SwiftUIMenu
           key="sections"
-          label={sectionLabel}
-          systemImage={section === favoritesSection ? 'star.fill' : 'square.grid.2x2'}
+          label="Labs"
+          systemImage="square.grid.2x2"
         >
           {modelSections.map((candidateSection) => (
             <SwiftUIButton
