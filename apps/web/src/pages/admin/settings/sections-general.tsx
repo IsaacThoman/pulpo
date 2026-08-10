@@ -132,7 +132,7 @@ export function AuthenticationSection() {
         />
         <NumField
           label="Maximum attachment size"
-          hint={`Per-file limit for uploads and generated files, up to ${MAX_CONFIGURABLE_ATTACHMENT_BYTES / (1024 * 1024)} MiB. Set to 0 to disable attachments.`}
+          hint={`Per-file upload limit, up to ${MAX_CONFIGURABLE_ATTACHMENT_BYTES / (1024 * 1024)} MiB. Set to 0 to disable attachments.`}
           value={t.maxAttachmentBytes / (1024 * 1024)}
           onChange={(value) => s('maxAttachmentBytes', Math.round(Math.max(0, value) * 1024 * 1024))}
           min={0}

@@ -1,4 +1,8 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createReadStream, createWriteStream } from 'node:fs'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import type { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import path from 'node:path'
 import type { BlobMetadata, BlobStore } from './blob-store.js'
 
@@ -18,8 +22,25 @@ export class LocalBlobStore implements BlobStore {
     await writeFile(target, body)
   }
 
+  async putStream(key: string, body: Readable, _metadata: BlobMetadata): Promise<void> {
+    const target = this.resolve(key)
+    const temporary = `${target}.${randomUUID()}.upload`
+    await mkdir(path.dirname(target), { recursive: true })
+    try {
+      await pipeline(body, createWriteStream(temporary, { flags: 'wx' }))
+      await rename(temporary, target)
+    } catch (error) {
+      await rm(temporary, { force: true }).catch(() => undefined)
+      throw error
+    }
+  }
+
   async get(key: string): Promise<Uint8Array> {
     return readFile(this.resolve(key))
+  }
+
+  async getStream(key: string): Promise<Readable> {
+    return createReadStream(this.resolve(key))
   }
 
   async delete(key: string): Promise<void> {

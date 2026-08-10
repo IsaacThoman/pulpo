@@ -6,7 +6,7 @@ export { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 export const idSchema = z.uuid()
 export const isoDateSchema = z.iso.datetime()
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
-export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 100 * 1024 * 1024
+export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 1_000 * 1024 * 1024
 
 export const roleSchema = z.enum(['pending', 'user', 'admin'])
 export type Role = z.infer<typeof roleSchema>

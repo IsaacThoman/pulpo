@@ -12,6 +12,7 @@ import type { RequestInit } from 'undici'
 import { detectImageMime } from './images.js'
 
 const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
+const MAX_EXPORT_FILE_BYTES = 25 * 1024 * 1024
 
 export interface WorkspaceOperation {
   id: string
@@ -55,7 +56,6 @@ export class WorkspaceManager {
     private readonly responseId: string,
     private readonly chatId: string,
     private readonly userId: string,
-    private readonly maxAttachmentBytes: number,
     private readonly onLeaseEvent?: (state: 'waiting' | 'provisioning' | 'ready' | 'expired' | 'unavailable' | 'continuing_without_agent', details?: Record<string, unknown>) => Promise<void>,
   ) {}
 
@@ -174,7 +174,12 @@ export class WorkspaceManager {
     const rows = await db.select().from(attachments).where(and(eq(attachments.userId, this.userId), inArray(attachments.id, ids), eq(attachments.status, 'ready')))
     for (const attachment of rows) {
       const path = attachmentWorkspacePath(attachment.originalName, attachment.id)
-      await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(path)}`, { method: 'PUT', headers: { 'content-type': attachment.mimeType }, body: new Uint8Array(await getBlobStore().get(attachment.objectKey)) })
+      await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(path)}`, {
+        method: 'PUT',
+        headers: { 'content-type': attachment.mimeType, 'content-length': String(attachment.sizeBytes) },
+        body: await getBlobStore().getStream(attachment.objectKey),
+        duplex: 'half',
+      })
     }
     this.staged = true
   }
@@ -256,7 +261,7 @@ export class WorkspaceManager {
     }
     await onStarted?.()
     const data = new Uint8Array(await response.arrayBuffer())
-    if (data.byteLength > this.maxAttachmentBytes) throw new Error(`File exceeds the ${this.maxAttachmentBytes} byte limit`)
+    if (data.byteLength > MAX_EXPORT_FILE_BYTES) throw new Error(`File exceeds the ${MAX_EXPORT_FILE_BYTES} byte limit`)
     if (this.localLeaseId) {
       const now = new Date()
       await db.update(workspaceLeases).set({ lastUsedAt: now, expiresAt: new Date(now.getTime() + this.idleTimeoutMs), updatedAt: now }).where(eq(workspaceLeases.id, this.localLeaseId))
