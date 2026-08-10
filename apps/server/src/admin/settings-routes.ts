@@ -15,6 +15,7 @@ import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { resolveLegacyOcrCatalogModel } from '../responses/catalog-model-runtime.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
+import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -51,7 +52,19 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
     if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
-    if (values.auth !== undefined) values.auth = authSettingsSchema.parse(values.auth)
+    if (values.auth !== undefined) {
+      const authSettings = authSettingsSchema.parse(values.auth)
+      const referencedModelIds = newAccountModelReferenceIds(authSettings)
+      if (referencedModelIds.length) {
+        const available = await db.select({ id: models.id }).from(models)
+          .where(and(eq(models.enabled, true), eq(models.visible, true)))
+        const missing = firstUnavailableModelReference(referencedModelIds, available.map((model) => model.id))
+        if (missing) {
+          throw new AppError(400, 'new_account_model_unavailable', `Configured model ${missing} is unavailable`)
+        }
+      }
+      values.auth = authSettings
+    }
     if (values.logging !== undefined) values.logging = loggingSettingsSchema.parse(values.logging)
     if (values.interface !== undefined) {
       const interfaceSettings = interfaceSettingsSchema.parse(values.interface)

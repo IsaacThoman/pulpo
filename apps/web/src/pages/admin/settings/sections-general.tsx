@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { useAuth } from '@/stores/auth'
 import { apiRequest } from '@/lib/api'
 import { modelOptionLabel, useAvailableModels } from './use-available-models'
+import { NewAccountModelDefaultsFields } from './new-account-model-defaults'
 import { DEFAULT_MAX_ATTACHMENT_BYTES, MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
@@ -90,6 +91,7 @@ export function GeneralSection() {
 
 export function AuthenticationSection() {
   const auth = useAuth()
+  const models = useAvailableModels()
   const [t, setT, save] = useAdminSetting('auth', {
     signupEnabled: auth.signupEnabled,
     defaultBalanceMicros: 5_000_000,
@@ -100,6 +102,10 @@ export function AuthenticationSection() {
     pendingMessage: auth.pendingMessage,
     defaultSignupRole: 'pending' as 'pending' | 'user',
     apiKeysEnabled: true,
+    newAccountModelDefaults: {
+      defaultModelId: null as string | null,
+      favoriteModelIds: [] as string[],
+    },
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
 
@@ -164,6 +170,12 @@ export function AuthenticationSection() {
           onChange={(v) => s('pendingMessage', v)}
         />
       </Section>
+
+      <NewAccountModelDefaultsFields
+        value={t.newAccountModelDefaults}
+        models={models}
+        onChange={(value) => s('newAccountModelDefaults', value)}
+      />
 
       <SaveBar onSave={async () => { await save(); auth.setSignupEnabled(t.signupEnabled); useAuth.setState({ pendingDetails: t.pendingDetails, adminEmail: t.adminEmail, pendingMessage: t.pendingMessage, apiKeysEnabled: t.apiKeysEnabled, maxAttachmentBytes: t.maxAttachmentBytes }) }} />
     </div>

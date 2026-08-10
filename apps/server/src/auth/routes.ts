@@ -18,6 +18,7 @@ import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
 import {
   createPasswordHash,
@@ -80,6 +81,9 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747743)`)
       const [existingUser] = await tx.select({ id: users.id }).from(users).limit(1)
       if (existingUser) throw new AppError(409, 'setup_complete', 'Pulpo has already been set up')
+      const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'auth')).limit(1)
+      const authSettings = parseAuthSettings(setting?.value)
       await tx.insert(users).values({
         id: userId,
         email: input.email,
@@ -89,6 +93,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         storageLimitBytes: 5_000 * 1024 * 1024,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
+      await insertNewAccountPreferences(tx, userId, authSettings)
     })
     await createSession(userId, request, reply)
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
@@ -133,6 +138,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         storageLimitBytes: authSettings.defaultStorageLimitBytes,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
+      await insertNewAccountPreferences(tx, userId, authSettings)
     })
     await createSession(userId, request, reply)
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
