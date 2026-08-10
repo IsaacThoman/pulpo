@@ -104,6 +104,7 @@ import {
   Brain,
   FilePenLine,
   FileText,
+  FlaskConical,
   FolderSearch,
   Ghost,
   List,
@@ -2685,7 +2686,17 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           label={(
             <SwiftUILabel
               title="Labs"
-              icon={<SwiftUIImage color={temporary ? '#f2f2f7' : undefined} systemName="flask" />}
+              icon={(
+                <SwiftUIRNHostView matchContents>
+                  <View pointerEvents="none" style={styles.modelMenuCustomIcon}>
+                    <FlaskConical
+                      color={temporary || colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e'}
+                      size={20}
+                      strokeWidth={2}
+                    />
+                  </View>
+                </SwiftUIRNHostView>
+              )}
             />
           )}
         >
@@ -4292,6 +4303,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.75 },
   modelTriggerWrap: { flex: 1, alignItems: 'center' },
   modelMenuHost: { minHeight: 44, maxWidth: 230, justifyContent: 'center' },
+  modelMenuCustomIcon: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
   modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
