@@ -10,6 +10,7 @@ import { createRedis } from '../redis.js'
 import { readResponseEvents, requestCancellation } from '../responses/events.js'
 import { notFound } from '../lib/errors.js'
 import { accessibleChatCondition, temporaryChatExpiresAt } from '../chats/temporary.js'
+import { createStreamCloser } from './stream-cleanup.js'
 
 const publicResponseInput = z.object({
   model: z.string().min(1),
@@ -64,14 +65,8 @@ async function streamResponse(reply: FastifyReply, responseId: string): Promise<
   })
   await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots')
   let lastSequence = 0
-  let closed = false
-  const close = async () => {
-    if (closed) return
-    closed = true
-    await subscriber.quit()
-    if (!reply.raw.writableEnded) reply.raw.end()
-  }
-  reply.raw.on('close', () => void subscriber.quit())
+  const close = createStreamCloser(subscriber, reply.raw)
+  reply.raw.once('close', close)
   subscriber.on('message', (channel: string, message: string) => {
     const parsed = JSON.parse(message)
     if (parsed.responseId !== responseId) return
@@ -81,7 +76,7 @@ async function streamResponse(reply: FastifyReply, responseId: string): Promise<
       reply.raw.write(`data: ${JSON.stringify(parsed.payload)}\n\n`)
     } else if (['completed', 'failed', 'cancelled', 'incomplete'].includes(parsed.status)) {
       reply.raw.write('data: [DONE]\n\n')
-      void close()
+      close()
     }
   })
   const replay = await readResponseEvents(responseId, 0)
@@ -93,7 +88,7 @@ async function streamResponse(reply: FastifyReply, responseId: string): Promise<
   const [current] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
   if (current && !['queued', 'in_progress'].includes(current.status)) {
     reply.raw.write('data: [DONE]\n\n')
-    await close()
+    close()
   }
 }
 

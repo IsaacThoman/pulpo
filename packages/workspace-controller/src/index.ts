@@ -3,13 +3,24 @@ import { createServer as createHttpsServer } from 'node:https'
 import { randomBytes, randomUUID } from 'node:crypto'
 import * as k8s from '@kubernetes/client-node'
 import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
+import { effectiveWarmTargets, instanceIdHash, normalizeInstanceId, WORKSPACE_INSTANCE_ANNOTATION, WORKSPACE_INSTANCE_HASH_LABEL, WORKSPACE_INSTANCE_HEADER, type WarmRequest } from './tenancy.js'
 
 const namespace = process.env.PULPO_WORKSPACE_NAMESPACE ?? 'pulpo-workspaces'
 const image = process.env.PULPO_WORKSPACE_IMAGE
 const authToken = process.env.PULPO_CONTROLLER_TOKEN
 const runtimeClassName = process.env.PULPO_RUNTIME_CLASS ?? 'kata'
-let warmCapacity = Number(process.env.PULPO_WARM_CAPACITY ?? 1)
-const port = Number(process.env.PORT ?? 8786)
+
+function environmentInteger(name: string, fallback: number, minimum: number, maximum: number): number {
+  const value = Number(process.env[name] ?? fallback)
+  if (!Number.isInteger(value) || value < minimum || value > maximum) {
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`)
+  }
+  return value
+}
+
+const defaultWarmCapacity = environmentInteger('PULPO_WARM_CAPACITY', 1, 0, 100)
+const maxActiveWorkspacesTotal = environmentInteger('PULPO_MAX_ACTIVE_WORKSPACES_TOTAL', 100, 1, 10_000)
+const port = environmentInteger('PORT', 8786, 1, 65_535)
 if (!image?.includes('@sha256:')) throw new Error('PULPO_WORKSPACE_IMAGE must be an immutable digest reference')
 if (!authToken || authToken.length < 32) throw new Error('PULPO_CONTROLLER_TOKEN must contain at least 32 characters')
 const tlsCert = process.env.PULPO_CONTROLLER_TLS_CERT
@@ -18,24 +29,73 @@ if ((!tlsCert || !tlsKey) && process.env.PULPO_ALLOW_INSECURE_HTTP !== 'true') t
 
 const kc = new k8s.KubeConfig(); kc.loadFromDefault()
 const core = kc.makeApiClient(k8s.CoreV1Api)
-type Lease = { id: string; podName: string; podIp: string; daemonToken: string; createdAt: number; lastUsedAt: number; idleMs: number; hardMs: number }
-let desiredSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi' }
+type Lease = {
+  id: string
+  instanceId: string
+  podName: string
+  podIp: string
+  daemonToken: string
+  specHash: string
+  createdAt: number
+  lastUsedAt: number
+  idleMs: number
+  hardMs: number
+}
+type ClaimInput = {
+  chatId?: string
+  imageDigest?: string
+  resources?: Partial<Omit<WorkspaceSpec, 'imageDigest'>>
+  warmCapacity?: number
+  idleTimeoutSeconds?: number
+  hardTimeoutSeconds?: number
+  maxActiveWorkspaces?: number
+}
+
+const defaultSpec: WorkspaceSpec = { imageDigest: image, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi' }
+const controllerWarmRequest: WarmRequest = { spec: defaultSpec, capacity: defaultWarmCapacity }
+const warmRequests = new Map<string, WarmRequest>()
 const leases = new Map<string, Lease>()
 const activeOperations = new Map<string, Set<string>>()
+const pendingClaims = new Map<string, number>()
+let pendingClaimTotal = 0
 let reconcileInFlight: Promise<void> | undefined
+let warmClaimTail: Promise<void> = Promise.resolve()
+let useControllerWarmRequest = defaultWarmCapacity > 0
 
 function json(response: ServerResponse, status: number, value: unknown): void { response.writeHead(status, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)) }
 async function body(request: IncomingMessage): Promise<Buffer> { const chunks: Buffer[] = []; for await (const chunk of request) chunks.push(Buffer.from(chunk)); return Buffer.concat(chunks) }
 function podName(): string { return `pulpo-workspace-${randomUUID().slice(0, 8)}` }
+function podInstanceId(pod: k8s.V1Pod): string { return pod.metadata?.annotations?.[WORKSPACE_INSTANCE_ANNOTATION] ?? 'default' }
+function activeForInstance(instanceId: string): number { return [...leases.values()].filter((lease) => lease.instanceId === instanceId).length }
+function currentWarmTargets() { return effectiveWarmTargets([...(useControllerWarmRequest ? [controllerWarmRequest] : []), ...warmRequests.values()]) }
+function desiredSpec(instanceId: string): WorkspaceSpec { return warmRequests.get(instanceId)?.spec ?? defaultSpec }
+function configuredWarmCapacity(instanceId: string): number { return currentWarmTargets().get(workspaceSpecHash(desiredSpec(instanceId)))?.capacity ?? 0 }
 
-async function createWorkspacePod(state: 'warm' | 'starting', spec = desiredSpec, chatId?: string): Promise<{ name: string; daemonToken: string }> {
+async function withWarmClaimLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = warmClaimTail
+  let release!: () => void
+  warmClaimTail = new Promise<void>((resolve) => { release = resolve })
+  await previous
+  try { return await operation() } finally { release() }
+}
+
+async function createWorkspacePod(state: 'warm' | 'starting', spec: WorkspaceSpec, chatId?: string, instanceId?: string): Promise<{ name: string; daemonToken: string }> {
   const name = podName()
   const daemonToken = randomBytes(32).toString('hex')
   await core.createNamespacedPod({ namespace, body: {
     metadata: {
       name,
-      labels: { 'app.kubernetes.io/name': 'pulpo-workspace', 'pulpo.dev/state': state },
-      annotations: { 'pulpo.dev/daemon-token': daemonToken, [WORKSPACE_SPEC_HASH_ANNOTATION]: workspaceSpecHash(spec), ...(chatId ? { 'pulpo.dev/chat-id': chatId } : {}) },
+      labels: {
+        'app.kubernetes.io/name': 'pulpo-workspace',
+        'pulpo.dev/state': state,
+        ...(instanceId ? { [WORKSPACE_INSTANCE_HASH_LABEL]: instanceIdHash(instanceId) } : {}),
+      },
+      annotations: {
+        'pulpo.dev/daemon-token': daemonToken,
+        [WORKSPACE_SPEC_HASH_ANNOTATION]: workspaceSpecHash(spec),
+        ...(instanceId ? { [WORKSPACE_INSTANCE_ANNOTATION]: instanceId } : {}),
+        ...(chatId ? { 'pulpo.dev/chat-id': chatId } : {}),
+      },
     },
     spec: {
       runtimeClassName, automountServiceAccountToken: false, restartPolicy: 'Never', enableServiceLinks: false,
@@ -54,7 +114,7 @@ function isPodReady(pod: k8s.V1Pod | undefined): pod is k8s.V1Pod & { metadata: 
   )
 }
 
-async function findReadyWarmPod(spec = desiredSpec): Promise<k8s.V1Pod | undefined> {
+async function findReadyWarmPod(spec: WorkspaceSpec): Promise<k8s.V1Pod | undefined> {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace,pulpo.dev/state=warm' })).items
   return pods.find((candidate) => podMatchesSpec(candidate, spec) && isPodReady(candidate))
 }
@@ -78,7 +138,18 @@ async function reconcileOnce(): Promise<void> {
   for (const pod of pods) {
     const leaseId = pod.metadata?.labels?.['pulpo.dev/lease-id']; const annotations = pod.metadata?.annotations
     if (!leaseId || leases.has(leaseId) || !pod.metadata?.name || !pod.status?.podIP) continue
-    leases.set(leaseId, { id: leaseId, podName: pod.metadata.name, podIp: pod.status.podIP, daemonToken: annotations?.['pulpo.dev/daemon-token'] ?? '', createdAt: Number(annotations?.['pulpo.dev/created-at'] ?? Date.now()), lastUsedAt: Number(annotations?.['pulpo.dev/last-used-at'] ?? Date.now()), idleMs: Number(annotations?.['pulpo.dev/idle-ms'] ?? 3_600_000), hardMs: Number(annotations?.['pulpo.dev/hard-ms'] ?? 28_800_000) })
+    leases.set(leaseId, {
+      id: leaseId,
+      instanceId: podInstanceId(pod),
+      podName: pod.metadata.name,
+      podIp: pod.status.podIP,
+      daemonToken: annotations?.['pulpo.dev/daemon-token'] ?? '',
+      specHash: annotations?.[WORKSPACE_SPEC_HASH_ANNOTATION] ?? '',
+      createdAt: Number(annotations?.['pulpo.dev/created-at'] ?? Date.now()),
+      lastUsedAt: Number(annotations?.['pulpo.dev/last-used-at'] ?? Date.now()),
+      idleMs: Number(annotations?.['pulpo.dev/idle-ms'] ?? 3_600_000),
+      hardMs: Number(annotations?.['pulpo.dev/hard-ms'] ?? 28_800_000),
+    })
   }
   const now = Date.now()
   for (const lease of leases.values()) if (now - lease.lastUsedAt > lease.idleMs || now - lease.createdAt > lease.hardMs) {
@@ -86,13 +157,18 @@ async function reconcileOnce(): Promise<void> {
   }
   const staleStarting = pods.filter((pod) => isStaleStartingPod(pod, now))
   await Promise.all(staleStarting.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
+
+  const targets = currentWarmTargets()
   const allWarm = pods.filter((pod) => pod.metadata?.labels?.['pulpo.dev/state'] === 'warm')
-  const incompatible = allWarm.filter((pod) => !podMatchesSpec(pod, desiredSpec))
-  await Promise.all(incompatible.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
-  const warm = allWarm.filter((pod) => podMatchesSpec(pod, desiredSpec))
-  const excess = warm.slice(warmCapacity)
+  const retained = new Set<string>()
+  for (const target of targets.values()) {
+    const compatible = allWarm.filter((pod) => podMatchesSpec(pod, target.spec))
+    const keep = compatible.slice(0, target.capacity)
+    for (const pod of keep) if (pod.metadata?.name) retained.add(pod.metadata.name)
+    for (let count = keep.length; count < target.capacity; count += 1) await createWorkspacePod('warm', target.spec)
+  }
+  const excess = allWarm.filter((pod) => pod.metadata?.name && !retained.has(pod.metadata.name))
   await Promise.all(excess.flatMap((pod) => pod.metadata?.name ? [core.deleteNamespacedPod({ namespace, name: pod.metadata.name }).catch(() => undefined)] : []))
-  for (let count = warm.length - excess.length; count < warmCapacity; count += 1) await createWorkspacePod('warm')
 }
 
 async function reconcile(): Promise<void> {
@@ -102,35 +178,95 @@ async function reconcile(): Promise<void> {
   try { await run } finally { if (reconcileInFlight === run) reconcileInFlight = undefined }
 }
 
-async function claim(input: { chatId?: string; imageDigest?: string; resources?: Partial<Omit<WorkspaceSpec, 'imageDigest'>>; warmCapacity?: number; idleTimeoutSeconds?: number; hardTimeoutSeconds?: number; maxActiveWorkspaces?: number }): Promise<Lease> {
-  if (!input.imageDigest?.includes('@sha256:')) throw new Error('An immutable workspace image digest is required')
-  desiredSpec = { imageDigest: input.imageDigest, cpu: input.resources?.cpu || desiredSpec.cpu, memory: input.resources?.memory || desiredSpec.memory, ephemeralStorage: input.resources?.ephemeralStorage || desiredSpec.ephemeralStorage }
-  if (Number.isInteger(input.warmCapacity)) warmCapacity = Math.max(0, Math.min(100, input.warmCapacity!))
-  await reconcile()
-  if (leases.size >= Math.max(1, input.maxActiveWorkspaces ?? 3)) throw new Error('Maximum active workspace capacity reached')
+function reserveCapacity(instanceId: string, maxActiveWorkspaces: number): void {
+  const perInstanceLimit = Math.max(1, maxActiveWorkspaces)
+  const ownerPending = pendingClaims.get(instanceId) ?? 0
+  if (activeForInstance(instanceId) + ownerPending >= perInstanceLimit) throw new Error('Maximum active workspace capacity reached for this Pulpo instance')
+  if (leases.size + pendingClaimTotal >= maxActiveWorkspacesTotal) throw new Error('Maximum controller workspace capacity reached')
+  pendingClaims.set(instanceId, ownerPending + 1)
+  pendingClaimTotal += 1
+}
 
-  const deadline = Date.now() + 180_000
-  let pod = await findReadyWarmPod()
-  // Prefer a warm pod when the pool is configured; briefly wait for in-flight warm starts.
-  if (!pod && warmCapacity > 0) {
-    const warmDeadline = Math.min(deadline, Date.now() + 15_000)
-    while (!pod && Date.now() < warmDeadline) {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      pod = await findReadyWarmPod()
-    }
-  }
-  // Cold-start on demand when the warm pool is empty (including warmCapacity=0).
-  if (!pod) {
-    const created = await createWorkspacePod('starting', desiredSpec, input.chatId)
-    pod = await waitForPodReady(created.name, deadline)
-  }
+function releaseCapacityReservation(instanceId: string): void {
+  const ownerPending = pendingClaims.get(instanceId) ?? 1
+  if (ownerPending <= 1) pendingClaims.delete(instanceId)
+  else pendingClaims.set(instanceId, ownerPending - 1)
+  pendingClaimTotal = Math.max(0, pendingClaimTotal - 1)
+}
+
+async function claimPod(pod: k8s.V1Pod, instanceId: string, input: ClaimInput, spec: WorkspaceSpec): Promise<Lease> {
   if (!isPodReady(pod)) throw new Error('Workspace failed to become ready')
-
   const id = randomUUID()
   const createdAt = Date.now(); const idleMs = (input.idleTimeoutSeconds ?? 1800) * 1000; const hardMs = (input.hardTimeoutSeconds ?? 14400) * 1000
-  await core.patchNamespacedPod({ namespace, name: pod.metadata.name, body: { metadata: { labels: { 'pulpo.dev/state': 'claimed', 'pulpo.dev/lease-id': id }, annotations: { 'pulpo.dev/created-at': String(createdAt), 'pulpo.dev/last-used-at': String(createdAt), 'pulpo.dev/idle-ms': String(idleMs), 'pulpo.dev/hard-ms': String(hardMs), ...(input.chatId ? { 'pulpo.dev/chat-id': input.chatId } : {}) } } } }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch))
-  const lease: Lease = { id, podName: pod.metadata.name, podIp: pod.status.podIP, daemonToken: pod.metadata.annotations?.['pulpo.dev/daemon-token'] ?? '', createdAt, lastUsedAt: createdAt, idleMs, hardMs }
-  leases.set(id, lease); void reconcile(); return lease
+  await core.patchNamespacedPod({ namespace, name: pod.metadata.name, body: { metadata: {
+    labels: { 'pulpo.dev/state': 'claimed', 'pulpo.dev/lease-id': id, [WORKSPACE_INSTANCE_HASH_LABEL]: instanceIdHash(instanceId) },
+    annotations: {
+      [WORKSPACE_INSTANCE_ANNOTATION]: instanceId,
+      [WORKSPACE_SPEC_HASH_ANNOTATION]: workspaceSpecHash(spec),
+      'pulpo.dev/created-at': String(createdAt),
+      'pulpo.dev/last-used-at': String(createdAt),
+      'pulpo.dev/idle-ms': String(idleMs),
+      'pulpo.dev/hard-ms': String(hardMs),
+      ...(input.chatId ? { 'pulpo.dev/chat-id': input.chatId } : {}),
+    },
+  } } }, k8s.setHeaderOptions('Content-Type', k8s.PatchStrategy.MergePatch))
+  const lease: Lease = {
+    id,
+    instanceId,
+    podName: pod.metadata.name,
+    podIp: pod.status.podIP,
+    daemonToken: pod.metadata.annotations?.['pulpo.dev/daemon-token'] ?? '',
+    specHash: workspaceSpecHash(spec),
+    createdAt,
+    lastUsedAt: createdAt,
+    idleMs,
+    hardMs,
+  }
+  leases.set(id, lease)
+  return lease
+}
+
+// The controller deployment is intentionally a singleton. This lock prevents two
+// concurrent requests from observing and claiming the same ready warm pod.
+async function tryClaimWarmPod(instanceId: string, input: ClaimInput, spec: WorkspaceSpec): Promise<Lease | undefined> {
+  return withWarmClaimLock(async () => {
+    const pod = await findReadyWarmPod(spec)
+    return pod ? claimPod(pod, instanceId, input, spec) : undefined
+  })
+}
+
+async function claim(instanceId: string, input: ClaimInput): Promise<Lease> {
+  if (!input.imageDigest?.includes('@sha256:')) throw new Error('An immutable workspace image digest is required')
+  const spec: WorkspaceSpec = {
+    imageDigest: input.imageDigest,
+    cpu: input.resources?.cpu || defaultSpec.cpu,
+    memory: input.resources?.memory || defaultSpec.memory,
+    ephemeralStorage: input.resources?.ephemeralStorage || defaultSpec.ephemeralStorage,
+  }
+  const requestedWarmCapacity = Number.isInteger(input.warmCapacity) ? Math.max(0, Math.min(100, input.warmCapacity!)) : 0
+  if (requestedWarmCapacity > 0) useControllerWarmRequest = false
+  warmRequests.set(instanceId, { spec, capacity: requestedWarmCapacity })
+  await reconcile()
+  reserveCapacity(instanceId, input.maxActiveWorkspaces ?? 3)
+  try {
+    const deadline = Date.now() + 180_000
+    let lease = await tryClaimWarmPod(instanceId, input, spec)
+    if (!lease && requestedWarmCapacity > 0) {
+      const warmDeadline = Math.min(deadline, Date.now() + 15_000)
+      while (!lease && Date.now() < warmDeadline) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        lease = await tryClaimWarmPod(instanceId, input, spec)
+      }
+    }
+    if (!lease) {
+      const created = await createWorkspacePod('starting', spec, input.chatId, instanceId)
+      lease = await claimPod(await waitForPodReady(created.name, deadline), instanceId, input, spec)
+    }
+    void reconcile()
+    return lease
+  } finally {
+    releaseCapacityReservation(instanceId)
+  }
 }
 
 async function proxy(lease: Lease, request: IncomingMessage, pathname: string, search = ''): Promise<Response> {
@@ -151,9 +287,13 @@ async function proxy(lease: Lease, request: IncomingMessage, pathname: string, s
   return upstream
 }
 
-async function workspaceInventory() {
+async function workspaceInventory(instanceId: string) {
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace' })).items
-  return pods.map((pod) => {
+  const spec = desiredSpec(instanceId)
+  return pods.filter((pod) => {
+    const state = pod.metadata?.labels?.['pulpo.dev/state']
+    return state === 'warm' ? podMatchesSpec(pod, spec) : podInstanceId(pod) === instanceId
+  }).map((pod) => {
     const labels = pod.metadata?.labels ?? {}
     const annotations = pod.metadata?.annotations ?? {}
     const leaseId = labels['pulpo.dev/lease-id']
@@ -180,6 +320,7 @@ async function workspaceInventory() {
       id: pod.metadata?.uid ?? pod.metadata?.name,
       name: pod.metadata?.name,
       leaseId: leaseId ?? null,
+      instanceId: annotations[WORKSPACE_INSTANCE_ANNOTATION] ?? null,
       chatId: annotations['pulpo.dev/chat-id'] ?? null,
       lifecycleState,
       phase: pod.status?.phase ?? 'Unknown',
@@ -198,15 +339,19 @@ async function workspaceInventory() {
 
 const handler = async (request: IncomingMessage, response: ServerResponse) => {
   try {
-    if (request.url === '/healthz') { await reconcile(); return json(response, 200, { status: 'ok', warmCapacity, active: leases.size }) }
+    if (request.url === '/healthz') { await reconcile(); return json(response, 200, { status: 'ok', warmCapacity: [...currentWarmTargets().values()].reduce((total, target) => total + target.capacity, 0), active: leases.size }) }
     if (request.headers.authorization !== `Bearer ${authToken}`) return json(response, 401, { error: 'unauthorized' })
+    let instanceId: string
+    try { instanceId = normalizeInstanceId(request.headers[WORKSPACE_INSTANCE_HEADER] ?? 'default') } catch (error) {
+      return json(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
     const url = new URL(request.url ?? '/', 'http://controller')
-    if (request.method === 'POST' && url.pathname === '/v1/leases') return json(response, 201, await claim(JSON.parse((await body(request)).toString('utf8') || '{}')))
+    if (request.method === 'POST' && url.pathname === '/v1/leases') return json(response, 201, await claim(instanceId, JSON.parse((await body(request)).toString('utf8') || '{}')))
     if (request.method === 'GET' && url.pathname === '/v1/leases') {
       await reconcile()
-      return json(response, 200, { leases: [...leases.values()].map((lease) => ({ id: lease.id, createdAt: lease.createdAt, lastUsedAt: lease.lastUsedAt })) })
+      return json(response, 200, { leases: [...leases.values()].filter((lease) => lease.instanceId === instanceId).map((lease) => ({ id: lease.id, createdAt: lease.createdAt, lastUsedAt: lease.lastUsedAt })) })
     }
-    if (request.method === 'GET' && url.pathname === '/v1/workspaces') return json(response, 200, { warmCapacity, active: leases.size, workspaces: await workspaceInventory() })
+    if (request.method === 'GET' && url.pathname === '/v1/workspaces') return json(response, 200, { warmCapacity: configuredWarmCapacity(instanceId), active: activeForInstance(instanceId), globalActive: leases.size, workspaces: await workspaceInventory(instanceId) })
     const workspaceMatch = url.pathname.match(/^\/v1\/workspaces\/([^/]+)$/)
     if (request.method === 'DELETE' && workspaceMatch) {
       const name = decodeURIComponent(workspaceMatch[1]!)
@@ -218,12 +363,13 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
         if (statusCode === 404) return json(response, 404, { error: 'workspace_not_found' })
         throw error
       }
+      if (podInstanceId(pod) !== instanceId) return json(response, 404, { error: 'workspace_not_found' })
       if (!isUnleasedOrphanPod(pod)) return json(response, 409, { error: 'workspace_is_not_an_unleased_orphan' })
       await core.deleteNamespacedPod({ namespace, name })
       return json(response, 200, { status: 'deleted' })
     }
     const match = url.pathname.match(/^\/v1\/leases\/([^/]+)(\/.*)?$/); const lease = match ? leases.get(match[1]!) : undefined
-    if (!lease) return json(response, 404, { error: 'lease_not_found' })
+    if (!lease || lease.instanceId !== instanceId) return json(response, 404, { error: 'lease_not_found' })
     if (request.method === 'DELETE' && !match?.[2]) { await core.deleteNamespacedPod({ namespace, name: lease.podName }); leases.delete(lease.id); activeOperations.delete(lease.id); return json(response, 200, { status: 'released' }) }
     const upstream = await proxy(lease, request, match?.[2] || '/', url.search)
     response.writeHead(upstream.status, { 'content-type': upstream.headers.get('content-type') ?? 'application/json' }); response.end(Buffer.from(await upstream.arrayBuffer()))

@@ -3644,6 +3644,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
+                autoFocus
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
@@ -3987,6 +3988,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onNewChat: () => void;
   onOpenSettings: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const folders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
@@ -4115,7 +4117,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
 
   return (
     <View style={styles.panelRoot}>
-      <SafeAreaView style={styles.flex} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.flex} edges={['top']}>
         <AppHeader>
           <View style={styles.profileChip}>
             <PulpoMark size={38} />
@@ -4182,7 +4184,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </Reanimated.View>
 
         <SectionList
-          contentContainerStyle={styles.chatList}
+          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 16 }]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           keyExtractor={(chat) => chat.id}

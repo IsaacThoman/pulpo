@@ -4,6 +4,35 @@ This service is deployed inside the Kubernetes cluster and is the only Pulpo
 component with permission to create, claim, and delete workspace pods. The
 Pulpo worker calls it over a private authenticated endpoint.
 
+## Multiple Pulpo instances
+
+One controller can serve multiple independent Pulpo deployments. Every
+authenticated request includes an `x-pulpo-instance-id` header. The controller
+stores that id as a pod annotation plus a hash label, reconstructs it after a
+restart, and only lists, proxies, or releases leases owned by that instance.
+
+Pulpo resolves the id from `PULPO_INSTANCE_ID`, then Coolify's
+`SERVICE_FQDN_WEB` or `COOLIFY_FQDN`, and finally the `PUBLIC_URL` hostname.
+Set `PULPO_INSTANCE_ID` explicitly outside platforms that provide stable
+deployment FQDN metadata.
+
+For a rolling upgrade, authenticated clients that do not yet send the header
+are placed in the legacy `default` ownership scope.
+
+Warm pods remain unowned until claimed. Pools are shared by immutable workspace
+specification, and the effective target is the largest capacity requested for
+that specification. A preview configured with `warmCapacity: 0` therefore
+cannot remove production's compatible warm pool.
+
+`maxActiveWorkspaces` is enforced per Pulpo instance. Set
+`PULPO_MAX_ACTIVE_WORKSPACES_TOTAL` on the controller for a cluster-wide hard
+limit. The example manifest defaults it to 100.
+
+The bearer token authenticates access to the controller, while the instance id
+provides operational ownership. Deployments sharing the same token are in the
+same trust domain because a holder can forge the header. Use separate controller
+credentials or a trusted proxy if instance identity must be a security boundary.
+
 ## Deployment
 
 The controller is designed to run inside the Kubernetes cluster that hosts the

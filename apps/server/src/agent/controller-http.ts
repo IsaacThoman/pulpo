@@ -1,5 +1,5 @@
 import { Agent, fetch, type RequestInit } from 'undici'
-import { getConfig } from '../config.js'
+import { getConfig, getWorkspaceInstanceId } from '../config.js'
 
 let dispatcher: Agent | undefined
 let dispatcherCertificate: string | undefined
@@ -26,6 +26,7 @@ export async function workspaceControllerRequest(path: string, init: RequestInit
     dispatcher: controllerDispatcher(),
     headers: {
       ...(init.headers as Record<string, string> | undefined),
+      ...(authenticate ? { 'x-pulpo-instance-id': getWorkspaceInstanceId(config) } : {}),
       ...(authenticate ? { authorization: `Bearer ${config.WORKSPACE_CONTROLLER_TOKEN}` } : {}),
     },
   }) as unknown as Response

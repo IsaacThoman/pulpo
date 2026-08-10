@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getStorageCorsOrigins, isAllowedOrigin, parseConfig } from './config.js'
+import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, parseConfig } from './config.js'
 
 describe('server configuration', () => {
   it('treats empty optional workspace controller values as unset', () => {
@@ -19,6 +19,56 @@ describe('server configuration', () => {
       WORKSPACE_CONTROLLER_URL: 'not-a-url',
       WORKSPACE_CONTROLLER_TOKEN: 'short',
     })).toThrow()
+  })
+
+  it('parses optional ci-preview bootstrap values and validates their shape', () => {
+    const digest = `ghcr.io/isaacthoman/pulpo-agent-workspace@sha256:${'a'.repeat(64)}`
+    const config = parseConfig({
+      PULPO_BOOTSTRAP_PRESET: 'ci-preview',
+      PULPO_PREVIEW_ADMIN_EMAIL: 'preview@example.com',
+      PULPO_PREVIEW_ADMIN_PASSWORD: 'preview-password',
+      PULPO_PREVIEW_PROVIDER_API_KEY: 'sk-preview',
+      PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: digest,
+    })
+
+    expect(config).toMatchObject({
+      PULPO_BOOTSTRAP_PRESET: 'ci-preview',
+      PULPO_PREVIEW_ADMIN_EMAIL: 'preview@example.com',
+      PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: digest,
+    })
+    expect(() => parseConfig({ PULPO_BOOTSTRAP_PRESET: 'production' })).toThrow()
+    expect(() => parseConfig({ PULPO_PREVIEW_ADMIN_EMAIL: 'not-an-email' })).toThrow()
+    expect(() => parseConfig({ PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: 'ghcr.io/example/workspace:latest' })).toThrow()
+  })
+
+  it('resolves Coolify preview service names from pull request metadata', () => {
+    expect(parseConfig({
+      COOLIFY_BRANCH: '"pull/48/head"',
+      POSTGRES_HOST: 'postgres',
+      REDIS_URL: 'redis://redis:6379',
+      S3_ENDPOINT: 'http://seaweed-s3:8333',
+    })).toMatchObject({
+      POSTGRES_HOST: 'postgres-pr-48',
+      REDIS_URL: 'redis://redis-pr-48:6379',
+      S3_ENDPOINT: 'http://seaweed-s3-pr-48:8333',
+    })
+
+    expect(parseConfig({ COOLIFY_BRANCH: 'main' })).toMatchObject({
+      POSTGRES_HOST: 'localhost',
+      REDIS_URL: 'redis://localhost:6379',
+      S3_ENDPOINT: 'http://localhost:8333',
+    })
+  })
+
+  it('resolves an explicit workspace instance id before deployment metadata', () => {
+    const config = parseConfig({ PUBLIC_URL: 'https://pulpo.example.com', PULPO_INSTANCE_ID: 'production' })
+    expect(getWorkspaceInstanceId(config, { SERVICE_FQDN_WEB: '42.preview.example.com' })).toBe('production')
+  })
+
+  it('uses a Coolify service FQDN as the preview workspace instance id', () => {
+    const config = parseConfig({ PUBLIC_URL: 'https://pulpo.example.com' })
+    expect(getWorkspaceInstanceId(config, { SERVICE_FQDN_WEB: 'https://42.preview.example.com' })).toBe('42.preview.example.com')
+    expect(getWorkspaceInstanceId(config, {})).toBe('pulpo.example.com')
   })
 
   it('keeps arbitrary localhost ports disabled by default', () => {

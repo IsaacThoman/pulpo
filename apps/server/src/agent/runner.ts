@@ -66,7 +66,57 @@ function nonNegativeMicros(value: unknown): number {
   return Number.isSafeInteger(amount) && amount > 0 ? amount : 0
 }
 
+async function finalizeUnhandledAgentFailure(responseId: string, error: unknown): Promise<void> {
+  const [state] = await db.select({ response: responses, requestLog: requestLogs })
+    .from(responses)
+    .leftJoin(requestLogs, eq(requestLogs.responseId, responses.id))
+    .where(eq(responses.id, responseId))
+    .limit(1)
+  if (!state || ['completed', 'failed', 'cancelled', 'incomplete'].includes(state.response.status)) return
+
+  const message = error instanceof Error ? error.message : String(error)
+  const category = classifyGenerationError(error)
+  const completedAt = new Date()
+  await db.transaction(async (tx) => {
+    await tx.update(responses).set({
+      status: 'failed',
+      error: { message, category },
+      completedAt,
+      updatedAt: completedAt,
+    }).where(eq(responses.id, responseId))
+    await tx.update(agentRuns).set({
+      status: 'failed',
+      error: message,
+      completedAt,
+      updatedAt: completedAt,
+    }).where(eq(agentRuns.responseId, responseId))
+    if (state.requestLog) {
+      await tx.update(requestLogs).set({
+        status: 'failed',
+        errorCategory: category,
+        errorMessage: message,
+        durationMs: Math.max(0, completedAt.getTime() - (state.requestLog.startedAt ?? state.requestLog.createdAt).getTime()),
+        completedAt,
+        updatedAt: completedAt,
+      }).where(eq(requestLogs.id, state.requestLog.id))
+    }
+  })
+  await releaseBudget(responseId)
+  const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+  if (terminal) await publishSnapshot(toSnapshot(terminal))
+  if (state.requestLog) await publishAdminUsage(state.requestLog.id, true)
+}
+
 export async function processAgentGeneration(responseId: string): Promise<void> {
+  try {
+    await runAgentGeneration(responseId)
+  } catch (error) {
+    await finalizeUnhandledAgentFailure(responseId, error)
+    throw error
+  }
+}
+
+async function runAgentGeneration(responseId: string): Promise<void> {
   const startedAt = Date.now()
   const config = getConfig()
   const [record] = await db.select({ response: responses, model: models, provider: providerConnections })
