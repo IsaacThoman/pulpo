@@ -150,6 +150,7 @@ jobs:
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
       COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
+      PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,21 +161,9 @@ jobs:
       - name: Validate preview configuration
         run: bash .github/scripts/validate-coolify-preview-env.sh "${COOLIFY_APP_UUID}"
 
-      - name: Deploy preview
+      - name: Find automatic preview deployment
         id: deploy
-        run: |
-          set -euo pipefail
-          : "${COOLIFY_APP_UUID:?COOLIFY_PULPO_APP_UUID repository variable is required}"
-          : "${PULL_REQUEST_ID:?pull request id is required}"
-          response="$(coolify deploy uuid "${COOLIFY_APP_UUID}" --pull-request-id "${PULL_REQUEST_ID}" --format json)"
-          deployment_uuid="$(jq -r '.deployments[0].deployment_uuid // .[0].deployment_uuid // .deployment_uuid // empty' <<< "${response}")"
-          if [[ -z "${deployment_uuid}" ]]; then
-            message="$(jq -r '.deployments[0].message // .[0].message // .message // "Coolify did not return a deployment UUID."' <<< "${response}")"
-            echo "${message}" >&2
-            exit 1
-          fi
-          echo "deployment_uuid=${deployment_uuid}" >> "${GITHUB_OUTPUT}"
-          echo "Queued Coolify preview deployment ${deployment_uuid} for PR ${PULL_REQUEST_ID}."
+        run: bash .github/scripts/find-coolify-preview-deployment.sh
 
       - name: Wait for healthy preview
         run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
