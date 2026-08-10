@@ -87,7 +87,7 @@ export function AppLayout() {
   }, [mobileOpen])
 
   return (
-    <TooltipProvider delayDuration={200}>
+    <TooltipProvider delayDuration={1000}>
       <ChatDataBridge />
       <SettingsBridge />
       <div className="relative flex h-full overflow-hidden">

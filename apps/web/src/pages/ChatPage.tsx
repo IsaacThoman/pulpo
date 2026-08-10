@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Ghost, Loader2, Save } from 'lucide-react'
+import { Ghost, Loader2, Save, SquarePen } from 'lucide-react'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
@@ -167,6 +167,7 @@ export function ChatPage() {
   const viewportRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
+  const temporaryViewVersionRef = useRef(0)
   useEffect(() => {
     const viewport = viewportRef.current
     const content = contentRef.current
@@ -222,16 +223,34 @@ export function ChatPage() {
       return
     }
     if (!chat.temporary || chat.expired || savingTemporary) return
+    const viewVersion = temporaryViewVersionRef.current
     setSavingTemporary(true)
     try {
       await useChat.getState().persistTemporaryChat(chat.id)
+      if (temporaryViewVersionRef.current !== viewVersion) return
       setTemporary(false)
       navigate(`/c/${chat.id}`)
     } catch (error) {
+      if (temporaryViewVersionRef.current !== viewVersion) return
       setTemporaryError(error instanceof Error ? error.message : 'Unable to save this chat')
     } finally {
       setSavingTemporary(false)
     }
+  }
+
+  const startNewChat = (temporaryByDefault = false) => {
+    if (chat?.temporary) {
+      temporaryViewVersionRef.current += 1
+      useChat.getState().abandonTemporaryChat(chat.id)
+    }
+    setTemporary(temporaryByDefault)
+    setTemporaryError(null)
+    setMessageEdit(null)
+    setComposerEditActive(false)
+    shouldApplyDefaultRef.current = true
+    const next = resolveDefaultModelId(models, defaultModelId)
+    if (next) setModelId(next)
+    navigate('/')
   }
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
@@ -251,24 +270,63 @@ export function ChatPage() {
       <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />
         <div className="flex-1" />
-        {showTemporaryControl && (
+        {showTemporaryControl && (chat?.temporary ? (
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label="Save chat"
+                  onClick={() => void handleTemporaryControl()}
+                  disabled={savingTemporary || Boolean(chat.expired)}
+                >
+                  {savingTemporary
+                    ? <Loader2 className="size-4 animate-spin" />
+                    : <Save className="size-4 text-primary" />}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{chat.expired ? 'Temporary chat expired' : 'Save chat'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                  aria-label="New temporary chat"
+                  onClick={() => startNewChat(true)}
+                >
+                  <SquarePen className="size-4 text-primary" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>New temporary chat</TooltipContent>
+            </Tooltip>
+          </div>
+        ) : (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={temporaryMode ? 'Save chat' : 'Temporary chat'}
+                aria-label={temporaryMode ? 'Disable temporary chat' : 'Enable temporary chat'}
                 onClick={() => void handleTemporaryControl()}
-                disabled={savingTemporary || Boolean(chat?.expired)}
                 data-active={temporaryMode}
               >
-                {savingTemporary
-                  ? <Loader2 className="size-4 animate-spin" />
-                  : temporaryMode
-                    ? <Save className="size-4 text-primary" />
-                    : <Ghost className="size-4" />}
+                <Ghost className={cn('size-4', temporaryMode && 'text-primary')} />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{chat?.expired ? 'Temporary chat expired' : temporaryMode ? 'Save chat' : 'Temporary chat'}</TooltipContent>
+            <TooltipContent>{temporaryMode ? 'Disable temporary chat' : 'Enable temporary chat'}</TooltipContent>
+          </Tooltip>
+        ))}
+        {chat && !chat.temporary && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label="New chat"
+                onClick={() => startNewChat()}
+              >
+                <SquarePen className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>New chat</TooltipContent>
           </Tooltip>
         )}
       </header>
