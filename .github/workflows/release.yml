@@ -153,6 +153,9 @@ jobs:
       - name: Set up Coolify CLI
         run: bash .github/scripts/setup-coolify.sh
 
+      - name: Verify Coolify Compose configuration
+        run: bash .github/scripts/verify-coolify-compose.sh "${COOLIFY_APP_UUID}"
+
       - name: Deploy preview
         id: deploy
         run: |
@@ -250,6 +253,9 @@ jobs:
 
       - name: Set up Coolify CLI
         run: bash .github/scripts/setup-coolify.sh
+
+      - name: Verify Coolify Compose configuration
+        run: bash .github/scripts/verify-coolify-compose.sh "${COOLIFY_APP_UUID}"
 
       - name: Deploy production
         id: deploy

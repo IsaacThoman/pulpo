@@ -42,21 +42,6 @@ x-server: &server
   volumes:
     - object_data:/app/data/objects
 
-x-seaweed-environment: &seaweed-environment
-  COOLIFY_BRANCH: ${COOLIFY_BRANCH:-}
-  SERVICE_NAME_SEAWEED_MASTER: ${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}
-  SERVICE_NAME_SEAWEED_VOLUME: ${SERVICE_NAME_SEAWEED_VOLUME:-seaweed-volume}
-  SERVICE_NAME_SEAWEED_FILER: ${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}
-
-x-seaweed: &seaweed
-  # The wrapper resolves Coolify's preview-specific peer names before handing
-  # off to the upstream SeaweedFS entrypoint.
-  build:
-    context: .
-    dockerfile: Dockerfile.seaweed
-  environment:
-    <<: *seaweed-environment
-
 services:
   object-storage-init:
     image: alpine:3.22
@@ -139,36 +124,49 @@ services:
     restart: unless-stopped
 
   seaweed-master:
-    <<: *seaweed
-    command: ["master", "-mdir=/data"]
+    image: chrislusf/seaweedfs:4.29
+    command: ["master", "-ip=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}", "-mdir=/data"]
+    networks:
+      default:
+        # Coolify renames preview services but gives every preview its own
+        # network. Preserve the stable peer hostname inside that network.
+        aliases:
+          - seaweed-master
     volumes:
       - seaweed_master_data:/data
     restart: unless-stopped
 
   seaweed-volume:
-    <<: *seaweed
-    command: ["volume", "-dir=/data", "-max=0"]
+    image: chrislusf/seaweedfs:4.29
+    command: ["volume", "-mserver=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333", "-ip=${SERVICE_NAME_SEAWEED_VOLUME:-seaweed-volume}", "-dir=/data", "-max=0"]
     depends_on:
       - seaweed-master
+    networks:
+      default:
+        aliases:
+          - seaweed-volume
     volumes:
       - seaweed_volume_data:/data
     restart: unless-stopped
 
   seaweed-filer:
-    <<: *seaweed
-    command: ["filer"]
+    image: chrislusf/seaweedfs:4.29
+    command: ["filer", "-master=${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333", "-ip=${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}"]
     depends_on:
       - seaweed-master
       - seaweed-volume
+    networks:
+      default:
+        aliases:
+          - seaweed-filer
     volumes:
       - seaweed_filer_data:/data
     restart: unless-stopped
 
   seaweed-s3:
-    <<: *seaweed
-    command: ["s3", "-ip.bind=0.0.0.0"]
+    image: chrislusf/seaweedfs:4.29
+    command: ["s3", "-filer=${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}:8888", "-ip.bind=0.0.0.0"]
     environment:
-      <<: *seaweed-environment
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
       SERVICE_URL_S3_8333:
@@ -176,6 +174,10 @@ services:
       - "8333"
     depends_on:
       - seaweed-filer
+    networks:
+      default:
+        aliases:
+          - seaweed-s3
     restart: unless-stopped
 
 volumes:
