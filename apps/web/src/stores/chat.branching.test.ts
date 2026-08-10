@@ -197,6 +197,27 @@ describe('chat store branching integration', () => {
     expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.expiresAt).toBeNull()
   })
 
+  it('disables an existing deadline from chat actions', async () => {
+    const initial = {
+      ...detail(responseAId, [response(responseAId, 'completed')]),
+      expiresAt: '2026-08-17T12:00:00.000Z',
+    }
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    queryClient.setQueryData(['chats', userId], [initial])
+    useChat.getState().setDetailedChat(initial)
+
+    useChat.getState().setChatAutoExpiration(chatId, false)
+
+    expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.expiresAt).toBeNull()
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: `/api/chats/${chatId}`,
+      method: 'PATCH',
+      body: { autoExpire: false },
+    })
+    requests[0]!.resolve({ ...initial, expiresAt: null })
+  })
+
   it('fails a temporary send instead of persisting it to the offline outbox', async () => {
     networkFailure = true
     const temporaryId = useChat.getState().sendMessage(null, 'private prompt', 'test-model', [], true)

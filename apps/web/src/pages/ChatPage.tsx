@@ -5,6 +5,7 @@ import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
+import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { MessageItem } from '@/components/chat/MessageItem'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -277,9 +278,7 @@ export function ChatPage() {
   const showExpirationControl = !temporaryMode && (chat
     ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
     : !routeChatId && automaticChatExpiration !== 'disabled')
-  const expirationPeriodLabel = automaticChatExpiration === '24h'
-    ? '24 hours'
-    : automaticChatExpiration === '7d' ? '7 days' : null
+  const expirationPeriodLabel = automaticChatExpiration === 'disabled' ? null : automaticChatExpiration
   const toggleExpiration = () => {
     if (chat) {
       useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
@@ -308,7 +307,9 @@ export function ChatPage() {
             <TooltipTrigger asChild>
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
+                aria-label={expirationEnabled
+                  ? 'Disable chat expiry'
+                  : expirationPeriodLabel ? `Expire chat in ${expirationPeriodLabel}` : 'Enable chat expiry'}
                 aria-pressed={expirationEnabled}
                 onClick={toggleExpiration}
               >
@@ -317,8 +318,10 @@ export function ChatPage() {
             </TooltipTrigger>
             <TooltipContent>
               {expirationEnabled
-                ? expirationPeriodLabel ? `Automatic expiration enabled (${expirationPeriodLabel})` : 'Automatic expiration enabled'
-                : `Enable ${expirationPeriodLabel} expiration`}
+                ? chat?.expiresAt
+                  ? <>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></>
+                  : expirationPeriodLabel ? `Disable ${expirationPeriodLabel} expiry` : 'Disable chat expiry'
+                : expirationPeriodLabel ? `Expire chat in ${expirationPeriodLabel}` : 'Enable chat expiry'}
             </TooltipContent>
           </Tooltip>
         )}

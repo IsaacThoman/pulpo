@@ -30,6 +30,7 @@ import { useSettings } from '@/stores/settings'
 import { chatTimeGroup } from '@/lib/format'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
+import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -210,6 +211,7 @@ function DropLines({
 
 function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const togglePin = useChat((state) => state.togglePin)
+  const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
   const shareChat = useChat((state) => state.shareChat)
   const deleteChat = useChat((state) => state.deleteChat)
   const moveToFolder = useChat((state) => state.moveToFolder)
@@ -225,6 +227,12 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         <Pencil />
         Rename
       </DropdownMenuItem>
+      {chat.expiresAt !== null && (
+        <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, false)}>
+          <Hourglass className="text-teal-500 dark:text-teal-400" />
+          <span>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
+        </DropdownMenuItem>
+      )}
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <FolderInput />
