@@ -238,11 +238,15 @@ export async function replaceRecoveryCodes(userId: string): Promise<string[]> {
   return recoveryCodes
 }
 
-export async function clearTwoFactor(userId: string): Promise<void> {
-  await db.transaction(async (tx) => {
-    await tx.delete(userTotpEnrollments).where(eq(userTotpEnrollments.userId, userId))
-    await tx.delete(twoFactorRecoveryCodes).where(eq(twoFactorRecoveryCodes.userId, userId))
-    await tx.delete(userTotpCredentials).where(eq(userTotpCredentials.userId, userId))
-  })
+type DatabaseTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+export async function clearTwoFactor(userId: string, transaction?: DatabaseTransaction): Promise<void> {
+  const clear = async (database: typeof db | DatabaseTransaction) => {
+    await database.delete(userTotpEnrollments).where(eq(userTotpEnrollments.userId, userId))
+    await database.delete(twoFactorRecoveryCodes).where(eq(twoFactorRecoveryCodes.userId, userId))
+    await database.delete(userTotpCredentials).where(eq(userTotpCredentials.userId, userId))
+  }
+  if (transaction) await clear(transaction)
+  else await db.transaction(clear)
   await redis.del(attemptKey(userId))
 }
