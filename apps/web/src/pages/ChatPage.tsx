@@ -238,11 +238,12 @@ export function ChatPage() {
     }
   }
 
-  const startNewTemporaryChat = () => {
-    if (!chat?.temporary) return
-    temporaryViewVersionRef.current += 1
-    useChat.getState().abandonTemporaryChat(chat.id)
-    setTemporary(true)
+  const startNewChat = (temporaryByDefault = false) => {
+    if (chat?.temporary) {
+      temporaryViewVersionRef.current += 1
+      useChat.getState().abandonTemporaryChat(chat.id)
+    }
+    setTemporary(temporaryByDefault)
     setTemporaryError(null)
     setMessageEdit(null)
     setComposerEditActive(false)
@@ -291,7 +292,7 @@ export function ChatPage() {
                 <button
                   className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                   aria-label="New temporary chat"
-                  onClick={startNewTemporaryChat}
+                  onClick={() => startNewChat(true)}
                 >
                   <SquarePen className="size-4 text-primary" />
                 </button>
@@ -314,6 +315,20 @@ export function ChatPage() {
             <TooltipContent>{temporaryMode ? 'Disable temporary chat' : 'Enable temporary chat'}</TooltipContent>
           </Tooltip>
         ))}
+        {chat && !chat.temporary && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label="New chat"
+                onClick={() => startNewChat()}
+              >
+                <SquarePen className="size-4" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>New chat</TooltipContent>
+          </Tooltip>
+        )}
       </header>
 
       {temporaryError && (
