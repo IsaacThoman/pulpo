@@ -66,6 +66,8 @@ spec:
               value: kata
             - name: PULPO_WARM_CAPACITY
               value: "1"
+            - name: PULPO_MAX_ACTIVE_WORKSPACES_TOTAL
+              value: "100"
             - name: PULPO_WORKSPACE_IMAGE
               value: ghcr.io/your-org/pulpo-agent-workspace@sha256:REPLACE_WITH_WORKSPACE_DIGEST
             - name: PULPO_CONTROLLER_TOKEN

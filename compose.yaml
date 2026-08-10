@@ -14,15 +14,31 @@ x-server: &server
       condition: service_healthy
   restart: unless-stopped
   environment:
-    POSTGRES_HOST: postgres
+    POSTGRES_HOST: ${SERVICE_NAME_POSTGRES:-postgres}
     POSTGRES_PORT: 5432
     POSTGRES_USER: ${POSTGRES_USER:-pulpo}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pulpo}
     POSTGRES_DATABASE: ${POSTGRES_DATABASE:-pulpo}
-    REDIS_URL: redis://redis:6379
+    REDIS_URL: redis://${SERVICE_NAME_REDIS:-redis}:6379
     STORAGE_LOCAL_PATH: /app/data/objects
     S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
     S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
+    S3_ENDPOINT: http://${SERVICE_NAME_SEAWEED_S3:-seaweed-s3}:8333
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY:-development-only-key-change-me-000000}
+    WORKSPACE_CONTROLLER_URL: ${WORKSPACE_CONTROLLER_URL:-}
+    WORKSPACE_CONTROLLER_TOKEN: ${WORKSPACE_CONTROLLER_TOKEN:-}
+    WORKSPACE_CONTROLLER_CA_CERT_BASE64: ${WORKSPACE_CONTROLLER_CA_CERT_BASE64:-}
+    PULPO_INSTANCE_ID: ${PULPO_INSTANCE_ID:-}
+    # Coolify generates this URL per production/preview deployment. Explicit
+    # S3_PUBLIC_ENDPOINT values still take precedence.
+    S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${SERVICE_URL_S3_8333:-http://localhost:8333}}
+    # Optional one-time bootstrap for trusted CI previews. Keep these unset in
+    # production and provide secret values as runtime-only Coolify variables.
+    PULPO_BOOTSTRAP_PRESET: ${PULPO_BOOTSTRAP_PRESET:-}
+    PULPO_PREVIEW_ADMIN_EMAIL: ${PULPO_PREVIEW_ADMIN_EMAIL:-}
+    PULPO_PREVIEW_ADMIN_PASSWORD: ${PULPO_PREVIEW_ADMIN_PASSWORD:-}
+    PULPO_PREVIEW_PROVIDER_API_KEY: ${PULPO_PREVIEW_PROVIDER_API_KEY:-}
+    PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: ${PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST:-}
   volumes:
     - object_data:/app/data/objects
 
@@ -42,8 +58,28 @@ services:
       dockerfile: Dockerfile.web
     depends_on:
       - api
+    environment:
+      API_HOST: ${SERVICE_NAME_API:-api}
+      NGINX_ENVSUBST_FILTER: ^API_HOST$
     expose:
       - "80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    labels:
+      # Coolify preview domains are stored as FQDNs. Its generated preview
+      # router is HTTP-only, so add a uniquely named TLS router for Cloudflare
+      # and other HTTPS origins. SERVICE_NAME_WEB includes the PR suffix.
+      - traefik.enable=true
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.entryPoints=https"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.rule=Host(`${SERVICE_FQDN_WEB:-localhost}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.service=${SERVICE_NAME_WEB:-pulpo-web}-https"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls=true"
+      - "traefik.http.services.${SERVICE_NAME_WEB:-pulpo-web}-https.loadbalancer.server.port=80"
     restart: unless-stopped
 
   api:
@@ -89,14 +125,20 @@ services:
 
   seaweed-master:
     image: chrislusf/seaweedfs:4.29
-    command: ["master", "-ip=seaweed-master", "-mdir=/data"]
+    # Coolify rewrites preview service names after parsing Compose. Resolve its
+    # injected runtime service names only after the container starts.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh master -ip="$${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}" -mdir=/data'
     volumes:
       - seaweed_master_data:/data
     restart: unless-stopped
 
   seaweed-volume:
     image: chrislusf/seaweedfs:4.29
-    command: ["volume", "-mserver=seaweed-master:9333", "-ip=seaweed-volume", "-dir=/data", "-max=0"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh volume -mserver="$${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333" -ip="$${SERVICE_NAME_SEAWEED_VOLUME:-seaweed-volume}" -dir=/data -max=0'
     depends_on:
       - seaweed-master
     volumes:
@@ -105,7 +147,9 @@ services:
 
   seaweed-filer:
     image: chrislusf/seaweedfs:4.29
-    command: ["filer", "-master=seaweed-master:9333", "-ip=seaweed-filer"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh filer -master="$${SERVICE_NAME_SEAWEED_MASTER:-seaweed-master}:9333" -ip="$${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}"'
     depends_on:
       - seaweed-master
       - seaweed-volume
@@ -115,10 +159,13 @@ services:
 
   seaweed-s3:
     image: chrislusf/seaweedfs:4.29
-    command: ["s3", "-filer=seaweed-filer:8888", "-ip.bind=0.0.0.0"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'exec /entrypoint.sh s3 -filer="$${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}:8888" -ip.bind=0.0.0.0'
     environment:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pulpo}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-replace-this-storage-secret}
+      SERVICE_URL_S3_8333:
     expose:
       - "8333"
     depends_on:

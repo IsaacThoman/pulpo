@@ -48,19 +48,57 @@ const configSchema = z.object({
   WORKSPACE_CONTROLLER_URL: optionalEnvironmentValue(z.url()),
   WORKSPACE_CONTROLLER_TOKEN: optionalEnvironmentValue(z.string().min(32)),
   WORKSPACE_CONTROLLER_CA_CERT_BASE64: optionalEnvironmentValue(z.string().min(1)),
+  PULPO_INSTANCE_ID: optionalEnvironmentValue(z.string().trim().regex(/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/)),
+  PULPO_BOOTSTRAP_PRESET: optionalEnvironmentValue(z.literal('ci-preview')),
+  PULPO_PREVIEW_ADMIN_EMAIL: optionalEnvironmentValue(z.email()),
+  PULPO_PREVIEW_ADMIN_PASSWORD: optionalEnvironmentValue(z.string().min(8).max(1024)),
+  PULPO_PREVIEW_PROVIDER_API_KEY: optionalEnvironmentValue(z.string().min(1)),
+  PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST: optionalEnvironmentValue(
+    z.string().regex(/^ghcr\.io\/[a-z0-9._/-]+@sha256:[a-f0-9]{64}$/),
+  ),
 })
 
 export type Config = z.infer<typeof configSchema>
 
 let cached: Config | undefined
 
+export function getCoolifyPreviewId(environment: NodeJS.ProcessEnv): string | undefined {
+  const branch = environment.COOLIFY_BRANCH?.trim().replace(/^['"]|['"]$/g, '')
+  return branch?.match(/^pull\/([1-9]\d*)\/head$/)?.[1]
+}
+
 export function parseConfig(environment: NodeJS.ProcessEnv): Config {
-  return configSchema.parse(environment)
+  const previewId = getCoolifyPreviewId(environment)
+  return configSchema.parse({
+    ...environment,
+    ...(previewId ? {
+      POSTGRES_HOST: `postgres-pr-${previewId}`,
+      REDIS_URL: `redis://redis-pr-${previewId}:6379`,
+      S3_ENDPOINT: `http://seaweed-s3-pr-${previewId}:8333`,
+    } : {}),
+  })
 }
 
 export function getConfig(): Config {
   cached ??= parseConfig(process.env)
   return cached
+}
+
+function fqdnHostname(value: string | undefined): string | undefined {
+  const first = value?.split(',')[0]?.trim()
+  if (!first) return undefined
+  try {
+    return new URL(first.includes('://') ? first : `https://${first}`).hostname
+  } catch {
+    return undefined
+  }
+}
+
+export function getWorkspaceInstanceId(config = getConfig(), environment: NodeJS.ProcessEnv = process.env): string {
+  return config.PULPO_INSTANCE_ID
+    ?? fqdnHostname(environment.SERVICE_FQDN_WEB)
+    ?? fqdnHostname(environment.COOLIFY_FQDN)
+    ?? new URL(config.PUBLIC_URL).hostname
 }
 
 export function getAllowedOrigins(config = getConfig()): Set<string> {
