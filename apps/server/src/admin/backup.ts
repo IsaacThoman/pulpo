@@ -3,12 +3,12 @@ import { gzipSync, gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { redis } from '../redis.js'
 
 const TABLES = [
-  'users', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
+  'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories', 'api_keys',
@@ -51,9 +51,11 @@ export async function createFullBackup(jobId: string): Promise<void> {
       await db.update(backupJobs).set({ progress: Math.round(((index + 1) / TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
     const attachmentBlobRows = await db.select({ objectKey: attachments.objectKey, checksum: attachments.checksum }).from(attachments).where(eq(attachments.status, 'ready'))
+    const avatarBlobRows = await db.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const iconRows = await db.select().from(catalogIcons)
     const blobRows = [
       ...attachmentBlobRows,
+      ...avatarBlobRows.map((avatar) => ({ objectKey: avatar.objectKey!, checksum: null })),
       ...iconRows.flatMap((icon) => [
         { objectKey: icon.originalObjectKey, checksum: icon.originalChecksum },
         { objectKey: icon.monochromeLightObjectKey, checksum: icon.monochromeLightChecksum },
@@ -97,12 +99,21 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     // Older backups predate optional per-user two-factor authentication.
     database.user_totp_credentials ??= []
     database.two_factor_recovery_codes ??= []
+    database.friendships ??= []
+    database.user_blocks ??= []
+    for (const user of database.users ?? []) {
+      user.username ??= null
+      user.profile_color ??= null
+      user.avatar_object_key ??= null
+      user.avatar_version ??= 0
+    }
     for (const table of TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
     for (const [index, blob] of manifest.blobs.entries()) {
       const body = files.get(blob.entry); if (!body || !checksumMatches(body, blob.checksum)) throw new Error(`Blob checksum failed: ${blob.objectKey}`)
       const staged = `restored/${jobId}/${Buffer.from(blob.objectKey).toString('base64url')}`
       await getBlobStore().put(staged, body, { contentType: 'application/octet-stream', contentLength: body.byteLength }); stagedKeys.push(staged)
       for (const attachment of database.attachments ?? []) if (attachment.object_key === blob.objectKey) attachment.object_key = staged
+      for (const user of database.users ?? []) if (user.avatar_object_key === blob.objectKey) user.avatar_object_key = staged
       for (const icon of database.catalog_icons ?? []) {
         for (const field of ['original_object_key', 'monochrome_light_object_key', 'monochrome_dark_object_key']) {
           if (icon[field] === blob.objectKey) icon[field] = staged
@@ -111,9 +122,11 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       await db.update(backupJobs).set({ progress: 5 + Math.round(((index + 1) / Math.max(manifest.blobs.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
     const oldAttachmentBlobs = await db.select({ key: attachments.objectKey }).from(attachments)
+    const oldAvatarBlobs = await db.select({ key: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
     const oldIconRows = await db.select().from(catalogIcons)
     const oldBlobs = [
       ...oldAttachmentBlobs,
+      ...oldAvatarBlobs.map((avatar) => ({ key: avatar.key! })),
       ...oldIconRows.flatMap((icon) => [
         { key: icon.originalObjectKey },
         { key: icon.monochromeLightObjectKey },

@@ -6,8 +6,11 @@ import {
   creditLedger,
   dailyUsageRollups,
   exportJobs,
+  friendships,
   twoFactorRecoveryCodes,
   usageEvents,
+  userBlocks,
+  users,
   userTotpCredentials,
   userTotpEnrollments,
 } from './schema.js'
@@ -20,6 +23,7 @@ describe('user-owned operational records', () => {
     ['usage events', usageEvents],
     ['daily usage rollups', dailyUsageRollups],
     ['export jobs', exportJobs],
+    ['user blocks', userBlocks],
     ['TOTP credentials', userTotpCredentials],
     ['pending TOTP enrollments', userTotpEnrollments],
     ['two-factor recovery codes', twoFactorRecoveryCodes],
@@ -29,5 +33,24 @@ describe('user-owned operational records', () => {
     )
 
     expect(userForeignKey?.onDelete).toBe('cascade')
+  })
+
+  it('enforces normalized friendship pairs and non-self blocks', () => {
+    const friendshipConfig = getTableConfig(friendships)
+    const blockConfig = getTableConfig(userBlocks)
+    expect(friendshipConfig.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'friendships_ordered_pair_check',
+      'friendships_requester_member_check',
+    ]))
+    expect(friendshipConfig.indexes.some((item) => item.config.name === 'friendships_pair_unique' && item.config.unique)).toBe(true)
+    expect(friendshipConfig.foreignKeys).toHaveLength(3)
+    expect(friendshipConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+    expect(blockConfig.checks.map((constraint) => constraint.name)).toContain('user_blocks_not_self_check')
+  })
+
+  it('uses a case-insensitive partial unique index for optional usernames', () => {
+    const usernameIndex = getTableConfig(users).indexes.find((item) => item.config.name === 'users_username_unique')
+    expect(usernameIndex?.config.unique).toBe(true)
+    expect(usernameIndex?.config.where).toBeDefined()
   })
 })

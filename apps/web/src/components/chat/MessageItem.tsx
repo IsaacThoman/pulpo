@@ -43,7 +43,8 @@ import {
   type WorkspaceStep,
 } from './message-timeline'
 import { ModelIcon } from '@/components/ModelIcon'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
@@ -583,16 +584,19 @@ export const MessageItem = memo(function MessageItem({
   if (message.role === 'user') {
     return (
       <div className="group flex min-w-0 max-w-full flex-col items-end gap-1">
-        <div className={cn(
-          'min-w-0 max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7 [overflow-wrap:anywhere]',
-          message.content ? 'px-4 py-2.5' : 'p-2',
-        )}>
-          {message.attachments && message.attachments.length > 0 && (
-            <div className={cn(message.content ? 'mb-2' : undefined)}>
-              <MessageAttachmentList attachments={message.attachments} />
-            </div>
-          )}
-          {message.content ? <Markdown content={message.content} /> : null}
+        <div className="flex max-w-full items-end justify-end gap-2">
+          <div className={cn(
+            'min-w-0 max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7 [overflow-wrap:anywhere]',
+            message.content ? 'px-4 py-2.5' : 'p-2',
+          )}>
+            {message.attachments && message.attachments.length > 0 && (
+              <div className={cn(message.content ? 'mb-2' : undefined)}>
+                <MessageAttachmentList attachments={message.attachments} />
+              </div>
+            )}
+            {message.content ? <Markdown content={message.content} /> : null}
+          </div>
+          <UserAvatar />
         </div>
         <div className="flex items-center gap-1">
             {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
@@ -794,11 +798,6 @@ export const MessageItem = memo(function MessageItem({
 ))
 
 export function UserAvatar() {
-  return (
-    <Avatar className="size-7">
-      <AvatarFallback className="bg-zinc-700 text-[10px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-        IT
-      </AvatarFallback>
-    </Avatar>
-  )
+  const user = useAuth((state) => state.user)
+  return <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[10px]" />
 }

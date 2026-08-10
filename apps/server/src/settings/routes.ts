@@ -16,22 +16,12 @@ const preferencesSchema = z.record(z.string(), z.unknown())
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
-    const [[row], [profile]] = await Promise.all([
-      db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1),
-      db.select({
-        nickname: users.nickname,
-        leaderboardVisible: users.leaderboardVisible,
-        leaderboardColor: users.leaderboardColor,
-      }).from(users).where(eq(users.id, user.id)).limit(1),
-    ])
+    const [row] = await db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
     const values = preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined)
     return {
       values: {
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
-        nickname: profile?.nickname ?? '',
-        leaderboardVisible: profile?.leaderboardVisible ?? false,
-        leaderboardColor: profile?.leaderboardColor ?? '#10b981',
       },
       updatedAt: row?.updatedAt.toISOString() ?? null,
     }
@@ -43,11 +33,6 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('trashRetention' in patch && !trashRetentionValues.includes(patch.trashRetention as typeof trashRetentionValues[number])) {
       throw new AppError(400, 'invalid_trash_retention', 'Choose a valid trash retention period')
     }
-    const nickname = typeof patch.nickname === 'string'
-      ? patch.nickname.trim() || null
-      : patch.nickname === null ? null : undefined
-    const leaderboardVisible = typeof patch.leaderboardVisible === 'boolean' ? patch.leaderboardVisible : undefined
-    const leaderboardColor = typeof patch.leaderboardColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(patch.leaderboardColor) ? patch.leaderboardColor : undefined
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
     let saved: typeof userPreferences.$inferSelect | undefined
     let stateRevision: number | undefined
@@ -70,7 +55,6 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
           },
         }).returning()
       const [revision] = await tx.update(users).set({
-        nickname, leaderboardVisible, leaderboardColor,
         stateRevision: sql`${users.stateRevision} + 1`,
       }).where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
       stateRevision = revision?.revision

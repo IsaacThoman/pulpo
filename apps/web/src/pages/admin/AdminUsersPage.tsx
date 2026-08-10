@@ -9,7 +9,7 @@ import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
 import {
   Select,
   SelectContent,
@@ -96,7 +96,7 @@ export function AdminUsersPage() {
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-5 py-2.5 font-medium">Role</th>
-                <th className="py-2.5 font-medium">Name</th>
+                <th className="py-2.5 font-medium">Display name</th>
                 <th className="py-2.5 font-medium">Email</th>
                 <th className="px-4 py-2.5 text-right font-medium">Balance</th>
                 <th className="px-4 py-2.5 text-right font-medium">File storage</th>
@@ -125,11 +125,7 @@ export function AdminUsersPage() {
                   </td>
                   <td className="py-2.5">
                     <span className="flex items-center gap-2">
-                      <Avatar className="size-6">
-                        <AvatarFallback className="bg-zinc-700 text-[9px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                          {u.name.split(' ').map((w) => w[0]).join('')}
-                        </AvatarFallback>
-                      </Avatar>
+                      <ProfileAvatar name={u.name} avatarUrl={u.avatarUrl} className="size-6" fallbackClassName="text-[9px]" />
                       {u.name}
                     </span>
                   </td>
@@ -213,8 +209,8 @@ export function AdminUsersPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Name</Label>
-              <Input name="name" placeholder="Full name" required />
+              <Label>Display name</Label>
+              <Input name="name" placeholder="Display name" required />
             </div>
             <div className="space-y-1.5">
               <Label>Email</Label>
@@ -303,7 +299,7 @@ export function AdminUsersPage() {
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Name</Label>
+              <Label>Display name</Label>
               <Input name="name" defaultValue={editUser?.name} required />
             </div>
             <div className="space-y-1.5">

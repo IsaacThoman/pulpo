@@ -10,6 +10,9 @@ export interface AuthUser {
   id: string
   name: string
   email: string
+  username: string | null
+  avatarUrl: string | null
+  profileColor: string | null
   role: AuthRole
   initials: string
   balanceMicros: number
@@ -47,6 +50,7 @@ interface AuthState {
   signup: (name: string, email: string, password: string) => Promise<AuthResult>
   setup: (name: string, email: string, password: string) => Promise<AuthResult>
   logout: () => Promise<void>
+  replaceUser: (user: ServerUser) => void
   setSignupEnabled: (value: boolean) => void
 }
 
@@ -57,7 +61,13 @@ function initials(name: string): string {
 }
 
 function normalizeUser(user: ServerUser): AuthUser {
-  return { ...user, initials: initials(user.name) }
+  return {
+    ...user,
+    username: user.username ?? null,
+    avatarUrl: user.avatarUrl ?? null,
+    profileColor: user.profileColor ?? null,
+    initials: initials(user.name),
+  }
 }
 
 function readCachedProfile(): AuthUser | null {
@@ -169,6 +179,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     queryClient.clear()
     if (userId) await clearLocalUserData(userId)
+  },
+
+  replaceUser: (profile) => {
+    const user = normalizeUser(profile)
+    cacheProfile(user)
+    set({ user })
   },
 
   setSignupEnabled: (signupEnabled) => set({ signupEnabled }),

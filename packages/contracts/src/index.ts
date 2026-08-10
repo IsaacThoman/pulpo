@@ -11,10 +11,17 @@ export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 1_000 * 1024 * 1024
 export const roleSchema = z.enum(['pending', 'user', 'admin'])
 export type Role = z.infer<typeof roleSchema>
 
+export const usernameSchema = z.string().trim().toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/, 'Use 3–30 letters, numbers, or underscores; begin and end with a letter or number')
+export const profileColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+
 export const userSchema = z.object({
   id: idSchema,
   email: z.email(),
   name: z.string().min(1).max(120),
+  username: usernameSchema.nullable(),
+  avatarUrl: z.string().nullable(),
+  profileColor: profileColorSchema.nullable(),
   role: roleSchema,
   balanceMicros: z.number().int(),
   storageLimitBytes: z.number().int().nonnegative(),
@@ -120,8 +127,35 @@ export const twoFactorRecoveryCodesSchema = z.object({
 export type TwoFactorRecoveryCodes = z.infer<typeof twoFactorRecoveryCodesSchema>
 
 export const updateProfileInputSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(120).optional(),
+  username: usernameSchema.nullable().optional(),
+  profileColor: profileColorSchema.nullable().optional(),
+}).refine((value) => Object.keys(value).length > 0, 'At least one profile field is required')
+
+export const friendProfileSchema = z.object({
+  id: idSchema,
+  displayName: z.string().min(1).max(120),
+  username: usernameSchema.nullable(),
+  avatarUrl: z.string().nullable(),
+  profileColor: profileColorSchema.nullable(),
 })
+export type FriendProfile = z.infer<typeof friendProfileSchema>
+
+export const friendConnectionSchema = z.object({
+  requestId: idSchema,
+  profile: friendProfileSchema,
+  requestedAt: isoDateSchema,
+  acceptedAt: isoDateSchema.nullable(),
+})
+export type FriendConnection = z.infer<typeof friendConnectionSchema>
+
+export const friendsListSchema = z.object({
+  friends: z.array(friendConnectionSchema),
+  incoming: z.array(friendConnectionSchema),
+  outgoing: z.array(friendConnectionSchema),
+  blocked: z.array(friendProfileSchema),
+})
+export type FriendsList = z.infer<typeof friendsListSchema>
 
 export const changePasswordInputSchema = z.object({
   currentPassword: z.string().min(1).max(1024),
@@ -789,11 +823,10 @@ export const managementAccountSettingsSchema = z.object({
   showReasoning: z.boolean().default(true),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   customInstructions: z.string().max(100_000).default(''),
-  nickname: z.string().max(80).default(''),
+  username: usernameSchema.nullable().default(null),
+  profileColor: profileColorSchema.nullable().default(null),
   memoryEnabled: z.boolean().default(false),
   agentModeEnabled: z.boolean().default(true),
-  leaderboardVisible: z.boolean().default(false),
-  leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
   trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),

@@ -69,7 +69,7 @@ export function SignupPage() {
 
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="name">Full name</Label>
+          <Label htmlFor="name">Display name</Label>
           <Input
             id="name"
             autoComplete="name"

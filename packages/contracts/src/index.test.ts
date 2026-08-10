@@ -523,4 +523,14 @@ describe('response snapshot accumulation', () => {
     })).toThrow(/unique/i)
   })
 
+  it('normalizes usernames and validates partial profile updates', async () => {
+    const { updateProfileInputSchema, usernameSchema } = await import('./index.js')
+    expect(usernameSchema.parse('  Isaac_2 ')).toBe('isaac_2')
+    expect(updateProfileInputSchema.parse({ username: null })).toEqual({ username: null })
+    expect(updateProfileInputSchema.parse({ profileColor: '#10b981' })).toEqual({ profileColor: '#10b981' })
+    expect(() => usernameSchema.parse('_isaac')).toThrow()
+    expect(() => usernameSchema.parse('is')).toThrow()
+    expect(() => updateProfileInputSchema.parse({})).toThrow()
+  })
+
 })

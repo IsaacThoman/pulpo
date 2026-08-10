@@ -19,7 +19,7 @@ export function RecentUsagePanel({
   users?: MonitorUser[]
   showUser?: boolean
   showBalance?: boolean
-  /** anonymize / nickname-aware name lookup; defaults to nickname ?? name */
+  /** Optional custom display-name lookup. */
   displayName?: (u: MonitorUser) => string
 }) {
   const [visible, setVisible] = useState(PAGE_SIZE)
@@ -36,7 +36,7 @@ export function RecentUsagePanel({
   const nameOf = (userId: string) => {
     const u = users?.find((x) => x.id === userId)
     if (!u) return '—'
-    return displayName ? displayName(u) : (u.nickname ?? u.name)
+    return displayName ? displayName(u) : u.name
   }
 
   return (

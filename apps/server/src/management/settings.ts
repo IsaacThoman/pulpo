@@ -60,9 +60,8 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const [[preferenceRow], [profile], settingRows] = await Promise.all([
     database.select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1),
     database.select({
-      nickname: users.nickname,
-      leaderboardVisible: users.leaderboardVisible,
-      leaderboardColor: users.leaderboardColor,
+      username: users.username,
+      profileColor: users.profileColor,
     }).from(users).where(eq(users.id, userId)).limit(1),
     database.select().from(applicationSettings),
   ])
@@ -70,9 +69,8 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const rawAccount = preferencesWithModelDefaults(preferenceRow?.values as Record<string, unknown> | undefined)
   const account = managementAccountSettingsSchema.parse({
     ...rawAccount,
-    nickname: profile?.nickname ?? '',
-    leaderboardVisible: profile?.leaderboardVisible ?? false,
-    leaderboardColor: profile?.leaderboardColor ?? '#10b981',
+    username: profile?.username ?? null,
+    profileColor: profile?.profileColor ?? null,
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))
   const instance = {
@@ -196,9 +194,8 @@ export async function applyManagementSettings(
       await tx.insert(userPreferences).values({ userId, values: account })
         .onConflictDoUpdate({ target: userPreferences.userId, set: { values: account, updatedAt: new Date() } })
       const [revision] = await tx.update(users).set({
-        nickname: account.nickname.trim() || null,
-        leaderboardVisible: account.leaderboardVisible,
-        leaderboardColor: account.leaderboardColor,
+        username: account.username,
+        profileColor: account.profileColor,
         stateRevision: sql`${users.stateRevision} + 1`,
         updatedAt: new Date(),
       }).where(eq(users.id, userId)).returning({ revision: users.stateRevision })

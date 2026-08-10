@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
 import {
   Select,
   SelectContent,
@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/select'
 import { ModelIcon } from '@/components/ModelIcon'
 import { useSettings, type Theme, type TrashRetention } from '@/stores/settings'
-import { useAuth } from '@/stores/auth'
+import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
@@ -75,6 +75,8 @@ interface DeletedChat {
   purgeAt: string | null
 }
 
+const PROFILE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
+
 const TRASH_RETENTION_LABELS: Record<TrashRetention, string> = {
   instant: 'No retention',
   '24h': '24 hours',
@@ -112,6 +114,27 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
+async function squareAvatarFile(file: File): Promise<File> {
+  const image = await createImageBitmap(file)
+  try {
+    const edge = Math.min(image.width, image.height)
+    const canvas = document.createElement('canvas')
+    canvas.width = 512
+    canvas.height = 512
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Could not prepare the profile picture')
+    context.drawImage(image, (image.width - edge) / 2, (image.height - edge) / 2, edge, edge, 0, 0, 512, 512)
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      (value) => value ? resolve(value) : reject(new Error('Could not prepare the profile picture')),
+      'image/webp',
+      0.9,
+    ))
+    return new File([blob], 'avatar.webp', { type: 'image/webp' })
+  } finally {
+    image.close()
+  }
+}
+
 function ThemePicker() {
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
@@ -144,6 +167,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const s = useSettings()
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
+  const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
   const [memories, setMemories] = useState<Memory[]>([])
   const [memoriesLoading, setMemoriesLoading] = useState(false)
@@ -154,6 +178,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
   const [trashRetentionError, setTrashRetentionError] = useState('')
   const [trashNow, setTrashNow] = useState(() => Date.now())
+  const [profileName, setProfileName] = useState(user?.name ?? '')
+  const [profileUsername, setProfileUsername] = useState(user?.username ?? '')
+  const [profileColor, setProfileColor] = useState<string | null>(user?.profileColor ?? null)
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [profileMessage, setProfileMessage] = useState('')
+  const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
     queryKey: deletedChatsQueryKey,
@@ -165,6 +196,76 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     refetchOnWindowFocus: 'always',
   })
   const deletedChats = deletedChatsQuery.data ?? []
+
+  useEffect(() => {
+    if (!open || !user) return
+    setProfileName(user.name)
+    setProfileUsername(user.username ?? '')
+    setProfileColor(user.profileColor ?? null)
+    setProfileError('')
+  }, [open, user])
+
+  useEffect(() => { if (!open) setProfileMessage('') }, [open])
+
+  useEffect(() => () => { if (avatarCandidate) URL.revokeObjectURL(avatarCandidate.url) }, [avatarCandidate])
+
+  const profileDirty = Boolean(user) && (
+    profileName.trim() !== user!.name
+    || (profileUsername.trim().toLowerCase() || null) !== user!.username
+    || profileColor !== user!.profileColor
+  )
+
+  const saveProfile = async () => {
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileMessage('')
+    try {
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me', {
+        method: 'PATCH',
+        body: { name: profileName, username: profileUsername.trim() ? profileUsername.trim().toLowerCase() : null, profileColor },
+      })
+      replaceUser(result.user)
+      setProfileMessage('Profile saved.')
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : 'Could not save profile')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
+  const uploadAvatar = async () => {
+    if (!avatarCandidate) return
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileMessage('')
+    try {
+      const body = new FormData()
+      body.append('file', await squareAvatarFile(avatarCandidate.file))
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'PUT', body })
+      replaceUser(result.user)
+      setAvatarCandidate(null)
+      setProfileMessage('Profile picture updated.')
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : 'Could not upload profile picture')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
+  const removeAvatar = async () => {
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileMessage('')
+    try {
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'DELETE' })
+      replaceUser(result.user)
+      setProfileMessage('Profile picture removed.')
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : 'Could not remove profile picture')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || section !== 'trash' || s.trashRetention === 'instant') return
@@ -412,20 +513,35 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Account</h2>
                   <Separator className="my-3" />
-                  <div className="flex items-center gap-4 py-3">
-                    <Avatar className="size-14">
-                      <AvatarFallback className="bg-zinc-700 text-lg font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                        {user?.initials ?? '?'}
-                      </AvatarFallback>
-                    </Avatar>
+                  <div className="flex flex-wrap items-center gap-4 py-3">
+                    <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
                     <div>
                       <div className="font-medium">{user?.name}</div>
                       <div className="text-sm text-muted-foreground">{user?.email} · {user?.role}</div>
                     </div>
                     <div className="flex-1" />
-                    <Button variant="outline" size="sm">Change avatar</Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" disabled={profileSaving} onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'; input.accept = 'image/jpeg,image/png,image/webp'
+                        input.onchange = () => { const file = input.files?.[0]; if (file) { setProfileMessage(''); setAvatarCandidate({ file, url: URL.createObjectURL(file) }) } }
+                        input.click()
+                      }}>Change picture</Button>
+                      {user?.avatarUrl && <Button variant="ghost" size="sm" disabled={profileSaving} onClick={() => void removeAvatar()}>Remove</Button>}
+                    </div>
                   </div>
-                  <Row label="Display name"><Input defaultValue={user?.name ?? ''} className="w-52" /></Row>
+                  {avatarCandidate && <div className="mb-3 flex items-center gap-4 rounded-lg border bg-muted/20 p-3">
+                    <img src={avatarCandidate.url} alt="Square profile picture preview" className="size-24 rounded-full object-cover" />
+                    <div><div className="text-sm font-medium">Profile picture preview</div><p className="mt-1 text-xs text-muted-foreground">Pulpo will center-crop and resize this image.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div></div>
+                  </div>}
+                  <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
+                  <Row label="Username" hint="Optional. Friends use this exact username to find you."><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span><Input value={profileUsername} onChange={(event) => { setProfileMessage(''); setProfileUsername(event.target.value.replace(/^@/, '').toLowerCase()) }} maxLength={30} className="w-52 pl-7" placeholder="username" /></div></Row>
+                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2"><Button size="sm" variant={profileColor === null ? 'secondary' : 'outline'} onClick={() => { setProfileMessage(''); setProfileColor(null) }}>Automatic</Button>{PROFILE_COLORS.map((color) => <button key={color} type="button" aria-label={`Profile color ${color}`} className={cn('size-5 rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')} style={{ backgroundColor: color }} onClick={() => { setProfileMessage(''); setProfileColor(color) }} />)}</div></Row>
+                  <div className="flex min-h-10 items-center justify-end gap-3 py-2">
+                    {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
+                    {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
+                    <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? 'Saving…' : 'Save profile'}</Button>
+                  </div>
                   <PasswordSettings />
                   <TwoFactorSettings />
                   <Separator className="my-3" />
@@ -439,14 +555,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Personalization</h2>
                   <Separator className="my-3" />
-                  <Row label="Nickname" hint="Shown on the public leaderboard instead of your name.">
-                    <Input
-                      value={s.nickname}
-                      onChange={(e) => s.set('nickname', e.target.value)}
-                      placeholder="e.g. crazy_hamburger"
-                      className="w-52"
-                    />
-                  </Row>
                   <div className="py-3">
                     <Label className="text-sm font-medium">Custom instructions</Label>
                     <p className="mb-2 mt-0.5 text-xs text-muted-foreground">

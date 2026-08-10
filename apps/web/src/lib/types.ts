@@ -117,7 +117,9 @@ export interface UsageRecord {
 export interface MonitorUser {
   id: string
   name: string
-  nickname: string | null
+  username: string | null
+  avatarUrl: string | null
+  profileColor: string | null
   email: string
   role: 'pending' | 'admin' | 'user'
   balance: number
@@ -125,8 +127,6 @@ export interface MonitorUser {
   storageBytes?: number
   joinedAt: number
   blocked: boolean
-  showOnLeaderboard: boolean
-  barColor: string
   lastActiveAt?: number | null
   twoFactorEnabled?: boolean
   usageCalls?: number

@@ -27,6 +27,8 @@ import { registerResponseCompression } from './compression.js'
 import { registerManagementRoutes } from './management/routes.js'
 import { ensureBootstrapPreset } from './bootstrap/ci-preview.js'
 import { registerCatalogIconRoutes } from './catalog/icon-routes.js'
+import { registerFriendRoutes } from './friends/routes.js'
+import { registerProfileRoutes } from './profile/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -98,6 +100,8 @@ export async function buildApp() {
   await ensureBootstrapPreset()
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
+  await registerProfileRoutes(app)
+  await registerFriendRoutes(app)
   await registerCatalogRoutes(app)
   await registerCatalogIconRoutes(app)
   await registerChatRoutes(app)

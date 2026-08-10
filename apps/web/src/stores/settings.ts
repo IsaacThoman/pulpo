@@ -16,11 +16,8 @@ interface SettingsState {
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
   customInstructions: string
-  nickname: string
   memoryEnabled: boolean
   agentModeEnabled: boolean
-  leaderboardVisible: boolean
-  leaderboardColor: string
   localChatLimit: number
   localAttachmentCacheMb: number
   trashRetention: TrashRetention
@@ -41,11 +38,8 @@ export const DEFAULT_SETTINGS = {
   showReasoning: true,
   chatWidth: 'narrow' as const,
   customInstructions: '',
-  nickname: '',
   memoryEnabled: false,
   agentModeEnabled: true,
-  leaderboardVisible: false,
-  leaderboardColor: '#10b981',
   localChatLimit: 50,
   localAttachmentCacheMb: 50,
   trashRetention: '30d' as TrashRetention,

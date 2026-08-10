@@ -11,6 +11,7 @@ import { newId } from '../lib/ids.js'
 import { sendTwoFactorResetNotice } from '../lib/mail.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { profileAvatarUrl } from '../profile/service.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -20,9 +21,8 @@ const patchUserSchema = z.object({
   blocked: z.boolean().optional(),
   balanceMicros: z.number().int().nonnegative().optional(),
   storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-  nickname: z.string().trim().max(80).nullable().optional(),
-  leaderboardVisible: z.boolean().optional(),
-  leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  username: z.string().trim().toLowerCase().regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/).nullable().optional(),
+  profileColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 })
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
@@ -69,7 +69,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         where ${userTotpCredentials.userId} = ${users.id}
       )`,
     }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
-    return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros), storageBytes: Number(row.storageBytes) })) }
+    return { data: rows.map((row) => {
+      const { avatarObjectKey: _avatarObjectKey, ...publicUser } = row.user
+      return {
+        ...row,
+        user: { ...publicUser, avatarUrl: profileAvatarUrl(row.user) },
+        calls: Number(row.calls), spentMicros: Number(row.spentMicros), storageBytes: Number(row.storageBytes),
+      }
+    }) }
   })
 
   app.patch('/api/admin/users/:id', async (request) => {

@@ -32,9 +32,9 @@ export function PersonalPage() {
   const userId = authUser?.id ?? usageUserId
   const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
-    nickname: null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
+    username: authUser?.username ?? null, avatarUrl: authUser?.avatarUrl ?? null, profileColor: authUser?.profileColor ?? null,
+    role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
     joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
-    showOnLeaderboard: true, barColor: '#10b981',
   }
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<Metric>('cost')

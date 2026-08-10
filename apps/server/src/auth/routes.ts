@@ -180,11 +180,21 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/me', async (request) => {
     const user = requireUser(request)
     const input = updateProfileInputSchema.parse(request.body)
-    const [updated] = await db.update(users).set({
-      name: input.name,
-      stateRevision: sql`${users.stateRevision} + 1`,
-      updatedAt: new Date(),
-    }).where(eq(users.id, user.id)).returning()
+    let updated: typeof users.$inferSelect | undefined
+    try {
+      ;[updated] = await db.update(users).set({
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.username !== undefined ? { username: input.username } : {}),
+        ...(input.profileColor !== undefined ? { profileColor: input.profileColor?.toLowerCase() ?? null } : {}),
+        stateRevision: sql`${users.stateRevision} + 1`,
+        updatedAt: new Date(),
+      }).where(eq(users.id, user.id)).returning()
+    } catch (cause) {
+      if (cause && typeof cause === 'object' && 'code' in cause && cause.code === '23505') {
+        throw new AppError(409, 'username_taken', 'That username is already taken', 'invalid_request_error', 'username')
+      }
+      throw cause
+    }
     if (!updated) throw unauthorized()
     await publishStateChange({ userId: user.id, revision: updated.stateRevision })
     return { user: serializeUser(updated) }

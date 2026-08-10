@@ -49,7 +49,7 @@ export function SetupPage() {
       </div>
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="setup-name">Full name</Label>
+          <Label htmlFor="setup-name">Display name</Label>
           <Input id="setup-name" autoComplete="name" placeholder="Ada Lovelace" value={name} onChange={(event) => setName(event.target.value)} required />
         </div>
         <div className="space-y-2">

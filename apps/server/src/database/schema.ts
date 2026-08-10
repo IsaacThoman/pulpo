@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
+  check,
   doublePrecision,
   index,
   integer,
@@ -31,6 +32,7 @@ export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 's
 export const workspaceLeaseStatusEnum = pgEnum('workspace_lease_status', ['provisioning', 'ready', 'expired', 'failed', 'released'])
 export const agentRunStatusEnum = pgEnum('agent_run_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
 export const toolExecutionStatusEnum = pgEnum('tool_execution_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
+export const friendshipStatusEnum = pgEnum('friendship_status', ['pending', 'accepted'])
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey(),
@@ -41,11 +43,41 @@ export const users = pgTable('users', {
   storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_242_880_000),
   blocked: boolean('blocked').notNull().default(false),
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
-  leaderboardVisible: boolean('leaderboard_visible').notNull().default(false),
-  leaderboardColor: text('leaderboard_color').notNull().default('#71717a'),
-  nickname: text('nickname'),
+  username: text('username'),
+  profileColor: text('profile_color'),
+  avatarObjectKey: text('avatar_object_key'),
+  avatarVersion: integer('avatar_version').notNull().default(0),
   ...timestamps,
-}, (table) => [uniqueIndex('users_email_unique').on(sql`lower(${table.email})`)])
+}, (table) => [
+  uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
+  uniqueIndex('users_username_unique').on(sql`lower(${table.username})`).where(sql`${table.username} is not null`),
+])
+
+export const friendships = pgTable('friendships', {
+  id: uuid('id').primaryKey(),
+  userAId: uuid('user_a_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userBId: uuid('user_b_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  requestedByUserId: uuid('requested_by_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: friendshipStatusEnum('status').notNull().default('pending'),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('friendships_pair_unique').on(table.userAId, table.userBId),
+  index('friendships_user_a_status_idx').on(table.userAId, table.status),
+  index('friendships_user_b_status_idx').on(table.userBId, table.status),
+  check('friendships_ordered_pair_check', sql`${table.userAId} < ${table.userBId}`),
+  check('friendships_requester_member_check', sql`${table.requestedByUserId} in (${table.userAId}, ${table.userBId})`),
+])
+
+export const userBlocks = pgTable('user_blocks', {
+  blockerUserId: uuid('blocker_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  blockedUserId: uuid('blocked_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.blockerUserId, table.blockedUserId] }),
+  index('user_blocks_blocked_idx').on(table.blockedUserId),
+  check('user_blocks_not_self_check', sql`${table.blockerUserId} <> ${table.blockedUserId}`),
+])
 
 export const passwordCredentials = pgTable('password_credentials', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
