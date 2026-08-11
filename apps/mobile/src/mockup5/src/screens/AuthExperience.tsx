@@ -10,7 +10,7 @@ import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkey
 import { useSessionStore } from '../../../store/session';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
-type AuthPage = 'login' | 'two-factor' | 'signup' | 'forgot' | 'instance';
+type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' | 'instance';
 
 const mockupOneDark = {
   background: '#101014', surface: '#18181C', border: '#303036', text: '#FAFAFA',
@@ -68,6 +68,18 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   const foregroundColor = inactive ? colors.textMuted : colors.accentText;
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.primaryButton, { backgroundColor }]}>
     {loading ? <ActivityIndicator color={foregroundColor} /> : <><Text style={[styles.primaryButtonText, { color: foregroundColor }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={foregroundColor} size={16} weight="semibold" /> : null}</>}
+  </Pressable>;
+}
+
+function SecondaryAuthButton({ label, colors, loading = false, icon, onPress }: {
+  label: string;
+  colors: AuthColors;
+  loading?: boolean;
+  icon?: Parameters<typeof SymbolView>[0]['name'];
+  onPress: () => void;
+}) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={loading} onPress={onPress} style={[styles.secondaryButton, { borderColor: colors.border }]}>
+    {loading ? <ActivityIndicator color={colors.text} /> : <><Text style={[styles.secondaryButtonText, { color: colors.text }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={colors.text} size={16} weight="semibold" /> : null}</>}
   </Pressable>;
 }
 
@@ -247,6 +259,12 @@ export function AuthExperience() {
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
 
+  if (page === 'login-options') return <AuthShell colors={colors} title="More login options" subtitle="Choose another way to sign in to your Pulpo account.">
+    <SecondaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+    <BackToSignIn colors={colors} onPress={() => goTo('login')} />
+  </AuthShell>;
+
   return <AuthShell colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
@@ -254,14 +272,11 @@ export function AuthExperience() {
       <Text style={[styles.change, { color: colors.text }]}>Change</Text>
     </Pressable>
   }>
-    {productionConfig?.capabilities.passkeys ? <>
-      <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
-      <View style={styles.divider}><View style={[styles.dividerLine, { backgroundColor: colors.border }]} /><Text style={[styles.dividerText, { color: colors.textFaint }]}>or use your password</Text><View style={[styles.dividerLine, { backgroundColor: colors.border }]} /></View>
-    </> : null}
     <AuthField colors={colors} icon="envelope" label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" />
     <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="current-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitLogin} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Sign in" colors={colors} loading={loading} disabled={!email.trim() || !password} onPress={submitLogin} />
+    {productionConfig?.capabilities.passkeys ? <BackToSignIn colors={colors} label="More login options" onPress={() => goTo('login-options')} /> : null}
     <View style={styles.links}>
       {instance.signupOpen ? <Pressable accessibilityRole="link" onPress={() => goTo('signup')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.text }]}>Create account</Text></Pressable> : null}
       <Pressable accessibilityRole="link" onPress={() => goTo('forgot')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.textMuted }]}>Forgot password?</Text></Pressable>
@@ -302,7 +317,4 @@ const styles = StyleSheet.create({
   pendingName: { fontSize: 16, fontWeight: '600' },
   pendingEmail: { fontSize: 13.5 },
   pendingHelp: { fontSize: 13.5, lineHeight: 20 },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 2 },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 12 },
 });
