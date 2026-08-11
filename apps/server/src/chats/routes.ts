@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
@@ -21,7 +21,7 @@ import {
   temporaryChatExpiresAt,
   temporaryChatIsExpired,
 } from './temporary.js'
-import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, updateQueuedMessage } from './message-queue.js'
+import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, reorderQueuedMessage, updateQueuedMessage } from './message-queue.js'
 import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
 
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
@@ -648,6 +648,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id, messageId } = request.params as { id: string; messageId: string }
     const input = updateQueuedMessageSchema.parse(request.body)
     return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input) }
+  })
+
+  app.patch('/api/chats/:id/queued-messages/:messageId/reorder', async (request) => {
+    const user = requireUser(request)
+    const { id, messageId } = request.params as { id: string; messageId: string }
+    const input = reorderQueuedMessageSchema.parse(request.body)
+    return { queuedMessages: await reorderQueuedMessage(user.id, id, messageId, input) }
   })
 
   app.delete('/api/chats/:id/queued-messages/:messageId', async (request, reply) => {

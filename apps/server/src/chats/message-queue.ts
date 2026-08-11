@@ -1,5 +1,5 @@
 import { and, asc, eq, inArray, isNull, max, ne, sql } from 'drizzle-orm'
-import type { CreateQueuedMessageInput, QueuedMessage, UpdateQueuedMessageInput } from '@pulpo/contracts'
+import type { CreateQueuedMessageInput, QueuedMessage, ReorderQueuedMessageInput, UpdateQueuedMessageInput } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, models, queuedMessages, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -9,7 +9,7 @@ import { createResponse, resolveResponseGeneration } from '../responses/service.
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { attachmentsRequireAgentMode } from '../attachments/policy.js'
 import { accessibleChatCondition } from './temporary.js'
-import { canPromoteQueueHead, nextQueuePosition } from './message-queue-policy.js'
+import { canPromoteQueueHead, nextQueuePosition, reorderQueueIds } from './message-queue-policy.js'
 
 type QueueRow = typeof queuedMessages.$inferSelect
 
@@ -209,6 +209,41 @@ export async function deleteQueuedMessage(userId: string, chatId: string, id: st
   })
   await bumpQueueRevision(userId, chatId)
   await advanceMessageQueue(chatId)
+}
+
+export async function reorderQueuedMessage(
+  userId: string,
+  chatId: string,
+  id: string,
+  input: ReorderQueuedMessageInput,
+): Promise<QueuedMessage[]> {
+  await assertAccessibleChat(userId, chatId)
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
+    const rows = await tx.select({ id: queuedMessages.id, status: queuedMessages.status })
+      .from(queuedMessages).where(and(
+        eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId),
+      )).orderBy(asc(queuedMessages.position), asc(queuedMessages.id))
+    const moving = rows.find((row) => row.id === id)
+    const target = rows.find((row) => row.id === input.targetMessageId)
+    if (!moving || !target) throw notFound('Queued message')
+    if (moving.status === 'dispatching' || target.status === 'dispatching') {
+      throw new AppError(409, 'queued_message_dispatching', 'A message that is already being sent cannot be reordered')
+    }
+    const currentIds = rows.map((row) => row.id)
+    const reorderedIds = reorderQueueIds(currentIds, id, input.targetMessageId, input.edge)
+    if (reorderedIds === currentIds) return
+
+    // Use unique temporary positions while reassigning the queue's persisted order.
+    for (const [index, messageId] of reorderedIds.entries()) {
+      await tx.update(queuedMessages).set({ position: -(index + 1) }).where(eq(queuedMessages.id, messageId))
+    }
+    for (const [position, messageId] of reorderedIds.entries()) {
+      await tx.update(queuedMessages).set({ position }).where(eq(queuedMessages.id, messageId))
+    }
+  })
+  await bumpQueueRevision(userId, chatId)
+  return listQueuedMessages(chatId, userId)
 }
 
 export async function advanceMessageQueue(chatId: string): Promise<void> {

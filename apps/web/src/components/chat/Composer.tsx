@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
@@ -114,11 +114,14 @@ export function Composer({
   const [submitting, setSubmitting] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
+  const [queueDragId, setQueueDragId] = useState<string | null>(null)
+  const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachmentsRef = useRef(attachments)
   const preservedDraftRef = useRef<{ value: string; attachments: PendingAttachment[] } | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
+  const queueDragIdRef = useRef<string | null>(null)
   attachmentsRef.current = attachments
 
   const sendMessage = useChat((s) => s.sendMessage)
@@ -137,6 +140,7 @@ export function Composer({
     : EMPTY_QUEUE)
   const enqueueMessage = useChat((s) => s.enqueueMessage)
   const updateQueuedMessage = useChat((s) => s.updateQueuedMessage)
+  const reorderQueuedMessage = useChat((s) => s.reorderQueuedMessage)
   const deleteQueuedMessage = useChat((s) => s.deleteQueuedMessage)
   const editUserMessage = useChat((s) => s.editUserMessage)
   const overrides = useModelConfig((s) => s.overrides)
@@ -506,6 +510,48 @@ export function Composer({
     }
   }
 
+  const clearQueueDrag = () => {
+    queueDragIdRef.current = null
+    setQueueDragId(null)
+    setQueueDrop(null)
+  }
+
+  const startQueueDrag = (messageId: string, event: ReactDragEvent) => {
+    queueDragIdRef.current = messageId
+    setQueueDragId(messageId)
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', messageId)
+  }
+
+  const dragQueuedMessageOver = (messageId: string, event: ReactDragEvent<HTMLElement>) => {
+    const fromId = queueDragIdRef.current
+    if (!fromId || fromId === messageId) return
+    const moving = queuedMessages.find((message) => message.id === fromId)
+    const target = queuedMessages.find((message) => message.id === messageId)
+    if (!moving || !target || moving.status === 'dispatching' || target.status === 'dispatching') {
+      if (queueDrop) setQueueDrop(null)
+      return
+    }
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const rect = event.currentTarget.getBoundingClientRect()
+    const edge = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+    if (queueDrop?.id !== messageId || queueDrop.edge !== edge) setQueueDrop({ id: messageId, edge })
+  }
+
+  const moveQueuedMessage = async (messageId: string, targetMessageId: string, edge: 'before' | 'after') => {
+    if (!chatId) return
+    setQueueError(null)
+    setSubmitting(true)
+    try {
+      await reorderQueuedMessage(chatId, messageId, targetMessageId, edge)
+    } catch (error) {
+      setQueueError(error instanceof Error ? error.message : 'Unable to reorder queued message')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const onPaste = (event: React.ClipboardEvent) => {
     let files = collectImageFiles(event.clipboardData?.items)
     if (!files.length) files = collectImageFiles(event.clipboardData?.files)
@@ -567,15 +613,40 @@ export function Composer({
           {queuedMessages.map((message) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
+            const canReorder = queuedMessages.length > 1 && !submitting && message.status !== 'dispatching'
+            const isDragging = queueDragId === message.id
+            const showLineBefore = queueDrop?.id === message.id && queueDrop.edge === 'before' && !isDragging
+            const showLineAfter = queueDrop?.id === message.id && queueDrop.edge === 'after' && !isDragging
             return (
               <div
                 key={message.id}
+                draggable={canReorder}
+                onDragStart={(event) => {
+                  if (canReorder) startQueueDrag(message.id, event)
+                }}
+                onDragOver={(event) => dragQueuedMessageOver(message.id, event)}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  const fromId = queueDragIdRef.current ?? event.dataTransfer.getData('text/plain')
+                  const edge = queueDrop?.id === message.id ? queueDrop.edge : 'before'
+                  clearQueueDrag()
+                  if (fromId && fromId !== message.id) void moveQueuedMessage(fromId, message.id, edge)
+                }}
+                onDragEnd={clearQueueDrag}
                 className={cn(
-                  'flex min-h-8 min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 text-sm',
+                  'relative flex min-h-8 min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 text-sm',
+                  canReorder && 'cursor-grab active:cursor-grabbing',
+                  isDragging && 'opacity-40',
                   editing && 'bg-accent ring-1 ring-border',
                   message.status === 'failed' && 'bg-destructive/5',
                 )}
               >
+                {showLineBefore && (
+                  <div className="pointer-events-none absolute inset-x-2 -top-px h-0.5 rounded-full bg-foreground/35" />
+                )}
+                {showLineAfter && (
+                  <div className="pointer-events-none absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground/35" />
+                )}
                 <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                   <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>

@@ -150,6 +150,7 @@ interface ChatState {
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean) => string
   enqueueMessage: (chatId: string, input: CreateQueuedMessageInput, attachments: Attachment[]) => Promise<void>
   updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
+  reorderQueuedMessage: (chatId: string, messageId: string, targetMessageId: string, edge: 'before' | 'after') => Promise<void>
   deleteQueuedMessage: (chatId: string, messageId: string) => Promise<void>
   regenerate: (chatId: string, messageId: string, modelId: string) => void
   editUserMessage: (input: {
@@ -1485,6 +1486,39 @@ export const useChat = create<ChatState>()((set, get) => ({
             if (message.id !== messageId) return [message]
             return result.queuedMessage ? [result.queuedMessage] : []
           }),
+        }),
+      }))
+      await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+    } catch (error) {
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: previous }),
+      }))
+      throw error
+    }
+  },
+
+  reorderQueuedMessage: async (chatId, messageId, targetMessageId, edge) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
+    const currentIds = previous.map((message) => message.id)
+    const reorderedIds = reorderList(currentIds, messageId, targetMessageId, edge)
+    if (reorderedIds === currentIds) return
+    const byId = new Map(previous.map((message) => [message.id, message]))
+    const optimistic = reorderedIds.flatMap((id, position) => {
+      const message = byId.get(id)
+      return message ? [{ ...message, position }] : []
+    })
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: optimistic }),
+    }))
+    try {
+      const result = await apiRequest<{ queuedMessages: QueuedMessage[] }>(
+        `/api/chats/${chatId}/queued-messages/${messageId}/reorder`,
+        { method: 'PATCH', body: { targetMessageId, edge } },
+      )
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+          ...chat,
+          queuedMessages: result.queuedMessages,
         }),
       }))
       await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })

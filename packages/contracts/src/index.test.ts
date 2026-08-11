@@ -569,7 +569,7 @@ describe('response snapshot accumulation', () => {
   })
 
   it('validates queued messages and queue edit actions', async () => {
-    const { createQueuedMessageSchema, updateQueuedMessageSchema } = await import('./index.js')
+    const { createQueuedMessageSchema, reorderQueuedMessageSchema, updateQueuedMessageSchema } = await import('./index.js')
     const attachmentId = '00000000-0000-4000-8000-000000000004'
     expect(createQueuedMessageSchema.parse({
       input: '', modelId: 'model-1', attachmentIds: [attachmentId], agentMode: true,
@@ -579,6 +579,9 @@ describe('response snapshot accumulation', () => {
     })).toMatchObject({ action: 'save_edit', input: 'updated', attachmentIds: [] })
     expect(() => createQueuedMessageSchema.parse({ input: '', modelId: 'model-1' })).toThrow()
     expect(() => updateQueuedMessageSchema.parse({ action: 'save_edit', input: '', modelId: 'model-1' })).toThrow()
+    expect(reorderQueuedMessageSchema.parse({
+      targetMessageId: '00000000-0000-4000-8000-000000000002', edge: 'before',
+    })).toEqual({ targetMessageId: '00000000-0000-4000-8000-000000000002', edge: 'before' })
   })
 
   it('accepts attachment-aware message edits and rejects duplicate references', async () => {
