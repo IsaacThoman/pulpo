@@ -1147,6 +1147,12 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
 ])
 export type UpdateQueuedMessageInput = z.infer<typeof updateQueuedMessageSchema>
 
+export const reorderQueuedMessageSchema = z.object({
+  targetMessageId: idSchema,
+  edge: z.enum(['before', 'after']),
+})
+export type ReorderQueuedMessageInput = z.infer<typeof reorderQueuedMessageSchema>
+
 export const startChatSchema = z.object({
   chat: createChatSchema.extend({ clientId: idSchema }),
   response: createChatResponseSchema.safeExtend({ clientId: idSchema }),

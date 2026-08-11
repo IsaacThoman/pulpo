@@ -6,6 +6,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  ChevronUp,
   CornerDownRight,
   ImagePlus,
   Loader2,
@@ -137,6 +138,7 @@ export function Composer({
     : EMPTY_QUEUE)
   const enqueueMessage = useChat((s) => s.enqueueMessage)
   const updateQueuedMessage = useChat((s) => s.updateQueuedMessage)
+  const reorderQueuedMessage = useChat((s) => s.reorderQueuedMessage)
   const deleteQueuedMessage = useChat((s) => s.deleteQueuedMessage)
   const editUserMessage = useChat((s) => s.editUserMessage)
   const overrides = useModelConfig((s) => s.overrides)
@@ -506,6 +508,22 @@ export function Composer({
     }
   }
 
+  const moveQueuedMessage = async (messageId: string, direction: 'up' | 'down') => {
+    if (!chatId) return
+    const index = queuedMessages.findIndex((message) => message.id === messageId)
+    const target = queuedMessages[index + (direction === 'up' ? -1 : 1)]
+    if (index < 0 || !target) return
+    setQueueError(null)
+    setSubmitting(true)
+    try {
+      await reorderQueuedMessage(chatId, messageId, target.id, direction === 'up' ? 'before' : 'after')
+    } catch (error) {
+      setQueueError(error instanceof Error ? error.message : 'Unable to reorder queued message')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const onPaste = (event: React.ClipboardEvent) => {
     let files = collectImageFiles(event.clipboardData?.items)
     if (!files.length) files = collectImageFiles(event.clipboardData?.files)
@@ -564,9 +582,13 @@ export function Composer({
           'max-h-48 overflow-y-auto border border-b-0 bg-card px-2 pt-2 pb-1 shadow-sm',
           messageEdit ? 'rounded-none' : 'rounded-t-2xl',
         )}>
-          {queuedMessages.map((message) => {
+          {queuedMessages.map((message, index) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
+            const previousMessage = queuedMessages[index - 1]
+            const nextMessage = queuedMessages[index + 1]
+            const canMoveUp = message.status !== 'dispatching' && Boolean(previousMessage) && previousMessage?.status !== 'dispatching'
+            const canMoveDown = message.status !== 'dispatching' && Boolean(nextMessage) && nextMessage?.status !== 'dispatching'
             return (
               <div
                 key={message.id}
@@ -590,6 +612,26 @@ export function Composer({
                     </p>
                   )}
                   {message.error && <p role="alert" className="truncate text-xs text-destructive">{message.error}</p>}
+                </div>
+                <div className="flex size-7 shrink-0 flex-col overflow-hidden rounded-md">
+                  <button
+                    type="button"
+                    onClick={() => void moveQueuedMessage(message.id, 'up')}
+                    disabled={submitting || !canMoveUp}
+                    className="flex min-h-0 flex-1 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Move queued message up"
+                  >
+                    <ChevronUp className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void moveQueuedMessage(message.id, 'down')}
+                    disabled={submitting || !canMoveDown}
+                    className="flex min-h-0 flex-1 cursor-pointer items-center justify-center text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-30"
+                    aria-label="Move queued message down"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </button>
                 </div>
                 <button
                   type="button"
