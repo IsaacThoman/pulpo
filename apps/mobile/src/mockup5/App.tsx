@@ -176,8 +176,10 @@ import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import {
   historyChatSummary,
+  resolveHistoryChatExpiryMenuAction,
   reuseHistoryChatSummaries,
   visibleHistoryChats,
+  type HistoryChatExpiryMenuAction,
   type HistoryChatSummary,
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
@@ -3977,15 +3979,17 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
-const HistoryChatRow = memo(function HistoryChatRow({ active, chat, previewText, removeChatLabel, onChatAction, onOpenActions, onSelectChat }: {
+const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewText, removeChatLabel, onChatAction, onOpenActions, onSelectChat }: {
   active: boolean;
   chat: HistoryChatSummary;
+  expirationMenuAction: HistoryChatExpiryMenuAction;
   previewText: string;
   removeChatLabel: string;
   onChatAction: (chat: HistoryChatSummary, action: HistoryChatAction) => void;
   onOpenActions: (chat: HistoryChatSummary) => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
+  const expirationAction = expirationMenuAction?.kind ?? 'hidden';
   const rowContent = <>
     <View style={styles.flex}>
       <Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text>
@@ -4001,6 +4005,9 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, previewText,
       accessibilityState={{ selected: active }}
       pinned={chat.pinned}
       removeChatLabel={removeChatLabel}
+      expirationAction={expirationAction}
+      expirationPeriodLabel={expirationMenuAction?.kind === 'enable' ? expirationMenuAction.periodLabel : ''}
+      expiresAt={chat.expiresAt ?? 0}
       previewTitle={chat.title}
       previewBody={previewText}
       previewMetadata={`${chat.section} · ${chat.time}`}
@@ -4043,6 +4050,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const folders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
+  const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
   const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const moveChat = usePrototypeStore((state) => state.moveChat);
@@ -4121,6 +4129,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       }
       return;
     }
+    if (action === 'enable-expiration' || action === 'disable-expiration') {
+      usePrototypeStore.getState().setChatAutoExpiration(chat.id, action === 'enable-expiration');
+      return;
+    }
     if (action === 'move') {
       Alert.alert('Move to folder', chat.title, [
         { text: 'No folder', onPress: () => moveChat(chat.id, null) },
@@ -4158,13 +4170,14 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     return <HistoryChatRow
       active={activeChatId === item.id}
       chat={item}
+      expirationMenuAction={resolveHistoryChatExpiryMenuAction(item.expiresAt, automaticChatExpiration)}
       previewText={previewText}
       removeChatLabel={removeChatLabel}
       onChatAction={runChatAction}
       onOpenActions={showChatActions}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>
