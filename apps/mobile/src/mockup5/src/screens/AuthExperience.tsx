@@ -1,6 +1,6 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
@@ -132,7 +132,11 @@ export function AuthExperience() {
     if (password.length < 8) return setError('Password must be at least 8 characters.');
     void run(async () => {
       const result = await login(email.trim(), password);
-      if (result === 'two-factor-required') { setTwoFactorCode(''); setPage('two-factor'); }
+      if (result === 'two-factor-required') {
+        Keyboard.dismiss();
+        setTwoFactorCode('');
+        setPage('two-factor');
+      }
     });
   };
   const submitPasskey = (forceBrowser = false) => {
@@ -208,8 +212,8 @@ export function AuthExperience() {
     <Pressable accessibilityRole="button" onPress={() => { void logout(); }} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.text }]}>Back to sign in</Text></Pressable>
   </AuthShell>;
 
-  if (page === 'two-factor') return <AuthShell colors={colors} title="Verify your identity" subtitle={recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.'}>
-    <AuthField colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : 6} />
+  if (page === 'two-factor') return <AuthShell key={`two-factor-${recoveryMode ? 'recovery' : 'authenticator'}`} colors={colors} title="Verify your identity" subtitle={recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.'}>
+    <AuthField key={recoveryMode ? 'recovery-code' : 'authenticator-code'} colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete={recoveryMode ? 'off' : 'one-time-code'} textContentType={recoveryMode ? 'none' : 'oneTimeCode'} keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : undefined} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Verify and sign in" colors={colors} loading={loading} disabled={recoveryMode ? twoFactorCode.trim().length < 12 : twoFactorCode.length !== 6} onPress={submitTwoFactor} />
     <BackToSignIn colors={colors} label={recoveryMode ? 'Use an authenticator code' : 'Use a recovery code'} onPress={() => { setRecoveryMode((value) => !value); setTwoFactorCode(''); setError(''); }} />
@@ -253,7 +257,7 @@ export function AuthExperience() {
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
 
-  return <AuthShell colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
+  return <AuthShell key="login" colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
       <Text style={[styles.instanceText, { color: colors.textMuted }]} numberOfLines={1}>{instance.url}</Text>
