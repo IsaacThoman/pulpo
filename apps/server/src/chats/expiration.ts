@@ -5,7 +5,7 @@ import { maintenanceQueue } from '../jobs.js'
 
 export const automaticChatExpirationValues = ['disabled', '24h', '7d'] as const
 export type AutomaticChatExpiration = typeof automaticChatExpirationValues[number]
-export const DEFAULT_AUTOMATIC_CHAT_EXPIRATION: AutomaticChatExpiration = 'disabled'
+export const DEFAULT_AUTOMATIC_CHAT_EXPIRATION: AutomaticChatExpiration = '24h'
 
 const expirationMs: Record<AutomaticChatExpiration, number | null> = {
   disabled: null,

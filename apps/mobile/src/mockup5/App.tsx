@@ -849,7 +849,7 @@ function FallbackTemporaryChatHeaderControl({
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
   const iconColor = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
-  const expirationColor = expirationEnabled ? '#14B8A6' : '#8E8E93';
+  const expirationColor = expirationEnabled ? '#14B8A6' : iconColor;
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const expansion = useSharedValue(expanded ? 1 : 0);
   const trailingTransition = useSharedValue(trailingAction === 'new-chat' ? 1 : 0);
