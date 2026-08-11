@@ -559,6 +559,13 @@ export const modelPreferencesPatchSchema = z.object({
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
+/** Instance defaults copied into each account when it is created. */
+export const newAccountModelDefaultsSchema = z.object({
+  defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
+  favoriteModelIds: orderedPreferenceIdsSchema.default([]),
+})
+export type NewAccountModelDefaults = z.infer<typeof newAccountModelDefaultsSchema>
+
 export const createProviderSchema = z.object({
   name: z.string().trim().min(1).max(120),
   baseUrl: z.url().default('https://api.openai.com/v1'),
@@ -825,6 +832,7 @@ export const authSettingsSchema = z.object({
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
   defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
   apiKeysEnabled: z.boolean().default(true),
+  newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
 
 export const DEFAULT_TITLE_PROMPT = `### Task:
@@ -881,6 +889,10 @@ export const instanceOcrSettingsSchema = z.object({
 const accountPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).max(500)
   .transform((ids) => [...new Set(ids)])
 
+export const automaticChatExpirationSchema = z.enum(['disabled', '24h', '7d'])
+export type AutomaticChatExpiration = z.infer<typeof automaticChatExpirationSchema>
+export const newChatAutoExpireSchema = z.boolean().default(true)
+
 export const managementAccountSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   language: z.string().min(1).max(32).default('en-US'),
@@ -897,6 +909,8 @@ export const managementAccountSettingsSchema = z.object({
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
   trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
+  automaticChatExpiration: automaticChatExpirationSchema.default('disabled'),
+  newChatAutoExpire: newChatAutoExpireSchema,
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   favoriteModelIds: accountPreferenceIdsSchema.default([]),
@@ -1033,7 +1047,18 @@ export const createChatSchema = z.object({
   modelId: z.string().min(1),
   title: z.string().trim().min(1).max(200).optional(),
   temporary: z.boolean().default(false),
+  autoExpire: z.boolean().default(false),
 })
+
+export const updateChatSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  pinned: z.boolean().optional(),
+  folderId: idSchema.nullable().optional(),
+  modelId: z.string().min(1).optional(),
+  sortOrder: z.number().int().optional(),
+  autoExpire: z.boolean().optional(),
+})
+export type UpdateChatInput = z.infer<typeof updateChatSchema>
 
 const attachmentIdListSchema = z.array(idSchema).refine(
   (ids) => new Set(ids).size === ids.length,

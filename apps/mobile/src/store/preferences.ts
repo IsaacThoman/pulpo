@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { getValue, setValue } from '../data/database'
 import { defaultPreferences as defaults, type Preferences } from './preferenceMapping'
 
-export type { Preferences, TextSizePreference, ThemePreference, TrashRetentionPreference } from './preferenceMapping'
+export type { AutomaticChatExpirationPreference, Preferences, TextSizePreference, ThemePreference, TrashRetentionPreference } from './preferenceMapping'
 export { preferencePatchForServer, preferencesFromServer } from './preferenceMapping'
 
 interface PreferenceState extends Preferences {

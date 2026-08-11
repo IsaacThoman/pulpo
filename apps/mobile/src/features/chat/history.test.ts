@@ -26,6 +26,7 @@ describe('reuseHistoryChatSummaries', () => {
     updatedAt: now - 3_600_000,
     pinned: false,
     folderId: null,
+    expiresAt: null,
   }
 
   it('preserves the list and row when only transcript state changes', () => {
@@ -44,6 +45,7 @@ describe('reuseHistoryChatSummaries', () => {
     ['time', { updatedAt: now - 2 * 86_400_000 }],
     ['pin', { pinned: true }],
     ['folder', { folderId: 'folder-1' }],
+    ['expiration', { expiresAt: now + 86_400_000 }],
   ])('replaces a row when its %s metadata changes', (_field, patch) => {
     const before = historyChatSummary(source, now)
     const after = historyChatSummary({ ...source, ...patch }, now)

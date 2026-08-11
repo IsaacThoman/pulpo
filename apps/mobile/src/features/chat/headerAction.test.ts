@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextChatStartsTemporary, resolveChatHeaderAction } from './headerAction'
+import { nextChatStartsTemporary, resolveChatHeaderAction, resolveChatHeaderControl } from './headerAction'
 
 describe('resolveChatHeaderAction', () => {
   it('shows the temporary toggle on an empty new chat', () => {
@@ -21,5 +21,34 @@ describe('resolveChatHeaderAction', () => {
   it('keeps the next chat temporary when started from a temporary conversation', () => {
     expect(nextChatStartsTemporary(true)).toBe(true)
     expect(nextChatStartsTemporary(false)).toBe(false)
+  })
+
+  it('expands expiration from the ghost on a blank normal chat', () => {
+    expect(resolveChatHeaderControl('temporary-toggle', true)).toEqual({
+      expanded: true,
+      leadingAction: 'expiration',
+      trailingAction: 'ghost',
+    })
+  })
+
+  it('uses the same leading slot for expiration and temporary-chat saving', () => {
+    expect(resolveChatHeaderControl('new-chat', true)).toEqual({
+      expanded: true,
+      leadingAction: 'expiration',
+      trailingAction: 'new-chat',
+    })
+    expect(resolveChatHeaderControl('temporary-actions', false)).toEqual({
+      expanded: true,
+      leadingAction: 'save',
+      trailingAction: 'new-chat',
+    })
+  })
+
+  it('collapses to the ghost while temporary mode is empty', () => {
+    expect(resolveChatHeaderControl('temporary-toggle', false)).toEqual({
+      expanded: false,
+      leadingAction: 'none',
+      trailingAction: 'ghost',
+    })
   })
 })

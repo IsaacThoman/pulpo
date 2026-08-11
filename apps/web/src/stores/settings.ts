@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 export type Theme = 'light' | 'dark' | 'system'
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
+export type AutomaticChatExpiration = 'disabled' | '24h' | '7d'
 
 /** Per-model map of preset id → selected choice id. */
 export type GenerationPrefs = Record<string, string>
@@ -24,6 +25,8 @@ interface SettingsState {
   localChatLimit: number
   localAttachmentCacheMb: number
   trashRetention: TrashRetention
+  automaticChatExpiration: AutomaticChatExpiration
+  newChatAutoExpire: boolean
   defaultModelId: string
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
@@ -49,6 +52,8 @@ export const DEFAULT_SETTINGS = {
   localChatLimit: 50,
   localAttachmentCacheMb: 50,
   trashRetention: '30d' as TrashRetention,
+  automaticChatExpiration: 'disabled' as AutomaticChatExpiration,
+  newChatAutoExpire: true,
   defaultModelId: '',
   generation: {},
 }

@@ -31,6 +31,7 @@ interface CacheOptimisticTurnInput {
   title: string
   modelId: string
   temporary: boolean
+  expiresAt?: string | null
   presetSelections: Record<string, string>
   agentMode: boolean
   attachments: OptimisticAttachment[]
@@ -219,6 +220,7 @@ export function cacheOptimisticTurn(input: CacheOptimisticTurnInput): void {
     folderId: null,
     sortOrder: 0,
     temporary: input.temporary,
+    expiresAt: input.expiresAt ?? null,
     activeResponseId: response.id,
     activeBranchLeafId: response.id,
     createdAt,

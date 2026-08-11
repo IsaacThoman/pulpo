@@ -93,6 +93,7 @@ export function Composer({
   modelId,
   centered,
   temporary = false,
+  autoExpire = false,
   messageEdit = null,
   onMessageEditComplete,
   onEditStateChange,
@@ -101,6 +102,7 @@ export function Composer({
   modelId: string
   centered?: boolean
   temporary?: boolean
+  autoExpire?: boolean
   messageEdit?: ComposerMessageEdit | null
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
@@ -444,7 +446,7 @@ export function Composer({
       }
       return
     }
-    const targetChatId = sendMessage(chatId, text, modelId, payload, temporary)
+    const targetChatId = sendMessage(chatId, text, modelId, payload, temporary, autoExpire)
     if (!chatId && targetChatId && !temporary) navigate(`/c/${targetChatId}`)
     clearDraft()
   }

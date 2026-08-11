@@ -11,9 +11,16 @@ import { useRealtimeStore } from '../../providers/realtimeStore'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
 
-export async function createChat(input: { clientId?: string; modelId: string; temporary?: boolean; title?: string }): Promise<ServerChat> {
+function optimisticAutomaticExpiration(enabled: boolean, now = Date.now()): string | null {
+  if (!enabled) return null
+  const preference = usePreferencesStore.getState().automaticChatExpiration
+  const duration = preference === '24h' ? 86_400_000 : preference === '7d' ? 604_800_000 : null
+  return duration === null ? null : new Date(now + duration).toISOString()
+}
+
+export async function createChat(input: { clientId?: string; modelId: string; temporary?: boolean; autoExpire?: boolean; title?: string }): Promise<ServerChat> {
   const clientId = input.clientId ?? Crypto.randomUUID()
-  const body = { clientId, modelId: input.modelId, temporary: input.temporary ?? false, title: input.title }
+  const body = { clientId, modelId: input.modelId, temporary: input.temporary ?? false, autoExpire: input.autoExpire ?? false, title: input.title }
   try {
     return await apiRequest('/api/chats', { method: 'POST', idempotencyKey: clientId, body })
   } catch (error) {
@@ -28,12 +35,14 @@ export async function createChat(input: { clientId?: string; modelId: string; te
     return {
       id: clientId, title: input.title ?? 'New chat', modelId: input.modelId, pinned: false,
       folderId: null, sortOrder: 0, temporary: input.temporary ?? false, activeResponseId: null,
-      activeBranchLeafId: null, createdAt: now, updatedAt: now, responses: [], attachments: [],
+      activeBranchLeafId: null,
+      expiresAt: optimisticAutomaticExpiration(Boolean(input.autoExpire), Date.parse(now)),
+      createdAt: now, updatedAt: now, responses: [], attachments: [],
     }
   }
 }
 
-export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder'>>): Promise<ServerChat> {
+export async function updateChat(id: string, patch: Partial<Pick<ServerChat, 'title' | 'pinned' | 'folderId' | 'modelId' | 'sortOrder'>> & { autoExpire?: boolean }): Promise<ServerChat> {
   return apiRequest(`/api/chats/${id}`, { method: 'PATCH', body: patch })
 }
 
@@ -130,6 +139,7 @@ export async function startChat(input: {
   modelId: string
   title: string
   temporary?: boolean
+  autoExpire?: boolean
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
   agentMode?: boolean
@@ -151,6 +161,7 @@ export async function startChat(input: {
       modelId: input.modelId,
       title: input.title,
       temporary: input.temporary ?? false,
+      autoExpire: input.autoExpire ?? false,
     },
     response: {
       clientId: input.responseId,
@@ -195,6 +206,7 @@ export async function startChat(input: {
         folderId: null,
         sortOrder: 0,
         temporary: input.temporary ?? false,
+        expiresAt: optimisticAutomaticExpiration(Boolean(input.autoExpire), Date.parse(now)),
         activeResponseId: input.responseId,
         activeBranchLeafId: input.responseId,
         createdAt: now,

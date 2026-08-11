@@ -15,6 +15,7 @@ import { getConfig } from '../config.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
   bearerSessionToken,
   createNativeSession,
@@ -161,6 +162,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         userId,
         passwordHash: await createPasswordHash(input.password),
       })
+      await insertNewAccountPreferences(tx, userId, auth)
     })
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
     const session = await createNativeSession(userId, input.deviceLabel, request)

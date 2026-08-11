@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
+  automaticChatExpirationSchema,
   authSettingsSchema,
   chatSummarySchema,
   CHAT_PRESET_ICON_NAMES,
@@ -12,6 +13,7 @@ import {
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
   managementInfoSchema,
+  managementAccountSettingsSchema,
   managementSettingsDocumentSchema,
   managementTokenSchema,
   isChatPresetIcon,
@@ -25,11 +27,13 @@ import {
   passkeyRegistrationResponseSchema,
   beginPasskeyRegistrationInputSchema,
   mobileBrowserPasskeyOptionsInputSchema,
+  newChatAutoExpireSchema,
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
   startChatSchema,
   syncRequestSchema,
+  updateChatSchema,
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
@@ -91,6 +95,19 @@ describe('shared contracts', () => {
     }
     expect(persistChatResponseSchema.parse(summary)).toMatchObject({ temporary: false, expiresAt: null })
     expect(() => persistChatResponseSchema.parse({ ...summary, temporary: true })).toThrow()
+  })
+
+  it('validates automatic chat expiration preferences and chat mutations', () => {
+    expect(automaticChatExpirationSchema.options).toEqual(['disabled', '24h', '7d'])
+    expect(newChatAutoExpireSchema.parse(undefined)).toBe(true)
+    expect(newChatAutoExpireSchema.parse(false)).toBe(false)
+    expect(newChatAutoExpireSchema.safeParse('false').success).toBe(false)
+    expect(startChatSchema.parse({
+      chat: { clientId: crypto.randomUUID(), modelId: 'model', autoExpire: true },
+      response: { clientId: crypto.randomUUID(), input: 'hello', modelId: 'model' },
+    }).chat.autoExpire).toBe(true)
+    expect(updateChatSchema.parse({ autoExpire: false })).toEqual({ autoExpire: false })
+    expect(updateChatSchema.safeParse({ autoExpire: 'yes' }).success).toBe(false)
   })
 
   it('uses the Pulpo Proxy OCR prompt by default', () => {
@@ -197,6 +214,22 @@ describe('shared contracts', () => {
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
+  it('normalizes new-account model defaults while preserving favorite order', () => {
+    expect(authSettingsSchema.parse({}).newAccountModelDefaults).toEqual({
+      defaultModelId: null,
+      favoriteModelIds: [],
+    })
+    expect(authSettingsSchema.parse({
+      newAccountModelDefaults: {
+        defaultModelId: ' model-a ',
+        favoriteModelIds: ['model-b', 'model-a', 'model-b'],
+      },
+    }).newAccountModelDefaults).toEqual({
+      defaultModelId: 'model-a',
+      favoriteModelIds: ['model-b', 'model-a'],
+    })
+  })
+
   it('validates native sessions and instance discovery', () => {
     expect(nativeLoginInputSchema.parse({
       email: 'member@example.com', password: 'password', deviceLabel: 'Isaac’s iPhone',
@@ -264,9 +297,15 @@ describe('shared contracts', () => {
       account: {},
       instance: {},
     })
-    expect(document.account).toMatchObject({ theme: 'system', trashRetention: '30d', favoriteModelIds: [] })
+    expect(document.account).toMatchObject({
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: 'disabled', newChatAutoExpire: true, favoriteModelIds: [],
+    })
+    expect(managementAccountSettingsSchema.parse({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(document.instance).toMatchObject({
-      auth: { signupEnabled: true },
+      auth: {
+        signupEnabled: true,
+        newAccountModelDefaults: { defaultModelId: null, favoriteModelIds: [] },
+      },
       interface: { localTask: 'current' },
       ocr: { enabled: false, modelId: null },
       webTools: { searchEnabled: false },

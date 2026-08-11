@@ -318,8 +318,8 @@ export const chats = pgTable('chats', {
   ...timestamps,
 }, (table) => [
   index('chats_user_updated_idx').on(table.userId, table.updatedAt),
-  index('chats_temporary_expiry_idx').on(table.expiresAt)
-    .where(sql`${table.temporary} = true and ${table.purgeStartedAt} is null`),
+  index('chats_expiry_idx').on(table.expiresAt)
+    .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
 ])
 
 export const responses = pgTable('responses', {
