@@ -71,18 +71,6 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   </Pressable>;
 }
 
-function SecondaryAuthButton({ label, colors, loading = false, icon, onPress }: {
-  label: string;
-  colors: AuthColors;
-  loading?: boolean;
-  icon?: Parameters<typeof SymbolView>[0]['name'];
-  onPress: () => void;
-}) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={loading} onPress={onPress} style={[styles.secondaryButton, { borderColor: colors.border }]}>
-    {loading ? <ActivityIndicator color={colors.text} /> : <><Text style={[styles.secondaryButtonText, { color: colors.text }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={colors.text} size={16} weight="semibold" /> : null}</>}
-  </Pressable>;
-}
-
 function BackToSignIn({ colors, onPress, label = 'Back to sign in' }: { colors: AuthColors; onPress: () => void; label?: string }) {
   return <Pressable accessibilityRole="link" onPress={onPress} style={styles.backLink}><Text style={[styles.backLinkText, { color: colors.textMuted }]}>{label}</Text></Pressable>;
 }
@@ -260,7 +248,7 @@ export function AuthExperience() {
   </AuthShell>;
 
   if (page === 'login-options') return <AuthShell colors={colors} title="More login options" subtitle="Choose another way to sign in to your Pulpo account.">
-    <SecondaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
+    <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
