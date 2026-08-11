@@ -2949,7 +2949,7 @@ function ChatView({
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
     // Re-roll when opening a new empty chat.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
     [chatId, isEmptyConversation, promptConfig],
   );
 

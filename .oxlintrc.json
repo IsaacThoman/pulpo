@@ -2,6 +2,10 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["react", "typescript", "oxc"],
   "rules": {
+    "oxc/no-accumulating-spread": "warn",
+    "preserve-caught-error": "warn",
+    "react/exhaustive-deps": "warn",
+    "react/no-object-type-as-default-prop": "warn",
     "react/rules-of-hooks": "error",
     "react/only-export-components": ["warn", { "allowConstantExport": true }]
   }

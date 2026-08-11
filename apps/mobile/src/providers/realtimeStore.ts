@@ -33,16 +33,19 @@ const responseSubscriptions = new Map<string, ResponseSubscription>()
 
 export const useRealtimeStore = create<RealtimeState>((set) => {
   const applyEvents = (state: RealtimeState, events: ResponseEvent[]) => {
-    let snapshots = state.snapshots
-    let changed = false
-    for (const event of events) {
+    const firstApplicableEvent = events.findIndex((event) => {
+      const current = state.snapshots[event.responseId]
+      return current && event.sequence > current.sequence
+    })
+    if (firstApplicableEvent === -1) return state
+
+    const snapshots = { ...state.snapshots }
+    for (const event of events.slice(firstApplicableEvent)) {
       const current = snapshots[event.responseId]
       if (!current || event.sequence <= current.sequence) continue
-      if (!changed) snapshots = { ...snapshots }
       snapshots[event.responseId] = applyResponseEventToSnapshot(current, event)
-      changed = true
     }
-    return changed ? { snapshots } : state
+    return { snapshots }
   }
   return {
     connected: false,
