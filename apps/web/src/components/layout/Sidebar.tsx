@@ -28,6 +28,7 @@ import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { chatTimeGroup } from '@/lib/format'
+import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
@@ -217,6 +218,8 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const moveToFolder = useChat((state) => state.moveToFolder)
   const folders = useChat((state) => state.folders)
   const trashRetention = useSettings((state) => state.trashRetention)
+  const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
+  const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
     <DropdownMenuContent side="right" align="start" className="w-48">
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
@@ -227,10 +230,12 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         <Pencil />
         Rename
       </DropdownMenuItem>
-      {chat.expiresAt !== null && (
-        <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, false)}>
-          <Hourglass className="text-teal-500 dark:text-teal-400" />
-          <span>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
+      {expirationMenuAction && (
+        <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, expirationMenuAction.kind === 'enable')}>
+          <Hourglass className={cn(expirationMenuAction.kind === 'disable' && 'text-teal-500 dark:text-teal-400')} />
+          {expirationMenuAction.kind === 'disable' && chat.expiresAt !== null
+            ? <span>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
+            : expirationMenuAction.kind === 'enable' ? expirationMenuAction.label : null}
         </DropdownMenuItem>
       )}
       <DropdownMenuSub>
