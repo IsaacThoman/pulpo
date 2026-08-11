@@ -5,8 +5,11 @@ import SwiftUI
 private final class TemporaryChatHeaderModel: ObservableObject {
   @Published var active = false
   @Published var expanded = false
+  @Published var expirationEnabled = true
+  @Published var leadingAction = "none"
   @Published var saving = false
   @Published var saveDisabled = false
+  @Published var trailingAction = "ghost"
   var reduceMotion = false
 }
 
@@ -43,6 +46,7 @@ private struct PulpoGhostShape: Shape {
 @available(iOS 26.0, *)
 private struct TemporaryChatHeaderContent: View {
   @ObservedObject var model: TemporaryChatHeaderModel
+  let onToggleExpiration: () -> Void
   let onToggleTemporary: () -> Void
   let onSave: () -> Void
   let onNewChat: () -> Void
@@ -62,21 +66,48 @@ private struct TemporaryChatHeaderContent: View {
     colorScheme == .dark ? .white : .black
   }
 
+  private var leadingIconColor: Color {
+    if model.leadingAction == "expiration" {
+      return model.expirationEnabled
+        ? Color(red: 0.078, green: 0.722, blue: 0.651)
+        : iconColor.opacity(0.52)
+    }
+    return iconColor
+  }
+
+  private var leadingAccessibilityLabel: String {
+    if model.leadingAction == "expiration" {
+      return model.expirationEnabled ? "Disable automatic expiration" : "Enable automatic expiration"
+    }
+    return model.saving ? "Saving chat" : "Save chat"
+  }
+
+  private var trailingAccessibilityLabel: String {
+    if model.trailingAction == "ghost" {
+      return model.active ? "Disable temporary chat" : "Enable temporary chat"
+    }
+    return model.active ? "New temporary chat" : "New chat"
+  }
+
   var body: some View {
     GlassEffectContainer(spacing: 8) {
       HStack(spacing: 0) {
-        Button(action: onSave) {
+        Button(action: model.leadingAction == "expiration" ? onToggleExpiration : onSave) {
           ZStack {
             Image(systemName: "bookmark")
               .font(.system(size: 18))
-              .opacity(model.saving ? 0 : 1)
+              .opacity(model.leadingAction == "save" && !model.saving ? 1 : 0)
+
+            Image(systemName: "hourglass")
+              .font(.system(size: 18))
+              .opacity(model.leadingAction == "expiration" ? 1 : 0)
 
             ProgressView()
               .controlSize(.small)
-              .opacity(model.saving ? 1 : 0)
+              .opacity(model.leadingAction == "save" && model.saving ? 1 : 0)
           }
           .frame(width: 44, height: 44)
-          .foregroundStyle(iconColor)
+          .foregroundStyle(leadingIconColor)
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -84,41 +115,44 @@ private struct TemporaryChatHeaderContent: View {
         .opacity(model.expanded ? 1 : 0)
         .scaleEffect(model.expanded ? 1 : 0.78)
         .clipped()
-        .disabled(!model.expanded || model.saveDisabled || model.saving)
+        .disabled(!model.expanded || (model.leadingAction == "save" && (model.saveDisabled || model.saving)))
         .accessibilityHidden(!model.expanded)
-        .accessibilityLabel(model.saving ? "Saving chat" : "Save chat")
+        .accessibilityLabel(leadingAccessibilityLabel)
 
-        Button(action: model.expanded ? onNewChat : onToggleTemporary) {
+        Button(action: model.trailingAction == "ghost" ? onToggleTemporary : onNewChat) {
           ZStack {
             PulpoGhostShape()
               .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
               .frame(width: 18, height: 18)
-              .opacity(model.expanded ? 0 : 1)
-              .scaleEffect(model.expanded ? 0.72 : 1)
+              .opacity(model.trailingAction == "ghost" ? 1 : 0)
+              .scaleEffect(model.trailingAction == "ghost" ? 1 : 0.72)
 
             Image(systemName: "square.and.pencil")
               .font(.system(size: 18))
-              .opacity(model.expanded ? 1 : 0)
-              .scaleEffect(model.expanded ? 1 : 0.72)
+              .opacity(model.trailingAction == "new-chat" ? 1 : 0)
+              .scaleEffect(model.trailingAction == "new-chat" ? 1 : 0.72)
           }
           .frame(width: 44, height: 44)
           .foregroundStyle(iconColor)
           .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(model.expanded ? "New temporary chat" : (model.active ? "Disable temporary chat" : "Enable temporary chat"))
+        .accessibilityLabel(trailingAccessibilityLabel)
       }
       .frame(width: model.expanded ? 88 : 44, height: 44, alignment: .trailing)
       .glassEffect(.regular.tint(glassTint).interactive(), in: Capsule())
       .glassEffectID("temporary-chat-header", in: glassNamespace)
       .animation(spring, value: model.expanded)
+      .animation(spring, value: model.leadingAction)
       .animation(spring, value: model.saving)
+      .animation(spring, value: model.trailingAction)
     }
     .frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .trailing)
   }
 }
 
 public final class TemporaryChatHeaderView: ExpoView {
+  let onToggleExpiration = EventDispatcher()
   let onToggleTemporary = EventDispatcher()
   let onSave = EventDispatcher()
   let onNewChat = EventDispatcher()
@@ -137,6 +171,7 @@ public final class TemporaryChatHeaderView: ExpoView {
     guard #available(iOS 26.0, *) else { return }
     let content = TemporaryChatHeaderContent(
       model: model,
+      onToggleExpiration: { [weak self] in self?.onToggleExpiration([:]) },
       onToggleTemporary: { [weak self] in self?.onToggleTemporary([:]) },
       onSave: { [weak self] in self?.onSave([:]) },
       onNewChat: { [weak self] in self?.onNewChat([:]) }
@@ -167,6 +202,20 @@ public final class TemporaryChatHeaderView: ExpoView {
     }
   }
 
+  public func setExpirationEnabled(_ value: Bool) {
+    guard #available(iOS 26.0, *), model.expirationEnabled != value else { return }
+    withAnimation(model.reduceMotion ? nil : .easeInOut(duration: 0.16)) {
+      model.expirationEnabled = value
+    }
+  }
+
+  public func setLeadingAction(_ value: String) {
+    guard #available(iOS 26.0, *), model.leadingAction != value else { return }
+    withAnimation(model.reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.84)) {
+      model.leadingAction = value
+    }
+  }
+
   public func setSaving(_ value: Bool) {
     guard #available(iOS 26.0, *), model.saving != value else { return }
     withAnimation(model.reduceMotion ? nil : .easeInOut(duration: 0.16)) {
@@ -177,6 +226,13 @@ public final class TemporaryChatHeaderView: ExpoView {
   public func setSaveDisabled(_ value: Bool) {
     guard #available(iOS 26.0, *) else { return }
     model.saveDisabled = value
+  }
+
+  public func setTrailingAction(_ value: String) {
+    guard #available(iOS 26.0, *), model.trailingAction != value else { return }
+    withAnimation(model.reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.84)) {
+      model.trailingAction = value
+    }
   }
 
   public func setReduceMotion(_ value: Bool) {

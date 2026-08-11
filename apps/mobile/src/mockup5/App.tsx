@@ -181,7 +181,13 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
-import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
+import {
+  nextChatStartsTemporary,
+  resolveChatHeaderAction,
+  resolveChatHeaderControl,
+  type ChatHeaderLeadingAction,
+  type ChatHeaderTrailingAction,
+} from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 import {
   HistoryChatContextMenuView,
@@ -800,7 +806,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   );
 }
 
-function HeaderActionGlyph({ name }: { name: 'bookmark' | 'square.and.pencil' }) {
+function HeaderActionGlyph({ name, color = COLORS.text }: { name: 'bookmark' | 'hourglass' | 'square.and.pencil'; color?: ColorValue }) {
   if (Platform.OS === 'ios') {
     return (
       <View pointerEvents="none" style={styles.headerActionGlyphHost}>
@@ -810,14 +816,18 @@ function HeaderActionGlyph({ name }: { name: 'bookmark' | 'square.and.pencil' })
       </View>
     );
   }
-  return <Icon name={name} size={44 * 0.44} color={COLORS.text} />;
+  return <Icon name={name} size={44 * 0.44} color={color} />;
 }
 
 type TemporaryChatHeaderControlProps = {
   active: boolean;
   expanded: boolean;
+  expirationEnabled: boolean;
+  leadingAction: ChatHeaderLeadingAction;
   saving: boolean;
   saveDisabled: boolean;
+  trailingAction: ChatHeaderTrailingAction;
+  onToggleExpiration: () => void;
   onToggleTemporary: () => void;
   onSave: () => void;
   onNewChat: () => void;
@@ -826,8 +836,12 @@ type TemporaryChatHeaderControlProps = {
 function FallbackTemporaryChatHeaderControl({
   active,
   expanded,
+  expirationEnabled,
+  leadingAction,
   saving,
   saveDisabled,
+  trailingAction,
+  onToggleExpiration,
   onToggleTemporary,
   onSave,
   onNewChat,
@@ -835,25 +849,27 @@ function FallbackTemporaryChatHeaderControl({
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
   const iconColor = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const expirationColor = expirationEnabled ? '#14B8A6' : '#8E8E93';
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const expansion = useSharedValue(expanded ? 1 : 0);
+  const trailingTransition = useSharedValue(trailingAction === 'new-chat' ? 1 : 0);
   const containerStyle = useAnimatedStyle(() => ({
     width: interpolate(expansion.value, [0, 1], [44, 88]),
   }));
-  const ghostStyle = useAnimatedStyle(() => ({
-    opacity: 1 - expansion.value,
-    transform: [{ scale: interpolate(expansion.value, [0, 1], [1, 0.72]) }],
-  }));
-  const bookmarkStyle = useAnimatedStyle(() => ({
+  const leadingStyle = useAnimatedStyle(() => ({
     opacity: expansion.value,
     transform: [
       { translateX: interpolate(expansion.value, [0, 1], [10, 0]) },
       { scale: interpolate(expansion.value, [0, 1], [0.82, 1]) },
     ],
   }));
-  const newChatStyle = useAnimatedStyle(() => ({
-    opacity: expansion.value,
-    transform: [{ scale: interpolate(expansion.value, [0, 1], [0.72, 1]) }],
+  const trailingGhostStyle = useAnimatedStyle(() => ({
+    opacity: 1 - trailingTransition.value,
+    transform: [{ scale: interpolate(trailingTransition.value, [0, 1], [1, 0.72]) }],
+  }));
+  const trailingNewChatStyle = useAnimatedStyle(() => ({
+    opacity: trailingTransition.value,
+    transform: [{ scale: interpolate(trailingTransition.value, [0, 1], [0.72, 1]) }],
   }));
 
   useEffect(() => {
@@ -865,34 +881,49 @@ function FallbackTemporaryChatHeaderControl({
           stiffness: 220,
           mass: 0.8,
         });
-  }, [expanded, expansion, reduceMotion]);
+    const trailingTarget = trailingAction === 'new-chat' ? 1 : 0;
+    trailingTransition.value = reduceMotion
+      ? trailingTarget
+      : withSpring(trailingTarget, {
+          damping: 18,
+          stiffness: 220,
+          mass: 0.8,
+        });
+  }, [expanded, expansion, reduceMotion, trailingAction, trailingTransition]);
+
+  const runLeadingAction = () => {
+    if (leadingAction === 'expiration') onToggleExpiration();
+    else if (leadingAction === 'save' && !saveDisabled && !saving) onSave();
+  };
+  const runTrailingAction = () => {
+    if (trailingAction === 'ghost') onToggleTemporary();
+    else onNewChat();
+  };
+  const leadingAccessibilityLabel = leadingAction === 'expiration'
+    ? expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'
+    : saving ? 'Saving chat' : 'Save chat';
+  const trailingAccessibilityLabel = trailingAction === 'ghost'
+    ? active ? 'Disable temporary chat' : 'Enable temporary chat'
+    : active ? 'New temporary chat' : 'New chat';
 
   return (
     <Reanimated.View style={[styles.temporaryHeaderActionsShell, containerStyle]}>
       <Glass
         interactive
         accessibilityActions={expanded ? [
-          { name: 'activate', label: 'Save chat' },
-          { name: 'new-chat', label: 'New temporary chat' },
+          { name: 'activate', label: leadingAccessibilityLabel },
+          { name: 'trailing-action', label: trailingAccessibilityLabel },
         ] : undefined}
-        accessibilityHint={expanded ? 'Tap the left side to save or the right side to start a new temporary chat.' : undefined}
-        accessibilityLabel={expanded ? saving ? 'Saving chat' : 'Temporary chat actions' : active ? 'Disable temporary chat' : 'Enable temporary chat'}
+        accessibilityHint={expanded ? `${leadingAccessibilityLabel} on the left; ${trailingAccessibilityLabel} on the right.` : undefined}
+        accessibilityLabel={expanded ? 'Chat actions' : trailingAccessibilityLabel}
         accessibilityRole="button"
         onAccessibilityTap={() => {
-          if (!expanded) {
-            onToggleTemporary();
-          } else if (!saveDisabled && !saving) {
-            onSave();
-          }
+          if (expanded) runLeadingAction();
+          else runTrailingAction();
         }}
         onAccessibilityAction={(event) => {
-          if (!expanded) {
-            onToggleTemporary();
-          } else if (event.nativeEvent.actionName === 'new-chat') {
-            onNewChat();
-          } else if (!saveDisabled && !saving) {
-            onSave();
-          }
+          if (!expanded || event.nativeEvent.actionName === 'trailing-action') runTrailingAction();
+          else runLeadingAction();
         }}
         onTouchStart={(event) => {
           touchStart.current = {
@@ -905,28 +936,30 @@ function FallbackTemporaryChatHeaderControl({
           touchStart.current = null;
           if (!start || Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) > 10) return;
           if (expanded && event.nativeEvent.locationX >= 44) {
-            onNewChat();
+            runTrailingAction();
           } else if (expanded) {
-            if (!saveDisabled && !saving) onSave();
+            runLeadingAction();
           } else {
-            onToggleTemporary();
+            runTrailingAction();
           }
         }}
         style={styles.temporaryHeaderActions}
         tintColor={active ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
       >
-        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderPrimaryAction, bookmarkStyle]}>
+        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderPrimaryAction, leadingStyle]}>
           <View style={styles.temporaryHeaderAction}>
-            {saving
-              ? <ActivityIndicator color={iconColor} size="small" />
-              : <HeaderActionGlyph name="bookmark" />}
+            {leadingAction === 'save'
+              ? saving
+                ? <ActivityIndicator color={iconColor} size="small" />
+                : <HeaderActionGlyph name="bookmark" />
+              : <HeaderActionGlyph name="hourglass" color={expirationColor} />}
           </View>
         </Reanimated.View>
         <View style={[styles.temporaryHeaderAction, styles.temporaryHeaderNewChatAction]}>
-          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, ghostStyle]}>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, trailingGhostStyle]}>
             <Ghost color={iconColor} size={18} strokeWidth={2} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, newChatStyle]}>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, trailingNewChatStyle]}>
             <HeaderActionGlyph name="square.and.pencil" />
           </Reanimated.View>
         </View>
@@ -3421,7 +3454,8 @@ function ChatView({
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
-  const headerExpansionProgress = useSharedValue(headerAction === 'temporary-actions' ? 1 : 0);
+  const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
+  const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
   const modelTriggerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
   }));
@@ -3436,11 +3470,11 @@ function ChatView({
     && !attachments.some((attachment) => attachment.state === 'uploading');
 
   useEffect(() => {
-    const target = headerAction === 'temporary-actions' ? 1 : 0;
+    const target = headerControl.expanded ? 1 : 0;
     headerExpansionProgress.value = reduceMotion
       ? target
       : withSpring(target, { damping: 18, stiffness: 220, mass: 0.8 });
-  }, [headerAction, headerExpansionProgress, reduceMotion]);
+  }, [headerControl.expanded, headerExpansionProgress, reduceMotion]);
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
@@ -3519,47 +3553,28 @@ function ChatView({
               </Pressable>
             )}
           </Reanimated.View>
-          {showAutoExpirationControl ? (
-            <RoundButton
-              icon="hourglass"
-              accessibilityLabel={autoExpire ? 'Disable automatic expiration' : 'Enable automatic expiration'}
-              selected={autoExpire}
-              selectedColor="teal"
-              onPress={() => {
-                onAutoExpirationChange(!autoExpire);
-                Haptics.selectionAsync();
-              }}
-            />
-          ) : null}
           <Reanimated.View
             style={styles.headerActionExpanded}
           >
-            {headerAction === 'temporary-toggle' ? (
-              <TemporaryChatHeaderControl
-                active={temporary}
-                expanded={false}
-                onToggleTemporary={() => {
-                  onTemporaryChange(!temporary);
-                  Haptics.selectionAsync();
-                }}
-                onNewChat={onNewChat}
-                onSave={onSaveTemporary}
-                saveDisabled={expired}
-                saving={savingTemporary}
-              />
-            ) : headerAction === 'temporary-actions' ? (
-              <TemporaryChatHeaderControl
-                active
-                expanded
-                onToggleTemporary={() => onTemporaryChange(false)}
-                onNewChat={onNewChat}
-                onSave={onSaveTemporary}
-                saveDisabled={expired}
-                saving={savingTemporary}
-              />
-            ) : (
-              <RoundButton icon="square.and.pencil" accessibilityLabel="New chat" onPress={onNewChat} />
-            )}
+            <TemporaryChatHeaderControl
+              active={temporary}
+              expanded={headerControl.expanded}
+              expirationEnabled={autoExpire}
+              leadingAction={headerControl.leadingAction}
+              trailingAction={headerControl.trailingAction}
+              onToggleExpiration={() => {
+                onAutoExpirationChange(!autoExpire);
+                Haptics.selectionAsync();
+              }}
+              onToggleTemporary={() => {
+                onTemporaryChange(!temporary);
+                Haptics.selectionAsync();
+              }}
+              onNewChat={onNewChat}
+              onSave={onSaveTemporary}
+              saveDisabled={expired}
+              saving={savingTemporary}
+            />
           </Reanimated.View>
         </AppHeader>
 
