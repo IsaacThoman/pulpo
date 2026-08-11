@@ -35,6 +35,7 @@ import {
   pickerStyle,
   tag,
   textFieldStyle,
+  textContentType,
   textInputAutocapitalization,
   tint,
 } from '@expo/ui/swift-ui/modifiers';
@@ -95,7 +96,8 @@ export function ListRow({ icon, iconColor, leading, title, detail, value, onPres
 
 export function Field({ label, error, ...props }: TextInputProps & { label?: string; error?: string }) {
   const theme = useAppTheme();
-  return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} /> : <TextInput placeholderTextColor={theme.secondary} {...props} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
+  const accessibilityLabel = props.accessibilityLabel ?? label;
+  return <View style={styles.fieldWrap}>{label ? <Text style={[styles.fieldLabel, { color: theme.secondary }]}>{label}</Text> : null}{Platform.OS === 'ios' ? <NativeField {...props} accessibilityLabel={accessibilityLabel} /> : <TextInput placeholderTextColor={theme.secondary} {...props} accessibilityLabel={accessibilityLabel} style={[styles.field, { color: theme.text, backgroundColor: theme.elevated, borderColor: error ? theme.red : theme.separator }, props.style]} />}{error ? <Text style={[styles.fieldError, { color: theme.red }]}>{error}</Text> : null}</View>;
 }
 
 export function PasswordField({ label, value, onChangeText, placeholder, revealed, onToggleVisibility }: {
@@ -138,8 +140,14 @@ function NativeField(props: TextInputProps) {
   const modifiers = [
     textFieldStyle('roundedBorder'), frame({ maxWidth: Infinity, minHeight: fieldHeight }), controlSize('large'),
     ...(props.keyboardType ? [keyboardType(props.keyboardType as never)] : []),
-    ...(props.autoCapitalize === 'none' ? [textInputAutocapitalization('never')] : []),
+    ...(props.autoCapitalize ? [textInputAutocapitalization(props.autoCapitalize === 'none' ? 'never' : props.autoCapitalize)] : []),
     ...(props.autoCorrect === false ? [autocorrectionDisabled()] : []),
+    ...(props.autoComplete === 'one-time-code' ? [textContentType('oneTimeCode')] : []),
+    ...(props.autoComplete === 'current-password' ? [textContentType('password')] : []),
+    ...(props.autoComplete === 'new-password' ? [textContentType('newPassword')] : []),
+    ...(props.autoComplete === 'email' ? [textContentType('emailAddress')] : []),
+    ...(props.autoComplete === 'name' ? [textContentType('name')] : []),
+    ...(props.accessibilityLabel ? [swiftUIAccessibilityLabel(props.accessibilityLabel)] : []),
   ];
   const common = { text: nativeText, placeholder: props.placeholder, autoFocus: props.autoFocus, maxLength: props.maxLength, onTextChange: props.onChangeText, modifiers };
   return <SwiftUIHost style={[styles.nativeField, { height: fieldHeight }]}>{props.secureTextEntry ? <SwiftUISecureField {...common} /> : <SwiftUITextField {...common} axis={props.multiline ? 'vertical' : 'horizontal'} />}</SwiftUIHost>;

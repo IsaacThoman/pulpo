@@ -1,6 +1,6 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
@@ -9,6 +9,12 @@ import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
 import { FORM_CONTENT_MAX } from '../../../responsive';
+import {
+  isValidAuthenticatorCode,
+  isValidRecoveryCode,
+  normalizeAuthenticatorCode,
+  normalizeRecoveryCodeInput,
+} from '../../../auth/twoFactorInput';
 
 type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' | 'instance';
 
@@ -52,6 +58,46 @@ function AuthField({ colors, icon, invalid = false, label, ...props }: AuthField
   return <View style={[styles.field, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
     <SymbolView name={icon} tintColor={colors.textFaint} size={18} />
     <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, { color: colors.text }]} {...props} />
+  </View>;
+}
+
+function AuthCodeField({ colors, error, recoveryMode, value, onChangeText, onSubmit }: {
+  colors: AuthColors;
+  error: boolean;
+  recoveryMode: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  const [focused, setFocused] = useState(false);
+  const label = recoveryMode ? 'Recovery code' : 'Authenticator code';
+  return <View style={styles.codeFieldGroup}>
+    <Text style={[styles.codeFieldLabel, { color: colors.textMuted }]}>{label}</Text>
+    <View style={[styles.codeField, {
+      backgroundColor: colors.surface,
+      borderColor: error ? colors.destructive : focused ? colors.text : colors.border,
+      borderWidth: focused || error ? 1.5 : StyleSheet.hairlineWidth,
+    }]}>
+      <TextInput
+        accessibilityLabel={label}
+        accessibilityHint={recoveryMode ? 'Enter one of your twelve-character recovery codes' : 'Enter the six-digit code from your authenticator app'}
+        autoCapitalize={recoveryMode ? 'characters' : 'none'}
+        autoComplete={recoveryMode ? 'off' : 'one-time-code'}
+        autoCorrect={false}
+        autoFocus
+        inputAccessoryViewButtonLabel="Verify"
+        keyboardType={recoveryMode ? Platform.select({ ios: 'ascii-capable', default: 'default' }) : 'number-pad'}
+        onBlur={() => setFocused(false)}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onSubmitEditing={onSubmit}
+        returnKeyType="go"
+        smartInsertDelete={false}
+        spellCheck={false}
+        style={[styles.codeInput, { color: colors.text }]}
+        value={value}
+      />
+    </View>
   </View>;
 }
 
@@ -150,7 +196,8 @@ export function AuthExperience() {
     }).finally(() => setLoading(false));
   };
   const submitTwoFactor = () => {
-    if (recoveryMode ? twoFactorCode.trim().length < 12 : !/^\d{6}$/.test(twoFactorCode)) return setError('Enter a valid code.');
+    if (recoveryMode ? !isValidRecoveryCode(twoFactorCode) : !isValidAuthenticatorCode(twoFactorCode)) return setError('Enter a valid code.');
+    Keyboard.dismiss();
     void run(async () => { await login(email.trim(), password, twoFactorCode.trim()); });
   };
   const submitSignup = () => {
@@ -209,9 +256,19 @@ export function AuthExperience() {
   </AuthShell>;
 
   if (page === 'two-factor') return <AuthShell colors={colors} title="Verify your identity" subtitle={recoveryMode ? 'Enter one of your saved recovery codes.' : 'Enter the six-digit code from your authenticator app.'}>
-    <AuthField colors={colors} icon="checkmark.shield" label={recoveryMode ? 'Recovery code' : 'Authenticator code'} value={twoFactorCode} onChangeText={(value) => setTwoFactorCode(recoveryMode ? value.toUpperCase() : value.replace(/\D/g, '').slice(0, 6))} autoComplete="one-time-code" keyboardType={recoveryMode ? 'default' : 'number-pad'} maxLength={recoveryMode ? 14 : 6} />
+    <AuthCodeField
+      colors={colors}
+      error={Boolean(error)}
+      recoveryMode={recoveryMode}
+      value={twoFactorCode}
+      onChangeText={(value) => {
+        if (error) setError('');
+        setTwoFactorCode(recoveryMode ? normalizeRecoveryCodeInput(value) : normalizeAuthenticatorCode(value));
+      }}
+      onSubmit={submitTwoFactor}
+    />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
-    <PrimaryAuthButton label="Verify and sign in" colors={colors} loading={loading} disabled={recoveryMode ? twoFactorCode.trim().length < 12 : twoFactorCode.length !== 6} onPress={submitTwoFactor} />
+    <PrimaryAuthButton label="Verify and sign in" colors={colors} loading={loading} disabled={recoveryMode ? !isValidRecoveryCode(twoFactorCode) : !isValidAuthenticatorCode(twoFactorCode)} onPress={submitTwoFactor} />
     <BackToSignIn colors={colors} label={recoveryMode ? 'Use an authenticator code' : 'Use a recovery code'} onPress={() => { setRecoveryMode((value) => !value); setTwoFactorCode(''); setError(''); }} />
     <BackToSignIn colors={colors} onPress={() => { setPassword(''); goTo('login'); }} />
   </AuthShell>;
@@ -285,6 +342,10 @@ const styles = StyleSheet.create({
   footer: { marginTop: 'auto', paddingTop: 32 },
   field: { minHeight: 56, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
   input: { flex: 1, fontSize: 17, paddingVertical: 14 },
+  codeFieldGroup: { gap: 7 },
+  codeFieldLabel: { marginLeft: 4, fontSize: 13, fontWeight: '600' },
+  codeField: { minHeight: 58, borderRadius: 16, justifyContent: 'center' },
+  codeInput: { minHeight: 56, paddingHorizontal: 18, fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 22, fontWeight: '600', letterSpacing: 5, textAlign: 'center' },
   hint: { fontSize: 12.5, marginTop: -6, marginLeft: 8 },
   error: { fontSize: 13.5, lineHeight: 19 },
   primaryButton: { minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
