@@ -13,6 +13,20 @@ export type HistoryChatSummary = {
   expiresAt: number | null
 }
 
+export type HistoryChatExpiryMenuAction =
+  | { kind: 'enable'; periodLabel: '24h' | '7d' }
+  | { kind: 'disable' }
+  | null
+
+export function resolveHistoryChatExpiryMenuAction(
+  expiresAt: number | null,
+  automaticChatExpiration: 'disabled' | '24h' | '7d',
+): HistoryChatExpiryMenuAction {
+  if (expiresAt !== null) return { kind: 'disable' }
+  if (automaticChatExpiration === 'disabled') return null
+  return { kind: 'enable', periodLabel: automaticChatExpiration }
+}
+
 type HistoryChatSource = {
   id: string
   title: string

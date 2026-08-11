@@ -9,6 +9,8 @@ export type HistoryChatContextMenuAction =
   | 'pin'
   | 'rename'
   | 'duplicate'
+  | 'enable-expiration'
+  | 'disable-expiration'
 
 type ActionEvent = {
   nativeEvent: {
@@ -24,12 +26,15 @@ type HistoryChatContextMenuNativeProps = ViewProps & {
   children?: ReactNode
   pinned: boolean
   removeChatLabel: string
+  expirationAction: 'hidden' | 'enable' | 'disable'
+  expirationPeriodLabel: string
+  expiresAt: number
   previewTitle: string
   previewBody: string
   previewMetadata: string
   previewImageURI: string
   onAction: (event: ActionEvent) => void
-  onPress: (event: PressEvent) => void
+  onChatPress: (event: PressEvent) => void
 }
 
 const HistoryChatContextMenuNativeView =
@@ -40,7 +45,7 @@ const HistoryChatContextMenuNativeView =
 
 export type HistoryChatContextMenuViewProps = Omit<
   ComponentProps<typeof HistoryChatContextMenuNativeView>,
-  'onAction' | 'onPress'
+  'onAction' | 'onChatPress'
 > & {
   onAction: (action: HistoryChatContextMenuAction) => void
   onPress: () => void
@@ -55,7 +60,7 @@ export function HistoryChatContextMenuView({
     <HistoryChatContextMenuNativeView
       {...props}
       onAction={(event) => onAction(event.nativeEvent.action)}
-      onPress={() => onPress()}
+      onChatPress={() => onPress()}
     />
   )
 }
