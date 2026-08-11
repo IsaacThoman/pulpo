@@ -136,11 +136,15 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     title: String,
     systemImage: String,
     action: String,
+    imageColor: UIColor? = nil,
     attributes: UIMenuElement.Attributes = []
   ) -> UIAction {
-    UIAction(
+    let image = imageColor.map {
+      UIImage(systemName: systemImage)?.withTintColor($0, renderingMode: .alwaysOriginal)
+    } ?? UIImage(systemName: systemImage)
+    return UIAction(
       title: title,
-      image: UIImage(systemName: systemImage),
+      image: image,
       attributes: attributes
     ) { [weak self] _ in
       self?.onAction(["action": action])
@@ -152,7 +156,8 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       return menuAction(
         title: "Disable expiry in \(formatExpiryRemaining())",
         systemImage: "hourglass",
-        action: "disable-expiration"
+        action: "disable-expiration",
+        imageColor: .systemTeal
       )
     }
     if expirationAction == "enable", !expirationPeriodLabel.isEmpty {
