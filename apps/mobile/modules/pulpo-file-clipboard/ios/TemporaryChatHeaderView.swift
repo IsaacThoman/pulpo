@@ -70,7 +70,7 @@ private struct TemporaryChatHeaderContent: View {
     if model.leadingAction == "expiration" {
       return model.expirationEnabled
         ? Color(red: 0.078, green: 0.722, blue: 0.651)
-        : iconColor.opacity(0.52)
+        : iconColor
     }
     return iconColor
   }
