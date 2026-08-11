@@ -622,7 +622,6 @@ export function Composer({
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
           (queuedMessages.length > 0 || messageEdit) && '-mt-px rounded-t-xl',
           temporary && 'border-violet-500/70 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
-          temporary && 'border-dashed',
         )}
       >
         {attachments.length > 0 && (
