@@ -22,6 +22,11 @@ import {
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
   nativeLoginInputSchema,
+  passkeyAuthenticationResponseSchema,
+  passkeyListSchema,
+  passkeyRegistrationResponseSchema,
+  beginPasskeyRegistrationInputSchema,
+  mobileBrowserPasskeyOptionsInputSchema,
   newChatAutoExpireSchema,
   ocrSettingsSchema,
   persistChatResponseSchema,
@@ -253,8 +258,35 @@ describe('shared contracts', () => {
       },
     })).toMatchObject({
       limits: { maxAttachmentBytes: 25 * 1024 * 1024 },
-      capabilities: { twoFactorAuth: false },
+      capabilities: { twoFactorAuth: false, passkeys: false },
     })
+  })
+
+  it('validates passkey names, summaries, and WebAuthn ceremony responses', () => {
+    expect(beginPasskeyRegistrationInputSchema.parse({
+      name: '  MacBook Touch ID  ', currentPassword: 'password', verificationCode: '123456',
+    }).name).toBe('MacBook Touch ID')
+    expect(beginPasskeyRegistrationInputSchema.safeParse({ name: ' ', currentPassword: 'password' }).success).toBe(false)
+    expect(passkeyListSchema.safeParse({
+      requiresSecondFactor: false,
+      passkeys: Array.from({ length: 11 }, (_, index) => ({
+        id: crypto.randomUUID(), name: `Key ${index}`, createdAt: new Date().toISOString(), lastUsedAt: null,
+      })),
+    }).success).toBe(false)
+
+    const common = { id: 'credential', rawId: 'credential', type: 'public-key' as const, clientExtensionResults: {} }
+    expect(passkeyRegistrationResponseSchema.safeParse({
+      ...common, response: { clientDataJSON: 'client-data', attestationObject: 'attestation', transports: ['internal'] },
+    }).success).toBe(true)
+    expect(passkeyAuthenticationResponseSchema.safeParse({
+      ...common, response: { authenticatorData: 'authenticator', clientDataJSON: 'client-data', signature: 'signature', userHandle: null },
+    }).success).toBe(true)
+  })
+
+  it('requires S256-shaped PKCE challenges for mobile passkey authorization', () => {
+    const valid = { state: 's'.repeat(32), codeChallenge: 'A'.repeat(43) }
+    expect(mobileBrowserPasskeyOptionsInputSchema.safeParse(valid).success).toBe(true)
+    expect(mobileBrowserPasskeyOptionsInputSchema.safeParse({ ...valid, codeChallenge: 'not-base64+' }).success).toBe(false)
   })
 
   it('normalizes a complete management settings document', () => {

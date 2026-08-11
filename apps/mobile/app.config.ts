@@ -7,6 +7,21 @@ const defaultInstanceUrl = process.env.EXPO_PUBLIC_DEFAULT_INSTANCE_URL ?? 'http
 const appVersion = process.env.PULPO_APP_VERSION ?? '1.0.0'
 const iosBuildNumber = process.env.PULPO_IOS_BUILD_NUMBER ?? '1'
 
+function httpsHostname(value: string): string | null {
+  try {
+    const url = new URL(value.includes('://') ? value : `https://${value}`)
+    return url.protocol === 'https:' && (!url.port || url.port === '443') ? url.hostname.toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+const passkeyDomains = [...new Set([
+  'pulpo.baby',
+  httpsHostname(defaultInstanceUrl),
+  ...(process.env.PULPO_IOS_PASSKEY_DOMAINS ?? '').split(',').map((value) => httpsHostname(value.trim())),
+].filter((value): value is string => Boolean(value)))]
+
 const config: ExpoConfig = {
   name: 'Pulpo',
   slug: 'pulpo',
@@ -24,7 +39,7 @@ const config: ExpoConfig = {
     requireFullScreen: false,
     appleTeamId: 'PX72AL9366',
     icon: './assets/pulpo-app-icon.png',
-    associatedDomains: ['applinks:pulpo.baby'],
+    associatedDomains: ['applinks:pulpo.baby', ...passkeyDomains.map((domain) => `webcredentials:${domain}`)],
     infoPlist: {
       CFBundleDisplayName: 'Pulpo',
       ITSAppUsesNonExemptEncryption: false,
@@ -107,6 +122,7 @@ const config: ExpoConfig = {
   ],
   extra: {
     defaultInstanceUrl,
+    passkeyDomains,
     eas: {},
   },
 }

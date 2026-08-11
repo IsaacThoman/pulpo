@@ -6,6 +6,7 @@ import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
+import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
@@ -82,6 +83,7 @@ export function AuthExperience() {
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionConfig = useSessionStore((state) => state.config);
   const login = useSessionStore((state) => state.login);
+  const loginWithPasskey = useSessionStore((state) => state.loginWithPasskey);
   const signup = useSessionStore((state) => state.signup);
   const logout = useSessionStore((state) => state.logout);
   const refreshSession = useSessionStore((state) => state.refreshSession);
@@ -106,10 +108,12 @@ export function AuthExperience() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [pendingFeedback, setPendingFeedback] = useState('');
+  const [passkeyFallback, setPasskeyFallback] = useState(false);
 
   const goTo = (next: AuthPage) => {
     setError('');
     setSent(false);
+    setPasskeyFallback(false);
     setPage(next);
   };
   const run = async (action: () => Promise<void>) => {
@@ -130,6 +134,20 @@ export function AuthExperience() {
       const result = await login(email.trim(), password);
       if (result === 'two-factor-required') { setTwoFactorCode(''); setPage('two-factor'); }
     });
+  };
+  const submitPasskey = (forceBrowser = false) => {
+    setError('');
+    setPasskeyFallback(false);
+    setLoading(true);
+    void loginWithPasskey(forceBrowser).catch((nextError) => {
+      if (nextError instanceof PasskeyCancelledError) return;
+      if (nextError instanceof NativePasskeyError) {
+        setPasskeyFallback(true);
+        setError('Native passkeys are not available for this server configuration. You can continue securely in Safari.');
+        return;
+      }
+      setError(nextError instanceof Error ? nextError.message : 'Could not sign in with a passkey.');
+    }).finally(() => setLoading(false));
   };
   const submitTwoFactor = () => {
     if (recoveryMode ? twoFactorCode.trim().length < 12 : !/^\d{6}$/.test(twoFactorCode)) return setError('Enter a valid code.');
@@ -236,6 +254,10 @@ export function AuthExperience() {
       <Text style={[styles.change, { color: colors.text }]}>Change</Text>
     </Pressable>
   }>
+    {productionConfig?.capabilities.passkeys ? <>
+      <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
+      <View style={styles.divider}><View style={[styles.dividerLine, { backgroundColor: colors.border }]} /><Text style={[styles.dividerText, { color: colors.textFaint }]}>or use your password</Text><View style={[styles.dividerLine, { backgroundColor: colors.border }]} /></View>
+    </> : null}
     <AuthField colors={colors} icon="envelope" label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" />
     <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="current-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitLogin} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
@@ -280,4 +302,7 @@ const styles = StyleSheet.create({
   pendingName: { fontSize: 16, fontWeight: '600' },
   pendingEmail: { fontSize: 13.5 },
   pendingHelp: { fontSize: 13.5, lineHeight: 20 },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 2 },
+  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  dividerText: { fontSize: 12 },
 });

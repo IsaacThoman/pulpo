@@ -1,14 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 
 export function LoginPage() {
   const user = useAuth((s) => s.user)
   const login = useAuth((s) => s.login)
+  const passkeyLogin = useAuth((s) => s.passkeyLogin)
   const signupEnabled = useAuth((s) => s.signupEnabled)
   const setupRequired = useAuth((s) => s.setupRequired)
   const navigate = useNavigate()
@@ -21,6 +23,20 @@ export function LoginPage() {
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const passkeySupported = browserSupportsWebAuthn()
+
+  useEffect(() => {
+    let active = true
+    if (!passkeySupported || user || setupRequired !== false) return
+    void browserSupportsWebAuthnAutofill().then(async (supported) => {
+      if (!active || !supported) return
+      const result = await passkeyLogin(true)
+      if (!active || !result.ok) return
+      const currentUser = useAuth.getState().user
+      navigate(currentUser?.role === 'pending' ? '/pending' : '/')
+    })
+    return () => { active = false; cancelPasskeyCeremony() }
+  }, [navigate, passkeyLogin, passkeySupported, setupRequired, user])
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
   if (user) return <Navigate to="/" replace />
@@ -60,7 +76,7 @@ export function LoginPage() {
           <Input
             id="email"
             type="email"
-            autoComplete="email"
+            autoComplete="username webauthn"
             placeholder="jon@pulpo.baby"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -135,6 +151,14 @@ export function LoginPage() {
           <ArrowLeft /> Back
         </Button>}
       </form>
+
+      {!twoFactorStep && (
+        <div className="mt-4 text-center">
+          <Link to="/login/options" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            More login options
+          </Link>
+        </div>
+      )}
 
       {!twoFactorStep && signupEnabled && (
         <p className="mt-6 text-center text-sm text-muted-foreground">

@@ -2,7 +2,8 @@ import { create } from 'zustand'
 import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData } from '@/lib/local-first/database'
 import { queryClient } from '@/lib/query-client'
-import { DEFAULT_MAX_ATTACHMENT_BYTES } from '@pulpo/contracts'
+import { DEFAULT_MAX_ATTACHMENT_BYTES, type PasskeyCeremony } from '@pulpo/contracts'
+import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
 
 export type AuthRole = 'pending' | 'user' | 'admin'
 
@@ -44,6 +45,7 @@ interface AuthState {
   maxAttachmentBytes: number
   bootstrap: () => Promise<void>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
+  passkeyLogin: (useBrowserAutofill?: boolean) => Promise<AuthResult>
   signup: (name: string, email: string, password: string) => Promise<AuthResult>
   setup: (name: string, email: string, password: string) => Promise<AuthResult>
   logout: () => Promise<void>
@@ -131,6 +133,22 @@ export const useAuth = create<AuthState>()((set, get) => ({
         return { ok: false, twoFactorRequired: true }
       }
       return { ok: false, error: error instanceof Error ? error.message : 'Unable to sign in.' }
+    }
+  },
+
+  passkeyLogin: async (useBrowserAutofill = false) => {
+    try {
+      const ceremony = await apiRequest<PasskeyCeremony>('/api/auth/passkey/options', { method: 'POST' })
+      const assertion = await authenticateWithPasskey(ceremony, useBrowserAutofill)
+      const response = await apiRequest<AuthResponse>('/api/auth/passkey/verify', {
+        method: 'POST', body: { ceremonyToken: ceremony.ceremonyToken, response: assertion },
+      })
+      const user = normalizeUser(response.user)
+      cacheProfile(user)
+      set({ user, checkingSession: false })
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: passkeyErrorMessage(error, 'Unable to sign in with a passkey.') }
     }
   },
 

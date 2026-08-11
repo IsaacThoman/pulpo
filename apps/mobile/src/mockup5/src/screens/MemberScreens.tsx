@@ -5,7 +5,7 @@ import {
 import * as Network from 'expo-network';
 import * as Clipboard from 'expo-clipboard';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { TwoFactorEnrollment, TwoFactorStatus } from '@pulpo/contracts';
+import type { PasskeyList, PasskeySummary, TwoFactorEnrollment, TwoFactorStatus } from '@pulpo/contracts';
 import { useQuery } from '@tanstack/react-query';
 import {
   Button as SwiftUIButton,
@@ -33,6 +33,7 @@ import type { RootStackParamList, SettingsSection } from '../navigation';
 import { apiRequest, mobileApi } from '../../../api/client';
 import { useSessionStore } from '../../../store/session';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
+import { canUseNativePasskeys, createPkceRequest, nativeRegister, openPasskeyEnrollment, PasskeyCancelledError } from '../../../auth/passkeys';
 
 const relative = (timestamp: number) => {
   const delta = Date.now() - timestamp;
@@ -58,6 +59,7 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
   const instance = usePrototypeStore((state) => state.instance);
   const signOut = useSessionStore((state) => state.logout);
   const twoFactorSupported = useSessionStore((state) => state.config?.capabilities.twoFactorAuth ?? false);
+  const passkeysSupported = useSessionStore((state) => state.config?.capabilities.passkeys ?? false);
   const user = session.user;
   const confirmSignOut = () => Alert.alert('Sign out?', 'End this session on this device.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Sign out', style: 'destructive', onPress: signOut }]);
 
@@ -68,12 +70,87 @@ export function AccountScreen({ navigation }: NativeStackScreenProps<RootStackPa
       <SwiftUILabeledContent label="Role"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>Member</SwiftUIText></SwiftUILabeledContent>
       <NativeDestinationRow icon="person.crop.circle" title="Edit Profile" onPress={() => navigation.navigate('EditProfile')} />
     </SwiftUISection>
-    <SwiftUISection title="Security"><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} />{twoFactorSupported ? <NativeDestinationRow icon="checkmark.shield" title="Two-Factor Authentication" onPress={() => navigation.navigate('TwoFactor')} /> : null}</SwiftUISection>
+    <SwiftUISection title="Security"><NativeDestinationRow icon="lock.rotation" title="Change Password" onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <NativeDestinationRow icon="person.badge.key" title="Passkeys" onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <NativeDestinationRow icon="checkmark.shield" title="Two-Factor Authentication" onPress={() => navigation.navigate('TwoFactor')} /> : null}</SwiftUISection>
     <SwiftUISection title="Server"><NativeDestinationRow icon="network" title="Pulpo Instance" detail={instance.version} onPress={() => navigation.navigate('InstanceDetails')} /></SwiftUISection>
     <SwiftUISection title="Session"><SwiftUIButton label="Sign Out" role="destructive" systemImage="rectangle.portrait.and.arrow.right" onPress={confirmSignOut} /></SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
 
-  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow title="Role" value="Member" /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
+  return <Screen><PageHeader title="Account" onBack={() => navigation.goBack()} /><SectionTitle>Profile</SectionTitle><Card><ListRow title="Name" value={user?.name ?? 'Pulpo Member'} /><ListRow title="Email" value={user?.email ?? ''} /><ListRow title="Role" value="Member" /><ListRow icon="person.crop.circle" title="Edit profile" last onPress={() => navigation.navigate('EditProfile')} /></Card><SectionTitle>Security</SectionTitle><Card><ListRow icon="lock.rotation" title="Change password" last={!passkeysSupported && !twoFactorSupported} onPress={() => navigation.navigate('ChangePassword')} />{passkeysSupported ? <ListRow icon="person.badge.key" title="Passkeys" last={!twoFactorSupported} onPress={() => navigation.navigate('Passkeys')} /> : null}{twoFactorSupported ? <ListRow icon="checkmark.shield" title="Two-factor authentication" last onPress={() => navigation.navigate('TwoFactor')} /> : null}</Card><SectionTitle>Server</SectionTitle><Card><ListRow icon="network" title="Pulpo instance" value={instance.version} last onPress={() => navigation.navigate('InstanceDetails')} /></Card><SectionTitle>Session</SectionTitle><Card><ListRow icon="rectangle.portrait.and.arrow.right" iconColor={theme.red} title="Sign out" destructive last onPress={confirmSignOut} /></Card></Screen>;
+}
+
+type PasskeyAction = 'list' | 'add' | 'rename' | 'delete';
+
+export function PasskeysScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Passkeys'>) {
+  const theme = useAppTheme();
+  const instanceUrl = useSessionStore((state) => state.instanceUrl);
+  const [data, setData] = useState<PasskeyList | null>(null);
+  const [action, setAction] = useState<PasskeyAction>('list');
+  const [selected, setSelected] = useState<PasskeySummary | null>(null);
+  const [name, setName] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [forceSafari, setForceSafari] = useState(false);
+  const refresh = useCallback(() => mobileApi.passkeys().then(setData).catch((next) => setError(next instanceof Error ? next.message : 'Could not load passkeys.')), []);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const reset = () => { setAction('list'); setSelected(null); setName(''); setCurrentPassword(''); setVerificationCode(''); setError(''); setForceSafari(false); };
+  const fail = (next: unknown, fallback: string) => {
+    if (next instanceof PasskeyCancelledError) return;
+    setError(next instanceof Error ? next.message : fallback);
+  };
+  const registerInSafari = async () => {
+    const { state } = await createPkceRequest();
+    const { url } = await mobileApi.beginBrowserPasskeyRegistration(name.trim(), currentPassword, state, data?.requiresSecondFactor ? verificationCode : undefined);
+    await openPasskeyEnrollment(url, state, instanceUrl);
+  };
+  const add = () => {
+    setLoading(true); setError('');
+    const execute = async () => {
+      if (forceSafari || !canUseNativePasskeys(instanceUrl)) {
+        await registerInSafari();
+      } else {
+        const ceremony = await mobileApi.beginPasskeyRegistration(name.trim(), currentPassword, data?.requiresSecondFactor ? verificationCode : undefined);
+        let response;
+        try {
+          response = await nativeRegister(ceremony);
+        } catch (next) {
+          if (next instanceof PasskeyCancelledError) throw next;
+          setForceSafari(true);
+          setVerificationCode('');
+          setError(`Native passkeys are not configured for this domain. ${data?.requiresSecondFactor ? 'Enter a fresh authenticator or recovery code, then continue securely in Safari.' : 'Continue securely in Safari.'}`);
+          return;
+        }
+        await mobileApi.verifyPasskeyRegistration(ceremony.ceremonyToken, response);
+      }
+      reset();
+      await refresh();
+    };
+    void execute().catch((next) => fail(next, 'Could not add passkey.')).finally(() => setLoading(false));
+  };
+  const rename = () => {
+    if (!selected) return;
+    setLoading(true); setError('');
+    void mobileApi.renamePasskey(selected.id, name.trim()).then(() => { reset(); return refresh(); }).catch((next) => fail(next, 'Could not rename passkey.')).finally(() => setLoading(false));
+  };
+  const remove = () => {
+    if (!selected) return;
+    setLoading(true); setError('');
+    void mobileApi.deletePasskey(selected.id, currentPassword, data?.requiresSecondFactor ? verificationCode : undefined).then(() => { reset(); return refresh(); }).catch((next) => fail(next, 'Could not delete passkey.')).finally(() => setLoading(false));
+  };
+  const sensitiveReady = Boolean(currentPassword && (!data?.requiresSecondFactor || verificationCode.length >= 6));
+  const choose = (nextAction: PasskeyAction, passkey?: PasskeySummary) => { setAction(nextAction); setSelected(passkey ?? null); setName(passkey?.name ?? ''); setCurrentPassword(''); setVerificationCode(''); setError(''); setForceSafari(false); };
+
+  return <Screen><PageHeader title="Passkeys" subtitle="Sign in without a password or authenticator code." onBack={() => action === 'list' ? navigation.goBack() : reset()} />
+    {action === 'list' && <>
+      <SectionTitle>{data ? `${data.passkeys.length} of 10 passkeys` : 'Passkeys'}</SectionTitle>
+      {!data ? <Text style={[styles.twoFactorHelp, { color: theme.secondary }]}>Loading…</Text> : data.passkeys.length === 0 ? <EmptyState icon="person.badge.key" title="No passkeys yet" detail="Add one to use Face ID, Touch ID, a device PIN, or a security key to sign in." /> : <Card>{data.passkeys.map((passkey, index) => <ListRow key={passkey.id} icon="person.badge.key" title={passkey.name} detail={`Added ${new Date(passkey.createdAt).toLocaleDateString()} · ${passkey.lastUsedAt ? `last used ${new Date(passkey.lastUsedAt).toLocaleDateString()}` : 'never used'}`} last={index === data.passkeys.length - 1} onPress={() => Alert.alert(passkey.name, undefined, [{ text: 'Rename', onPress: () => choose('rename', passkey) }, { text: 'Delete', style: 'destructive', onPress: () => choose('delete', passkey) }, { text: 'Cancel', style: 'cancel' }])} />)}</Card>}
+      {error ? <Text accessibilityRole="alert" style={[styles.twoFactorError, { color: theme.red }]}>{error}</Text> : null}
+      <PrimaryButton label="Add passkey" icon="plus" disabled={!data || data.passkeys.length >= 10} onPress={() => choose('add')} />
+    </>}
+    {action === 'rename' && <><SectionTitle>Rename passkey</SectionTitle><Field label="Passkey name" maxLength={80} value={name} onChangeText={setName} />{error ? <Text accessibilityRole="alert" style={[styles.twoFactorError, { color: theme.red }]}>{error}</Text> : null}<PrimaryButton label="Save name" loading={loading} disabled={!name.trim()} onPress={rename} /></>}
+    {(action === 'add' || action === 'delete') && <><SectionTitle>{action === 'add' ? 'Add a passkey' : `Delete ${selected?.name ?? 'passkey'}`}</SectionTitle>{action === 'add' ? <Field label="Passkey name" maxLength={80} value={name} onChangeText={setName} /> : <Text style={[styles.twoFactorHelp, { color: theme.secondary }]}>You can still sign in with your password or another passkey.</Text>}<Field label="Current password" secureTextEntry autoComplete="current-password" value={currentPassword} onChangeText={setCurrentPassword} />{data?.requiresSecondFactor ? <Field label="Authenticator or recovery code" autoComplete="one-time-code" autoCapitalize="characters" value={verificationCode} onChangeText={(value) => setVerificationCode(value.toUpperCase())} /> : null}<Text style={[styles.helper, { color: theme.secondary }]}>This security change signs out your other devices. This iPhone stays signed in.</Text>{error ? <Text accessibilityRole="alert" style={[styles.twoFactorError, { color: theme.red }]}>{error}</Text> : null}<PrimaryButton label={action === 'add' ? forceSafari ? 'Continue in Safari' : 'Add passkey' : 'Delete passkey'} variant={action === 'delete' ? 'destructive' : 'primary'} loading={loading} disabled={!sensitiveReady || (action === 'add' && !name.trim())} onPress={action === 'add' ? add : remove} /></>}
+  </Screen>;
 }
 
 export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'EditProfile'>) {
