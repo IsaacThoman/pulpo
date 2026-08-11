@@ -13,6 +13,7 @@ import {
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
   managementInfoSchema,
+  managementAccountSettingsSchema,
   managementSettingsDocumentSchema,
   managementTokenSchema,
   isChatPresetIcon,
@@ -21,6 +22,7 @@ import {
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
   nativeLoginInputSchema,
+  newChatAutoExpireSchema,
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
@@ -92,6 +94,9 @@ describe('shared contracts', () => {
 
   it('validates automatic chat expiration preferences and chat mutations', () => {
     expect(automaticChatExpirationSchema.options).toEqual(['disabled', '24h', '7d'])
+    expect(newChatAutoExpireSchema.parse(undefined)).toBe(true)
+    expect(newChatAutoExpireSchema.parse(false)).toBe(false)
+    expect(newChatAutoExpireSchema.safeParse('false').success).toBe(false)
     expect(startChatSchema.parse({
       chat: { clientId: crypto.randomUUID(), modelId: 'model', autoExpire: true },
       response: { clientId: crypto.randomUUID(), input: 'hello', modelId: 'model' },
@@ -261,8 +266,9 @@ describe('shared contracts', () => {
       instance: {},
     })
     expect(document.account).toMatchObject({
-      theme: 'system', trashRetention: '30d', automaticChatExpiration: 'disabled', favoriteModelIds: [],
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: 'disabled', newChatAutoExpire: true, favoriteModelIds: [],
     })
+    expect(managementAccountSettingsSchema.parse({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(document.instance).toMatchObject({
       auth: {
         signupEnabled: true,

@@ -5,12 +5,12 @@ describe('production preference mapping', () => {
   it('hydrates the mobile names used by the web settings bridge', () => {
     expect(preferencesFromServer({
       theme: 'dark', localAttachmentCacheMb: 96, localChatLimit: 200,
-      trashRetention: '7d', automaticChatExpiration: '24h', agentModeEnabled: false, ignored: 'value',
+      trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, agentModeEnabled: false, ignored: 'value',
       favoriteModelIds: ['model-b', 'model-a', 'model-b'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
     })).toEqual({
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
-      trashRetention: '7d', automaticChatExpiration: '24h',
+      trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
     })
@@ -20,6 +20,7 @@ describe('production preference mapping', () => {
     expect(preferencePatchForServer('attachmentCacheMb', 64)).toEqual({ localAttachmentCacheMb: 64 })
     expect(preferencePatchForServer('trashRetention', '90d')).toEqual({ trashRetention: '90d' })
     expect(preferencePatchForServer('automaticChatExpiration', '7d')).toEqual({ automaticChatExpiration: '7d' })
+    expect(preferencePatchForServer('newChatAutoExpire', false)).toEqual({ newChatAutoExpire: false })
     expect(preferencePatchForServer('favoriteModelIds', ['model-b', 'model-a'])).toEqual({ favoriteModelIds: ['model-b', 'model-a'] })
     expect(preferencePatchForServer('providerOrder', ['lab-b', 'lab-a'])).toEqual({ providerOrder: ['lab-b', 'lab-a'] })
     expect(preferencePatchForServer('generation', { 'model-a': { reasoning: 'high' } })).toEqual({

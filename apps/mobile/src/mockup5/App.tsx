@@ -1183,6 +1183,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const newChatAutoExpire = usePrototypeStore((state) => state.preferences.newChatAutoExpire);
   const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady);
   const modelCatalogReady = usePrototypeStore((state) => state.modelCatalogReady);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
@@ -1210,8 +1211,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   );
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [newChatTemporary, setNewChatTemporary] = useState(false);
-  const [newChatAutoExpire, setNewChatAutoExpire] = useState(() => automaticChatExpiration !== 'disabled');
-  const newChatAutoExpireTouched = useRef(false);
   const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [assistantStatus, setAssistantStatus] = useState<'idle' | 'thinking' | 'streaming'>('idle');
@@ -1244,15 +1243,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (prototypeModels.some((model) => model.id === selectedModelId)) return;
     setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
   }, [defaultModelId, prototypeModels, selectedModelId]);
-
-  useEffect(() => {
-    if (activeChatId) return;
-    if (automaticChatExpiration === 'disabled') {
-      setNewChatAutoExpire(false);
-      return;
-    }
-    if (!newChatAutoExpireTouched.current) setNewChatAutoExpire(true);
-  }, [activeChatId, automaticChatExpiration]);
 
   useEffect(() => useRealtimeStore.subscribe((state) => {
     const responseId = activeResponseId.current;
@@ -1398,7 +1388,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [historyChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
-  const chatAutoExpire = activePrototypeChat ? activePrototypeChat.expiresAt != null : newChatAutoExpire;
+  const chatAutoExpire = activePrototypeChat
+    ? activePrototypeChat.expiresAt != null
+    : automaticChatExpiration !== 'disabled' && newChatAutoExpire;
   const showAutoExpirationControl = !(activePrototypeChat?.temporary ?? newChatTemporary) && (activePrototypeChat
     ? automaticChatExpiration !== 'disabled' || activePrototypeChat.expiresAt != null
     : automaticChatExpiration !== 'disabled');
@@ -1407,8 +1399,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       usePrototypeStore.getState().setChatAutoExpiration(activePrototypeChat.id, enabled);
       return;
     }
-    newChatAutoExpireTouched.current = true;
-    setNewChatAutoExpire(enabled);
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', enabled);
   }, [activePrototypeChat]);
   const messages = activeChat?.messages ?? [];
   const remoteAssistantStatus = messages.some((message) => message.role === 'assistant' && message.status === 'streaming')
@@ -1453,11 +1444,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setStreamingSession(null);
     setActiveChatId(null);
     setNewChatTemporary(temporaryByDefault);
-    newChatAutoExpireTouched.current = false;
-    setNewChatAutoExpire(automaticChatExpiration !== 'disabled');
     setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
     setInput('');
-  }, [abandonActiveTemporaryChat, automaticChatExpiration, defaultModelId, prototypeModels]);
+  }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
 
   const newChatFromHistory = useCallback(() => {
     newChat();

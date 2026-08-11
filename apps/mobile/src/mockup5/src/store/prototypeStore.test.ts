@@ -22,15 +22,40 @@ import { configureProductionActions } from '../production/productionActions';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 
 beforeEach(() => {
+  setPreference.mockClear();
   usePrototypeStore.setState({ ...createSeedState(), productionNamespace: null, agentAvailable: false });
   useRealtimeStore.getState().setSyncError(null);
   configureProductionActions({
     renameChat: async () => undefined,
     setChatAutoExpiration: async () => undefined,
+    setPreference: async () => undefined,
   });
 });
 
 describe('prototype store', () => {
+  it('optimistically persists the new-chat expiration choice', async () => {
+    const persistPreference = vi.fn(async () => undefined);
+    configureProductionActions({ setPreference: persistPreference });
+
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', false);
+
+    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(false);
+    expect(persistPreference).toHaveBeenCalledWith('newChatAutoExpire', false);
+  });
+
+  it('restores the new-chat expiration choice when persistence fails', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    configureProductionActions({ setPreference: async () => { throw new Error('Preference rejected'); } });
+
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', false);
+    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(false);
+
+    await vi.waitFor(() => expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(true));
+    expect(setPreference).toHaveBeenCalledWith('newChatAutoExpire', true);
+    expect(useRealtimeStore.getState().syncError).toBe('Preference rejected');
+    warning.mockRestore();
+  });
+
   it('purges every legacy non-namespaced production snapshot', async () => {
     await purgeLegacyPrototypeSnapshots();
     expect(AsyncStorage.multiRemove).toHaveBeenCalledWith([...LEGACY_PROTOTYPE_STORAGE_KEYS]);

@@ -146,7 +146,7 @@ beforeEach(() => {
     responseSequences: {},
     responseChatIds: {},
   })
-  useSettings.setState({ automaticChatExpiration: 'disabled' })
+  useSettings.setState({ automaticChatExpiration: 'disabled', newChatAutoExpire: true })
   queryClient.clear()
 })
 
@@ -155,6 +155,18 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('persists the new-chat expiration choice independently from the duration', () => {
+    useSettings.setState({ automaticChatExpiration: '24h', newChatAutoExpire: true })
+
+    useSettings.getState().set('newChatAutoExpire', false)
+
+    expect(useSettings.getState()).toMatchObject({
+      automaticChatExpiration: '24h',
+      newChatAutoExpire: false,
+    })
+    expect(JSON.parse(storage.get('pulpo-settings') ?? '{}').state).toMatchObject({ newChatAutoExpire: false })
+  })
+
   it('starts an expiring chat with an optimistic deadline and the create flag', async () => {
     useSettings.setState({ automaticChatExpiration: '24h' })
     const before = Date.now()
@@ -175,7 +187,7 @@ describe('chat store branching integration', () => {
   })
 
   it('optimistically toggles an existing deadline and rolls back a rejected change', async () => {
-    useSettings.setState({ automaticChatExpiration: '7d' })
+    useSettings.setState({ automaticChatExpiration: '7d', newChatAutoExpire: false })
     const initial = detail(responseAId, [response(responseAId, 'completed')])
     queryClient.setQueryData(['chat', userId, chatId], initial)
     queryClient.setQueryData(['chats', userId], [initial])
@@ -183,6 +195,7 @@ describe('chat store branching integration', () => {
 
     useChat.getState().setChatAutoExpiration(chatId, true)
     expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.expiresAt).not.toBeNull()
+    expect(useSettings.getState().newChatAutoExpire).toBe(false)
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     expect(requests[0]).toMatchObject({
       path: `/api/chats/${chatId}`,

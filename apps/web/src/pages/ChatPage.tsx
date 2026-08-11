@@ -99,13 +99,10 @@ export function ChatPage() {
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
+  const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const [temporary, setTemporary] = useState(false)
-  const [autoExpire, setAutoExpire] = useState(
-    () => useSettings.getState().automaticChatExpiration !== 'disabled',
-  )
-  const autoExpireTouchedRef = useRef(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
@@ -141,22 +138,11 @@ export function ChatPage() {
     if (!resetDefaultToken || handledResetRef.current === resetDefaultToken) return
     handledResetRef.current = resetDefaultToken
     setTemporary(false)
-    autoExpireTouchedRef.current = false
-    setAutoExpire(automaticChatExpiration !== 'disabled')
     setTemporaryError(null)
     shouldApplyDefaultRef.current = true
     const next = resolveDefaultModelId(models, defaultModelId)
     if (next) setModelId(next)
-  }, [automaticChatExpiration, defaultModelId, models, resetDefaultToken])
-
-  useEffect(() => {
-    if (chat || routeChatId) return
-    if (automaticChatExpiration === 'disabled') {
-      setAutoExpire(false)
-      return
-    }
-    if (!autoExpireTouchedRef.current) setAutoExpire(true)
-  }, [automaticChatExpiration, chat, routeChatId])
+  }, [defaultModelId, models, resetDefaultToken])
 
   useEffect(() => {
     if (!routeChatId || !chat?.temporary) return
@@ -221,6 +207,7 @@ export function ChatPage() {
   }
 
   const isEmpty = !chat
+  const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
   const suggestions = useMemo(
     () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : []),
     // Re-roll when opening a new empty chat
@@ -229,7 +216,7 @@ export function ChatPage() {
   )
 
   const sendSuggestion = (s: string) => {
-    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary, autoExpire)
+    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary, effectiveNewChatAutoExpire)
     if (!temporary) navigate(`/c/${id}`)
   }
 
@@ -261,8 +248,6 @@ export function ChatPage() {
       useChat.getState().abandonTemporaryChat(chat.id)
     }
     setTemporary(temporaryByDefault)
-    autoExpireTouchedRef.current = false
-    setAutoExpire(automaticChatExpiration !== 'disabled')
     setTemporaryError(null)
     setMessageEdit(null)
     setComposerEditActive(false)
@@ -274,7 +259,7 @@ export function ChatPage() {
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
   const showTemporaryControl = !routeChatId && (!chat || chat.temporary)
-  const expirationEnabled = chat ? chat.expiresAt !== null : autoExpire
+  const expirationEnabled = chat ? chat.expiresAt !== null : effectiveNewChatAutoExpire
   const showExpirationControl = !temporaryMode && (chat
     ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
     : !routeChatId && automaticChatExpiration !== 'disabled')
@@ -284,8 +269,7 @@ export function ChatPage() {
       useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
       return
     }
-    autoExpireTouchedRef.current = true
-    setAutoExpire((value) => !value)
+    useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
   }
   const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
 
@@ -409,7 +393,7 @@ export function ChatPage() {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={autoExpire} />
+            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (

@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { memories, userPreferences, users } from '../database/schema.js'
@@ -47,6 +48,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     }
     if ('automaticChatExpiration' in patch && !automaticChatExpirationValues.includes(patch.automaticChatExpiration as typeof automaticChatExpirationValues[number])) {
       throw new AppError(400, 'invalid_chat_expiration', 'Choose a valid automatic chat expiration period')
+    }
+    if ('newChatAutoExpire' in patch && !newChatAutoExpireSchema.safeParse(patch.newChatAutoExpire).success) {
+      throw new AppError(400, 'invalid_new_chat_expiration', 'Choose whether new chats should expire automatically')
     }
     const nickname = typeof patch.nickname === 'string'
       ? patch.nickname.trim() || null

@@ -26,6 +26,7 @@ interface SettingsState {
   localAttachmentCacheMb: number
   trashRetention: TrashRetention
   automaticChatExpiration: AutomaticChatExpiration
+  newChatAutoExpire: boolean
   defaultModelId: string
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
@@ -52,6 +53,7 @@ export const DEFAULT_SETTINGS = {
   localAttachmentCacheMb: 50,
   trashRetention: '30d' as TrashRetention,
   automaticChatExpiration: 'disabled' as AutomaticChatExpiration,
+  newChatAutoExpire: true,
   defaultModelId: '',
   generation: {},
 }

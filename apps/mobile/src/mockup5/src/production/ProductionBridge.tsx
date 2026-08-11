@@ -174,6 +174,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
       localChatLimit: preferences.localChatLimit,
       trashRetention: preferences.trashRetention,
       automaticChatExpiration: preferences.automaticChatExpiration,
+      newChatAutoExpire: preferences.newChatAutoExpire,
       agentMode: preferences.agentMode,
     },
   }))
@@ -217,6 +218,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     localChatLimit: state.localChatLimit,
     trashRetention: state.trashRetention,
     automaticChatExpiration: state.automaticChatExpiration,
+    newChatAutoExpire: state.newChatAutoExpire,
     favoriteModelIds: state.favoriteModelIds,
     providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
@@ -359,6 +361,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           localChatLimit: preferences.localChatLimit,
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
+          newChatAutoExpire: preferences.newChatAutoExpire,
           agentMode: preferences.agentMode,
         },
         defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,

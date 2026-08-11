@@ -14,6 +14,7 @@ export interface Preferences {
   localChatLimit: number
   trashRetention: TrashRetentionPreference
   automaticChatExpiration: AutomaticChatExpirationPreference
+  newChatAutoExpire: boolean
   favoriteModelIds: string[]
   providerOrder: string[]
   defaultModelId: string | null
@@ -25,7 +26,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', automaticChatExpiration: 'disabled', favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
+  trashRetention: '30d', automaticChatExpiration: 'disabled', newChatAutoExpire: true, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
   generation: {},
 }
 
@@ -55,6 +56,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   if (typeof values.automaticChatExpiration === 'string' && automaticChatExpirationValues.includes(values.automaticChatExpiration as AutomaticChatExpirationPreference)) {
     result.automaticChatExpiration = values.automaticChatExpiration as AutomaticChatExpirationPreference
   }
+  if (typeof values.newChatAutoExpire === 'boolean') result.newChatAutoExpire = values.newChatAutoExpire
   return result
 }
 
@@ -76,7 +78,7 @@ function validGenerationPreferences(value: unknown): Preferences['generation'] {
 
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation'].includes(key)
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation'].includes(key)
       ? key
       : null
   return serverKey ? { [serverKey]: value } : null

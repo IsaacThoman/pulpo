@@ -143,6 +143,7 @@ export interface AppPreferences {
   attachmentCacheMb: number;
   trashRetention: TrashRetention;
   automaticChatExpiration: AutomaticChatExpiration;
+  newChatAutoExpire: boolean;
 }
 
 export interface DemoScenarios {
