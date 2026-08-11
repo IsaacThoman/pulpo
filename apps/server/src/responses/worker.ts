@@ -35,6 +35,7 @@ import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
+import { backgroundRequestParameter } from './upstream-request.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -377,7 +378,7 @@ async function processGenerationAttempt(
       model: record.model.upstreamModelId,
       input: input as never,
       stream: true as const,
-      background: record.response.executionMode === 'background',
+      ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
       metadata: { pulpo_response_id: responseId, pulpo_chat_id: record.response.chatId },
     }
