@@ -37,21 +37,21 @@ describe('prototype store', () => {
     const persistPreference = vi.fn(async () => undefined);
     configureProductionActions({ setPreference: persistPreference });
 
-    usePrototypeStore.getState().setPreference('newChatAutoExpire', false);
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', true);
 
-    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(false);
-    expect(persistPreference).toHaveBeenCalledWith('newChatAutoExpire', false);
+    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(true);
+    expect(persistPreference).toHaveBeenCalledWith('newChatAutoExpire', true);
   });
 
   it('restores the new-chat expiration choice when persistence fails', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     configureProductionActions({ setPreference: async () => { throw new Error('Preference rejected'); } });
 
-    usePrototypeStore.getState().setPreference('newChatAutoExpire', false);
-    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(false);
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', true);
+    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(true);
 
-    await vi.waitFor(() => expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(true));
-    expect(setPreference).toHaveBeenCalledWith('newChatAutoExpire', true);
+    await vi.waitFor(() => expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(false));
+    expect(setPreference).toHaveBeenCalledWith('newChatAutoExpire', false);
     expect(useRealtimeStore.getState().syncError).toBe('Preference rejected');
     warning.mockRestore();
   });

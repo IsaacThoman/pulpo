@@ -94,7 +94,7 @@ describe('shared contracts', () => {
 
   it('validates automatic chat expiration preferences and chat mutations', () => {
     expect(automaticChatExpirationSchema.options).toEqual(['disabled', '24h', '7d'])
-    expect(newChatAutoExpireSchema.parse(undefined)).toBe(true)
+    expect(newChatAutoExpireSchema.parse(undefined)).toBe(false)
     expect(newChatAutoExpireSchema.parse(false)).toBe(false)
     expect(newChatAutoExpireSchema.safeParse('false').success).toBe(false)
     expect(startChatSchema.parse({
@@ -266,7 +266,7 @@ describe('shared contracts', () => {
       instance: {},
     })
     expect(document.account).toMatchObject({
-      theme: 'system', trashRetention: '30d', automaticChatExpiration: 'disabled', newChatAutoExpire: true, favoriteModelIds: [],
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [],
     })
     expect(managementAccountSettingsSchema.parse({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(document.instance).toMatchObject({

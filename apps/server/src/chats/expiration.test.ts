@@ -20,9 +20,9 @@ afterEach(() => {
 describe('automatic normal-chat expiration', () => {
   const now = new Date('2026-08-10T12:00:00.000Z')
 
-  it('defaults missing and invalid settings to disabled', () => {
+  it('defaults missing and invalid settings to 24 hours', () => {
     expect(parseAutomaticChatExpiration(undefined)).toBe(DEFAULT_AUTOMATIC_CHAT_EXPIRATION)
-    expect(parseAutomaticChatExpiration('30d')).toBe('disabled')
+    expect(parseAutomaticChatExpiration('30d')).toBe('24h')
   })
 
   it('accepts only the public setting values', () => {
