@@ -7,7 +7,8 @@ describe('new-account model defaults', () => {
     const settings = parseAuthSettings({ signupEnabled: false })
     expect(newAccountPreferenceValues(settings)).toEqual({
       defaultModelId: null,
-      newChatAutoExpire: true,
+      automaticChatExpiration: '24h',
+      newChatAutoExpire: false,
       favoriteModelIds: [],
       providerOrder: [],
     })
@@ -22,7 +23,8 @@ describe('new-account model defaults', () => {
     })
     expect(newAccountPreferenceValues(settings)).toEqual({
       defaultModelId: 'model-a',
-      newChatAutoExpire: true,
+      automaticChatExpiration: '24h',
+      newChatAutoExpire: false,
       favoriteModelIds: ['model-c', 'model-a', 'model-b'],
       providerOrder: [],
     })

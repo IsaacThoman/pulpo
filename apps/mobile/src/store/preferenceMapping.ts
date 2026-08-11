@@ -26,7 +26,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', automaticChatExpiration: 'disabled', newChatAutoExpire: true, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
+  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
   generation: {},
 }
 

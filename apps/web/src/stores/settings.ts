@@ -52,8 +52,8 @@ export const DEFAULT_SETTINGS = {
   localChatLimit: 50,
   localAttachmentCacheMb: 50,
   trashRetention: '30d' as TrashRetention,
-  automaticChatExpiration: 'disabled' as AutomaticChatExpiration,
-  newChatAutoExpire: true,
+  automaticChatExpiration: '24h' as AutomaticChatExpiration,
+  newChatAutoExpire: false,
   defaultModelId: '',
   generation: {},
 }
