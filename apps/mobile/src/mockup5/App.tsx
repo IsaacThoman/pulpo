@@ -2686,6 +2686,7 @@ const StreamingResponse = memo(function StreamingResponse({
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, temporary = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; temporary?: boolean }) {
   const colorScheme = useColorScheme();
+  const useWhiteArtwork = temporary && colorScheme === 'dark';
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
@@ -2715,7 +2716,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 modifiers={[
                   resizable(),
                   frame({ width: 22, height: 22 }),
-                  ...(temporary ? [grayscale(1), brightness(1)] : []),
+                  ...(useWhiteArtwork ? [grayscale(1), brightness(1)] : []),
                 ]}
               />
             )}
@@ -2740,7 +2741,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 label={candidate.name}
                 model={candidate}
                 selected={candidate.id === model.id}
-                whiteIcons={temporary}
+                whiteIcons={useWhiteArtwork}
               />
             </SwiftUIButton>
           ))}
@@ -2752,7 +2753,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             <SwiftUILabel
               title="Labs"
               icon={<SwiftUIImage
-                assetName={temporary || colorScheme === 'dark'
+                assetName={colorScheme === 'dark'
                   ? 'LucideFlaskConicalWhite'
                   : 'LucideFlaskConical'}
                 modifiers={[resizable(), frame({ width: 20, height: 20 })]}
@@ -2774,7 +2775,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 section={candidateSection.id}
                 models={models}
                 selected={candidateSection.id === section}
-                whiteIcons={temporary}
+                whiteIcons={useWhiteArtwork}
               />
             </SwiftUIButton>
           ))}
