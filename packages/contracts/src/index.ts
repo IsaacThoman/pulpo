@@ -791,7 +791,7 @@ const accountPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).ma
 
 export const automaticChatExpirationSchema = z.enum(['disabled', '24h', '7d'])
 export type AutomaticChatExpiration = z.infer<typeof automaticChatExpirationSchema>
-export const newChatAutoExpireSchema = z.boolean().default(true)
+export const newChatAutoExpireSchema = z.boolean().default(false)
 
 export const managementAccountSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('system'),
@@ -809,7 +809,7 @@ export const managementAccountSettingsSchema = z.object({
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
   trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
-  automaticChatExpiration: automaticChatExpirationSchema.default('disabled'),
+  automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
   newChatAutoExpire: newChatAutoExpireSchema,
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
