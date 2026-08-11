@@ -1,6 +1,6 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
@@ -10,7 +10,7 @@ import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkey
 import { useSessionStore } from '../../../store/session';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
-type AuthPage = 'login' | 'two-factor' | 'signup' | 'forgot' | 'instance';
+type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' | 'instance';
 
 const mockupOneDark = {
   background: '#101014', surface: '#18181C', border: '#303036', text: '#FAFAFA',
@@ -32,8 +32,8 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
 
 function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChildren<{ title: string; subtitle: string; footer?: ReactNode; colors: AuthColors }>) {
   const insets = useSafeAreaInsets();
-  return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
+  return <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
       <View style={styles.brand}>
         <Image source={require('../../assets/pulpo-smiley.png')} style={styles.logo} />
         <Text style={[styles.brandName, { color: colors.text }]}>Pulpo</Text>
@@ -45,7 +45,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
       <View style={styles.form}>{children}</View>
       {footer ? <View style={styles.footer}>{footer}</View> : null}
     </ScrollView>
-  </KeyboardAvoidingView>;
+  </View>;
 }
 
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
@@ -247,6 +247,12 @@ export function AuthExperience() {
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
 
+  if (page === 'login-options') return <AuthShell colors={colors} title="More login options" subtitle="Choose another way to sign in to your Pulpo account.">
+    <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+    <BackToSignIn colors={colors} onPress={() => goTo('login')} />
+  </AuthShell>;
+
   return <AuthShell colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
@@ -254,14 +260,11 @@ export function AuthExperience() {
       <Text style={[styles.change, { color: colors.text }]}>Change</Text>
     </Pressable>
   }>
-    {productionConfig?.capabilities.passkeys ? <>
-      <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
-      <View style={styles.divider}><View style={[styles.dividerLine, { backgroundColor: colors.border }]} /><Text style={[styles.dividerText, { color: colors.textFaint }]}>or use your password</Text><View style={[styles.dividerLine, { backgroundColor: colors.border }]} /></View>
-    </> : null}
     <AuthField colors={colors} icon="envelope" label="Email" value={email} onChangeText={setEmail} autoComplete="email" keyboardType="email-address" />
     <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="current-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitLogin} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Sign in" colors={colors} loading={loading} disabled={!email.trim() || !password} onPress={submitLogin} />
+    {productionConfig?.capabilities.passkeys ? <BackToSignIn colors={colors} label="More login options" onPress={() => goTo('login-options')} /> : null}
     <View style={styles.links}>
       {instance.signupOpen ? <Pressable accessibilityRole="link" onPress={() => goTo('signup')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.text }]}>Create account</Text></Pressable> : null}
       <Pressable accessibilityRole="link" onPress={() => goTo('forgot')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.textMuted }]}>Forgot password?</Text></Pressable>
@@ -302,7 +305,4 @@ const styles = StyleSheet.create({
   pendingName: { fontSize: 16, fontWeight: '600' },
   pendingEmail: { fontSize: 13.5 },
   pendingHelp: { fontSize: 13.5, lineHeight: 20 },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 2 },
-  dividerLine: { flex: 1, height: StyleSheet.hairlineWidth },
-  dividerText: { fontSize: 12 },
 });
