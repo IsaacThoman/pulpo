@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ModelIcon } from '@/components/ModelIcon'
-import { useSettings, type Theme, type TrashRetention } from '@/stores/settings'
+import { useSettings, type AutomaticChatExpiration, type Theme, type TrashRetention } from '@/stores/settings'
 import { useAuth } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
@@ -557,6 +557,19 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Data controls</h2>
                   <Separator className="my-3" />
+                  <Row label="Automatic chat expiration" hint="Move chats to Trash automatically unless saved within the selected period.">
+                    <Select
+                      value={s.automaticChatExpiration}
+                      onValueChange={(value) => s.set('automaticChatExpiration', value as AutomaticChatExpiration)}
+                    >
+                      <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="disabled">Disabled</SelectItem>
+                        <SelectItem value="24h">24 hours</SelectItem>
+                        <SelectItem value="7d">7 days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Row>
                   <div className="py-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">File storage</span>

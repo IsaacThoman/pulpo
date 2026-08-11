@@ -7,7 +7,7 @@ import { generationQueue, maintenanceQueue, type GenerationJob, type Maintenance
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
-import { expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
+import { expireNormalChat, expireTemporaryChat, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { parseAgentSettings } from './settings/application-settings.js'
 import { accessibleChatCondition } from './chats/temporary.js'
 import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
@@ -74,6 +74,17 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     const chatId = typeof job.data.payload?.chatId === 'string' ? job.data.payload.chatId : ''
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : ''
     if (chatId && userId && await expireTemporaryChat(chatId, userId)) await purgePendingChats(userId)
+  }
+  if (job.data.type === 'expire-normal-chat') {
+    const chatId = typeof job.data.payload?.chatId === 'string' ? job.data.payload.chatId : ''
+    const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : ''
+    const expectedValue = typeof job.data.payload?.expectedExpiresAt === 'string'
+      ? new Date(job.data.payload.expectedExpiresAt)
+      : undefined
+    const expectedExpiresAt = expectedValue && !Number.isNaN(expectedValue.getTime()) ? expectedValue : undefined
+    if (chatId && userId && await expireNormalChat(chatId, userId, new Date(), expectedExpiresAt)) {
+      await purgePendingChats(userId)
+    }
   }
   if (job.data.type === 'rollup') await rebuildDailyRollups()
   if (job.data.type === 'backup') await createFullBackup(String(job.data.payload?.jobId))

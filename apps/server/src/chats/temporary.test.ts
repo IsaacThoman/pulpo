@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import {
+  accessibleChatCondition,
   TEMPORARY_CHAT_TTL_MS,
   temporaryChatExpiryValue,
   temporaryChatExpiresAt,
@@ -29,8 +30,17 @@ describe('temporary chat retention', () => {
     const expiresAt = new Date('2026-08-07T12:00:00.000Z')
     const query = new PgDialect().sqlToQuery(temporaryChatExpiryValue(expiresAt))
 
-    expect(query.sql).toContain('case when "chats"."temporary" then cast($1 as timestamp with time zone) else null end')
+    expect(query.sql).toContain('case when "chats"."temporary" then cast($1 as timestamp with time zone) else "chats"."expires_at" end')
     expect(query.params).toEqual([expiresAt.toISOString()])
     expect(query.params[0]).not.toBeInstanceOf(Date)
+  })
+
+  it('makes normal and temporary chats inaccessible at their deadlines', () => {
+    const now = new Date('2026-08-07T12:00:00.000Z')
+    const query = new PgDialect().sqlToQuery(accessibleChatCondition(now)!)
+
+    expect(query.sql).toContain('"chats"."expires_at" > $1')
+    expect(query.sql).toContain('"chats"."temporary" = $2 and "chats"."expires_at" is null')
+    expect(query.params).toEqual([now.toISOString(), false])
   })
 })

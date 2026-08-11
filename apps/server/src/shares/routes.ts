@@ -10,6 +10,7 @@ import { newId } from '../lib/ids.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { createRedis } from '../redis.js'
 import { getConfig } from '../config.js'
+import { accessibleChatCondition } from '../chats/temporary.js'
 
 function publicOutput(output: unknown[]): unknown[] {
   return output.filter((item) => (item as { type?: string }).type !== 'reasoning')
@@ -22,7 +23,11 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     return { data: await db.select({ share: chatShares, title: chats.title }).from(chatShares)
       .innerJoin(chats, eq(chats.id, chatShares.chatId))
-      .where(eq(chatShares.userId, user.id)).orderBy(desc(chatShares.createdAt)) }
+      .where(and(
+        eq(chatShares.userId, user.id),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(),
+      )).orderBy(desc(chatShares.createdAt)) }
   })
 
   app.post('/api/chat-shares', async (request, reply) => {
@@ -39,6 +44,7 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       eq(chats.userId, user.id),
       eq(chats.temporary, false),
       isNull(chats.deletedAt),
+      accessibleChatCondition(),
     )).limit(1)
     if (!chat) throw notFound('Chat')
     const token = randomToken(32)
@@ -66,7 +72,13 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
     const now = new Date()
     const [row] = await db.select({ share: chatShares, chat: chats }).from(chatShares)
       .innerJoin(chats, eq(chats.id, chatShares.chatId))
-      .where(and(eq(chatShares.tokenHash, hashToken(token)), isNull(chatShares.revokedAt), or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now))))
+      .where(and(
+        eq(chatShares.tokenHash, hashToken(token)),
+        isNull(chatShares.revokedAt),
+        isNull(chats.deletedAt),
+        accessibleChatCondition(now),
+        or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now)),
+      ))
       .limit(1)
     if (!row) throw new AppError(404, 'share_not_found', 'This share does not exist or has expired')
     const allTurns = await db.select().from(responses).where(and(eq(responses.chatId, row.chat.id), isNull(responses.deletedAt))).orderBy(asc(responses.createdAt), asc(responses.id))

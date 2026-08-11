@@ -29,7 +29,7 @@ public final class PulpoFileClipboardModule: Module {
     .runOnQueue(DispatchQueue.main)
 
     View(TemporaryChatHeaderView.self) {
-      Events("onToggleTemporary", "onSave", "onNewChat")
+      Events("onToggleExpiration", "onToggleTemporary", "onSave", "onNewChat")
 
       Prop("active") { (view, value: Bool) in
         view.setActive(value)
@@ -37,11 +37,20 @@ public final class PulpoFileClipboardModule: Module {
       Prop("expanded") { (view, value: Bool) in
         view.setExpanded(value)
       }
+      Prop("expirationEnabled") { (view, value: Bool) in
+        view.setExpirationEnabled(value)
+      }
+      Prop("leadingAction") { (view, value: String) in
+        view.setLeadingAction(value)
+      }
       Prop("saving") { (view, value: Bool) in
         view.setSaving(value)
       }
       Prop("saveDisabled") { (view, value: Bool) in
         view.setSaveDisabled(value)
+      }
+      Prop("trailingAction") { (view, value: String) in
+        view.setTrailingAction(value)
       }
       Prop("reduceMotion") { (view, value: Bool) in
         view.setReduceMotion(value)

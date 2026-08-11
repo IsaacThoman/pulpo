@@ -2,19 +2,21 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ResponseSnapshot } from '@pulpo/contracts'
 
 const storage = new Map<string, string>()
-vi.stubGlobal('localStorage', {
+const localStorageStub = {
   getItem: (key: string) => storage.get(key) ?? null,
   setItem: (key: string, value: string) => storage.set(key, value),
   removeItem: (key: string) => storage.delete(key),
   clear: () => storage.clear(),
   key: (index: number) => [...storage.keys()][index] ?? null,
   get length() { return storage.size },
-})
+}
+vi.stubGlobal('localStorage', localStorageStub)
 vi.stubGlobal('navigator', { onLine: true })
 vi.stubGlobal('document', {
   documentElement: { classList: { toggle: vi.fn() } },
 })
 vi.stubGlobal('window', {
+  localStorage: localStorageStub,
   matchMedia: () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }),
   setTimeout,
   clearTimeout,
@@ -25,11 +27,12 @@ interface PendingRequest {
   method?: string
   body?: unknown
   resolve: (body: unknown) => void
+  reject: (error: unknown) => void
 }
 
 const requests: PendingRequest[] = []
 let networkFailure = false
-vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => new Promise<Response>((resolve) => {
+vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
   if (networkFailure) throw new TypeError('Failed to fetch')
   requests.push({
     path: String(input),
@@ -39,12 +42,14 @@ vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit)
       status: 200,
       headers: { 'content-type': 'application/json' },
     })),
+    reject,
   })
 })))
 
-const [{ useChat }, { useAuth }, { queryClient }, { withBranchMetadata }] = await Promise.all([
+const [{ useChat }, { useAuth }, { useSettings }, { queryClient }, { withBranchMetadata }] = await Promise.all([
   import('./chat'),
   import('./auth'),
+  import('./settings'),
   import('@/lib/query-client'),
   import('@/lib/message-branches'),
 ])
@@ -141,6 +146,7 @@ beforeEach(() => {
     responseSequences: {},
     responseChatIds: {},
   })
+  useSettings.setState({ automaticChatExpiration: 'disabled', newChatAutoExpire: true })
   queryClient.clear()
 })
 
@@ -149,6 +155,82 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('persists the new-chat expiration choice independently from the duration', () => {
+    useSettings.setState({ automaticChatExpiration: '24h', newChatAutoExpire: true })
+
+    useSettings.getState().set('newChatAutoExpire', false)
+
+    expect(useSettings.getState()).toMatchObject({
+      automaticChatExpiration: '24h',
+      newChatAutoExpire: false,
+    })
+    expect(JSON.parse(storage.get('pulpo-settings') ?? '{}').state).toMatchObject({ newChatAutoExpire: false })
+  })
+
+  it('starts an expiring chat with an optimistic deadline and the create flag', async () => {
+    useSettings.setState({ automaticChatExpiration: '24h' })
+    const before = Date.now()
+    const id = useChat.getState().sendMessage(null, 'expiring prompt', 'test-model', [], false, true)
+
+    const optimistic = useChat.getState().chats.find((chat) => chat.id === id)
+    expect(optimistic?.expiresAt).toBeGreaterThanOrEqual(before + 24 * 60 * 60 * 1_000)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: '/api/chats/start',
+      method: 'POST',
+      body: expect.objectContaining({ chat: expect.objectContaining({ autoExpire: true, temporary: false }) }),
+    })
+    requests[0]!.reject(new Error('Stop test request'))
+    await vi.waitFor(() => expect(
+      useChat.getState().chats.find((chat) => chat.id === id)?.messages.at(-1)?.done,
+    ).toBe(true))
+  })
+
+  it('optimistically toggles an existing deadline and rolls back a rejected change', async () => {
+    useSettings.setState({ automaticChatExpiration: '7d', newChatAutoExpire: false })
+    const initial = detail(responseAId, [response(responseAId, 'completed')])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    queryClient.setQueryData(['chats', userId], [initial])
+    useChat.getState().setDetailedChat(initial)
+
+    useChat.getState().setChatAutoExpiration(chatId, true)
+    expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.expiresAt).not.toBeNull()
+    expect(useSettings.getState().newChatAutoExpire).toBe(false)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: `/api/chats/${chatId}`,
+      method: 'PATCH',
+      body: { autoExpire: true },
+    })
+
+    requests[0]!.reject(new Error('Expiration rejected'))
+    await vi.waitFor(() => expect(
+      useChat.getState().chats.find((chat) => chat.id === chatId)?.expiresAt,
+    ).toBeNull())
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.expiresAt).toBeNull()
+  })
+
+  it('disables an existing deadline from chat actions', async () => {
+    const initial = {
+      ...detail(responseAId, [response(responseAId, 'completed')]),
+      expiresAt: '2026-08-17T12:00:00.000Z',
+    }
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    queryClient.setQueryData(['chats', userId], [initial])
+    useChat.getState().setDetailedChat(initial)
+
+    useChat.getState().setChatAutoExpiration(chatId, false)
+
+    expect(useChat.getState().chats.find((chat) => chat.id === chatId)?.expiresAt).toBeNull()
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: `/api/chats/${chatId}`,
+      method: 'PATCH',
+      body: { autoExpire: false },
+    })
+    requests[0]!.resolve({ ...initial, expiresAt: null })
+  })
+
   it('fails a temporary send instead of persisting it to the offline outbox', async () => {
     networkFailure = true
     const temporaryId = useChat.getState().sendMessage(null, 'private prompt', 'test-model', [], true)

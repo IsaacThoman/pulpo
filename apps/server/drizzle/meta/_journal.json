@@ -204,6 +204,13 @@
       "when": 1786384805135,
       "tag": "0028_absent_captain_flint",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786399007856,
+      "tag": "0029_lumpy_terrax",
+      "breakpoints": true
     }
   ]
 }

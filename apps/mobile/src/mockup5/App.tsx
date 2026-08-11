@@ -181,7 +181,13 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
-import { nextChatStartsTemporary, resolveChatHeaderAction } from '../features/chat/headerAction';
+import {
+  nextChatStartsTemporary,
+  resolveChatHeaderAction,
+  resolveChatHeaderControl,
+  type ChatHeaderLeadingAction,
+  type ChatHeaderTrailingAction,
+} from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
 import {
   HistoryChatContextMenuView,
@@ -465,7 +471,13 @@ type StreamingSession = {
   response: string;
   thinkSeconds: number;
 };
-type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean };
+type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+
+function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
+  if (preference === '24h') return now + 86_400_000;
+  if (preference === '7d') return now + 604_800_000;
+  return null;
+}
 type MessageEditSession = {
   message: Message;
   originalAttachmentIds: Set<string>;
@@ -748,10 +760,12 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
   );
 }
 
-function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size = 44 }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; size?: number }) {
+function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44 }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number }) {
   const colorScheme = useColorScheme();
   const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const ghostColor = selectedForeground;
+  const accent = selectedColor === 'teal' ? '#14B8A6' : '#AF52DE';
+  const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
       <SwiftUIHost key={selected ? 'selected' : 'default'} matchContents style={{ width: size, height: size }}>
@@ -761,7 +775,8 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size
             buttonStyle(selected ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
-            ...(selected ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(selectedForeground)] : []),
+            ...(selected ? [tint(selectedTint), foregroundStyle(accent)] : []),
+            ...(!selected && selectedColor === 'teal' ? [foregroundStyle('secondary')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
           ]}
         >
@@ -783,15 +798,15 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, size
       {({ pressed }) => (
         <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]}>
           {icon === 'ghost'
-            ? <Ghost color={selected ? '#AF52DE' : ghostColor} size={size * 0.44} strokeWidth={2} />
-            : <Icon name={icon} size={size * 0.44} color={selected ? '#AF52DE' : COLORS.text} />}
+            ? <Ghost color={selected ? accent : ghostColor} size={size * 0.44} strokeWidth={2} />
+            : <Icon name={icon} size={size * 0.44} color={selected ? accent : selectedColor === 'teal' ? '#8E8E93' : COLORS.text} />}
         </Glass>
       )}
     </Pressable>
   );
 }
 
-function HeaderActionGlyph({ name }: { name: 'bookmark' | 'square.and.pencil' }) {
+function HeaderActionGlyph({ name, color = COLORS.text }: { name: 'bookmark' | 'hourglass' | 'square.and.pencil'; color?: ColorValue }) {
   if (Platform.OS === 'ios') {
     return (
       <View pointerEvents="none" style={styles.headerActionGlyphHost}>
@@ -801,14 +816,18 @@ function HeaderActionGlyph({ name }: { name: 'bookmark' | 'square.and.pencil' })
       </View>
     );
   }
-  return <Icon name={name} size={44 * 0.44} color={COLORS.text} />;
+  return <Icon name={name} size={44 * 0.44} color={color} />;
 }
 
 type TemporaryChatHeaderControlProps = {
   active: boolean;
   expanded: boolean;
+  expirationEnabled: boolean;
+  leadingAction: ChatHeaderLeadingAction;
   saving: boolean;
   saveDisabled: boolean;
+  trailingAction: ChatHeaderTrailingAction;
+  onToggleExpiration: () => void;
   onToggleTemporary: () => void;
   onSave: () => void;
   onNewChat: () => void;
@@ -817,8 +836,12 @@ type TemporaryChatHeaderControlProps = {
 function FallbackTemporaryChatHeaderControl({
   active,
   expanded,
+  expirationEnabled,
+  leadingAction,
   saving,
   saveDisabled,
+  trailingAction,
+  onToggleExpiration,
   onToggleTemporary,
   onSave,
   onNewChat,
@@ -826,25 +849,27 @@ function FallbackTemporaryChatHeaderControl({
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
   const iconColor = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
+  const expirationColor = expirationEnabled ? '#14B8A6' : '#8E8E93';
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const expansion = useSharedValue(expanded ? 1 : 0);
+  const trailingTransition = useSharedValue(trailingAction === 'new-chat' ? 1 : 0);
   const containerStyle = useAnimatedStyle(() => ({
     width: interpolate(expansion.value, [0, 1], [44, 88]),
   }));
-  const ghostStyle = useAnimatedStyle(() => ({
-    opacity: 1 - expansion.value,
-    transform: [{ scale: interpolate(expansion.value, [0, 1], [1, 0.72]) }],
-  }));
-  const bookmarkStyle = useAnimatedStyle(() => ({
+  const leadingStyle = useAnimatedStyle(() => ({
     opacity: expansion.value,
     transform: [
       { translateX: interpolate(expansion.value, [0, 1], [10, 0]) },
       { scale: interpolate(expansion.value, [0, 1], [0.82, 1]) },
     ],
   }));
-  const newChatStyle = useAnimatedStyle(() => ({
-    opacity: expansion.value,
-    transform: [{ scale: interpolate(expansion.value, [0, 1], [0.72, 1]) }],
+  const trailingGhostStyle = useAnimatedStyle(() => ({
+    opacity: 1 - trailingTransition.value,
+    transform: [{ scale: interpolate(trailingTransition.value, [0, 1], [1, 0.72]) }],
+  }));
+  const trailingNewChatStyle = useAnimatedStyle(() => ({
+    opacity: trailingTransition.value,
+    transform: [{ scale: interpolate(trailingTransition.value, [0, 1], [0.72, 1]) }],
   }));
 
   useEffect(() => {
@@ -856,34 +881,49 @@ function FallbackTemporaryChatHeaderControl({
           stiffness: 220,
           mass: 0.8,
         });
-  }, [expanded, expansion, reduceMotion]);
+    const trailingTarget = trailingAction === 'new-chat' ? 1 : 0;
+    trailingTransition.value = reduceMotion
+      ? trailingTarget
+      : withSpring(trailingTarget, {
+          damping: 18,
+          stiffness: 220,
+          mass: 0.8,
+        });
+  }, [expanded, expansion, reduceMotion, trailingAction, trailingTransition]);
+
+  const runLeadingAction = () => {
+    if (leadingAction === 'expiration') onToggleExpiration();
+    else if (leadingAction === 'save' && !saveDisabled && !saving) onSave();
+  };
+  const runTrailingAction = () => {
+    if (trailingAction === 'ghost') onToggleTemporary();
+    else onNewChat();
+  };
+  const leadingAccessibilityLabel = leadingAction === 'expiration'
+    ? expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'
+    : saving ? 'Saving chat' : 'Save chat';
+  const trailingAccessibilityLabel = trailingAction === 'ghost'
+    ? active ? 'Disable temporary chat' : 'Enable temporary chat'
+    : active ? 'New temporary chat' : 'New chat';
 
   return (
     <Reanimated.View style={[styles.temporaryHeaderActionsShell, containerStyle]}>
       <Glass
         interactive
         accessibilityActions={expanded ? [
-          { name: 'activate', label: 'Save chat' },
-          { name: 'new-chat', label: 'New temporary chat' },
+          { name: 'activate', label: leadingAccessibilityLabel },
+          { name: 'trailing-action', label: trailingAccessibilityLabel },
         ] : undefined}
-        accessibilityHint={expanded ? 'Tap the left side to save or the right side to start a new temporary chat.' : undefined}
-        accessibilityLabel={expanded ? saving ? 'Saving chat' : 'Temporary chat actions' : active ? 'Disable temporary chat' : 'Enable temporary chat'}
+        accessibilityHint={expanded ? `${leadingAccessibilityLabel} on the left; ${trailingAccessibilityLabel} on the right.` : undefined}
+        accessibilityLabel={expanded ? 'Chat actions' : trailingAccessibilityLabel}
         accessibilityRole="button"
         onAccessibilityTap={() => {
-          if (!expanded) {
-            onToggleTemporary();
-          } else if (!saveDisabled && !saving) {
-            onSave();
-          }
+          if (expanded) runLeadingAction();
+          else runTrailingAction();
         }}
         onAccessibilityAction={(event) => {
-          if (!expanded) {
-            onToggleTemporary();
-          } else if (event.nativeEvent.actionName === 'new-chat') {
-            onNewChat();
-          } else if (!saveDisabled && !saving) {
-            onSave();
-          }
+          if (!expanded || event.nativeEvent.actionName === 'trailing-action') runTrailingAction();
+          else runLeadingAction();
         }}
         onTouchStart={(event) => {
           touchStart.current = {
@@ -896,28 +936,30 @@ function FallbackTemporaryChatHeaderControl({
           touchStart.current = null;
           if (!start || Math.hypot(event.nativeEvent.pageX - start.x, event.nativeEvent.pageY - start.y) > 10) return;
           if (expanded && event.nativeEvent.locationX >= 44) {
-            onNewChat();
+            runTrailingAction();
           } else if (expanded) {
-            if (!saveDisabled && !saving) onSave();
+            runLeadingAction();
           } else {
-            onToggleTemporary();
+            runTrailingAction();
           }
         }}
         style={styles.temporaryHeaderActions}
         tintColor={active ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
       >
-        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderPrimaryAction, bookmarkStyle]}>
+        <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderPrimaryAction, leadingStyle]}>
           <View style={styles.temporaryHeaderAction}>
-            {saving
-              ? <ActivityIndicator color={iconColor} size="small" />
-              : <HeaderActionGlyph name="bookmark" />}
+            {leadingAction === 'save'
+              ? saving
+                ? <ActivityIndicator color={iconColor} size="small" />
+                : <HeaderActionGlyph name="bookmark" />
+              : <HeaderActionGlyph name="hourglass" color={expirationColor} />}
           </View>
         </Reanimated.View>
         <View style={[styles.temporaryHeaderAction, styles.temporaryHeaderNewChatAction]}>
-          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, ghostStyle]}>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, trailingGhostStyle]}>
             <Ghost color={iconColor} size={18} strokeWidth={2} />
           </Reanimated.View>
-          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, newChatStyle]}>
+          <Reanimated.View pointerEvents="none" style={[styles.temporaryHeaderIconLayer, trailingNewChatStyle]}>
             <HeaderActionGlyph name="square.and.pencil" />
           </Reanimated.View>
         </View>
@@ -1173,6 +1215,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [modelSheet, setModelSheet] = useState(false);
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
+  const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const newChatAutoExpire = usePrototypeStore((state) => state.preferences.newChatAutoExpire);
   const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady);
   const modelCatalogReady = usePrototypeStore((state) => state.modelCatalogReady);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
@@ -1377,6 +1421,19 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [historyChats]);
   const activePrototypeChat = useMemo(() => storedChats.find((chat) => chat.id === activeChatId && chat.deletedAt === null) ?? null, [activeChatId, storedChats]);
   const activeChat = useMemo(() => activePrototypeChat ? prototypeChatToLegacy(activePrototypeChat) : null, [activePrototypeChat]);
+  const chatAutoExpire = activePrototypeChat
+    ? activePrototypeChat.expiresAt != null
+    : automaticChatExpiration !== 'disabled' && newChatAutoExpire;
+  const showAutoExpirationControl = !(activePrototypeChat?.temporary ?? newChatTemporary) && (activePrototypeChat
+    ? automaticChatExpiration !== 'disabled' || activePrototypeChat.expiresAt != null
+    : automaticChatExpiration !== 'disabled');
+  const changeAutoExpiration = useCallback((enabled: boolean) => {
+    if (activePrototypeChat) {
+      usePrototypeStore.getState().setChatAutoExpiration(activePrototypeChat.id, enabled);
+      return;
+    }
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', enabled);
+  }, [activePrototypeChat]);
   const messages = activeChat?.messages ?? [];
   const remoteAssistantStatus = messages.some((message) => message.role === 'assistant' && message.status === 'streaming')
     ? 'streaming'
@@ -1521,6 +1578,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const selections = options?.presetSelections ?? presetSelections;
     const title = trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat';
+    const initialExpiresAt = options?.temporary
+      ? timestamp + 48 * 60 * 60 * 1_000
+      : options?.autoExpire ? automaticExpirationDeadline(automaticChatExpiration, timestamp) : null;
     const productionNamespace = productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null;
     if (!activeChat) {
       upsertChat({
@@ -1532,6 +1592,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         pinned: false,
         folderId: null,
         temporary: options?.temporary ?? false,
+        expiresAt: initialExpiresAt,
         deletedAt: null,
         purgeAt: null,
         messages: [],
@@ -1573,6 +1634,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         title,
         modelId,
         temporary: options?.temporary ?? false,
+        expiresAt: initialExpiresAt === null ? null : new Date(initialExpiresAt).toISOString(),
         presetSelections: selections,
         agentMode,
         attachments: attachments.map((attachment) => ({
@@ -1598,6 +1660,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           content: trimmed,
           modelId,
           temporary: options?.temporary ?? false,
+          autoExpire: options?.autoExpire ?? false,
           title,
           presetSelections: selections,
           attachmentIds: attachments.map((attachment) => attachment.serverId),
@@ -1901,9 +1964,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
+            autoExpire={chatAutoExpire}
+            showAutoExpirationControl={showAutoExpirationControl}
             expired={Boolean(activePrototypeChat?.expired)}
             savingTemporary={savingTemporaryChatId === activePrototypeChat?.id}
             onTemporaryChange={setNewChatTemporary}
+            onAutoExpirationChange={changeAutoExpiration}
             onSaveTemporary={() => { void saveActiveTemporaryChat(); }}
             onNewChat={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2786,7 +2852,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 function ChatView({
   messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, temporary, expired, savingTemporary, onTemporaryChange,
+  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, temporary, autoExpire, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -2814,9 +2880,12 @@ function ChatView({
   onNewChat: () => void;
   onSaveTemporary: () => void;
   temporary: boolean;
+  autoExpire: boolean;
+  showAutoExpirationControl: boolean;
   expired: boolean;
   savingTemporary: boolean;
   onTemporaryChange: (value: boolean) => void;
+  onAutoExpirationChange: (value: boolean) => void;
 }) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
@@ -3233,7 +3302,7 @@ function ChatView({
       // Arm before invoking onSend: it inserts the optimistic rows before its
       // first network await, so arming after the promise resolves is too late.
       followSnapshot = armSubmittedTurnFollow();
-      const accepted = await onSend(input, prepared as PreparedAttachment[], { presetSelections, agentEnabled: activeAgentEnabled, temporary });
+      const accepted = await onSend(input, prepared as PreparedAttachment[], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire });
       if (!accepted) {
         restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
@@ -3248,17 +3317,17 @@ function ChatView({
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, temporary, uploadOne]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();
-    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary }).then((accepted) => {
+    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
       restoreSubmittedTurnFollow(followSnapshot);
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : undefined);
     });
-  }, [activeAgentEnabled, armSubmittedTurnFollow, onSend, presetSelections, restoreSubmittedTurnFollow, temporary]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, autoExpire, onSend, presetSelections, restoreSubmittedTurnFollow, temporary]);
 
   const nativeAgentTint = colorScheme === 'dark' ? '#BF5AF2' : '#AF52DE';
   const nativeAgentForeground = activeAgentEnabled ? '#ffffff' : colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
@@ -3385,7 +3454,8 @@ function ChatView({
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
-  const headerExpansionProgress = useSharedValue(headerAction === 'temporary-actions' ? 1 : 0);
+  const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
+  const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
   const modelTriggerAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
   }));
@@ -3400,11 +3470,11 @@ function ChatView({
     && !attachments.some((attachment) => attachment.state === 'uploading');
 
   useEffect(() => {
-    const target = headerAction === 'temporary-actions' ? 1 : 0;
+    const target = headerControl.expanded ? 1 : 0;
     headerExpansionProgress.value = reduceMotion
       ? target
       : withSpring(target, { damping: 18, stiffness: 220, mass: 0.8 });
-  }, [headerAction, headerExpansionProgress, reduceMotion]);
+  }, [headerControl.expanded, headerExpansionProgress, reduceMotion]);
 
   const emptyLandingContent = (
     <View style={styles.emptyState}>
@@ -3486,32 +3556,25 @@ function ChatView({
           <Reanimated.View
             style={styles.headerActionExpanded}
           >
-            {headerAction === 'temporary-toggle' ? (
-              <TemporaryChatHeaderControl
-                active={temporary}
-                expanded={false}
-                onToggleTemporary={() => {
-                  onTemporaryChange(!temporary);
-                  Haptics.selectionAsync();
-                }}
-                onNewChat={onNewChat}
-                onSave={onSaveTemporary}
-                saveDisabled={expired}
-                saving={savingTemporary}
-              />
-            ) : headerAction === 'temporary-actions' ? (
-              <TemporaryChatHeaderControl
-                active
-                expanded
-                onToggleTemporary={() => onTemporaryChange(false)}
-                onNewChat={onNewChat}
-                onSave={onSaveTemporary}
-                saveDisabled={expired}
-                saving={savingTemporary}
-              />
-            ) : (
-              <RoundButton icon="square.and.pencil" accessibilityLabel="New chat" onPress={onNewChat} />
-            )}
+            <TemporaryChatHeaderControl
+              active={temporary}
+              expanded={headerControl.expanded}
+              expirationEnabled={autoExpire}
+              leadingAction={headerControl.leadingAction}
+              trailingAction={headerControl.trailingAction}
+              onToggleExpiration={() => {
+                onAutoExpirationChange(!autoExpire);
+                Haptics.selectionAsync();
+              }}
+              onToggleTemporary={() => {
+                onTemporaryChange(!temporary);
+                Haptics.selectionAsync();
+              }}
+              onNewChat={onNewChat}
+              onSave={onSaveTemporary}
+              saveDisabled={expired}
+              saving={savingTemporary}
+            />
           </Reanimated.View>
         </AppHeader>
 
@@ -3924,6 +3987,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, previewText,
     <View style={styles.flex}>
       <Text numberOfLines={1} style={styles.chatTitle}>{chat.title}</Text>
     </View>
+    {chat.expiresAt !== null ? <Icon name="hourglass" size={13} color="#14B8A6" /> : null}
     <Text style={styles.chatTime}>{chat.time}</Text>
   </>;
   if (Platform.OS === 'ios') return (
