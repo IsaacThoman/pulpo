@@ -1,6 +1,6 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
@@ -32,8 +32,8 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
 
 function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChildren<{ title: string; subtitle: string; footer?: ReactNode; colors: AuthColors }>) {
   const insets = useSafeAreaInsets();
-  return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
+  return <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
       <View style={styles.brand}>
         <Image source={require('../../assets/pulpo-smiley.png')} style={styles.logo} />
         <Text style={[styles.brandName, { color: colors.text }]}>Pulpo</Text>
@@ -45,7 +45,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
       <View style={styles.form}>{children}</View>
       {footer ? <View style={styles.footer}>{footer}</View> : null}
     </ScrollView>
-  </KeyboardAvoidingView>;
+  </View>;
 }
 
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
