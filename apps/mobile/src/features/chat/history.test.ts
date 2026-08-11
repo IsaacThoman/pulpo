@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   historyChatSummary,
+  resolveHistoryChatExpiryMenuAction,
   reuseHistoryChatSummaries,
   visibleHistoryChats,
 } from './history'
@@ -14,6 +15,21 @@ describe('visibleHistoryChats', () => {
     ]
 
     expect(visibleHistoryChats(chats).map((chat) => chat.id)).toEqual(['saved'])
+  })
+})
+
+describe('resolveHistoryChatExpiryMenuAction', () => {
+  it('enables expiry using the configured period', () => {
+    expect(resolveHistoryChatExpiryMenuAction(null, '24h')).toEqual({ kind: 'enable', periodLabel: '24h' })
+    expect(resolveHistoryChatExpiryMenuAction(null, '7d')).toEqual({ kind: 'enable', periodLabel: '7d' })
+  })
+
+  it('hides enablement when automatic expiry is disabled', () => {
+    expect(resolveHistoryChatExpiryMenuAction(null, 'disabled')).toBeNull()
+  })
+
+  it('allows an existing expiry to be disabled regardless of the preference', () => {
+    expect(resolveHistoryChatExpiryMenuAction(Date.now() + 60_000, 'disabled')).toEqual({ kind: 'disable' })
   })
 })
 

@@ -3,10 +3,13 @@ import UIKit
 
 public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   let onAction = EventDispatcher()
-  let onPress = EventDispatcher()
+  let onChatPress = EventDispatcher()
 
   private var pinned = false
   private var removeChatLabel = "Delete chat"
+  private var expirationAction = "hidden"
+  private var expirationPeriodLabel = ""
+  private var expiresAt: Double = 0
   private var previewTitle = ""
   private var previewBody = "Start a new conversation with your selected model."
   private var previewMetadata = ""
@@ -30,6 +33,18 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     removeChatLabel = value
   }
 
+  public func setExpirationAction(_ value: String) {
+    expirationAction = value
+  }
+
+  public func setExpirationPeriodLabel(_ value: String) {
+    expirationPeriodLabel = value
+  }
+
+  public func setExpiresAt(_ value: Double) {
+    expiresAt = value
+  }
+
   public func setPreviewTitle(_ value: String) {
     previewTitle = value
   }
@@ -47,11 +62,11 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   }
 
   @objc private func handleTap() {
-    onPress()
+    onChatPress()
   }
 
   public override func accessibilityActivate() -> Bool {
-    onPress()
+    onChatPress()
     return true
   }
 
@@ -86,22 +101,29 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
         ]
       )
 
+      var standardActionChildren: [UIMenuElement] = [
+        menuAction(
+          title: pinned ? "Unpin chat" : "Pin chat",
+          systemImage: pinned ? "pin.slash" : "pin",
+          action: "pin"
+        ),
+        menuAction(title: "Rename chat", systemImage: "pencil", action: "rename"),
+      ]
+      if let expirationMenuAction = expirationMenuAction() {
+        standardActionChildren.append(expirationMenuAction)
+      }
+      standardActionChildren.append(
+        menuAction(
+          title: "Duplicate chat",
+          systemImage: "plus.square.on.square",
+          action: "duplicate"
+        )
+      )
+
       let standardActions = UIMenu(
         title: "",
         options: .displayInline,
-        children: [
-          menuAction(
-            title: pinned ? "Unpin chat" : "Pin chat",
-            systemImage: pinned ? "pin.slash" : "pin",
-            action: "pin"
-          ),
-          menuAction(title: "Rename chat", systemImage: "pencil", action: "rename"),
-          menuAction(
-            title: "Duplicate chat",
-            systemImage: "plus.square.on.square",
-            action: "duplicate"
-          )
-        ]
+        children: standardActionChildren
       )
 
       return UIMenu(children: [primaryActions, standardActions])
@@ -114,15 +136,58 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     title: String,
     systemImage: String,
     action: String,
+    imageColor: UIColor? = nil,
     attributes: UIMenuElement.Attributes = []
   ) -> UIAction {
-    UIAction(
+    let image = imageColor.map {
+      UIImage(systemName: systemImage)?.withTintColor($0, renderingMode: .alwaysOriginal)
+    } ?? UIImage(systemName: systemImage)
+    return UIAction(
       title: title,
-      image: UIImage(systemName: systemImage),
+      image: image,
       attributes: attributes
     ) { [weak self] _ in
       self?.onAction(["action": action])
     }
+  }
+
+  private func expirationMenuAction() -> UIAction? {
+    if expirationAction == "disable" {
+      return menuAction(
+        title: "Disable expiry in \(formatExpiryRemaining())",
+        systemImage: "hourglass",
+        action: "disable-expiration",
+        imageColor: .systemTeal
+      )
+    }
+    if expirationAction == "enable", !expirationPeriodLabel.isEmpty {
+      return menuAction(
+        title: "Expire in \(expirationPeriodLabel)",
+        systemImage: "hourglass",
+        action: "enable-expiration"
+      )
+    }
+    return nil
+  }
+
+  private func formatExpiryRemaining(now: Date = Date()) -> String {
+    let remainingMilliseconds = expiresAt - now.timeIntervalSince1970 * 1_000
+    if remainingMilliseconds <= 0 {
+      return "now"
+    }
+
+    let days = Int(floor(remainingMilliseconds / 86_400_000))
+    if days > 0 {
+      return "\(days)d"
+    }
+
+    let hours = Int(floor(remainingMilliseconds / 3_600_000))
+    if hours > 0 {
+      return "\(hours)h"
+    }
+
+    let minutes = max(1, Int(ceil(remainingMilliseconds / 60_000)))
+    return "\(minutes)m"
   }
 }
 
