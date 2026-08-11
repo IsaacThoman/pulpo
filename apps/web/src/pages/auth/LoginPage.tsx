@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, KeyRound, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useAuth } from '@/stores/auth'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
+import { useAuth } from '@/stores/auth'
 
 export function LoginPage() {
   const user = useAuth((s) => s.user)
@@ -23,7 +23,6 @@ export function LoginPage() {
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [passkeyLoading, setPasskeyLoading] = useState(false)
   const passkeySupported = browserSupportsWebAuthn()
 
   useEffect(() => {
@@ -62,19 +61,6 @@ export function LoginPage() {
     navigate(currentUser?.role === 'pending' ? '/pending' : '/')
   }
 
-  const submitPasskey = async () => {
-    setError(null)
-    setPasskeyLoading(true)
-    const result = await passkeyLogin(false)
-    setPasskeyLoading(false)
-    if (!result.ok) {
-      if (result.error) setError(result.error)
-      return
-    }
-    const currentUser = useAuth.getState().user
-    navigate(currentUser?.role === 'pending' ? '/pending' : '/')
-  }
-
   return (
     <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
@@ -85,15 +71,6 @@ export function LoginPage() {
       </div>
 
       <form onSubmit={submit} className="space-y-4">
-        {!twoFactorStep && passkeySupported && <>
-          <Button type="button" variant="outline" className="w-full" disabled={passkeyLoading || loading} onClick={() => void submitPasskey()}>
-            {passkeyLoading ? <Loader2 className="animate-spin" /> : <KeyRound />}
-            Sign in with a passkey
-          </Button>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="h-px flex-1 bg-border" /><span>or use your password</span><div className="h-px flex-1 bg-border" />
-          </div>
-        </>}
         {!twoFactorStep && <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
@@ -174,6 +151,14 @@ export function LoginPage() {
           <ArrowLeft /> Back
         </Button>}
       </form>
+
+      {!twoFactorStep && (
+        <div className="mt-4 text-center">
+          <Link to="/login/options" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            More login options
+          </Link>
+        </div>
+      )}
 
       {!twoFactorStep && signupEnabled && (
         <p className="mt-6 text-center text-sm text-muted-foreground">
