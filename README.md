@@ -29,7 +29,7 @@ deploy/               nginx gateway configuration
 ## Quick start with Docker Compose
 
 1. Copy `.env.example` to `.env` and replace every development secret. `ENCRYPTION_KEY`, the PostgreSQL password, and the S3 secret must be private random values.
-2. Set `PUBLIC_URL` to the URL users will open. Set `COOKIE_SECURE=true` behind HTTPS.
+2. Set `PUBLIC_URL` to the stable canonical URL users will open. Set `COOKIE_SECURE=true` behind HTTPS. Passkeys are bound to this hostname, so changing it invalidates existing passkeys.
 3. Start Pulpo:
 
 ```bash
@@ -204,6 +204,14 @@ EXPO_PUBLIC_DEFAULT_INSTANCE_URL=http://localhost:8080 npm run dev:mobile
 Open the project in an iOS 26 simulator through Expo CLI. Local HTTP is accepted
 only by development builds; preview and production builds require HTTPS. See
 `apps/mobile/README.md` for EAS, Release build, and environment details.
+
+Passkeys work in every HTTPS Pulpo browser instance (and on localhost during
+development). The iPhone app uses native passkeys for domains included when the
+app is built and a PKCE-protected Safari bridge for other HTTPS instances. A
+self-hosted instance must keep `PUBLIC_URL` on a stable hostname. Its AASA file
+enables native ceremonies only when that hostname is also present in the signed
+app's `webcredentials:` entitlements; runtime-discovered domains cannot be added
+to an already-signed iOS app.
 
 ## Local-first and realtime behavior
 

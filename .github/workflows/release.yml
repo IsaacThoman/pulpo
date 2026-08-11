@@ -414,7 +414,7 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Add :signingStyle string automatic' "${export_options_path}"
           /usr/libexec/PlistBuddy -c 'Add :teamID string PX72AL9366' "${export_options_path}"
           /usr/libexec/PlistBuddy -c 'Add :manageAppVersionAndBuildNumber bool false' "${export_options_path}"
-          /usr/libexec/PlistBuddy -c 'Add :testFlightInternalTestingOnly bool true' "${export_options_path}"
+          /usr/libexec/PlistBuddy -c 'Add :testFlightInternalTestingOnly bool false' "${export_options_path}"
 
           xcodebuild \
             -exportArchive \

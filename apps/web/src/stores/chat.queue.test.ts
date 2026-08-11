@@ -110,4 +110,30 @@ describe('chat queue store', () => {
 
     expect(useChat.getState().chats[0]?.queuedMessages).toEqual([saved])
   })
+
+  it('optimistically reorders queued messages and reconciles server positions', async () => {
+    const first = queued({ id: '00000000-0000-4000-8000-000000000003', position: 0 })
+    const second = queued({ id: '00000000-0000-4000-8000-000000000004', position: 1, content: 'second' })
+    const third = queued({ id: '00000000-0000-4000-8000-000000000005', position: 2, content: 'third' })
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => ({ ...chat, queuedMessages: [first, second, third] })),
+    }))
+
+    const pending = useChat.getState().reorderQueuedMessage(chatId, third.id, first.id, 'before')
+    expect(useChat.getState().chats[0]?.queuedMessages?.map((message) => message.id)).toEqual([
+      third.id, first.id, second.id,
+    ])
+    expect(useChat.getState().chats[0]?.queuedMessages?.map((message) => message.position)).toEqual([0, 1, 2])
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({
+      path: `/api/chats/${chatId}/queued-messages/${third.id}/reorder`,
+      method: 'PATCH',
+      body: { targetMessageId: first.id, edge: 'before' },
+    })
+    const saved = [third, first, second].map((message, position) => ({ ...message, position }))
+    requests[0]!.resolve({ queuedMessages: saved })
+    await pending
+
+    expect(useChat.getState().chats[0]?.queuedMessages).toEqual(saved)
+  })
 })

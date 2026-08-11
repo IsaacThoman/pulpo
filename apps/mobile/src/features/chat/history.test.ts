@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   historyChatSummary,
+  resolveHistoryChatExpiryMenuAction,
   reuseHistoryChatSummaries,
   visibleHistoryChats,
 } from './history'
@@ -17,6 +18,21 @@ describe('visibleHistoryChats', () => {
   })
 })
 
+describe('resolveHistoryChatExpiryMenuAction', () => {
+  it('enables expiry using the configured period', () => {
+    expect(resolveHistoryChatExpiryMenuAction(null, '24h')).toEqual({ kind: 'enable', periodLabel: '24h' })
+    expect(resolveHistoryChatExpiryMenuAction(null, '7d')).toEqual({ kind: 'enable', periodLabel: '7d' })
+  })
+
+  it('hides enablement when automatic expiry is disabled', () => {
+    expect(resolveHistoryChatExpiryMenuAction(null, 'disabled')).toBeNull()
+  })
+
+  it('allows an existing expiry to be disabled regardless of the preference', () => {
+    expect(resolveHistoryChatExpiryMenuAction(Date.now() + 60_000, 'disabled')).toEqual({ kind: 'disable' })
+  })
+})
+
 describe('reuseHistoryChatSummaries', () => {
   const now = Date.UTC(2026, 7, 9, 16)
   const source = {
@@ -26,6 +42,7 @@ describe('reuseHistoryChatSummaries', () => {
     updatedAt: now - 3_600_000,
     pinned: false,
     folderId: null,
+    expiresAt: null,
   }
 
   it('preserves the list and row when only transcript state changes', () => {
@@ -44,6 +61,7 @@ describe('reuseHistoryChatSummaries', () => {
     ['time', { updatedAt: now - 2 * 86_400_000 }],
     ['pin', { pinned: true }],
     ['folder', { folderId: 'folder-1' }],
+    ['expiration', { expiresAt: now + 86_400_000 }],
   ])('replaces a row when its %s metadata changes', (_field, patch) => {
     const before = historyChatSummary(source, now)
     const after = historyChatSummary({ ...source, ...patch }, now)

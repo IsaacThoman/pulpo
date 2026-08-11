@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { memories, userPreferences, users } from '../database/schema.js'
@@ -10,6 +11,7 @@ import { publishStateChange } from '../responses/events.js'
 import { maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
+import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -22,6 +24,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       values: {
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
+        automaticChatExpiration: parseAutomaticChatExpiration(values?.automaticChatExpiration),
       },
       updatedAt: row?.updatedAt.toISOString() ?? null,
     }
@@ -32,6 +35,12 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     const patch = normalizedPreferencePatch(preferencesSchema.parse(request.body))
     if ('trashRetention' in patch && !trashRetentionValues.includes(patch.trashRetention as typeof trashRetentionValues[number])) {
       throw new AppError(400, 'invalid_trash_retention', 'Choose a valid trash retention period')
+    }
+    if ('automaticChatExpiration' in patch && !automaticChatExpirationValues.includes(patch.automaticChatExpiration as typeof automaticChatExpirationValues[number])) {
+      throw new AppError(400, 'invalid_chat_expiration', 'Choose a valid automatic chat expiration period')
+    }
+    if ('newChatAutoExpire' in patch && !newChatAutoExpireSchema.safeParse(patch.newChatAutoExpire).success) {
+      throw new AppError(400, 'invalid_new_chat_expiration', 'Choose whether new chats should expire automatically')
     }
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
     let saved: typeof userPreferences.$inferSelect | undefined

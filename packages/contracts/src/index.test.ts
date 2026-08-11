@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
+  automaticChatExpirationSchema,
   authSettingsSchema,
   chatSummarySchema,
   CHAT_PRESET_ICON_NAMES,
@@ -12,6 +13,7 @@ import {
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
   managementInfoSchema,
+  managementAccountSettingsSchema,
   managementSettingsDocumentSchema,
   managementTokenSchema,
   isChatPresetIcon,
@@ -20,11 +22,18 @@ import {
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
   nativeLoginInputSchema,
+  passkeyAuthenticationResponseSchema,
+  passkeyListSchema,
+  passkeyRegistrationResponseSchema,
+  beginPasskeyRegistrationInputSchema,
+  mobileBrowserPasskeyOptionsInputSchema,
+  newChatAutoExpireSchema,
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
   startChatSchema,
   syncRequestSchema,
+  updateChatSchema,
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
@@ -86,6 +95,19 @@ describe('shared contracts', () => {
     }
     expect(persistChatResponseSchema.parse(summary)).toMatchObject({ temporary: false, expiresAt: null })
     expect(() => persistChatResponseSchema.parse({ ...summary, temporary: true })).toThrow()
+  })
+
+  it('validates automatic chat expiration preferences and chat mutations', () => {
+    expect(automaticChatExpirationSchema.options).toEqual(['disabled', '24h', '7d'])
+    expect(newChatAutoExpireSchema.parse(undefined)).toBe(false)
+    expect(newChatAutoExpireSchema.parse(false)).toBe(false)
+    expect(newChatAutoExpireSchema.safeParse('false').success).toBe(false)
+    expect(startChatSchema.parse({
+      chat: { clientId: crypto.randomUUID(), modelId: 'model', autoExpire: true },
+      response: { clientId: crypto.randomUUID(), input: 'hello', modelId: 'model' },
+    }).chat.autoExpire).toBe(true)
+    expect(updateChatSchema.parse({ autoExpire: false })).toEqual({ autoExpire: false })
+    expect(updateChatSchema.safeParse({ autoExpire: 'yes' }).success).toBe(false)
   })
 
   it('uses the Pulpo Proxy OCR prompt by default', () => {
@@ -192,6 +214,22 @@ describe('shared contracts', () => {
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
+  it('normalizes new-account model defaults while preserving favorite order', () => {
+    expect(authSettingsSchema.parse({}).newAccountModelDefaults).toEqual({
+      defaultModelId: null,
+      favoriteModelIds: [],
+    })
+    expect(authSettingsSchema.parse({
+      newAccountModelDefaults: {
+        defaultModelId: ' model-a ',
+        favoriteModelIds: ['model-b', 'model-a', 'model-b'],
+      },
+    }).newAccountModelDefaults).toEqual({
+      defaultModelId: 'model-a',
+      favoriteModelIds: ['model-b', 'model-a'],
+    })
+  })
+
   it('validates native sessions and instance discovery', () => {
     expect(nativeLoginInputSchema.parse({
       email: 'member@example.com', password: 'password', deviceLabel: 'Isaac’s iPhone',
@@ -220,8 +258,35 @@ describe('shared contracts', () => {
       },
     })).toMatchObject({
       limits: { maxAttachmentBytes: 25 * 1024 * 1024 },
-      capabilities: { twoFactorAuth: false },
+      capabilities: { twoFactorAuth: false, passkeys: false },
     })
+  })
+
+  it('validates passkey names, summaries, and WebAuthn ceremony responses', () => {
+    expect(beginPasskeyRegistrationInputSchema.parse({
+      name: '  MacBook Touch ID  ', currentPassword: 'password', verificationCode: '123456',
+    }).name).toBe('MacBook Touch ID')
+    expect(beginPasskeyRegistrationInputSchema.safeParse({ name: ' ', currentPassword: 'password' }).success).toBe(false)
+    expect(passkeyListSchema.safeParse({
+      requiresSecondFactor: false,
+      passkeys: Array.from({ length: 11 }, (_, index) => ({
+        id: crypto.randomUUID(), name: `Key ${index}`, createdAt: new Date().toISOString(), lastUsedAt: null,
+      })),
+    }).success).toBe(false)
+
+    const common = { id: 'credential', rawId: 'credential', type: 'public-key' as const, clientExtensionResults: {} }
+    expect(passkeyRegistrationResponseSchema.safeParse({
+      ...common, response: { clientDataJSON: 'client-data', attestationObject: 'attestation', transports: ['internal'] },
+    }).success).toBe(true)
+    expect(passkeyAuthenticationResponseSchema.safeParse({
+      ...common, response: { authenticatorData: 'authenticator', clientDataJSON: 'client-data', signature: 'signature', userHandle: null },
+    }).success).toBe(true)
+  })
+
+  it('requires S256-shaped PKCE challenges for mobile passkey authorization', () => {
+    const valid = { state: 's'.repeat(32), codeChallenge: 'A'.repeat(43) }
+    expect(mobileBrowserPasskeyOptionsInputSchema.safeParse(valid).success).toBe(true)
+    expect(mobileBrowserPasskeyOptionsInputSchema.safeParse({ ...valid, codeChallenge: 'not-base64+' }).success).toBe(false)
   })
 
   it('normalizes a complete management settings document', () => {
@@ -232,9 +297,15 @@ describe('shared contracts', () => {
       account: { username: 'pulpo_user' },
       instance: {},
     })
-    expect(document.account).toMatchObject({ theme: 'system', trashRetention: '30d', favoriteModelIds: [] })
+    expect(document.account).toMatchObject({
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [],
+    })
+    expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(document.instance).toMatchObject({
-      auth: { signupEnabled: true },
+      auth: {
+        signupEnabled: true,
+        newAccountModelDefaults: { defaultModelId: null, favoriteModelIds: [] },
+      },
       interface: { localTask: 'current' },
       ocr: { enabled: false, modelId: null },
       webTools: { searchEnabled: false },
@@ -498,7 +569,7 @@ describe('response snapshot accumulation', () => {
   })
 
   it('validates queued messages and queue edit actions', async () => {
-    const { createQueuedMessageSchema, updateQueuedMessageSchema } = await import('./index.js')
+    const { createQueuedMessageSchema, reorderQueuedMessageSchema, updateQueuedMessageSchema } = await import('./index.js')
     const attachmentId = '00000000-0000-4000-8000-000000000004'
     expect(createQueuedMessageSchema.parse({
       input: '', modelId: 'model-1', attachmentIds: [attachmentId], agentMode: true,
@@ -508,6 +579,9 @@ describe('response snapshot accumulation', () => {
     })).toMatchObject({ action: 'save_edit', input: 'updated', attachmentIds: [] })
     expect(() => createQueuedMessageSchema.parse({ input: '', modelId: 'model-1' })).toThrow()
     expect(() => updateQueuedMessageSchema.parse({ action: 'save_edit', input: '', modelId: 'model-1' })).toThrow()
+    expect(reorderQueuedMessageSchema.parse({
+      targetMessageId: '00000000-0000-4000-8000-000000000002', edge: 'before',
+    })).toEqual({ targetMessageId: '00000000-0000-4000-8000-000000000002', edge: 'before' })
   })
 
   it('accepts attachment-aware message edits and rejects duplicate references', async () => {

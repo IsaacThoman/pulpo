@@ -8,6 +8,9 @@ import {
   exportJobs,
   friendships,
   twoFactorRecoveryCodes,
+  userPasskeyCredentials,
+  passkeyCeremonies,
+  mobilePasskeyAuthCodes,
   usageEvents,
   userBlocks,
   users,
@@ -27,6 +30,9 @@ describe('user-owned operational records', () => {
     ['TOTP credentials', userTotpCredentials],
     ['pending TOTP enrollments', userTotpEnrollments],
     ['two-factor recovery codes', twoFactorRecoveryCodes],
+    ['passkey credentials', userPasskeyCredentials],
+    ['passkey ceremonies', passkeyCeremonies],
+    ['mobile passkey authorization codes', mobilePasskeyAuthCodes],
   ])('deletes %s when their user is deleted', (_name, table) => {
     const userForeignKey = getTableConfig(table as PgTable).foreignKeys.find((foreignKey) =>
       foreignKey.getName().endsWith('_user_id_users_id_fk'),

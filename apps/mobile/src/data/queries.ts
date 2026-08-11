@@ -59,6 +59,7 @@ function normalizeDeletedChat(chat: ServerDeletedChat, existing?: ServerChat): S
     folderId: null,
     sortOrder: existing?.sortOrder ?? 0,
     temporary: false,
+    expiresAt: null,
     activeResponseId: existing?.activeResponseId ?? null,
     activeBranchLeafId: existing?.activeBranchLeafId ?? null,
     createdAt: existing?.createdAt ?? timestamp,

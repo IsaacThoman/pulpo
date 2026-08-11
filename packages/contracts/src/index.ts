@@ -90,6 +90,7 @@ export const mobileConfigSchema = z.object({
     attachments: z.literal(true),
     folders: z.literal(true),
     twoFactorAuth: z.boolean().optional().default(false),
+    passkeys: z.boolean().optional().default(false),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>
@@ -126,6 +127,105 @@ export const twoFactorRecoveryCodesSchema = z.object({
   recoveryCodes: z.array(z.string()).length(10),
 })
 export type TwoFactorRecoveryCodes = z.infer<typeof twoFactorRecoveryCodesSchema>
+
+export const passkeyNameSchema = z.string().trim().min(1).max(80)
+
+const passkeyClientExtensionResultsSchema = z.record(z.string(), z.unknown()).default({})
+
+export const passkeyRegistrationResponseSchema = z.looseObject({
+  id: z.string().min(1).max(2048),
+  rawId: z.string().min(1).max(2048),
+  response: z.looseObject({
+    clientDataJSON: z.string().min(1),
+    attestationObject: z.string().min(1),
+    transports: z.array(z.string().min(1).max(32)).max(16).optional(),
+  }),
+  type: z.literal('public-key'),
+  clientExtensionResults: passkeyClientExtensionResultsSchema,
+  authenticatorAttachment: z.enum(['platform', 'cross-platform']).nullable().optional(),
+})
+export type PasskeyRegistrationResponse = z.infer<typeof passkeyRegistrationResponseSchema>
+
+export const passkeyAuthenticationResponseSchema = z.looseObject({
+  id: z.string().min(1).max(2048),
+  rawId: z.string().min(1).max(2048),
+  response: z.looseObject({
+    authenticatorData: z.string().min(1),
+    clientDataJSON: z.string().min(1),
+    signature: z.string().min(1),
+    userHandle: z.string().max(2048).nullable().optional(),
+  }),
+  type: z.literal('public-key'),
+  clientExtensionResults: passkeyClientExtensionResultsSchema,
+  authenticatorAttachment: z.enum(['platform', 'cross-platform']).nullable().optional(),
+})
+export type PasskeyAuthenticationResponse = z.infer<typeof passkeyAuthenticationResponseSchema>
+
+export const passkeyCeremonySchema = z.object({
+  ceremonyToken: z.string().min(32),
+  options: z.record(z.string(), z.unknown()),
+})
+export type PasskeyCeremony = z.infer<typeof passkeyCeremonySchema>
+
+export const passkeySummarySchema = z.object({
+  id: idSchema,
+  name: passkeyNameSchema,
+  createdAt: isoDateSchema,
+  lastUsedAt: isoDateSchema.nullable(),
+})
+export type PasskeySummary = z.infer<typeof passkeySummarySchema>
+
+export const passkeyListSchema = z.object({
+  passkeys: z.array(passkeySummarySchema).max(10),
+  requiresSecondFactor: z.boolean(),
+})
+export type PasskeyList = z.infer<typeof passkeyListSchema>
+
+export const passkeySensitiveChangeSchema = z.object({
+  currentPassword: z.string().min(1).max(1024),
+  verificationCode: z.string().trim().min(6).max(32).optional(),
+})
+
+export const beginPasskeyRegistrationInputSchema = passkeySensitiveChangeSchema.extend({
+  name: passkeyNameSchema,
+})
+
+export const verifyPasskeyRegistrationInputSchema = z.object({
+  ceremonyToken: z.string().min(32),
+  response: passkeyRegistrationResponseSchema,
+})
+
+export const verifyPasskeyAuthenticationInputSchema = z.object({
+  ceremonyToken: z.string().min(32),
+  response: passkeyAuthenticationResponseSchema,
+})
+
+export const renamePasskeyInputSchema = z.object({ name: passkeyNameSchema })
+
+export const beginBrowserPasskeyRegistrationInputSchema = beginPasskeyRegistrationInputSchema.extend({
+  state: z.string().min(32).max(256),
+})
+
+export const browserPasskeyRegistrationTokenSchema = z.object({
+  ceremonyToken: z.string().min(32),
+})
+
+export const browserPasskeyRegistrationVerifySchema = browserPasskeyRegistrationTokenSchema.extend({
+  response: passkeyRegistrationResponseSchema,
+})
+
+export const mobileBrowserPasskeyOptionsInputSchema = z.object({
+  state: z.string().min(32).max(256),
+  codeChallenge: z.string().regex(/^[A-Za-z0-9_-]{43}$/),
+})
+
+export const mobilePasskeyVerifyInputSchema = verifyPasskeyAuthenticationInputSchema.and(nativeDeviceSchema)
+
+export const mobilePasskeyCodeExchangeInputSchema = z.object({
+  code: z.string().min(32),
+  codeVerifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+  deviceLabel: nativeDeviceSchema.shape.deviceLabel,
+})
 
 export const updateProfileInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -494,6 +594,13 @@ export const modelPreferencesPatchSchema = z.object({
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
+/** Instance defaults copied into each account when it is created. */
+export const newAccountModelDefaultsSchema = z.object({
+  defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
+  favoriteModelIds: orderedPreferenceIdsSchema.default([]),
+})
+export type NewAccountModelDefaults = z.infer<typeof newAccountModelDefaultsSchema>
+
 export const createProviderSchema = z.object({
   name: z.string().trim().min(1).max(120),
   baseUrl: z.url().default('https://api.openai.com/v1'),
@@ -760,6 +867,7 @@ export const authSettingsSchema = z.object({
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
   defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
   apiKeysEnabled: z.boolean().default(true),
+  newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
 
 export const DEFAULT_TITLE_PROMPT = `### Task:
@@ -816,6 +924,10 @@ export const instanceOcrSettingsSchema = z.object({
 const accountPreferenceIdsSchema = z.array(z.string().trim().min(1).max(200)).max(500)
   .transform((ids) => [...new Set(ids)])
 
+export const automaticChatExpirationSchema = z.enum(['disabled', '24h', '7d'])
+export type AutomaticChatExpiration = z.infer<typeof automaticChatExpirationSchema>
+export const newChatAutoExpireSchema = z.boolean().default(false)
+
 export const managementAccountSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   language: z.string().min(1).max(32).default('en-US'),
@@ -831,6 +943,8 @@ export const managementAccountSettingsSchema = z.object({
   localChatLimit: z.number().int().min(0).max(500).default(50),
   localAttachmentCacheMb: z.number().int().min(0).max(2_048).default(50),
   trashRetention: z.enum(['instant', '24h', '7d', '30d', '90d', 'indefinite']).default('30d'),
+  automaticChatExpiration: automaticChatExpirationSchema.default('24h'),
+  newChatAutoExpire: newChatAutoExpireSchema,
   defaultModelId: z.string().max(120).nullable().default(null),
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   favoriteModelIds: accountPreferenceIdsSchema.default([]),
@@ -967,7 +1081,18 @@ export const createChatSchema = z.object({
   modelId: z.string().min(1),
   title: z.string().trim().min(1).max(200).optional(),
   temporary: z.boolean().default(false),
+  autoExpire: z.boolean().default(false),
 })
+
+export const updateChatSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  pinned: z.boolean().optional(),
+  folderId: idSchema.nullable().optional(),
+  modelId: z.string().min(1).optional(),
+  sortOrder: z.number().int().optional(),
+  autoExpire: z.boolean().optional(),
+})
+export type UpdateChatInput = z.infer<typeof updateChatSchema>
 
 const attachmentIdListSchema = z.array(idSchema).refine(
   (ids) => new Set(ids).size === ids.length,
@@ -1055,6 +1180,12 @@ export const updateQueuedMessageSchema = z.discriminatedUnion('action', [
   }),
 ])
 export type UpdateQueuedMessageInput = z.infer<typeof updateQueuedMessageSchema>
+
+export const reorderQueuedMessageSchema = z.object({
+  targetMessageId: idSchema,
+  edge: z.enum(['before', 'after']),
+})
+export type ReorderQueuedMessageInput = z.infer<typeof reorderQueuedMessageSchema>
 
 export const startChatSchema = z.object({
   chat: createChatSchema.extend({ clientId: idSchema }),

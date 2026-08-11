@@ -1,4 +1,4 @@
-import { and, eq, gt, or, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { chats } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 
@@ -17,13 +17,13 @@ export function temporaryChatIsExpired(
 
 export function accessibleChatCondition(now = new Date()) {
   return or(
-    eq(chats.temporary, false),
-    and(eq(chats.temporary, true), gt(chats.expiresAt, now)),
+    gt(chats.expiresAt, now),
+    and(eq(chats.temporary, false), isNull(chats.expiresAt)),
   )
 }
 
 export function temporaryChatExpiryValue(expiresAt: Date | null) {
-  return sql<Date | null>`case when ${chats.temporary} then cast(${sql.param(expiresAt, chats.expiresAt)} as timestamp with time zone) else null end`
+  return sql<Date | null>`case when ${chats.temporary} then cast(${sql.param(expiresAt, chats.expiresAt)} as timestamp with time zone) else ${chats.expiresAt} end`
 }
 
 export async function scheduleTemporaryChatExpiry(input: {

@@ -139,7 +139,10 @@ async function validateProviderAccess(fetchImplementation: typeof globalThis.fet
       signal: AbortSignal.timeout(10_000),
     })
   } catch (error) {
-    throw new Error(`Pulpo Baby model validation failed: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(
+      `Pulpo Baby model validation failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
   }
   if (!response.ok) throw new Error(`Pulpo Baby model validation returned ${response.status}`)
   const body = providerModelsSchema.parse(await response.json())

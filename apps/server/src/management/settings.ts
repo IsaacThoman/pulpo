@@ -30,6 +30,7 @@ import {
   parseWebToolsSettings,
 } from '../settings/application-settings.js'
 import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
+import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 import { getConfig } from '../config.js'
 
 export type ManagementSettingsMode = 'all' | 'account' | 'instance'
@@ -116,14 +117,17 @@ function changesBetween(before: unknown, after: unknown, path = ''): ManagementS
 async function validateModelReferences(document: ManagementSettingsDocument, mode: ManagementSettingsMode): Promise<void> {
   const referenced = [
     ...(mode === 'instance' ? [] : [document.account.defaultModelId, ...document.account.favoriteModelIds]),
-    ...(mode === 'account' ? [] : [document.instance.interface.localTask, document.instance.ocr.modelId]),
+    ...(mode === 'account' ? [] : [
+      ...newAccountModelReferenceIds(document.instance.auth),
+      document.instance.interface.localTask,
+      document.instance.ocr.modelId,
+    ]),
   ]
     .filter((id): id is string => Boolean(id && id !== 'current'))
   if (!referenced.length) return
   const rows = await db.select({ id: models.id }).from(models)
     .where(and(eq(models.enabled, true), eq(models.visible, true)))
-  const available = new Set(rows.map((row) => row.id))
-  const missing = referenced.find((id) => !available.has(id))
+  const missing = firstUnavailableModelReference(referenced, rows.map((row) => row.id))
   if (missing) throw new AppError(400, 'model_unavailable', `Configured model ${missing} is unavailable`)
 }
 

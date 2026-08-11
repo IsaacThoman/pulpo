@@ -17,7 +17,7 @@ import {
 } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
-import { interfaceSettingsSchema, parseOcrSettings } from '../settings/application-settings.js'
+import { authSettingsSchema, interfaceSettingsSchema, parseAuthSettings, parseOcrSettings } from '../settings/application-settings.js'
 import { UNKNOWN_MODEL_ID } from './defaults.js'
 
 function objectValue(value: unknown): Record<string, unknown> {
@@ -115,9 +115,17 @@ export async function deleteCatalogModel(modelId: string, actorUserId: string): 
       }
     }
 
-    const settings = await tx.select().from(applicationSettings).where(inArray(applicationSettings.key, ['interface', 'ocr']))
+    const settings = await tx.select().from(applicationSettings).where(inArray(applicationSettings.key, ['auth', 'interface', 'ocr']))
     for (const setting of settings) {
-      if (setting.key === 'interface') {
+      if (setting.key === 'auth') {
+        const value = parseAuthSettings(setting.value)
+        const replacement = removeDeletedModelPreferences(value.newAccountModelDefaults, modelId)
+        if (replacement.changed) {
+          const next = authSettingsSchema.parse({ ...value, newAccountModelDefaults: replacement.value })
+          await tx.update(applicationSettings).set({ value: next, updatedBy: actorUserId, updatedAt: new Date() })
+            .where(eq(applicationSettings.key, setting.key))
+        }
+      } else if (setting.key === 'interface') {
         const parsed = interfaceSettingsSchema.safeParse(setting.value)
         const value = parsed.success ? parsed.data : interfaceSettingsSchema.parse({})
         if (value.localTask === modelId) {

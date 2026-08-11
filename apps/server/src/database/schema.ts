@@ -85,6 +85,24 @@ export const passwordCredentials = pgTable('password_credentials', {
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
+export const userPasskeyCredentials = pgTable('user_passkey_credentials', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  credentialId: text('credential_id').notNull(),
+  credentialPublicKey: text('credential_public_key').notNull(),
+  counter: bigint('counter', { mode: 'number' }).notNull().default(0),
+  transports: jsonb('transports').notNull().default([]),
+  deviceType: text('device_type').notNull(),
+  backedUp: boolean('backed_up').notNull().default(false),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('user_passkey_credentials_credential_unique').on(table.credentialId),
+  uniqueIndex('user_passkey_credentials_name_unique').on(table.userId, sql`lower(${table.name})`),
+  index('user_passkey_credentials_user_idx').on(table.userId),
+])
+
 export const userTotpCredentials = pgTable('user_totp_credentials', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   encryptedSecret: text('encrypted_secret').notNull(),
@@ -122,6 +140,34 @@ export const sessions = pgTable('sessions', {
   ipAddress: text('ip_address'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('sessions_token_hash_unique').on(table.tokenHash), index('sessions_user_idx').on(table.userId)])
+
+export const passkeyCeremonies = pgTable('passkey_ceremonies', {
+  tokenHash: text('token_hash').primaryKey(),
+  challenge: text('challenge').notNull(),
+  flow: text('flow').notNull(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  initiatingSessionId: uuid('initiating_session_id').references(() => sessions.id, { onDelete: 'cascade' }),
+  name: text('name'),
+  expectedOrigin: text('expected_origin').notNull(),
+  rpId: text('rp_id').notNull(),
+  pkceChallenge: text('pkce_challenge'),
+  state: text('state'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('passkey_ceremonies_user_idx').on(table.userId),
+  index('passkey_ceremonies_expiry_idx').on(table.expiresAt),
+])
+
+export const mobilePasskeyAuthCodes = pgTable('mobile_passkey_auth_codes', {
+  tokenHash: text('token_hash').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  pkceChallenge: text('pkce_challenge').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  consumedAt: timestamp('consumed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index('mobile_passkey_auth_codes_expiry_idx').on(table.expiresAt)])
 
 export const passwordResetTokens = pgTable('password_reset_tokens', {
   id: uuid('id').primaryKey(),
@@ -304,8 +350,8 @@ export const chats = pgTable('chats', {
   ...timestamps,
 }, (table) => [
   index('chats_user_updated_idx').on(table.userId, table.updatedAt),
-  index('chats_temporary_expiry_idx').on(table.expiresAt)
-    .where(sql`${table.temporary} = true and ${table.purgeStartedAt} is null`),
+  index('chats_expiry_idx').on(table.expiresAt)
+    .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
 ])
 
 export const responses = pgTable('responses', {

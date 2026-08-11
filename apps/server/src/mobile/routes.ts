@@ -2,8 +2,12 @@ import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   mobileConfigSchema,
+  mobileBrowserPasskeyOptionsInputSchema,
   nativeLoginInputSchema,
   nativeSignupInputSchema,
+  mobilePasskeyCodeExchangeInputSchema,
+  mobilePasskeyVerifyInputSchema,
+  verifyPasskeyAuthenticationInputSchema,
 } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, passwordCredentials, users } from '../database/schema.js'
@@ -11,6 +15,7 @@ import { getConfig } from '../config.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
   bearerSessionToken,
   createNativeSession,
@@ -20,6 +25,12 @@ import {
   verifyPassword,
 } from '../auth/service.js'
 import { requireLoginSecondFactor } from '../auth/two-factor.js'
+import {
+  beginPasskeyAuthentication,
+  exchangeMobilePasskeyAuthCode,
+  finishPasskeyAuthentication,
+  issueMobilePasskeyAuthCode,
+} from '../auth/passkeys.js'
 
 export async function registerMobileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/mobile/config', async () => {
@@ -49,6 +60,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         attachments: true,
         folders: true,
         twoFactorAuth: true,
+        passkeys: true,
       },
     })
   })
@@ -67,6 +79,61 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
     await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
     const session = await createNativeSession(row.user.id, input.deviceLabel, request)
     return { user: serializeUser(row.user), session }
+  })
+
+  app.post('/api/mobile/auth/passkey/options', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (_request, reply) => {
+    reply.header('cache-control', 'no-store')
+    return beginPasskeyAuthentication({ flow: 'native-authentication' })
+  })
+
+  app.post('/api/mobile/auth/passkey/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request) => {
+    const input = mobilePasskeyVerifyInputSchema.parse(request.body)
+    const { user } = await finishPasskeyAuthentication({
+      ceremonyToken: input.ceremonyToken,
+      response: input.response,
+      flows: ['native-authentication'],
+    })
+    const session = await createNativeSession(user.id, input.deviceLabel, request)
+    return { user: serializeUser(user), session }
+  })
+
+  app.post('/api/mobile/auth/passkey/browser/options', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const input = mobileBrowserPasskeyOptionsInputSchema.parse(request.body)
+    reply.header('cache-control', 'no-store')
+    return beginPasskeyAuthentication({
+      flow: 'browser-authentication',
+      pkceChallenge: input.codeChallenge,
+      state: input.state,
+    })
+  })
+
+  app.post('/api/mobile/auth/passkey/browser/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const input = verifyPasskeyAuthenticationInputSchema.parse(request.body)
+    const { user, ceremony } = await finishPasskeyAuthentication({
+      ceremonyToken: input.ceremonyToken,
+      response: input.response,
+      flows: ['browser-authentication'],
+    })
+    const { redirectUrl } = await issueMobilePasskeyAuthCode(user.id, ceremony)
+    reply.header('cache-control', 'no-store')
+    return { redirectUrl }
+  })
+
+  app.post('/api/mobile/auth/passkey/browser/exchange', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request) => {
+    const input = mobilePasskeyCodeExchangeInputSchema.parse(request.body)
+    const user = await exchangeMobilePasskeyAuthCode(input.code, input.codeVerifier)
+    const session = await createNativeSession(user.id, input.deviceLabel, request)
+    return { user: serializeUser(user), session }
   })
 
   app.post('/api/mobile/auth/signup', async (request, reply) => {
@@ -99,6 +166,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         userId,
         passwordHash: await createPasswordHash(input.password),
       })
+      await insertNewAccountPreferences(tx, userId, auth)
     })
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
     const session = await createNativeSession(userId, input.deviceLabel, request)

@@ -1,6 +1,7 @@
 export type ThemePreference = 'system' | 'light' | 'dark'
 export type TextSizePreference = 'default' | 'large' | 'extra-large'
 export type TrashRetentionPreference = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
+export type AutomaticChatExpirationPreference = 'disabled' | '24h' | '7d'
 
 export interface Preferences {
   theme: ThemePreference
@@ -12,6 +13,8 @@ export interface Preferences {
   attachmentCacheMb: number
   localChatLimit: number
   trashRetention: TrashRetentionPreference
+  automaticChatExpiration: AutomaticChatExpirationPreference
+  newChatAutoExpire: boolean
   favoriteModelIds: string[]
   providerOrder: string[]
   defaultModelId: string | null
@@ -23,11 +26,12 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
+  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
   generation: {},
 }
 
 const trashRetentionValues: TrashRetentionPreference[] = ['instant', '24h', '7d', '30d', '90d', 'indefinite']
+const automaticChatExpirationValues: AutomaticChatExpirationPreference[] = ['disabled', '24h', '7d']
 
 export function preferencesFromServer(values: Record<string, unknown>): Partial<Preferences> {
   const result: Partial<Preferences> = {
@@ -49,6 +53,10 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   if (typeof values.trashRetention === 'string' && trashRetentionValues.includes(values.trashRetention as TrashRetentionPreference)) {
     result.trashRetention = values.trashRetention as TrashRetentionPreference
   }
+  if (typeof values.automaticChatExpiration === 'string' && automaticChatExpirationValues.includes(values.automaticChatExpiration as AutomaticChatExpirationPreference)) {
+    result.automaticChatExpiration = values.automaticChatExpiration as AutomaticChatExpirationPreference
+  }
+  if (typeof values.newChatAutoExpire === 'boolean') result.newChatAutoExpire = values.newChatAutoExpire
   return result
 }
 
@@ -70,7 +78,7 @@ function validGenerationPreferences(value: unknown): Preferences['generation'] {
 
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation'].includes(key)
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation'].includes(key)
       ? key
       : null
   return serverKey ? { [serverKey]: value } : null

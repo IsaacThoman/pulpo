@@ -77,6 +77,31 @@ describe('temporary chat promotion', () => {
   })
 })
 
+describe('automatic chat expiration', () => {
+  it('includes the per-chat selection when starting a normal chat', async () => {
+    const snapshot = {
+      responseId: 'response-1', status: 'queued', sequence: 0, output: [], usage: null, error: null,
+      updatedAt: '2026-08-10T00:00:00.000Z',
+    }
+    mocks.apiRequest.mockResolvedValueOnce({
+      chat: { id: 'chat-1', temporary: false, expiresAt: '2026-08-11T00:00:00.000Z' },
+      response: snapshot,
+    })
+
+    await startChat({
+      chatId: 'chat-1', responseId: 'response-1', content: 'expiring', modelId: 'model-1',
+      title: 'Expiring', temporary: false, autoExpire: true,
+    })
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/chats/start', expect.objectContaining({
+      method: 'POST',
+      body: expect.objectContaining({
+        chat: expect.objectContaining({ temporary: false, autoExpire: true }),
+      }),
+    }))
+  })
+})
+
 describe('message edits', () => {
   it('sends attachment and Agent settings for a user branch edit', async () => {
     const snapshot = {

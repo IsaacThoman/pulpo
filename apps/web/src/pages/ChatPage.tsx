@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Ghost, Loader2, Save, SquarePen } from 'lucide-react'
+import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelSelector } from '@/components/chat/ModelSelector'
 import { Composer, type ComposerMessageEdit } from '@/components/chat/Composer'
+import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { MessageItem } from '@/components/chat/MessageItem'
 import { ModelIcon } from '@/components/ModelIcon'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -76,7 +77,10 @@ function Placeholder({
             <button
               key={`${s.id}-${i}`}
               onClick={() => onPick(s.message)}
-              className="cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent"
+              className={cn(
+                'cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent',
+                showTemporaryLabel && 'border-dashed !border-violet-500/50 bg-violet-100/80 hover:bg-violet-200/80 dark:!border-violet-600/30 dark:bg-violet-950/30 dark:hover:bg-violet-900/40',
+              )}
             >
               {s.label}
             </button>
@@ -97,6 +101,8 @@ export function ChatPage() {
   const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
+  const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
+  const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const [temporary, setTemporary] = useState(false)
@@ -204,15 +210,16 @@ export function ChatPage() {
   }
 
   const isEmpty = !chat
+  const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
   const suggestions = useMemo(
     () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : []),
     // Re-roll when opening a new empty chat
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
     [chatId, isEmpty, promptConfig],
   )
 
   const sendSuggestion = (s: string) => {
-    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary)
+    const id = useChat.getState().sendMessage(null, s, modelId, [], temporary, effectiveNewChatAutoExpire)
     if (!temporary) navigate(`/c/${id}`)
   }
 
@@ -255,6 +262,18 @@ export function ChatPage() {
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
   const showTemporaryControl = !routeChatId && (!chat || chat.temporary)
+  const expirationEnabled = chat ? chat.expiresAt !== null : effectiveNewChatAutoExpire
+  const showExpirationControl = !temporaryMode && (chat
+    ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
+    : !routeChatId && automaticChatExpiration !== 'disabled')
+  const expirationPeriodLabel = automaticChatExpiration === 'disabled' ? null : automaticChatExpiration
+  const toggleExpiration = () => {
+    if (chat) {
+      useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
+      return
+    }
+    useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
+  }
   const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
 
   if (legacyTemporaryRoute) {
@@ -270,6 +289,29 @@ export function ChatPage() {
       <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />
         <div className="flex-1" />
+        {showExpirationControl && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+                aria-label={expirationEnabled
+                  ? 'Disable chat expiry'
+                  : expirationPeriodLabel ? `Expire chat in ${expirationPeriodLabel}` : 'Enable chat expiry'}
+                aria-pressed={expirationEnabled}
+                onClick={toggleExpiration}
+              >
+                <Hourglass className={cn('size-4', expirationEnabled && 'text-teal-500 dark:text-teal-400')} />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {expirationEnabled
+                ? chat?.expiresAt
+                  ? <>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></>
+                  : expirationPeriodLabel ? `Disable ${expirationPeriodLabel} expiry` : 'Disable chat expiry'
+                : expirationPeriodLabel ? `Expire chat in ${expirationPeriodLabel}` : 'Enable chat expiry'}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {showTemporaryControl && (chat?.temporary ? (
           <div className="flex items-center gap-1">
             <Tooltip>
@@ -354,7 +396,7 @@ export function ChatPage() {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} />
+            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (

@@ -30,7 +30,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ModelIcon } from '@/components/ModelIcon'
-import { useSettings, type Theme, type TrashRetention } from '@/stores/settings'
+import { useSettings, type AutomaticChatExpiration, type Theme, type TrashRetention } from '@/stores/settings'
 import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
@@ -41,6 +41,7 @@ import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
 import { PasswordSettings } from './PasswordSettings'
+import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
 import { UsernameSettings } from './UsernameSettings'
 
@@ -518,7 +519,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                         <span className="font-medium">{user?.name}</span>
                         {user?.username && <span className="text-sm text-muted-foreground">@{user.username}</span>}
                       </div>
-                      <div className="text-sm text-muted-foreground">{user?.email} · {user?.role}</div>
+                      <div className="text-sm text-muted-foreground">{user?.email}</div>
                     </div>
                     <div className="flex-1" />
                     <div className="flex flex-wrap gap-2">
@@ -544,6 +545,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? 'Saving…' : 'Save profile'}</Button>
                   </div>
                   <PasswordSettings />
+                  <PasskeySettings />
                   <TwoFactorSettings />
                   <Separator className="my-3" />
                   <Row label="Sign out" hint="End this session on this device.">
@@ -666,6 +668,19 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Data controls</h2>
                   <Separator className="my-3" />
+                  <Row label="Automatic chat expiration" hint="Move chats to Trash automatically unless saved within the selected period.">
+                    <Select
+                      value={s.automaticChatExpiration}
+                      onValueChange={(value) => s.set('automaticChatExpiration', value as AutomaticChatExpiration)}
+                    >
+                      <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="disabled">Disabled</SelectItem>
+                        <SelectItem value="24h">24 hours</SelectItem>
+                        <SelectItem value="7d">7 days</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </Row>
                   <div className="py-3">
                     <div className="flex items-center justify-between text-sm">
                       <span className="font-medium">File storage</span>

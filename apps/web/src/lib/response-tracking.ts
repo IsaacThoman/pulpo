@@ -14,12 +14,15 @@ export function mergeSummaryResponseTracking(
   streamingIds: string[],
   responseChatIds: Record<string, string>,
 ): { streamingIds: string[]; responseChatIds: Record<string, string> } {
-  let nextStreamingIds = streamingIds
+  const nextStreamingIds = [...streamingIds]
+  const trackedResponseIds = new Set(streamingIds)
   const nextResponseChatIds = { ...responseChatIds }
   for (const summary of summaries) {
     for (const responseId of summary.inFlightResponseIds ?? []) {
       nextResponseChatIds[responseId] = summary.id
-      if (!nextStreamingIds.includes(responseId)) nextStreamingIds = [...nextStreamingIds, responseId]
+      if (trackedResponseIds.has(responseId)) continue
+      trackedResponseIds.add(responseId)
+      nextStreamingIds.push(responseId)
     }
   }
   return { streamingIds: nextStreamingIds, responseChatIds: nextResponseChatIds }

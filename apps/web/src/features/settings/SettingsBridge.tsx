@@ -15,6 +15,8 @@ const persistedKeys = [
   'localChatLimit',
   'localAttachmentCacheMb',
   'trashRetention',
+  'automaticChatExpiration',
+  'newChatAutoExpire',
   'defaultModelId',
 ] as const
 

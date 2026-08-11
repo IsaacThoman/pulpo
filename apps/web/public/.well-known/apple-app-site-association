@@ -8,5 +8,8 @@
         ]
       }
     ]
+  },
+  "webcredentials": {
+    "apps": ["PX72AL9366.com.isaacthoman.pulpo"]
   }
 }

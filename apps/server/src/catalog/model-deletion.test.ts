@@ -33,4 +33,17 @@ describe('deleted model replacement', () => {
     const value = { theme: 'light', favoriteModelIds: ['other-model'] }
     expect(removeDeletedModelPreferences(value, 'deleted-model')).toEqual({ changed: false, value })
   })
+
+  it('cleans the same references from nested new-account defaults', () => {
+    expect(removeDeletedModelPreferences({
+      defaultModelId: 'deleted-model',
+      favoriteModelIds: ['first-model', 'deleted-model', 'last-model'],
+    }, 'deleted-model')).toEqual({
+      changed: true,
+      value: {
+        defaultModelId: null,
+        favoriteModelIds: ['first-model', 'last-model'],
+      },
+    })
+  })
 })

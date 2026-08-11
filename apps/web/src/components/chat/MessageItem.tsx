@@ -487,12 +487,14 @@ function ActivityBlock({
   )
 }
 
+const ignoreUserMessageEdit = () => undefined
+
 export const MessageItem = memo(function MessageItem({
   chat,
   message,
   streaming,
   activeModelId,
-  onEditUserMessage = () => undefined,
+  onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
   editDisabled = false,
 }: {

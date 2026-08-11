@@ -21,7 +21,7 @@
     "mobile:typecheck": "npm run typecheck -w @pulpo/mobile",
     "mobile:export": "npm run export -w @pulpo/mobile",
     "test": "npm run build -w @pulpo/contracts && npm run build -w @pulpo/client-core && npm run build -w @isaacthoman/pulpo && npm run test -w @pulpo/contracts && npm run test -w @pulpo/client-core && npm run test -w @isaacthoman/pulpo && npm run test -w @pulpo/web && npm run test -w @pulpo/workspace-controller && npm run test -w @pulpo/server && npm run test -w @pulpo/mobile",
-    "lint": "oxlint",
+    "lint": "oxlint --report-unused-disable-directives --deny-warnings",
     "release": "semantic-release",
     "release:dry-run": "semantic-release --dry-run --no-ci",
     "workspace-image:build": "docker build --file infra/workspace-image/Dockerfile --tag pulpo-agent-workspace:test .",

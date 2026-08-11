@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, startChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
@@ -21,7 +21,17 @@ import {
   temporaryChatExpiresAt,
   temporaryChatIsExpired,
 } from './temporary.js'
-import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, updateQueuedMessage } from './message-queue.js'
+import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, reorderQueuedMessage, updateQueuedMessage } from './message-queue.js'
+import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
+
+async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
+  if (!enabled) return null
+  const expiresAt = automaticChatExpiresAt(await getAutomaticChatExpiration(userId), now)
+  if (!expiresAt) {
+    throw new AppError(400, 'automatic_chat_expiration_disabled', 'Choose an automatic chat expiration period in Data controls')
+  }
+  return expiresAt
+}
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   const bumpRevision = async (userId: string, chatId?: string) => {
@@ -37,7 +47,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const rows = await db
       .select()
       .from(chats)
-      .where(and(eq(chats.userId, user.id), isNull(chats.deletedAt), eq(chats.temporary, false)))
+      .where(and(
+        eq(chats.userId, user.id), isNull(chats.deletedAt), eq(chats.temporary, false), accessibleChatCondition(),
+      ))
       .orderBy(desc(chats.updatedAt))
     const inFlight = rows.length
       ? await db.select({ id: responses.id, chatId: responses.chatId })
@@ -92,6 +104,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       select distinct c.* from chats c
       left join responses r on r.chat_id = c.id
       where c.user_id = ${user.id} and c.deleted_at is null and c.temporary = false
+        and (c.expires_at is null or c.expires_at > now())
         and to_tsvector('simple', coalesce(c.title, '') || ' ' || coalesce(r.input::text, '') || ' ' || coalesce(r.output::text, ''))
           @@ plainto_tsquery('simple', ${query})
       order by c.updated_at desc limit 50
@@ -211,6 +224,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const retention = await getTrashRetention(user.id)
     await db.update(chats).set({
       deletedAt: now,
+      expiresAt: null,
       purgeStartedAt: retention === 'instant' ? now : null,
       updatedAt: now,
     }).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
@@ -246,7 +260,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [model] = await db.select({ id: models.id }).from(models).where(and(eq(models.id, input.modelId), eq(models.enabled, true))).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
     const id = input.clientId ?? newId()
-    const expiresAt = input.temporary ? temporaryChatExpiresAt() : null
+    const createdAt = new Date()
+    const expiresAt = input.temporary
+      ? temporaryChatExpiresAt(createdAt)
+      : await requestedNormalChatExpiry(user.id, input.autoExpire, createdAt)
     const [created] = await db.insert(chats).values({
       id,
       userId: user.id,
@@ -254,6 +271,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       title: input.title ?? 'New chat',
       temporary: input.temporary,
       expiresAt,
+      createdAt,
+      updatedAt: createdAt,
     }).onConflictDoNothing().returning()
     if (!created) {
       const [existing] = await db.select().from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id))).limit(1)
@@ -262,6 +281,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     if (created.temporary && created.expiresAt) {
       await scheduleTemporaryChatExpiry({ chatId: created.id, userId: user.id, expiresAt: created.expiresAt })
+    }
+    if (!created.temporary && created.expiresAt) {
+      await scheduleNormalChatExpiry({ chatId: created.id, userId: user.id, expiresAt: created.expiresAt })
     }
     if (!created.temporary) await bumpRevision(user.id, id)
     reply.code(201)
@@ -278,7 +300,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(models.id, input.chat.modelId), eq(models.enabled, true),
     )).limit(1)
     if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable')
-    const expiresAt = input.chat.temporary ? temporaryChatExpiresAt() : null
+    const createdAt = new Date()
+    const expiresAt = input.chat.temporary
+      ? temporaryChatExpiresAt(createdAt)
+      : await requestedNormalChatExpiry(user.id, input.chat.autoExpire, createdAt)
     const [inserted] = await db.insert(chats).values({
       id: input.chat.clientId,
       userId: user.id,
@@ -286,6 +311,8 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       title: input.chat.title ?? 'New chat',
       temporary: input.chat.temporary,
       expiresAt,
+      createdAt,
+      updatedAt: createdAt,
     }).onConflictDoNothing().returning()
     let chat = inserted
     if (!chat) {
@@ -304,6 +331,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       })
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
+      if (inserted && !chat.temporary && chat.expiresAt) {
+        await scheduleNormalChatExpiry({ chatId: chat.id, userId: user.id, expiresAt: chat.expiresAt })
+      }
       const [updatedChat] = await db.select().from(chats).where(eq(chats.id, chat.id)).limit(1)
       reply.code(202)
       return { chat: updatedChat ?? chat, response: toSnapshot(response) }
@@ -334,6 +364,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     if (temporaryChatIsExpired(current, now)) {
       throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
     }
+    if (normalChatIsExpired(current, now)) throw notFound('Chat')
     if (current.deletedAt || current.purgeStartedAt) throw notFound('Chat')
     if (!current.temporary) return current
 
@@ -372,6 +403,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(chats.userId, user.id),
       isNull(chats.deletedAt),
       eq(chats.temporary, false),
+      accessibleChatCondition(),
     )).limit(1)
     if (!source) throw notFound('Chat')
     const sourceResponses = await db.select().from(responses).where(and(
@@ -434,6 +466,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       eq(chats.userId, user.id),
       isNull(chats.deletedAt),
       eq(chats.temporary, false),
+      accessibleChatCondition(),
       inArray(chats.id, chatIds),
     ))
     if (existing.length !== chatIds.length) throw notFound('Chat')
@@ -500,22 +533,27 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/chats/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const patch = request.body as {
-      title?: string
-      pinned?: boolean
-      folderId?: string | null
-      modelId?: string
-      sortOrder?: number
-    }
+    const patch = updateChatSchema.parse(request.body)
+    const now = new Date()
+    const expiresAt = patch.autoExpire === undefined
+      ? undefined
+      : await requestedNormalChatExpiry(user.id, patch.autoExpire, now)
     const [updated] = await db.update(chats).set({
       title: patch.title?.trim(),
       pinned: patch.pinned,
       folderId: patch.folderId,
       modelId: patch.modelId,
       sortOrder: typeof patch.sortOrder === 'number' ? patch.sortOrder : undefined,
-      updatedAt: new Date(),
-    }).where(and(eq(chats.id, id), eq(chats.userId, user.id), eq(chats.temporary, false))).returning()
+      expiresAt,
+      updatedAt: now,
+    }).where(and(
+      eq(chats.id, id), eq(chats.userId, user.id), eq(chats.temporary, false),
+      isNull(chats.deletedAt), isNull(chats.purgeStartedAt), accessibleChatCondition(now),
+    )).returning()
     if (!updated) throw notFound('Chat')
+    if (patch.autoExpire && updated.expiresAt) {
+      await scheduleNormalChatExpiry({ chatId: updated.id, userId: user.id, expiresAt: updated.expiresAt })
+    }
     await bumpRevision(user.id, id)
     return updated
   })
@@ -527,6 +565,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const retention = await getTrashRetention(user.id)
     const result = await db.update(chats).set({
       deletedAt: now,
+      expiresAt: null,
       purgeStartedAt: retention === 'instant' ? now : null,
       updatedAt: now,
     }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
@@ -545,7 +584,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/chats/:id/recover', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [recovered] = await db.update(chats).set({ deletedAt: null, updatedAt: new Date() }).where(and(
+    const [recovered] = await db.update(chats).set({ deletedAt: null, expiresAt: null, updatedAt: new Date() }).where(and(
       eq(chats.id, id),
       eq(chats.userId, user.id),
       eq(chats.temporary, false),
@@ -609,6 +648,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id, messageId } = request.params as { id: string; messageId: string }
     const input = updateQueuedMessageSchema.parse(request.body)
     return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input) }
+  })
+
+  app.patch('/api/chats/:id/queued-messages/:messageId/reorder', async (request) => {
+    const user = requireUser(request)
+    const { id, messageId } = request.params as { id: string; messageId: string }
+    const input = reorderQueuedMessageSchema.parse(request.body)
+    return { queuedMessages: await reorderQueuedMessage(user.id, id, messageId, input) }
   })
 
   app.delete('/api/chats/:id/queued-messages/:messageId', async (request, reply) => {

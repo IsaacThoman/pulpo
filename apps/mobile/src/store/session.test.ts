@@ -7,6 +7,12 @@ const mocks = vi.hoisted(() => ({
   config: vi.fn(),
   me: vi.fn(),
   login: vi.fn(),
+  passkeyOptions: vi.fn(),
+  verifyPasskey: vi.fn(),
+  exchangeBrowserPasskey: vi.fn(),
+  canUseNativePasskeys: vi.fn(() => false),
+  nativeAuthenticate: vi.fn(),
+  runSafariPasskeyAuthentication: vi.fn(),
   configureApi: vi.fn(),
   deleteToken: vi.fn(async () => undefined),
 }))
@@ -28,6 +34,13 @@ vi.mock('../data/database', () => ({
     mocks.values.set(`${namespace}:${key}`, value)
   }),
 }))
+vi.mock('../auth/passkeys', () => ({
+  canUseNativePasskeys: mocks.canUseNativePasskeys,
+  NativePasskeyError: class NativePasskeyError extends Error {},
+  PasskeyCancelledError: class PasskeyCancelledError extends Error {},
+  nativeAuthenticate: mocks.nativeAuthenticate,
+  runSafariPasskeyAuthentication: mocks.runSafariPasskeyAuthentication,
+}))
 vi.mock('../api/client', () => {
   class ApiError extends Error {
     constructor(readonly status: number, readonly code: string, message: string) {
@@ -43,6 +56,9 @@ vi.mock('../api/client', () => {
       config: mocks.config,
       me: mocks.me,
       login: mocks.login,
+      passkeyOptions: mocks.passkeyOptions,
+      verifyPasskey: mocks.verifyPasskey,
+      exchangeBrowserPasskey: mocks.exchangeBrowserPasskey,
       signup: vi.fn(),
       logout: vi.fn(async () => undefined),
     },
@@ -87,6 +103,12 @@ beforeEach(() => {
   mocks.config.mockReset().mockResolvedValue(null)
   mocks.me.mockReset()
   mocks.login.mockReset()
+  mocks.passkeyOptions.mockReset()
+  mocks.verifyPasskey.mockReset()
+  mocks.exchangeBrowserPasskey.mockReset()
+  mocks.canUseNativePasskeys.mockReset().mockReturnValue(false)
+  mocks.nativeAuthenticate.mockReset()
+  mocks.runSafariPasskeyAuthentication.mockReset()
   mocks.configureApi.mockReset()
   mocks.deleteToken.mockClear()
   useSessionStore.setState({
@@ -185,5 +207,36 @@ describe('two-factor login', () => {
     await expect(useSessionStore.getState().login('member@example.com', 'password', '123456')).resolves.toBe('authenticated')
     expect(mocks.login).toHaveBeenCalledWith('member@example.com', 'password', 'Test iPhone', '123456')
     expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'new-session-token', user: signedIn })
+  })
+})
+
+describe('passkey login', () => {
+  const ceremony = { ceremonyToken: 'c'.repeat(43), options: { challenge: 'challenge' } }
+  const assertion = { id: 'credential' }
+
+  it('uses native ceremonies for a compiled domain and persists the bearer session', async () => {
+    const signedIn = user('55555555-5555-4555-8555-555555555555', 'Native Passkey User')
+    mocks.canUseNativePasskeys.mockReturnValue(true)
+    mocks.passkeyOptions.mockResolvedValue(ceremony)
+    mocks.nativeAuthenticate.mockResolvedValue(assertion)
+    mocks.verifyPasskey.mockResolvedValue({ user: signedIn, session: { token: 'native-passkey-token', expiresAt: '2026-09-01T00:00:00.000Z' } })
+
+    await useSessionStore.getState().loginWithPasskey()
+
+    expect(mocks.verifyPasskey).toHaveBeenCalledWith(ceremony.ceremonyToken, assertion, 'Test iPhone')
+    expect(mocks.runSafariPasskeyAuthentication).not.toHaveBeenCalled()
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'native-passkey-token', user: signedIn })
+  })
+
+  it('uses Safari PKCE for custom domains and exchanges the one-time code', async () => {
+    const signedIn = user('66666666-6666-4666-8666-666666666666', 'Safari Passkey User')
+    mocks.runSafariPasskeyAuthentication.mockResolvedValue({ code: 'authorization-code', codeVerifier: 'code-verifier' })
+    mocks.exchangeBrowserPasskey.mockResolvedValue({ user: signedIn, session: { token: 'safari-passkey-token', expiresAt: '2026-09-01T00:00:00.000Z' } })
+
+    await useSessionStore.getState().loginWithPasskey()
+
+    expect(mocks.exchangeBrowserPasskey).toHaveBeenCalledWith('authorization-code', 'code-verifier', 'Test iPhone')
+    expect(mocks.passkeyOptions).not.toHaveBeenCalled()
+    expect(useSessionStore.getState()).toMatchObject({ status: 'authenticated', token: 'safari-passkey-token', user: signedIn })
   })
 })

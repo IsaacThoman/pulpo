@@ -23,6 +23,7 @@ const AdminUsageLayout = lazy(() => import('@/pages/admin/AdminUsageLayout').the
 const AdminWorkspacesPage = lazy(() => import('@/pages/admin/AdminWorkspacesPage').then((module) => ({ default: module.AdminWorkspacesPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
+const LoginOptionsPage = lazy(() => import('@/pages/auth/LoginOptionsPage').then((module) => ({ default: module.LoginOptionsPage })))
 const SetupPage = lazy(() => import('@/pages/auth/SetupPage').then((module) => ({ default: module.SetupPage })))
 const SignupPage = lazy(() => import('@/pages/auth/SignupPage').then((module) => ({ default: module.SignupPage })))
 const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })))
@@ -31,6 +32,8 @@ const PendingPage = lazy(() => import('@/pages/auth/PendingPage').then((module) 
 const SharedChatPage = lazy(() => import('@/pages/SharedChatPage').then((module) => ({ default: module.SharedChatPage })))
 const PrivacyPage = lazy(() => import('@/pages/PrivacyPage').then((module) => ({ default: module.PrivacyPage })))
 const SupportPage = lazy(() => import('@/pages/SupportPage').then((module) => ({ default: module.SupportPage })))
+const MobilePasskeyPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyPage })))
+const MobilePasskeyEnrollmentPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyEnrollmentPage })))
 
 export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
@@ -43,6 +46,7 @@ export default function App() {
         <Route element={<AuthLayout />}>
           <Route path="setup" element={<SetupPage />} />
           <Route path="login" element={<LoginPage />} />
+          <Route path="login/options" element={<LoginOptionsPage />} />
           <Route path="signup" element={<SignupPage />} />
           <Route path="forgot-password" element={<ForgotPasswordPage />} />
           <Route path="reset-password" element={<ResetPasswordPage />} />
@@ -51,6 +55,8 @@ export default function App() {
         <Route path="share/:token" element={<SharedChatPage />} />
         <Route path="privacy" element={<PrivacyPage />} />
         <Route path="support" element={<SupportPage />} />
+        <Route path="mobile/passkey" element={<MobilePasskeyPage />} />
+        <Route path="mobile/passkey/enroll" element={<MobilePasskeyEnrollmentPage />} />
 
         <Route element={<RequireAuth />}>
           <Route element={<AppLayout />}>

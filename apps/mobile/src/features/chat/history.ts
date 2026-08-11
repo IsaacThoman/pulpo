@@ -10,6 +10,21 @@ export type HistoryChatSummary = {
   section: string
   pinned: boolean
   folderId: string | null
+  expiresAt: number | null
+}
+
+export type HistoryChatExpiryMenuAction =
+  | { kind: 'enable'; periodLabel: '24h' | '7d' }
+  | { kind: 'disable' }
+  | null
+
+export function resolveHistoryChatExpiryMenuAction(
+  expiresAt: number | null,
+  automaticChatExpiration: 'disabled' | '24h' | '7d',
+): HistoryChatExpiryMenuAction {
+  if (expiresAt !== null) return { kind: 'disable' }
+  if (automaticChatExpiration === 'disabled') return null
+  return { kind: 'enable', periodLabel: automaticChatExpiration }
 }
 
 type HistoryChatSource = {
@@ -19,6 +34,7 @@ type HistoryChatSource = {
   updatedAt: number
   pinned: boolean
   folderId: string | null
+  expiresAt?: number | null
 }
 
 function historySection(updatedAt: number, now: number): string {
@@ -40,6 +56,7 @@ export function historyChatSummary<T extends HistoryChatSource>(chat: T, now = D
     section: chat.pinned ? 'Pinned' : historySection(chat.updatedAt, now),
     pinned: chat.pinned,
     folderId: chat.folderId,
+    expiresAt: chat.expiresAt ?? null,
   }
 }
 
@@ -51,6 +68,7 @@ function historyChatSummaryEqual(left: HistoryChatSummary, right: HistoryChatSum
     && left.section === right.section
     && left.pinned === right.pinned
     && left.folderId === right.folderId
+    && left.expiresAt === right.expiresAt
 }
 
 /** Preserve row and list identity when transcript-only chat state changes. */

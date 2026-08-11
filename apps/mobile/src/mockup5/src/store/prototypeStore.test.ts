@@ -22,12 +22,40 @@ import { configureProductionActions } from '../production/productionActions';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 
 beforeEach(() => {
+  setPreference.mockClear();
   usePrototypeStore.setState({ ...createSeedState(), productionNamespace: null, agentAvailable: false });
   useRealtimeStore.getState().setSyncError(null);
-  configureProductionActions({ renameChat: async () => undefined });
+  configureProductionActions({
+    renameChat: async () => undefined,
+    setChatAutoExpiration: async () => undefined,
+    setPreference: async () => undefined,
+  });
 });
 
 describe('prototype store', () => {
+  it('optimistically persists the new-chat expiration choice', async () => {
+    const persistPreference = vi.fn(async () => undefined);
+    configureProductionActions({ setPreference: persistPreference });
+
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', true);
+
+    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(true);
+    expect(persistPreference).toHaveBeenCalledWith('newChatAutoExpire', true);
+  });
+
+  it('restores the new-chat expiration choice when persistence fails', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    configureProductionActions({ setPreference: async () => { throw new Error('Preference rejected'); } });
+
+    usePrototypeStore.getState().setPreference('newChatAutoExpire', true);
+    expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(true);
+
+    await vi.waitFor(() => expect(usePrototypeStore.getState().preferences.newChatAutoExpire).toBe(false));
+    expect(setPreference).toHaveBeenCalledWith('newChatAutoExpire', false);
+    expect(useRealtimeStore.getState().syncError).toBe('Preference rejected');
+    warning.mockRestore();
+  });
+
   it('purges every legacy non-namespaced production snapshot', async () => {
     await purgeLegacyPrototypeSnapshots();
     expect(AsyncStorage.multiRemove).toHaveBeenCalledWith([...LEGACY_PROTOTYPE_STORAGE_KEYS]);
@@ -83,6 +111,42 @@ describe('prototype store', () => {
     await vi.waitFor(() => expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.title).toBe(original));
     expect(useRealtimeStore.getState().syncError).toBe('Rename rejected');
     warning.mockRestore();
+  });
+
+  it('optimistically schedules expiration and restores the prior deadline on rejection', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let reject!: (error: Error) => void;
+    const request = new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; });
+    const setChatAutoExpiration = vi.fn(() => request);
+    configureProductionActions({ setChatAutoExpiration });
+    usePrototypeStore.setState((state) => ({
+      preferences: { ...state.preferences, automaticChatExpiration: '24h' },
+      chats: state.chats.map((chat) => chat.id === 'c-kv' ? { ...chat, expiresAt: null } : chat),
+    }));
+
+    usePrototypeStore.getState().setChatAutoExpiration('c-kv', true);
+    expect(setChatAutoExpiration).toHaveBeenCalledWith('c-kv', true);
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.expiresAt).not.toBeNull();
+
+    reject(new Error('Expiration rejected'));
+    await vi.waitFor(() => expect(
+      usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.expiresAt,
+    ).toBeNull());
+    expect(useRealtimeStore.getState().syncError).toBe('Expiration rejected');
+    warning.mockRestore();
+  });
+
+  it('optimistically disables an existing expiration', () => {
+    const setChatAutoExpiration = vi.fn(async () => undefined);
+    configureProductionActions({ setChatAutoExpiration });
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === 'c-kv' ? { ...chat, expiresAt: Date.now() + 86_400_000 } : chat),
+    }));
+
+    usePrototypeStore.getState().setChatAutoExpiration('c-kv', false);
+
+    expect(setChatAutoExpiration).toHaveBeenCalledWith('c-kv', false);
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.expiresAt).toBeNull();
   });
 
   it('does not let an older failure overwrite a newer optimistic choice', async () => {

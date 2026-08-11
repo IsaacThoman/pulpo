@@ -2,12 +2,20 @@ import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   beginTwoFactorEnrollmentInputSchema,
+  beginBrowserPasskeyRegistrationInputSchema,
+  beginPasskeyRegistrationInputSchema,
+  browserPasskeyRegistrationTokenSchema,
+  browserPasskeyRegistrationVerifySchema,
   changePasswordInputSchema,
   confirmTwoFactorEnrollmentInputSchema,
   loginInputSchema,
+  passkeySensitiveChangeSchema,
+  renamePasskeyInputSchema,
   setupInputSchema,
   signupInputSchema,
   updateProfileInputSchema,
+  verifyPasskeyAuthenticationInputSchema,
+  verifyPasskeyRegistrationInputSchema,
   verifyTwoFactorChangeInputSchema,
 } from '@pulpo/contracts'
 import { z } from 'zod'
@@ -18,16 +26,33 @@ import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
 import {
   createPasswordHash,
   createSession,
+  bearerSessionToken,
   destroySession,
   requireUser,
   revokeOtherSessions,
   serializeUser,
   verifyPassword,
 } from './service.js'
+import {
+  beginBrowserPasskeyRegistration,
+  beginPasskeyAuthentication,
+  beginPasskeyRegistration,
+  browserRegistrationOptions,
+  deletePasskey,
+  finishBrowserPasskeyRegistration,
+  finishPasskeyAuthentication,
+  finishPasskeyRegistration,
+  listPasskeys,
+  recordDirectPasskeyAdd,
+  recordDirectPasskeyDelete,
+  renamePasskey,
+  requirePasskeySensitiveAuth,
+} from './passkeys.js'
 import {
   beginTwoFactorEnrollment,
   clearTwoFactor,
@@ -80,6 +105,9 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747743)`)
       const [existingUser] = await tx.select({ id: users.id }).from(users).limit(1)
       if (existingUser) throw new AppError(409, 'setup_complete', 'Pulpo has already been set up')
+      const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings)
+        .where(eq(applicationSettings.key, 'auth')).limit(1)
+      const authSettings = parseAuthSettings(setting?.value)
       await tx.insert(users).values({
         id: userId,
         email: input.email,
@@ -90,6 +118,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         storageLimitBytes: 5_000 * 1024 * 1024,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
+      await insertNewAccountPreferences(tx, userId, authSettings)
     })
     await createSession(userId, request, reply)
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
@@ -111,6 +140,42 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
     await createSession(row.user.id, request, reply)
     return { user: serializeUser(row.user) }
+  })
+
+  app.post('/api/auth/passkey/options', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    reply.header('cache-control', 'no-store')
+    return beginPasskeyAuthentication({ flow: 'web-authentication' })
+  })
+
+  app.post('/api/auth/passkey/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const input = verifyPasskeyAuthenticationInputSchema.parse(request.body)
+    const { user } = await finishPasskeyAuthentication({
+      ceremonyToken: input.ceremonyToken,
+      response: input.response,
+      flows: ['web-authentication'],
+    })
+    await createSession(user.id, request, reply)
+    return { user: serializeUser(user) }
+  })
+
+  app.post('/api/auth/passkey/browser-registration/options', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
+    const { ceremonyToken } = browserPasskeyRegistrationTokenSchema.parse(request.body)
+    reply.header('cache-control', 'no-store')
+    return browserRegistrationOptions(ceremonyToken)
+  })
+
+  app.post('/api/auth/passkey/browser-registration/verify', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const input = browserPasskeyRegistrationVerifySchema.parse(request.body)
+    reply.header('cache-control', 'no-store')
+    return finishBrowserPasskeyRegistration(input.ceremonyToken, input.response)
   })
 
   app.post('/api/auth/signup', async (request, reply) => {
@@ -138,6 +203,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         storageLimitBytes: authSettings.defaultStorageLimitBytes,
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
+      await insertNewAccountPreferences(tx, userId, authSettings)
     })
     await createSession(userId, request, reply)
     const [created] = await db.select().from(users).where(eq(users.id, userId)).limit(1)
@@ -217,6 +283,69 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       passwordHash: await createPasswordHash(input.newPassword),
       changedAt: new Date(),
     }).where(eq(passwordCredentials.userId, user.id))
+    reply.code(204).send()
+  })
+
+  app.get('/api/me/passkeys', async (request, reply) => {
+    const user = requireUser(request)
+    reply.header('cache-control', 'no-store')
+    return listPasskeys(user.id)
+  })
+
+  app.post('/api/me/passkeys/registration/options', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const user = requireUser(request)
+    const input = beginPasskeyRegistrationInputSchema.parse(request.body)
+    await requirePasskeySensitiveAuth(user.id, input.currentPassword, input.verificationCode)
+    reply.header('cache-control', 'no-store')
+    return beginPasskeyRegistration({
+      user,
+      name: input.name,
+      native: Boolean(bearerSessionToken(request.headers.authorization)),
+    })
+  })
+
+  app.post('/api/me/passkeys/registration/verify', async (request, reply) => {
+    const user = requireUser(request)
+    const input = verifyPasskeyRegistrationInputSchema.parse(request.body)
+    const passkey = await finishPasskeyRegistration({
+      userId: user.id,
+      ceremonyToken: input.ceremonyToken,
+      response: input.response,
+      native: Boolean(bearerSessionToken(request.headers.authorization)),
+    })
+    await recordDirectPasskeyAdd(request, user.id, passkey)
+    reply.code(201)
+    return { passkey }
+  })
+
+  app.post('/api/me/passkeys/browser-registration', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const user = requireUser(request)
+    const input = beginBrowserPasskeyRegistrationInputSchema.parse(request.body)
+    await requirePasskeySensitiveAuth(user.id, input.currentPassword, input.verificationCode)
+    reply.header('cache-control', 'no-store')
+    return beginBrowserPasskeyRegistration({ request, user, name: input.name, state: input.state })
+  })
+
+  app.patch('/api/me/passkeys/:id', async (request) => {
+    const user = requireUser(request)
+    const { id } = z.object({ id: z.uuid() }).parse(request.params)
+    const { name } = renamePasskeyInputSchema.parse(request.body)
+    return { passkey: await renamePasskey(user.id, id, name) }
+  })
+
+  app.delete('/api/me/passkeys/:id', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const user = requireUser(request)
+    const { id } = z.object({ id: z.uuid() }).parse(request.params)
+    const input = passkeySensitiveChangeSchema.parse(request.body)
+    await requirePasskeySensitiveAuth(user.id, input.currentPassword, input.verificationCode)
+    await deletePasskey(user.id, id)
+    await recordDirectPasskeyDelete(request, user.id)
     reply.code(204).send()
   })
 

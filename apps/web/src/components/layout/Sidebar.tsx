@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
   ChevronRight,
   Folder as FolderIcon,
   FolderInput,
+  Hourglass,
   KeyRound,
   LogOut,
   Loader2,
@@ -29,8 +30,10 @@ import { useChat } from '@/stores/chat'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { chatTimeGroup } from '@/lib/format'
+import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
 import type { Chat, Folder } from '@/lib/types'
+import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -212,11 +215,14 @@ function DropLines({
 
 function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
   const togglePin = useChat((state) => state.togglePin)
+  const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
   const shareChat = useChat((state) => state.shareChat)
   const deleteChat = useChat((state) => state.deleteChat)
   const moveToFolder = useChat((state) => state.moveToFolder)
   const folders = useChat((state) => state.folders)
   const trashRetention = useSettings((state) => state.trashRetention)
+  const automaticChatExpiration = useSettings((state) => state.automaticChatExpiration)
+  const expirationMenuAction = resolveChatExpiryMenuAction(chat.expiresAt, automaticChatExpiration)
   return (
     <DropdownMenuContent side="right" align="start" className="w-48">
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
@@ -227,6 +233,14 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         <Pencil />
         Rename
       </DropdownMenuItem>
+      {expirationMenuAction && (
+        <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, expirationMenuAction.kind === 'enable')}>
+          <Hourglass className={cn(expirationMenuAction.kind === 'disable' && 'text-teal-500 dark:text-teal-400')} />
+          {expirationMenuAction.kind === 'disable' && chat.expiresAt !== null
+            ? <span>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
+            : expirationMenuAction.kind === 'enable' ? expirationMenuAction.label : null}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <FolderInput />
@@ -372,7 +386,7 @@ function ChatRow({
               className={cn(
                 actionClassName,
                 'group/chat-action',
-                generating ? 'visible' : 'invisible group-hover:visible',
+                generating || chat.expiresAt !== null ? 'visible' : 'invisible group-hover:visible',
                 'data-[state=open]:visible',
               )}
               onClick={(e) => e.stopPropagation()}
@@ -389,6 +403,17 @@ function ChatRow({
                     </svg>
                     <Loader2 className="absolute inset-0 size-4 animate-spin motion-reduce:animate-none" />
                   </span>
+                  <MoreHorizontal
+                    aria-hidden="true"
+                    className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
+                  />
+                </>
+              ) : chat.expiresAt !== null ? (
+                <>
+                  <Hourglass
+                    aria-hidden="true"
+                    className="size-4 text-teal-500 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden dark:text-teal-400"
+                  />
                   <MoreHorizontal
                     aria-hidden="true"
                     className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
@@ -612,7 +637,6 @@ export function Sidebar({
   onOpenSettings: () => void
 }) {
   const navigate = useNavigate()
-  const location = useLocation()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
     `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
@@ -765,9 +789,7 @@ export function Sidebar({
   const startNewChat = () => {
     useChat.getState().abandonTemporaryChat()
     navigate('/', {
-      state: location.pathname === '/'
-        ? { resetDefaultModel: `${Date.now()}-${Math.random()}` }
-        : null,
+      state: { resetDefaultModel: `${Date.now()}-${Math.random()}` },
     })
     onNavigate()
   }

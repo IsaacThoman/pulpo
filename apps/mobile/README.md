@@ -35,6 +35,23 @@ attachment bytes use the app cache and are evicted by the configured LRU quota.
 configuration, never a secret. Copy `.env.example` to `.env.local` when a
 persistent local override is useful.
 
+The build always includes `pulpo.baby` for native passkeys. The HTTPS hostname
+from `EXPO_PUBLIC_DEFAULT_INSTANCE_URL` is also included. Add more native
+relying-party domains with a comma-separated `PULPO_IOS_PASSKEY_DOMAINS` value
+before prebuilding or signing:
+
+```bash
+PULPO_IOS_PASSKEY_DOMAINS=chat.example.com,pulpo.company.test npm run prebuild -w @pulpo/mobile
+```
+
+This generates matching `webcredentials:` associated-domain entitlements and
+exposes the same allow-list to runtime selection. Each domain must serve the
+Pulpo AASA document for Apple team `PX72AL9366` and bundle
+`com.isaacthoman.pulpo`. Instances not compiled into the app remain supported
+through the authorization-code-with-PKCE Safari flow. Changing an instance's
+canonical `PUBLIC_URL` hostname invalidates passkeys registered for the old
+hostname.
+
 ```bash
 npm run mobile:typecheck
 npm test -w @pulpo/mobile

@@ -33,7 +33,9 @@ import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImag
 import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
+import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
+import { backgroundRequestParameter } from './upstream-request.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -376,7 +378,7 @@ async function processGenerationAttempt(
       model: record.model.upstreamModelId,
       input: input as never,
       stream: true as const,
-      background: record.response.executionMode === 'background',
+      ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
       metadata: { pulpo_response_id: responseId, pulpo_chat_id: record.response.chatId },
     }
@@ -481,7 +483,8 @@ export async function processGeneration(responseId: string): Promise<void> {
     .innerJoin(requestLogs, eq(requestLogs.responseId, responses.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!base || ['completed', 'cancelled'].includes(base.response.status)) return
-  if (base.chatDeletedAt || temporaryChatIsExpired({ temporary: base.chatTemporary, expiresAt: base.chatExpiresAt })) {
+  const chatRetention = { temporary: base.chatTemporary, expiresAt: base.chatExpiresAt }
+  if (base.chatDeletedAt || temporaryChatIsExpired(chatRetention) || normalChatIsExpired(chatRetention)) {
     const now = new Date()
     await db.update(responses).set({ status: 'cancelled', completedAt: now, updatedAt: now }).where(eq(responses.id, responseId))
     await releaseBudget(responseId)

@@ -129,6 +129,7 @@ interface ChatState {
   persistTemporaryChat: (id: string) => Promise<ServerChat>
   abandonTemporaryChat: (id?: string) => void
   markTemporaryExpired: (id: string) => void
+  setChatAutoExpiration: (id: string, enabled: boolean) => void
   deleteChat: (id: string) => void
   renameChat: (id: string, title: string) => void
   togglePin: (id: string) => void
@@ -146,9 +147,10 @@ interface ChatState {
   toggleFolderPin: (id: string) => void
   reorderFolders: (fromId: string, toId: string, edge: 'before' | 'after') => void
   deleteFolder: (id: string) => void
-  sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean) => string
+  sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean) => string
   enqueueMessage: (chatId: string, input: CreateQueuedMessageInput, attachments: Attachment[]) => Promise<void>
   updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
+  reorderQueuedMessage: (chatId: string, messageId: string, targetMessageId: string, edge: 'before' | 'after') => Promise<void>
   deleteQueuedMessage: (chatId: string, messageId: string) => Promise<void>
   regenerate: (chatId: string, messageId: string, modelId: string) => void
   editUserMessage: (input: {
@@ -351,6 +353,13 @@ function currentUserId(): string | null { return useAuth.getState().user?.id ?? 
 function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
 function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
+function automaticExpirationDeadline(now = Date.now()): number | null {
+  const preference = useSettings.getState().automaticChatExpiration
+  if (preference === '24h') return now + 24 * 60 * 60 * 1_000
+  if (preference === '7d') return now + 7 * 24 * 60 * 60 * 1_000
+  return null
+}
+
 const pendingOptimisticResponses = new Map<string, {
   chatId: string
   response: ServerResponse
@@ -412,6 +421,7 @@ function cacheOptimisticTurn(input: {
   displayModelId: string
   title: string
   temporary: boolean
+  expiresAt: string | null
   attachments: Attachment[]
   presetSelections: Record<string, string>
   createdAt: number
@@ -464,7 +474,7 @@ function cacheOptimisticTurn(input: {
         temporary: existing.temporary ?? input.temporary,
         expiresAt: (existing.temporary ?? input.temporary)
           ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString()
-          : null,
+          : existing.expiresAt ?? input.expiresAt,
         attachments: [
           ...(existing.attachments ?? []).filter((attachment) => !input.attachments.some((item) => item.id === attachment.id)),
           ...attachmentRows,
@@ -479,7 +489,7 @@ function cacheOptimisticTurn(input: {
         folderId: null,
         sortOrder: 0,
         temporary: input.temporary,
-        expiresAt: input.temporary ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString() : null,
+        expiresAt: input.temporary ? new Date(input.createdAt + 48 * 60 * 60 * 1_000).toISOString() : input.expiresAt,
         createdAt,
         updatedAt: createdAt,
         activeResponseId: input.responseId,
@@ -994,6 +1004,37 @@ export const useChat = create<ChatState>()((set, get) => ({
     chats: state.chats.map((chat) => chat.id === id && chat.temporary ? { ...chat, expired: true } : chat),
   })),
 
+  setChatAutoExpiration: (id, enabled) => {
+    const chat = get().chats.find((item) => item.id === id)
+    if (!chat || chat.temporary) return
+    const previous = chat.expiresAt
+    const expiresAt = enabled ? automaticExpirationDeadline() : null
+    if (enabled && expiresAt === null) return
+    const expiresAtIso = expiresAt === null ? null : new Date(expiresAt).toISOString()
+    set((state) => ({
+      chats: state.chats.map((item) => item.id === id ? { ...item, expiresAt } : item),
+    }))
+    queryClient.setQueryData<ServerChat[]>(chatsKey(), (rows) => rows?.map((row) => (
+      row.id === id ? { ...row, expiresAt: expiresAtIso } : row
+    )))
+    queryClient.setQueryData<ServerChat>(chatKey(id), (row) => row ? { ...row, expiresAt: expiresAtIso } : row)
+    void enqueueChatMutation(id, () => optimisticRequest('PATCH', `/api/chats/${id}`, { autoExpire: enabled }))
+      .then(() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: chatsKey() }),
+        queryClient.invalidateQueries({ queryKey: chatKey(id) }),
+      ]))
+      .catch(() => {
+        const previousIso = previous === null ? null : new Date(previous).toISOString()
+        set((state) => ({
+          chats: state.chats.map((item) => item.id === id ? { ...item, expiresAt: previous } : item),
+        }))
+        queryClient.setQueryData<ServerChat[]>(chatsKey(), (rows) => rows?.map((row) => (
+          row.id === id ? { ...row, expiresAt: previousIso } : row
+        )))
+        queryClient.setQueryData<ServerChat>(chatKey(id), (row) => row ? { ...row, expiresAt: previousIso } : row)
+      })
+  },
+
   deleteChat: (id) => {
     const userId = currentUserId()
     set((state) => {
@@ -1161,12 +1202,13 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('DELETE', `/api/folders/${id}`)
   },
 
-  sendMessage: (chatId, content, modelId, attachments = [], temporary = false) => {
+  sendMessage: (chatId, content, modelId, attachments = [], temporary = false, autoExpire = false) => {
     const userId = currentUserId()
     if (!userId) return chatId ?? ''
     const id = chatId ?? crypto.randomUUID()
     const responseId = crypto.randomUUID()
     const timestamp = Date.now()
+    const newChatExpiresAt = !chatId && !temporary && autoExpire ? automaticExpirationDeadline(timestamp) : null
     const cachedChat = queryClient.getQueryData<ServerChat>(chatKey(id))
     const currentChat = get().chats.find((chat) => chat.id === id)
     if (currentChat?.temporary && currentChat.expired) return id
@@ -1212,7 +1254,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           sortOrder: 0,
           tags: [],
           temporary,
-          expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : null,
+          expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
         }
       return {
@@ -1231,6 +1273,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       displayModelId: modelId,
       title: (content || attachments[0]?.name || 'Image').slice(0, 200),
       temporary,
+      expiresAt: newChatExpiresAt === null ? null : new Date(newChatExpiresAt).toISOString(),
       attachments,
       presetSelections: generation.selections,
       createdAt: timestamp,
@@ -1254,6 +1297,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           modelId,
           title: (content || attachments[0]?.name || 'Image').slice(0, 200),
           temporary,
+          autoExpire,
         },
         response: responseBody,
       }
@@ -1442,6 +1486,39 @@ export const useChat = create<ChatState>()((set, get) => ({
             if (message.id !== messageId) return [message]
             return result.queuedMessage ? [result.queuedMessage] : []
           }),
+        }),
+      }))
+      await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
+    } catch (error) {
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: previous }),
+      }))
+      throw error
+    }
+  },
+
+  reorderQueuedMessage: async (chatId, messageId, targetMessageId, edge) => {
+    const previous = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
+    const currentIds = previous.map((message) => message.id)
+    const reorderedIds = reorderList(currentIds, messageId, targetMessageId, edge)
+    if (reorderedIds === currentIds) return
+    const byId = new Map(previous.map((message) => [message.id, message]))
+    const optimistic = reorderedIds.flatMap((id, position) => {
+      const message = byId.get(id)
+      return message ? [{ ...message, position }] : []
+    })
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== chatId ? chat : { ...chat, queuedMessages: optimistic }),
+    }))
+    try {
+      const result = await apiRequest<{ queuedMessages: QueuedMessage[] }>(
+        `/api/chats/${chatId}/queued-messages/${messageId}/reorder`,
+        { method: 'PATCH', body: { targetMessageId, edge } },
+      )
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+          ...chat,
+          queuedMessages: result.queuedMessages,
         }),
       }))
       await queryClient.invalidateQueries({ queryKey: chatKey(chatId) })

@@ -1,9 +1,9 @@
-import { and, eq, inArray, isNotNull, isNull, lte } from 'drizzle-orm'
+import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, chats, memories, responses, userPreferences } from '../database/schema.js'
+import { attachments, chats, memories, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
-import { requestCancellation } from '../responses/events.js'
+import { publishStateChange, requestCancellation } from '../responses/events.js'
 
 export const trashRetentionValues = ['instant', '24h', '7d', '30d', '90d', 'indefinite'] as const
 export type TrashRetention = typeof trashRetentionValues[number]
@@ -27,6 +27,32 @@ export function parseTrashRetention(value: unknown): TrashRetention {
 export function purgeAtFor(deletedAt: Date, retention: TrashRetention): Date | null {
   const duration = retentionMs[retention]
   return duration === null ? null : new Date(deletedAt.getTime() + duration)
+}
+
+export function expiredChatTrashValues(now: Date, retention: TrashRetention) {
+  return {
+    deletedAt: now,
+    expiresAt: null,
+    purgeStartedAt: retention === 'instant' ? now : null,
+    updatedAt: now,
+  }
+}
+
+export function normalChatExpiryCondition(
+  chatId: string,
+  userId: string,
+  now: Date,
+  expectedExpiresAt?: Date,
+) {
+  return and(
+    eq(chats.id, chatId),
+    eq(chats.userId, userId),
+    eq(chats.temporary, false),
+    lte(chats.expiresAt, now),
+    expectedExpiresAt ? eq(chats.expiresAt, expectedExpiresAt) : undefined,
+    isNull(chats.deletedAt),
+    isNull(chats.purgeStartedAt),
+  )
 }
 
 export async function getTrashRetention(userId: string): Promise<TrashRetention> {
@@ -113,6 +139,48 @@ export async function expireTemporaryChat(chatId: string, userId: string, now = 
     isNull(chats.purgeStartedAt),
   )).returning({ id: chats.id })
   return Boolean(marked)
+}
+
+async function publishExpiredChat(userId: string, chatId: string): Promise<void> {
+  const [updated] = await db.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+    .where(eq(users.id, userId)).returning({ revision: users.stateRevision })
+  if (updated) await publishStateChange({ userId, chatId, revision: updated.revision })
+}
+
+export async function expireNormalChat(
+  chatId: string,
+  userId: string,
+  now = new Date(),
+  expectedExpiresAt?: Date,
+): Promise<boolean> {
+  const retention = await getTrashRetention(userId)
+  const [marked] = await db.update(chats).set(expiredChatTrashValues(now, retention))
+    .where(normalChatExpiryCondition(chatId, userId, now, expectedExpiresAt))
+    .returning({ id: chats.id })
+  if (!marked) return false
+  const cleanup = await Promise.allSettled([
+    db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId))),
+    cancelChatWork([chatId]),
+  ])
+  await publishExpiredChat(userId, chatId)
+  const failed = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+  if (failed) throw failed.reason
+  return true
+}
+
+export async function expireNormalChats(now = new Date(), userId?: string): Promise<number> {
+  const expired = await db.select({ id: chats.id, userId: chats.userId }).from(chats).where(and(
+    eq(chats.temporary, false),
+    lte(chats.expiresAt, now),
+    isNull(chats.deletedAt),
+    isNull(chats.purgeStartedAt),
+    userId ? eq(chats.userId, userId) : undefined,
+  ))
+  let count = 0
+  for (const chat of expired) {
+    if (await expireNormalChat(chat.id, chat.userId, now)) count += 1
+  }
+  return count
 }
 
 export async function purgePendingChats(userId?: string): Promise<number> {

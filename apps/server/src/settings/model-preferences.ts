@@ -1,8 +1,17 @@
-import { modelPreferencesPatchSchema, modelPreferencesSchema } from '@pulpo/contracts'
+import {
+  automaticChatExpirationSchema,
+  modelPreferencesPatchSchema,
+  modelPreferencesSchema,
+  newChatAutoExpireSchema,
+} from '@pulpo/contracts'
 
 export function preferencesWithModelDefaults(values?: Record<string, unknown>): Record<string, unknown> {
+  const parsedAutomaticChatExpiration = automaticChatExpirationSchema.safeParse(values?.automaticChatExpiration)
+  const parsedNewChatAutoExpire = newChatAutoExpireSchema.safeParse(values?.newChatAutoExpire)
   return {
     ...values,
+    automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
+    newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
     ...modelPreferencesSchema.parse({
       favoriteModelIds: values?.favoriteModelIds,
       providerOrder: values?.providerOrder,

@@ -6,6 +6,13 @@ import { create } from 'zustand'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
 import type { MobileConfig, User } from '@pulpo/contracts'
 import { ApiError, apiOrigin, configureApi, isNetworkError, mobileApi } from '../api/client'
+import {
+  canUseNativePasskeys,
+  NativePasskeyError,
+  nativeAuthenticate,
+  PasskeyCancelledError,
+  runSafariPasskeyAuthentication,
+} from '../auth/passkeys'
 import { cacheNamespace, clearNamespace, getValue, setValue } from '../data/database'
 
 const SESSION_TOKEN_KEY = 'pulpo.native.session'
@@ -25,6 +32,7 @@ interface SessionState {
   hydrate: () => Promise<void>
   discover: (url?: string) => Promise<MobileConfig>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<'authenticated' | 'two-factor-required'>
+  loginWithPasskey: (forceBrowser?: boolean) => Promise<void>
   signup: (name: string, username: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshSession: () => Promise<void>
@@ -187,6 +195,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     configureApi({ instanceUrl: get().instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
     return 'authenticated'
+  },
+
+  loginWithPasskey: async (forceBrowser = false) => {
+    const instanceUrl = get().instanceUrl
+    configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
+    let result
+    if (!forceBrowser && canUseNativePasskeys(instanceUrl)) {
+      const ceremony = await mobileApi.passkeyOptions()
+      let response
+      try {
+        response = await nativeAuthenticate(ceremony)
+      } catch (error) {
+        if (error instanceof PasskeyCancelledError) throw error
+        throw new NativePasskeyError(error)
+      }
+      result = await mobileApi.verifyPasskey(ceremony.ceremonyToken, response, await deviceLabel())
+    } else {
+      const { code, codeVerifier } = await runSafariPasskeyAuthentication(instanceUrl)
+      result = await mobileApi.exchangeBrowserPasskey(code, codeVerifier, await deviceLabel())
+    }
+    await persistSession(instanceUrl, result.user, result.session.token)
+    configureApi({ instanceUrl, token: result.session.token, onUnauthorized: () => { void get().handleUnauthorized() } })
+    set({ token: result.session.token, user: result.user, status: result.user.role === 'pending' ? 'pending' : 'authenticated', error: null })
   },
 
   signup: async (name, username, email, password) => {

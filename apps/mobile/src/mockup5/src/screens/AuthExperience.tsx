@@ -1,15 +1,16 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
+import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
 import { useSessionStore } from '../../../store/session';
 import { FORM_CONTENT_MAX } from '../../../responsive';
 
-type AuthPage = 'login' | 'two-factor' | 'signup' | 'forgot' | 'instance';
+type AuthPage = 'login' | 'login-options' | 'two-factor' | 'signup' | 'forgot' | 'instance';
 
 const mockupOneDark = {
   background: '#101014', surface: '#18181C', border: '#303036', text: '#FAFAFA',
@@ -31,8 +32,8 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
 
 function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChildren<{ title: string; subtitle: string; footer?: ReactNode; colors: AuthColors }>) {
   const insets = useSafeAreaInsets();
-  return <KeyboardAvoidingView style={[styles.root, { backgroundColor: colors.background }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
+  return <View style={[styles.root, { backgroundColor: colors.background }]}>
+    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
       <View style={styles.brand}>
         <Image source={require('../../assets/pulpo-smiley.png')} style={styles.logo} />
         <Text style={[styles.brandName, { color: colors.text }]}>Pulpo</Text>
@@ -44,7 +45,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
       <View style={styles.form}>{children}</View>
       {footer ? <View style={styles.footer}>{footer}</View> : null}
     </ScrollView>
-  </KeyboardAvoidingView>;
+  </View>;
 }
 
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
@@ -82,6 +83,7 @@ export function AuthExperience() {
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionConfig = useSessionStore((state) => state.config);
   const login = useSessionStore((state) => state.login);
+  const loginWithPasskey = useSessionStore((state) => state.loginWithPasskey);
   const signup = useSessionStore((state) => state.signup);
   const logout = useSessionStore((state) => state.logout);
   const refreshSession = useSessionStore((state) => state.refreshSession);
@@ -107,10 +109,12 @@ export function AuthExperience() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [pendingFeedback, setPendingFeedback] = useState('');
+  const [passkeyFallback, setPasskeyFallback] = useState(false);
 
   const goTo = (next: AuthPage) => {
     setError('');
     setSent(false);
+    setPasskeyFallback(false);
     setPage(next);
   };
   const run = async (action: () => Promise<void>) => {
@@ -131,6 +135,20 @@ export function AuthExperience() {
       const result = await login(email.trim(), password);
       if (result === 'two-factor-required') { setTwoFactorCode(''); setPage('two-factor'); }
     });
+  };
+  const submitPasskey = (forceBrowser = false) => {
+    setError('');
+    setPasskeyFallback(false);
+    setLoading(true);
+    void loginWithPasskey(forceBrowser).catch((nextError) => {
+      if (nextError instanceof PasskeyCancelledError) return;
+      if (nextError instanceof NativePasskeyError) {
+        setPasskeyFallback(true);
+        setError('Native passkeys are not available for this server configuration. You can continue securely in Safari.');
+        return;
+      }
+      setError(nextError instanceof Error ? nextError.message : 'Could not sign in with a passkey.');
+    }).finally(() => setLoading(false));
   };
   const submitTwoFactor = () => {
     if (recoveryMode ? twoFactorCode.trim().length < 12 : !/^\d{6}$/.test(twoFactorCode)) return setError('Enter a valid code.');
@@ -232,6 +250,12 @@ export function AuthExperience() {
     <BackToSignIn colors={colors} onPress={() => goTo('login')} />
   </AuthShell>;
 
+  if (page === 'login-options') return <AuthShell colors={colors} title="More login options" subtitle="Choose another way to sign in to your Pulpo account.">
+    <PrimaryAuthButton label={passkeyFallback ? 'Try passkey in Safari' : 'Sign in with a passkey'} colors={colors} loading={loading} icon="person.badge.key" onPress={() => submitPasskey(passkeyFallback)} />
+    {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
+    <BackToSignIn colors={colors} onPress={() => goTo('login')} />
+  </AuthShell>;
+
   return <AuthShell colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
       <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
@@ -243,6 +267,7 @@ export function AuthExperience() {
     <AuthField colors={colors} icon="lock" label="Password" value={password} onChangeText={setPassword} autoComplete="current-password" secureTextEntry returnKeyType="go" onSubmitEditing={submitLogin} />
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Sign in" colors={colors} loading={loading} disabled={!email.trim() || !password} onPress={submitLogin} />
+    {productionConfig?.capabilities.passkeys ? <BackToSignIn colors={colors} label="More login options" onPress={() => goTo('login-options')} /> : null}
     <View style={styles.links}>
       {instance.signupOpen ? <Pressable accessibilityRole="link" onPress={() => goTo('signup')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.text }]}>Create account</Text></Pressable> : null}
       <Pressable accessibilityRole="link" onPress={() => goTo('forgot')} style={styles.linkTarget}><Text style={[styles.link, { color: colors.textMuted }]}>Forgot password?</Text></Pressable>
