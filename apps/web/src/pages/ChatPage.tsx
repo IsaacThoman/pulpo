@@ -77,7 +77,10 @@ function Placeholder({
             <button
               key={`${s.id}-${i}`}
               onClick={() => onPick(s.message)}
-              className="cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent"
+              className={cn(
+                'cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent',
+                showTemporaryLabel && '!border-violet-500/50 bg-violet-100/80 hover:bg-violet-200/80 dark:!border-violet-600/50 dark:bg-violet-950/60 dark:hover:bg-violet-900/60',
+              )}
             >
               {s.label}
             </button>
