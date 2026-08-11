@@ -58,13 +58,22 @@ public final class PulpoFileClipboardModule: Module {
     }
 
     View(HistoryChatContextMenuView.self) {
-      Events("onAction", "onPress")
+      Events("onAction", "onChatPress")
 
       Prop("pinned") { (view, value: Bool) in
         view.setPinned(value)
       }
       Prop("removeChatLabel") { (view, value: String) in
         view.setRemoveChatLabel(value)
+      }
+      Prop("expirationAction") { (view, value: String) in
+        view.setExpirationAction(value)
+      }
+      Prop("expirationPeriodLabel") { (view, value: String) in
+        view.setExpirationPeriodLabel(value)
+      }
+      Prop("expiresAt") { (view, value: Double) in
+        view.setExpiresAt(value)
       }
       Prop("previewTitle") { (view, value: String) in
         view.setPreviewTitle(value)

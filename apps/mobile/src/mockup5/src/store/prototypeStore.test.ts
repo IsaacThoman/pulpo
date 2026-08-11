@@ -136,6 +136,19 @@ describe('prototype store', () => {
     warning.mockRestore();
   });
 
+  it('optimistically disables an existing expiration', () => {
+    const setChatAutoExpiration = vi.fn(async () => undefined);
+    configureProductionActions({ setChatAutoExpiration });
+    usePrototypeStore.setState((state) => ({
+      chats: state.chats.map((chat) => chat.id === 'c-kv' ? { ...chat, expiresAt: Date.now() + 86_400_000 } : chat),
+    }));
+
+    usePrototypeStore.getState().setChatAutoExpiration('c-kv', false);
+
+    expect(setChatAutoExpiration).toHaveBeenCalledWith('c-kv', false);
+    expect(usePrototypeStore.getState().chats.find((chat) => chat.id === 'c-kv')?.expiresAt).toBeNull();
+  });
+
   it('does not let an older failure overwrite a newer optimistic choice', async () => {
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     let rejectFirst!: (error: Error) => void;
