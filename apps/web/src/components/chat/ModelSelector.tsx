@@ -140,7 +140,7 @@ export function ModelSelector({
 
         <div className="flex h-[264px] min-h-0">
           {/* provider rail */}
-          <div className="flex flex-col items-center gap-0.5 border-r px-1.5 py-2">
+          <div className="flex min-h-0 flex-col items-center gap-0.5 overflow-y-auto border-r px-1.5 py-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
