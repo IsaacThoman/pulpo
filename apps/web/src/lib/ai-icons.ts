@@ -24,6 +24,8 @@ export const AI_ICONS = [
   { id: 'grok', label: 'Grok', kind: 'model', color: false, file: 'grok.svg' },
   { id: 'meta', label: 'Meta', kind: 'lab', color: false, file: 'meta.svg' },
   { id: 'meta-color', label: 'Meta color', kind: 'model', color: true, file: 'meta-color.svg' },
+  { id: 'minimax', label: 'MiniMax Labs', kind: 'lab', color: false, file: 'minimax.svg' },
+  { id: 'minimax-color', label: 'MiniMax color', kind: 'model', color: true, file: 'minimax-color.svg' },
   { id: 'mistral', label: 'Mistral', kind: 'lab', color: false, file: 'mistral.svg' },
   { id: 'mistral-color', label: 'Mistral color', kind: 'model', color: true, file: 'mistral-color.svg' },
   {
@@ -53,6 +55,8 @@ export const AI_ICONS = [
   { id: 'qwen', label: 'Qwen', kind: 'model', color: false, file: 'qwen.svg' },
   { id: 'qwen-color', label: 'Qwen color', kind: 'model', color: true, file: 'qwen-color.svg' },
   { id: 'xai', label: 'xAI', kind: 'lab', color: false, file: 'xai.svg' },
+  { id: 'zhipu', label: 'Zhipu AI', kind: 'lab', color: false, file: 'zhipu.svg' },
+  { id: 'zhipu-color', label: 'Zhipu color', kind: 'model', color: true, file: 'zhipu-color.svg' },
 ] as const satisfies readonly AiIconDefinition[]
 
 export type AiIconId = (typeof AI_ICONS)[number]['id']
@@ -63,10 +67,14 @@ export const DEFAULT_PROVIDER_ICONS: Record<string, AiIconId> = {
   anthropic: 'anthropic',
   deepseek: 'deepseek',
   meta: 'meta',
+  minimax: 'minimax',
+  'minimax labs': 'minimax',
   alibaba: 'alibaba',
   mistral: 'mistral',
   xai: 'xai',
   google: 'google',
+  zhipu: 'zhipu',
+  'zhipu ai': 'zhipu',
   internal: 'pulpo',
   pulpo: 'pulpo',
 }
