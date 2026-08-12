@@ -16,6 +16,7 @@ const light: Record<string, ImageSourcePropType> = {
   grok: require('../../assets/ai-icons/grok.png'),
   meta: require('../../assets/ai-icons/meta.png'),
   'meta-color': require('../../assets/ai-icons/meta-color.png'),
+  minimax: require('../../assets/ai-icons/minimax.png'),
   mistral: require('../../assets/ai-icons/mistral.png'),
   'mistral-color': require('../../assets/ai-icons/mistral-color.png'),
   moonshot: require('../../assets/ai-icons/moonshot.png'),
@@ -23,6 +24,7 @@ const light: Record<string, ImageSourcePropType> = {
   qwen: require('../../assets/ai-icons/qwen.png'),
   'qwen-color': require('../../assets/ai-icons/qwen-color.png'),
   xai: require('../../assets/ai-icons/xai.png'),
+  zhipu: require('../../assets/ai-icons/zhipu.png'),
   pulpo: require('../../assets/pulpo-smiley.png'),
 }
 
@@ -40,6 +42,7 @@ const dark: Record<string, ImageSourcePropType> = {
   grok: require('../../assets/ai-icons/grok-dark.png'),
   meta: require('../../assets/ai-icons/meta-dark.png'),
   'meta-color': require('../../assets/ai-icons/meta-color-dark.png'),
+  minimax: require('../../assets/ai-icons/minimax-dark.png'),
   mistral: require('../../assets/ai-icons/mistral-dark.png'),
   'mistral-color': require('../../assets/ai-icons/mistral-color-dark.png'),
   moonshot: require('../../assets/ai-icons/moonshot-dark.png'),
@@ -47,6 +50,7 @@ const dark: Record<string, ImageSourcePropType> = {
   qwen: require('../../assets/ai-icons/qwen-dark.png'),
   'qwen-color': require('../../assets/ai-icons/qwen-color-dark.png'),
   xai: require('../../assets/ai-icons/xai-dark.png'),
+  zhipu: require('../../assets/ai-icons/zhipu-dark.png'),
   pulpo: require('../../assets/pulpo-smiley.png'),
 }
 
