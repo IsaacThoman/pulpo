@@ -26,4 +26,12 @@ describe('AI icon availability', () => {
     expect(isAiIconAvailable(icon!, 'lab')).toBe(true)
     expect(providerIcon(provider)).toBe(iconId)
   })
+
+  it.each(['minimax-color', 'zhipu-color'])('makes %s available to model pickers', (iconId) => {
+    const icon = AI_ICONS.find((candidate) => candidate.id === iconId)
+
+    expect(icon).toBeDefined()
+    expect(icon?.color).toBe(true)
+    expect(isAiIconAvailable(icon!, 'model')).toBe(true)
+  })
 })
