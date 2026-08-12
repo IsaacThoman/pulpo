@@ -1,8 +1,22 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
+import { Host as SwiftUIHost, TextField as SwiftUITextField, useNativeState } from '@expo/ui/swift-ui';
+import {
+  accessibilityHint as swiftUIAccessibilityHint,
+  accessibilityLabel as swiftUIAccessibilityLabel,
+  autocorrectionDisabled,
+  font,
+  foregroundStyle,
+  frame,
+  keyboardType,
+  multilineTextAlignment,
+  textContentType,
+  textFieldStyle,
+  textInputAutocapitalization,
+} from '@expo/ui/swift-ui/modifiers';
 import { useAppTheme } from '../theme';
 import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
@@ -61,6 +75,66 @@ function AuthField({ colors, icon, invalid = false, label, ...props }: AuthField
   </View>;
 }
 
+type AuthCodeInputProps = {
+  colors: AuthColors;
+  label: string;
+  recoveryMode: boolean;
+  value: string;
+  onChangeText: (value: string) => void;
+  onFocusChange: (focused: boolean) => void;
+  onSubmit: () => void;
+};
+
+function IOSAuthCodeInput({ colors, label, recoveryMode, value, onChangeText, onFocusChange }: AuthCodeInputProps) {
+  const nativeText = useNativeState(value);
+  useEffect(() => {
+    if (nativeText.get() !== value) nativeText.set(value);
+  }, [nativeText, value]);
+  const modifiers = [
+    textFieldStyle('plain'),
+    frame({ maxWidth: Infinity, minHeight: 56 }),
+    font({ design: 'monospaced', size: 22, weight: 'semibold' }),
+    foregroundStyle(colors.text),
+    multilineTextAlignment('center'),
+    keyboardType(recoveryMode ? 'ascii-capable' : 'numeric'),
+    textInputAutocapitalization(recoveryMode ? 'characters' : 'never'),
+    autocorrectionDisabled(),
+    swiftUIAccessibilityLabel(label),
+    swiftUIAccessibilityHint(recoveryMode ? 'Enter one of your twelve-character recovery codes' : 'Enter the six-digit code from your authenticator app'),
+    ...(!recoveryMode ? [textContentType('oneTimeCode')] : []),
+  ];
+  return <SwiftUIHost style={styles.nativeCodeInput}>
+    <SwiftUITextField
+      autoFocus
+      onFocusChange={onFocusChange}
+      onTextChange={onChangeText}
+      text={nativeText}
+      modifiers={modifiers}
+    />
+  </SwiftUIHost>;
+}
+
+function CrossPlatformAuthCodeInput({ colors, label, recoveryMode, value, onChangeText, onFocusChange, onSubmit }: AuthCodeInputProps) {
+  if (Platform.OS === 'ios') return <IOSAuthCodeInput colors={colors} label={label} recoveryMode={recoveryMode} value={value} onChangeText={onChangeText} onFocusChange={onFocusChange} onSubmit={onSubmit} />;
+  return <TextInput
+    accessibilityLabel={label}
+    accessibilityHint={recoveryMode ? 'Enter one of your twelve-character recovery codes' : 'Enter the six-digit code from your authenticator app'}
+    autoCapitalize={recoveryMode ? 'characters' : 'none'}
+    autoComplete={recoveryMode ? 'off' : 'one-time-code'}
+    autoCorrect={false}
+    autoFocus
+    keyboardType={recoveryMode ? 'default' : 'number-pad'}
+    onBlur={() => onFocusChange(false)}
+    onChangeText={onChangeText}
+    onFocus={() => onFocusChange(true)}
+    onSubmitEditing={onSubmit}
+    returnKeyType="go"
+    spellCheck={false}
+    style={[styles.codeInput, { color: colors.text }]}
+    value={value}
+  />;
+}
+
 function AuthCodeField({ colors, error, recoveryMode, value, onChangeText, onSubmit }: {
   colors: AuthColors;
   error: boolean;
@@ -78,25 +152,7 @@ function AuthCodeField({ colors, error, recoveryMode, value, onChangeText, onSub
       borderColor: error ? colors.destructive : focused ? colors.text : colors.border,
       borderWidth: focused || error ? 1.5 : StyleSheet.hairlineWidth,
     }]}>
-      <TextInput
-        accessibilityLabel={label}
-        accessibilityHint={recoveryMode ? 'Enter one of your twelve-character recovery codes' : 'Enter the six-digit code from your authenticator app'}
-        autoCapitalize={recoveryMode ? 'characters' : 'none'}
-        autoComplete={recoveryMode ? 'off' : 'one-time-code'}
-        autoCorrect={false}
-        autoFocus
-        inputAccessoryViewButtonLabel="Verify"
-        keyboardType={recoveryMode ? Platform.select({ ios: 'ascii-capable', default: 'default' }) : 'number-pad'}
-        onBlur={() => setFocused(false)}
-        onChangeText={onChangeText}
-        onFocus={() => setFocused(true)}
-        onSubmitEditing={onSubmit}
-        returnKeyType="go"
-        smartInsertDelete={false}
-        spellCheck={false}
-        style={[styles.codeInput, { color: colors.text }]}
-        value={value}
-      />
+      <CrossPlatformAuthCodeInput colors={colors} label={label} recoveryMode={recoveryMode} value={value} onChangeText={onChangeText} onFocusChange={setFocused} onSubmit={onSubmit} />
     </View>
   </View>;
 }
@@ -346,6 +402,7 @@ const styles = StyleSheet.create({
   codeFieldLabel: { marginLeft: 4, fontSize: 13, fontWeight: '600' },
   codeField: { minHeight: 58, borderRadius: 16, justifyContent: 'center' },
   codeInput: { minHeight: 56, paddingHorizontal: 18, fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 22, fontWeight: '600', letterSpacing: 5, textAlign: 'center' },
+  nativeCodeInput: { width: '100%', height: 56 },
   hint: { fontSize: 12.5, marginTop: -6, marginLeft: 8 },
   error: { fontSize: 13.5, lineHeight: 19 },
   primaryButton: { minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
