@@ -13,6 +13,7 @@ import { createResponse, toSnapshot } from '../responses/service.js'
 import { replaceResponseUserInput, responseAttachmentIds, responseInputText, responseUserAttachmentIds } from './input.js'
 import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/temporary.js'
 import { assistantEditInheritedValues } from './assistant-edit.js'
+import { resolveBranchGenerationSettings } from './generation-selection.js'
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
@@ -71,6 +72,7 @@ const generationSelectionSchema = z.object({
   clientId: idSchema.optional(),
   modelId: z.string().trim().min(1).optional(),
   presetSelections: z.record(z.string(), z.string()).optional(),
+  agentMode: z.boolean().optional(),
 })
 
 export async function registerMessageRoutes(app: FastifyInstance): Promise<void> {
@@ -81,6 +83,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const selection = generationSelectionSchema.parse(request.body ?? {})
     const modelId = selection.modelId ?? await requestedModelId(original.id, original.modelId)
     const attachmentIds = responseAttachmentIds(original.input)
+    const generation = resolveBranchGenerationSettings(original, selection)
     const created = await createResponse({
       userId: user.id,
       chatId: original.chatId,
@@ -92,12 +95,10 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       input: {
         clientId: selection.clientId,
         input: responseInputText(original.input), modelId,
-        executionMode: selection.modelId ? undefined : original.executionMode,
-        presetSelections: selection.modelId
-          ? selection.presetSelections ?? {}
-          : original.presetSelections as Record<string, string>,
+        executionMode: generation.executionMode,
+        presetSelections: generation.presetSelections,
         attachmentIds,
-        agentMode: original.agentMode,
+        agentMode: generation.agentMode,
       },
     })
     await bumpRevision(user.id, original.chatId)
@@ -121,7 +122,11 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     if (id.endsWith(':input')) {
       const modelId = selectedModelId ?? await requestedModelId(original.id, original.modelId)
       const attachmentIds = selectedAttachmentIds ?? responseUserAttachmentIds(original.input)
-      const agentMode = selectedAgentMode ?? original.agentMode
+      const generation = resolveBranchGenerationSettings(original, {
+        modelId: selectedModelId,
+        presetSelections,
+        agentMode: selectedAgentMode,
+      })
       if (!content && attachmentIds.length === 0) {
         throw new AppError(400, 'empty_message', 'Message must include text or attachments')
       }
@@ -135,12 +140,10 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         input: {
           clientId,
           input: content, modelId,
-          executionMode: selectedModelId ? undefined : original.executionMode,
-          presetSelections: selectedModelId
-            ? presetSelections ?? {}
-            : original.presetSelections as Record<string, string>,
+          executionMode: generation.executionMode,
+          presetSelections: generation.presetSelections,
           attachmentIds,
-          agentMode,
+          agentMode: generation.agentMode,
         },
       })
       await bumpRevision(user.id, original.chatId)

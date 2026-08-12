@@ -230,7 +230,7 @@ describe('optimistic response reconciliation', () => {
       queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId: 'response-2',
       modelId: 'model-1', presetSelections: {}, editedInput: 'Edited prompt',
       editedAttachments: [{ id: 'attachment-2', name: 'replacement.pdf', mimeType: 'application/pdf', sizeBytes: 24 }],
-      editedAgentMode: true,
+      agentMode: true,
       createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
     })
     const userEdit = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.responses?.find((response) => response.id === 'response-2')
