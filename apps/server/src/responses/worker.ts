@@ -380,7 +380,6 @@ async function processGenerationAttempt(
       stream: true as const,
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
-      metadata: { pulpo_response_id: responseId, pulpo_chat_id: record.response.chatId },
     }
     const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
     if (parseLoggingSettings(loggingRow?.value).logDetailedPayloads) await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
