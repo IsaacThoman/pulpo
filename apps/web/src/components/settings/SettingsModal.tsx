@@ -597,7 +597,14 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
                   <Separator className="my-3" />
-                  <Row label="Trash all chats" hint="Moves every conversation to trash.">
+                  <Row
+                    label="Trash all chats"
+                    hint={s.trashRetention === 'instant'
+                      ? 'Permanently deletes every chat.'
+                      : s.trashRetention === 'indefinite'
+                        ? 'Moves every conversation to trash. (no automatic permanent deletion)'
+                        : `Moves every conversation to trash. (permanent deletion in ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()})`}
+                  >
                     <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>Trash all chats</Button>
                   </Row>
                 </div>
