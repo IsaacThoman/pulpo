@@ -187,7 +187,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
-  const profileColorInputRef = useRef<HTMLInputElement>(null)
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
     queryKey: deletedChatsQueryKey,
@@ -570,23 +569,22 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       style={{ backgroundColor: color }}
                       onClick={() => { setProfileMessage(''); setProfileColor(color) }}
                     />)}
-                    <button
-                      type="button"
-                      aria-label="Choose a custom profile color"
-                      className={cn('size-5 cursor-pointer rounded border', !profileColorIsPreset && 'ring-2 ring-inset ring-foreground')}
-                      style={profileColorIsPreset
-                        ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
-                        : { backgroundColor: profileColor }}
-                      onClick={() => profileColorInputRef.current?.click()}
-                    />
-                    <input
-                      ref={profileColorInputRef}
-                      type="color"
-                      aria-label="Custom profile color"
-                      value={profileColor}
-                      className="hidden"
-                      onChange={(event) => { setProfileMessage(''); setProfileColor(event.currentTarget.value) }}
-                    />
+                    <div className="relative size-5 shrink-0">
+                      <input
+                        type="color"
+                        aria-label="Choose a custom profile color"
+                        value={profileColor}
+                        className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+                        onChange={(event) => { setProfileMessage(''); setProfileColor(event.currentTarget.value) }}
+                      />
+                      <span
+                        aria-hidden="true"
+                        className={cn('pointer-events-none absolute inset-0 rounded border peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring', !profileColorIsPreset && 'ring-2 ring-inset ring-foreground')}
+                        style={profileColorIsPreset
+                          ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
+                          : { backgroundColor: profileColor }}
+                      />
+                    </div>
                   </div></Row>
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
