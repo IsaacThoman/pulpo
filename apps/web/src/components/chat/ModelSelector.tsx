@@ -330,7 +330,7 @@ export function ModelSelector({
             {favoritesActive && newAccountFavoritesLoaded && !favoritesMatchDefaults && (
               confirmReset ? (
                 <div className="mx-2 my-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
-                  <p className="text-foreground">Replace favorites with the new-user defaults?</p>
+                  <p className="text-foreground">Replace favorites with defaults?</p>
                   <div className="mt-1.5 flex items-center gap-3">
                     <button
                       type="button"
