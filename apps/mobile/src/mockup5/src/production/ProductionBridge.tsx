@@ -137,7 +137,6 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
     if (store.synchronizedOwnerNamespace !== namespace) {
       await store.resetSynchronizedPreferences(namespace)
     }
-    await usePreferencesStore.getState().activateAgentNamespace(namespace)
     return usePreferencesStore.getState()
   })().catch(() => usePreferencesStore.getState())
   const [localChats, localFolders, catalog, preferences] = await Promise.all([
@@ -175,7 +174,6 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
       trashRetention: preferences.trashRetention,
       automaticChatExpiration: preferences.automaticChatExpiration,
       newChatAutoExpire: preferences.newChatAutoExpire,
-      agentMode: preferences.agentMode,
     },
   }))
 }
@@ -222,7 +220,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     favoriteModelIds: state.favoriteModelIds,
     providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
-    agentMode: state.agentMode,
   })))
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
   const productionNamespace = usePrototypeStore((state) => state.productionNamespace)
@@ -291,10 +288,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
       setPreference: async (key, value) => {
-        if (key === 'agentMode') {
-          await usePreferencesStore.getState().setNamespacedAgentMode(namespace, Boolean(value))
-          return
-        }
         await usePreferencesStore.getState().setPreference(key, value)
         const body = preferencePatchForServer(key, value)
         if (!body) return
@@ -303,7 +296,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           namespace, entityKey: `setting:${serverKey}`, method: 'PATCH', path: '/api/settings', body,
           request: () => mobileApi.updateSettings(body),
         })
-        if (saved && (key === 'favoriteModelIds' || key === 'providerOrder' || key === 'generation')) {
+        if (saved && (key === 'favoriteModelIds' || key === 'providerOrder' || key === 'generation' || key === 'agentModes')) {
           await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
         }
       },
@@ -362,7 +355,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
-          agentMode: preferences.agentMode,
         },
         defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
         models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,

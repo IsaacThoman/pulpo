@@ -8,11 +8,13 @@ describe('production preference mapping', () => {
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, agentModeEnabled: false, ignored: 'value',
       favoriteModelIds: ['model-b', 'model-a', 'model-b'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
+      agentModes: { 'model-a': false, 'model-b': true },
     })).toEqual({
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
+      agentModes: { 'model-a': false, 'model-b': true },
     })
   })
 
@@ -26,13 +28,13 @@ describe('production preference mapping', () => {
     expect(preferencePatchForServer('generation', { 'model-a': { reasoning: 'high' } })).toEqual({
       generation: { 'model-a': { reasoning: 'high' } },
     })
+    expect(preferencePatchForServer('agentModes', { 'model-a': false })).toEqual({ agentModes: { 'model-a': false } })
     expect(preferencePatchForServer('haptics', false)).toBeNull()
-    expect(preferencePatchForServer('agentMode', true)).toBeNull()
-    expect(preferencesFromServer({ agentModeEnabled: true })).not.toHaveProperty('agentMode')
+    expect(preferencesFromServer({ agentModeEnabled: false }).agentModes).toEqual({})
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ favoriteModelIds: [], providerOrder: [], generation: {} })
+    expect(preferencesFromServer({})).toEqual({ favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {
@@ -44,5 +46,12 @@ describe('production preference mapping', () => {
       },
     }).generation).toEqual({ valid: { reasoning: 'medium' } })
     expect(preferencesFromServer({ generation: 'invalid' }).generation).toEqual({})
+  })
+
+  it('filters malformed Agent mode preferences from server settings', () => {
+    expect(preferencesFromServer({
+      agentModes: { valid: false, enabled: true, ignored: 'false' },
+    }).agentModes).toEqual({ valid: false, enabled: true })
+    expect(preferencesFromServer({ agentModes: ['invalid'] }).agentModes).toEqual({})
   })
 })

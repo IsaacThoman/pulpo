@@ -319,9 +319,17 @@ describe('shared contracts', () => {
       instance: {},
     })
     expect(document.account).toMatchObject({
-      theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [],
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
+      favoriteModelIds: [], agentModes: {},
     })
     expect(managementAccountSettingsSchema.parse({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
+    expect(managementAccountSettingsSchema.parse({ agentModes: { 'model-a': false, 'model-b': true } }).agentModes)
+      .toEqual({ 'model-a': false, 'model-b': true })
+    expect(managementAccountSettingsSchema.safeParse({ agentModes: { 'model-a': 'false' } }).success).toBe(false)
+    expect(managementAccountSettingsSchema.parse({ agentModeEnabled: false })).toMatchObject({
+      agentModeEnabled: false,
+      agentModes: {},
+    })
     expect(document.instance).toMatchObject({
       auth: {
         signupEnabled: true,

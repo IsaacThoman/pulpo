@@ -1185,7 +1185,6 @@ function PrototypeRoot() {
   useLayoutEffect(() => {
     if (productionStatus !== 'authenticated' || !expectedNamespace) {
       if (usePrototypeStore.getState().productionNamespace !== null) clearProductionScope();
-      void usePreferencesStore.getState().activateAgentNamespace(null);
       return;
     }
     if (usePrototypeStore.getState().productionNamespace !== expectedNamespace) {
@@ -1832,7 +1831,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
-    const agentMode = Boolean(usePreferencesStore.getState().agentMode && agentAvailable && selectedPrototypeModel?.agentEnabled);
+    const agentMode = Boolean((usePreferencesStore.getState().agentModes[modelId] ?? true) && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
     const responseId = Crypto.randomUUID();
     const optimistic = cacheOptimisticBranch({
@@ -2957,11 +2956,8 @@ function ChatView({
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
-  const preferredAgentMode = usePreferencesStore((state) => state.agentMode);
+  const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
-  const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
-  const productionUserId = useSessionStore((state) => state.user?.id);
-  const agentNamespace = productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null;
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
@@ -3089,12 +3085,22 @@ function ChatView({
   }, []);
 
   const toggleAgent = useCallback(() => {
-    if (!canUseAgent || !agentNamespace) return;
+    if (!canUseAgent) return;
     const next = !activeAgentEnabled;
     setAgentEnabled(next);
-    if (!messageEdit) void usePreferencesStore.getState().setNamespacedAgentMode(agentNamespace, next);
+    if (!messageEdit) {
+      const store = usePreferencesStore.getState();
+      runProductionAction(productionActions.setPreference('agentModes', {
+        ...store.agentModes,
+        [model.id]: next,
+      }), {
+        onError: (error) => {
+          useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The Agent mode choice could not be synced.');
+        },
+      });
+    }
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, agentNamespace, canUseAgent, messageEdit]);
+  }, [activeAgentEnabled, canUseAgent, messageEdit, model.id]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
