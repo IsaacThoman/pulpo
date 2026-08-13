@@ -876,25 +876,27 @@ export function Sidebar({
     const pinned = sidebarPins[key]
     const action = pinned ? 'Unpin' : 'Pin'
     return (
-      <div key={key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-0.5">
-        <DropdownMenuItem onClick={() => go(path)}>
+      <div key={key} className="group/account-nav relative">
+        <DropdownMenuItem className="w-full pr-9" onClick={() => go(path)}>
           {icon}
           <span className="min-w-0 flex-1 truncate">{label}</span>
           {Boolean(badge) && <span className="rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
             {badge! > 99 ? '99+' : badge}
           </span>}
         </DropdownMenuItem>
-        <DropdownMenuItem
+        <button
+          type="button"
           aria-label={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
           title={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
-          className="px-2"
-          onSelect={(event) => {
+          className="invisible absolute right-1 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground focus-visible:visible focus-visible:ring-1 focus-visible:ring-ring group-hover/account-nav:visible group-focus-within/account-nav:visible"
+          onClick={(event) => {
             event.preventDefault()
+            event.stopPropagation()
             setSetting('sidebarPins', toggleSidebarPin(sidebarPins, key))
           }}
         >
-          {pinned ? <PinOff /> : <Pin />}
-        </DropdownMenuItem>
+          {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+        </button>
       </div>
     )
   }
