@@ -30,13 +30,24 @@
         }
       ],
       "lighting" : "combined",
-      "shadow" : {
-        "kind" : "layer-color",
-        "opacity" : 1
-      },
+      "shadow-specializations" : [
+        {
+          "value" : {
+            "kind" : "none",
+            "opacity" : 1
+          }
+        },
+        {
+          "appearance" : "tinted",
+          "value" : {
+            "kind" : "layer-color",
+            "opacity" : 1
+          }
+        }
+      ],
       "specular-specializations" : [
         {
-          "value" : true
+          "value" : false
         },
         {
           "appearance" : "tinted",
@@ -54,7 +65,7 @@
           "appearance" : "tinted",
           "value" : {
             "enabled" : false,
-            "value" : 0.43
+            "value" : 0
           }
         }
       ]
