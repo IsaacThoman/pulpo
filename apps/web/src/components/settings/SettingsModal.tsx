@@ -566,7 +566,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       key={color}
                       type="button"
                       aria-label={`Profile color ${color}`}
-                      className={cn('size-5 cursor-pointer rounded border', profileColor === color && 'ring-2 ring-inset ring-foreground')}
+                      className={cn('size-5 cursor-pointer rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
                       style={{ backgroundColor: color }}
                       onClick={() => { setProfileMessage(''); setProfileColor(color) }}
                     />)}
