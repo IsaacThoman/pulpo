@@ -17,6 +17,7 @@ describe('deleted model replacement', () => {
         'deleted-model': { effort: 'high' },
         'other-model': { effort: 'low' },
       },
+      agentModes: { 'deleted-model': false, 'other-model': true },
     }, 'deleted-model')).toEqual({
       changed: true,
       value: {
@@ -25,6 +26,7 @@ describe('deleted model replacement', () => {
         favoriteModelIds: ['other-model'],
         providerOrder: ['other-model'],
         generation: { 'other-model': { effort: 'low' } },
+        agentModes: { 'other-model': true },
       },
     })
   })

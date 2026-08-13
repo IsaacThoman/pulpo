@@ -145,8 +145,8 @@ export function Composer({
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const setPresetChoice = useSettings((s) => s.setPresetChoice)
-  const agentModeEnabled = useSettings((s) => s.agentModeEnabled)
-  const setSetting = useSettings((s) => s.set)
+  const agentModeEnabled = useSettings((s) => s.agentModes[modelId] ?? true)
+  const setAgentMode = useSettings((s) => s.setAgentMode)
   const agentAvailable = useCatalog((s) => s.agentAvailable)
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
@@ -582,7 +582,10 @@ export function Composer({
           {attachmentRestriction === 'enable_agent' && (
             <button
               type="button"
-              onClick={() => setSetting('agentModeEnabled', true)}
+              onClick={() => {
+                if (messageEdit) setEditAgentMode(true)
+                else setAgentMode(modelId, true)
+              }}
               className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
             >
               Enable Agent
@@ -823,7 +826,7 @@ export function Composer({
             onClick={() => {
               if (!canUseAgent) return
               if (messageEdit) setEditAgentMode((value) => !value)
-              else setSetting('agentModeEnabled', !agentModeEnabled)
+              else setAgentMode(modelId, !agentModeEnabled)
             }}
             aria-label={activeAgentMode && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
             aria-pressed={activeAgentMode && canUseAgent}

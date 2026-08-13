@@ -18,7 +18,8 @@ export interface Preferences {
   favoriteModelIds: string[]
   providerOrder: string[]
   defaultModelId: string | null
-  agentMode: boolean
+  /** Per-model Agent mode selections. Missing model ids default on. */
+  agentModes: Record<string, boolean>
   /** Per-model map of generation preset id to selected choice id. */
   generation: Record<string, Record<string, string>>
 }
@@ -26,7 +27,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentMode: false,
+  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
 }
 
@@ -38,6 +39,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     favoriteModelIds: validOrderedIds(values.favoriteModelIds),
     providerOrder: validOrderedIds(values.providerOrder),
     generation: validGenerationPreferences(values.generation),
+    agentModes: validAgentModes(values.agentModes),
   }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
@@ -76,9 +78,16 @@ function validGenerationPreferences(value: unknown): Preferences['generation'] {
   }))
 }
 
+function validAgentModes(value: unknown): Preferences['agentModes'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean'),
+  )
+}
+
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation'].includes(key)
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
   return serverKey ? { [serverKey]: value } : null
