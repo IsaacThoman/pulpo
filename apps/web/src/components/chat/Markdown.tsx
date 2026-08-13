@@ -102,9 +102,9 @@ export const Markdown = memo(function Markdown({ content, streaming = false }: {
           ul: ({ children }) => <ul className="my-2 list-disc space-y-1 pl-6">{children}</ul>,
           ol: ({ children }) => <ol className="my-2 list-decimal space-y-1 pl-6">{children}</ol>,
           li: ({ children }) => <li className="leading-7">{children}</li>,
-          h1: ({ children }) => <h1 className="mb-2 mt-4 text-xl font-semibold">{children}</h1>,
-          h2: ({ children }) => <h2 className="mb-2 mt-4 text-lg font-semibold">{children}</h2>,
-          h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-base font-semibold">{children}</h3>,
+          h1: ({ children }) => <h1 className="mb-2 mt-4 text-xl font-semibold first:mt-0">{children}</h1>,
+          h2: ({ children }) => <h2 className="mb-2 mt-4 text-lg font-semibold first:mt-0">{children}</h2>,
+          h3: ({ children }) => <h3 className="mb-1.5 mt-3 text-base font-semibold first:mt-0">{children}</h3>,
           blockquote: ({ children }) => (
             <blockquote className="my-2 border-l-2 border-muted-foreground/30 pl-4 text-muted-foreground italic">
               {children}
