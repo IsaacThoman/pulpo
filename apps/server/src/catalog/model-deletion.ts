@@ -33,10 +33,14 @@ export function removeDeletedModelPreferences(value: unknown, modelId: string): 
   const generation = objectValue(current.generation)
   const hasGeneration = Object.hasOwn(generation, modelId)
   const { [modelId]: _deletedGeneration, ...remainingGeneration } = generation
+  const agentModes = objectValue(current.agentModes)
+  const hasAgentMode = Object.hasOwn(agentModes, modelId)
+  const { [modelId]: _deletedAgentMode, ...remainingAgentModes } = agentModes
   const changed = current.defaultModelId === modelId
     || favoriteModelIds !== undefined && favoriteModelIds.length !== currentFavorites?.length
     || providerOrder !== undefined && providerOrder.length !== currentProviderOrder?.length
     || hasGeneration
+    || hasAgentMode
   if (!changed) return { changed: false, value: current }
   return {
     changed: true,
@@ -46,6 +50,7 @@ export function removeDeletedModelPreferences(value: unknown, modelId: string): 
       ...(favoriteModelIds ? { favoriteModelIds } : {}),
       ...(providerOrder ? { providerOrder } : {}),
       ...(hasGeneration ? { generation: remainingGeneration } : {}),
+      ...(hasAgentMode ? { agentModes: remainingAgentModes } : {}),
     },
   }
 }

@@ -561,6 +561,9 @@ export const modelPreferencesPatchSchema = z.object({
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
+/** Account-scoped Agent mode selections keyed by visible catalog model id. */
+export const agentModesSchema = z.record(z.string(), z.boolean())
+
 /** Instance defaults copied into each account when it is created. */
 export const newAccountModelDefaultsSchema = z.object({
   defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
@@ -935,7 +938,10 @@ export const managementAccountSettingsSchema = z.object({
   customInstructions: z.string().max(100_000).default(''),
   nickname: z.string().max(80).default(''),
   memoryEnabled: z.boolean().default(false),
-  agentModeEnabled: z.boolean().default(true),
+  /** Per-model composer Agent mode selections. Missing model ids default on in clients. */
+  agentModes: agentModesSchema.default({}),
+  /** @deprecated Retained so older management documents remain readable. */
+  agentModeEnabled: z.boolean().optional(),
   leaderboardVisible: z.boolean().default(false),
   leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default('#10b981'),
   localChatLimit: z.number().int().min(0).max(500).default(50),
