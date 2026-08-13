@@ -1106,6 +1106,22 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            <DropdownMenuItem onClick={() => go('/usage')}>
+              <BarChart3 />
+              Usage
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => go('/friends')}>
+              <UsersRound />
+              Friends
+              {Boolean(pendingFriendsQuery.data?.count) && <span className="ml-auto rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
+                {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
+              </span>}
+            </DropdownMenuItem>
+            {apiKeysEnabled && <DropdownMenuItem onClick={() => go('/api-keys')}>
+              <KeyRound />
+              API keys
+            </DropdownMenuItem>}
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
               Settings
