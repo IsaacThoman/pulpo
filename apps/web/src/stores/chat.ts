@@ -181,6 +181,12 @@ function replaceStreamingId(ids: string[], from: string, to: string): string[] {
   return addStreamingId(removeStreamingId(ids, from), to)
 }
 
+function currentAgentMode(modelId: string): boolean {
+  return useSettings.getState().agentModeEnabled
+    && Boolean(getCatalogModel(modelId).agentEnabled)
+    && useCatalog.getState().agentAvailable
+}
+
 function responseChatIndex(chats: Chat[], previous: Record<string, string> = {}): Record<string, string> {
   const chatIds = new Set(chats.map((chat) => chat.id))
   const index: Record<string, string> = Object.fromEntries(
@@ -540,7 +546,7 @@ function cacheOptimisticBranch(input: {
   presetSelections: Record<string, string>
   editedInput?: string
   editedAttachments?: Attachment[]
-  editedAgentMode?: boolean
+  agentMode?: boolean
 }): { chat: ServerChat; selectionVersion: number } | undefined {
   const existing = queryClient.getQueryData<ServerChat>(chatKey(input.chatId))
   const source = existing?.responses?.find((response) => response.id === input.sourceResponseId)
@@ -572,7 +578,7 @@ function cacheOptimisticBranch(input: {
     },
     branches: { user: { ids: [input.responseId], index: 0 }, assistant: { ids: [input.responseId], index: 0 } },
     userMessageId: input.editedInput === undefined ? source.userMessageId : crypto.randomUUID(),
-    agentMode: input.editedAgentMode ?? source.agentMode,
+    agentMode: input.agentMode ?? source.agentMode,
   }
   const attachmentRows = (input.editedAttachments ?? []).map((attachment) => ({
     id: attachment.id,
@@ -1218,6 +1224,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       useSettings.getState().generation[modelId],
       modelId,
     )
+    const agentMode = currentAgentMode(modelId)
     const userMessage: Message = {
       id: `${responseId}:input`,
       role: 'user',
@@ -1229,7 +1236,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     const assistantMessage: Message = {
       id: responseId, role: 'assistant', content: '', modelId,
       timestamp: timestamp + 1, done: false, presetSelections: generation.selections,
-      agentMode: useSettings.getState().agentModeEnabled && getCatalogModel(modelId).agentEnabled && useCatalog.getState().agentAvailable,
+      agentMode,
     }
     set((state) => {
       const existing = state.chats.find((chat) => chat.id === id)
@@ -1288,7 +1295,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         modelId,
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
-        agentMode: useSettings.getState().agentModeEnabled && getCatalogModel(modelId).agentEnabled && useCatalog.getState().agentAvailable,
+        agentMode,
       }
       const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
       const body = chatId ? responseBody : {
@@ -1555,6 +1562,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       useSettings.getState().generation[modelId],
       modelId,
     )
+    const agentMode = currentAgentMode(modelId)
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,
@@ -1563,6 +1571,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId: generation.effectiveModelId || modelId,
       displayModelId: modelId,
       presetSelections: generation.selections,
+      agentMode,
     })
     const selectionVersion = optimistic?.selectionVersion
       ?? branchSelectionIntents.select(chatId, responseId).version
@@ -1571,6 +1580,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       clientId: responseId,
       modelId,
       presetSelections: generation.selections,
+      agentMode,
     }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) })).then((result) => {
       if (result === undefined) return
       branchSelectionIntents.clear(chatId, selectionVersion)
@@ -1603,7 +1613,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       presetSelections: generation.selections,
       editedInput: content,
       editedAttachments,
-      editedAgentMode: agentMode,
+      agentMode,
     })
     const selectionVersion = optimistic?.selectionVersion
       ?? branchSelectionIntents.select(chatId, responseId).version

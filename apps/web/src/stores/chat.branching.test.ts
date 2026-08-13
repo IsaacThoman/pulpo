@@ -46,19 +46,51 @@ vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit)
   })
 })))
 
-const [{ useChat }, { useAuth }, { useSettings }, { queryClient }, { withBranchMetadata }] = await Promise.all([
+const [{ useChat }, { useAuth }, { useSettings }, { queryClient }, { withBranchMetadata }, { useCatalog }] = await Promise.all([
   import('./chat'),
   import('./auth'),
   import('./settings'),
   import('@/lib/query-client'),
   import('@/lib/message-branches'),
+  import('./catalog'),
 ])
+import type { Model } from '@/lib/types'
 import type { ServerChat, ServerResponse } from './chat'
 
 const userId = '00000000-0000-4000-8000-000000000001'
 const chatId = '00000000-0000-4000-8000-000000000002'
 const responseAId = '00000000-0000-4000-8000-000000000003'
 const createdAt = '2026-08-03T12:00:00.000Z'
+
+const testModel: Model = {
+  id: 'test-model',
+  name: 'Test model',
+  providerGroupId: 'test-provider',
+  provider: 'Test provider',
+  inferenceProvider: 'Test provider',
+  labLogo: 'pulpo',
+  modelLogo: 'pulpo',
+  description: '',
+  contextWindow: 128_000,
+  tags: ['reasoning'],
+  iconLight: '#000000',
+  iconDark: '#ffffff',
+  inputPrice: 0,
+  outputPrice: 0,
+  perMessagePrice: 0,
+  enabled: true,
+  agentEnabled: true,
+  presets: [{
+    id: 'reasoning',
+    name: 'Reasoning',
+    icon: 'brain',
+    defaultChoiceId: 'low',
+    choices: [
+      { id: 'low', displayName: 'Low', action: { type: 'params', params: { reasoning_effort: 'low' } } },
+      { id: 'high', displayName: 'High', action: { type: 'params', params: { reasoning_effort: 'high' } } },
+    ],
+  }],
+}
 
 function response(id: string, status: ServerResponse['status']): ServerResponse & { snapshot: ResponseSnapshot } {
   const done = !['queued', 'in_progress'].includes(status)
@@ -146,7 +178,13 @@ beforeEach(() => {
     responseSequences: {},
     responseChatIds: {},
   })
-  useSettings.setState({ automaticChatExpiration: 'disabled', newChatAutoExpire: true })
+  useSettings.setState({
+    automaticChatExpiration: 'disabled',
+    newChatAutoExpire: true,
+    agentModeEnabled: false,
+    generation: {},
+  })
+  useCatalog.setState({ models: [testModel], loaded: true, agentAvailable: true })
   queryClient.clear()
 })
 
@@ -374,6 +412,45 @@ describe('chat store branching integration', () => {
       ...detail(responseBId, [responseA, completed]),
       attachments: optimistic.attachments,
     })
+  })
+
+  it('regenerates with the Agent and preset state selected when the action starts', async () => {
+    const responseA = {
+      ...response(responseAId, 'completed'),
+      agentMode: false,
+      presetSelections: { reasoning: 'low' },
+    }
+    const initial = detail(responseAId, [responseA])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+    useSettings.setState({
+      agentModeEnabled: true,
+      generation: { 'test-model': { reasoning: 'high' } },
+    })
+
+    useChat.getState().regenerate(chatId, responseAId, 'test-model')
+
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const responseBId = optimistic.activeBranchLeafId!
+    expect(optimistic.responses?.find((item) => item.id === responseBId)).toMatchObject({
+      agentMode: true,
+      presetSelections: { reasoning: 'high' },
+    })
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]?.body).toMatchObject({
+      modelId: 'test-model',
+      presetSelections: { reasoning: 'high' },
+      agentMode: true,
+    })
+    requests[0]!.resolve({ response: optimistic.responses!.find((item) => item.id === responseBId)!.snapshot })
+    const completed = {
+      ...response(responseBId, 'completed'),
+      agentMode: true,
+      presetSelections: { reasoning: 'high' },
+    }
+    useChat.getState().applyResponseSnapshot(completed.snapshot)
+    useChat.getState().setDetailedChat(detail(responseBId, [responseA, completed]))
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   it('keeps one visible turn through regenerate, back, forward, stale detail, and completion', async () => {

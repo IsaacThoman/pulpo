@@ -1784,6 +1784,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
+    const agentMode = Boolean(usePreferencesStore.getState().agentMode && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
     const responseId = Crypto.randomUUID();
     const optimistic = cacheOptimisticBranch({
@@ -1794,12 +1795,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       responseId,
       modelId,
       presetSelections: selections,
+      agentMode,
       createdAt: Date.now(),
     });
     setAssistantStatus('thinking');
     if (optimistic) trackActiveResponse(optimistic.snapshot);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
-    void regenerateServerResponse(message.id, modelId, selections, responseId).then((response) => {
+    void regenerateServerResponse(message.id, modelId, selections, responseId, agentMode).then((response) => {
       const responseActive = trackActiveResponse(response);
       setAssistantStatus(responseActive ? (response.status === 'queued' ? 'thinking' : 'streaming') : 'idle');
       void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) });
@@ -1812,7 +1814,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       setAssistantStatus('idle');
       Alert.alert('Couldn’t regenerate response', error instanceof Error ? error.message : undefined);
     });
-  }, [activeChatId, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, trackActiveResponse]);
+  }, [activeChatId, agentAvailable, effectiveAssistantStatus, presetSelections, productionInstanceUrl, productionUserId, queryClient, selectedModel.id, selectedPrototypeModel?.agentEnabled, trackActiveResponse]);
 
   const editMessage = useCallback(async (
     message: Message,
@@ -1843,7 +1845,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           mimeType: attachment.mimeType,
           sizeBytes: attachment.size ?? 0,
         })),
-        editedAgentMode: agentMode,
+        agentMode,
       } : {}),
       createdAt: Date.now(),
     });
@@ -3079,7 +3081,6 @@ function ChatView({
     const existing = message.attachments ?? [];
     setMessageEdit({ message, originalAttachmentIds: new Set(existing.map((attachment) => attachment.id)) });
     onChangeInput(message.text);
-    setAgentEnabled(Boolean(message.agentMode));
     setAttachments(existing.map((attachment) => ({
       ...attachment,
       localId: `sent:${message.id}:${attachment.id}`,

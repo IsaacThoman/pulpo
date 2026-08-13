@@ -80,4 +80,39 @@ describe('conversation compaction', () => {
     expect(result.item).toBeUndefined()
     expect(result.conversation).toHaveLength(4)
   })
+
+  it('replays Agent turns as plain assistant text for a non-Agent request', () => {
+    const chunks = effectiveHistoryChunks([{
+      ...turn('00000000-0000-4000-8000-000000000041'),
+      agentMode: true,
+      output: [
+        {
+          id: 'agent-checkpoint', type: 'pulpo_compaction', phase: 'pre_response', status: 'completed', model_id: 'model',
+          estimated_tokens: 100, threshold_tokens: 50, retained_turns: [], summary: 'agent summary',
+          retained_context: [{ role: 'assistant', content: [{ type: 'toolCall', name: 'bash' }] }],
+          retained_context_turns: [[{ role: 'assistant', content: [{ type: 'toolCall', name: 'bash' }] }]],
+          started_at: new Date(0).toISOString(),
+        },
+        { type: 'pulpo_workspace', status: 'completed' },
+        { type: 'reasoning', summary: [{ type: 'summary_text', text: 'private reasoning' }] },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Checking that now.' }] },
+        { type: 'pulpo_tool', tool: 'bash', arguments: { command: 'curl' }, output: '203.0.113.4', status: 'completed' },
+        { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'There is no public IP.' }] },
+      ],
+    }])
+
+    expect(chunks).toEqual([{
+      responseId: '00000000-0000-4000-8000-000000000041',
+      retainable: true,
+      context: [
+        { role: 'user', content: 'user 00000000-0000-4000-8000-000000000041' },
+        { role: 'assistant', content: 'Checking that now.\nThere is no public IP.' },
+      ],
+    }])
+    expect(JSON.stringify(chunks)).not.toContain('pulpo_tool')
+    expect(JSON.stringify(chunks)).not.toContain('toolCall')
+    expect(JSON.stringify(chunks)).not.toContain('agent summary')
+    expect(JSON.stringify(chunks)).not.toContain('private reasoning')
+    expect(JSON.stringify(chunks)).not.toContain('203.0.113.4')
+  })
 })

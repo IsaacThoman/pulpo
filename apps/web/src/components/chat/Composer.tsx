@@ -64,7 +64,6 @@ export interface ComposerMessageEdit {
   messageId: string
   content: string
   attachments: Attachment[]
-  agentMode: boolean
 }
 
 const EMPTY_QUEUE: never[] = []
@@ -350,7 +349,7 @@ export function Composer({
     preservedDraftRef.current = { value, attachments }
     activeMessageEditIdRef.current = messageEdit.messageId
     setValue(messageEdit.content)
-    setEditAgentMode(messageEdit.agentMode)
+    setEditAgentMode(agentModeEnabled)
     setQueueError(null)
     setAttachments(messageEdit.attachments.map((attachment) => ({
       localId: `sent:${messageEdit.messageId}:${attachment.id}`,
@@ -365,7 +364,7 @@ export function Composer({
       autosize()
       ref.current?.focus()
     })
-  }, [attachments, autosize, editingQueueId, messageEdit, value])
+  }, [agentModeEnabled, attachments, autosize, editingQueueId, messageEdit, value])
 
   const cancelMessageEdit = useCallback(() => {
     if (!messageEdit) return

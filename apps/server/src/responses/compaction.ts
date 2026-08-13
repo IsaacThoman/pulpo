@@ -1,12 +1,14 @@
 import type { CompactionItem, CompactionRetainedEntry } from '@pulpo/contracts'
 import { estimateInputTokens } from '../accounting/pricing.js'
 import { sanitizeContextForStorage } from './public-output.js'
+import { assistantOutputText } from './output-text.js'
 
 export const COMPACTION_PROMPT = 'Summarize this earlier conversation faithfully for context. Preserve decisions, facts, code constraints, and unresolved tasks.'
 
 type HistoryResponse = {
   id: string
   status: string
+  agentMode?: boolean
   input: unknown
   output: unknown
 }
@@ -57,7 +59,9 @@ function contextEntries(context: unknown[]): CompactionRetainedEntry[] {
 }
 
 function completedCheckpoint(response: HistoryResponse): CompactionItem | undefined {
-  if (response.status !== 'completed') return undefined
+  // Agent checkpoints retain Pi tool-protocol messages, which are not valid
+  // input for the plain Responses API path.
+  if (response.status !== 'completed' || response.agentMode) return undefined
   const output = Array.isArray(response.output) ? response.output : []
   return output.findLast((raw): raw is CompactionItem => {
     const item = raw as Partial<CompactionItem>
@@ -84,13 +88,18 @@ export function effectiveHistoryChunks(history: HistoryResponse[]): HistoryChunk
     chunks.push(...retainedTurns.map((context) => ({ context, retainable: true })))
   }
   for (const response of history.slice(Math.max(0, checkpointIndex))) {
+    const agentText = response.agentMode && response.status === 'completed'
+      ? assistantOutputText(response.output)
+      : ''
     chunks.push({
       responseId: response.id,
       retainable: true,
       context: [
         ...(Array.isArray(response.input) ? response.input : []),
         ...(response.status === 'completed' && Array.isArray(response.output)
-          ? response.output.filter((item) => (item as { type?: string }).type !== 'pulpo_compaction')
+          ? response.agentMode
+            ? agentText ? [{ role: 'assistant', content: agentText }] : []
+            : response.output.filter((item) => (item as { type?: string }).type !== 'pulpo_compaction')
           : []),
       ],
     })
