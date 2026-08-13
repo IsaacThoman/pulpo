@@ -59,6 +59,7 @@ for service in api worker; do
     .services[$service].environment as $env
     | $env.NODE_ENV == "development"
       and $env.PUBLIC_URL == "http://localhost:8080"
+      and $env.POSTGRES_PASSWORD == "pulpo"
       and $env.PULPO_INSTANCE_ID == "local-preview"
       and $env.PULPO_BOOTSTRAP_PRESET == "ci-preview"
       and $env.PULPO_PREVIEW_ADMIN_EMAIL == "preview@example.com"
