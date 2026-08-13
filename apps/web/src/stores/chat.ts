@@ -182,7 +182,7 @@ function replaceStreamingId(ids: string[], from: string, to: string): string[] {
 }
 
 function currentAgentMode(modelId: string): boolean {
-  return useSettings.getState().agentModeEnabled
+  return (useSettings.getState().agentModes[modelId] ?? true)
     && Boolean(getCatalogModel(modelId).agentEnabled)
     && useCatalog.getState().agentAvailable
 }

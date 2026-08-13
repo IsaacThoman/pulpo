@@ -11,7 +11,8 @@ import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
 
 const persistedKeys = [
   'theme', 'language', 'sendWithEnter', 'streamResponses', 'showReasoning',
-  'chatWidth', 'customInstructions', 'memoryEnabled', 'agentModeEnabled', 'generation',
+  'chatWidth', 'customInstructions', 'nickname', 'memoryEnabled', 'agentModes',
+  'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',
   'localAttachmentCacheMb',
   'trashRetention',

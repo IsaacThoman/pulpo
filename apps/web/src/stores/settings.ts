@@ -18,8 +18,12 @@ interface SettingsState {
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
   customInstructions: string
+  nickname: string
   memoryEnabled: boolean
-  agentModeEnabled: boolean
+  /** Per-model composer Agent mode selections. Missing model ids default on. */
+  agentModes: Record<string, boolean>
+  leaderboardVisible: boolean
+  leaderboardColor: string
   localChatLimit: number
   localAttachmentCacheMb: number
   trashRetention: TrashRetention
@@ -33,6 +37,7 @@ interface SettingsState {
   set: <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => void
   setGeneration: (modelId: string, prefs: GenerationPrefs) => void
   setPresetChoice: (modelId: string, presetId: string, choiceId: string) => void
+  setAgentMode: (modelId: string, enabled: boolean) => void
 }
 
 export const DEFAULT_SETTINGS = {
@@ -43,8 +48,11 @@ export const DEFAULT_SETTINGS = {
   showReasoning: true,
   chatWidth: 'narrow' as const,
   customInstructions: '',
+  nickname: '',
   memoryEnabled: false,
-  agentModeEnabled: true,
+  agentModes: {},
+  leaderboardVisible: false,
+  leaderboardColor: '#10b981',
   localChatLimit: 50,
   localAttachmentCacheMb: 50,
   trashRetention: '30d' as TrashRetention,
@@ -73,6 +81,8 @@ export const useSettings = create<SettingsState>()(
             [modelId]: { ...s.generation[modelId], [presetId]: choiceId },
           },
         })),
+      setAgentMode: (modelId, enabled) =>
+        set((s) => ({ agentModes: { ...s.agentModes, [modelId]: enabled } })),
     }),
     { name: 'pulpo-settings' }
   )

@@ -266,7 +266,7 @@ function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrap
           defaultModelId: CI_PREVIEW_MODEL_ID,
           favoriteModelIds: [CI_PREVIEW_MODEL_ID],
           providerOrder: [CI_PREVIEW_LAB_ID],
-          agentModeEnabled: true,
+          agentModes: {},
         },
       })
       await transaction.insert(applicationSettings).values([

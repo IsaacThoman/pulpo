@@ -38,7 +38,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: false,
     appleTeamId: 'PX72AL9366',
-    icon: './assets/pulpo-app-icon.png',
+    icon: './assets/Pulpo.icon',
     associatedDomains: ['applinks:pulpo.baby', ...passkeyDomains.map((domain) => `webcredentials:${domain}`)],
     infoPlist: {
       CFBundleDisplayName: 'Pulpo',

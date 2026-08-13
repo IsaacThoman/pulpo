@@ -18,22 +18,47 @@ beforeEach(() => {
   usePreferencesStore.setState({
     ...defaultPreferences,
     hydrated: true,
-    activeAgentNamespace: null,
-    agentModeHydrated: false,
     synchronizedOwnerNamespace: null,
     modelPreferencesDirty: false,
     generationPreferenceDirty: false,
+    agentModesPreferenceDirty: false,
   })
 })
 
-describe('namespaced agent preference', () => {
-  it('survives scope changes without leaking to another account', async () => {
-    await usePreferencesStore.getState().activateAgentNamespace('instance-a|user-a')
-    await usePreferencesStore.getState().setNamespacedAgentMode('instance-a|user-a', true)
-    await usePreferencesStore.getState().activateAgentNamespace('instance-a|user-b')
-    expect(usePreferencesStore.getState().agentMode).toBe(false)
-    await usePreferencesStore.getState().activateAgentNamespace('instance-a|user-a')
-    expect(usePreferencesStore.getState().agentMode).toBe(true)
+describe('synchronized Agent mode preferences', () => {
+  const local = { 'model-a': false, 'model-b': true }
+  const account = { 'model-a': true, 'model-b': false }
+
+  it('hydrates account choices and defaults missing models on at the call site', async () => {
+    await usePreferencesStore.getState().applyServerPreferences({ agentModes: account })
+
+    expect(usePreferencesStore.getState()).toMatchObject({
+      agentModes: account,
+      agentModesPreferenceDirty: false,
+    })
+    expect(usePreferencesStore.getState().agentModes['model-missing'] ?? true).toBe(true)
+  })
+
+  it('keeps dirty local choices until the matching value is saved', async () => {
+    await usePreferencesStore.getState().setPreference('agentModes', local)
+    await usePreferencesStore.getState().applyServerPreferences({ agentModes: account })
+    expect(usePreferencesStore.getState()).toMatchObject({
+      agentModes: local,
+      agentModesPreferenceDirty: true,
+    })
+
+    await usePreferencesStore.getState().markSynchronizedPreferenceSynced('agentModes', local)
+    expect(usePreferencesStore.getState().agentModesPreferenceDirty).toBe(false)
+  })
+
+  it('clears choices when another account takes ownership', async () => {
+    usePreferencesStore.setState({ agentModes: local, agentModesPreferenceDirty: true })
+    await usePreferencesStore.getState().resetSynchronizedPreferences('instance-a|user-b')
+    expect(usePreferencesStore.getState()).toMatchObject({
+      synchronizedOwnerNamespace: 'instance-a|user-b',
+      agentModes: {},
+      agentModesPreferenceDirty: false,
+    })
   })
 })
 

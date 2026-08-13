@@ -184,7 +184,7 @@ beforeEach(() => {
   useSettings.setState({
     automaticChatExpiration: 'disabled',
     newChatAutoExpire: true,
-    agentModeEnabled: false,
+    agentModes: { 'test-model': false },
     generation: {},
   })
   useCatalog.setState({ models: [testModel], loaded: true, agentAvailable: true })
@@ -427,7 +427,7 @@ describe('chat store branching integration', () => {
     queryClient.setQueryData(['chat', userId, chatId], initial)
     useChat.getState().setDetailedChat(initial)
     useSettings.setState({
-      agentModeEnabled: true,
+      agentModes: { 'another-model': false },
       generation: { 'test-model': { reasoning: 'high' } },
     })
 

@@ -327,9 +327,23 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      favoriteModelIds: [], sidebarPins: { usage: false, friends: false, apiKeys: false },
+      nickname: '', favoriteModelIds: [], agentModes: {},
+      sidebarPins: { usage: false, friends: false, apiKeys: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
+    expect(managementAccountSettingsSchema.parse({
+      username: 'pulpo_user', agentModes: { 'model-a': false, 'model-b': true },
+    }).agentModes)
+      .toEqual({ 'model-a': false, 'model-b': true })
+    expect(managementAccountSettingsSchema.safeParse({
+      username: 'pulpo_user', agentModes: { 'model-a': 'false' },
+    }).success).toBe(false)
+    expect(managementAccountSettingsSchema.parse({
+      username: 'pulpo_user', agentModeEnabled: false,
+    })).toMatchObject({
+      agentModeEnabled: false,
+      agentModes: {},
+    })
     expect(document.instance).toMatchObject({
       auth: {
         signupEnabled: true,

@@ -118,6 +118,7 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   KeyboardChatScrollView,
+  KeyboardController,
   KeyboardStickyView,
   type KeyboardChatScrollViewRef,
   useReanimatedKeyboardAnimation,
@@ -155,7 +156,7 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { chatRemovalBehavior } from './src/chatRemoval';
-import { resolveDisplayModel } from './src/modelIdentity';
+import { reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
@@ -168,6 +169,7 @@ import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
+import { startComposerAutoFocus } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
@@ -192,6 +194,7 @@ import {
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
+import { startAuthKeyboardHandoff } from '../auth/keyboardHandoff';
 import {
   HistoryChatContextMenuView,
   type HistoryChatContextMenuAction,
@@ -228,6 +231,10 @@ const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps
 ));
 
 ChatScrollView.displayName = 'ChatScrollView';
+
+function systemKeyboardIsVisible(): boolean {
+  return Keyboard.isVisible() || KeyboardController.isVisible() || Keyboard.metrics() != null;
+}
 
 function systemColor(ios: string, android: string, fallback: string): ColorValue {
   if (Platform.OS === 'ios') return PlatformColor(ios);
@@ -1126,6 +1133,7 @@ export default function App() {
 
 function PrototypeRoot() {
   const productionStatus = useSessionStore((state) => state.status);
+  const productionToken = useSessionStore((state) => state.token);
   const productionUser = useSessionStore((state) => state.user);
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionConfig = useSessionStore((state) => state.config);
@@ -1133,6 +1141,11 @@ function PrototypeRoot() {
   const status = productionStatus === 'authenticated' ? 'signed-in' : productionStatus === 'pending' ? 'pending' : 'signed-out';
   const appearance = useColorScheme();
   const themePreference = usePrototypeStore((state) => state.preferences.theme);
+  const [keyboardHandedOffToken, setKeyboardHandedOffToken] = useState<string | null>(null);
+  const authKeyboardHandoffPending = productionStatus === 'authenticated'
+    && productionToken !== null
+    && keyboardHandedOffToken !== productionToken
+    && systemKeyboardIsVisible();
   const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
   const navigationTheme = useMemo(() => {
     const base = isDark ? NavigationDarkTheme : NavigationLightTheme;
@@ -1172,15 +1185,38 @@ function PrototypeRoot() {
   useLayoutEffect(() => {
     if (productionStatus !== 'authenticated' || !expectedNamespace) {
       if (usePrototypeStore.getState().productionNamespace !== null) clearProductionScope();
-      void usePreferencesStore.getState().activateAgentNamespace(null);
       return;
     }
     if (usePrototypeStore.getState().productionNamespace !== expectedNamespace) {
       void hydrateProductionScope(expectedNamespace);
     }
   }, [expectedNamespace, productionStatus]);
+  useEffect(() => {
+    if (productionStatus !== 'authenticated' || !productionToken || keyboardHandedOffToken === productionToken) return undefined;
+    if (!authKeyboardHandoffPending) {
+      setKeyboardHandedOffToken(productionToken);
+      return undefined;
+    }
+
+    return startAuthKeyboardHandoff({
+      addKeyboardDidHideListener: (listener) => Keyboard.addListener('keyboardDidHide', listener),
+      dismissKeyboard: () => {
+        Keyboard.dismiss();
+        void KeyboardController.dismiss({ animated: false }).catch(() => undefined);
+      },
+      isKeyboardVisible: systemKeyboardIsVisible,
+      onComplete: () => setKeyboardHandedOffToken(productionToken),
+      scheduleFallback: (listener, delayMs) => {
+        const timeout = setTimeout(listener, delayMs);
+        return () => clearTimeout(timeout);
+      },
+    });
+  }, [authKeyboardHandoffPending, keyboardHandedOffToken, productionStatus, productionToken]);
   if (productionStatus === 'hydrating') return null;
   if (status !== 'signed-in') return <AuthExperience />;
+  // Retain the focused auth input until its keyboard is fully gone. The chat
+  // input can then mount and auto-focus against a clean keyboard state.
+  if (authKeyboardHandoffPending) return <AuthExperience />;
   return (
     <NavigationContainer theme={navigationTheme}>
       <RootStack.Navigator
@@ -1231,6 +1267,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const availableModels = useMemo(() => prototypeModels.map((model) => prototypeModelToLegacy(model, isDark)), [isDark, prototypeModels]);
   const [selectedModelId, setSelectedModelId] = useState(() => defaultModelId || prototypeModels[0]?.id || '');
+  const composerFollowsDefaultModel = useRef(true);
   const selectedPrototypeModel = useMemo(
     () => prototypeModels.find((model) => model.id === selectedModelId) ?? prototypeModels[0],
     [prototypeModels, selectedModelId],
@@ -1277,8 +1314,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [persistentSidebar, slideX]);
 
   useEffect(() => {
-    if (prototypeModels.some((model) => model.id === selectedModelId)) return;
-    setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
+    const nextModelId = reconcileComposerModelId(
+      prototypeModels,
+      selectedModelId,
+      defaultModelId,
+      composerFollowsDefaultModel.current,
+    );
+    if (nextModelId !== selectedModelId) setSelectedModelId(nextModelId);
   }, [defaultModelId, prototypeModels, selectedModelId]);
 
   useEffect(() => useRealtimeStore.subscribe((state) => {
@@ -1305,6 +1347,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   useEffect(() => {
     const requestedChatId = route.params?.chatId;
     if (!requestedChatId || !storedChats.some((chat) => chat.id === requestedChatId && chat.deletedAt === null)) return;
+    composerFollowsDefaultModel.current = false;
     setActiveChatId(requestedChatId);
     const requestedChat = storedChats.find((chat) => chat.id === requestedChatId);
     if (requestedChat?.modelId) setSelectedModelId(requestedChat.modelId);
@@ -1466,6 +1509,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
+    composerFollowsDefaultModel.current = false;
     setActiveChatId(chat.id);
     setSelectedModelId(chat.modelId);
     setAssistantStatus('idle');
@@ -1481,7 +1525,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setStreamingSession(null);
     setActiveChatId(null);
     setNewChatTemporary(temporaryByDefault);
-    setSelectedModelId(defaultModelId || prototypeModels[0]?.id || '');
+    composerFollowsDefaultModel.current = true;
+    setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
     setInput('');
   }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
 
@@ -1549,6 +1594,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [activeChatId, productionInstanceUrl, productionUserId, queryClient, savingTemporaryChatId]);
 
   const selectModel = useCallback((model: Model) => {
+    composerFollowsDefaultModel.current = false;
     setSelectedModelId(model.id);
     Haptics.selectionAsync();
   }, []);
@@ -1571,6 +1617,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const sendMessage = async (value = input, attachments: PreparedAttachment[] = [], options?: SendOptions): Promise<boolean> => {
     const trimmed = value.trim();
     if ((!trimmed && attachments.length === 0) || effectiveAssistantStatus !== 'idle' || !selectedModel.id) return false;
+    composerFollowsDefaultModel.current = false;
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     const timestamp = Date.now();
@@ -1784,7 +1831,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
-    const agentMode = Boolean(usePreferencesStore.getState().agentMode && agentAvailable && selectedPrototypeModel?.agentEnabled);
+    const agentMode = Boolean((usePreferencesStore.getState().agentModes[modelId] ?? true) && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
     const responseId = Crypto.randomUUID();
     const optimistic = cacheOptimisticBranch({
@@ -2909,11 +2956,8 @@ function ChatView({
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
-  const preferredAgentMode = usePreferencesStore((state) => state.agentMode);
+  const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
-  const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
-  const productionUserId = useSessionStore((state) => state.user?.id);
-  const agentNamespace = productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null;
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
@@ -3012,6 +3056,12 @@ function ChatView({
   const presetLabel = generationSummary(prototypeModel, presetSelections);
   const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
 
+  useEffect(() => startComposerAutoFocus({
+    cancelFrame: cancelAnimationFrame,
+    focus: () => composerInputRef.current?.focus(),
+    scheduleFrame: requestAnimationFrame,
+  }), []);
+
   useEffect(() => {
     setAgentEnabled(preferredAgentMode && canUseAgent);
   }, [canUseAgent, preferredAgentMode]);
@@ -3035,12 +3085,22 @@ function ChatView({
   }, []);
 
   const toggleAgent = useCallback(() => {
-    if (!canUseAgent || !agentNamespace) return;
+    if (!canUseAgent) return;
     const next = !activeAgentEnabled;
     setAgentEnabled(next);
-    if (!messageEdit) void usePreferencesStore.getState().setNamespacedAgentMode(agentNamespace, next);
+    if (!messageEdit) {
+      const store = usePreferencesStore.getState();
+      runProductionAction(productionActions.setPreference('agentModes', {
+        ...store.agentModes,
+        [model.id]: next,
+      }), {
+        onError: (error) => {
+          useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The Agent mode choice could not be synced.');
+        },
+      });
+    }
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, agentNamespace, canUseAgent, messageEdit]);
+  }, [activeAgentEnabled, canUseAgent, messageEdit, model.id]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
@@ -3697,7 +3757,6 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
-                autoFocus
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}

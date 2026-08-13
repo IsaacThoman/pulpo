@@ -5,7 +5,8 @@ describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       theme: 'dark', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      sidebarPins: { usage: false, friends: false, apiKeys: false }, favoriteModelIds: [], providerOrder: [],
+      sidebarPins: { usage: false, friends: false, apiKeys: false },
+      agentModes: {}, favoriteModelIds: [], providerOrder: [],
     })
   })
 
@@ -36,5 +37,28 @@ describe('account model preferences', () => {
       usage: false, friends: false, apiKeys: false,
     })
     expect(() => normalizedPreferencePatch({ sidebarPins: { usage: 'yes' } })).toThrow()
+  })
+})
+
+describe('Agent mode account preferences', () => {
+  it('defaults missing and malformed maps without migrating the legacy global value', () => {
+    expect(preferencesWithModelDefaults({ agentModeEnabled: false })).toMatchObject({
+      agentModeEnabled: false,
+      agentModes: {},
+    })
+    expect(preferencesWithModelDefaults({ agentModes: { 'model-a': 'false' } })).toMatchObject({
+      agentModes: {},
+    })
+  })
+
+  it('normalizes boolean selections and rejects malformed patches', () => {
+    expect(normalizedPreferencePatch({
+      theme: 'dark',
+      agentModes: { 'model-a': false, 'model-b': true },
+    })).toEqual({
+      theme: 'dark',
+      agentModes: { 'model-a': false, 'model-b': true },
+    })
+    expect(() => normalizedPreferencePatch({ agentModes: { 'model-a': 'false' } })).toThrow()
   })
 })
