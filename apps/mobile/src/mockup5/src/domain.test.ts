@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeInstanceUrl } from './domain';
-import { createSeedState } from './seed';
+import { createInitialState } from './initialState';
 
 describe('normalizeInstanceUrl', () => {
   it('defaults a bare hostname to HTTPS and strips paths', () => {
@@ -17,14 +17,14 @@ describe('normalizeInstanceUrl', () => {
   });
 });
 
-describe('prototype seed', () => {
-  it('ships a connected member state with broad sample data', () => {
-    const state = createSeedState();
+describe('initial state', () => {
+  it('starts signed out without account-scoped sample data', () => {
+    const state = createInitialState();
     expect(state.instance.url).toBe('https://pulpo.baby');
-    expect(state.session.status).toBe('signed-in');
-    expect(state.chats.some((chat) => chat.deletedAt !== null)).toBe(true);
-    expect(state.models.some((model) => model.agentEnabled)).toBe(true);
+    expect(state.session).toEqual({ status: 'signed-out', user: null });
+    expect(state.chats).toEqual([]);
+    expect(state.models).toEqual([]);
+    expect(state.folders).toEqual([]);
     expect(state.preferences.sendWithEnter).toBe(true);
-    expect(state.demo.response).toBe('success');
   });
 });

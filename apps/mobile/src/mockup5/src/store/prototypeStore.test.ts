@@ -15,7 +15,8 @@ vi.mock('../../../store/preferences', () => ({
   usePreferencesStore: { getState: () => ({ favoriteModelIds: [], setPreference }) },
 }));
 
-import { createSeedState } from '../seed';
+import { createInitialState } from '../initialState';
+import type { PrototypeChat } from '../domain';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LEGACY_PROTOTYPE_STORAGE_KEYS, purgeLegacyPrototypeSnapshots, usePrototypeStore } from './prototypeStore';
 import { configureProductionActions } from '../production/productionActions';
@@ -23,7 +24,21 @@ import { useRealtimeStore } from '../../../providers/realtimeStore';
 
 beforeEach(() => {
   setPreference.mockClear();
-  usePrototypeStore.setState({ ...createSeedState(), productionNamespace: null, agentAvailable: false });
+  const chats: PrototypeChat[] = [
+    {
+      id: 'c-streaming', title: 'Streaming state architecture', modelId: 'model-1', createdAt: 1, updatedAt: 2,
+      pinned: true, folderId: null, temporary: false, deletedAt: null, purgeAt: null,
+      messages: [
+        { id: 'm-stream-user', role: 'user', text: 'How should streaming state work?', createdAt: 1 },
+        { id: 'm-stream-assistant', role: 'assistant', text: 'Keep transient state local.', createdAt: 2 },
+      ],
+    },
+    {
+      id: 'c-kv', title: 'KV caching explainer', modelId: 'model-1', createdAt: 1, updatedAt: 2,
+      pinned: false, folderId: null, temporary: false, deletedAt: null, purgeAt: null, messages: [],
+    },
+  ];
+  usePrototypeStore.setState({ ...createInitialState(), chats, productionNamespace: null, agentAvailable: false });
   useRealtimeStore.getState().setSyncError(null);
   configureProductionActions({
     renameChat: async () => undefined,
