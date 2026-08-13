@@ -3,6 +3,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Markdown } from './Markdown'
 
 describe('Markdown responsive containment', () => {
+  it.each(['# Heading', '## Heading', '### Heading'])('removes top spacing from an initial heading: %s', (content) => {
+    const markup = renderToStaticMarkup(<Markdown content={content} />)
+
+    expect(markup).toContain('first:mt-0')
+  })
+
   it('allows prose and inline code to break without widening the chat column', () => {
     const markup = renderToStaticMarkup(
       <Markdown content={'https://example.com/an-unbroken-path-without-natural-breaks `anUnbrokenInlineCodeValue`'} />,
