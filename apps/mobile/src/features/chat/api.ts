@@ -225,11 +225,17 @@ export async function cancelResponse(id: string): Promise<ResponseSnapshot> {
   return snapshot
 }
 
-export async function regenerateResponse(id: string, modelId?: string, presetSelections?: Record<string, string>, clientId?: string): Promise<ResponseSnapshot> {
+export async function regenerateResponse(
+  id: string,
+  modelId?: string,
+  presetSelections?: Record<string, string>,
+  clientId?: string,
+  agentMode?: boolean,
+): Promise<ResponseSnapshot> {
   const responseId = clientId ?? Crypto.randomUUID()
   const result = await apiRequest<{ response: ResponseSnapshot }>(`/api/messages/${id}/regenerate`, {
     method: 'POST', idempotencyKey: responseId,
-    body: { clientId: responseId, modelId, presetSelections },
+    body: { clientId: responseId, modelId, presetSelections, agentMode },
   })
   useRealtimeStore.getState().receiveSnapshot(result.response)
   return result.response

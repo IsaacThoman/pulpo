@@ -37,7 +37,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { editMessage, persistChat, sendMessage, startChat } from './api'
+import { editMessage, persistChat, regenerateResponse, sendMessage, startChat } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
@@ -119,6 +119,28 @@ describe('message edits', () => {
       method: 'PATCH',
       idempotencyKey: 'response-2',
       body: expect.objectContaining({ attachmentIds: ['attachment-2'], agentMode: true }),
+    }))
+  })
+})
+
+describe('response regeneration', () => {
+  it('sends the current Agent and preset selections', async () => {
+    const snapshot = {
+      responseId: 'response-2', status: 'queued', sequence: 0, output: [], usage: null, error: null,
+      updatedAt: '2026-08-08T00:00:00.000Z',
+    }
+    mocks.apiRequest.mockResolvedValueOnce({ response: snapshot })
+
+    await regenerateResponse('response-1', 'model-1', { reasoning: 'high' }, 'response-2', true)
+
+    expect(mocks.apiRequest).toHaveBeenCalledWith('/api/messages/response-1/regenerate', expect.objectContaining({
+      method: 'POST',
+      idempotencyKey: 'response-2',
+      body: expect.objectContaining({
+        modelId: 'model-1',
+        presetSelections: { reasoning: 'high' },
+        agentMode: true,
+      }),
     }))
   })
 })

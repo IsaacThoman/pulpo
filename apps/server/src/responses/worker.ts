@@ -36,6 +36,7 @@ import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter } from './upstream-request.js'
+import { browserChatOutputError } from './output-text.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -275,14 +276,20 @@ async function processGenerationAttempt(
         const output = [...compactionItems, ...(recovered.output as unknown[])]
         const usage = normalizeUsage(recovered.usage)
         const providerCostMicros = record.model.useProviderCost ? providerReportedCostMicros(recovered.usage) : undefined
-        const status = recovered.status === 'completed' ? 'completed'
+        let status: typeof responses.$inferSelect.status = recovered.status === 'completed' ? 'completed'
           : recovered.status === 'cancelled' ? 'cancelled'
             : recovered.status === 'incomplete' ? 'incomplete' : 'failed'
+        const outputError = status === 'completed' && record.response.origin === 'web'
+          ? browserChatOutputError(output)
+          : undefined
+        if (outputError) status = 'failed'
         await persistItems(responseId, output)
         const completedAt = new Date()
         await db.update(responses).set({
           status, output, usage, completedAt, updatedAt: completedAt,
-          error: recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
+          error: outputError
+            ? { message: outputError }
+            : recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
         }).where(eq(responses.id, responseId))
         if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
         else await releaseBudget(responseId)
@@ -434,6 +441,10 @@ async function processGenerationAttempt(
     }
     await flushTelemetry(true)
     if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
+    if (record.response.origin === 'web') {
+      const outputError = browserChatOutputError(output)
+      if (outputError) throw new Error(outputError)
+    }
     await persistItems(responseId, output)
     const completedAt = new Date()
     await db.update(responses).set({
