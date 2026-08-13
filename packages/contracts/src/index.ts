@@ -1011,8 +1011,8 @@ export const adminUsageEventSchema = z.object({
   ocrStatus: z.string(),
   eventCount: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative(),
-  cachedInputTokens: z.number().int().nonnegative(),
-  cacheWriteTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative().default(0),
+  cacheWriteTokens: z.number().int().nonnegative().default(0),
   outputTokens: z.number().int().nonnegative(),
   updatedAt: isoDateSchema,
 })
