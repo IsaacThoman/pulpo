@@ -46,6 +46,8 @@ import { PasswordSettings } from './PasswordSettings'
 import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
 import { UsernameSettings } from './UsernameSettings'
+import { AvatarCropEditor } from './AvatarCropEditor'
+import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal },
@@ -116,27 +118,6 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   )
 }
 
-async function squareAvatarFile(file: File): Promise<File> {
-  const image = await createImageBitmap(file)
-  try {
-    const edge = Math.min(image.width, image.height)
-    const canvas = document.createElement('canvas')
-    canvas.width = 512
-    canvas.height = 512
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('Could not prepare the profile picture')
-    context.drawImage(image, (image.width - edge) / 2, (image.height - edge) / 2, edge, edge, 0, 0, 512, 512)
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-      (value) => value ? resolve(value) : reject(new Error('Could not prepare the profile picture')),
-      'image/webp',
-      0.9,
-    ))
-    return new File([blob], 'avatar.webp', { type: 'image/webp' })
-  } finally {
-    image.close()
-  }
-}
-
 function ThemePicker() {
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
@@ -186,6 +167,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [profileError, setProfileError] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
+  const [avatarCrop, setAvatarCrop] = useState(DEFAULT_AVATAR_CROP)
   const [customColorSelected, setCustomColorSelected] = useState(() => Boolean(
     user?.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor),
   ))
@@ -245,7 +227,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     setProfileMessage('')
     try {
       const body = new FormData()
-      body.append('file', await squareAvatarFile(avatarCandidate.file))
+      body.append('file', await prepareAvatarFile(avatarCandidate.file, avatarCrop))
       const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'PUT', body })
       replaceUser(result.user)
       setAvatarCandidate(null)
@@ -541,6 +523,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                         const file = event.currentTarget.files?.[0]
                         if (file) {
                           setProfileMessage('')
+                          setAvatarCrop(DEFAULT_AVATAR_CROP)
                           setAvatarCandidate({ file, url: URL.createObjectURL(file) })
                         }
                         event.currentTarget.value = ''
@@ -558,9 +541,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       {user?.avatarUrl && <Button variant="ghost" size="sm" disabled={profileSaving} onClick={() => void removeAvatar()}>Remove</Button>}
                     </div>
                   </div>
-                  {avatarCandidate && <div className="mb-3 flex items-center gap-4 rounded-lg border bg-muted/20 p-3">
-                    <img src={avatarCandidate.url} alt="Square profile picture preview" className="size-24 rounded-full object-cover" />
-                    <div><div className="text-sm font-medium">Profile picture preview</div><p className="mt-1 text-xs text-muted-foreground">Pulpo will center-crop and resize this image.</p><div className="mt-3 flex gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div></div>
+                  {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
+                    <AvatarCropEditor imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
+                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div>
                   </div>}
                   <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
                   <UsernameSettings />
