@@ -2,6 +2,7 @@ import type { AgentMessage } from '@earendil-works/pi-agent-core'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { buildAgentUserPrompt, type AgentAttachment } from './policy.js'
+import { assistantOutputText } from '../responses/output-text.js'
 
 export type AgentHistoryResponse = {
   id: string
@@ -22,23 +23,6 @@ export function messagesFromAgentContext(context: unknown): AgentMessage[] {
 function timestamp(value: Date | string | null | undefined): number {
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value ?? '')
   return Number.isFinite(parsed) ? parsed : Date.now()
-}
-
-function assistantOutputText(output: unknown): string {
-  if (!Array.isArray(output)) return ''
-  return output.flatMap((raw) => {
-    if (!raw || typeof raw !== 'object') return []
-    const item = raw as { type?: unknown; role?: unknown; content?: unknown }
-    if (item.type !== 'message' || item.role !== 'assistant' || !Array.isArray(item.content)) return []
-    const text = item.content.flatMap((part) => {
-      if (!part || typeof part !== 'object') return []
-      const typed = part as { type?: unknown; text?: unknown }
-      return (typed.type === 'output_text' || typed.type === 'text') && typeof typed.text === 'string'
-        ? [typed.text]
-        : []
-    }).join('')
-    return text ? [text] : []
-  }).join('\n')
 }
 
 function replayedTurn(
