@@ -6,15 +6,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
@@ -119,6 +110,7 @@ export function ModelSelector({
           if (!v) {
             setQuery('')
             setProvider(null)
+            setConfirmReset(false)
             clearDrag()
           }
         }}
@@ -146,7 +138,10 @@ export function ModelSelector({
           <Search className="size-4 text-muted-foreground" />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setConfirmReset(false)
+            }}
             placeholder="Search models…"
             className="h-10 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
@@ -159,7 +154,10 @@ export function ModelSelector({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => setProvider(null)}
+                  onClick={() => {
+                    setProvider(null)
+                    setConfirmReset(false)
+                  }}
                   className={cn(
                     'group/star flex size-8 shrink-0 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
                     favoritesActive
@@ -211,6 +209,7 @@ export function ModelSelector({
                           return
                         }
                         setProvider(p)
+                        setConfirmReset(false)
                       }}
                       className={cn(
                         'group/prov relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
@@ -329,44 +328,43 @@ export function ModelSelector({
               )
             })}
             {favoritesActive && newAccountFavoritesLoaded && !favoritesMatchDefaults && (
-              <button
-                type="button"
-                className="mx-2 my-1 block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-                onClick={() => {
-                  setOpen(false)
-                  setConfirmReset(true)
-                }}
-              >
-                Reset favorites
-              </button>
+              confirmReset ? (
+                <div className="mx-2 my-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                  <p className="text-foreground">Replace favorites with the new-user defaults?</p>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <button
+                      type="button"
+                      className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
+                      onClick={() => {
+                        resetFavorites()
+                        setConfirmReset(false)
+                      }}
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      className="cursor-pointer text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                      onClick={() => setConfirmReset(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="mx-2 my-1 block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  onClick={() => setConfirmReset(true)}
+                >
+                  Reset favorites
+                </button>
+              )
             )}
           </div>
         </div>
       </DropdownMenuContent>
       </DropdownMenu>
-      <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Reset favorites?</DialogTitle>
-            <DialogDescription>
-              This will replace your favorites with the list configured for new users.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmReset(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                resetFavorites()
-                setConfirmReset(false)
-              }}
-            >
-              Reset favorites
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
       {value && value !== defaultModelId && (
         <button
           type="button"
