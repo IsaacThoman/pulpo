@@ -6,6 +6,15 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
@@ -25,6 +34,7 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState<string | null>(null) // null = favorites
+  const [confirmReset, setConfirmReset] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind | null>(null)
   const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
@@ -34,6 +44,8 @@ export function ModelSelector({
   const favorites = useModels((s) => s.favoriteModelIds)
   const providerOrder = useModels((s) => s.providerOrder)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
+  const resetFavorites = useModels((s) => s.resetFavorites)
+  const newAccountFavoritesLoaded = useModels((s) => s.newAccountFavoritesLoaded)
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
   const catalogModels = useCatalog((state) => state.models)
@@ -232,92 +244,132 @@ export function ModelSelector({
           </div>
 
           {/* model list */}
-          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1.5">
-            {rows.length === 0 && (
-              <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                {provider === null && !searching ? 'No favorites yet' : 'No models found'}
-              </div>
-            )}
-            {rows.map((m) => {
-              const isFav = favorites.includes(m.id)
-              const isSelected = m.id === value
-              const isDragging = dragKind === 'model' && dragId === m.id
-              const showLineBefore =
-                dragKind === 'model' && drop?.id === m.id && drop.edge === 'before' && !isDragging
-              const showLineAfter =
-                dragKind === 'model' && drop?.id === m.id && drop.edge === 'after' && !isDragging
-              return (
-                <div
-                  key={m.id}
-                  draggable={canReorderModels}
-                  onDragStart={(e) => {
-                    if (!canReorderModels) return
-                    startDrag('model', m.id, e)
-                  }}
-                  onDragOver={(e) => onItemDragOver('model', m.id, e)}
-                  onDrop={(e) => {
-                    e.preventDefault()
-                    if (dragKindRef.current !== 'model') return
-                    const from = dragIdRef.current ?? e.dataTransfer.getData('text/plain')
-                    const edge = drop?.id === m.id ? drop.edge : 'before'
-                    if (from) reorderFavorites(from, m.id, edge)
-                    clearDrag()
-                  }}
-                  onDragEnd={clearDrag}
-                  className={cn(
-                    'group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
-                    isSelected ? 'bg-accent/70' : 'hover:bg-accent',
-                    isDragging && 'opacity-40'
-                  )}
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+              {rows.length === 0 && (
+                <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  {provider === null && !searching ? 'No favorites yet' : 'No models found'}
+                </div>
+              )}
+              {rows.map((m) => {
+                const isFav = favorites.includes(m.id)
+                const isSelected = m.id === value
+                const isDragging = dragKind === 'model' && dragId === m.id
+                const showLineBefore =
+                  dragKind === 'model' && drop?.id === m.id && drop.edge === 'before' && !isDragging
+                const showLineAfter =
+                  dragKind === 'model' && drop?.id === m.id && drop.edge === 'after' && !isDragging
+                return (
+                  <div
+                    key={m.id}
+                    draggable={canReorderModels}
+                    onDragStart={(e) => {
+                      if (!canReorderModels) return
+                      startDrag('model', m.id, e)
+                    }}
+                    onDragOver={(e) => onItemDragOver('model', m.id, e)}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      if (dragKindRef.current !== 'model') return
+                      const from = dragIdRef.current ?? e.dataTransfer.getData('text/plain')
+                      const edge = drop?.id === m.id ? drop.edge : 'before'
+                      if (from) reorderFavorites(from, m.id, edge)
+                      clearDrag()
+                    }}
+                    onDragEnd={clearDrag}
+                    className={cn(
+                      'group relative flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors',
+                      isSelected ? 'bg-accent/70' : 'hover:bg-accent',
+                      isDragging && 'opacity-40'
+                    )}
+                    onClick={() => {
+                      if (dragIdRef.current || didDragRef.current) {
+                        didDragRef.current = false
+                        return
+                      }
+                      pick(m.id)
+                    }}
+                  >
+                    {showLineBefore && (
+                      <div className="pointer-events-none absolute inset-x-2 -top-px h-0.5 rounded-full bg-foreground/35" />
+                    )}
+                    {showLineAfter && (
+                      <div className="pointer-events-none absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground/35" />
+                    )}
+                    {showLogos && (
+                      <ModelIcon model={m} className="size-[18px] rounded-[3px]" boxed={false} />
+                    )}
+                    <span className="flex-1 truncate text-left text-sm">{m.name}</span>
+
+                    {/* favorite star — stronger hover */}
+                    <button
+                      className={cn(
+                        'group/favorite flex size-7 cursor-pointer items-center justify-center bg-transparent transition-colors duration-150',
+                        isFav
+                          ? 'opacity-100 text-amber-400'
+                          : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:text-amber-500'
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleFavorite(m.id)
+                      }}
+                      aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                    >
+                      <Star
+                        className={cn(
+                          'size-3.5 fill-transparent transition-all duration-150',
+                          isFav
+                            ? 'fill-amber-400 text-amber-400 group-hover/favorite:fill-transparent group-hover/favorite:text-amber-400'
+                            : 'group-hover/favorite:fill-amber-400 group-hover/favorite:text-amber-500'
+                        )}
+                      />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+            {favoritesActive && (
+              <div className="shrink-0 border-t px-3 py-2 text-center">
+                <button
+                  type="button"
+                  disabled={!newAccountFavoritesLoaded}
+                  className="cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
                   onClick={() => {
-                    if (dragIdRef.current || didDragRef.current) {
-                      didDragRef.current = false
-                      return
-                    }
-                    pick(m.id)
+                    setOpen(false)
+                    setConfirmReset(true)
                   }}
                 >
-                  {showLineBefore && (
-                    <div className="pointer-events-none absolute inset-x-2 -top-px h-0.5 rounded-full bg-foreground/35" />
-                  )}
-                  {showLineAfter && (
-                    <div className="pointer-events-none absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-foreground/35" />
-                  )}
-                  {showLogos && (
-                    <ModelIcon model={m} className="size-[18px] rounded-[3px]" boxed={false} />
-                  )}
-                  <span className="flex-1 truncate text-left text-sm">{m.name}</span>
-
-                  {/* favorite star — stronger hover */}
-                  <button
-                    className={cn(
-                      'group/favorite flex size-7 cursor-pointer items-center justify-center bg-transparent transition-colors duration-150',
-                      isFav
-                        ? 'opacity-100 text-amber-400'
-                        : 'opacity-0 text-muted-foreground group-hover:opacity-100 hover:text-amber-500'
-                    )}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      toggleFavorite(m.id)
-                    }}
-                    aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
-                  >
-                    <Star
-                      className={cn(
-                        'size-3.5 fill-transparent transition-all duration-150',
-                        isFav
-                          ? 'fill-amber-400 text-amber-400 group-hover/favorite:fill-transparent group-hover/favorite:text-amber-400'
-                          : 'group-hover/favorite:fill-amber-400 group-hover/favorite:text-amber-500'
-                      )}
-                    />
-                  </button>
-                </div>
-              )
-            })}
+                  Reset favorites
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </DropdownMenuContent>
       </DropdownMenu>
+      <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Reset favorites?</DialogTitle>
+            <DialogDescription>
+              This will replace your favorites with the list configured for new users.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmReset(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                resetFavorites()
+                setConfirmReset(false)
+              }}
+            >
+              Reset favorites
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {value && value !== defaultModelId && (
         <button
           type="button"
