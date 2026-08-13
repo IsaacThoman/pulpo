@@ -1,6 +1,5 @@
 export type ThemePreference = 'system' | 'light' | 'dark';
 export type TextSizePreference = 'default' | 'large' | 'extra-large';
-export type ResponseScenario = 'success' | 'tool-heavy' | 'capacity' | 'failure';
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite';
 export type AutomaticChatExpiration = 'disabled' | '24h' | '7d';
 export type SessionStatus = 'signed-out' | 'signed-in' | 'pending';
@@ -54,7 +53,6 @@ export interface PrototypeModel {
   agentEnabled: boolean;
   favorite: boolean;
   tint: string;
-  asset: 'claude' | 'openai' | 'gemini' | 'deepseek';
   modelLogo?: string;
   labLogo?: string;
   modelCustomIcon?: import('../../types').MobileCatalogIcon | null;
@@ -146,10 +144,6 @@ export interface AppPreferences {
   newChatAutoExpire: boolean;
 }
 
-export interface DemoScenarios {
-  response: ResponseScenario;
-}
-
 export interface PersistedPrototypeState {
   instance: InstanceProfile;
   session: SessionState;
@@ -158,7 +152,6 @@ export interface PersistedPrototypeState {
   chats: PrototypeChat[];
   folders: PrototypeFolder[];
   preferences: AppPreferences;
-  demo: DemoScenarios;
 }
 
 export function normalizeInstanceUrl(input: string): string {

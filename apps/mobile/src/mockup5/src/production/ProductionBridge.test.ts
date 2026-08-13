@@ -55,7 +55,7 @@ vi.mock('./optimisticBranches', () => ({
 }))
 
 import { hydrateProductionScope } from './ProductionBridge'
-import { createSeedState } from '../seed'
+import { createInitialState } from '../initialState'
 import { usePrototypeStore } from '../store/prototypeStore'
 
 function deferred<T>() {
@@ -85,7 +85,7 @@ beforeEach(() => {
   mocks.preferences.resetSynchronizedPreferences.mockClear()
   mocks.preferences.activateAgentNamespace.mockClear()
   usePrototypeStore.setState({
-    ...createSeedState(), models: [], defaultModelId: '', chats: [], folders: [],
+    ...createInitialState(),
     productionNamespace: null, productionScopeReady: false, modelCatalogReady: false, agentAvailable: false,
   })
 })

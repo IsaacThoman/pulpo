@@ -17,7 +17,6 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
-  Animated,
   Appearance,
   type ColorValue,
   DynamicColorIOS,
@@ -294,8 +293,6 @@ type AppPreferences = {
   setTheme: (theme: AppTheme) => void;
   textSize: AppTextSize;
   setTextSize: (size: AppTextSize) => void;
-  smoothStreaming: boolean;
-  setSmoothStreaming: (enabled: boolean) => void;
   showReasoning: boolean;
   setShowReasoning: (enabled: boolean) => void;
   haptics: boolean;
@@ -307,8 +304,6 @@ const AppPreferencesContext = createContext<AppPreferences>({
   setTheme: () => {},
   textSize: 'Default',
   setTextSize: () => {},
-  smoothStreaming: true,
-  setSmoothStreaming: () => {},
   showReasoning: true,
   setShowReasoning: () => {},
   haptics: true,
@@ -320,7 +315,6 @@ function AppPreferencesProvider({ children }: { children: ReactNode }) {
   const setPreference = usePrototypeStore((state) => state.setPreference);
   const theme = ({ system: 'System', light: 'Light', dark: 'Dark' } as const)[preferences.theme];
   const textSize = ({ default: 'Default', large: 'Large', 'extra-large': 'Extra Large' } as const)[preferences.textSize];
-  const smoothStreaming = preferences.streamResponses;
   const showReasoning = preferences.showReasoning;
   const haptics = preferences.haptics;
 
@@ -335,7 +329,6 @@ function AppPreferencesProvider({ children }: { children: ReactNode }) {
   const setTextSize = useCallback((nextSize: AppTextSize) => {
     setPreference('textSize', ({ Default: 'default', Large: 'large', 'Extra Large': 'extra-large' } as const)[nextSize]);
   }, [setPreference]);
-  const setSmoothStreaming = useCallback((enabled: boolean) => setPreference('streamResponses', enabled), [setPreference]);
   const setShowReasoning = useCallback((enabled: boolean) => setPreference('showReasoning', enabled), [setPreference]);
   const setHaptics = useCallback((enabled: boolean) => {
     hapticsEnabled = enabled;
@@ -346,13 +339,11 @@ function AppPreferencesProvider({ children }: { children: ReactNode }) {
     setTheme,
     textSize,
     setTextSize,
-    smoothStreaming,
-    setSmoothStreaming,
     showReasoning,
     setShowReasoning,
     haptics,
     setHaptics,
-  }), [haptics, setHaptics, setShowReasoning, setSmoothStreaming, setTextSize, setTheme, showReasoning, smoothStreaming, textSize, theme]);
+  }), [haptics, setHaptics, setShowReasoning, setTextSize, setTheme, showReasoning, textSize, theme]);
 
   return <AppPreferencesContext.Provider value={value}>{children}</AppPreferencesContext.Provider>;
 }
@@ -474,13 +465,6 @@ type Message = {
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
-type StreamingSession = {
-  id: string;
-  chatKey: string;
-  modelId: string;
-  response: string;
-  thinkSeconds: number;
-};
 type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
@@ -500,13 +484,6 @@ type ChatFollowSnapshot = {
   revision: number;
 };
 
-const MODELS: Model[] = [
-  { id: 'demo-claude', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
-  { id: 'demo-gpt', name: 'GPT-5', providerGroupId: 'openai', lab: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence', agentEnabled: true },
-  { id: 'demo-gemini', name: 'Gemini 2.5 Pro', providerGroupId: 'google', lab: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision', agentEnabled: true },
-  { id: 'demo-deepseek', name: 'DeepSeek R1', providerGroupId: 'deepseek', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces', agentEnabled: false },
-];
-
 const UNAVAILABLE_MODEL: Model = {
   id: '',
   name: 'No model available',
@@ -524,15 +501,9 @@ const LOADING_MODEL: Model = {
 };
 
 function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
-  const template = MODELS.find((candidate) => candidate.lab === model.lab)
-    ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
-    ?? MODELS[1];
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark, model.modelCustomIcon);
-  return { ...template, id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), tintColor: undefined, agentEnabled: model.agentEnabled };
+  return { id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), agentEnabled: model.agentEnabled };
 }
-
-const REASONING_SAMPLE =
-  'The user wants a practical answer, not an architecture lecture. Lead with the state boundary: durable messages in the store, transient tokens in the view. Mention the commit-once pattern and why it keeps rendering cheap.';
 
 const legacyMessageCache = new WeakMap<PrototypeMessage, { chatId: string; chatModelId: string; value: Message }>();
 const legacyChatCache = new WeakMap<PrototypeChat, Chat>();
@@ -1099,26 +1070,6 @@ function ResponsePendingIndicator() {
   );
 }
 
-function BlinkingCaret() {
-  const { reduceMotion } = useAccessibilityPreferences();
-  const opacity = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    if (reduceMotion) {
-      opacity.setValue(1);
-      return undefined;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0, duration: 420, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 420, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [opacity, reduceMotion]);
-  return <Animated.Text style={[styles.caret, { opacity }]}>▍</Animated.Text>;
-}
-
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
@@ -1289,7 +1240,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [savingTemporaryChatId, setSavingTemporaryChatId] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [assistantStatus, setAssistantStatus] = useState<'idle' | 'thinking' | 'streaming'>('idle');
-  const [streamingSession, setStreamingSession] = useState<StreamingSession | null>(null);
   const thinkingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeResponseId = useRef<string | null>(null);
   const activeResponseSubscription = useRef<(() => void) | null>(null);
@@ -1353,7 +1303,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const requestedChat = storedChats.find((chat) => chat.id === requestedChatId);
     if (requestedChat?.modelId) setSelectedModelId(requestedChat.modelId);
     setAssistantStatus('idle');
-    setStreamingSession(null);
     navigation.setParams({ chatId: undefined });
   }, [navigation, route.params?.chatId, storedChats]);
 
@@ -1514,7 +1463,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setActiveChatId(chat.id);
     setSelectedModelId(chat.modelId);
     setAssistantStatus('idle');
-    setStreamingSession(null);
     animatePanel(false);
   }, [abandonActiveTemporaryChat, animatePanel]);
 
@@ -1523,7 +1471,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     thinkingTimer.current = null;
     abandonActiveTemporaryChat();
     setAssistantStatus('idle');
-    setStreamingSession(null);
     setActiveChatId(null);
     setNewChatTemporary(temporaryByDefault);
     composerFollowsDefaultModel.current = true;
@@ -1700,7 +1647,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
-    setStreamingSession(null);
     let serverChatCreated = Boolean(activeChat);
     try {
       let serverChatId = activeChat?.id;
@@ -1791,41 +1737,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       throw error;
     }
   };
-
-  const completeStreamingResponse = useCallback((session: StreamingSession) => {
-    const words = session.response.split(' ');
-    const tokensIn = 480 + Math.floor(Math.random() * 900);
-    const tokensOut = words.length + 90;
-    const seconds = (3 + Math.random() * 6).toFixed(1);
-    const timestamp = Date.now();
-    const responseModel = usePrototypeStore.getState().models.find((model) => model.id === session.modelId);
-    const scenario = usePrototypeStore.getState().demo.response;
-    const activity: ActivityStep[] = scenario === 'tool-heavy' ? [
-      { id: `reasoning-${timestamp}`, kind: 'reasoning', title: 'Planned the implementation', detail: REASONING_SAMPLE, durationMs: session.thinkSeconds * 1000, status: 'complete' },
-      { id: `tool-search-${timestamp}`, kind: 'tool', title: 'Searched the workspace', detail: 'Located chat state, navigation, and settings components.', output: '18 files searched · 7 matches', durationMs: 1700, status: 'complete' },
-      { id: `tool-patch-${timestamp}`, kind: 'tool', title: 'Applied changes', detail: 'Updated the member prototype and verified the resulting state.', output: '3 files changed · typecheck passed', durationMs: 2600, status: 'complete' },
-      { id: `workspace-${timestamp}`, kind: 'workspace', title: 'Finished in agent workspace', detail: 'Workspace released cleanly.', durationMs: 1200, status: 'complete' },
-    ] : scenario === 'capacity' ? [
-      { id: `reasoning-${timestamp}`, kind: 'reasoning', title: 'Prepared the coding task', detail: REASONING_SAMPLE, durationMs: session.thinkSeconds * 1000, status: 'complete' },
-      { id: `workspace-${timestamp}`, kind: 'workspace', title: 'Agent workspace unavailable', detail: 'All workspace capacity is currently in use.', durationMs: 8400, status: 'failed' },
-    ] : [{ id: `reasoning-${timestamp}`, kind: 'reasoning', title: 'Reasoned about the request', detail: REASONING_SAMPLE, durationMs: session.thinkSeconds * 1000, status: 'complete' }];
-    appendStoredMessage(session.chatKey, {
-      id: `a${timestamp}`,
-      role: 'assistant',
-      modelId: responseModel?.id ?? session.modelId,
-      text: scenario === 'failure' ? '' : session.response,
-      createdAt: timestamp,
-      status: scenario === 'failure' ? 'failed' : 'complete',
-      error: scenario === 'failure' ? 'Pulpo lost the upstream connection before the response completed. Retry when your connection is stable.' : undefined,
-      activity,
-      meta: `${tokensIn.toLocaleString()}→${tokensOut} tok · ${Math.round(tokensOut / Number(seconds))} tok/s · ${seconds}s`,
-      feedback: null,
-    });
-    setStreamingSession((current) => current?.id === session.id ? null : current);
-    setAssistantStatus('idle');
-    AccessibilityInfo.announceForAccessibility('Response complete');
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [appendStoredMessage]);
 
   const regenerateMessage = useCallback((message: Message) => {
     const chatId = message.chatId ?? activeChatId;
@@ -1944,7 +1855,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const stopGeneration = useCallback(() => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
-    setStreamingSession(null);
     setAssistantStatus('idle');
     const responseId = activeResponseId.current;
     activeResponseSubscription.current?.();
@@ -2008,8 +1918,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onSend={sendMessage}
             onStop={stopGeneration}
             assistantStatus={effectiveAssistantStatus}
-            streamingSession={streamingSession}
-            onStreamingComplete={completeStreamingResponse}
             onRegenerate={regenerateMessage}
             onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
@@ -2484,7 +2392,7 @@ function responseModel(message: Message, models: Model[], fallback: Model): Mode
   const modelId = message.modelId ?? message.chatModelId;
   if (!modelId) return fallback;
   return resolveDisplayModel(models, modelId, (unavailableModelId) => ({
-    ...MODELS[1],
+    ...UNAVAILABLE_MODEL,
     id: unavailableModelId,
     name: unavailableModelId,
     lab: 'Model',
@@ -2693,51 +2601,6 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
-const StreamingResponse = memo(function StreamingResponse({
-  session,
-  model,
-  onComplete,
-}: {
-  session: StreamingSession;
-  model: Model;
-  onComplete: (session: StreamingSession) => void;
-}) {
-  const [draft, setDraft] = useState('');
-  const { smoothStreaming } = useAppPreferences();
-
-  useEffect(() => {
-    if (!smoothStreaming) {
-      setDraft(session.response);
-      const completionTimer = setTimeout(() => onComplete(session), 0);
-      return () => clearTimeout(completionTimer);
-    }
-    const words = session.response.split(' ');
-    const wordsPerFrame = Math.max(1, Math.ceil(words.length / 28));
-    let index = 0;
-    const timer = setInterval(() => {
-      index = Math.min(words.length, index + wordsPerFrame);
-      setDraft(words.slice(0, index).join(' '));
-      if (index >= words.length) {
-        clearInterval(timer);
-        onComplete(session);
-      }
-    }, 60);
-    return () => clearInterval(timer);
-  }, [onComplete, session, smoothStreaming]);
-
-  return (
-    <View accessibilityLabel="Assistant is responding" accessibilityRole="text" style={styles.assistantRow}>
-      <View style={styles.assistantHeader}>
-        <ModelMark model={model} size={26} />
-        <Text style={styles.assistantName}>{model.name}</Text>
-        <Text style={styles.messageTime}>now</Text>
-      </View>
-      {!draft && <ResponsePendingIndicator />}
-      <Text accessible={false} style={[styles.assistantText, styles.draftText]}>{draft}<BlinkingCaret /></Text>
-    </View>
-  );
-});
-
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, temporary = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; temporary?: boolean }) {
   const colorScheme = useColorScheme();
   const useWhiteArtwork = temporary && colorScheme === 'dark';
@@ -2906,8 +2769,8 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus, streamingSession,
-  onStreamingComplete, onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, temporary, autoExpire, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
+  onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, temporary, autoExpire, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -2921,8 +2784,6 @@ function ChatView({
   onChangeInput: (value: string) => void;
   onSend: (value?: string, attachments?: PreparedAttachment[], options?: SendOptions) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
-  streamingSession: StreamingSession | null;
-  onStreamingComplete: (session: StreamingSession) => void;
   onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
@@ -3703,8 +3564,6 @@ function ChatView({
               </View>
               <ResponsePendingIndicator />
             </View>
-          ) : streamingSession ? (
-            <StreamingResponse key={streamingSession.id} model={model} onComplete={onStreamingComplete} session={streamingSession} />
           ) : null}
           onContentSizeChange={handleContentSizeChange}
           onMomentumScrollBegin={beginReaderInteraction}
@@ -4482,8 +4341,6 @@ const styles = StyleSheet.create({
   messageTime: { color: COLORS.muted, fontSize: 11.5 },
   assistantContent: { width: '100%', gap: 4 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
-  draftText: { marginTop: 10 },
-  caret: { color: COLORS.muted, fontSize: 15.5 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
   responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },
   reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingVertical: 4 },

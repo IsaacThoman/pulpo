@@ -4,7 +4,7 @@ import type {
   AppPreferences, PersistedPrototypeState,
   PrototypeChat, PrototypeFolder, PrototypeMessage, SessionState,
 } from '../domain';
-import { createSeedState } from '../seed';
+import { createInitialState } from '../initialState';
 import { productionActions, runProductionAction } from '../production/productionActions';
 import { useRealtimeStore } from '../../../providers/realtimeStore';
 import { usePreferencesStore } from '../../../store/preferences';
@@ -88,8 +88,7 @@ function runOptimisticAction(key: string, action: Promise<unknown>, rollback: ()
 }
 
 export const usePrototypeStore = create<PrototypeStore>()((set, get) => ({
-  ...createSeedState(),
-  models: [], defaultModelId: '', chats: [], folders: [],
+  ...createInitialState(),
   productionNamespace: null, productionScopeReady: false, modelCatalogReady: false, agentAvailable: false,
   updateProfile: (patch) => set((state) => state.session.user ? { session: { ...state.session, user: { ...state.session.user, ...patch, initials: patch.name ? initialsFor(patch.name) : state.session.user.initials } } } : {}),
   setPreference: (key, value) => {
