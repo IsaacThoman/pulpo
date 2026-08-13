@@ -60,6 +60,7 @@ for service in api worker; do
     | $env.NODE_ENV == "development"
       and $env.PUBLIC_URL == "http://localhost:8080"
       and $env.POSTGRES_PASSWORD == "pulpo"
+      and $env.S3_SECRET_ACCESS_KEY == "pulpo-local-storage-secret"
       and $env.PULPO_INSTANCE_ID == "local-preview"
       and $env.PULPO_BOOTSTRAP_PRESET == "ci-preview"
       and $env.PULPO_PREVIEW_ADMIN_EMAIL == "preview@example.com"

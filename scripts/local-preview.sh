@@ -91,21 +91,22 @@ validate_config() {
   ' <<< "${compose_config}" >/dev/null \
     || invalid_config 'NODE_ENV, PUBLIC_URL, PULPO_INSTANCE_ID, and PULPO_BOOTSTRAP_PRESET must retain the local-preview template values.'
 
-  local required_key value
-  for required_key in \
-    POSTGRES_PASSWORD \
+  # These values either protect real credentials, grant external access, or are
+  # required for the preview seed to function. Disposable local PostgreSQL and
+  # Seaweed S3 credentials intentionally use known defaults and are excluded.
+  local required_custom_value value
+  for required_custom_value in \
     ENCRYPTION_KEY \
     WORKSPACE_CONTROLLER_URL \
     WORKSPACE_CONTROLLER_TOKEN \
     PULPO_PREVIEW_ADMIN_EMAIL \
     PULPO_PREVIEW_ADMIN_PASSWORD \
     PULPO_PREVIEW_PROVIDER_API_KEY \
-    PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST \
-    S3_SECRET_ACCESS_KEY; do
-    value="$(jq -er --arg key "${required_key}" '.services.api.environment[$key]' <<< "${compose_config}")" \
-      || invalid_config "${required_key} is required."
+    PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST; do
+    value="$(jq -er --arg key "${required_custom_value}" '.services.api.environment[$key]' <<< "${compose_config}")" \
+      || invalid_config "${required_custom_value} is required."
     [[ -n "${value}" && "${value}" != replace-* && "${value}" != *replace-with* ]] \
-      || invalid_config "${required_key} still contains a template placeholder."
+      || invalid_config "${required_custom_value} still contains a template placeholder."
   done
 
   local encryption_key controller_url controller_token admin_email admin_password workspace_digest

@@ -55,7 +55,9 @@ local deployment secrets. It is created with `0600` permissions and is shared
 by every worktree. Set `PULPO_LOCAL_PREVIEW_ENV_FILE` to use a different absolute
 path. The disposable local stack keeps the `pulpo` PostgreSQL password because
 the database binds only to `127.0.0.1`; production deployments must continue to
-use a strong, deployment-specific database password.
+use a strong, deployment-specific database password. Its loopback-only Seaweed
+S3 service likewise uses a known local secret; production object storage must
+use a strong secret of its own.
 
 Then reset and rebuild the stack from the current worktree:
 
