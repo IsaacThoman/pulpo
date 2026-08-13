@@ -35,6 +35,7 @@ import { trackInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
+import { providerCacheRequestOptions } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
@@ -467,6 +468,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       thinkingLevel: initialParameters.reasoning,
     },
     streamFn: async (_model, context, options) => {
+      const cacheOptions = providerCacheRequestOptions(active.provider, {
+        userId: record.response.userId,
+        chatId: record.response.chatId,
+        runId,
+      })
       const thresholdTokens = effectiveAgentCompactionThreshold(
         active.model.agentCompactionThresholdTokens,
         active.model.contextWindow,
@@ -505,6 +511,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: active.model.maxRetries,
+          sessionId: cacheOptions.sessionId,
+          headers: cacheOptions.headers,
         },
       )
     },

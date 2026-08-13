@@ -29,6 +29,7 @@ import { parseLoggingSettings } from '../settings/application-settings.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
+import { providerCacheRequestOptions } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
@@ -385,6 +386,11 @@ async function processGenerationAttempt(
     const parameters = resolveModelParameters(record.model, record.response.parameters, {
       publicApi: Boolean(requestLog.apiKeyId),
     })
+    const cacheOptions = providerCacheRequestOptions(record.provider, {
+      userId: record.response.userId,
+      chatId: record.response.chatId,
+      runId: record.response.id,
+    })
     const upstreamPayload = {
       ...(parameters as Record<string, never>),
       model: record.model.upstreamModelId,
@@ -392,10 +398,14 @@ async function processGenerationAttempt(
       stream: true as const,
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
+      ...(cacheOptions.promptCacheKey ? { prompt_cache_key: cacheOptions.promptCacheKey } : {}),
     }
     const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
     if (parseLoggingSettings(loggingRow?.value).logDetailedPayloads) await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-    const stream = await client.responses.create(upstreamPayload, { signal: controller.signal })
+    const stream = await client.responses.create(upstreamPayload, {
+      signal: controller.signal,
+      headers: cacheOptions.headers,
+    })
     for await (const rawEvent of stream) {
       if (await isCancellationRequested(responseId)) {
         if (record.response.executionMode === 'background' && upstreamResponseId) {
