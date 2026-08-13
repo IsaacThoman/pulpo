@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MobileModel } from '../../types'
-import { findDisplayModel, mapModel, reconcileComposerModelId, redirectTargetModelIds, resolveDisplayModel } from './modelIdentity'
+import { findDisplayModel, mapModel, modelProviderLabel, reconcileComposerModelId, redirectTargetModelIds, resolveDisplayModel } from './modelIdentity'
 
 describe('mobile model identity', () => {
+  it('formats the lab and inference provider like the web empty state', () => {
+    expect(modelProviderLabel({ lab: 'DeepSeek', provider: 'Fireworks' })).toBe('DeepSeek · Fireworks')
+    expect(modelProviderLabel({ lab: 'OpenAI', provider: 'OpenAI' })).toBe('OpenAI')
+  })
+
   it('adopts a late account default while a new composer still follows defaults', () => {
     const models = [{ id: 'catalog-first' }, { id: 'account-default' }]
 

@@ -156,7 +156,7 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { chatRemovalBehavior } from './src/chatRemoval';
-import { reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
+import { modelProviderLabel, reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
@@ -422,7 +422,7 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
+type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; lab: string; provider: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
 type ModelSection = string;
 type Attachment = {
   id: string;
@@ -501,10 +501,10 @@ type ChatFollowSnapshot = {
 };
 
 const MODELS: Model[] = [
-  { id: 'demo-claude', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', lab: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
-  { id: 'demo-gpt', name: 'GPT-5', providerGroupId: 'openai', lab: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence', agentEnabled: true },
-  { id: 'demo-gemini', name: 'Gemini 2.5 Pro', providerGroupId: 'google', lab: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision', agentEnabled: true },
-  { id: 'demo-deepseek', name: 'DeepSeek R1', providerGroupId: 'deepseek', lab: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces', agentEnabled: false },
+  { id: 'demo-claude', name: 'Claude Sonnet 4', providerGroupId: 'anthropic', lab: 'Anthropic', provider: 'Anthropic', icon: require('./assets/model-claude.png'), detail: 'Balanced reasoning and speed', agentEnabled: true },
+  { id: 'demo-gpt', name: 'GPT-5', providerGroupId: 'openai', lab: 'OpenAI', provider: 'OpenAI', icon: require('./assets/model-openai.png'), menuIcon: require('./assets/model-openai-menu.png'), tintColor: COLORS.textSoft, detail: 'Strong general intelligence', agentEnabled: true },
+  { id: 'demo-gemini', name: 'Gemini 2.5 Pro', providerGroupId: 'google', lab: 'Google', provider: 'Google', icon: require('./assets/model-gemini.png'), detail: '1M context · Vision', agentEnabled: true },
+  { id: 'demo-deepseek', name: 'DeepSeek R1', providerGroupId: 'deepseek', lab: 'DeepSeek', provider: 'DeepSeek', icon: require('./assets/model-deepseek.png'), detail: 'Deep reasoning traces', agentEnabled: false },
 ];
 
 const UNAVAILABLE_MODEL: Model = {
@@ -512,6 +512,7 @@ const UNAVAILABLE_MODEL: Model = {
   name: 'No model available',
   providerGroupId: 'pulpo',
   lab: 'Pulpo',
+  provider: 'Pulpo',
   icon: require('./assets/pulpo-smiley.png'),
   detail: 'Ask an administrator to enable a model',
   agentEnabled: false,
@@ -528,7 +529,7 @@ function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
     ?? MODELS[{ claude: 0, openai: 1, gemini: 2, deepseek: 3 }[model.asset]]
     ?? MODELS[1];
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark, model.modelCustomIcon);
-  return { ...template, id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), tintColor: undefined, agentEnabled: model.agentEnabled };
+  return { ...template, id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, provider: model.provider, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), tintColor: undefined, agentEnabled: model.agentEnabled };
 }
 
 const REASONING_SAMPLE =
@@ -3554,7 +3555,7 @@ function ChatView({
             <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
           </View>
         </View>
-        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{model.lab}</Text>
+        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelProviderLabel(model)}</Text>
       </Reanimated.View>
       <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
         <View
