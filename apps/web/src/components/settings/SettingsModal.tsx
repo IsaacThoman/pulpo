@@ -501,19 +501,27 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <h2 className="text-base font-semibold">Account</h2>
                   <Separator className="my-3" />
                   <div className="flex flex-wrap items-center gap-4 py-3">
-                    <button
-                      type="button"
-                      aria-label="Change profile picture"
-                      disabled={profileSaving}
-                      className="group relative size-14 shrink-0 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
-                      onClick={() => avatarInputRef.current?.click()}
-                    >
-                      <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
-                      <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                        <Camera className="size-4" />
-                        <span className="text-[9px] font-medium leading-none">Change</span>
-                      </span>
-                    </button>
+                    <div className="flex shrink-0 flex-col items-center">
+                      <button
+                        type="button"
+                        aria-label="Change profile picture"
+                        disabled={profileSaving}
+                        className="group relative size-14 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => avatarInputRef.current?.click()}
+                      >
+                        <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
+                        <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          <Camera className="size-4" />
+                          <span className="text-[9px] font-medium leading-none">Change</span>
+                        </span>
+                      </button>
+                      {user?.avatarUrl && <button
+                        type="button"
+                        disabled={profileSaving}
+                        className="mt-1 cursor-pointer text-[10px] leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => void removeAvatar()}
+                      >Remove</button>}
+                    </div>
                     <input
                       ref={avatarInputRef}
                       type="file"
@@ -537,9 +545,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       <div className="text-sm text-muted-foreground">{user?.email}</div>
                     </div>
                     <div className="flex-1" />
-                    <div className="flex flex-wrap gap-2">
-                      {user?.avatarUrl && <Button variant="ghost" size="sm" disabled={profileSaving} onClick={() => void removeAvatar()}>Remove</Button>}
-                    </div>
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
                     <AvatarCropEditor imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
