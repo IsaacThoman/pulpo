@@ -580,7 +580,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       <span
                         aria-hidden="true"
                         className={cn(
-                          'pointer-events-none absolute inset-0 rounded border',
+                          'pointer-events-none absolute inset-0 rounded border bg-clip-padding',
                           profileColorIsPreset
                             ? 'peer-focus-visible:ring-2 peer-focus-visible:ring-foreground peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background'
                             : 'ring-2 ring-foreground ring-offset-2 ring-offset-background',
