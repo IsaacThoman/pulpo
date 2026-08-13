@@ -8,11 +8,22 @@ export function resolveProviderOrder(order: string[], available = CATALOG_PROVID
   return resolveOrder(order, available)
 }
 
+export function resetFavoriteIds(newAccountFavoriteModelIds: string[]): string[] {
+  return [...newAccountFavoriteModelIds]
+}
+
+export function favoriteIdsMatch(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
 interface ModelsState {
   ownerUserId: string | null
   favoriteModelIds: string[]
+  newAccountFavoriteModelIds: string[]
+  newAccountFavoritesLoaded: boolean
   providerOrder: string[]
   toggleFavorite: (id: string) => void
+  resetFavorites: () => void
   reorderFavorites: (fromId: string, toId: string, edge: 'before' | 'after') => void
   reorderProviders: (fromId: string, toId: string, edge: 'before' | 'after', available: string[]) => void
 }
@@ -22,6 +33,8 @@ export const useModels = create<ModelsState>()(
     (set, get) => ({
       ownerUserId: null,
       favoriteModelIds: [],
+      newAccountFavoriteModelIds: [],
+      newAccountFavoritesLoaded: false,
       providerOrder: [...CATALOG_PROVIDERS],
       toggleFavorite: (id) =>
         set({
@@ -29,6 +42,7 @@ export const useModels = create<ModelsState>()(
             ? get().favoriteModelIds.filter((favoriteId) => favoriteId !== id)
             : [...get().favoriteModelIds, id],
         }),
+      resetFavorites: () => set({ favoriteModelIds: resetFavoriteIds(get().newAccountFavoriteModelIds) }),
       reorderFavorites: (fromId, toId, edge) =>
         set({ favoriteModelIds: reorderList(get().favoriteModelIds, fromId, toId, edge) }),
       reorderProviders: (fromId, toId, edge, available) =>

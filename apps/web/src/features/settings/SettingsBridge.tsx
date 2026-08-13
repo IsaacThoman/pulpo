@@ -61,7 +61,10 @@ export function SettingsBridge() {
   const applyingRemote = useRef(false)
   const { data, refetch } = useQuery({
     queryKey: ['settings', userId],
-    queryFn: () => apiRequest<{ values: Record<string, unknown> }>('/api/settings'),
+    queryFn: () => apiRequest<{
+      values: Record<string, unknown>
+      newAccountFavoriteModelIds?: string[]
+    }>('/api/settings'),
     enabled: Boolean(userId),
   })
 
@@ -71,7 +74,13 @@ export function SettingsBridge() {
       useSettings.setState({ ...DEFAULT_SETTINGS, ownerUserId: userId })
     }
     if (useModels.getState().ownerUserId !== userId) {
-      useModels.setState({ ownerUserId: userId, favoriteModelIds: [], providerOrder: [] })
+      useModels.setState({
+        ownerUserId: userId,
+        favoriteModelIds: [],
+        newAccountFavoriteModelIds: [],
+        newAccountFavoritesLoaded: false,
+        providerOrder: [],
+      })
     }
   }, [userId])
 
@@ -85,11 +94,23 @@ export function SettingsBridge() {
     try {
       useSettings.setState({ ...DEFAULT_SETTINGS, ...data.values, ownerUserId: userId })
       const modelPreferences = modelPreferencesSchema.parse(data.values)
+      const newAccountFavoriteModelIds = data.newAccountFavoriteModelIds ?? []
+      const newAccountFavoritesLoaded = Array.isArray(data.newAccountFavoriteModelIds)
       const local = modelPreferencesSnapshot()
       const matchesLocal = JSON.stringify(modelPreferences) === JSON.stringify(local)
       if (!modelsDirty.current || matchesLocal) {
-        useModels.setState({ ...modelPreferences, ownerUserId: userId })
+        useModels.setState({
+          ...modelPreferences,
+          ownerUserId: userId,
+          newAccountFavoriteModelIds,
+          newAccountFavoritesLoaded,
+        })
         modelsDirty.current = false
+      } else {
+        useModels.setState({
+          newAccountFavoriteModelIds,
+          newAccountFavoritesLoaded,
+        })
       }
     } finally {
       applyingRemote.current = false

@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { memories, userPreferences, users } from '../database/schema.js'
+import { applicationSettings, memories, userPreferences, users } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
@@ -12,20 +12,29 @@ import { maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
+import { parseAuthSettings } from './application-settings.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
-    const [row] = await db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
+    const [[row], [authSetting]] = await Promise.all([
+      db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1),
+      db.select({ value: applicationSettings.value })
+        .from(applicationSettings)
+        .where(eq(applicationSettings.key, 'auth'))
+        .limit(1),
+    ])
     const values = preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined)
+    const newAccountFavoriteModelIds = parseAuthSettings(authSetting?.value).newAccountModelDefaults.favoriteModelIds
     return {
       values: {
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
         automaticChatExpiration: parseAutomaticChatExpiration(values?.automaticChatExpiration),
       },
+      newAccountFavoriteModelIds,
       updatedAt: row?.updatedAt.toISOString() ?? null,
     }
   })
