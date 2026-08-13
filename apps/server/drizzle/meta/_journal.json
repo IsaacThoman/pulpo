@@ -225,6 +225,13 @@
       "when": 1786646400676,
       "tag": "0031_flawless_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786648043509,
+      "tag": "0032_closed_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }
