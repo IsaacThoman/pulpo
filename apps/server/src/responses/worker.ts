@@ -321,7 +321,7 @@ async function processGenerationAttempt(
     history.unshift(parent)
     parentId = parent.parentResponseId
   }
-  const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+  const [requestLog] = await db.select({ id: requestLogs.id, apiKeyId: requestLogs.apiKeyId }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
@@ -372,7 +372,9 @@ async function processGenerationAttempt(
   if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
-    const parameters = resolveModelParameters(record.model, record.response.parameters)
+    const parameters = resolveModelParameters(record.model, record.response.parameters, {
+      publicApi: Boolean(requestLog.apiKeyId),
+    })
     const upstreamPayload = {
       ...(parameters as Record<string, never>),
       model: record.model.upstreamModelId,
