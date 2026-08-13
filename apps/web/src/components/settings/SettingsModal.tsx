@@ -186,6 +186,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [profileError, setProfileError] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
+  const [customColorSelected, setCustomColorSelected] = useState(() => Boolean(
+    user?.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor),
+  ))
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
@@ -203,6 +206,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     if (!open || !user) return
     setProfileName(user.name)
     setProfileColor(user.profileColor ?? automaticProfileColor(user.id))
+    setCustomColorSelected(Boolean(user.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor)))
     setProfileError('')
   }, [open, user])
 
@@ -565,9 +569,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       key={color}
                       type="button"
                       aria-label={`Profile color ${color}`}
-                      className={cn('size-5 cursor-pointer rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
+                      className={cn('size-5 cursor-pointer rounded border', !customColorSelected && profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
                       style={{ backgroundColor: color }}
-                      onClick={() => { setProfileMessage(''); setProfileColor(color) }}
+                      onClick={() => { setProfileMessage(''); setCustomColorSelected(false); setProfileColor(color) }}
                     />)}
                     <div className="relative size-5 shrink-0">
                       <input
@@ -575,18 +579,20 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                         aria-label="Choose a custom profile color"
                         value={profileColor}
                         className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
-                        onChange={(event) => { setProfileMessage(''); setProfileColor(event.currentTarget.value) }}
+                        onPointerDown={() => setCustomColorSelected(true)}
+                        onClick={() => setCustomColorSelected(true)}
+                        onChange={(event) => { setProfileMessage(''); setCustomColorSelected(true); setProfileColor(event.currentTarget.value) }}
                       />
                       <span
                         aria-hidden="true"
                         className={cn(
                           'pointer-events-none absolute inset-0 rounded border bg-clip-padding',
-                          profileColorIsPreset
+                          !customColorSelected
                             ? 'peer-focus-visible:ring-2 peer-focus-visible:ring-foreground peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background'
                             : 'ring-2 ring-foreground ring-offset-2 ring-offset-background',
                         )}
                         style={profileColorIsPreset
-                          ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
+                          ? { backgroundImage: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
                           : { backgroundColor: profileColor }}
                       />
                     </div>
