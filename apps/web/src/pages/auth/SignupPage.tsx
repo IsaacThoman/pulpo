@@ -99,10 +99,10 @@ export function SignupPage() {
             <Input
               id="username"
               autoComplete="username"
-              placeholder="jon_arbuckle"
+              placeholder="popbob"
               value={username}
               onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())}
-              className="pl-7"
+              className="pl-6"
               minLength={3}
               maxLength={30}
               pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]"
@@ -110,7 +110,6 @@ export function SignupPage() {
               required
             />
           </div>
-          <p className="text-xs text-muted-foreground">Friends will use this exact username to find you.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="password">Password</Label>
