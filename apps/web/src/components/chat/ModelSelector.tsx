@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { ChevronDown, Search, Star } from 'lucide-react'
 import {
   DropdownMenu,
@@ -32,6 +32,7 @@ export function ModelSelector({
   const dragIdRef = useRef<string | null>(null)
   const dragKindRef = useRef<DragKind | null>(null)
   const didDragRef = useRef(false)
+  const resetConfirmationRef = useRef<HTMLDivElement | null>(null)
   const favorites = useModels((s) => s.favoriteModelIds)
   const providerOrder = useModels((s) => s.providerOrder)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
@@ -66,6 +67,14 @@ export function ModelSelector({
   const favoritesMatchDefaults = favoriteIdsMatch(favorites, newAccountFavoriteModelIds)
   const canReorderModels = favoritesActive && rows.length > 1
   const canReorderProviders = providers.length > 1
+
+  useEffect(() => {
+    if (!confirmReset) return
+    resetConfirmationRef.current?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'nearest',
+    })
+  }, [confirmReset])
 
   const pick = (id: string) => {
     onChange(id)
@@ -329,7 +338,7 @@ export function ModelSelector({
             })}
             {favoritesActive && newAccountFavoritesLoaded && !favoritesMatchDefaults && (
               confirmReset ? (
-                <div className="mx-2 my-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                <div ref={resetConfirmationRef} className="mx-2 my-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
                   <p className="text-foreground">Replace favorites with defaults?</p>
                   <div className="mt-1.5 flex items-center gap-3">
                     <button
