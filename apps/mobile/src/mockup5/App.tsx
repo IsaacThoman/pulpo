@@ -155,7 +155,7 @@ import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { chatRemovalBehavior } from './src/chatRemoval';
-import { reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
+import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
@@ -413,7 +413,7 @@ function useAccessibilityPreferences() {
 
 type SymbolName = ComponentProps<typeof SymbolView>['name'];
 
-type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
+type Model = { id: string; redirectTargetModelIds?: string[]; name: string; providerGroupId: string; provider: string; lab: string; icon: ImageSourcePropType; labIcon?: ImageSourcePropType; menuIcon?: ImageSourcePropType; tintColor?: ColorValue; detail: string; agentEnabled: boolean };
 type ModelSection = string;
 type Attachment = {
   id: string;
@@ -488,6 +488,7 @@ const UNAVAILABLE_MODEL: Model = {
   id: '',
   name: 'No model available',
   providerGroupId: 'pulpo',
+  provider: 'Pulpo',
   lab: 'Pulpo',
   icon: require('./assets/pulpo-smiley.png'),
   detail: 'Ask an administrator to enable a model',
@@ -502,7 +503,7 @@ const LOADING_MODEL: Model = {
 
 function prototypeModelToLegacy(model: PrototypeModel, isDark: boolean): Model {
   const icon = aiIconSource(model.modelLogo ?? model.labLogo, isDark, model.modelCustomIcon);
-  return { id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), agentEnabled: model.agentEnabled };
+  return { id: model.id, redirectTargetModelIds: model.redirectTargetModelIds, name: model.name, providerGroupId: model.providerGroupId, provider: model.provider, lab: model.lab, detail: model.description, icon, menuIcon: icon, labIcon: aiIconSource(model.labLogo, isDark, model.labCustomIcon), agentEnabled: model.agentEnabled };
 }
 
 const legacyMessageCache = new WeakMap<PrototypeMessage, { chatId: string; chatModelId: string; value: Message }>();
@@ -3421,7 +3422,7 @@ function ChatView({
             <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
           </View>
         </View>
-        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{model.lab}</Text>
+        <Text maxFontSizeMultiplier={1.6} style={styles.emptyProvider}>{modelSubtitle(model)}</Text>
       </Reanimated.View>
       <Reanimated.View style={[styles.suggestionReveal, suggestionsAnimatedStyle]}>
         <View

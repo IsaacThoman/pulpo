@@ -17,6 +17,10 @@ interface SelectableModel {
   enabled?: boolean
 }
 
+export function modelSubtitle(model: { lab: string; provider: string }): string {
+  return model.lab === model.provider ? model.lab : `${model.lab} · ${model.provider}`
+}
+
 /** Keep a new composer on the account default until the user makes an explicit choice. */
 export function reconcileComposerModelId<T extends SelectableModel>(
   models: readonly T[],
