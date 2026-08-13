@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Database,
+  Camera,
   Info,
   KeyRound,
   Monitor,
@@ -186,6 +187,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [profileError, setProfileError] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
     queryKey: deletedChatsQueryKey,
@@ -513,7 +515,33 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   <h2 className="text-base font-semibold">Account</h2>
                   <Separator className="my-3" />
                   <div className="flex flex-wrap items-center gap-4 py-3">
-                    <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
+                    <button
+                      type="button"
+                      aria-label="Change profile picture"
+                      disabled={profileSaving}
+                      className="group relative size-14 shrink-0 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => avatarInputRef.current?.click()}
+                    >
+                      <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
+                      <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        <Camera className="size-4" />
+                        <span className="text-[9px] font-medium leading-none">Change</span>
+                      </span>
+                    </button>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0]
+                        if (file) {
+                          setProfileMessage('')
+                          setAvatarCandidate({ file, url: URL.createObjectURL(file) })
+                        }
+                        event.currentTarget.value = ''
+                      }}
+                    />
                     <div>
                       <div className="flex flex-wrap items-baseline gap-x-2">
                         <span className="font-medium">{user?.name}</span>
@@ -523,12 +551,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     </div>
                     <div className="flex-1" />
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="outline" size="sm" disabled={profileSaving} onClick={() => {
-                        const input = document.createElement('input')
-                        input.type = 'file'; input.accept = 'image/jpeg,image/png,image/webp'
-                        input.onchange = () => { const file = input.files?.[0]; if (file) { setProfileMessage(''); setAvatarCandidate({ file, url: URL.createObjectURL(file) }) } }
-                        input.click()
-                      }}>Change picture</Button>
                       {user?.avatarUrl && <Button variant="ghost" size="sm" disabled={profileSaving} onClick={() => void removeAvatar()}>Remove</Button>}
                     </div>
                   </div>
