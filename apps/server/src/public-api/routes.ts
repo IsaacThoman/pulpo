@@ -32,6 +32,7 @@ function publicResponse(row: typeof responses.$inferSelect) {
   const usage = row.usage as {
     inputTokens?: number
     cachedInputTokens?: number
+    cacheWriteTokens?: number
     outputTokens?: number
     reasoningTokens?: number
     totalTokens?: number
@@ -46,7 +47,10 @@ function publicResponse(row: typeof responses.$inferSelect) {
     error: row.error,
     usage: usage ? {
       input_tokens: usage.inputTokens ?? 0,
-      input_tokens_details: { cached_tokens: usage.cachedInputTokens ?? 0 },
+      input_tokens_details: {
+        cached_tokens: usage.cachedInputTokens ?? 0,
+        cache_write_tokens: usage.cacheWriteTokens ?? 0,
+      },
       output_tokens: usage.outputTokens ?? 0,
       output_tokens_details: { reasoning_tokens: usage.reasoningTokens ?? 0 },
       total_tokens: usage.totalTokens ?? 0,

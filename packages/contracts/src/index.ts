@@ -257,6 +257,7 @@ export type ExecutionMode = z.infer<typeof executionModeSchema>
 export const responseUsageSchema = z.object({
   inputTokens: z.number().int().nonnegative(),
   cachedInputTokens: z.number().int().nonnegative().default(0),
+  cacheWriteTokens: z.number().int().nonnegative().default(0),
   outputTokens: z.number().int().nonnegative(),
   reasoningTokens: z.number().int().nonnegative().default(0),
   totalTokens: z.number().int().nonnegative(),
@@ -539,6 +540,7 @@ export const modelSchema = z.object({
   maxOutputTokens: z.number().int().positive(),
   inputPriceMicros: z.number().int().nonnegative(),
   cachedInputPriceMicros: z.number().int().nonnegative(),
+  cacheWritePriceMicros: z.number().int().nonnegative(),
   outputPriceMicros: z.number().int().nonnegative(),
   tags: z.array(z.string()),
   agentEnabled: z.boolean().default(false),
@@ -673,6 +675,7 @@ export const createModelSchema = z.object({
   slowStickyMinCompletionSeconds: z.number().int().min(1).max(86_400).default(30),
   inputPriceMicros: z.number().int().nonnegative(),
   cachedInputPriceMicros: z.number().int().nonnegative(),
+  cacheWritePriceMicros: z.number().int().nonnegative(),
   outputPriceMicros: z.number().int().nonnegative(),
   perRequestPriceMicros: z.number().int().nonnegative().default(0),
 })
@@ -1008,6 +1011,8 @@ export const adminUsageEventSchema = z.object({
   ocrStatus: z.string(),
   eventCount: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   updatedAt: isoDateSchema,
 })

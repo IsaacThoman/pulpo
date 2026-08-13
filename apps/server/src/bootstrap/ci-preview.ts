@@ -255,6 +255,7 @@ function lockedDatabaseStore(transaction: BootstrapTransaction): LockedBootstrap
         modelId: CI_PREVIEW_MODEL_ID,
         inputPriceMicros: 0,
         cachedInputPriceMicros: 0,
+        cacheWritePriceMicros: 0,
         outputPriceMicros: 0,
         perRequestPriceMicros: 0,
       })

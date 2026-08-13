@@ -67,12 +67,13 @@ function normalizeUsage(usage: unknown): ResponseUsage {
     input_tokens?: number
     output_tokens?: number
     total_tokens?: number
-    input_tokens_details?: { cached_tokens?: number }
+    input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number }
     output_tokens_details?: { reasoning_tokens?: number }
   }
   return {
     inputTokens: value.input_tokens ?? 0,
     cachedInputTokens: value.input_tokens_details?.cached_tokens ?? 0,
+    cacheWriteTokens: value.input_tokens_details?.cache_write_tokens ?? 0,
     outputTokens: value.output_tokens ?? 0,
     reasoningTokens: value.output_tokens_details?.reasoning_tokens ?? 0,
     totalTokens: value.total_tokens ?? (value.input_tokens ?? 0) + (value.output_tokens ?? 0),
@@ -367,6 +368,8 @@ async function processGenerationAttempt(
     await db.update(requestLogs).set({
       eventCount: sql`${requestLogs.eventCount} + ${eventCount}`,
       inputTokens: usage?.inputTokens,
+      cachedInputTokens: usage?.cachedInputTokens,
+      cacheWriteTokens: usage?.cacheWriteTokens,
       outputTokens: usage?.outputTokens,
       updatedAt: new Date(),
     }).where(eq(requestLogs.id, requestLog.id))
@@ -539,14 +542,14 @@ export async function processGeneration(responseId: string): Promise<void> {
         await db.transaction(async (tx) => {
           await tx.update(generationAttempts).set({
             status: 'completed', durationMs: Date.now() - attemptStarted, upstreamResponseId: completed?.openaiResponseId,
-            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0,
+            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), completedAt: new Date(),
           }).where(eq(generationAttempts.id, attemptId))
           await tx.update(responses).set({ actualModelId: model!.id }).where(eq(responses.id, responseId))
           await tx.update(requestLogs).set({
             status: completed?.status ?? 'completed', actualModelId: model!.id, currentModelId: model!.id,
-            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0,
+            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), durationMs,
             tokensPerSecond: durationMs > 0 ? completionTokensPerSecond(durationMs, usage?.outputTokens ?? 0) : null,

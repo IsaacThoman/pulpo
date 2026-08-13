@@ -13,6 +13,7 @@ export function modelCallUsage(usage: unknown): ResponseUsage {
   return {
     inputTokens,
     cachedInputTokens: Number(inputDetails.cached_tokens ?? value.cachedInputTokens ?? 0),
+    cacheWriteTokens: Number(inputDetails.cache_write_tokens ?? value.cacheWriteTokens ?? 0),
     outputTokens,
     reasoningTokens: Number(outputDetails.reasoning_tokens ?? value.reasoningTokens ?? 0),
     totalTokens: Number(value.total_tokens ?? value.totalTokens ?? inputTokens + outputTokens),
@@ -53,6 +54,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
       durationMs: Date.now() - startedAt,
       inputTokens: usage.inputTokens,
       cachedInputTokens: usage.cachedInputTokens,
+      cacheWriteTokens: usage.cacheWriteTokens,
       outputTokens: usage.outputTokens,
       reasoningTokens: usage.reasoningTokens,
       completedAt: new Date(),

@@ -157,6 +157,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       maxOutputTokens: model.maxOutputTokens,
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
       cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
+      cacheWritePriceMicros: pricing?.cacheWritePriceMicros ?? 0,
       outputPriceMicros: pricing?.outputPriceMicros ?? 0,
       perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
       tags: model.tags,
@@ -432,6 +433,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       ...model,
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
       cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
+      cacheWritePriceMicros: pricing?.cacheWritePriceMicros ?? 0,
       outputPriceMicros: pricing?.outputPriceMicros ?? 0,
       perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
       presets: await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => ({
@@ -500,6 +502,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         modelId: input.id,
         inputPriceMicros: input.inputPriceMicros,
         cachedInputPriceMicros: input.cachedInputPriceMicros,
+        cacheWritePriceMicros: input.cacheWritePriceMicros,
         outputPriceMicros: input.outputPriceMicros,
         perRequestPriceMicros: input.perRequestPriceMicros,
       })
@@ -575,12 +578,18 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       slowStickyMinCompletionSeconds: typeof body.slowStickyMinCompletionSeconds === 'number' ? body.slowStickyMinCompletionSeconds : undefined,
       updatedAt: new Date(),
     }).where(eq(models.id, id)).returning()
-    if (['inputPriceMicros', 'cachedInputPriceMicros', 'outputPriceMicros', 'perRequestPriceMicros'].some((key) => typeof body[key] === 'number')) {
+    if (['inputPriceMicros', 'cachedInputPriceMicros', 'cacheWritePriceMicros', 'outputPriceMicros', 'perRequestPriceMicros'].some((key) => typeof body[key] === 'number')) {
+      const [currentPricing] = await db.select().from(modelPricingVersions)
+        .where(and(eq(modelPricingVersions.modelId, id), isNull(modelPricingVersions.effectiveTo))).limit(1)
+      if (!currentPricing) throw notFound('Model pricing')
       await db.update(modelPricingVersions).set({ effectiveTo: new Date() }).where(and(eq(modelPricingVersions.modelId, id), isNull(modelPricingVersions.effectiveTo)))
       await db.insert(modelPricingVersions).values({
         id: newId(), modelId: id,
-        inputPriceMicros: Number(body.inputPriceMicros ?? 0), cachedInputPriceMicros: Number(body.cachedInputPriceMicros ?? 0),
-        outputPriceMicros: Number(body.outputPriceMicros ?? 0), perRequestPriceMicros: Number(body.perRequestPriceMicros ?? 0),
+        inputPriceMicros: typeof body.inputPriceMicros === 'number' ? body.inputPriceMicros : currentPricing.inputPriceMicros,
+        cachedInputPriceMicros: typeof body.cachedInputPriceMicros === 'number' ? body.cachedInputPriceMicros : currentPricing.cachedInputPriceMicros,
+        cacheWritePriceMicros: typeof body.cacheWritePriceMicros === 'number' ? body.cacheWritePriceMicros : currentPricing.cacheWritePriceMicros,
+        outputPriceMicros: typeof body.outputPriceMicros === 'number' ? body.outputPriceMicros : currentPricing.outputPriceMicros,
+        perRequestPriceMicros: typeof body.perRequestPriceMicros === 'number' ? body.perRequestPriceMicros : currentPricing.perRequestPriceMicros,
       })
     }
     if (parsedPresets) await db.transaction((tx) => replacePresets(tx, id, parsedPresets))
