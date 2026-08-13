@@ -17,6 +17,10 @@ interface SelectableModel {
   enabled?: boolean
 }
 
+export function modelSubtitle(model: { lab: string; provider: string }): string {
+  return model.lab === model.provider ? model.lab : `${model.lab} · ${model.provider}`
+}
+
 /** Keep a new composer on the account default until the user makes an explicit choice. */
 export function reconcileComposerModelId<T extends SelectableModel>(
   models: readonly T[],
@@ -41,7 +45,7 @@ export function redirectTargetModelIds(presets: readonly RedirectPreset[]): stri
   )))]
 }
 
-function modelAsset(model: MobileModel): PrototypeModel['asset'] {
+function modelFamily(model: MobileModel): 'claude' | 'openai' | 'gemini' | 'deepseek' {
   const value = `${model.provider.name} ${model.name}`.toLowerCase()
   if (value.includes('anthropic') || value.includes('claude')) return 'claude'
   if (value.includes('google') || value.includes('gemini')) return 'gemini'
@@ -51,7 +55,7 @@ function modelAsset(model: MobileModel): PrototypeModel['asset'] {
 
 /** Convert a server catalog model without discarding redirect identity metadata. */
 export function mapModel(model: MobileModel, favorites: string[]): PrototypeModel {
-  const asset = modelAsset(model)
+  const family = modelFamily(model)
   return {
     id: model.id,
     redirectTargetModelIds: redirectTargetModelIds(model.presets),
@@ -66,8 +70,7 @@ export function mapModel(model: MobileModel, favorites: string[]): PrototypeMode
     enabled: true,
     agentEnabled: model.agentEnabled,
     favorite: favorites.includes(model.id),
-    tint: asset === 'claude' ? '#E8794A' : asset === 'gemini' ? '#6EA8FF' : asset === 'deepseek' ? '#5B8CFF' : '#D9D9D9',
-    asset,
+    tint: family === 'claude' ? '#E8794A' : family === 'gemini' ? '#6EA8FF' : family === 'deepseek' ? '#5B8CFF' : '#D9D9D9',
     modelLogo: model.logo ?? model.lab?.logo ?? 'pulpo',
     labLogo: model.lab?.logo ?? 'pulpo',
     modelCustomIcon: model.customIcon ?? (model.logo ? null : model.lab?.customIcon ?? null),
