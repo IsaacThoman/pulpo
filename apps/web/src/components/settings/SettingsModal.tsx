@@ -579,7 +579,12 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       />
                       <span
                         aria-hidden="true"
-                        className={cn('pointer-events-none absolute inset-0 rounded border peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-ring', !profileColorIsPreset && 'ring-2 ring-inset ring-foreground')}
+                        className={cn(
+                          'pointer-events-none absolute inset-0 rounded border',
+                          profileColorIsPreset
+                            ? 'peer-focus-visible:ring-2 peer-focus-visible:ring-foreground peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background'
+                            : 'ring-2 ring-foreground ring-offset-2 ring-offset-background',
+                        )}
                         style={profileColorIsPreset
                           ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
                           : { backgroundColor: profileColor }}
