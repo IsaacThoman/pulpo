@@ -1,8 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MobileModel } from '../../types'
-import { findDisplayModel, mapModel, redirectTargetModelIds, resolveDisplayModel } from './modelIdentity'
+import { findDisplayModel, mapModel, reconcileComposerModelId, redirectTargetModelIds, resolveDisplayModel } from './modelIdentity'
 
 describe('mobile model identity', () => {
+  it('adopts a late account default while a new composer still follows defaults', () => {
+    const models = [{ id: 'catalog-first' }, { id: 'account-default' }]
+
+    expect(reconcileComposerModelId(models, 'catalog-first', 'account-default', true)).toBe('account-default')
+  })
+
+  it('preserves an explicit model choice when the account default arrives', () => {
+    const models = [{ id: 'catalog-first' }, { id: 'account-default' }, { id: 'chosen' }]
+
+    expect(reconcileComposerModelId(models, 'chosen', 'account-default', false)).toBe('chosen')
+  })
+
+  it('falls back to the account default when an explicit choice becomes unavailable', () => {
+    const models = [{ id: 'catalog-first' }, { id: 'account-default' }]
+
+    expect(reconcileComposerModelId(models, 'removed', 'account-default', false)).toBe('account-default')
+  })
+
   it('maps a hidden redirect target back to its visible parent', () => {
     const parent = { id: 'gpt-5.6-luna', redirectTargetModelIds: ['gpt-5.6-luna-fast'], name: 'GPT-5.6 Luna' }
 
