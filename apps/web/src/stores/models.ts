@@ -12,6 +12,10 @@ export function resetFavoriteIds(newAccountFavoriteModelIds: string[]): string[]
   return [...newAccountFavoriteModelIds]
 }
 
+export function favoriteIdsMatch(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
+}
+
 interface ModelsState {
   ownerUserId: string | null
   favoriteModelIds: string[]
