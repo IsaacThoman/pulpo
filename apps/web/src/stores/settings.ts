@@ -51,7 +51,7 @@ export const DEFAULT_SETTINGS = {
   automaticChatExpiration: '24h' as AutomaticChatExpiration,
   newChatAutoExpire: false,
   defaultModelId: '',
-  sidebarPins: { usage: true, friends: true, apiKeys: true },
+  sidebarPins: { usage: false, friends: false, apiKeys: false },
   generation: {},
 }
 

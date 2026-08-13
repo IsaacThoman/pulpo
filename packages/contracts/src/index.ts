@@ -598,9 +598,9 @@ export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
 /** Account-scoped visibility controls for optional primary sidebar links. */
 export const sidebarPinsSchema = z.object({
-  usage: z.boolean().default(true),
-  friends: z.boolean().default(true),
-  apiKeys: z.boolean().default(true),
+  usage: z.boolean().default(false),
+  friends: z.boolean().default(false),
+  apiKeys: z.boolean().default(false),
 })
 export type SidebarPins = z.infer<typeof sidebarPinsSchema>
 

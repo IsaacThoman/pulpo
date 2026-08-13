@@ -5,7 +5,7 @@ describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       theme: 'dark', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      sidebarPins: { usage: true, friends: true, apiKeys: true }, favoriteModelIds: [], providerOrder: [],
+      sidebarPins: { usage: false, friends: false, apiKeys: false }, favoriteModelIds: [], providerOrder: [],
     })
   })
 
@@ -28,12 +28,12 @@ describe('account model preferences', () => {
     expect(() => preferencesWithModelDefaults({ favoriteModelIds: [''] })).toThrow()
   })
 
-  it('normalizes sidebar pins and defaults missing links to pinned', () => {
-    expect(preferencesWithModelDefaults({ sidebarPins: { usage: false } }).sidebarPins).toEqual({
-      usage: false, friends: true, apiKeys: true,
+  it('normalizes sidebar pins and defaults missing links to unpinned', () => {
+    expect(preferencesWithModelDefaults({ sidebarPins: { usage: true } }).sidebarPins).toEqual({
+      usage: true, friends: false, apiKeys: false,
     })
     expect(normalizedPreferencePatch({ sidebarPins: { friends: false } }).sidebarPins).toEqual({
-      usage: true, friends: false, apiKeys: true,
+      usage: false, friends: false, apiKeys: false,
     })
     expect(() => normalizedPreferencePatch({ sidebarPins: { usage: 'yes' } })).toThrow()
   })
