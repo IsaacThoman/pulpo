@@ -27,6 +27,7 @@ export const CI_PREVIEW_PRICING_ID = '00000000-0000-7000-8000-000000000104'
 export const CI_PREVIEW_MODEL_ID = 'gpt-5.6-luna'
 
 const PREVIEW_HOST_PATTERN = /^pulpo-pr-[1-9]\d*\.deathgrips\.org$/
+const LOCAL_PREVIEW_INSTANCE_ID = 'local-preview'
 const PROVIDER_BASE_URL = 'https://pulpo.baby/v1'
 const DEVELOPMENT_ENCRYPTION_KEY = 'development-only-key-change-me-000000'
 const BOOTSTRAP_LOCK_ID = 1_886_747_745
@@ -156,13 +157,15 @@ export async function runBootstrapPreset(
   instanceId: string,
   dependencies: BootstrapDependencies,
 ): Promise<'disabled' | 'existing' | 'created'> {
+  const isTrustedPreview = PREVIEW_HOST_PATTERN.test(instanceId)
+    || (config.NODE_ENV === 'development' && instanceId === LOCAL_PREVIEW_INSTANCE_ID)
   if (!config.PULPO_BOOTSTRAP_PRESET) {
-    if (PREVIEW_HOST_PATTERN.test(instanceId)) {
-      throw new Error('PULPO_BOOTSTRAP_PRESET=ci-preview is required for Pulpo CI preview deployments')
+    if (isTrustedPreview) {
+      throw new Error('PULPO_BOOTSTRAP_PRESET=ci-preview is required for trusted Pulpo preview deployments')
     }
     return 'disabled'
   }
-  if (!PREVIEW_HOST_PATTERN.test(instanceId)) {
+  if (!isTrustedPreview) {
     throw new Error(`The ci-preview preset is not allowed for Pulpo instance ${instanceId}`)
   }
   requirePreviewRuntimeConfig(config)
