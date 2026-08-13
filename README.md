@@ -39,6 +39,38 @@ docker compose ps
 
 Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, manage reusable lab/model artwork under Admin → Icons, create a lab and model, configure pricing, and approve pending users.
 
+### Local preview stack
+
+To replace the shared local Compose stack with a blank stack seeded exactly like
+a trusted preview deployment, initialize the machine-wide local preview config:
+
+```bash
+npm run local:preview:init
+```
+
+Edit `~/.config/pulpo/local-preview.env` and replace every `replace-*` value with
+preview-safe credentials. The file supplies the administrator login, Pulpo Baby
+provider key, workspace controller credentials, workspace image digest, and
+local deployment secrets. It is created with `0600` permissions and is shared
+by every worktree. Set `PULPO_LOCAL_PREVIEW_ENV_FILE` to use a different absolute
+path. The disposable local stack keeps the `pulpo` PostgreSQL password because
+the database binds only to `127.0.0.1`; production deployments must continue to
+use a strong, deployment-specific database password. Its loopback-only Seaweed
+S3 service likewise uses a known local secret; production object storage must
+use a strong secret of its own.
+
+Then reset and rebuild the stack from the current worktree:
+
+```bash
+npm run local:preview:reset
+```
+
+The command validates the configuration before prompting. Once confirmed, it
+deletes all volumes in the `pulpo` Compose project, rebuilds images from the
+invoking worktree, starts the stack, and verifies the seeded administrator can
+log in. For deliberate non-interactive use, run
+`npm run local:preview:reset -- --yes`. Docker build cache is preserved.
+
 ## Management CLI
 
 `@isaacthoman/pulpo` is the Node.js 22+ operator client for contexts, scoped automation tokens,

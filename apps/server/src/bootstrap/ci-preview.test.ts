@@ -88,6 +88,26 @@ describe('ci-preview bootstrap preset', () => {
     expect(JSON.stringify(store.seeds)).not.toContain('"sk-pulpo-preview-provider"')
   })
 
+  it('uses the same preview seed for the dedicated local development instance', async () => {
+    const store = new MemoryBootstrapStore()
+    const result = await runBootstrapPreset(
+      previewConfig({ NODE_ENV: 'development', PUBLIC_URL: 'http://localhost:8080', PULPO_INSTANCE_ID: 'local-preview' }),
+      'local-preview',
+      dependencies(store),
+    )
+
+    expect(result).toBe('created')
+    expect(store.seeds).toHaveLength(1)
+  })
+
+  it('does not allow the local preview identity in production', async () => {
+    await expect(runBootstrapPreset(
+      previewConfig({ NODE_ENV: 'production', PULPO_INSTANCE_ID: 'local-preview' }),
+      'local-preview',
+      dependencies(new MemoryBootstrapStore()),
+    )).rejects.toThrow('not allowed')
+  })
+
   it('preserves an existing seeded preview without requiring bootstrap secrets again', async () => {
     const store = new MemoryBootstrapStore()
     store.marker = true
