@@ -9,19 +9,32 @@ import {
 const pricing = {
   inputPriceMicros: 2_500_000,
   cachedInputPriceMicros: 1_250_000,
+  cacheWritePriceMicros: 3_125_000,
   outputPriceMicros: 10_000_000,
   perRequestPriceMicros: 100,
 }
 
 describe('pricing', () => {
-  it('separates cached and uncached input', () => {
+  it('separates cache reads, cache writes, and uncached input', () => {
     expect(calculateCostMicros({
       inputTokens: 1_000,
       cachedInputTokens: 400,
+      cacheWriteTokens: 200,
       outputTokens: 200,
       reasoningTokens: 50,
       totalTokens: 1_200,
-    }, pricing)).toBe(4_100)
+    }, pricing)).toBe(4_225)
+  })
+
+  it('does not bill overlapping cache categories twice', () => {
+    expect(calculateCostMicros({
+      inputTokens: 100,
+      cachedInputTokens: 80,
+      cacheWriteTokens: 50,
+      outputTokens: 0,
+      reasoningTokens: 0,
+      totalTokens: 100,
+    }, { ...pricing, perRequestPriceMicros: 0 })).toBe(163)
   })
 
   it('reserves the configured maximum output cost', () => {

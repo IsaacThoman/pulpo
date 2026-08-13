@@ -29,6 +29,7 @@ import { parseLoggingSettings } from '../settings/application-settings.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
+import { providerCacheRequestOptions } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
@@ -67,12 +68,13 @@ function normalizeUsage(usage: unknown): ResponseUsage {
     input_tokens?: number
     output_tokens?: number
     total_tokens?: number
-    input_tokens_details?: { cached_tokens?: number }
+    input_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number }
     output_tokens_details?: { reasoning_tokens?: number }
   }
   return {
     inputTokens: value.input_tokens ?? 0,
     cachedInputTokens: value.input_tokens_details?.cached_tokens ?? 0,
+    cacheWriteTokens: value.input_tokens_details?.cache_write_tokens ?? 0,
     outputTokens: value.output_tokens ?? 0,
     reasoningTokens: value.output_tokens_details?.reasoning_tokens ?? 0,
     totalTokens: value.total_tokens ?? (value.input_tokens ?? 0) + (value.output_tokens ?? 0),
@@ -367,6 +369,8 @@ async function processGenerationAttempt(
     await db.update(requestLogs).set({
       eventCount: sql`${requestLogs.eventCount} + ${eventCount}`,
       inputTokens: usage?.inputTokens,
+      cachedInputTokens: usage?.cachedInputTokens,
+      cacheWriteTokens: usage?.cacheWriteTokens,
       outputTokens: usage?.outputTokens,
       updatedAt: new Date(),
     }).where(eq(requestLogs.id, requestLog.id))
@@ -382,6 +386,11 @@ async function processGenerationAttempt(
     const parameters = resolveModelParameters(record.model, record.response.parameters, {
       publicApi: Boolean(requestLog.apiKeyId),
     })
+    const cacheOptions = providerCacheRequestOptions(record.provider, {
+      userId: record.response.userId,
+      chatId: record.response.chatId,
+      runId: record.response.id,
+    })
     const upstreamPayload = {
       ...(parameters as Record<string, never>),
       model: record.model.upstreamModelId,
@@ -389,10 +398,14 @@ async function processGenerationAttempt(
       stream: true as const,
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
+      ...(cacheOptions.promptCacheKey ? { prompt_cache_key: cacheOptions.promptCacheKey } : {}),
     }
     const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
     if (parseLoggingSettings(loggingRow?.value).logDetailedPayloads) await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
-    const stream = await client.responses.create(upstreamPayload, { signal: controller.signal })
+    const stream = await client.responses.create(upstreamPayload, {
+      signal: controller.signal,
+      headers: cacheOptions.headers,
+    })
     for await (const rawEvent of stream) {
       if (await isCancellationRequested(responseId)) {
         if (record.response.executionMode === 'background' && upstreamResponseId) {
@@ -539,14 +552,14 @@ export async function processGeneration(responseId: string): Promise<void> {
         await db.transaction(async (tx) => {
           await tx.update(generationAttempts).set({
             status: 'completed', durationMs: Date.now() - attemptStarted, upstreamResponseId: completed?.openaiResponseId,
-            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0,
+            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), completedAt: new Date(),
           }).where(eq(generationAttempts.id, attemptId))
           await tx.update(responses).set({ actualModelId: model!.id }).where(eq(responses.id, responseId))
           await tx.update(requestLogs).set({
             status: completed?.status ?? 'completed', actualModelId: model!.id, currentModelId: model!.id,
-            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0,
+            inputTokens: usage?.inputTokens ?? 0, cachedInputTokens: usage?.cachedInputTokens ?? 0, cacheWriteTokens: usage?.cacheWriteTokens ?? 0,
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), durationMs,
             tokensPerSecond: durationMs > 0 ? completionTokensPerSecond(durationMs, usage?.outputTokens ?? 0) : null,

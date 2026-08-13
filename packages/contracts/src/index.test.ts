@@ -9,6 +9,7 @@ import {
   chatPresetsSchema,
   catalogIconReferenceSchema,
   createModelSchema,
+  createProviderSchema,
   createChatResponseSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
   mergeResponseSnapshots,
@@ -34,6 +35,7 @@ import {
   startChatSchema,
   syncRequestSchema,
   updateChatSchema,
+  updateProviderSchema,
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
@@ -63,6 +65,25 @@ function targetedDelta(type: string, text: string, sequence: number, itemId: str
 }
 
 describe('shared contracts', () => {
+  it('validates semantic provider cache configuration', () => {
+    expect(createProviderSchema.parse({
+      name: 'Fireworks',
+      baseUrl: 'https://api.fireworks.ai/inference/v1',
+      apiKey: 'secret',
+      cacheAffinityMode: 'fireworks_session_affinity',
+      cacheAffinityScope: 'chat',
+      cacheIsolationMode: 'fireworks_prompt_cache_isolation',
+      cacheIsolationScope: 'user',
+    })).toMatchObject({
+      cacheAffinityMode: 'fireworks_session_affinity',
+      cacheAffinityScope: 'chat',
+      cacheIsolationMode: 'fireworks_prompt_cache_isolation',
+      cacheIsolationScope: 'user',
+    })
+    expect(updateProviderSchema.parse({ cacheAffinityMode: 'none' })).toEqual({ cacheAffinityMode: 'none' })
+    expect(() => updateProviderSchema.parse({ cacheAffinityMode: 'raw_header' })).toThrow()
+  })
+
   it('defaults missing in-flight response ids in chat summaries', () => {
     const summary = {
       id: crypto.randomUUID(),

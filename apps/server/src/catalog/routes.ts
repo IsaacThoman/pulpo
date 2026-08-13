@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -157,6 +157,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       maxOutputTokens: model.maxOutputTokens,
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
       cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
+      cacheWritePriceMicros: pricing?.cacheWritePriceMicros ?? 0,
       outputPriceMicros: pricing?.outputPriceMicros ?? 0,
       perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
       tags: model.tags,
@@ -201,6 +202,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         organizationId: input.organizationId,
         projectId: input.projectId,
         requestTimeoutMs: input.requestTimeoutMs,
+        cacheAffinityMode: input.cacheAffinityMode,
+        cacheAffinityScope: input.cacheAffinityScope,
+        cacheIsolationMode: input.cacheIsolationMode,
+        cacheIsolationScope: input.cacheIsolationScope,
       })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'provider.create', targetType: 'provider', targetId: id,
@@ -214,14 +219,19 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
     if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
-    const body = request.body as { name?: string; baseUrl?: string; apiKey?: string; organizationId?: string | null; projectId?: string | null; requestTimeoutMs?: number; enabled?: boolean }
-    if (body.requestTimeoutMs !== undefined && (body.requestTimeoutMs < 1_000 || body.requestTimeoutMs > 900_000)) throw new AppError(400, 'validation_error', 'Invalid provider configuration')
+    const body = updateProviderSchema.parse(request.body)
     if (body.baseUrl) await assertSafeProviderUrl(body.baseUrl)
     const [updated] = await db.update(providerConnections).set({
       name: body.name, baseUrl: body.baseUrl,
       encryptedApiKey: body.apiKey ? encryptSecret(body.apiKey, getConfig().ENCRYPTION_KEY) : undefined,
       organizationId: body.organizationId, projectId: body.projectId,
-      requestTimeoutMs: body.requestTimeoutMs, enabled: body.enabled, updatedAt: new Date(),
+      requestTimeoutMs: body.requestTimeoutMs,
+      cacheAffinityMode: body.cacheAffinityMode,
+      cacheAffinityScope: body.cacheAffinityScope,
+      cacheIsolationMode: body.cacheIsolationMode,
+      cacheIsolationScope: body.cacheIsolationScope,
+      enabled: body.enabled,
+      updatedAt: new Date(),
     }).where(eq(providerConnections.id, id)).returning()
     if (!updated) throw notFound('Provider')
     await db.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'provider.update', targetType: 'provider', targetId: id })
@@ -432,6 +442,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       ...model,
       inputPriceMicros: pricing?.inputPriceMicros ?? 0,
       cachedInputPriceMicros: pricing?.cachedInputPriceMicros ?? 0,
+      cacheWritePriceMicros: pricing?.cacheWritePriceMicros ?? 0,
       outputPriceMicros: pricing?.outputPriceMicros ?? 0,
       perRequestPriceMicros: pricing?.perRequestPriceMicros ?? 0,
       presets: await Promise.all((await db.select().from(modelPresets).where(eq(modelPresets.modelId, model.id)).orderBy(modelPresets.sortOrder)).map(async (preset) => ({
@@ -500,6 +511,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         modelId: input.id,
         inputPriceMicros: input.inputPriceMicros,
         cachedInputPriceMicros: input.cachedInputPriceMicros,
+        cacheWritePriceMicros: input.cacheWritePriceMicros,
         outputPriceMicros: input.outputPriceMicros,
         perRequestPriceMicros: input.perRequestPriceMicros,
       })
@@ -575,12 +587,18 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       slowStickyMinCompletionSeconds: typeof body.slowStickyMinCompletionSeconds === 'number' ? body.slowStickyMinCompletionSeconds : undefined,
       updatedAt: new Date(),
     }).where(eq(models.id, id)).returning()
-    if (['inputPriceMicros', 'cachedInputPriceMicros', 'outputPriceMicros', 'perRequestPriceMicros'].some((key) => typeof body[key] === 'number')) {
+    if (['inputPriceMicros', 'cachedInputPriceMicros', 'cacheWritePriceMicros', 'outputPriceMicros', 'perRequestPriceMicros'].some((key) => typeof body[key] === 'number')) {
+      const [currentPricing] = await db.select().from(modelPricingVersions)
+        .where(and(eq(modelPricingVersions.modelId, id), isNull(modelPricingVersions.effectiveTo))).limit(1)
+      if (!currentPricing) throw notFound('Model pricing')
       await db.update(modelPricingVersions).set({ effectiveTo: new Date() }).where(and(eq(modelPricingVersions.modelId, id), isNull(modelPricingVersions.effectiveTo)))
       await db.insert(modelPricingVersions).values({
         id: newId(), modelId: id,
-        inputPriceMicros: Number(body.inputPriceMicros ?? 0), cachedInputPriceMicros: Number(body.cachedInputPriceMicros ?? 0),
-        outputPriceMicros: Number(body.outputPriceMicros ?? 0), perRequestPriceMicros: Number(body.perRequestPriceMicros ?? 0),
+        inputPriceMicros: typeof body.inputPriceMicros === 'number' ? body.inputPriceMicros : currentPricing.inputPriceMicros,
+        cachedInputPriceMicros: typeof body.cachedInputPriceMicros === 'number' ? body.cachedInputPriceMicros : currentPricing.cachedInputPriceMicros,
+        cacheWritePriceMicros: typeof body.cacheWritePriceMicros === 'number' ? body.cacheWritePriceMicros : currentPricing.cacheWritePriceMicros,
+        outputPriceMicros: typeof body.outputPriceMicros === 'number' ? body.outputPriceMicros : currentPricing.outputPriceMicros,
+        perRequestPriceMicros: typeof body.perRequestPriceMicros === 'number' ? body.perRequestPriceMicros : currentPricing.perRequestPriceMicros,
       })
     }
     if (parsedPresets) await db.transaction((tx) => replacePresets(tx, id, parsedPresets))

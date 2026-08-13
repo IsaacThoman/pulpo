@@ -59,6 +59,7 @@ interface AdminModel {
   useProviderCost: boolean
   inputPriceMicros: number
   cachedInputPriceMicros: number
+  cacheWritePriceMicros: number
   outputPriceMicros: number
   perRequestPriceMicros: number
   presets: ChatPreset[]
@@ -80,7 +81,7 @@ const empty = (providerConnectionId = '', labId: string | null = null): AdminMod
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
   compactionEnabled: true, compactionThresholdTokens: 100_000, agentCompactionThresholdTokens: 180_000, compactionRetainedTurns: 4,
   useProviderCost: false,
-  inputPriceMicros: 0, cachedInputPriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
+  inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
   fallbackModelId: null, maxRetries: 0, retryDelaySeconds: 1, stickyFallbackSeconds: 0,
   firstTokenTimeoutEnabled: false, firstTokenTimeoutSeconds: 30, slowStickyEnabled: false, slowStickyMinTokensPerSecond: 5, slowStickyMinCompletionSeconds: 30,
@@ -442,9 +443,10 @@ function ModelEditorBody({
           checked={draft.useProviderCost}
           onChange={(useProviderCost) => setDraft({ ...draft, useProviderCost })}
         />
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <PriceField label="Input $/M tokens" valueMicros={draft.inputPriceMicros} onChange={(inputPriceMicros) => setDraft({ ...draft, inputPriceMicros })} />
-          <PriceField label="Cached $/M tokens" valueMicros={draft.cachedInputPriceMicros} onChange={(cachedInputPriceMicros) => setDraft({ ...draft, cachedInputPriceMicros })} />
+          <PriceField label="Cache read $/M tokens" valueMicros={draft.cachedInputPriceMicros} onChange={(cachedInputPriceMicros) => setDraft({ ...draft, cachedInputPriceMicros })} />
+          <PriceField label="Cache write $/M tokens" valueMicros={draft.cacheWritePriceMicros} onChange={(cacheWritePriceMicros) => setDraft({ ...draft, cacheWritePriceMicros })} />
           <PriceField label="Output $/M tokens" valueMicros={draft.outputPriceMicros} onChange={(outputPriceMicros) => setDraft({ ...draft, outputPriceMicros })} />
         </div>
         <PriceField label="Per-request $" valueMicros={draft.perRequestPriceMicros} onChange={(perRequestPriceMicros) => setDraft({ ...draft, perRequestPriceMicros })} />
@@ -598,6 +600,7 @@ function ModelEditorBody({
                 upstream_model_name: draft.upstreamModelId,
                 input_cost_per_million: draft.inputPriceMicros / 1_000_000,
                 cached_input_cost_per_million: draft.cachedInputPriceMicros / 1_000_000,
+                cache_write_cost_per_million: draft.cacheWritePriceMicros / 1_000_000,
                 output_cost_per_million: draft.outputPriceMicros / 1_000_000,
                 per_request_cost: draft.perRequestPriceMicros / 1_000_000,
                 custom_params: draft.defaultParameters,

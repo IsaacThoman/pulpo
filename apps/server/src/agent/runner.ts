@@ -35,6 +35,7 @@ import { trackInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
+import { providerCacheRequestOptions } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
@@ -206,7 +207,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await publishAdminUsage(requestLog.id, true)
   }
   const streams = openAIResponsesApi()
-  const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
+  const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
   let sequence = record.response.lastSequence; let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
   let usage = persistedUsage ?? emptyUsage
@@ -467,6 +468,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       thinkingLevel: initialParameters.reasoning,
     },
     streamFn: async (_model, context, options) => {
+      const cacheOptions = providerCacheRequestOptions(active.provider, {
+        userId: record.response.userId,
+        chatId: record.response.chatId,
+        runId,
+      })
       const thresholdTokens = effectiveAgentCompactionThreshold(
         active.model.agentCompactionThresholdTokens,
         active.model.contextWindow,
@@ -505,6 +511,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: active.model.maxRetries,
+          sessionId: cacheOptions.sessionId,
+          headers: cacheOptions.headers,
         },
       )
     },
@@ -570,8 +578,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const message = event.message as AssistantMessage
       const completedTurnNumber = modelTurns
       const completedRuntime = turnRuntime.get(completedTurnNumber) ?? { runtime: active, index: activeIndex }
-      const turnUsage = { inputTokens: message.usage.input, cachedInputTokens: message.usage.cacheRead, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
-      usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
+      const turnUsage = { inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite, cachedInputTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
+      usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens + turnUsage.cacheWriteTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
       const pricing = turnPricing.get(completedTurnNumber) ?? await getActivePricing(completedRuntime.runtime.model.id)
       const turnCost = calculateCostMicros(turnUsage, pricing)
       accruedCostMicros += turnCost
@@ -587,7 +595,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         : undefined
       await db.update(generationAttempts).set({
         status: failed ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorCategory, errorMessage: message.errorMessage,
-        inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, outputTokens: turnUsage.outputTokens,
+        inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, cacheWriteTokens: turnUsage.cacheWriteTokens, outputTokens: turnUsage.outputTokens,
         reasoningTokens: turnUsage.reasoningTokens, costMicros: turnCost,
         durationMs: turnDurationMs, completedAt: new Date(),
       }).where(eq(generationAttempts.id, turnAttemptIds.get(completedTurnNumber)!))
@@ -595,6 +603,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         actualModelId: lastResponder?.runtime.model.id,
         inputTokens: usage.inputTokens,
         cachedInputTokens: usage.cachedInputTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
         outputTokens: usage.outputTokens,
         reasoningTokens: usage.reasoningTokens,
         costMicros: accruedCostMicros + accruedWebToolCostMicros,
@@ -725,7 +734,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
     await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
@@ -739,7 +748,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw error
   } finally {

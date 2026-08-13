@@ -1,6 +1,6 @@
 {
-  "id": "6ae073b5-c35e-4be8-87d2-b40421ace75a",
-  "prevId": "7932bda7-4725-4f32-96e8-55a81c8b6654",
+  "id": "190c6d8d-8d27-4648-9e62-2672170d3786",
+  "prevId": "6ae073b5-c35e-4be8-87d2-b40421ace75a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3595,6 +3595,34 @@
           "primaryKey": false,
           "notNull": true,
           "default": 120000
+        },
+        "cache_affinity_mode": {
+          "name": "cache_affinity_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "cache_affinity_scope": {
+          "name": "cache_affinity_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'chat'"
+        },
+        "cache_isolation_mode": {
+          "name": "cache_isolation_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "cache_isolation_scope": {
+          "name": "cache_isolation_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'user'"
         },
         "enabled": {
           "name": "enabled",

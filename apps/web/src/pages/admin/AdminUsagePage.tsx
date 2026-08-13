@@ -15,7 +15,7 @@ interface SummaryResult {
   topModels: Array<{ id: string; calls: number; costMicros: number }>; topUsers: Array<{ id: string; name: string; email: string; calls: number; costMicros: number }>
   topApiKeys: Array<{ id: string; name: string; prefix: string; calls: number; costMicros: number }>
 }
-interface LogRow { id: string; responseId: string; origin: string; purpose: string; status: string; requestedModelId: string; actualModelId: string | null; currentModelId: string | null; retryAttempt: number; turnNumber: number | null; retryCount: number; fallbackUsed: boolean; stickyFallbackUsed: boolean; ocrStatus: string; errorCategory: string | null; errorMessage: string | null; inputTokens: number; outputTokens: number; costMicros: number; durationMs: number | null; tokensPerSecond: number | null; createdAt: string; user: { name: string; email: string }; apiKey: { name: string; prefix: string } | null }
+interface LogRow { id: string; responseId: string; origin: string; purpose: string; status: string; requestedModelId: string; actualModelId: string | null; currentModelId: string | null; retryAttempt: number; turnNumber: number | null; retryCount: number; fallbackUsed: boolean; stickyFallbackUsed: boolean; ocrStatus: string; errorCategory: string | null; errorMessage: string | null; inputTokens: number; cachedInputTokens: number; cacheWriteTokens: number; outputTokens: number; costMicros: number; durationMs: number | null; tokensPerSecond: number | null; createdAt: string; user: { name: string; email: string }; apiKey: { name: string; prefix: string } | null }
 
 export function AdminUsagePage() {
   const [range, setRange] = useState<Range>('24h')

@@ -25,6 +25,8 @@ export async function publishAdminUsage(requestLogId: string, force = false): Pr
     ocrStatus: row.ocrStatus,
     eventCount: row.eventCount,
     inputTokens: row.inputTokens,
+    cachedInputTokens: row.cachedInputTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
     outputTokens: row.outputTokens,
     updatedAt: row.updatedAt.toISOString(),
   }

@@ -292,6 +292,7 @@ export type ExecutionMode = z.infer<typeof executionModeSchema>
 export const responseUsageSchema = z.object({
   inputTokens: z.number().int().nonnegative(),
   cachedInputTokens: z.number().int().nonnegative().default(0),
+  cacheWriteTokens: z.number().int().nonnegative().default(0),
   outputTokens: z.number().int().nonnegative(),
   reasoningTokens: z.number().int().nonnegative().default(0),
   totalTokens: z.number().int().nonnegative(),
@@ -574,6 +575,7 @@ export const modelSchema = z.object({
   maxOutputTokens: z.number().int().positive(),
   inputPriceMicros: z.number().int().nonnegative(),
   cachedInputPriceMicros: z.number().int().nonnegative(),
+  cacheWritePriceMicros: z.number().int().nonnegative(),
   outputPriceMicros: z.number().int().nonnegative(),
   tags: z.array(z.string()),
   agentEnabled: z.boolean().default(false),
@@ -601,6 +603,17 @@ export const newAccountModelDefaultsSchema = z.object({
 })
 export type NewAccountModelDefaults = z.infer<typeof newAccountModelDefaultsSchema>
 
+export const providerCacheAffinityModeSchema = z.enum([
+  'none',
+  'openai_prompt_cache_key',
+  'fireworks_session_affinity',
+])
+export const providerCacheIsolationModeSchema = z.enum([
+  'none',
+  'fireworks_prompt_cache_isolation',
+])
+export const providerCacheScopeSchema = z.enum(['agent_run', 'chat', 'user'])
+
 export const createProviderSchema = z.object({
   name: z.string().trim().min(1).max(120),
   baseUrl: z.url().default('https://api.openai.com/v1'),
@@ -608,6 +621,24 @@ export const createProviderSchema = z.object({
   organizationId: z.string().trim().optional(),
   projectId: z.string().trim().optional(),
   requestTimeoutMs: z.number().int().min(1_000).max(900_000).default(120_000),
+  cacheAffinityMode: providerCacheAffinityModeSchema.default('none'),
+  cacheAffinityScope: providerCacheScopeSchema.default('chat'),
+  cacheIsolationMode: providerCacheIsolationModeSchema.default('none'),
+  cacheIsolationScope: providerCacheScopeSchema.default('user'),
+})
+
+export const updateProviderSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  baseUrl: z.url().optional(),
+  apiKey: z.string().min(1).optional(),
+  organizationId: z.string().trim().nullable().optional(),
+  projectId: z.string().trim().nullable().optional(),
+  requestTimeoutMs: z.number().int().min(1_000).max(900_000).optional(),
+  cacheAffinityMode: providerCacheAffinityModeSchema.optional(),
+  cacheAffinityScope: providerCacheScopeSchema.optional(),
+  cacheIsolationMode: providerCacheIsolationModeSchema.optional(),
+  cacheIsolationScope: providerCacheScopeSchema.optional(),
+  enabled: z.boolean().optional(),
 })
 
 export type ChatPresetIcon = (typeof CHAT_PRESET_ICON_NAMES)[number]
@@ -708,6 +739,7 @@ export const createModelSchema = z.object({
   slowStickyMinCompletionSeconds: z.number().int().min(1).max(86_400).default(30),
   inputPriceMicros: z.number().int().nonnegative(),
   cachedInputPriceMicros: z.number().int().nonnegative(),
+  cacheWritePriceMicros: z.number().int().nonnegative(),
   outputPriceMicros: z.number().int().nonnegative(),
   perRequestPriceMicros: z.number().int().nonnegative().default(0),
 })
@@ -1042,6 +1074,8 @@ export const adminUsageEventSchema = z.object({
   ocrStatus: z.string(),
   eventCount: z.number().int().nonnegative(),
   inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative().default(0),
+  cacheWriteTokens: z.number().int().nonnegative().default(0),
   outputTokens: z.number().int().nonnegative(),
   updatedAt: isoDateSchema,
 })
