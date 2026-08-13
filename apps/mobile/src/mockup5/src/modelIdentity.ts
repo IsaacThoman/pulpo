@@ -12,6 +12,28 @@ export interface RedirectAwareModel {
   redirectTargetModelIds?: readonly string[]
 }
 
+interface SelectableModel {
+  id: string
+  enabled?: boolean
+}
+
+/** Keep a new composer on the account default until the user makes an explicit choice. */
+export function reconcileComposerModelId<T extends SelectableModel>(
+  models: readonly T[],
+  selectedModelId: string,
+  defaultModelId: string,
+  followsDefault: boolean,
+): string {
+  const available = (model: T) => model.enabled !== false
+  const fallback = models.find((model) => model.id === defaultModelId && available(model))
+    ?? models.find(available)
+    ?? models[0]
+  if (followsDefault) return fallback?.id ?? ''
+  return models.some((model) => model.id === selectedModelId && available(model))
+    ? selectedModelId
+    : fallback?.id ?? ''
+}
+
 /** Retain the hidden model IDs that a visible model can redirect to. */
 export function redirectTargetModelIds(presets: readonly RedirectPreset[]): string[] {
   return [...new Set(presets.flatMap((preset) => preset.choices.flatMap((choice) =>
