@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { ProviderLogo } from '@/components/ProviderLogo'
-import { resolveProviderOrder, useModels } from '@/stores/models'
+import { favoriteIdsMatch, resolveProviderOrder, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 
@@ -25,6 +25,7 @@ export function ModelSelector({
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState<string | null>(null) // null = favorites
+  const [confirmReset, setConfirmReset] = useState(false)
   const [dragId, setDragId] = useState<string | null>(null)
   const [dragKind, setDragKind] = useState<DragKind | null>(null)
   const [drop, setDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
@@ -34,6 +35,9 @@ export function ModelSelector({
   const favorites = useModels((s) => s.favoriteModelIds)
   const providerOrder = useModels((s) => s.providerOrder)
   const toggleFavorite = useModels((s) => s.toggleFavorite)
+  const resetFavorites = useModels((s) => s.resetFavorites)
+  const newAccountFavoriteModelIds = useModels((s) => s.newAccountFavoriteModelIds)
+  const newAccountFavoritesLoaded = useModels((s) => s.newAccountFavoritesLoaded)
   const reorderFavorites = useModels((s) => s.reorderFavorites)
   const reorderProviders = useModels((s) => s.reorderProviders)
   const catalogModels = useCatalog((state) => state.models)
@@ -59,6 +63,7 @@ export function ModelSelector({
   // logos next to models on favorites (and search); no logos when a provider is selected
   const showLogos = provider === null || searching
   const favoritesActive = provider === null && !searching
+  const favoritesMatchDefaults = favoriteIdsMatch(favorites, newAccountFavoriteModelIds)
   const canReorderModels = favoritesActive && rows.length > 1
   const canReorderProviders = providers.length > 1
 
@@ -105,6 +110,7 @@ export function ModelSelector({
           if (!v) {
             setQuery('')
             setProvider(null)
+            setConfirmReset(false)
             clearDrag()
           }
         }}
@@ -132,7 +138,10 @@ export function ModelSelector({
           <Search className="size-4 text-muted-foreground" />
           <input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setConfirmReset(false)
+            }}
             placeholder="Search models…"
             className="h-10 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
@@ -145,7 +154,10 @@ export function ModelSelector({
               <TooltipTrigger asChild>
                 <button
                   type="button"
-                  onClick={() => setProvider(null)}
+                  onClick={() => {
+                    setProvider(null)
+                    setConfirmReset(false)
+                  }}
                   className={cn(
                     'group/star flex size-8 shrink-0 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
                     favoritesActive
@@ -197,6 +209,7 @@ export function ModelSelector({
                           return
                         }
                         setProvider(p)
+                        setConfirmReset(false)
                       }}
                       className={cn(
                         'group/prov relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
@@ -314,6 +327,40 @@ export function ModelSelector({
                 </div>
               )
             })}
+            {favoritesActive && newAccountFavoritesLoaded && !favoritesMatchDefaults && (
+              confirmReset ? (
+                <div className="mx-2 my-1.5 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
+                  <p className="text-foreground">Replace favorites with defaults?</p>
+                  <div className="mt-1.5 flex items-center gap-3">
+                    <button
+                      type="button"
+                      className="cursor-pointer font-medium text-foreground underline-offset-4 hover:underline"
+                      onClick={() => {
+                        resetFavorites()
+                        setConfirmReset(false)
+                      }}
+                    >
+                      Reset
+                    </button>
+                    <button
+                      type="button"
+                      className="cursor-pointer text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                      onClick={() => setConfirmReset(false)}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="mx-2 my-1 block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+                  onClick={() => setConfirmReset(true)}
+                >
+                  Reset favorites
+                </button>
+              )
+            )}
           </div>
         </div>
       </DropdownMenuContent>
