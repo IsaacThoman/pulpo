@@ -41,6 +41,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
+import { automaticProfileColor, PROFILE_COLORS } from '@/lib/profile'
 import { PasswordSettings } from './PasswordSettings'
 import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
@@ -77,8 +78,6 @@ interface DeletedChat {
   deletedAt: string
   purgeAt: string | null
 }
-
-const PROFILE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
 
 const TRASH_RETENTION_LABELS: Record<TrashRetention, string> = {
   instant: 'No retention',
@@ -182,12 +181,13 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [trashRetentionError, setTrashRetentionError] = useState('')
   const [trashNow, setTrashNow] = useState(() => Date.now())
   const [profileName, setProfileName] = useState(user?.name ?? '')
-  const [profileColor, setProfileColor] = useState<string | null>(user?.profileColor ?? null)
+  const [profileColor, setProfileColor] = useState(() => user?.profileColor ?? automaticProfileColor(user?.id ?? 'pulpo-user'))
   const [profileSaving, setProfileSaving] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileMessage, setProfileMessage] = useState('')
   const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
   const avatarInputRef = useRef<HTMLInputElement>(null)
+  const profileColorInputRef = useRef<HTMLInputElement>(null)
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
     queryKey: deletedChatsQueryKey,
@@ -203,7 +203,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   useEffect(() => {
     if (!open || !user) return
     setProfileName(user.name)
-    setProfileColor(user.profileColor ?? null)
+    setProfileColor(user.profileColor ?? automaticProfileColor(user.id))
     setProfileError('')
   }, [open, user])
 
@@ -213,8 +213,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
 
   const profileDirty = Boolean(user) && (
     profileName.trim() !== user!.name
-    || profileColor !== user!.profileColor
+    || profileColor !== (user!.profileColor ?? automaticProfileColor(user!.id))
   )
+  const profileColorIsPreset = PROFILE_COLORS.some((color) => color === profileColor)
 
   const saveProfile = async () => {
     setProfileSaving(true)
@@ -560,7 +561,24 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </div>}
                   <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
                   <UsernameSettings />
-                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2"><Button size="sm" variant={profileColor === null ? 'secondary' : 'outline'} onClick={() => { setProfileMessage(''); setProfileColor(null) }}>Automatic</Button>{PROFILE_COLORS.map((color) => <button key={color} type="button" aria-label={`Profile color ${color}`} className={cn('size-5 rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')} style={{ backgroundColor: color }} onClick={() => { setProfileMessage(''); setProfileColor(color) }} />)}</div></Row>
+                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2"><button
+                    type="button"
+                    aria-label="Choose a custom profile color"
+                    className={cn('size-5 cursor-pointer rounded border', !profileColorIsPreset && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
+                    style={profileColorIsPreset
+                      ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
+                      : { backgroundColor: profileColor }}
+                    onClick={() => profileColorInputRef.current?.click()}
+                  />
+                    <input
+                      ref={profileColorInputRef}
+                      type="color"
+                      aria-label="Custom profile color"
+                      value={profileColor}
+                      className="hidden"
+                      onChange={(event) => { setProfileMessage(''); setProfileColor(event.currentTarget.value) }}
+                    />
+                    {PROFILE_COLORS.map((color) => <button key={color} type="button" aria-label={`Profile color ${color}`} className={cn('size-5 rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')} style={{ backgroundColor: color }} onClick={() => { setProfileMessage(''); setProfileColor(color) }} />)}</div></Row>
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
                     {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
