@@ -989,7 +989,7 @@ export function Sidebar({
           )}
         >
           {/* chat list */}
-          <div className="px-2 pb-4 pt-4">
+          <div className="px-2 pb-4 pt-2">
             {pinned.length > 0 && (
               <div className="mb-2">
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
