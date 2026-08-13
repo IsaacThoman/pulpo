@@ -118,7 +118,7 @@ export async function createResponse(options: CreateResponseOptions) {
     const [fallback] = await db.select().from(models).where(and(eq(models.id, fallbackId), eq(models.enabled, true))).limit(1)
     if (!fallback) break
     const candidate = await getActivePricing(fallback.id)
-    const score = (value: typeof candidate) => value.inputPriceMicros * model.contextWindow + value.outputPriceMicros * maxOutputTokens + value.perRequestPriceMicros * 1_000_000
+    const score = (value: typeof candidate) => Math.max(value.inputPriceMicros, value.cacheWritePriceMicros) * model.contextWindow + value.outputPriceMicros * maxOutputTokens + value.perRequestPriceMicros * 1_000_000
     if (score(candidate) > score(pricing)) pricing = candidate
     fallbackId = fallback.fallbackModelId
   }

@@ -3,6 +3,7 @@ import type { ResponseUsage } from '@pulpo/contracts'
 export interface Pricing {
   inputPriceMicros: number
   cachedInputPriceMicros: number
+  cacheWritePriceMicros: number
   outputPriceMicros: number
   perRequestPriceMicros: number
 }
@@ -12,11 +13,14 @@ export function tokenCostMicros(tokens: number, pricePerMillionMicros: number): 
 }
 
 export function calculateCostMicros(usage: ResponseUsage, pricing: Pricing): number {
-  const uncachedInput = Math.max(0, usage.inputTokens - usage.cachedInputTokens)
+  const cachedInput = Math.min(usage.inputTokens, usage.cachedInputTokens)
+  const cacheWrite = Math.min(usage.inputTokens - cachedInput, usage.cacheWriteTokens)
+  const uncachedInput = Math.max(0, usage.inputTokens - cachedInput - cacheWrite)
   return (
     pricing.perRequestPriceMicros +
     tokenCostMicros(uncachedInput, pricing.inputPriceMicros) +
-    tokenCostMicros(usage.cachedInputTokens, pricing.cachedInputPriceMicros) +
+    tokenCostMicros(cachedInput, pricing.cachedInputPriceMicros) +
+    tokenCostMicros(cacheWrite, pricing.cacheWritePriceMicros) +
     tokenCostMicros(usage.outputTokens, pricing.outputPriceMicros)
   )
 }
@@ -32,7 +36,7 @@ export function calculateReservationMicros(
 ): number {
   return (
     pricing.perRequestPriceMicros +
-    tokenCostMicros(estimateInputTokens(input), pricing.inputPriceMicros) +
+    tokenCostMicros(estimateInputTokens(input), Math.max(pricing.inputPriceMicros, pricing.cacheWritePriceMicros)) +
     tokenCostMicros(maxOutputTokens, pricing.outputPriceMicros)
   )
 }

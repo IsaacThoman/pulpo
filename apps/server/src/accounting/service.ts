@@ -156,6 +156,7 @@ export async function settleBudget(input: {
       pricingVersionId: pricing.id,
       inputTokens: input.usage.inputTokens,
       cachedInputTokens: input.usage.cachedInputTokens,
+      cacheWriteTokens: input.usage.cacheWriteTokens,
       outputTokens: input.usage.outputTokens,
       reasoningTokens: input.usage.reasoningTokens,
       costMicros: cost,

@@ -58,6 +58,8 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const [summary] = await db.select({
       calls: sql<number>`count(*)::int`,
       inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
+      cachedInputTokens: sql<number>`coalesce(sum(${usageEvents.cachedInputTokens}), 0)::bigint`,
+      cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
       averageLatencyMs: sql<number>`coalesce(avg(${usageEvents.latencyMs}), 0)::int`,
@@ -65,6 +67,8 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     return {
       calls: Number(summary?.calls ?? 0),
       inputTokens: Number(summary?.inputTokens ?? 0),
+      cachedInputTokens: Number(summary?.cachedInputTokens ?? 0),
+      cacheWriteTokens: Number(summary?.cacheWriteTokens ?? 0),
       outputTokens: Number(summary?.outputTokens ?? 0),
       costMicros: Number(summary?.costMicros ?? 0),
       averageLatencyMs: Number(summary?.averageLatencyMs ?? 0),
@@ -162,6 +166,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       db.select({
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
+        cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
         outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
         firstUsedAt: sql<string | null>`min(${usageEvents.createdAt})::text`,
@@ -174,6 +179,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         modelVisible: models.visible,
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
+        cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
         outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
       }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
@@ -182,6 +188,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         day: sql<string>`date_trunc('day', ${usageEvents.createdAt})::date`,
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
+        cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
         outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
       }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).where(allWhere)
@@ -193,6 +200,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         modelVisible: models.visible,
         calls: sql<number>`count(*)::int`,
         inputTokens: sql<number>`coalesce(sum(${usageEvents.inputTokens}), 0)::bigint`,
+        cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
         outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
         costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
       }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
@@ -207,25 +215,27 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const publicCanonical = new Map([...canonical.entries()].map(([id, model]) => [id, publicModel({
       visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo,
     })]))
-    const dailyByModel = new Map<string, { day: string; modelId: string; calls: number; inputTokens: number; outputTokens: number; costMicros: number }>()
+    const dailyByModel = new Map<string, { day: string; modelId: string; calls: number; inputTokens: number; cacheWriteTokens: number; outputTokens: number; costMicros: number }>()
     for (const row of daily) {
       const resolved = resolveUsageModelAlias({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) }, aliases)
       const modelId = publicCanonical.get(resolved.modelId)?.id ?? 'other'
       const key = `${row.day}:${modelId}`
-      const current = dailyByModel.get(key) ?? { day: row.day, modelId, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
+      const current = dailyByModel.get(key) ?? { day: row.day, modelId, calls: 0, inputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, costMicros: 0 }
       current.calls += Number(row.calls)
       current.inputTokens += Number(row.inputTokens)
+      current.cacheWriteTokens += Number(row.cacheWriteTokens)
       current.outputTokens += Number(row.outputTokens)
       current.costMicros += Number(row.costMicros)
       dailyByModel.set(key, current)
     }
-    const topByModel = new Map<string, { modelId: string; calls: number; inputTokens: number; outputTokens: number; costMicros: number }>()
+    const topByModel = new Map<string, { modelId: string; calls: number; inputTokens: number; cacheWriteTokens: number; outputTokens: number; costMicros: number }>()
     for (let index = 0; index < topModels.length; index += 1) {
       const row = topModels[index]!
       const modelId = publicCanonical.get(resolvedTopModels[index]!.modelId)?.id ?? 'other'
-      const current = topByModel.get(modelId) ?? { modelId, calls: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 }
+      const current = topByModel.get(modelId) ?? { modelId, calls: 0, inputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, costMicros: 0 }
       current.calls += Number(row.calls)
       current.inputTokens += Number(row.inputTokens)
+      current.cacheWriteTokens += Number(row.cacheWriteTokens)
       current.outputTokens += Number(row.outputTokens)
       current.costMicros += Number(row.costMicros)
       topByModel.set(modelId, current)
@@ -233,11 +243,12 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     return {
       summary: {
         calls: Number(totals?.calls ?? 0), inputTokens: Number(totals?.inputTokens ?? 0),
+        cacheWriteTokens: Number(totals?.cacheWriteTokens ?? 0),
         outputTokens: Number(totals?.outputTokens ?? 0), costMicros: Number(totals?.costMicros ?? 0),
         firstUsedAt: totals?.firstUsedAt ?? null,
       },
       daily: [...dailyByModel.values()],
-      contribution: contribution.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
+      contribution: contribution.map((row) => ({ ...row, calls: Number(row.calls), inputTokens: Number(row.inputTokens), cacheWriteTokens: Number(row.cacheWriteTokens), outputTokens: Number(row.outputTokens), costMicros: Number(row.costMicros) })),
       topModels: [...topByModel.values()].sort((a, b) => b.costMicros - a.costMicros).slice(0, 10),
     }
   })
@@ -279,6 +290,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         participant: publicParticipant({ visible: row.userVisible, name: row.userName, nickname: row.userNickname, color: row.userColor }),
         model: publicModel({ visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo }),
         inputTokens: row.usage.inputTokens,
+        cacheWriteTokens: row.usage.cacheWriteTokens,
         outputTokens: row.usage.outputTokens,
         costMicros: Number(row.usage.costMicros),
       }}),
