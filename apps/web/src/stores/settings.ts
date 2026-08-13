@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { SidebarPins } from '@pulpo/contracts'
 
 export type Theme = 'light' | 'dark' | 'system'
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
@@ -25,6 +26,7 @@ interface SettingsState {
   automaticChatExpiration: AutomaticChatExpiration
   newChatAutoExpire: boolean
   defaultModelId: string
+  sidebarPins: SidebarPins
   /** Per-model composer preset selections. */
   generation: Record<string, GenerationPrefs>
   setTheme: (t: Theme) => void
@@ -49,6 +51,7 @@ export const DEFAULT_SETTINGS = {
   automaticChatExpiration: '24h' as AutomaticChatExpiration,
   newChatAutoExpire: false,
   defaultModelId: '',
+  sidebarPins: { usage: true, friends: true, apiKeys: true },
   generation: {},
 }
 

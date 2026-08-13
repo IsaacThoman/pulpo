@@ -18,6 +18,7 @@ const persistedKeys = [
   'automaticChatExpiration',
   'newChatAutoExpire',
   'defaultModelId',
+  'sidebarPins',
 ] as const
 
 function settingsSnapshot() {

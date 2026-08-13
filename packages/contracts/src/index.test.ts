@@ -32,6 +32,7 @@ import {
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
+  sidebarPinsSchema,
   startChatSchema,
   syncRequestSchema,
   updateChatSchema,
@@ -235,6 +236,12 @@ describe('shared contracts', () => {
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
   })
 
+  it('defaults and validates account sidebar pins', () => {
+    expect(sidebarPinsSchema.parse({})).toEqual({ usage: true, friends: true, apiKeys: true })
+    expect(sidebarPinsSchema.parse({ usage: false })).toEqual({ usage: false, friends: true, apiKeys: true })
+    expect(sidebarPinsSchema.safeParse({ friends: 'no' }).success).toBe(false)
+  })
+
   it('normalizes new-account model defaults while preserving favorite order', () => {
     expect(authSettingsSchema.parse({}).newAccountModelDefaults).toEqual({
       defaultModelId: null,
@@ -319,7 +326,8 @@ describe('shared contracts', () => {
       instance: {},
     })
     expect(document.account).toMatchObject({
-      theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [],
+      theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
+      favoriteModelIds: [], sidebarPins: { usage: true, friends: true, apiKeys: true },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(document.instance).toMatchObject({

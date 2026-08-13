@@ -596,6 +596,14 @@ export const modelPreferencesPatchSchema = z.object({
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 
+/** Account-scoped visibility controls for optional primary sidebar links. */
+export const sidebarPinsSchema = z.object({
+  usage: z.boolean().default(true),
+  friends: z.boolean().default(true),
+  apiKeys: z.boolean().default(true),
+})
+export type SidebarPins = z.infer<typeof sidebarPinsSchema>
+
 /** Instance defaults copied into each account when it is created. */
 export const newAccountModelDefaultsSchema = z.object({
   defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
@@ -981,6 +989,7 @@ export const managementAccountSettingsSchema = z.object({
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   favoriteModelIds: accountPreferenceIdsSchema.default([]),
   providerOrder: accountPreferenceIdsSchema.default([]),
+  sidebarPins: sidebarPinsSchema.default(() => sidebarPinsSchema.parse({})),
 })
 
 export const managementWebToolsSettingsSchema = webToolsSettingsSchema.extend({

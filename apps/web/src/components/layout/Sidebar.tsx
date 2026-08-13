@@ -57,6 +57,7 @@ import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
+import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -663,6 +664,8 @@ export function Sidebar({
     refetchOnWindowFocus: 'always',
   })
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
+  const sidebarPins = useSettings((s) => s.sidebarPins)
+  const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
@@ -863,6 +866,39 @@ export function Sidebar({
     </Tooltip>
   )
 
+  const accountNavItem = (
+    key: SidebarPinKey,
+    label: string,
+    path: string,
+    icon: React.ReactNode,
+    badge?: number,
+  ) => {
+    const pinned = sidebarPins[key]
+    const action = pinned ? 'Unpin' : 'Pin'
+    return (
+      <div key={key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-0.5">
+        <DropdownMenuItem onClick={() => go(path)}>
+          {icon}
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          {Boolean(badge) && <span className="rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
+            {badge! > 99 ? '99+' : badge}
+          </span>}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          aria-label={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          title={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          className="px-2"
+          onSelect={(event) => {
+            event.preventDefault()
+            setSetting('sidebarPins', toggleSidebarPin(sidebarPins, key))
+          }}
+        >
+          {pinned ? <PinOff /> : <Pin />}
+        </DropdownMenuItem>
+      </div>
+    )
+  }
+
   return (
     <aside
       aria-label="Sidebar"
@@ -938,9 +974,9 @@ export function Sidebar({
         <div className="space-y-0.5 px-2">
           {iconBtn('New chat', startNewChat, <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
-          {iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
-          {iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingFriendsQuery.data?.count)}
-          {apiKeysEnabled && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {sidebarPins.usage && iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
+          {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingFriendsQuery.data?.count)}
+          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -1106,21 +1142,9 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
-            <DropdownMenuItem onClick={() => go('/usage')}>
-              <BarChart3 />
-              Usage
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => go('/friends')}>
-              <UsersRound />
-              Friends
-              {Boolean(pendingFriendsQuery.data?.count) && <span className="ml-auto rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
-                {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
-              </span>}
-            </DropdownMenuItem>
-            {apiKeysEnabled && <DropdownMenuItem onClick={() => go('/api-keys')}>
-              <KeyRound />
-              API keys
-            </DropdownMenuItem>}
+            {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
+            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
+            {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
