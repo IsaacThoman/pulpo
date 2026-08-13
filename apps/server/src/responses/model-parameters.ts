@@ -1,4 +1,9 @@
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
+const PUBLIC_API_PROTOCOL_PARAMETERS = new Set(['tools', 'tool_choice'])
+
+export type ModelParameterContext = {
+  publicApi?: boolean
+}
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -9,6 +14,7 @@ function record(value: unknown): Record<string, unknown> {
 export function resolveModelParameters(
   model: { allowedParameters: unknown; defaultParameters: unknown },
   responseParameters: unknown,
+  context: ModelParameterContext = {},
 ): Record<string, unknown> {
   const allowed = new Set(
     Array.isArray(model.allowedParameters)
@@ -20,7 +26,8 @@ export function resolveModelParameters(
     if (allowed.has(key) && !RESERVED_PARAMETERS.has(key)) result[key] = value
   }
   for (const [key, value] of Object.entries(record(responseParameters))) {
-    if (allowed.has(key) && !RESERVED_PARAMETERS.has(key)) result[key] = value
+    const publicApiProtocolParameter = context.publicApi && PUBLIC_API_PROTOCOL_PARAMETERS.has(key)
+    if ((allowed.has(key) || publicApiProtocolParameter) && !RESERVED_PARAMETERS.has(key)) result[key] = value
   }
   return result
 }

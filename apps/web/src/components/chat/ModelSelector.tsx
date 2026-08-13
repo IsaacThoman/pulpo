@@ -140,14 +140,14 @@ export function ModelSelector({
 
         <div className="flex h-[264px] min-h-0">
           {/* provider rail */}
-          <div className="flex flex-col items-center gap-0.5 border-r px-1.5 py-2">
+          <div className="flex min-h-0 flex-col items-center gap-0.5 overflow-y-auto border-r px-1.5 py-2">
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   type="button"
                   onClick={() => setProvider(null)}
                   className={cn(
-                    'group/star flex size-8 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
+                    'group/star flex size-8 shrink-0 cursor-pointer items-center justify-center bg-transparent shadow-none outline-none ring-0 transition-transform duration-150 hover:bg-transparent focus:bg-transparent focus-visible:ring-0',
                     favoritesActive
                       ? 'text-foreground'
                       : 'text-muted-foreground hover:text-amber-500'
@@ -162,7 +162,7 @@ export function ModelSelector({
               <TooltipContent side="right">Favorites</TooltipContent>
             </Tooltip>
 
-            <div className="my-1 h-px w-5 bg-border" />
+            <div className="my-1 h-px w-5 shrink-0 bg-border" />
 
             {providers.map((p) => {
               const active = provider === p && !searching
@@ -199,7 +199,7 @@ export function ModelSelector({
                         setProvider(p)
                       }}
                       className={cn(
-                        'group/prov relative flex size-8 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                        'group/prov relative flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
                         active
                           ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
                           : 'text-muted-foreground hover:bg-accent hover:text-foreground',

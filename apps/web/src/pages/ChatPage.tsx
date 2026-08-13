@@ -205,7 +205,6 @@ export function ChatPage() {
       messageId: message.id,
       content: message.content,
       attachments: message.attachments ?? [],
-      agentMode: Boolean(message.agentMode),
     })
   }
 

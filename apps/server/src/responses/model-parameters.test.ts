@@ -40,4 +40,30 @@ describe('model request parameters', () => {
       service_tier: 'flex',
     })
   })
+
+  it('forwards Responses API tool protocol fields independently of the model allowlist', () => {
+    const tools = [{ type: 'function', name: 'bash', description: 'Run a command', parameters: { type: 'object' } }]
+
+    expect(resolveModelParameters({
+      allowedParameters: [],
+      defaultParameters: {},
+    }, {
+      tools,
+      tool_choice: 'auto',
+      temperature: 0.2,
+    }, { publicApi: true })).toEqual({
+      tools,
+      tool_choice: 'auto',
+    })
+  })
+
+  it('does not let web responses bypass the model allowlist with tool protocol fields', () => {
+    expect(resolveModelParameters({
+      allowedParameters: [],
+      defaultParameters: {},
+    }, {
+      tools: [{ type: 'function', name: 'bash' }],
+      tool_choice: 'required',
+    })).toEqual({})
+  })
 })

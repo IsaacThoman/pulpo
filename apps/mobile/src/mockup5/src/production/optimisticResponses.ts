@@ -49,7 +49,7 @@ interface CacheOptimisticBranchInput {
   editedInput?: string
   editedOutput?: string
   editedAttachments?: OptimisticAttachment[]
-  editedAgentMode?: boolean
+  agentMode?: boolean
   createdAt: number
 }
 
@@ -283,7 +283,7 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
       user: { ids: [input.responseId], index: 0 },
       assistant: { ids: [input.responseId], index: 0 },
     },
-    agentMode: input.editedAgentMode ?? source.agentMode,
+    agentMode: input.agentMode ?? source.agentMode,
   }
   pendingResponses.set(pendingKey(input.namespace, input.responseId), {
     namespace: input.namespace,
