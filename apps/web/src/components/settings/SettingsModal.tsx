@@ -603,7 +603,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       ? 'Permanently deletes every chat.'
                       : s.trashRetention === 'indefinite'
                         ? 'Moves every conversation to trash. (no automatic permanent deletion)'
-                        : `Moves every conversation to trash. (deletes in ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()})`}
+                        : `Moves every conversation to trash. (delete in ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()})`}
                   >
                     <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>Trash all chats</Button>
                   </Row>
