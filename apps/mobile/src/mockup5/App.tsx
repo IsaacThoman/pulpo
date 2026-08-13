@@ -169,6 +169,7 @@ import { queryKeys } from '../data/queries';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
+import { startComposerAutoFocus } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
@@ -3059,6 +3060,12 @@ function ChatView({
   const presetLabel = generationSummary(prototypeModel, presetSelections);
   const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
 
+  useEffect(() => startComposerAutoFocus({
+    cancelFrame: cancelAnimationFrame,
+    focus: () => composerInputRef.current?.focus(),
+    scheduleFrame: requestAnimationFrame,
+  }), []);
+
   useEffect(() => {
     setAgentEnabled(preferredAgentMode && canUseAgent);
   }, [canUseAgent, preferredAgentMode]);
@@ -3744,7 +3751,6 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
-                autoFocus
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
