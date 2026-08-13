@@ -561,15 +561,24 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                   </div>}
                   <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
                   <UsernameSettings />
-                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2"><button
-                    type="button"
-                    aria-label="Choose a custom profile color"
-                    className={cn('size-5 cursor-pointer rounded border', !profileColorIsPreset && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
-                    style={profileColorIsPreset
-                      ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
-                      : { backgroundColor: profileColor }}
-                    onClick={() => profileColorInputRef.current?.click()}
-                  />
+                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2">
+                    {PROFILE_COLORS.map((color) => <button
+                      key={color}
+                      type="button"
+                      aria-label={`Profile color ${color}`}
+                      className={cn('size-5 cursor-pointer rounded border', profileColor === color && 'ring-2 ring-inset ring-foreground')}
+                      style={{ backgroundColor: color }}
+                      onClick={() => { setProfileMessage(''); setProfileColor(color) }}
+                    />)}
+                    <button
+                      type="button"
+                      aria-label="Choose a custom profile color"
+                      className={cn('size-5 cursor-pointer rounded border', !profileColorIsPreset && 'ring-2 ring-inset ring-foreground')}
+                      style={profileColorIsPreset
+                        ? { background: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
+                        : { backgroundColor: profileColor }}
+                      onClick={() => profileColorInputRef.current?.click()}
+                    />
                     <input
                       ref={profileColorInputRef}
                       type="color"
@@ -578,7 +587,7 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                       className="hidden"
                       onChange={(event) => { setProfileMessage(''); setProfileColor(event.currentTarget.value) }}
                     />
-                    {PROFILE_COLORS.map((color) => <button key={color} type="button" aria-label={`Profile color ${color}`} className={cn('size-5 rounded border', profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')} style={{ backgroundColor: color }} onClick={() => { setProfileMessage(''); setProfileColor(color) }} />)}</div></Row>
+                  </div></Row>
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
                     {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
