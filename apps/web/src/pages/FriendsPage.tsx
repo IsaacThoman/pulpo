@@ -81,7 +81,7 @@ export function FriendsPage() {
   const [searching, setSearching] = useState(false)
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null)
   const [searchMessage, setSearchMessage] = useState('')
-  const [actionId, setActionId] = useState<string | null>(null)
+  const [actionIds, setActionIds] = useState<Set<string>>(() => new Set())
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [outgoingOpen, setOutgoingOpen] = useState(false)
@@ -107,7 +107,7 @@ export function FriendsPage() {
   }
 
   const act = async (key: string, operation: () => Promise<unknown>, message: string, onSuccess?: () => void) => {
-    setActionId(key)
+    setActionIds((current) => new Set(current).add(key))
     setActionError('')
     setActionMessage('')
     try {
@@ -118,7 +118,11 @@ export function FriendsPage() {
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'Could not update friends')
     } finally {
-      setActionId(null)
+      setActionIds((current) => {
+        const next = new Set(current)
+        next.delete(key)
+        return next
+      })
     }
   }
 
@@ -148,7 +152,6 @@ export function FriendsPage() {
   }
 
   const data = listQuery.data
-  const isCompletelyEmpty = Boolean(data && !data.friends.length && !data.incoming.length && !data.outgoing.length)
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Friends</h1></header>
@@ -168,13 +171,13 @@ export function FriendsPage() {
           {searchMessage && <div className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">{searchMessage}</div>}
           {searchResult && <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
             <ProfileIdentity profile={searchResult.profile} />
-            {searchResult.relationship === 'none' && <Button size="sm" disabled={actionId === `request:${searchResult.profile.id}`} onClick={() => void act(
+            {searchResult.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${searchResult.profile.id}`)} onClick={() => void act(
               `request:${searchResult.profile.id}`,
               () => apiRequest('/api/friends/requests', { method: 'POST', body: { userId: searchResult.profile.id } }),
               `Friend request sent to ${searchResult.profile.displayName}.`,
               () => setSearchResult((result) => result ? { ...result, relationship: 'outgoing' } : result),
-            )}><UserRoundPlus />{actionId === `request:${searchResult.profile.id}` ? 'Sending…' : 'Add friend'}</Button>}
-            {searchResult.relationship === 'incoming' && <Button size="sm" disabled={actionId === `accept:${searchResult.requestId}`} onClick={() => void act(`accept:${searchResult.requestId}`, () => apiRequest(`/api/friends/requests/${searchResult.requestId}/accept`, { method: 'POST' }), `${searchResult.profile.displayName} is now your friend.`, () => setSearchResult((result) => result ? { ...result, relationship: 'friends' } : result))}>{actionId === `accept:${searchResult.requestId}` ? 'Accepting…' : 'Accept'}</Button>}
+            )}><UserRoundPlus />{actionIds.has(`request:${searchResult.profile.id}`) ? 'Sending…' : 'Add friend'}</Button>}
+            {searchResult.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${searchResult.requestId}`)} onClick={() => void act(`accept:${searchResult.requestId}`, () => apiRequest(`/api/friends/requests/${searchResult.requestId}/accept`, { method: 'POST' }), `${searchResult.profile.displayName} is now your friend.`, () => setSearchResult((result) => result ? { ...result, relationship: 'friends' } : result))}>{actionIds.has(`accept:${searchResult.requestId}`) ? 'Accepting…' : 'Accept'}</Button>}
             {searchResult.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">Request sent</span>}
             {searchResult.relationship === 'friends' && <Button size="sm" variant="outline" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>}
             {searchResult.relationship === 'self' && <span className="text-sm text-muted-foreground">This is you</span>}
@@ -186,7 +189,7 @@ export function FriendsPage() {
               : data && <div className="space-y-5">
                 {data.incoming.length > 0 && <Section title="Friend requests" count={data.incoming.length}>
                   {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
-                    <Button size="sm" disabled={actionId === `accept:${connection.requestId}`} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionId === `accept:${connection.requestId}` ? 'Accepting…' : 'Accept'}</Button>
+                    <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? 'Accepting…' : 'Accept'}</Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
@@ -218,14 +221,12 @@ export function FriendsPage() {
                 </div>}
 
                 {data.outgoing.length > 0 && <CollapsibleSection title="Sent requests" count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionId === `cancel:${connection.requestId}`} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionId === `cancel:${connection.requestId}` ? 'Canceling…' : 'Cancel'}</Button>} />)}
+                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? 'Canceling…' : 'Cancel'}</Button>} />)}
                 </CollapsibleSection>}
 
                 {data.blocked.length > 0 && <CollapsibleSection title="Blocked users" count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
-                  {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionId === `unblock:${profile.id}`} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionId === `unblock:${profile.id}` ? 'Unblocking…' : 'Unblock'}</Button></div>)}
+                  {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? 'Unblocking…' : 'Unblock'}</Button></div>)}
                 </CollapsibleSection>}
-
-                {isCompletelyEmpty && <div className="text-center text-xs text-muted-foreground">Friend requests stay private to this Pulpo instance.</div>}
               </div>}
         </div>
       </div>
