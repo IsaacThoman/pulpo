@@ -378,6 +378,122 @@ describe('chat store branching integration', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
+  it.each(['queued', 'in_progress'] as const)('edits a user message while its response is %s', async (status) => {
+    const originalId = crypto.randomUUID()
+    const responseA = response(originalId, status)
+    const initial = detail(originalId, [responseA])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    const edit = useChat.getState().editUserMessage({
+      chatId,
+      messageId: `${originalId}:input`,
+      content: 'edited while generating',
+      modelId: 'test-model',
+      attachments: [],
+      agentMode: false,
+    })
+
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const responseBId = optimistic.activeBranchLeafId!
+    const responseB = optimistic.responses!.find((item) => item.id === responseBId)!
+    expect(responseBId).not.toBe(originalId)
+    expect(responseB.parentResponseId).toBe(responseA.parentResponseId)
+    expect(responseB.userMessageId).not.toBe(responseA.userMessageId)
+    expect(new Set(useChat.getState().streamingIds)).toEqual(new Set([originalId, responseBId]))
+    expectOnly(responseBId)
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    requests[0]!.resolve({ response: responseB.snapshot })
+    await edit
+
+    const responseACompleted = response(originalId, 'completed')
+    useChat.getState().applyResponseSnapshot(responseACompleted.snapshot)
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId).toBe(responseBId)
+    expect(useChat.getState().streamingIds).toContain(responseBId)
+    expect(useChat.getState().streamingIds).not.toContain(originalId)
+
+    const responseBCompleted = {
+      ...response(responseBId, 'completed'),
+      userMessageId: responseB.userMessageId,
+      input: responseB.input,
+    }
+    useChat.getState().applyResponseSnapshot(responseBCompleted.snapshot)
+    useChat.getState().setDetailedChat(detail(responseBId, [responseACompleted, responseBCompleted]))
+    expectOnly(responseBId)
+    expect(useChat.getState().streamingIds).toEqual([])
+  })
+
+  it('keeps the edited branch selected when it completes before its running sibling', async () => {
+    const originalId = crypto.randomUUID()
+    const responseA = response(originalId, 'in_progress')
+    const initial = detail(originalId, [responseA])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    const edit = useChat.getState().editUserMessage({
+      chatId,
+      messageId: `${originalId}:input`,
+      content: 'edited branch finishes first',
+      modelId: 'test-model',
+      attachments: [],
+      agentMode: false,
+    })
+    const optimistic = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])!
+    const responseBId = optimistic.activeBranchLeafId!
+    const responseB = optimistic.responses!.find((item) => item.id === responseBId)!
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    requests[0]!.resolve({ response: responseB.snapshot })
+    await edit
+
+    const responseBCompleted = {
+      ...response(responseBId, 'completed'),
+      userMessageId: responseB.userMessageId,
+      input: responseB.input,
+    }
+    useChat.getState().applyResponseSnapshot(responseBCompleted.snapshot)
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId).toBe(responseBId)
+    expect(useChat.getState().streamingIds).toContain(originalId)
+
+    const responseACompleted = response(originalId, 'completed')
+    useChat.getState().applyResponseSnapshot(responseACompleted.snapshot)
+    useChat.getState().setDetailedChat(detail(responseBId, [responseACompleted, responseBCompleted]))
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId).toBe(responseBId)
+    expectOnly(responseBId)
+    expect(useChat.getState().streamingIds).toEqual([])
+  })
+
+  it('restores the exact active descendant when an earlier-message edit fails', async () => {
+    const responseA = response(responseAId, 'completed')
+    const descendantId = '00000000-0000-4000-8000-000000000007'
+    const descendant = {
+      ...response(descendantId, 'in_progress'),
+      parentResponseId: responseAId,
+      userMessageId: '00000000-0000-4000-8000-000000000008',
+    }
+    const initial = detail(descendantId, [responseA, descendant])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    const edit = useChat.getState().editUserMessage({
+      chatId,
+      messageId: `${responseAId}:input`,
+      content: 'failed edit',
+      modelId: 'test-model',
+      attachments: [],
+      agentMode: false,
+    })
+    const optimisticLeaf = queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId
+    expect(optimisticLeaf).not.toBe(descendantId)
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    requests[0]!.reject(new Error('edit failed'))
+    await expect(edit).rejects.toThrow('edit failed')
+
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.activeBranchLeafId).toBe(descendantId)
+    expect(visibleResponseIds()).toEqual([responseAId, descendantId])
+  })
+
   it('creates an attachment-specific user branch without mutating its sibling', async () => {
     const oldAttachmentId = '00000000-0000-4000-8000-000000000005'
     const newAttachmentId = '00000000-0000-4000-8000-000000000006'

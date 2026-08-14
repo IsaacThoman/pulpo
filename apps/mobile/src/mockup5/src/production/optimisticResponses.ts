@@ -289,7 +289,7 @@ export function cacheOptimisticBranch(input: CacheOptimisticBranchInput): Server
     namespace: input.namespace,
     chatId: input.chatId,
     response,
-    rollbackResponseId: source.id,
+    rollbackResponseId: existing.activeBranchLeafId ?? existing.activeResponseId ?? source.id,
     attachments: attachmentRows,
     chatListed: false,
     terminalDetailSeen: false,

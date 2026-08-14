@@ -22,6 +22,29 @@ function assistant(overrides: Partial<Message> = {}): Message {
   }
 }
 
+function user(overrides: Partial<Message> = {}): Message {
+  return {
+    id: 'response-1:input', role: 'user', content: 'Prompt',
+    timestamp: 1, done: true, ...overrides,
+  }
+}
+
+describe('user message actions', () => {
+  it('keeps edit enabled while an assistant response is streaming', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={{ ...chat, messages: [user(), assistant({ done: false })] }}
+      message={user()}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    const editButton = markup.match(/<button[^>]*aria-label="Edit"[^>]*>/)?.[0]
+    expect(editButton).toBeDefined()
+    expect(editButton).not.toContain(' disabled=""')
+  })
+})
+
 describe('activityDurationMs', () => {
   it('attributes only the durations belonging to an activity segment', () => {
     expect(activityDurationMs([
