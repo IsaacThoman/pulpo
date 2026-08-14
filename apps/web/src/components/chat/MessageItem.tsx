@@ -27,6 +27,7 @@ import { getCatalogModel } from '@/stores/catalog'
 import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
+import { useUploadOutbox } from '@/stores/upload-outbox'
 import { Markdown } from './Markdown'
 import { MessageAttachmentList } from './AttachmentImage'
 import { activityDurationMs } from './activity-timing'
@@ -516,6 +517,7 @@ export const MessageItem = memo(function MessageItem({
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
+  const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
@@ -587,6 +589,7 @@ export const MessageItem = memo(function MessageItem({
   }
 
   if (message.role === 'user') {
+    const pendingDelivery = message.deliveryStatus === 'uploading' && Boolean(message.pendingSubmissionId)
     return (
       <div className="group flex min-w-0 max-w-full flex-col items-end gap-1">
         <div className={cn(
@@ -603,21 +606,29 @@ export const MessageItem = memo(function MessageItem({
           {message.content ? <Markdown content={message.content} /> : null}
         </div>
         <div className="flex items-center gap-1">
-            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
+            {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {message.content ? <CopyButton text={message.content} /> : null}
               {!chat.expired && (
                 <>
                   <ActionButton
-                    label="Edit"
-                    onClick={() => onEditUserMessage(message)}
+                    label={pendingDelivery ? 'Edit pending message' : 'Edit'}
+                    onClick={() => {
+                      if (pendingDelivery && message.pendingSubmissionId) {
+                        returnSubmissionToComposer(message.pendingSubmissionId)
+                        return
+                      }
+                      onEditUserMessage(message)
+                    }}
                     disabled={composerEditActive}
                   >
                     <Pencil className="size-3.5" />
                   </ActionButton>
-                  <ActionButton label="Delete message" onClick={() => { if (confirm('Delete this user message and every response that follows from it?')) deleteUserMessage(chat.id, message.id) }}>
-                    <Trash2 className="size-3.5" />
-                  </ActionButton>
+                  {!pendingDelivery && (
+                    <ActionButton label="Delete message" onClick={() => { if (confirm('Delete this user message and every response that follows from it?')) deleteUserMessage(chat.id, message.id) }}>
+                      <Trash2 className="size-3.5" />
+                    </ActionButton>
+                  )}
                 </>
               )}
             </div>

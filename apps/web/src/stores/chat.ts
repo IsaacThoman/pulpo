@@ -113,6 +113,24 @@ interface BranchActivationResult {
   responses?: ServerResponse[]
 }
 
+interface PendingMessageInput {
+  chatId: string | null
+  responseId?: string
+  content: string
+  modelId: string
+  attachments: Attachment[]
+  temporary: boolean
+  autoExpire: boolean
+  createdAt?: number
+}
+
+interface StagedSendOptions {
+  targetChatId: string
+  responseId: string
+  presetSelections: Record<string, string>
+  agentMode: boolean
+}
+
 export function mergeServerChatDetails(cached: ServerChat | undefined, incoming: ServerChat): ServerChat {
   if (!cached) return incoming
   return {
@@ -164,7 +182,9 @@ interface ChatState {
   toggleFolderPin: (id: string) => void
   reorderFolders: (fromId: string, toId: string, edge: 'before' | 'after') => void
   deleteFolder: (id: string) => void
-  sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean) => string
+  sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean, staged?: StagedSendOptions) => string
+  stagePendingMessage: (input: PendingMessageInput) => { chatId: string; responseId: string }
+  removePendingMessage: (chatId: string, responseId: string) => void
   enqueueMessage: (chatId: string, input: CreateQueuedMessageInput, attachments: Attachment[]) => Promise<void>
   updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
   reorderQueuedMessage: (chatId: string, messageId: string, targetMessageId: string, edge: 'before' | 'after') => Promise<void>
@@ -750,6 +770,11 @@ async function optimisticRequest(
 }
 
 const chatMutationTails = new Map<string, Promise<unknown>>()
+const responseDispatches = new Map<string, Promise<void>>()
+
+export function waitForResponseDispatch(responseId: string): Promise<void> {
+  return responseDispatches.get(responseId) ?? Promise.resolve()
+}
 
 function enqueueChatMutation<T>(chatId: string, operation: () => Promise<T>): Promise<T> {
   const previous = chatMutationTails.get(chatId) ?? Promise.resolve()
@@ -810,9 +835,11 @@ export const useChat = create<ChatState>()((set, get) => ({
     const activeTemporary = state.activeTemporaryChatId
       ? state.chats.find((chat) => chat.id === state.activeTemporaryChatId && chat.temporary)
       : undefined
-    const chats = activeTemporary && !serverChats.some((chat) => chat.id === activeTemporary.id)
-      ? [activeTemporary, ...serverChats]
-      : serverChats
+    const localOnly = state.chats.filter((chat) => (
+      (chat.provisional || chat.id === activeTemporary?.id)
+      && !serverChats.some((serverChat) => serverChat.id === chat.id)
+    ))
+    const chats = [...localOnly, ...serverChats]
     const tracking = mergeSummaryResponseTracking(
       rows,
       state.streamingIds,
@@ -1226,11 +1253,72 @@ export const useChat = create<ChatState>()((set, get) => ({
     void optimisticRequest('DELETE', `/api/folders/${id}`)
   },
 
-  sendMessage: (chatId, content, modelId, attachments = [], temporary = false, autoExpire = false) => {
+  stagePendingMessage: (input) => {
+    const id = input.chatId ?? crypto.randomUUID()
+    const responseId = input.responseId ?? crypto.randomUUID()
+    const timestamp = input.createdAt ?? Date.now()
+    const newChatExpiresAt = !input.chatId && !input.temporary && input.autoExpire
+      ? automaticExpirationDeadline(timestamp)
+      : null
+    const userMessage: Message = {
+      id: `${responseId}:input`,
+      role: 'user',
+      content: input.content,
+      timestamp,
+      done: true,
+      attachments: input.attachments.length ? input.attachments : undefined,
+      deliveryStatus: 'uploading',
+      pendingSubmissionId: responseId,
+    }
+    set((state) => {
+      const existing = state.chats.find((chat) => chat.id === id)
+      const titleSource = input.content || (input.attachments[0]?.name ?? 'Message')
+      const title = titleSource.length > 42 ? `${titleSource.slice(0, 42)}…` : titleSource
+      const updated: Chat = existing
+        ? {
+            ...existing,
+            updatedAt: timestamp,
+            messages: existing.messages.some((message) => message.id === userMessage.id)
+              ? existing.messages.map((message) => message.id === userMessage.id ? userMessage : message)
+              : [...existing.messages, userMessage],
+          }
+        : {
+            id,
+            title,
+            modelId: input.modelId,
+            messages: [userMessage],
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            pinned: false,
+            folderId: null,
+            sortOrder: 0,
+            tags: [],
+            temporary: input.temporary,
+            expiresAt: input.temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
+            expired: false,
+            provisional: true,
+          }
+      return {
+        chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
+        activeChatId: id,
+        activeTemporaryChatId: input.temporary || existing?.temporary ? id : state.activeTemporaryChatId,
+      }
+    })
+    return { chatId: id, responseId }
+  },
+
+  removePendingMessage: (chatId, responseId) => set((state) => ({
+    chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+      ...chat,
+      messages: chat.messages.filter((message) => message.id !== `${responseId}:input`),
+    }),
+  })),
+
+  sendMessage: (chatId, content, modelId, attachments = [], temporary = false, autoExpire = false, staged) => {
     const userId = currentUserId()
     if (!userId) return chatId ?? ''
-    const id = chatId ?? crypto.randomUUID()
-    const responseId = crypto.randomUUID()
+    const id = staged?.targetChatId ?? chatId ?? crypto.randomUUID()
+    const responseId = staged?.responseId ?? crypto.randomUUID()
     const timestamp = Date.now()
     const newChatExpiresAt = !chatId && !temporary && autoExpire ? automaticExpirationDeadline(timestamp) : null
     const cachedChat = queryClient.getQueryData<ServerChat>(chatKey(id))
@@ -1239,10 +1327,10 @@ export const useChat = create<ChatState>()((set, get) => ({
     const parentResponseId = cachedChat?.activeBranchLeafId ?? cachedChat?.activeResponseId ?? null
     const generation = resolveGeneration(
       chatOptionsFor(getCatalogModel(modelId), useModelConfig.getState().overrides),
-      useSettings.getState().generation[modelId],
+      staged?.presetSelections ?? useSettings.getState().generation[modelId],
       modelId,
     )
-    const agentMode = currentAgentMode(modelId)
+    const agentMode = staged?.agentMode ?? currentAgentMode(modelId)
     const userMessage: Message = {
       id: `${responseId}:input`,
       role: 'user',
@@ -1265,7 +1353,9 @@ export const useChat = create<ChatState>()((set, get) => ({
           ...existing,
           updatedAt: timestamp,
           expiresAt: existing.temporary ? timestamp + 48 * 60 * 60 * 1_000 : existing.expiresAt,
-          messages: [...existing.messages, userMessage, assistantMessage],
+          messages: staged && existing.messages.some((message) => message.id === userMessage.id)
+            ? existing.messages.flatMap((message) => message.id === userMessage.id ? [userMessage, assistantMessage] : [message])
+            : [...existing.messages, userMessage, assistantMessage],
         }
         : {
           id,
@@ -1281,6 +1371,7 @@ export const useChat = create<ChatState>()((set, get) => ({
           temporary,
           expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
+          provisional: false,
         }
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],
@@ -1305,7 +1396,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       parentResponseId,
     })
 
-    void (async () => {
+    const dispatch = (async () => {
       const responseBody = {
         clientId: responseId,
         parentResponseId,
@@ -1329,6 +1420,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       const result = await enqueueChatMutation(id, () => optimisticRequest('POST', path, body, {
         queueOffline: !(temporary || currentChat?.temporary),
       })) as { response?: ResponseSnapshot } | undefined
+      set((state) => ({
+        chats: state.chats.map((chat) => chat.id === id ? { ...chat, provisional: false } : chat),
+      }))
       const serverId = result?.response?.responseId
       if (serverId && serverId !== responseId) {
         const clientUserId = `${responseId}:input`
@@ -1373,7 +1467,13 @@ export const useChat = create<ChatState>()((set, get) => ({
       if (result !== undefined) branchSelectionIntents.clear(id, selectionVersion)
       await queryClient.invalidateQueries({ queryKey: chatsKey() })
       await queryClient.invalidateQueries({ queryKey: chatKey(id) })
-    })().catch((error: unknown) => {
+    })()
+    const trackedDispatch = dispatch.then(() => undefined)
+    responseDispatches.set(responseId, trackedDispatch)
+    void trackedDispatch.catch(() => undefined).finally(() => {
+      if (responseDispatches.get(responseId) === trackedDispatch) responseDispatches.delete(responseId)
+    })
+    void dispatch.catch((error: unknown) => {
       const expired = error instanceof ApiError
         && (error.code === 'temporary_chat_expired' || (error.status === 404 && get().chats.some((chat) => chat.id === id && chat.temporary)))
       const errorMessage = expired

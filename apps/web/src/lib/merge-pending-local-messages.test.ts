@@ -68,6 +68,28 @@ describe('mergePendingLocalMessages', () => {
     expect(mergePendingLocalMessages([], local, ['a', 'b'])).toEqual(local)
   })
 
+  it('preserves user-only upload outbox bubbles on empty detail', () => {
+    const first = message('upload-a:input', 'user')
+    first.deliveryStatus = 'uploading'
+    const second = message('upload-b:input', 'user')
+    second.deliveryStatus = 'uploading'
+
+    expect(mergePendingLocalMessages([], [first, second])).toEqual([first, second])
+  })
+
+  it('appends an upload outbox bubble to a durable server prefix', () => {
+    const server = [message('saved:input', 'user'), message('saved', 'assistant')]
+    const pending = message('upload:input', 'user')
+    pending.deliveryStatus = 'uploading'
+
+    expect(mergePendingLocalMessages(
+      server,
+      [...server, pending],
+      [],
+      new Set(['saved']),
+    )).toEqual([...server, pending])
+  })
+
   it('does not append an in-flight sibling outside the selected lineage', () => {
     const selected = [message('a:input', 'user'), message('a', 'assistant')]
     const sibling = [message('b:input', 'user'), message('b', 'assistant', false)]

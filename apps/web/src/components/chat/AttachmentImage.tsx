@@ -13,6 +13,7 @@ import {
   ImageIcon,
   Loader2,
   Presentation,
+  RotateCcw,
   X,
   type LucideIcon,
 } from 'lucide-react'
@@ -31,6 +32,7 @@ import {
 } from '@/lib/attachments'
 import { attachmentPreviewKind } from '@/lib/attachment-previews'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
+import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 
 const ATTACHMENT_KIND_DETAILS: Record<AttachmentKind, {
   icon: LucideIcon
@@ -148,11 +150,20 @@ export function MessageAttachmentList({
   align?: 'start' | 'end'
 }) {
   if (!attachments.length) return null
-  const images = attachments.filter((attachment) => attachmentKind(attachment.name, attachment.mimeType) === 'image')
-  const files = attachments.filter((attachment) => attachmentKind(attachment.name, attachment.mimeType) !== 'image')
+  const pending = attachments.filter((attachment) => attachment.localUploadId)
+  const durable = attachments.filter((attachment) => !attachment.localUploadId)
+  const images = durable.filter((attachment) => attachmentKind(attachment.name, attachment.mimeType) === 'image')
+  const files = durable.filter((attachment) => attachmentKind(attachment.name, attachment.mimeType) !== 'image')
 
   return (
     <div className={cn('flex w-full flex-col gap-2', align === 'end' ? 'items-end' : 'items-start')}>
+      {pending.length > 0 && (
+        <div className={cn('flex max-w-full flex-wrap gap-2', align === 'end' && 'justify-end')}>
+          {pending.map((attachment) => (
+            <PendingMessageAttachment key={attachment.localUploadId} attachment={attachment} />
+          ))}
+        </div>
+      )}
       {images.length > 0 && (
         <div className={cn('flex max-w-full flex-wrap gap-2', align === 'end' && 'justify-end')}>
           {images.map((attachment) => (
@@ -168,6 +179,46 @@ export function MessageAttachmentList({
         </div>
       )}
     </div>
+  )
+}
+
+function downloadPendingAttachment(record: UploadRecord): void {
+  if (record.file) {
+    const url = URL.createObjectURL(record.file)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = record.file.name
+    anchor.click()
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    return
+  }
+  const userId = useAuth.getState().user?.id
+  if (!userId || !record.id) return
+  void downloadAttachment(userId, {
+    id: record.id,
+    originalName: record.name,
+    mimeType: record.mimeType,
+    sizeBytes: record.size,
+  }, useSettings.getState().localAttachmentCacheMb)
+}
+
+function PendingMessageAttachment({ attachment }: { attachment: Attachment }) {
+  const record = useUploadOutbox((state) => attachment.localUploadId
+    ? state.uploads[attachment.localUploadId]
+    : undefined)
+  if (!record) return null
+  return (
+    <PendingAttachmentChip
+      name={record.name}
+      size={record.size}
+      mimeType={record.mimeType}
+      previewUrl={record.previewUrl}
+      attachmentId={record.id}
+      sourceFile={record.file}
+      uploading={record.status === 'uploading'}
+      error={record.status === 'error' ? record.error : null}
+      onDownload={() => downloadPendingAttachment(record)}
+    />
   )
 }
 
@@ -296,6 +347,7 @@ export function PendingAttachmentChip({
   uploading,
   error,
   onDownload,
+  onRetry,
   onRemove,
 }: {
   name: string
@@ -307,7 +359,8 @@ export function PendingAttachmentChip({
   uploading?: boolean
   error?: string | null
   onDownload: () => void
-  onRemove: () => void
+  onRetry?: () => void
+  onRemove?: () => void
 }) {
   const kind = attachmentKind(name, mimeType)
   const remotePreview = useAttachmentPreviewUrl(
@@ -363,29 +416,37 @@ export function PendingAttachmentChip({
               type="button"
               onClick={() => setPreviewOpen(true)}
               aria-label={`Preview ${name}`}
-              className="flex h-full w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 pr-[4.75rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className={cn(
+                'flex h-full w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+                onRemove ? 'pr-[4.75rem]' : 'pr-12',
+              )}
             >
               {details}
             </button>
           ) : (
-            <div className="flex h-full w-full min-w-0 items-center gap-3 p-2.5 pr-[4.75rem] text-left">{details}</div>
+            <div className={cn('flex h-full w-full min-w-0 items-center gap-3 p-2.5 text-left', onRemove ? 'pr-[4.75rem]' : 'pr-12')}>{details}</div>
           )}
           <button
             type="button"
-            aria-label={`Download ${name}`}
-            onClick={onDownload}
-            className="absolute top-2 right-10 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={error && onRetry ? `Retry ${name}` : `Download ${name}`}
+            onClick={error && onRetry ? onRetry : onDownload}
+            className={cn(
+              'absolute top-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              onRemove ? 'right-10' : 'right-2',
+            )}
           >
-            <Download className="size-3.5" />
+            {error && onRetry ? <RotateCcw className="size-3.5" /> : <Download className="size-3.5" />}
           </button>
-          <button
-            type="button"
-            aria-label={`Remove ${name}`}
-            onClick={onRemove}
-            className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <X className="size-3.5" />
-          </button>
+          {onRemove && (
+            <button
+              type="button"
+              aria-label={`Remove ${name}`}
+              onClick={onRemove}
+              className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
         </div>
         {previewDialog}
       </>
@@ -427,20 +488,22 @@ export function PendingAttachmentChip({
         )}
         <button
           type="button"
-          aria-label={`Download ${name}`}
-          onClick={onDownload}
+          aria-label={error && onRetry ? `Retry ${name}` : `Download ${name}`}
+          onClick={error && onRetry ? onRetry : onDownload}
           className="absolute top-1.5 left-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Download className="size-3" />
+          {error && onRetry ? <RotateCcw className="size-3" /> : <Download className="size-3" />}
         </button>
-        <button
-          type="button"
-          aria-label={`Remove ${name}`}
-          onClick={onRemove}
-          className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <X className="size-3" />
-        </button>
+        {onRemove && (
+          <button
+            type="button"
+            aria-label={`Remove ${name}`}
+            onClick={onRemove}
+            className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="size-3" />
+          </button>
+        )}
       </div>
       {previewDialog}
     </>

@@ -38,6 +38,8 @@ export interface Attachment {
   mimeType: string
   type: 'image' | 'file'
   size: number
+  /** Client-only reference used while an attachment is still owned by the upload outbox. */
+  localUploadId?: string
 }
 
 export interface Message {
@@ -54,6 +56,9 @@ export interface Message {
   /** Selected preset choice ids keyed by preset id. */
   presetSelections?: Record<string, string>
   attachments?: Attachment[]
+  /** Client-only state for a visually sent message that has not reached the server yet. */
+  deliveryStatus?: 'uploading'
+  pendingSubmissionId?: string
   branch?: { ids: string[]; index: number }
   error?: string
   outputItems?: unknown[]
@@ -77,6 +82,8 @@ export interface Chat {
   expiresAt: number | null
   expired: boolean
   shareId?: string
+  /** Client-only chat created before its first response is persisted. */
+  provisional?: boolean
 }
 
 export interface Folder {
