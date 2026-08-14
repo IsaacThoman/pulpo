@@ -1,19 +1,21 @@
-import { useEffect, useState, type UIEvent } from 'react'
+import { useEffect, useRef, type UIEvent } from 'react'
 import { BarChart3, Zap } from 'lucide-react'
 import type { MonitorUser, UsageRecord } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatBalance, formatUsd, formatUsageTime } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
 
-const PAGE_SIZE = 100
-
-/** Bordered panel with a scrollable records table; loads more rows as you scroll. */
+/** Bordered panel with a scrollable, cursor-paginated records table. */
 export function RecentUsagePanel({
   records,
   users,
   showUser = false,
   showBalance = false,
   displayName,
+  nextCursor,
+  loadingMore = false,
+  error,
+  onLoadMore,
 }: {
   records: UsageRecord[]
   users?: MonitorUser[]
@@ -21,17 +23,27 @@ export function RecentUsagePanel({
   showBalance?: boolean
   /** Optional custom display-name lookup. */
   displayName?: (u: MonitorUser) => string
+  nextCursor?: string | null
+  loadingMore?: boolean
+  error?: string | null
+  onLoadMore?: () => void
 }) {
-  const [visible, setVisible] = useState(PAGE_SIZE)
-  useEffect(() => setVisible(PAGE_SIZE), [records])
-  const shown = records.slice(0, visible)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const onLoadMoreRef = useRef(onLoadMore)
+  useEffect(() => { onLoadMoreRef.current = onLoadMore }, [onLoadMore])
 
-  const onScroll = (e: UIEvent<HTMLDivElement>) => {
-    const { clientHeight, scrollHeight, scrollTop } = e.currentTarget
-    if (scrollHeight - scrollTop - clientHeight < 160 && visible < records.length) {
-      setVisible((v) => v + PAGE_SIZE)
-    }
+  const maybeLoadMore = (el: HTMLDivElement) => {
+    if (!nextCursor || loadingMore || !onLoadMoreRef.current) return
+    const { clientHeight, scrollHeight, scrollTop } = el
+    if (scrollHeight - scrollTop - clientHeight < 160) onLoadMoreRef.current()
   }
+  const onScroll = (event: UIEvent<HTMLDivElement>) => maybeLoadMore(event.currentTarget)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !nextCursor || loadingMore || error) return
+    if (el.scrollHeight <= el.clientHeight + 160) onLoadMoreRef.current?.()
+  }, [records, nextCursor, loadingMore, error])
 
   const nameOf = (userId: string) => {
     const u = users?.find((x) => x.id === userId)
@@ -47,7 +59,7 @@ export function RecentUsagePanel({
           <h3 className="text-xs font-medium">Recent usage</h3>
         </div>
         <span className="text-xs text-muted-foreground">
-          Showing {shown.length.toLocaleString()} of {records.length.toLocaleString()} records
+          {records.length.toLocaleString()} settled calls
         </span>
       </div>
 
@@ -79,7 +91,7 @@ export function RecentUsagePanel({
               </thead>
             </table>
           </div>
-          <div className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
+          <div ref={scrollRef} className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
             <table className="w-full table-fixed text-xs">
               <colgroup>
                 <col className="w-[22%]" />
@@ -90,7 +102,7 @@ export function RecentUsagePanel({
                 {showBalance && <col className="w-[14%]" />}
               </colgroup>
               <tbody className="divide-y">
-                {shown.map((r) => {
+                {records.map((r) => {
                   const model = getCatalogModel(r.modelId)
                   return (
                     <tr key={r.id}>
@@ -116,7 +128,7 @@ export function RecentUsagePanel({
                       <td className="px-3 py-2 text-right tabular-nums">{formatUsd(r.cost)}</td>
                       {showBalance && (
                         <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                          {formatBalance(r.balanceAfter)}
+                          {r.balanceAfter === null ? '—' : formatBalance(r.balanceAfter)}
                         </td>
                       )}
                     </tr>
@@ -124,6 +136,11 @@ export function RecentUsagePanel({
                 })}
               </tbody>
             </table>
+            {(loadingMore || error) && <div className="border-t p-2 text-center text-xs text-muted-foreground">
+              {error
+                ? <button type="button" className="text-destructive hover:underline" onClick={onLoadMore}>{error} — Retry</button>
+                : 'Loading…'}
+            </div>}
           </div>
         </>
       )}
