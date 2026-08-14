@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
+import { attachments, chatImportSources, chats, chatShares, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -67,10 +67,22 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (ids) ids.push(response.id)
       else responseIdsByChat.set(response.chatId, [response.id])
     }
+    const now = new Date()
+    const sharedChatIds = rows.length ? new Set((await db.selectDistinct({ chatId: chatShares.chatId })
+      .from(chatShares)
+      .where(and(
+        eq(chatShares.userId, user.id),
+        inArray(chatShares.chatId, rows.map((chat) => chat.id)),
+        isNull(chatShares.revokedAt),
+        isNotNull(chatShares.encryptedToken),
+        isNotNull(chatShares.snapshot),
+        or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now)),
+      ))).map((share) => share.chatId)) : new Set<string>()
     return {
       data: rows.map((chat) => ({
         ...chat,
         inFlightResponseIds: responseIdsByChat.get(chat.id) ?? [],
+        shared: sharedChatIds.has(chat.id),
       })),
     }
   })
@@ -519,8 +531,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       inArray(attachments.id, referencedAttachmentIds),
     )) : []
     const queue = await listQueuedMessages(id, user.id)
+    const [activeShare] = await db.select({ id: chatShares.id }).from(chatShares).where(and(
+      eq(chatShares.chatId, chat.id),
+      eq(chatShares.userId, user.id),
+      isNull(chatShares.revokedAt),
+      isNotNull(chatShares.encryptedToken),
+      isNotNull(chatShares.snapshot),
+      or(isNull(chatShares.expiresAt), gt(chatShares.expiresAt, now)),
+    )).limit(1)
     return {
       ...toPublicChat(chat),
+      shared: Boolean(activeShare),
       attachments: attachmentRows,
       queuedMessages: queue,
       responses: toPublicChatResponses(

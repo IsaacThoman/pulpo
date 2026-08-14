@@ -702,4 +702,26 @@ describe('response snapshot accumulation', () => {
     expect(() => friendSearchResponseSchema.parse({ results: Array(9).fill(result) })).toThrow()
   })
 
+  it('validates immutable shared chat snapshot contracts', async () => {
+    const { chatShareSnapshotSchema, chatShareSummarySchema } = await import('./index.js')
+    const snapshot = {
+      version: 1,
+      sharedAt: new Date().toISOString(),
+      chat: { id: '00000000-0000-4000-8000-000000000001', title: 'Shared', modelId: 'model-1', createdAt: new Date().toISOString() },
+      responses: [{
+        id: '00000000-0000-4000-8000-000000000002', modelId: 'model-1', displayModelId: 'model-1',
+        status: 'completed', input: [], output: [{ type: 'reasoning', summary: [{ text: 'Visible' }] }],
+        presetSelections: {}, usage: null, error: null, createdAt: new Date().toISOString(), completedAt: new Date().toISOString(), agentMode: true,
+      }],
+      attachments: [],
+      models: [],
+    }
+    expect(chatShareSnapshotSchema.parse(snapshot)).toEqual(snapshot)
+    expect(chatShareSummarySchema.parse({
+      id: '00000000-0000-4000-8000-000000000003', chatId: snapshot.chat.id,
+      token: 'a'.repeat(43), createdAt: snapshot.sharedAt, expiresAt: null, responseCount: 1,
+    }).responseCount).toBe(1)
+    expect(() => chatShareSnapshotSchema.parse({ ...snapshot, version: 2 })).toThrow()
+  })
+
 })

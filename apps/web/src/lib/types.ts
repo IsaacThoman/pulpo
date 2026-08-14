@@ -76,7 +76,7 @@ export interface Chat {
   temporary: boolean
   expiresAt: number | null
   expired: boolean
-  shareId?: string
+  shared?: boolean
 }
 
 export interface Folder {

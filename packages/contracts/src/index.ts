@@ -589,6 +589,70 @@ export const catalogIconReferenceSchema = z.object({
 export type CatalogIconMode = z.infer<typeof catalogIconModeSchema>
 export type CatalogIconReference = z.infer<typeof catalogIconReferenceSchema>
 
+export const chatShareSnapshotAttachmentSchema = z.object({
+  id: idSchema,
+  originalName: z.string().min(1).max(255),
+  mimeType: z.string().min(1).max(255),
+  sizeBytes: z.number().int().nonnegative(),
+})
+export type ChatShareSnapshotAttachment = z.infer<typeof chatShareSnapshotAttachmentSchema>
+
+export const chatShareSnapshotModelSchema = z.object({
+  id: z.string().min(1).max(120),
+  name: z.string().min(1).max(120),
+  providerGroupId: z.string().min(1),
+  provider: z.string().min(1),
+  inferenceProvider: z.string().min(1),
+  labLogo: z.string().min(1),
+  modelLogo: z.string().min(1),
+  labCustomIcon: catalogIconReferenceSchema.nullable(),
+  modelCustomIcon: catalogIconReferenceSchema.nullable(),
+  iconLight: z.string(),
+  iconDark: z.string(),
+})
+export type ChatShareSnapshotModel = z.infer<typeof chatShareSnapshotModelSchema>
+
+export const chatShareSnapshotResponseSchema = z.object({
+  id: idSchema,
+  modelId: z.string().min(1),
+  displayModelId: z.string().min(1),
+  status: responseStatusSchema,
+  input: z.array(z.unknown()),
+  output: z.array(z.unknown()),
+  presetSelections: z.record(z.string(), z.string()),
+  usage: responseUsageSchema.nullable(),
+  error: z.unknown().nullable(),
+  createdAt: isoDateSchema,
+  completedAt: isoDateSchema.nullable(),
+  agentMode: z.boolean(),
+})
+export type ChatShareSnapshotResponse = z.infer<typeof chatShareSnapshotResponseSchema>
+
+export const chatShareSnapshotSchema = z.object({
+  version: z.literal(1),
+  sharedAt: isoDateSchema,
+  chat: z.object({
+    id: idSchema,
+    title: z.string(),
+    modelId: z.string().min(1),
+    createdAt: isoDateSchema,
+  }),
+  responses: z.array(chatShareSnapshotResponseSchema),
+  attachments: z.array(chatShareSnapshotAttachmentSchema),
+  models: z.array(chatShareSnapshotModelSchema),
+})
+export type ChatShareSnapshot = z.infer<typeof chatShareSnapshotSchema>
+
+export const chatShareSummarySchema = z.object({
+  id: idSchema,
+  chatId: idSchema,
+  token: z.string().min(32),
+  createdAt: isoDateSchema,
+  expiresAt: isoDateSchema.nullable(),
+  responseCount: z.number().int().nonnegative(),
+})
+export type ChatShareSummary = z.infer<typeof chatShareSummarySchema>
+
 export const modelSchema = z.object({
   id: z.string().min(1).max(120),
   upstreamModelId: z.string().min(1).max(200),

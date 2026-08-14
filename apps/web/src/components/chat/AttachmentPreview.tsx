@@ -46,6 +46,7 @@ function usePreviewContent(
   kind: AttachmentPreviewKind | null,
   open: boolean,
   sourceFile?: File,
+  contentUrl?: string,
 ): PreviewContent {
   const userId = useAuth((state) => state.user?.id)
   const [content, setContent] = useState<PreviewContent>({ status: 'idle' })
@@ -71,16 +72,22 @@ function usePreviewContent(
       try {
         let blob: Blob | undefined = sourceFile
         if (!blob) {
-          if (!userId) throw new Error('Sign in to preview this file.')
-          const cached = await getCachedAttachment(userId, attachment.id)
-          if (cancelled) return
-          if (cached) {
-            blob = cached.blob
-          } else {
-            const { url } = await apiRequest<{ url: string }>(`/api/attachments/${attachment.id}/download`)
-            const response = await fetch(url, { credentials: url.startsWith('/api/') ? 'include' : 'omit' })
+          if (contentUrl) {
+            const response = await fetch(contentUrl, { credentials: 'include' })
             if (!response.ok) throw new Error(`Preview failed (${response.status})`)
             blob = await response.blob()
+          } else {
+            if (!userId) throw new Error('Sign in to preview this file.')
+            const cached = await getCachedAttachment(userId, attachment.id)
+            if (cancelled) return
+            if (cached) {
+              blob = cached.blob
+            } else {
+              const { url } = await apiRequest<{ url: string }>(`/api/attachments/${attachment.id}/download`)
+              const response = await fetch(url, { credentials: url.startsWith('/api/') ? 'include' : 'omit' })
+              if (!response.ok) throw new Error(`Preview failed (${response.status})`)
+              blob = await response.blob()
+            }
           }
         }
         if (cancelled) return
@@ -112,7 +119,7 @@ function usePreviewContent(
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [attachment.id, attachment.mimeType, attachment.name, attachment.size, kind, open, sourceFile, userId])
+  }, [attachment.id, attachment.mimeType, attachment.name, attachment.size, contentUrl, kind, open, sourceFile, userId])
 
   return content
 }
@@ -234,15 +241,17 @@ export function AttachmentPreviewDialog({
   open,
   onOpenChange,
   onDownload,
+  contentUrl,
 }: {
   attachment: Attachment
   sourceFile?: File
   open: boolean
   onOpenChange: (open: boolean) => void
   onDownload: () => void
+  contentUrl?: string
 }) {
   const kind = attachmentPreviewKind(attachment.name, attachment.mimeType)
-  const content = usePreviewContent(attachment, kind, open, sourceFile)
+  const content = usePreviewContent(attachment, kind, open, sourceFile, contentUrl)
   if (!kind) return null
 
   return (

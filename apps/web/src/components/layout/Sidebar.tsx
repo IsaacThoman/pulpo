@@ -32,8 +32,10 @@ import { useSettings } from '@/stores/settings'
 import { chatTimeGroup } from '@/lib/format'
 import { resolveChatExpiryMenuAction } from '@/lib/chat-expiration'
 import { chatHasStreamingResponse } from '@/lib/response-tracking'
+import { sharingMenuLabel } from '@/lib/sharing'
 import type { Chat, Folder } from '@/lib/types'
 import { ExpiryCountdown } from '@/components/chat/ExpiryCountdown'
+import { ShareManagementDialog } from '@/components/chat/ShareManagementDialog'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -214,10 +216,9 @@ function DropLines({
   )
 }
 
-function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
+function ChatMenu({ chat, onRename, onShare }: { chat: Chat; onRename: () => void; onShare: () => void }) {
   const togglePin = useChat((state) => state.togglePin)
   const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
-  const shareChat = useChat((state) => state.shareChat)
   const deleteChat = useChat((state) => state.deleteChat)
   const moveToFolder = useChat((state) => state.moveToFolder)
   const folders = useChat((state) => state.folders)
@@ -261,10 +262,10 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         </DropdownMenuSubContent>
       </DropdownMenuSub>
       <DropdownMenuItem
-        onClick={() => void shareChat(chat.id).then((url) => navigator.clipboard?.writeText(url))}
+        onClick={onShare}
       >
         <Share2 />
-        Copy share link
+        {sharingMenuLabel(chat.shared)}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => deleteChat(chat.id)}>
@@ -330,6 +331,7 @@ function ChatRow({
 }) {
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
+  const [sharingOpen, setSharingOpen] = useState(false)
   const [title, setTitle] = useState(chat.title)
   const renameChat = useChat((state) => state.renameChat)
   const deleteChat = useChat((state) => state.deleteChat)
@@ -425,7 +427,7 @@ function ChatRow({
               )}
             </button>
           </DropdownMenuTrigger>
-          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
+          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} onShare={() => setSharingOpen(true)} />
         </DropdownMenu>
       )}
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
@@ -446,6 +448,7 @@ function ChatRow({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ShareManagementDialog chat={chat} open={sharingOpen} onOpenChange={setSharingOpen} />
     </div>
   )
 }
@@ -640,7 +643,7 @@ export function Sidebar({
   const navigate = useNavigate()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
-    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
+    `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}:${chat.shared ?? false}`
   )).join('|'))
   void chatListRevision
   const folderListRevision = useChat((state) => state.folders.map((folder) => (

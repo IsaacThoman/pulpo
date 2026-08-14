@@ -21,14 +21,14 @@ import {
   Minimize2,
 } from 'lucide-react'
 import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem } from '@pulpo/contracts'
-import type { Chat, Message } from '@/lib/types'
+import type { Chat, Message, Model } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatCost, formatDuration, formatSecondsLabel, timeAgo } from '@/lib/format'
 import { useChat } from '@/stores/chat'
 import { useSettings } from '@/stores/settings'
 import { Markdown } from './Markdown'
-import { MessageAttachmentList } from './AttachmentImage'
+import { MessageAttachmentList, type MessageAttachmentAccess } from './AttachmentImage'
 import { activityDurationMs } from './activity-timing'
 import { canSubmitMessageEdit } from './message-edit'
 import {
@@ -363,6 +363,7 @@ function ActivityBlock({
   onStop,
   onContinue,
   capacityPending,
+  allowActions = true,
 }: {
   steps: ActivityStep[]
   active: boolean
@@ -372,6 +373,7 @@ function ActivityBlock({
   onStop: (id: string) => void
   onContinue: (id: string) => void
   capacityPending: boolean
+  allowActions?: boolean
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
@@ -401,7 +403,7 @@ function ActivityBlock({
     return () => window.clearTimeout(timer)
   }, [isWaiting, workspaceActionsAvailableAt])
 
-  const needsWorkspaceActions = isWaiting && showWorkspaceActions
+  const needsWorkspaceActions = allowActions && isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0
   const hasWorkspace = Boolean(workspace)
   const runningTool = tools.find((tool) => tool.status === 'running')
@@ -503,6 +505,10 @@ export const MessageItem = memo(function MessageItem({
   activeModelId,
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
+  readOnly = false,
+  forceShowReasoning,
+  attachmentAccess,
+  modelResolver = getCatalogModel,
 }: {
   chat: Chat
   message: Message
@@ -510,13 +516,18 @@ export const MessageItem = memo(function MessageItem({
   activeModelId: string
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
+  readOnly?: boolean
+  forceShowReasoning?: boolean
+  attachmentAccess?: MessageAttachmentAccess
+  modelResolver?: (id: string) => Model
 }) {
   const regenerate = useChat((state) => state.regenerate)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
-  const showReasoning = useSettings((s) => s.showReasoning)
+  const reasoningPreference = useSettings((s) => s.showReasoning)
+  const showReasoning = forceShowReasoning ?? reasoningPreference
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
@@ -597,16 +608,16 @@ export const MessageItem = memo(function MessageItem({
         )}>
           {message.attachments && message.attachments.length > 0 && (
             <div className={cn(message.content ? 'mb-2' : undefined)}>
-              <MessageAttachmentList attachments={message.attachments} />
+              <MessageAttachmentList attachments={message.attachments} access={attachmentAccess} />
             </div>
           )}
           {message.content ? <Markdown content={message.content} /> : null}
         </div>
         <div className="flex items-center gap-1">
-            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
+            {!readOnly && !chat.expired && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {message.content ? <CopyButton text={message.content} /> : null}
-              {!chat.expired && (
+              {!readOnly && !chat.expired && (
                 <>
                   <ActionButton
                     label="Edit"
@@ -626,7 +637,7 @@ export const MessageItem = memo(function MessageItem({
     )
   }
 
-  const model = getCatalogModel(message.modelId ?? chat.modelId)
+  const model = modelResolver(message.modelId ?? chat.modelId)
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
@@ -702,6 +713,7 @@ export const MessageItem = memo(function MessageItem({
                         void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
                       }}
                       capacityPending={capacityActionPending}
+                      allowActions={!readOnly}
                     />
                   )
                 }
@@ -726,7 +738,7 @@ export const MessageItem = memo(function MessageItem({
           )}
 
           {!editing && message.attachments && message.attachments.length > 0 && (
-            <MessageAttachmentList attachments={message.attachments} align="start" />
+            <MessageAttachmentList attachments={message.attachments} align="start" access={attachmentAccess} />
           )}
 
           {otherItems.map((item, index) => {
@@ -753,11 +765,11 @@ export const MessageItem = memo(function MessageItem({
 
         {(message.done || hasMultipleBranches(message.branch)) && (
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
-            {!chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
+            {!readOnly && !chat.expired && <BranchControls chatId={chat.id} branch={message.branch} />}
             {message.done && (
               <div className="flex min-w-0 flex-wrap items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                 <CopyButton text={message.content} />
-                {!chat.expired && (
+                {!readOnly && !chat.expired && (
                   <>
                     <ActionButton
                       label="Edit response"
@@ -799,4 +811,8 @@ export const MessageItem = memo(function MessageItem({
   && previous.chat.id === next.chat.id
   && previous.chat.modelId === next.chat.modelId
   && previous.chat.expired === next.chat.expired
+  && previous.readOnly === next.readOnly
+  && previous.forceShowReasoning === next.forceShowReasoning
+  && previous.attachmentAccess === next.attachmentAccess
+  && previous.modelResolver === next.modelResolver
 ))

@@ -45,6 +45,34 @@ describe('user message actions', () => {
   })
 })
 
+describe('shared read-only messages', () => {
+  it('keeps transcript actions while removing every mutation control', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Public answer',
+        outputItems: [
+          { type: 'reasoning', summary: [{ type: 'summary_text', text: 'Public thought' }] },
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'bash', arguments: { command: 'pwd' }, output: '/workspace', status: 'completed' },
+          { type: 'message', content: [{ type: 'output_text', text: 'Public answer' }] },
+        ],
+      })}
+      streaming={false}
+      activeModelId="model-1"
+      readOnly
+      forceShowReasoning
+    />)
+
+    expect(markup).toContain('Public answer')
+    expect(markup).toContain('Worked')
+    expect(markup).toContain('aria-label="Copy"')
+    expect(markup).not.toContain('aria-label="Edit response"')
+    expect(markup).not.toContain('aria-label="Regenerate"')
+    expect(markup).not.toContain('Continue without agent')
+  })
+})
+
 describe('activityDurationMs', () => {
   it('attributes only the durations belonging to an activity segment', () => {
     expect(activityDurationMs([

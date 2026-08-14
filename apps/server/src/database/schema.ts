@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import type { ChatShareSnapshot } from '@pulpo/contracts'
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -440,6 +441,9 @@ export const chatShares = pgTable('chat_shares', {
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull(),
+  encryptedToken: text('encrypted_token'),
+  snapshotVersion: integer('snapshot_version'),
+  snapshot: jsonb('snapshot').$type<ChatShareSnapshot>(),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

@@ -48,10 +48,17 @@ const ATTACHMENT_KIND_DETAILS: Record<AttachmentKind, {
   file: { icon: File, color: 'bg-slate-500/12 text-slate-700 ring-slate-500/15 dark:text-slate-300' },
 }
 
+export interface MessageAttachmentAccess {
+  contentUrl: (attachment: Attachment) => string
+  thumbnailUrl: (attachment: Attachment) => string
+  downloadUrl: (attachment: Attachment) => string
+}
+
 function useAttachmentPreviewUrl(
   attachmentId: string | undefined,
   enabled = true,
   variant: 'thumbnail' | 'full' = 'full',
+  access?: MessageAttachmentAccess,
 ): {
   url: string | null
   loading: boolean
@@ -61,7 +68,7 @@ function useAttachmentPreviewUrl(
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!enabled || !attachmentId || !userId) {
+    if (!enabled || !attachmentId || (!userId && !access)) {
       setUrl(null)
       setLoading(false)
       return
@@ -71,9 +78,16 @@ function useAttachmentPreviewUrl(
     setLoading(true)
     setUrl(null)
 
+    if (access) {
+      const attachment = { id: attachmentId } as Attachment
+      setUrl(variant === 'thumbnail' ? access.thumbnailUrl(attachment) : access.contentUrl(attachment))
+      setLoading(false)
+      return
+    }
+
     void (async () => {
       try {
-        const cached = await getCachedAttachment(userId, attachmentId)
+        const cached = await getCachedAttachment(userId!, attachmentId)
         if (cancelled) return
         if (cached) {
           objectUrl = URL.createObjectURL(cached.blob)
@@ -98,7 +112,7 @@ function useAttachmentPreviewUrl(
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [attachmentId, enabled, userId, variant])
+  }, [access, attachmentId, enabled, userId, variant])
 
   return { url, loading }
 }
@@ -129,7 +143,17 @@ function AttachmentTypeIcon({ name, mimeType, className }: {
   )
 }
 
-function performAttachmentDownload(attachment: Attachment): void {
+function performAttachmentDownload(attachment: Attachment, access?: MessageAttachmentAccess): void {
+  if (access) {
+    const link = document.createElement('a')
+    link.href = access.downloadUrl(attachment)
+    link.download = attachment.name
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    return
+  }
   const userId = useAuth.getState().user?.id
   if (!userId) return
   void downloadAttachment(userId, {
@@ -143,9 +167,11 @@ function performAttachmentDownload(attachment: Attachment): void {
 export function MessageAttachmentList({
   attachments,
   align = 'end',
+  access,
 }: {
   attachments: Attachment[]
   align?: 'start' | 'end'
+  access?: MessageAttachmentAccess
 }) {
   if (!attachments.length) return null
   const images = attachments.filter((attachment) => attachmentKind(attachment.name, attachment.mimeType) === 'image')
@@ -156,14 +182,14 @@ export function MessageAttachmentList({
       {images.length > 0 && (
         <div className={cn('flex max-w-full flex-wrap gap-2', align === 'end' && 'justify-end')}>
           {images.map((attachment) => (
-            <MessageImagePreview key={attachment.id} attachment={attachment} />
+            <MessageImagePreview key={attachment.id} attachment={attachment} access={access} />
           ))}
         </div>
       )}
       {files.length > 0 && (
         <div className="grid w-full max-w-[19rem] gap-2">
           {files.map((attachment) => (
-            <MessageFilePreview key={attachment.id} attachment={attachment} />
+            <MessageFilePreview key={attachment.id} attachment={attachment} access={access} />
           ))}
         </div>
       )}
@@ -171,7 +197,7 @@ export function MessageAttachmentList({
   )
 }
 
-function MessageFilePreview({ attachment }: { attachment: Attachment }) {
+function MessageFilePreview({ attachment, access }: { attachment: Attachment; access?: MessageAttachmentAccess }) {
   const [previewOpen, setPreviewOpen] = useState(false)
   const previewable = attachmentPreviewKind(attachment.name, attachment.mimeType) !== null
   const details = (
@@ -206,7 +232,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
         )}
         <button
           type="button"
-          onClick={() => performAttachmentDownload(attachment)}
+          onClick={() => performAttachmentDownload(attachment, access)}
           aria-label={`Download ${attachment.name}`}
           className="mr-2.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -218,21 +244,23 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
           attachment={attachment}
           open={previewOpen}
           onOpenChange={setPreviewOpen}
-          onDownload={() => performAttachmentDownload(attachment)}
+          onDownload={() => performAttachmentDownload(attachment, access)}
+          contentUrl={access?.contentUrl(attachment)}
         />
       )}
     </>
   )
 }
 
-function MessageImagePreview({ attachment }: { attachment: Attachment }) {
+function MessageImagePreview({ attachment, access }: { attachment: Attachment; access?: MessageAttachmentAccess }) {
   const { url, loading } = useAttachmentPreviewUrl(
     attachment.id,
     true,
     isSupportedImageMime(attachment.mimeType) ? 'thumbnail' : 'full',
+    access,
   )
   const [previewOpen, setPreviewOpen] = useState(false)
-  const handleDownload = () => performAttachmentDownload(attachment)
+  const handleDownload = () => performAttachmentDownload(attachment, access)
 
   return (
     <>
@@ -281,6 +309,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
         open={previewOpen}
         onOpenChange={setPreviewOpen}
         onDownload={handleDownload}
+        contentUrl={access?.contentUrl(attachment)}
       />
     </>
   )

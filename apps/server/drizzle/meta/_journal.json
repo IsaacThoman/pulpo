@@ -246,6 +246,13 @@
       "when": 1786673521238,
       "tag": "0034_bitter_dust",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786697547586,
+      "tag": "0035_happy_frog_thor",
+      "breakpoints": true
     }
   ]
 }
