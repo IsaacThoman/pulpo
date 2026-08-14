@@ -7,6 +7,7 @@ import { parseLoggingSettings, parseOcrSettings } from '../settings/application-
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { trackInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, resolveLegacyOcrCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
+import { modelImageRendition } from './model-image.js'
 
 export type OcrModel = Pick<typeof models.$inferSelect, 'id' | 'interceptImagesWithOcr'>
 
@@ -188,8 +189,11 @@ export async function interceptOpenAIInputImages(
         content.push(part)
         continue
       }
-      const text = await interceptor.intercept(model, { ...parsed, label: 'embedded image' })
-      content.push(text === null ? part : { type: 'input_text', text })
+      const rendition = await modelImageRendition(parsed.data, parsed.mimeType)
+      const text = await interceptor.intercept(model, { ...rendition, label: 'embedded image' })
+      content.push(text === null
+        ? { ...image, image_url: dataUrl(rendition) }
+        : { type: 'input_text', text })
     }
     transformed.push({ ...typed, content })
   }
@@ -234,8 +238,11 @@ export async function interceptAgentContextImages<T>(
         content.push(part)
         continue
       }
-      const text = await interceptor.intercept(model, { data: Buffer.from(image.data, 'base64'), mimeType: image.mimeType, label })
-      content.push(text === null ? part : { type: 'text', text })
+      const rendition = await modelImageRendition(Buffer.from(image.data, 'base64'), image.mimeType)
+      const text = await interceptor.intercept(model, { ...rendition, label })
+      content.push(text === null
+        ? { ...image, data: rendition.data.toString('base64'), mimeType: rendition.mimeType }
+        : { type: 'text', text })
     }
     messages.push({ ...record, content })
   }

@@ -6,6 +6,7 @@ describe('agent policy', () => {
     const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy', 'Prefer TypeScript.')
     expect(prompt).toContain('/workspace')
     expect(prompt).toContain('Use view_image')
+    expect(prompt).toContain('ImageOps.exif_transpose')
     expect(prompt.indexOf('Model policy')).toBeLessThan(prompt.indexOf('Agent policy'))
     expect(prompt.indexOf('Agent policy')).toBeLessThan(prompt.indexOf('User-provided custom instructions:'))
     expect(prompt).toContain('User-provided custom instructions:\nPrefer TypeScript.')
