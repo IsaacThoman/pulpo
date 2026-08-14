@@ -79,6 +79,26 @@ export function attachmentMetadata(name: string, mimeType: string, size?: number
   return `${attachmentTypeLabel(name, mimeType)} · ${formatAttachmentSize(size)}`
 }
 
+export function fitAttachmentPreviewSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  maximumWidth = 320,
+  maximumHeight = 420,
+): { width: number; height: number } {
+  const safeMaximumWidth = Number.isFinite(maximumWidth) && maximumWidth > 0 ? maximumWidth : 320
+  const safeMaximumHeight = Number.isFinite(maximumHeight) && maximumHeight > 0 ? maximumHeight : 420
+  if (
+    !Number.isFinite(sourceWidth) || sourceWidth <= 0
+    || !Number.isFinite(sourceHeight) || sourceHeight <= 0
+  ) return { width: safeMaximumWidth, height: Math.min(safeMaximumWidth, safeMaximumHeight) }
+
+  const scale = Math.min(safeMaximumWidth / sourceWidth, safeMaximumHeight / sourceHeight)
+  return {
+    width: Math.round(sourceWidth * scale),
+    height: Math.round(sourceHeight * scale),
+  }
+}
+
 export function selectAttachmentBatch<T extends { uri: string }>(
   current: T[],
   incoming: T[],

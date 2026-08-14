@@ -3,6 +3,7 @@ import {
   attachmentMetadata,
   attachmentTypeLabel,
   attachmentVisualKind,
+  fitAttachmentPreviewSize,
   formatAttachmentSize,
   isImageAttachment,
   selectAttachmentBatch,
@@ -31,6 +32,13 @@ describe('attachment experience', () => {
     expect(formatAttachmentSize(1_572_864)).toBe('1.5 MB')
     expect(attachmentTypeLabel('notes.md', 'text/plain')).toBe('MD')
     expect(attachmentMetadata('notes.md', 'text/plain', 10_240)).toBe('MD · 10 KB')
+  })
+
+  it('fits context-menu previews without cropping their aspect ratio', () => {
+    expect(fitAttachmentPreviewSize(3024, 4032)).toEqual({ width: 315, height: 420 })
+    expect(fitAttachmentPreviewSize(4032, 3024)).toEqual({ width: 320, height: 240 })
+    expect(fitAttachmentPreviewSize(1000, 1000)).toEqual({ width: 320, height: 320 })
+    expect(fitAttachmentPreviewSize(0, 0)).toEqual({ width: 320, height: 320 })
   })
 
   it('deduplicates and caps incoming selections', () => {

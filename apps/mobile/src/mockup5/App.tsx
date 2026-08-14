@@ -182,6 +182,7 @@ import {
   MAX_COMPOSER_ATTACHMENTS,
   attachmentMetadata,
   attachmentVisualKind,
+  fitAttachmentPreviewSize,
   formatAttachmentSize,
   isImageAttachment,
   selectAttachmentBatch,
@@ -761,10 +762,15 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
               </View>
             </Pressable>
           </Pressable>
-          {attachment.state === 'uploading' ? <Text style={styles.attachmentUploadStatus}>Uploading…</Text> : null}
           {attachment.state === 'failed' ? (
-            <Pressable accessibilityRole="button" onPress={() => onRetry(attachment.localId)}>
-              <Text numberOfLines={1} style={[styles.attachmentUploadStatus, styles.attachmentUploadFailed]}>Retry · {attachment.error ?? 'Upload failed'}</Text>
+            <Pressable
+              accessibilityLabel={`Retry ${attachment.name}`}
+              accessibilityRole="button"
+              onPress={() => onRetry(attachment.localId)}
+              style={styles.attachmentRetryOverlay}
+            >
+              <Icon name="arrow.clockwise" size={11} color="#ffffff" weight="bold" />
+              <Text numberOfLines={1} style={styles.attachmentRetryText}>Retry</Text>
             </Pressable>
           ) : null}
         </View>
@@ -2289,13 +2295,15 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
 function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachment; variant: 'message' | 'preview' | 'composer' }) {
   const [uri, setUri] = useState(attachment.uri);
   const [failed, setFailed] = useState(false);
+  const [previewSize, setPreviewSize] = useState(() => fitAttachmentPreviewSize(0, 0));
   const style = variant === 'preview'
-    ? styles.attachmentContextImagePreview
+    ? [styles.attachmentContextImagePreview, previewSize]
     : variant === 'composer' ? styles.attachmentImage : styles.sentAttachmentImage;
 
   useEffect(() => {
     setUri(attachment.uri);
     setFailed(false);
+    if (variant === 'preview') setPreviewSize(fitAttachmentPreviewSize(0, 0));
     if (attachment.uri) return;
     let cancelled = false;
     const resolve = variant === 'message' || variant === 'composer'
@@ -2309,7 +2317,27 @@ function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachme
     return () => { cancelled = true; };
   }, [attachment.id, attachment.name, attachment.uri, variant]);
 
-  if (uri) return <Image accessibilityLabel={attachment.name} source={{ uri }} style={style} />;
+  useEffect(() => {
+    if (variant !== 'preview' || !uri) return;
+    let cancelled = false;
+    void Image.getSize(uri).then(({ width, height }) => {
+      if (!cancelled) setPreviewSize(fitAttachmentPreviewSize(width, height));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [uri, variant]);
+
+  if (uri) return (
+    <Image
+      accessibilityLabel={attachment.name}
+      onLoad={variant === 'preview' ? (event) => {
+        const { width, height } = event.nativeEvent.source;
+        setPreviewSize(fitAttachmentPreviewSize(width, height));
+      } : undefined}
+      resizeMode={variant === 'preview' ? 'contain' : 'cover'}
+      source={{ uri }}
+      style={style}
+    />
+  );
   return (
     <View accessibilityLabel={attachment.name} style={[style, styles.attachmentImagePlaceholder]}>
       {failed
@@ -4700,7 +4728,7 @@ const styles = StyleSheet.create({
   messageContextPreviewUser: { backgroundColor: COLORS.secondary },
   messageContextPreviewRole: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 },
   messageContextPreviewText: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
-  attachmentContextImagePreview: { width: 320, height: 320, borderRadius: 28, backgroundColor: COLORS.elevated },
+  attachmentContextImagePreview: { borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
@@ -4763,27 +4791,27 @@ const styles = StyleSheet.create({
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   composerWrap: { paddingTop: 6 },
-  composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4 },
+  composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
-  attachmentStrip: { maxHeight: 132, marginBottom: 8 },
-  attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
-  attachmentFrame: { paddingTop: 17, paddingRight: 17 },
-  attachmentUploadStatus: { color: COLORS.muted, fontSize: 10, marginTop: 3, maxWidth: 148 },
-  attachmentUploadFailed: { color: COLORS.critical, fontWeight: '600' },
+  attachmentStrip: { height: 72, marginBottom: 3 },
+  attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
+  attachmentFrame: { paddingTop: 6, paddingRight: 6 },
   failedAttachment: { borderWidth: 1, borderColor: 'rgba(255,69,58,0.55)' },
-  imageAttachment: { width: 72, height: 72, borderRadius: 14, overflow: 'visible', backgroundColor: COLORS.fill },
-  attachmentImage: { width: 72, height: 72, borderRadius: 14 },
-  attachmentLoadingOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.34)' },
-  fileAttachment: { width: 174, minHeight: 72, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11, paddingVertical: 9, backgroundColor: COLORS.fill },
-  fileAttachmentIcon: { width: 32, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.fillStrong },
+  imageAttachment: { width: 64, height: 64, borderRadius: 13, overflow: 'visible', backgroundColor: COLORS.fill },
+  attachmentImage: { width: 64, height: 64, borderRadius: 13 },
+  attachmentLoadingOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.34)' },
+  fileAttachment: { width: 160, height: 64, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: COLORS.fill },
+  fileAttachmentIcon: { width: 32, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.fillStrong },
   fileAttachmentCopy: { flex: 1 },
   fileAttachmentName: { color: COLORS.text, fontSize: 12.5, fontWeight: '600' },
   fileAttachmentMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
-  removeAttachmentHitTarget: { position: 'absolute', top: -17, right: -17, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  removeAttachmentHitTarget: { position: 'absolute', top: -12, right: -12, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   removeAttachmentButton: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3a3a3c', borderWidth: 2, borderColor: COLORS.elevated },
+  attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
+  attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },
