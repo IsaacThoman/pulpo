@@ -7,6 +7,7 @@ import { dirname, isAbsolute, resolve, relative } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
+import { readTextFile, resolveReadableWorkspacePath } from './read.js'
 
 const port = Number(process.env.PORT ?? 8787)
 const token = process.env.PULPO_WORKSPACE_TOKEN
@@ -17,7 +18,7 @@ const maxExportBytes = Number(process.env.PULPO_WORKSPACE_MAX_EXPORT_BYTES ?? 25
 const maxFileBytes = Number(process.env.PULPO_WORKSPACE_MAX_FILE_BYTES ?? 1_000 * 1024 * 1024)
 if (!token || token.length < 32) throw new Error('PULPO_WORKSPACE_TOKEN must contain at least 32 characters')
 
-type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; startedAt: string; completedAt?: string }
+type Operation = { id: string; status: 'running' | 'completed' | 'failed' | 'cancelled'; output: string; exitCode: number | null; error?: string; details?: Record<string, unknown>; startedAt: string; completedAt?: string }
 const operations = new Map<string, Operation>()
 const children = new Map<string, ChildProcess>()
 const journalRoot = resolve(root, '.pulpo', 'operations')
@@ -86,6 +87,10 @@ function vmPath(value: unknown): string {
   return resolve(requested)
 }
 
+async function readableWorkspacePath(value: unknown): Promise<string> {
+  return resolveReadableWorkspacePath(root, workspacePath(value))
+}
+
 async function exportPath(value: unknown): Promise<string> {
   const requested = workspacePath(value)
   const resolved = await realpath(requested)
@@ -136,7 +141,11 @@ async function finishOperation(operation: Operation, type: string, args: Record<
           else resolveOutput(output)
         })
       })
-    } else if (type === 'read') operation.output = await readFile(workspacePath(args.path), 'utf8')
+    } else if (type === 'read') {
+      const result = await readTextFile(await readableWorkspacePath(args.path), args)
+      operation.output = result.output
+      operation.details = result.details
+    }
     else if (type === 'write') {
       const path = workspacePath(args.path); await mkdir(dirname(path), { recursive: true }); await writeFile(path, String(args.content ?? ''), 'utf8'); operation.output = `Wrote ${relative(root, path)}`
     } else if (type === 'edit') {

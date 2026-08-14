@@ -21,6 +21,7 @@ export interface WorkspaceOperation {
   output: string
   exitCode: number | null
   error?: string
+  details?: Record<string, unknown>
 }
 
 export interface WorkspaceImage {

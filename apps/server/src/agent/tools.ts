@@ -1,6 +1,7 @@
 import { Type } from '@earendil-works/pi-ai'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import type { WorkspaceManager } from './controller.js'
+import { boundLegacyReadOutput, isBoundedReadDetails, parseAgentReadArguments, READ_MAX_LINE_LIMIT, READ_MAX_OUTPUT_BYTES } from './bounded-read.js'
 
 const textResult = (output: string, details: unknown = {}) => ({ content: [{ type: 'text' as const, text: output }], details })
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
@@ -14,7 +15,23 @@ export function createWorkspaceTools(
   const tool = (name: string, description: string, parameters: ReturnType<typeof Type.Object>, execute: AgentTool['execute']): AgentTool => ({ name, label: name, description, parameters, executionMode: 'sequential', execute })
   const started = (operationId: string) => () => onOperationStarted?.(operationId)
   return [
-    tool('read', 'Read a UTF-8 file from the Linux workspace.', Type.Object({ path: Type.String() }), async (id, args, signal) => textResult((await manager.execute(id, 'read', record(args), signal, undefined, started(id))).output)),
+    tool('read', 'Read bounded, numbered lines from a UTF-8 workspace file. Bare reads start at line 1 and return at most 2,000 lines or 50 KiB. Use offset and limit to page, readAll for an intentional whole-file request subject to the same 50 KiB safety cap, and grep or bash for large datasets or oversized lines.', Type.Object({
+      path: Type.String({ description: 'Path to a UTF-8 file inside /workspace.' }),
+      offset: Type.Optional(Type.Integer({ minimum: 1, description: 'One-based line number at which to start reading.' })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: READ_MAX_LINE_LIMIT, description: 'Maximum lines to return; defaults to 2,000.' })),
+      readAll: Type.Optional(Type.Boolean({ description: 'Request the whole file when small enough; cannot be combined with offset or limit and never bypasses the 50 KiB cap.' })),
+    }, { additionalProperties: false }), async (id, rawArgs, signal) => {
+      const args = record(rawArgs)
+      if (typeof args.path !== 'string' || !args.path.trim()) throw new Error('path must be a non-empty string')
+      parseAgentReadArguments(args)
+      const operation = await manager.execute(id, 'read', args, signal, undefined, started(id))
+      const bounded = isBoundedReadDetails(operation.details)
+      if (bounded && Buffer.byteLength(operation.output, 'utf8') > READ_MAX_OUTPUT_BYTES) {
+        throw new Error('Workspace read exceeded the 50 KiB safety limit')
+      }
+      const result = bounded ? { output: operation.output, details: operation.details } : boundLegacyReadOutput(operation.output, args)
+      return textResult(result.output, result.details)
+    }),
     tool('view_image', 'View a PNG, JPEG, GIF, or WebP image using the model\'s vision capability. Absolute paths anywhere in the disposable VM are allowed.', Type.Object({ path: Type.String() }), async (id, args, signal) => {
       const path = String(record(args).path ?? '')
       const viewed = await manager.viewImage(path, signal, started(id))
