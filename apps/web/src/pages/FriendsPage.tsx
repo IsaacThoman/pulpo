@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList } from '@pulpo/contracts'
-import { BarChart3, Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { friendSearchHighlight, nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
@@ -107,7 +106,6 @@ function ConnectionRow({ connection, detail, actions }: { connection: FriendConn
 export function FriendsPage() {
   const user = useAuth((state) => state.user)
   const userId = user?.id
-  const navigate = useNavigate()
   const usernameInputRef = useRef<HTMLInputElement>(null)
   const [searchInput, setSearchInput] = useState('')
   const [searchResults, setSearchResults] = useState<FriendSearchResult[]>([])
@@ -231,7 +229,6 @@ export function FriendsPage() {
   const activateSearchResult = (result: FriendSearchResult) => {
     if (result.relationship === 'none') sendSearchRequest(result)
     else if (result.relationship === 'incoming') acceptSearchRequest(result)
-    else if (result.relationship === 'friends') navigate('/usage/friends')
   }
 
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -306,7 +303,7 @@ export function FriendsPage() {
                     {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? 'Sending…' : 'Add friend'}</Button>}
                     {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? 'Accepting…' : 'Accept'}</Button>}
                     {result.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">Request sent</span>}
-                    {result.relationship === 'friends' && <Button size="sm" variant="outline" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>}
+                    {result.relationship === 'friends' && <span className="flex items-center gap-1.5 text-sm text-emerald-500"><Check className="size-4" aria-hidden />Already friends</span>}
                     {result.relationship === 'self' && <span className="text-sm text-muted-foreground">You</span>}
                   </div>
                 </div>)}
