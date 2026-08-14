@@ -3230,7 +3230,8 @@ function ChatView({
 
   const shareResolvedAttachment = useCallback((attachment: Attachment) => {
     if (attachment.uri) {
-      void Share.share({ message: attachment.name, url: attachment.uri });
+      void Share.share({ message: attachment.name, url: attachment.uri })
+        .catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
       return;
     }
     void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType)

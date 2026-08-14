@@ -252,8 +252,9 @@ export function AttachmentImageViewer({
     offset: width * itemIndex,
   }), [width])
   const handleScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    setIndex(Math.round(event.nativeEvent.contentOffset.x / Math.max(1, width)))
-  }, [width])
+    const next = Math.round(event.nativeEvent.contentOffset.x / Math.max(1, width))
+    setIndex(Math.min(Math.max(0, next), Math.max(0, items.length - 1)))
+  }, [items.length, width])
   const renderItem = useCallback(({ item }: { item: AttachmentImagePreviewItem }) => (
     <ZoomableImage
       height={height}
