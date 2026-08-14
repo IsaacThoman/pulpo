@@ -318,9 +318,8 @@ export function FriendsPage() {
                   </>} />)}
                 </Section> : <div className="rounded-xl border px-6 py-10 text-center">
                   <UsersRound className="mx-auto size-6 text-muted-foreground" />
-                  <h2 className="mt-3 text-sm font-medium">Add friends to compare usage</h2>
+                  <h2 className="mt-3 text-sm font-medium">Add friends</h2>
                   <p className="mt-1 text-xs text-muted-foreground">Find someone by their name or Pulpo username.</p>
-                  <Button className="mt-4" size="sm" variant="outline" onClick={() => usernameInputRef.current?.focus()}><UserRoundPlus />Find friends</Button>
                 </div>}
 
                 {data.outgoing.length > 0 && <CollapsibleSection title="Sent requests" count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
