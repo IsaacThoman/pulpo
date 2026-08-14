@@ -198,11 +198,16 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       for (const chatId of batch.chatIds) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) })
       }
+      for (const scope of batch.scopes) invalidateScope(scope)
       if (batch.accountOnlyRevisions.length) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
       }
     }
-    const queueRevisionInvalidation = (event: { revision: number; chatId?: string }) => {
+    const queueRevisionInvalidation = (event: {
+      revision: number
+      chatId?: string
+      scopes?: SyncResult['invalidate']
+    }) => {
       stateRevision.current = Math.max(stateRevision.current, event.revision)
       pendingRevision = mergeRevisionInvalidation(pendingRevision, event)
       revisionTimer ??= setTimeout(flushRevisionInvalidations, 16)
@@ -288,8 +293,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     socket.on('chat.changed', ({ chatId, revision }) => {
       queueRevisionInvalidation({ chatId, revision })
     })
-    socket.on('account.revision', ({ revision }) => {
-      queueRevisionInvalidation({ revision })
+    socket.on('account.revision', ({ revision, scopes }) => {
+      queueRevisionInvalidation({ revision, scopes })
     })
     const appState = AppState.addEventListener('change', (state) => {
       appStateValue = state

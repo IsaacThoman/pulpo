@@ -4,6 +4,7 @@ import type { FriendConnection, FriendProfile, FriendsList } from '@pulpo/contra
 import { ChevronDown, ChevronRight, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
+import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
@@ -43,6 +44,7 @@ function ConnectionRow({ connection, actions }: { connection: FriendConnection; 
 }
 
 export function FriendsPage() {
+  const userId = useAuth((state) => state.user?.id)
   const [username, setUsername] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null)
@@ -51,8 +53,9 @@ export function FriendsPage() {
   const [actionError, setActionError] = useState('')
   const [blockedOpen, setBlockedOpen] = useState(false)
   const listQuery = useQuery({
-    queryKey: ['friends'],
+    queryKey: ['friends', userId],
     queryFn: () => apiRequest<FriendsList>('/api/friends'),
+    enabled: Boolean(userId),
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
@@ -63,7 +66,7 @@ export function FriendsPage() {
 
   const refresh = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['friends'] }),
+      queryClient.invalidateQueries({ queryKey: ['friends', userId] }),
       queryClient.invalidateQueries({ queryKey: ['friends-pending-count'] }),
       queryClient.invalidateQueries({ queryKey: ['friends-usage'] }),
     ])

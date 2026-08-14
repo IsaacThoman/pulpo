@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { io, type Socket } from 'socket.io-client'
-import type { ResponseEvent, ServerToClientEvents, ClientToServerEvents, SyncResult } from '@pulpo/contracts'
+import type {
+  ClientToServerEvents,
+  ResponseEvent,
+  ServerToClientEvents,
+  StateInvalidationScope,
+  SyncResult,
+} from '@pulpo/contracts'
 import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { localDb } from '@/lib/local-first/database'
@@ -14,6 +20,17 @@ import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
+
+function invalidateStateScope(scope: StateInvalidationScope, userId: string): void {
+  if (scope === 'friends') {
+    void queryClient.invalidateQueries({ queryKey: ['friends', userId] })
+    void queryClient.invalidateQueries({ queryKey: ['friends-pending-count', userId] })
+    void queryClient.invalidateQueries({ queryKey: ['friends-usage', userId] })
+    return
+  }
+  void queryClient.invalidateQueries({ queryKey: [scope, userId] })
+}
+
 function tabId(): string {
   const existing = sessionStorage.getItem('pulpo-tab-id')
   if (existing) return existing
@@ -120,11 +137,16 @@ export function ChatDataBridge() {
       for (const changedChatId of batch.chatIds) {
         void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
       }
+      for (const scope of batch.scopes) invalidateStateScope(scope, userId)
       if (batch.accountOnlyRevisions.length) {
         void queryClient.invalidateQueries({ queryKey: ['settings', userId] })
       }
     }
-    const queueRevisionInvalidation = (event: { revision: number; chatId?: string }) => {
+    const queueRevisionInvalidation = (event: {
+      revision: number
+      chatId?: string
+      scopes?: StateInvalidationScope[]
+    }) => {
       revisionRef.current = Math.max(revisionRef.current, event.revision)
       pendingRevision = mergeRevisionInvalidation(pendingRevision, event)
       revisionTimer ??= window.setTimeout(flushRevisionInvalidations, 16)
@@ -174,7 +196,7 @@ export function ChatDataBridge() {
         }
       }
       const scopes = syncInvalidationScopes(result)
-      for (const scope of scopes) void queryClient.invalidateQueries({ queryKey: [scope, userId] })
+      for (const scope of scopes) invalidateStateScope(scope, userId)
       if (scopes.includes('chats')) {
         void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
       }
@@ -220,8 +242,8 @@ export function ChatDataBridge() {
     socket.on('chat.changed', ({ chatId: changedChatId, revision }) => {
       queueRevisionInvalidation({ revision, chatId: changedChatId })
     })
-    socket.on('account.revision', ({ revision }) => {
-      queueRevisionInvalidation({ revision })
+    socket.on('account.revision', ({ revision, scopes }) => {
+      queueRevisionInvalidation({ revision, scopes })
     })
     const wake = () => { if (document.visibilityState === 'visible') void sync() }
     const online = () => void sync()

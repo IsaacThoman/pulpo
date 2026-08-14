@@ -1253,9 +1253,12 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
+export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends'])
+export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
+
 export const syncResultSchema = z.object({
   accountRevision: z.number().int().nonnegative(),
-  invalidate: z.array(z.enum(['chats', 'models', 'usage', 'settings'])),
+  invalidate: z.array(stateInvalidationScopeSchema),
   snapshots: z.array(responseSnapshotSchema),
   events: z.array(responseEventSchema),
 })
@@ -1276,7 +1279,7 @@ export interface ServerToClientEvents {
   'response.snapshot': (snapshot: ResponseSnapshot) => void
   'response.completed': (input: { responseId: string; chatId: string; preview: string }) => void
   'chat.changed': (input: { chatId: string; revision: number }) => void
-  'account.revision': (input: { revision: number }) => void
+  'account.revision': (input: { revision: number; scopes?: StateInvalidationScope[] }) => void
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
   'sync.result': (result: SyncResult) => void
   'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
@@ -135,16 +136,27 @@ export function LeaderboardPage() {
   const loadLeaderboard = useUsage((s) => s.loadLeaderboard)
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
-  const [activity, setActivity] = useState<LeaderboardActivity | null>(null)
   const [records, setRecords] = useState<PublicUsageRecord[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [reload, setReload] = useState(0)
 
   const authUser = useAuth((state) => state.user)
+  const friendsUsageQuery = useQuery({
+    queryKey: ['friends-usage', authUser?.id, range],
+    enabled: Boolean(authUser?.id),
+    queryFn: async () => {
+      const days = rangeDays(range)
+      const [, activity, recordPage] = await Promise.all([
+        loadLeaderboard(range),
+        apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?days=${days}`),
+        apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${days}&limit=50`),
+      ])
+      return { activity, recordPage }
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
   const leaderboardMe = users.find((u) => u.id === currentUserId)
   const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
@@ -154,29 +166,21 @@ export function LeaderboardPage() {
     ...(leaderboardMe ? { balance: leaderboardMe.balance } : {}),
   }
 
-  useEffect(() => { void loadLeaderboard(range) }, [loadLeaderboard, range])
   useEffect(() => {
-    let active = true
-    const days = rangeDays(range)
-    setLoading(true)
-    setError(null)
-    setActivity(null)
     setRecords([])
     setNextCursor(null)
     setLoadMoreError(null)
-    void Promise.all([
-      apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?days=${days}`),
-      apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${days}&limit=50`),
-    ]).then(([activityResult, recordResult]) => {
-      if (!active) return
-      setActivity(activityResult)
-      setRecords(recordResult.data)
-      setNextCursor(recordResult.nextCursor)
-    }).catch((cause) => {
-      if (active) setError(cause instanceof Error ? cause.message : 'Unable to load leaderboard usage')
-    }).finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [range, reload])
+  }, [range])
+  useEffect(() => {
+    if (!friendsUsageQuery.data) return
+    setRecords(friendsUsageQuery.data.recordPage.data)
+    setNextCursor(friendsUsageQuery.data.recordPage.nextCursor)
+    setLoadMoreError(null)
+  }, [friendsUsageQuery.data])
+
+  const activity = friendsUsageQuery.data?.activity ?? null
+  const loading = friendsUsageQuery.isLoading
+  const error = friendsUsageQuery.error
 
   const totals = {
     calls: activity?.summary.calls ?? 0,
@@ -317,8 +321,8 @@ export function LeaderboardPage() {
         <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
       ) : error ? (
         <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
-          <span>{error}</span>
-          <Button size="sm" variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button>
+          <span>{error instanceof Error ? error.message : 'Unable to load leaderboard usage'}</span>
+          <Button size="sm" variant="outline" onClick={() => void friendsUsageQuery.refetch()}>Try again</Button>
         </div>
       ) : (
         <>

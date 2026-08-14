@@ -29,6 +29,11 @@ import { parseAuthSettings } from '../settings/application-settings.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
 import {
+  bumpAccountRevisions,
+  friendPeerIds,
+  publishScopedStateChanges,
+} from '../friends/sync.js'
+import {
   createPasswordHash,
   createSession,
   bearerSessionToken,
@@ -252,14 +257,19 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const input = updateProfileInputSchema.parse(request.body)
     let updated: typeof users.$inferSelect | undefined
+    let friendChanges: Awaited<ReturnType<typeof bumpAccountRevisions>> = []
     try {
-      ;[updated] = await db.update(users).set({
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.username !== undefined ? { username: input.username } : {}),
-        ...(input.profileColor !== undefined ? { profileColor: input.profileColor?.toLowerCase() ?? null } : {}),
-        stateRevision: sql`${users.stateRevision} + 1`,
-        updatedAt: new Date(),
-      }).where(eq(users.id, user.id)).returning()
+      ;({ updated, friendChanges } = await db.transaction(async (tx) => {
+        const [updated] = await tx.update(users).set({
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.username !== undefined ? { username: input.username } : {}),
+          ...(input.profileColor !== undefined ? { profileColor: input.profileColor?.toLowerCase() ?? null } : {}),
+          stateRevision: sql`${users.stateRevision} + 1`,
+          updatedAt: new Date(),
+        }).where(eq(users.id, user.id)).returning()
+        const peers = await friendPeerIds(tx, user.id)
+        return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
+      }))
     } catch (cause) {
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === '23505') {
         throw new AppError(409, 'username_taken', 'That username is already taken', 'invalid_request_error', 'username')
@@ -268,6 +278,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     }
     if (!updated) throw unauthorized()
     await publishStateChange({ userId: user.id, revision: updated.stateRevision })
+    await publishScopedStateChanges(friendChanges, ['friends'])
     return { user: serializeUser(updated) }
   })
 

@@ -1,4 +1,4 @@
-import type { ResponseEvent, ResponseSnapshot } from '@pulpo/contracts'
+import type { ResponseEvent, ResponseSnapshot, StateInvalidationScope } from '@pulpo/contracts'
 import { redis } from '../redis.js'
 import { getConfig } from '../config.js'
 
@@ -36,7 +36,12 @@ export async function publishSnapshot(snapshot: ResponseSnapshot): Promise<void>
   await redis.publish('pulpo:response-snapshots', JSON.stringify(snapshot))
 }
 
-export async function publishStateChange(input: { userId: string; revision: number; chatId?: string }): Promise<void> {
+export async function publishStateChange(input: {
+  userId: string
+  revision: number
+  chatId?: string
+  scopes?: StateInvalidationScope[]
+}): Promise<void> {
   await redis.publish('pulpo:state-changes', JSON.stringify(input))
 }
 

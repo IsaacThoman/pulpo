@@ -9,6 +9,11 @@ import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
 import { getBlobStore } from '../storage/index.js'
 import { normalizeProfileAvatar, PROFILE_AVATAR_MAX_BYTES } from './avatar.js'
+import {
+  bumpAccountRevisions,
+  friendPeerIds,
+  publishScopedStateChanges,
+} from '../friends/sync.js'
 
 export async function registerProfileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/users/:id/avatar', async (request, reply) => {
@@ -42,20 +47,23 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
     await getBlobStore().put(key, image, { contentType: 'image/webp', contentLength: image.byteLength })
     let previousKey: string | null = null
     try {
-      const [updated] = await db.transaction(async (tx) => {
+      const { updated, friendChanges } = await db.transaction(async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`avatar:${user.id}`}))`)
         const [current] = await tx.select().from(users).where(eq(users.id, user.id)).limit(1)
         if (!current) throw notFound('User')
         previousKey = current.avatarObjectKey
-        return tx.update(users).set({
+        const [updated] = await tx.update(users).set({
           avatarObjectKey: key,
           avatarVersion: current.avatarVersion + 1,
           stateRevision: sql`${users.stateRevision} + 1`,
           updatedAt: new Date(),
         }).where(eq(users.id, user.id)).returning()
+        const peers = await friendPeerIds(tx, user.id)
+        return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
       })
       if (!updated) throw notFound('User')
       await publishStateChange({ userId: user.id, revision: updated.stateRevision })
+      await publishScopedStateChanges(friendChanges, ['friends'])
       if (previousKey) await getBlobStore().delete(previousKey).catch(() => undefined)
       reply.code(200)
       return { user: serializeUser(updated) }
@@ -68,19 +76,22 @@ export async function registerProfileRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/me/avatar', async (request, reply) => {
     const user = requireUser(request)
     let previousKey: string | null = null
-    const [updated] = await db.transaction(async (tx) => {
+    const { updated, friendChanges } = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`avatar:${user.id}`}))`)
       const [current] = await tx.select({ key: users.avatarObjectKey }).from(users).where(eq(users.id, user.id)).limit(1)
       previousKey = current?.key ?? null
-      return tx.update(users).set({
+      const [updated] = await tx.update(users).set({
         avatarObjectKey: null,
         avatarVersion: sql`${users.avatarVersion} + 1`,
         stateRevision: sql`${users.stateRevision} + 1`,
         updatedAt: new Date(),
       }).where(eq(users.id, user.id)).returning()
+      const peers = await friendPeerIds(tx, user.id)
+      return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
     })
     if (!updated) throw notFound('User')
     await publishStateChange({ userId: user.id, revision: updated.stateRevision })
+    await publishScopedStateChanges(friendChanges, ['friends'])
     if (previousKey) await getBlobStore().delete(previousKey).catch(() => undefined)
     reply.code(200)
     return { user: serializeUser(updated) }

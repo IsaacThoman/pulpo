@@ -35,6 +35,7 @@ import {
   sidebarPinsSchema,
   startChatSchema,
   syncRequestSchema,
+  syncResultSchema,
   updateChatSchema,
   updateProviderSchema,
   type ResponseEvent,
@@ -189,6 +190,16 @@ describe('shared contracts', () => {
       responseCursors: { [responseId]: 42 },
     })
     expect(result.responseCursors[responseId]).toBe(42)
+  })
+
+  it('accepts friends as a reconnect invalidation scope', () => {
+    const result = syncResultSchema.parse({
+      accountRevision: 4,
+      invalidate: ['friends'],
+      snapshots: [],
+      events: [],
+    })
+    expect(result.invalidate).toEqual(['friends'])
   })
 
   it('accepts generic composer presets', () => {
