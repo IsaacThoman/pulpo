@@ -28,6 +28,13 @@ cannot remove production's compatible warm pool.
 `PULPO_MAX_ACTIVE_WORKSPACES_TOTAL` on the controller for a cluster-wide hard
 limit. The example manifest defaults it to 100.
 
+Before provisioning, current Pulpo workers reserve capacity through
+`POST /v1/capacity-reservations`, then pass the returned reservation id to
+`POST /v1/leases`. Unconsumed reservations expire after 30 seconds and may be
+released early with `DELETE /v1/capacity-reservations/:id`. The legacy lease
+request without a reservation remains supported so the controller and workers
+can be upgraded independently.
+
 The bearer token authenticates access to the controller, while the instance id
 provides operational ownership. Deployments sharing the same token are in the
 same trust domain because a holder can forge the header. Use separate controller

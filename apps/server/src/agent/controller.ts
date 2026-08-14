@@ -6,10 +6,11 @@ import { getConfig } from '../config.js'
 import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
 import { attachmentWorkspacePath } from './policy.js'
-import { isWorkspaceCapacityResponse, workspaceQueuePosition } from './capacity.js'
+import { workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
 import { detectImageMime } from './images.js'
+import { attemptWorkspaceLease, ControllerRequestError } from './lease-acquisition.js'
 
 const MAX_VIEW_IMAGE_BYTES = 20 * 1024 * 1024
 const MAX_EXPORT_FILE_BYTES = 25 * 1024 * 1024
@@ -33,16 +34,6 @@ export interface WorkspaceFile {
   sizeBytes: number
 }
 
-class ControllerRequestError extends Error {
-  constructor(readonly status: number, readonly responseBody: string) {
-    super(`Workspace controller request failed (${status}): ${responseBody}`)
-  }
-}
-
-function isCapacityError(error: unknown): boolean {
-  return error instanceof ControllerRequestError && isWorkspaceCapacityResponse(error.status, error.responseBody)
-}
-
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds))
 
 export class WorkspaceManager {
@@ -51,6 +42,7 @@ export class WorkspaceManager {
   private staged = false
   private idleTimeoutMs = 1_800_000
   private toolsDisabled = false
+  private capacityReservationsSupported?: boolean
 
   constructor(
     private readonly responseId: string,
@@ -139,20 +131,34 @@ export class WorkspaceManager {
         const [claimedQueueRow] = await db.update(workspaceLeases).set({ capacityState: 'claiming', updatedAt: new Date() })
           .where(and(eq(workspaceLeases.id, queueLease.id), eq(workspaceLeases.status, 'provisioning'), eq(workspaceLeases.capacityState, 'waiting'))).returning({ id: workspaceLeases.id })
         if (!claimedQueueRow) { await wait(500); continue }
-        await this.onLeaseEvent?.('provisioning')
         try {
-          const controllerResponse = await this.request('/v1/leases', { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ chatId: this.chatId, imageDigest: settings.imageDigest, warmCapacity: settings.warmCapacity, maxActiveWorkspaces: settings.maxActiveWorkspaces, idleTimeoutSeconds: settings.idleTimeoutSeconds, hardTimeoutSeconds: settings.hardTimeoutSeconds, resources: { cpu: settings.cpu, memory: settings.memory, ephemeralStorage: settings.ephemeralStorage } }) })
-          const lease = await controllerResponse.json() as { id: string }
-          const now = new Date(); this.controllerLeaseId = lease.id
-          await db.update(workspaceLeases).set({ controllerLeaseId: lease.id, status: 'ready', capacityState: null, claimedAt: now, lastUsedAt: now, hardExpiresAt: new Date(now.getTime() + settings.hardTimeoutSeconds * 1000), expiresAt: new Date(now.getTime() + settings.idleTimeoutSeconds * 1000), updatedAt: now }).where(eq(workspaceLeases.id, queueLease.id))
-          await this.onLeaseEvent?.('ready', { reused: false })
-        } catch (error) {
-          if (isCapacityError(error)) {
+          const attempt = await attemptWorkspaceLease({
+            request: (path, init) => this.request(path, init),
+            signal,
+            capacityReservationsSupported: this.capacityReservationsSupported,
+            maxActiveWorkspaces: settings.maxActiveWorkspaces,
+            leaseInput: {
+              chatId: this.chatId,
+              imageDigest: settings.imageDigest,
+              warmCapacity: settings.warmCapacity,
+              maxActiveWorkspaces: settings.maxActiveWorkspaces,
+              idleTimeoutSeconds: settings.idleTimeoutSeconds,
+              hardTimeoutSeconds: settings.hardTimeoutSeconds,
+              resources: { cpu: settings.cpu, memory: settings.memory, ephemeralStorage: settings.ephemeralStorage },
+            },
+            onProvisioning: async () => { await this.onLeaseEvent?.('provisioning') },
+          })
+          this.capacityReservationsSupported = attempt.capacityReservationsSupported
+          if (attempt.kind === 'waiting') {
             await db.update(workspaceLeases).set({ capacityState: 'waiting', error: null, updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
-            await this.onLeaseEvent?.('waiting', { position: 1, waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds })
+            if (attempt.publicStateChanged) await this.onLeaseEvent?.('waiting', { position: 1, waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds })
             await wait(1_000)
             continue
           }
+          const now = new Date(); this.controllerLeaseId = attempt.leaseId
+          await db.update(workspaceLeases).set({ controllerLeaseId: attempt.leaseId, status: 'ready', capacityState: null, claimedAt: now, lastUsedAt: now, hardExpiresAt: new Date(now.getTime() + settings.hardTimeoutSeconds * 1000), expiresAt: new Date(now.getTime() + settings.idleTimeoutSeconds * 1000), updatedAt: now }).where(eq(workspaceLeases.id, queueLease.id))
+          await this.onLeaseEvent?.('ready', { reused: false })
+        } catch (error) {
           await db.update(workspaceLeases).set({ status: 'failed', capacityState: null, error: error instanceof Error ? error.message : String(error), updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
           await this.onLeaseEvent?.('unavailable', { error: error instanceof Error ? error.message : String(error) })
           throw error
