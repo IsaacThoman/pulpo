@@ -259,7 +259,7 @@ export function AttachmentPreviewDialog({
               {attachmentDescription(attachment, kind)}
             </DialogDescription>
           </div>
-          <Button type="button" variant="outline" size="icon-sm" onClick={onDownload} aria-label={`Download ${attachment.name}`} className="rounded-full">
+          <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={`Download ${attachment.name}`} className="rounded-full">
             <Download className="size-4" />
           </Button>
           <DialogClose asChild>
