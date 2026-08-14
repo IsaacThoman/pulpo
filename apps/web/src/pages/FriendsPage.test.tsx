@@ -1,20 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
-import { FriendsProfileSummary } from './FriendsPage'
+import { describe, expect, it } from 'vitest'
+import { FriendsHandle } from './FriendsPage'
 
-describe('FriendsProfileSummary', () => {
-  const user = {
-    name: 'Preview Admin',
-    username: 'preview_admin',
-    avatarUrl: null,
-  }
+describe('FriendsHandle', () => {
+  it('shows the signed-in handle as a copy control', () => {
+    const html = renderToStaticMarkup(<FriendsHandle username="preview_admin" />)
 
-  it('shows the signed-in profile without account settings metadata', () => {
-    const html = renderToStaticMarkup(<FriendsProfileSummary user={user} onEdit={vi.fn()} />)
-
-    expect(html).toContain('Preview Admin')
+    expect(html).toContain('Your handle is')
     expect(html).toContain('@preview_admin')
-    expect(html).toContain('Edit profile')
-    expect(html).not.toContain('Friends chart color')
+    expect(html).toContain('Copy @preview_admin')
+    expect(html).not.toContain('Edit profile')
   })
 })

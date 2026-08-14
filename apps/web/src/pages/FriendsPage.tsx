@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList } from '@pulpo/contracts'
-import { BarChart3, ChevronDown, ChevronRight, LoaderCircle, MoreHorizontal, Pencil, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { BarChart3, Check, ChevronDown, ChevronRight, Copy, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { friendSearchHighlight, nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
@@ -18,21 +18,29 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
-import { useSettingsDialog } from '@/components/settings/settings-dialog'
-import type { AuthUser } from '@/stores/auth'
 
-type FriendsProfileUser = Pick<AuthUser, 'name' | 'username' | 'avatarUrl'>
-
-export function FriendsProfileSummary({ user, onEdit }: { user: FriendsProfileUser; onEdit: () => void }) {
+export function FriendsHandle({ username }: { username: string }) {
+  const [copied, setCopied] = useState(false)
+  const copyHandle = async () => {
+    await navigator.clipboard.writeText(`@${username}`)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 1_500)
+  }
   return (
-    <section className="flex items-center gap-4 border-b px-1 pb-5" aria-label="Your profile">
-      <ProfileAvatar name={user.name} avatarUrl={user.avatarUrl} className="size-14" fallbackClassName="text-base" />
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-base font-medium">{user.name}</div>
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">@{user.username}</div>
-      </div>
-      <Button size="sm" variant="ghost" className="shrink-0" onClick={onEdit}><Pencil />Edit profile</Button>
-    </section>
+    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+      <span>Your handle is</span>
+      <button
+        type="button"
+        className="inline-flex cursor-pointer items-center gap-1 text-foreground underline-offset-4 hover:underline"
+        onClick={() => void copyHandle()}
+        aria-label={`Copy @${username}`}
+        title={copied ? 'Copied' : 'Copy handle'}
+      >
+        <span>@{username}</span>
+        {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
+      </button>
+      <span className="sr-only" aria-live="polite">{copied ? 'Handle copied' : ''}</span>
+    </p>
   )
 }
 
@@ -99,7 +107,6 @@ function ConnectionRow({ connection, detail, actions }: { connection: FriendConn
 export function FriendsPage() {
   const user = useAuth((state) => state.user)
   const userId = user?.id
-  const { openSettings } = useSettingsDialog()
   const navigate = useNavigate()
   const usernameInputRef = useRef<HTMLInputElement>(null)
   const [searchInput, setSearchInput] = useState('')
@@ -258,7 +265,7 @@ export function FriendsPage() {
       <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Friends</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-          {user && <FriendsProfileSummary user={user} onEdit={() => openSettings('profile')} />}
+          {user && <FriendsHandle username={user.username} />}
           <div>
             <h2 className="text-lg font-medium">Find your friends</h2>
             <p className="mt-1 text-sm text-muted-foreground">Search by name or username. Usage is shared after they accept.</p>
