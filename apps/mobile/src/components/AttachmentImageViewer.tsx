@@ -68,6 +68,7 @@ function ZoomableImage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [retryRevision, setRetryRevision] = useState(0)
+  const [zoomMode, setZoomMode] = useState(false)
   const scale = useSharedValue(1)
   const savedScale = useSharedValue(1)
   const translateX = useSharedValue(0)
@@ -101,8 +102,14 @@ function ZoomableImage({
     translateY.value = 0
     savedX.value = 0
     savedY.value = 0
+    setZoomMode(false)
     onZoomChange(false)
   }, [item.id, onZoomChange, savedScale, savedX, savedY, scale, translateX, translateY])
+
+  const updateZoomMode = useCallback((nextZoomMode: boolean) => {
+    setZoomMode(nextZoomMode)
+    onZoomChange(nextZoomMode)
+  }, [onZoomChange])
 
   const imageStyle = useAnimatedStyle(() => ({
     transform: [
@@ -120,40 +127,45 @@ function ZoomableImage({
         scale.value = withTiming(1)
         translateX.value = withTiming(0)
         translateY.value = withTiming(0)
-        runOnJS(onZoomChange)(false)
+        runOnJS(updateZoomMode)(false)
       } else {
         savedScale.value = scale.value
-        runOnJS(onZoomChange)(true)
+        runOnJS(updateZoomMode)(true)
       }
     })
 
-  const pan = Gesture.Pan()
+  const zoomPan = Gesture.Pan()
+    .enabled(zoomMode)
     .minDistance(5)
     .onBegin(() => {
       savedX.value = translateX.value
       savedY.value = translateY.value
     })
     .onUpdate((event) => {
-      if (scale.value > 1.01) {
-        const maxX = Math.max(0, (fittedWidth.value * scale.value - width) / 2)
-        const maxY = Math.max(0, (fittedHeight.value * scale.value - height) / 2)
-        translateX.value = clamp(savedX.value + event.translationX, -maxX, maxX)
-        translateY.value = clamp(savedY.value + event.translationY, -maxY, maxY)
-        return
-      }
-      if (Math.abs(event.translationY) > Math.abs(event.translationX)) translateY.value = event.translationY
+      const maxX = Math.max(0, (fittedWidth.value * scale.value - width) / 2)
+      const maxY = Math.max(0, (fittedHeight.value * scale.value - height) / 2)
+      translateX.value = clamp(savedX.value + event.translationX, -maxX, maxX)
+      translateY.value = clamp(savedY.value + event.translationY, -maxY, maxY)
+    })
+    .onEnd(() => {
+      savedX.value = translateX.value
+      savedY.value = translateY.value
+    })
+
+  const dismissPan = Gesture.Pan()
+    .enabled(!zoomMode)
+    .maxPointers(1)
+    .activeOffsetY([-12, 12])
+    .failOffsetX([-18, 18])
+    .onUpdate((event) => {
+      translateY.value = event.translationY
     })
     .onEnd((event) => {
-      if (scale.value <= 1.01) {
-        if (Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 900) {
-          runOnJS(onDismiss)()
-          return
-        }
-        translateY.value = reduceMotion ? 0 : withSpring(0, { damping: 18, stiffness: 220 })
-      } else {
-        savedX.value = translateX.value
-        savedY.value = translateY.value
+      if (Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 900) {
+        runOnJS(onDismiss)()
+        return
       }
+      translateY.value = reduceMotion ? 0 : withSpring(0, { damping: 18, stiffness: 220 })
     })
 
   const doubleTap = Gesture.Tap().numberOfTaps(2).onEnd(() => {
@@ -167,11 +179,11 @@ function ZoomableImage({
     savedScale.value = target
     savedX.value = 0
     savedY.value = 0
-    runOnJS(onZoomChange)(zooming)
+    runOnJS(updateZoomMode)(zooming)
   })
   const singleTap = Gesture.Tap().numberOfTaps(1).onEnd(() => runOnJS(onChromeToggle)())
   const taps = Gesture.Exclusive(doubleTap, singleTap)
-  const gestures = Gesture.Simultaneous(pinch, pan, taps)
+  const gestures = Gesture.Simultaneous(pinch, zoomPan, dismissPan, taps)
 
   return (
     <GestureDetector gesture={gestures}>

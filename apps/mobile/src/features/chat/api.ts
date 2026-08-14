@@ -1,4 +1,4 @@
-import { File, Paths } from 'expo-file-system'
+import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import { attachmentValidationError } from '@pulpo/client-core'
@@ -325,8 +325,35 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
   }
 }
 
-function safeFilename(name: string): string {
-  return name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-120) || 'pulpo-file'
+export function safeAttachmentFilename(name: string): string {
+  const withoutControlCharacters = Array.from(name, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0
+    return codePoint < 32 || codePoint === 127 ? '-' : character
+  }).join('')
+  const sanitized = withoutControlCharacters
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .trim()
+    .replace(/^\.+$/, '')
+  return sanitized.slice(-120) || 'pulpo-file'
+}
+
+function attachmentCacheDestination(id: string, name: string): File {
+  const directory = new Directory(Paths.cache, 'attachments', safeAttachmentFilename(id))
+  directory.create({ idempotent: true, intermediates: true })
+  return new File(directory, safeAttachmentFilename(name))
+}
+
+async function recordDownloadedAttachment(namespace: string, id: string, file: File): Promise<void> {
+  const quotaBytes = Math.max(usePreferencesStore.getState().attachmentCacheMb * 1024 * 1024, file.size)
+  const evictedUris = await recordCachedAttachment(namespace, id, file.uri, file.size, quotaBytes)
+  for (const uri of evictedUris) {
+    try {
+      const cached = new File(uri)
+      if (cached.exists) cached.delete()
+    } catch {
+      // The database is authoritative; an already-removed cache file is harmless.
+    }
+  }
 }
 
 const activeAttachmentDownloads = new Map<string, Promise<File>>()
@@ -352,30 +379,24 @@ async function downloadAttachmentOnce(id: string, name: string): Promise<File> {
     const localUri = await cachedAttachmentUri(namespace, id)
     if (localUri) {
       const cached = new File(localUri)
-      if (cached.exists) return cached
+      if (cached.exists) {
+        const destination = attachmentCacheDestination(id, name)
+        if (cached.uri === destination.uri) return cached
+        if (!destination.exists) await cached.copy(destination, { overwrite: true })
+        await recordDownloadedAttachment(namespace, id, destination)
+        cached.delete()
+        return destination
+      }
     }
   }
   const { url: rawUrl } = await apiRequest<{ url: string }>(`/api/attachments/${id}/download`)
   const url = apiUrl(rawUrl)
-  const destination = new File(Paths.cache, safeFilename(`${id}-${name}`))
+  const destination = attachmentCacheDestination(id, name)
   const file = await File.downloadFileAsync(url, destination, {
     idempotent: true,
     headers: nativeAuthorizationHeaders(url),
   })
-  if (namespace) {
-    const quotaBytes = Math.max(usePreferencesStore.getState().attachmentCacheMb * 1024 * 1024, file.size)
-    const evictedUris = await recordCachedAttachment(
-      namespace, id, file.uri, file.size, quotaBytes,
-    )
-    for (const uri of evictedUris) {
-      try {
-        const cached = new File(uri)
-        if (cached.exists) cached.delete()
-      } catch {
-        // The database is authoritative; an already-removed cache file is harmless.
-      }
-    }
-  }
+  if (namespace) await recordDownloadedAttachment(namespace, id, file)
   return file
 }
 
@@ -384,7 +405,7 @@ export function downloadAttachmentThumbnail(id: string): Promise<File> {
   const existing = activeAttachmentThumbnails.get(key)
   if (existing) return existing
   const pending = (async () => {
-    const destination = new File(Paths.cache, safeFilename(`${id}-thumbnail.webp`))
+    const destination = new File(Paths.cache, safeAttachmentFilename(`${id}-thumbnail.webp`))
     if (destination.exists) return destination
     const url = apiUrl(`/api/attachments/${id}/thumbnail`)
     return File.downloadFileAsync(url, destination, {

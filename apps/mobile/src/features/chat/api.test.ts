@@ -38,7 +38,7 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { editMessage, persistChat, regenerateResponse, sendMessage, startChat, uploadAttachment } from './api'
+import { editMessage, persistChat, regenerateResponse, safeAttachmentFilename, sendMessage, startChat, uploadAttachment } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
@@ -46,6 +46,13 @@ beforeEach(() => {
   mocks.removeSnapshot.mockReset()
   mocks.receiveSnapshot.mockReset()
   mocks.fileUpload.mockReset()
+})
+
+describe('attachment cache filenames', () => {
+  it('preserves user-facing names while removing unsafe path characters', () => {
+    expect(safeAttachmentFilename('Quarterly Plan 你好.pdf')).toBe('Quarterly Plan 你好.pdf')
+    expect(safeAttachmentFilename('../draft\\notes:final?.txt')).toBe('..-draft-notes-final-.txt')
+  })
 })
 
 describe('temporary chat offline behavior', () => {

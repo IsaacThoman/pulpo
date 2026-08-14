@@ -3223,10 +3223,12 @@ function ChatView({
   }, []);
 
   const shareImagePreview = useCallback((item: AttachmentImagePreviewItem) => {
-    void resolvePreviewImageUri(item)
-      .then((uri) => Share.share({ message: item.name, url: uri }))
+    const share = item.uri
+      ? Share.share({ message: item.name, url: item.uri })
+      : shareServerAttachment(item.id, item.name)
+    void share
       .catch((error) => Alert.alert('Couldn’t share image', error instanceof Error ? error.message : undefined));
-  }, [resolvePreviewImageUri]);
+  }, []);
 
   const shareResolvedAttachment = useCallback((attachment: Attachment) => {
     if (attachment.uri) {
