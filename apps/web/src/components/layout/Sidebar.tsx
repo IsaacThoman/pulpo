@@ -851,15 +851,14 @@ export function Sidebar({
     >
       <TooltipTrigger asChild>
         <button className={navBtn} onClick={onClick} aria-label={label}>
-          <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{collapsed && Boolean(badge) && <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
+          <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
           <span
             className={cn(
-              'flex min-w-0 items-center gap-1.5 whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+              'min-w-0 truncate whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
               sidebarTextTransition
             )}
           >
-            <span className="min-w-0 truncate">{label}</span>
-            {!collapsed && Boolean(badge) && <span className="grid min-w-3.5 shrink-0 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}
+            {label}
           </span>
         </button>
       </TooltipTrigger>
