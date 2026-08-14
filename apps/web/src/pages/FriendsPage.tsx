@@ -18,6 +18,34 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { useSettingsDialog } from '@/components/settings/settings-dialog'
+import { automaticProfileColor } from '@/lib/profile'
+import type { AuthUser } from '@/stores/auth'
+
+type FriendsProfileUser = Pick<AuthUser, 'id' | 'name' | 'username' | 'avatarUrl' | 'profileColor'>
+
+export function FriendsProfileSummary({ user, onEdit }: { user: FriendsProfileUser; onEdit: () => void }) {
+  const chartColor = user.profileColor ?? automaticProfileColor(user.id)
+  return (
+    <section className="flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" aria-labelledby="your-profile-heading">
+      <ProfileAvatar name={user.name} avatarUrl={user.avatarUrl} className="size-11" fallbackClassName="text-sm" />
+      <div className="min-w-0 flex-1">
+        <div id="your-profile-heading" className="text-xs text-muted-foreground">Your profile</div>
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="truncate text-sm font-medium">{user.name}</span>
+          <span className="truncate text-xs text-muted-foreground">@{user.username}</span>
+        </div>
+      </div>
+      <div className="flex w-full items-center justify-between gap-3 sm:ml-auto sm:w-auto sm:justify-end">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="size-3 rounded-sm border" style={{ backgroundColor: chartColor }} aria-label={`Friends chart color ${chartColor}`} />
+          <span>Chart color</span>
+        </div>
+        <Button size="sm" variant="outline" onClick={onEdit}>Edit profile</Button>
+      </div>
+    </section>
+  )
+}
 
 function HighlightedText({ value, query }: { value: string; query: string }) {
   return friendSearchHighlight(value, query).map((part, index) => part.match
@@ -80,7 +108,9 @@ function ConnectionRow({ connection, detail, actions }: { connection: FriendConn
 }
 
 export function FriendsPage() {
-  const userId = useAuth((state) => state.user?.id)
+  const user = useAuth((state) => state.user)
+  const userId = user?.id
+  const { openSettings } = useSettingsDialog()
   const navigate = useNavigate()
   const usernameInputRef = useRef<HTMLInputElement>(null)
   const [searchInput, setSearchInput] = useState('')
@@ -239,6 +269,7 @@ export function FriendsPage() {
       <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Friends</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
+          {user && <FriendsProfileSummary user={user} onEdit={() => openSettings('profile')} />}
           <div>
             <h2 className="text-lg font-medium">Find your friends</h2>
             <p className="mt-1 text-sm text-muted-foreground">Search by name or username. Usage is shared after they accept.</p>

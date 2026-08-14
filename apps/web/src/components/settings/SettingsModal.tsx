@@ -48,19 +48,21 @@ import { TwoFactorSettings } from './TwoFactorSettings'
 import { UsernameSettings } from './UsernameSettings'
 import { AvatarCropEditor } from './AvatarCropEditor'
 import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
+import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 
-const SECTIONS = [
-  { id: 'general', label: 'General', icon: SlidersHorizontal },
-  { id: 'account', label: 'Account', icon: User },
-  { id: 'personalization', label: 'Personalization', icon: Sparkles },
-  { id: 'interface', label: 'Interface', icon: Monitor },
-  { id: 'api', label: 'API keys', icon: KeyRound },
-  { id: 'data', label: 'Data controls', icon: Database },
-  { id: 'trash', label: 'Trash', icon: Trash2 },
-  { id: 'about', label: 'About', icon: Info },
-] as const
+const SECTION_CONFIG = {
+  general: { label: 'General', icon: SlidersHorizontal },
+  profile: { label: 'Profile', icon: User },
+  security: { label: 'Security', icon: ShieldCheck },
+  personalization: { label: 'Personalization', icon: Sparkles },
+  interface: { label: 'Interface', icon: Monitor },
+  api: { label: 'API keys', icon: KeyRound },
+  data: { label: 'Data controls', icon: Database },
+  trash: { label: 'Trash', icon: Trash2 },
+  about: { label: 'About', icon: Info },
+} as const satisfies Record<SettingsSectionId, { label: string; icon: typeof User }>
 
-type SectionId = (typeof SECTIONS)[number]['id']
+const SECTIONS = SETTINGS_SECTION_IDS.map((id) => ({ id, ...SECTION_CONFIG[id] }))
 
 interface Memory {
   id: string
@@ -145,8 +147,16 @@ function ThemePicker() {
   )
 }
 
-export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [section, setSection] = useState<SectionId>('general')
+export function SettingsModal({
+  open,
+  initialSection = 'general',
+  onClose,
+}: {
+  open: boolean
+  initialSection?: SettingsSectionId
+  onClose: () => void
+}) {
+  const [section, setSection] = useState<SettingsSectionId>(initialSection)
   const s = useSettings()
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
@@ -183,6 +193,10 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     refetchOnWindowFocus: 'always',
   })
   const deletedChats = deletedChatsQuery.data ?? []
+
+  useEffect(() => {
+    if (open) setSection(initialSection)
+  }, [initialSection, open])
 
   useEffect(() => {
     if (!open || !user) return
@@ -496,9 +510,9 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 </div>
               )}
 
-              {section === 'account' && (
+              {section === 'profile' && (
                 <div>
-                  <h2 className="text-base font-semibold">Account</h2>
+                  <h2 className="text-base font-semibold">Profile</h2>
                   <Separator className="my-3" />
                   <div className="flex flex-wrap items-center gap-4 py-3">
                     <div className="flex shrink-0 flex-col items-center">
@@ -542,7 +556,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                         <span className="font-medium">{user?.name}</span>
                         {user?.username && <span className="text-sm text-muted-foreground">@{user.username}</span>}
                       </div>
-                      <div className="text-sm text-muted-foreground">{user?.email}</div>
                     </div>
                     <div className="flex-1" />
                   </div>
@@ -590,6 +603,16 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                     {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
                     <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? 'Saving…' : 'Save profile'}</Button>
                   </div>
+                </div>
+              )}
+
+              {section === 'security' && (
+                <div>
+                  <h2 className="text-base font-semibold">Security</h2>
+                  <Separator className="my-3" />
+                  <Row label="Email" hint="Used to sign in to your account.">
+                    <span className="block max-w-64 truncate text-sm text-muted-foreground">{user?.email}</span>
+                  </Row>
                   <PasswordSettings />
                   <PasskeySettings />
                   <TwoFactorSettings />
