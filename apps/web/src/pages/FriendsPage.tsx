@@ -268,7 +268,6 @@ export function FriendsPage() {
           {user && <FriendsHandle username={user.username} />}
           <div>
             <h2 className="text-lg font-medium">Find your friends</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Search by name or username. Usage is shared after they accept.</p>
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
