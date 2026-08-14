@@ -556,13 +556,15 @@ export function SettingsModal({
                       {user?.username && <span className="truncate text-sm text-muted-foreground">@{user.username}</span>}
                     </div>
                     <div className="flex-1" />
+                    <div className="flex h-14 items-center">
+                      <UsernameSettings buttonOnly />
+                    </div>
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
                     <AvatarCropEditor imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
                     <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div>
                   </div>}
                   <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
-                  <UsernameSettings />
                   <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2">
                     {PROFILE_COLORS.map((color) => <button
                       key={color}

@@ -19,7 +19,7 @@ import {
   usernameChangeValidationError,
 } from './username-change'
 
-export function UsernameSettings() {
+export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean }) {
   const user = useAuth((state) => state.user)
   const replaceUser = useAuth((state) => state.replaceUser)
   const [open, setOpen] = useState(false)
@@ -65,14 +65,16 @@ export function UsernameSettings() {
     }
   }
 
+  const trigger = <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)}>Change username</Button>
+
   return <>
-    <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+    {buttonOnly ? trigger : <div className="flex min-w-0 items-center justify-between gap-4 py-3">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">Username</div>
         <div className="mt-0.5 text-xs text-muted-foreground">Friends can find you using @{user?.username}.</div>
       </div>
-      <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)}>Change username</Button>
-    </div>
+      {trigger}
+    </div>}
 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
