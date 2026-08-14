@@ -29,6 +29,7 @@ import {
   foregroundStyle,
   frame,
   lineLimit,
+  truncationMode,
 } from '@expo/ui/swift-ui/modifiers'
 import { StatusBar } from 'expo-status-bar'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
@@ -68,10 +69,12 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
   reduceTransparency: boolean
 }) {
   const label = `${name}${count ? `, ${count}` : ''}. Hide preview controls`
+  const controlMaxWidth = Platform.OS === 'ios' && Platform.isPad ? 360 : 230
+  const textMaxWidth = controlMaxWidth - 32
   if (Platform.OS === 'ios' && !reduceTransparency) {
     return (
       <View style={styles.metadataSlot}>
-        <SwiftUIHost colorScheme="dark" matchContents style={styles.metadataNativeHost}>
+        <SwiftUIHost colorScheme="dark" matchContents style={[styles.metadataNativeHost, { maxWidth: controlMaxWidth }]}>
           <SwiftUIButton
             onPress={onPress}
             modifiers={[
@@ -83,7 +86,12 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
             ]}
           >
             <SwiftUIVStack alignment="center" spacing={1}>
-              <SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'semibold' }), lineLimit(1)]}>{name}</SwiftUIText>
+              <SwiftUIText modifiers={[
+                font({ textStyle: 'subheadline', weight: 'semibold' }),
+                frame({ maxWidth: textMaxWidth }),
+                lineLimit(1),
+                truncationMode('middle'),
+              ]}>{name}</SwiftUIText>
               {count ? <SwiftUIText modifiers={[font({ textStyle: 'caption2' }), foregroundStyle('secondary'), lineLimit(1)]}>{count}</SwiftUIText> : null}
             </SwiftUIVStack>
           </SwiftUIButton>
@@ -450,7 +458,7 @@ const styles = StyleSheet.create({
   chrome: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'flex-start' },
   topBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16 },
   metadataSlot: { minWidth: 0, flex: 1, alignItems: 'center', justifyContent: 'center' },
-  metadataNativeHost: { maxWidth: '100%', minHeight: 44, justifyContent: 'center' },
+  metadataNativeHost: { minHeight: 44, justifyContent: 'center' },
   metadataGlass: { minWidth: 0, maxWidth: 520, minHeight: 44, flex: 1, borderRadius: 22, overflow: 'hidden' },
   metadataFallback: { backgroundColor: 'rgba(44,44,46,0.86)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
   metadataPressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
