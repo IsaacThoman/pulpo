@@ -10,6 +10,7 @@ import {
   Text,
   useWindowDimensions,
   View,
+  type GestureResponderEvent,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -56,6 +57,25 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
   reduceTransparency: boolean
 }) {
   const label = `${name}${count ? `, ${count}` : ''}. Hide preview controls`
+  const touchOrigin = useRef<{ x: number, y: number } | null>(null)
+  const touchDragged = useRef(false)
+  const handleGlassTouchStart = (event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.touches[0] ?? event.nativeEvent.changedTouches[0]
+    touchOrigin.current = touch ? { x: touch.pageX, y: touch.pageY } : null
+    touchDragged.current = false
+  }
+  const handleGlassTouchMove = (event: GestureResponderEvent) => {
+    const origin = touchOrigin.current
+    const touch = event.nativeEvent.touches[0] ?? event.nativeEvent.changedTouches[0]
+    if (!origin || !touch) return
+    if (Math.hypot(touch.pageX - origin.x, touch.pageY - origin.y) > 10) touchDragged.current = true
+  }
+  const handleGlassTouchEnd = () => {
+    const activate = !touchDragged.current
+    touchOrigin.current = null
+    touchDragged.current = false
+    if (activate) onPress()
+  }
   const content = (
     <View pointerEvents="none" style={styles.titleBlock}>
       <Text numberOfLines={1} style={styles.title}>{name}</Text>
@@ -73,7 +93,14 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
         <GlassView
           colorScheme="dark"
           glassEffectStyle="regular"
-          pointerEvents="none"
+          isInteractive
+          onTouchCancel={() => {
+            touchOrigin.current = null
+            touchDragged.current = false
+          }}
+          onTouchEnd={handleGlassTouchEnd}
+          onTouchMove={handleGlassTouchMove}
+          onTouchStart={handleGlassTouchStart}
           style={styles.metadataGlassBackground}
         />
         {content}
