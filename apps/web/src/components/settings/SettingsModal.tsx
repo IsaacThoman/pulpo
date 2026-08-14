@@ -514,7 +514,7 @@ export function SettingsModal({
                 <div>
                   <h2 className="text-base font-semibold">Profile</h2>
                   <Separator className="my-3" />
-                  <div className="flex flex-wrap items-center gap-4 py-3">
+                  <div className="flex flex-wrap items-start gap-4 py-3">
                     <div className="flex shrink-0 flex-col items-center">
                       <button
                         type="button"
@@ -551,11 +551,9 @@ export function SettingsModal({
                         event.currentTarget.value = ''
                       }}
                     />
-                    <div>
-                      <div className="flex flex-wrap items-baseline gap-x-2">
-                        <span className="font-medium">{user?.name}</span>
-                        {user?.username && <span className="text-sm text-muted-foreground">@{user.username}</span>}
-                      </div>
+                    <div className="flex h-14 min-w-0 flex-col justify-center">
+                      <span className="truncate font-medium">{user?.name}</span>
+                      {user?.username && <span className="truncate text-sm text-muted-foreground">@{user.username}</span>}
                     </div>
                     <div className="flex-1" />
                   </div>
