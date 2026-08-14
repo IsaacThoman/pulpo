@@ -10,15 +10,16 @@ export function mergePendingLocalMessages(
   if (!localMessages?.length) return serverMessages
   if (!serverMessages.length) {
     const streaming = new Set(streamingIds)
-    const assistants = localMessages.filter((message) =>
-      message.role === 'assistant'
-      && ((!message.done && streaming.has(message.id)) || Boolean(message.error)),
-    )
-    if (!assistants.length) return serverMessages
-    return assistants.flatMap((assistant) => {
-      const user = localMessages.find((message) => message.id === `${assistant.id}:input` && message.role === 'user')
-      return user ? [user, assistant] : [assistant]
-    })
+    const keepIds = new Set<string>()
+    for (const message of localMessages) {
+      if (message.role === 'user' && message.deliveryStatus === 'uploading') keepIds.add(message.id)
+      if (message.role !== 'assistant') continue
+      if ((!message.done && streaming.has(message.id)) || message.error) {
+        keepIds.add(message.id)
+        keepIds.add(`${message.id}:input`)
+      }
+    }
+    return localMessages.filter((message) => keepIds.has(message.id))
   }
 
   const serverIds = new Set(serverMessages.map((message) => message.id))
@@ -46,7 +47,8 @@ export function mergePendingLocalMessages(
   if (!pending.length) return serverMessages
 
   const hasLocalOnlyTurn = pending.some((message) =>
-    message.role === 'assistant' && (!message.done || Boolean(message.error)),
+    (message.role === 'assistant' && (!message.done || Boolean(message.error)))
+    || (message.role === 'user' && message.deliveryStatus === 'uploading'),
   )
   const lastServerId = serverMessages.at(-1)?.id
   const lastServerLocalIndex = lastServerId ? relevantLocalMessages.findIndex((message) => message.id === lastServerId) : -1

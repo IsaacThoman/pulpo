@@ -33,32 +33,19 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
 import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
-import { apiRequest } from '@/lib/api'
-import { cacheAttachmentBlob, downloadAttachment } from '@/lib/local-first/attachment-cache'
+import { downloadAttachment } from '@/lib/local-first/attachment-cache'
 import {
   collectImageFiles,
   collectUploadFiles,
-  isSupportedImageFile,
   isSupportedImageMime,
   nonImageAttachmentRestriction,
 } from '@/lib/attachments'
 import { useAuth } from '@/stores/auth'
 import { shouldSubmitComposerKey } from '@/components/chat/composer-keyboard'
-import { composerPrimaryAction, shouldQueueComposerMessage } from '@/components/chat/composer-queue'
+import { composerPrimaryAction } from '@/components/chat/composer-queue'
+import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy'
 import type { Attachment } from '@/lib/types'
-import { attachmentValidationError } from '@pulpo/client-core'
-
-interface PendingAttachment {
-  localId: string
-  id?: string
-  name: string
-  size: number
-  mimeType: string
-  previewUrl: string | null
-  status: 'uploading' | 'ready' | 'error'
-  error?: string
-  file?: File
-}
+import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 
 export interface ComposerMessageEdit {
   messageId: string
@@ -68,7 +55,7 @@ export interface ComposerMessageEdit {
 
 const EMPTY_QUEUE: never[] = []
 
-function downloadComposerAttachment(attachment: PendingAttachment): void {
+function downloadComposerAttachment(attachment: UploadRecord): void {
   if (attachment.file) {
     const url = URL.createObjectURL(attachment.file)
     const anchor = document.createElement('a')
@@ -108,7 +95,7 @@ export function Composer({
 }) {
   const navigate = useNavigate()
   const [value, setValue] = useState('')
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [attachmentIds, setAttachmentIds] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
@@ -117,13 +104,13 @@ export function Composer({
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const attachmentsRef = useRef(attachments)
-  const preservedDraftRef = useRef<{ value: string; attachments: PendingAttachment[] } | null>(null)
+  const attachmentIdsRef = useRef(attachmentIds)
+  const preservedDraftRef = useRef<{ value: string; attachmentIds: string[] } | null>(null)
+  const activeRecoveryIdRef = useRef<string | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
   const queueDragIdRef = useRef<string | null>(null)
-  attachmentsRef.current = attachments
+  attachmentIdsRef.current = attachmentIds
 
-  const sendMessage = useChat((s) => s.sendMessage)
   const streamingResponseId = useChat((s) => {
     if (!chatId) return null
     const chat = s.chats.find((item) => item.id === chatId)
@@ -137,11 +124,26 @@ export function Composer({
   const queuedMessages = useChat((s) => chatId
     ? s.chats.find((item) => item.id === chatId)?.queuedMessages ?? EMPTY_QUEUE
     : EMPTY_QUEUE)
-  const enqueueMessage = useChat((s) => s.enqueueMessage)
   const updateQueuedMessage = useChat((s) => s.updateQueuedMessage)
   const reorderQueuedMessage = useChat((s) => s.reorderQueuedMessage)
   const deleteQueuedMessage = useChat((s) => s.deleteQueuedMessage)
   const editUserMessage = useChat((s) => s.editUserMessage)
+  const uploads = useUploadOutbox((s) => s.uploads)
+  const addUploadFiles = useUploadOutbox((s) => s.addFiles)
+  const addExistingAttachments = useUploadOutbox((s) => s.addExistingAttachments)
+  const removeUpload = useUploadOutbox((s) => s.removeUpload)
+  const releaseDraftUploads = useUploadOutbox((s) => s.releaseDraftUploads)
+  const consumeUploads = useUploadOutbox((s) => s.consumeUploads)
+  const stageSubmission = useUploadOutbox((s) => s.stageSubmission)
+  const resumeSubmission = useUploadOutbox((s) => s.resumeSubmission)
+  const retryUpload = useUploadOutbox((s) => s.retryUpload)
+  const returnSubmissionToComposer = useUploadOutbox((s) => s.returnSubmissionToComposer)
+  const discardSubmission = useUploadOutbox((s) => s.discardSubmission)
+  const preserveComposerDraft = useUploadOutbox((s) => s.preserveComposerDraft)
+  const takePreservedComposerDraft = useUploadOutbox((s) => s.takePreservedComposerDraft)
+  const recovery = useUploadOutbox((s) => chatId
+    ? s.submissions.find((submission) => submission.chatId === chatId && submission.status === 'recovery') ?? null
+    : null)
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const setPresetChoice = useSettings((s) => s.setPresetChoice)
@@ -157,6 +159,7 @@ export function Composer({
 
   const [editAgentMode, setEditAgentMode] = useState(false)
   const activeAgentMode = messageEdit ? editAgentMode : agentModeEnabled
+  const attachments = attachmentIds.map((id) => uploads[id]).filter((item): item is UploadRecord => Boolean(item))
   const uploading = attachments.some((a) => a.status === 'uploading')
   const uploadFailed = attachments.some((a) => a.status === 'error')
   const hasNonImage = attachments.some((a) => !isSupportedImageMime(a.mimeType))
@@ -167,26 +170,31 @@ export function Composer({
     agentCapable,
   })
   const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
-  const hasDraft = value.trim().length > 0 || readyAttachments.length > 0
-  const canSend = Boolean(modelId) && !uploading && !uploadFailed && !attachmentRestriction && !submitting
-    && (value.trim().length > 0 || readyAttachments.length > 0)
+  const hasDraft = value.trim().length > 0 || attachments.length > 0
+  const editingExisting = Boolean(messageEdit || editingQueueId)
+  const canSend = canSubmitComposerDraft({
+    modelId,
+    hasText: value.trim().length > 0,
+    attachmentCount: attachments.length,
+    uploading,
+    uploadFailed,
+    attachmentRestricted: Boolean(attachmentRestriction),
+    submitting,
+    editingExisting,
+  })
 
   useEffect(() => {
     ref.current?.focus()
   }, [chatId])
 
   useEffect(() => {
-    onEditStateChange?.(Boolean(editingQueueId || messageEdit))
-  }, [editingQueueId, messageEdit, onEditStateChange])
+    onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
+  }, [editingQueueId, messageEdit, onEditStateChange, recovery])
 
   useEffect(() => () => {
-    for (const attachment of attachmentsRef.current) {
-      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
-    }
-    for (const attachment of preservedDraftRef.current?.attachments ?? []) {
-      if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
-    }
-  }, [])
+    releaseDraftUploads(attachmentIdsRef.current)
+    releaseDraftUploads(preservedDraftRef.current?.attachmentIds ?? [])
+  }, [releaseDraftUploads])
 
   const autosize = useCallback(() => {
     const el = ref.current
@@ -195,91 +203,20 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
 
-  const updateAttachment = useCallback((localId: string, update: (attachment: PendingAttachment) => PendingAttachment) => {
-    setAttachments((current) => current.map((item) => item.localId === localId ? update(item) : item))
-    const preserved = preservedDraftRef.current
-    if (preserved) {
-      preserved.attachments = preserved.attachments.map((item) => item.localId === localId ? update(item) : item)
-    }
-  }, [])
-
-  const cleanupAttachment = useCallback((attachment: PendingAttachment) => {
-    if (!attachment.id || !attachment.file) return
-    void apiRequest(`/api/attachments/${attachment.id}`, { method: 'DELETE' }).catch(() => undefined)
-  }, [])
-
   const removeAttachment = useCallback((localId: string) => {
-    setAttachments((current) => {
-      const target = current.find((item) => item.localId === localId)
-      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl)
-      if (target) cleanupAttachment(target)
-      return current.filter((item) => item.localId !== localId)
-    })
-  }, [cleanupAttachment])
+    setAttachmentIds((current) => current.filter((id) => id !== localId))
+    removeUpload(localId)
+  }, [removeUpload])
 
-  const uploadFiles = useCallback(async (incoming: File[]) => {
+  const uploadFiles = useCallback((incoming: File[]) => {
     if (!incoming.length) return
-    const staged: PendingAttachment[] = incoming.map((file) => ({
-      localId: crypto.randomUUID(),
-      name: file.name,
-      size: file.size,
-      mimeType: file.type || 'application/octet-stream',
-      previewUrl: isSupportedImageFile(file) ? URL.createObjectURL(file) : null,
-      status: 'uploading' as const,
-      file,
-    }))
-    setAttachments((current) => [...current, ...staged])
-
-    await Promise.all(staged.map(async (pending, index) => {
-      const file = incoming[index]!
-      try {
-        const validation = attachmentValidationError({
-          name: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          sizeBytes: file.size,
-        }, useAuth.getState().maxAttachmentBytes)
-        if (validation) throw new Error(validation)
-        const created = await apiRequest<{ attachment: { id: string }; uploadUrl: string; uploadHeaders: Record<string, string> }>('/api/attachments', {
-          method: 'POST',
-          body: {
-            chatId,
-            originalName: file.name,
-            mimeType: file.type || 'application/octet-stream',
-            sizeBytes: file.size,
-          },
-        })
-        const upload = await fetch(created.uploadUrl, {
-          method: 'PUT',
-          body: file,
-          headers: created.uploadHeaders,
-          credentials: created.uploadUrl.startsWith('/api/') ? 'include' : 'omit',
-        })
-        if (!upload.ok) throw new Error(`Upload failed (${upload.status})`)
-        const confirmed = await apiRequest<{ mimeType: string }>(`/api/attachments/${created.attachment.id}/confirm`, { method: 'POST' })
-        const mimeType = confirmed.mimeType
-        const userId = useAuth.getState().user?.id
-        if (userId && !temporary) {
-          await cacheAttachmentBlob(userId, {
-            id: created.attachment.id,
-            originalName: file.name,
-            mimeType,
-            sizeBytes: file.size,
-          }, file, useSettings.getState().localAttachmentCacheMb).catch(() => false)
-        }
-        updateAttachment(pending.localId, (item) => ({
-          ...item, id: created.attachment.id, mimeType, status: 'ready' as const,
-        }))
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Upload failed'
-        updateAttachment(pending.localId, (item) => ({ ...item, status: 'error' as const, error: message }))
-      }
-    }))
-
+    const ids = addUploadFiles(incoming, { chatId, temporary })
+    setAttachmentIds((current) => [...current, ...ids])
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [chatId, temporary, updateAttachment])
+  }, [addUploadFiles, chatId, temporary])
 
   const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
-    void uploadFiles(collectUploadFiles(list))
+    uploadFiles(collectUploadFiles(list))
   }, [uploadFiles])
 
   useEffect(() => {
@@ -320,10 +257,10 @@ export function Composer({
     }
   }, [addFiles])
 
-  const clearDraft = () => {
+  const clearDraft = (release = true) => {
+    if (release) releaseDraftUploads(attachmentIds)
     setValue('')
-    for (const attachment of attachments) if (attachment.previewUrl) URL.revokeObjectURL(attachment.previewUrl)
-    setAttachments([])
+    setAttachmentIds([])
     requestAnimationFrame(() => {
       if (ref.current) ref.current.style.height = 'auto'
     })
@@ -335,54 +272,65 @@ export function Composer({
     setEditingQueueId(null)
     activeMessageEditIdRef.current = null
     if (!preserved) return
-    const preservedIds = new Set(preserved.attachments.map((attachment) => attachment.localId))
-    for (const attachment of attachments) {
-      if (attachment.previewUrl && !preservedIds.has(attachment.localId)) URL.revokeObjectURL(attachment.previewUrl)
-    }
+    const preservedIds = new Set(preserved.attachmentIds)
+    releaseDraftUploads(attachmentIds.filter((id) => !preservedIds.has(id)))
     setValue(preserved.value)
-    setAttachments(preserved.attachments)
+    setAttachmentIds(preserved.attachmentIds)
     requestAnimationFrame(autosize)
-  }, [attachments, autosize])
+  }, [attachmentIds, autosize, releaseDraftUploads])
 
   useEffect(() => {
     if (!messageEdit || editingQueueId || activeMessageEditIdRef.current === messageEdit.messageId) return
-    preservedDraftRef.current = { value, attachments }
+    preservedDraftRef.current = { value, attachmentIds }
     activeMessageEditIdRef.current = messageEdit.messageId
     setValue(messageEdit.content)
     setEditAgentMode(agentModeEnabled)
     setQueueError(null)
-    setAttachments(messageEdit.attachments.map((attachment) => ({
-      localId: `sent:${messageEdit.messageId}:${attachment.id}`,
-      id: attachment.id,
-      name: attachment.name,
-      size: attachment.size,
-      mimeType: attachment.mimeType,
-      previewUrl: null,
-      status: 'ready' as const,
-    })))
+    setAttachmentIds(addExistingAttachments(messageEdit.attachments, { chatId, temporary }))
     requestAnimationFrame(() => {
       autosize()
       ref.current?.focus()
     })
-  }, [agentModeEnabled, attachments, autosize, editingQueueId, messageEdit, value])
+  }, [addExistingAttachments, agentModeEnabled, attachmentIds, autosize, chatId, editingQueueId, messageEdit, temporary, value])
 
   const cancelMessageEdit = useCallback(() => {
     if (!messageEdit) return
-    for (const attachment of attachments) cleanupAttachment(attachment)
     restorePreservedDraft()
     onMessageEditComplete?.('cancelled')
-  }, [attachments, cleanupAttachment, messageEdit, onMessageEditComplete, restorePreservedDraft])
+  }, [messageEdit, onMessageEditComplete, restorePreservedDraft])
 
   useEffect(() => {
     if (messageEdit || !activeMessageEditIdRef.current) return
-    for (const attachment of attachments) cleanupAttachment(attachment)
     restorePreservedDraft()
-  }, [attachments, cleanupAttachment, messageEdit, restorePreservedDraft])
+  }, [messageEdit, restorePreservedDraft])
 
   useEffect(() => {
     if (!editingQueueId || queuedMessages.some((message) => message.id === editingQueueId)) return
     restorePreservedDraft()
   }, [editingQueueId, queuedMessages, restorePreservedDraft])
+
+  useEffect(() => {
+    if (recovery && !activeRecoveryIdRef.current && !messageEdit && !editingQueueId) {
+      preserveComposerDraft(recovery.chatId, { value, attachmentIds })
+      activeRecoveryIdRef.current = recovery.id
+      setValue(recovery.content)
+      setAttachmentIds(recovery.attachmentIds)
+      setQueueError(null)
+      requestAnimationFrame(() => {
+        autosize()
+        ref.current?.focus()
+      })
+      return
+    }
+    if (recovery || !activeRecoveryIdRef.current) return
+    activeRecoveryIdRef.current = null
+    if (!chatId) return
+    const preserved = takePreservedComposerDraft(chatId)
+    if (!preserved) return
+    setValue(preserved.value)
+    setAttachmentIds(preserved.attachmentIds)
+    requestAnimationFrame(autosize)
+  }, [attachmentIds, autosize, chatId, editingQueueId, messageEdit, preserveComposerDraft, recovery, takePreservedComposerDraft, value])
 
   const queuePayload = () => readyAttachments.map((attachment) => ({
     id: attachment.id!,
@@ -395,7 +343,7 @@ export function Composer({
   const submit = async () => {
     const text = value.trim()
     if (!canSend) return
-    if (!text && readyAttachments.length === 0) return
+    if (!text && attachments.length === 0) return
     const payload = queuePayload()
     const queueInput = {
       input: text,
@@ -416,6 +364,7 @@ export function Composer({
           attachments: payload,
           agentMode: activeAgentMode && canUseAgent,
         })
+        consumeUploads(attachmentIds)
         restorePreservedDraft()
         onMessageEditComplete?.('saved')
       } catch (error) {
@@ -429,6 +378,7 @@ export function Composer({
       setSubmitting(true)
       try {
         await updateQueuedMessage(chatId, editingQueueId, { action: 'save_edit', ...queueInput }, payload)
+        consumeUploads(attachmentIds)
         restorePreservedDraft()
       } catch (error) {
         setQueueError(error instanceof Error ? error.message : 'Unable to update queued message')
@@ -437,21 +387,29 @@ export function Composer({
       }
       return
     }
-    if (chatId && shouldQueueComposerMessage(Boolean(streamingResponseId), queuedMessages.length)) {
-      setSubmitting(true)
-      try {
-        await enqueueMessage(chatId, queueInput, payload)
-        clearDraft()
-      } catch (error) {
-        setQueueError(error instanceof Error ? error.message : 'Unable to queue message')
-      } finally {
-        setSubmitting(false)
-      }
+    if (recovery) {
+      resumeSubmission(recovery.id, {
+        content: text,
+        modelId,
+        presetSelections: selections,
+        agentMode: activeAgentMode && canUseAgent,
+        attachmentIds,
+      })
+      clearDraft(false)
       return
     }
-    const targetChatId = sendMessage(chatId, text, modelId, payload, temporary, autoExpire)
-    if (!chatId && targetChatId && !temporary) navigate(`/c/${targetChatId}`)
-    clearDraft()
+    const staged = stageSubmission({
+      chatId,
+      content: text,
+      modelId,
+      presetSelections: selections,
+      agentMode: activeAgentMode && canUseAgent,
+      temporary,
+      autoExpire,
+      attachmentIds,
+    })
+    if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
+    clearDraft(false)
   }
 
   const beginQueueEdit = async (messageId: string) => {
@@ -471,22 +429,24 @@ export function Composer({
     if (editingQueueId) return
     const message = queuedMessages.find((item) => item.id === messageId)
     if (!message) return
+    if (message.pendingSubmissionId) {
+      returnSubmissionToComposer(message.pendingSubmissionId)
+      return
+    }
     setSubmitting(true)
     setQueueError(null)
     try {
       await updateQueuedMessage(chatId, messageId, { action: 'begin_edit' })
-      preservedDraftRef.current = { value, attachments }
+      preservedDraftRef.current = { value, attachmentIds }
       setEditingQueueId(messageId)
       setValue(message.content)
-      setAttachments(message.attachments.map((attachment) => ({
-        localId: `queued:${attachment.id}`,
+      setAttachmentIds(addExistingAttachments(message.attachments.map((attachment) => ({
         id: attachment.id,
         name: attachment.name,
         size: attachment.sizeBytes,
         mimeType: attachment.mimeType,
-        previewUrl: null,
-        status: 'ready' as const,
-      })))
+        type: isSupportedImageMime(attachment.mimeType) ? 'image' : 'file',
+      })), { chatId, temporary }))
       requestAnimationFrame(autosize)
     } catch (error) {
       setQueueError(error instanceof Error ? error.message : 'Unable to edit queued message')
@@ -497,6 +457,11 @@ export function Composer({
 
   const removeQueuedMessage = async (messageId: string) => {
     if (!chatId || submitting) return
+    const message = queuedMessages.find((item) => item.id === messageId)
+    if (message?.pendingSubmissionId) {
+      discardSubmission(message.pendingSubmissionId)
+      return
+    }
     setSubmitting(true)
     setQueueError(null)
     try {
@@ -558,7 +523,7 @@ export function Composer({
     // Keep normal text paste when the clipboard also has plain text.
     const text = event.clipboardData?.getData('text/plain') ?? ''
     if (!text.trim()) event.preventDefault()
-    void uploadFiles(files)
+    uploadFiles(files)
   }
 
   return (
@@ -593,6 +558,34 @@ export function Composer({
           )}
         </div>
       )}
+      {recovery && (
+        <div className={cn(
+          'flex items-center gap-2 rounded-t-2xl border border-b-0 px-3 py-2 text-sm shadow-sm',
+          uploadFailed || recovery.recoveryError ? 'border-destructive/30 bg-destructive/5' : 'bg-card',
+        )}>
+          {uploadFailed || recovery.recoveryError
+            ? <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+            : <Pencil className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
+          <span className="min-w-0 flex-1">
+            <span className="font-medium">{uploadFailed || recovery.recoveryError ? 'Message needs attention.' : 'Editing pending message.'}</span>{' '}
+            <span className="text-muted-foreground">
+              {recovery.recoveryError
+                ?? (uploadFailed
+                  ? 'Retry or remove the failed upload to continue. Later messages will wait.'
+                  : uploading
+                    ? 'You can resend now; delivery will still wait for its files. Later messages remain queued.'
+                    : 'Resend or discard this message to let later messages continue.')}
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => discardSubmission(recovery.id)}
+            className="shrink-0 cursor-pointer text-xs font-medium text-destructive hover:underline"
+          >
+            Discard
+          </button>
+        </div>
+      )}
       {messageEdit && (
         <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 py-2 text-sm shadow-sm">
           <Pencil className="size-3.5 text-muted-foreground" />
@@ -615,7 +608,11 @@ export function Composer({
           {queuedMessages.map((message) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
-            const canReorder = queuedMessages.length > 1 && !submitting && message.status !== 'dispatching'
+            const hasPendingOutboxItem = queuedMessages.some((item) => Boolean(item.pendingSubmissionId))
+            const canReorder = queuedMessages.length > 1
+              && !hasPendingOutboxItem
+              && !submitting
+              && message.status !== 'dispatching'
             const isDragging = queueDragId === message.id
             const showLineBefore = queueDrop?.id === message.id && queueDrop.edge === 'before' && !isDragging
             const showLineAfter = queueDrop?.id === message.id && queueDrop.edge === 'after' && !isDragging
@@ -651,16 +648,38 @@ export function Composer({
                 )}
                 <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
-                    {editing
-                      ? 'Editing queued message…'
-                      : `${message.content || message.attachments.map((attachment) => attachment.name).join(', ')}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
-                  </p>
-                  {message.attachments.length > 0 && message.content && !editing && (
-                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                      <Paperclip className="size-3" />
-                      {message.attachments.map((attachment) => attachment.name).join(', ')}
+                  {(editing || message.content) && (
+                    <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
+                      {editing
+                        ? 'Editing queued message…'
+                        : `${message.content}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
                     </p>
+                  )}
+                  {message.attachments.length > 0 && !editing && (
+                    <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+                      {message.attachments.map((attachment) => {
+                        const upload = attachment.localUploadId ? uploads[attachment.localUploadId] : undefined
+                        const uploadStatus = upload?.status
+                        return (
+                          <span
+                            key={attachment.localUploadId ?? attachment.id}
+                            className="flex min-w-0 items-center gap-1"
+                            role={uploadStatus === 'uploading' ? 'status' : undefined}
+                            aria-label={uploadStatus === 'uploading' ? `Uploading ${attachment.name}` : undefined}
+                            title={attachment.name}
+                          >
+                            {uploadStatus === 'uploading' ? (
+                              <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+                            ) : uploadStatus === 'error' ? (
+                              <AlertCircle className="size-3 shrink-0 text-destructive" aria-hidden="true" />
+                            ) : (
+                              <Paperclip className="size-3 shrink-0" aria-hidden="true" />
+                            )}
+                            <span className="truncate">{attachment.name}</span>
+                          </span>
+                        )
+                      })}
+                    </div>
                   )}
                   {message.error && <p role="alert" className="truncate text-xs text-destructive">{message.error}</p>}
                 </div>
@@ -693,7 +712,7 @@ export function Composer({
       <div
         className={cn(
           'relative rounded-2xl border bg-card shadow-sm transition-[background-color,box-shadow,border-color] duration-200 focus-within:shadow-md',
-          (queuedMessages.length > 0 || messageEdit) && '-mt-px rounded-t-xl',
+          (queuedMessages.length > 0 || messageEdit || recovery) && '-mt-px rounded-t-xl',
           temporary && '!border-violet-500/50 bg-violet-100/80 dark:!border-violet-600/50 dark:bg-violet-950/60',
           temporary && 'border-dashed',
         )}
@@ -712,6 +731,9 @@ export function Composer({
                 uploading={attachment.status === 'uploading'}
                 error={attachment.status === 'error' ? attachment.error : null}
                 onDownload={() => downloadComposerAttachment(attachment)}
+                onRetry={attachment.status === 'error' && attachment.file
+                  ? () => retryUpload(attachment.localId)
+                  : undefined}
                 onRemove={() => removeAttachment(attachment.localId)}
               />
             ))}
@@ -767,7 +789,7 @@ export function Composer({
                 className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label="Attach files"
               >
-                {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4.5" />}
+                <Plus className="size-4.5" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top">Attach files</TooltipContent>

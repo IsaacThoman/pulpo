@@ -77,6 +77,49 @@ beforeEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe('chat queue store', () => {
+  it('preserves a local upload queue item across a stale server detail', () => {
+    const pendingId = '00000000-0000-4000-8000-000000000099'
+    useChat.getState().stagePendingQueuedMessage({
+      chatId,
+      responseId: pendingId,
+      content: 'waiting for upload',
+      modelId: 'test-model',
+      presetSelections: { effort: 'high' },
+      agentMode: true,
+      attachments: [{
+        id: 'local:file', name: 'file.zip', mimeType: 'application/zip', type: 'file',
+        size: 42, localUploadId: 'local-file',
+      }],
+      temporary: false,
+      autoExpire: false,
+    })
+
+    useChat.getState().setDetailedChat({
+      id: chatId,
+      title: 'Queue',
+      modelId: 'test-model',
+      pinned: false,
+      folderId: null,
+      createdAt,
+      updatedAt: createdAt,
+      activeResponseId: null,
+      activeBranchLeafId: null,
+      responses: [],
+      queuedMessages: [],
+    })
+
+    expect(useChat.getState().chats[0]?.queuedMessages).toEqual([
+      expect.objectContaining({
+        id: pendingId,
+        pendingSubmissionId: pendingId,
+        presetSelections: { effort: 'high' },
+        agentMode: true,
+        attachments: [expect.objectContaining({ localUploadId: 'local-file' })],
+      }),
+    ])
+    useChat.getState().removePendingMessage(chatId, pendingId)
+  })
+
   it('optimistically appends and reconciles a server queued message', async () => {
     const pending = useChat.getState().enqueueMessage(chatId, {
       input: 'queued prompt', modelId: 'test-model', presetSelections: {}, attachmentIds: [], agentMode: false,

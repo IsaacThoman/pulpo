@@ -1,4 +1,8 @@
-import type { ChatPreset, QueuedMessage } from '@pulpo/contracts'
+import type {
+  ChatPreset,
+  QueuedMessage as ServerQueuedMessage,
+  QueuedMessageAttachment as ServerQueuedMessageAttachment,
+} from '@pulpo/contracts'
 import type { CatalogIconReference } from '@/lib/catalog-icons'
 
 export type { ChatPreset, ChatPresetAction, ChatPresetChoice, ChatPresetIcon } from '@pulpo/contracts'
@@ -38,6 +42,19 @@ export interface Attachment {
   mimeType: string
   type: 'image' | 'file'
   size: number
+  /** Client-only reference used while an attachment is still owned by the upload outbox. */
+  localUploadId?: string
+}
+
+export type QueuedMessageAttachment = ServerQueuedMessageAttachment & {
+  /** Client-only reference while a queued attachment is still uploading. */
+  localUploadId?: string
+}
+
+export type QueuedMessage = Omit<ServerQueuedMessage, 'attachments'> & {
+  attachments: QueuedMessageAttachment[]
+  /** Client-only link to an outbox submission that has not reached the queue API. */
+  pendingSubmissionId?: string
 }
 
 export interface Message {
@@ -54,6 +71,9 @@ export interface Message {
   /** Selected preset choice ids keyed by preset id. */
   presetSelections?: Record<string, string>
   attachments?: Attachment[]
+  /** Client-only state for a visually sent message that has not reached the server yet. */
+  deliveryStatus?: 'uploading'
+  pendingSubmissionId?: string
   branch?: { ids: string[]; index: number }
   error?: string
   outputItems?: unknown[]
@@ -77,6 +97,8 @@ export interface Chat {
   expiresAt: number | null
   expired: boolean
   shareId?: string
+  /** Client-only chat created before its first response is persisted. */
+  provisional?: boolean
 }
 
 export interface Folder {
