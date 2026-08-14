@@ -30,6 +30,7 @@
     "workspace-controller:build": "npm run build -w @pulpo/workspace-controller",
     "workspace-controller:image": "docker build --file infra/workspace-controller/Dockerfile --tag pulpo-workspace-controller:test .",
     "local:preview:init": "bash ./scripts/local-preview.sh init",
+    "local:preview:refresh": "bash ./scripts/local-preview.sh refresh",
     "local:preview:reset": "bash ./scripts/local-preview.sh reset",
     "preview": "npm run preview -w @pulpo/web"
   },
