@@ -1131,8 +1131,13 @@ export function Sidebar({
             <button
               className="flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
             >
-              <span className="flex size-8 shrink-0 items-center justify-center">
+              <span className="relative flex size-8 shrink-0 items-center justify-center">
                 <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[11px]" />
+                {!sidebarPins.friends && Boolean(pendingFriendsQuery.data?.count) && (
+                  <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">
+                    {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
+                  </span>
+                )}
               </span>
               <div
                 className={cn(
