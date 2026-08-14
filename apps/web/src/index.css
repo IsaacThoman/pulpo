@@ -148,6 +148,14 @@ body {
   background: transparent;
 }
 
+.settings-section-nav {
+  scrollbar-width: none;
+}
+
+.settings-section-nav::-webkit-scrollbar {
+  display: none;
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(100%);

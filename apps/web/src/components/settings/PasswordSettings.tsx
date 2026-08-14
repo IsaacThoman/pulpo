@@ -70,7 +70,7 @@ export function PasswordSettings() {
   const unchangedPassword = Boolean(values.newPassword && values.newPassword === values.currentPassword)
 
   return <>
-    <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+    <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">Password</div>
         <div className="mt-0.5 text-xs text-muted-foreground">Update the password used to sign in to your account.</div>
