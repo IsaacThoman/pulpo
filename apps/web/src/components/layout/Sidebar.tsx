@@ -1142,7 +1142,7 @@ export function Sidebar({
                 )}
               >
                 <div className="truncate text-sm font-medium">{user?.name ?? 'Signed out'}</div>
-                <div className="truncate text-xs text-muted-foreground">{user?.email ?? ''}</div>
+                <div className="truncate text-xs text-muted-foreground">{user?.username ? `@${user.username}` : ''}</div>
               </div>
               {!sidebarPins.friends && Boolean(pendingFriendsQuery.data?.count) && (
                 <span className={cn(
