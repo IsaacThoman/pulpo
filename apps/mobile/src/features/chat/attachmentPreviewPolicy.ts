@@ -5,6 +5,33 @@ export interface PreviewAttachment {
   kind: 'image' | 'file'
 }
 
+export interface AttachmentPreviewFrame {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export function fittedFullscreenImageFrame(
+  viewportWidth: number,
+  viewportHeight: number,
+  imageWidth: number,
+  imageHeight: number,
+): AttachmentPreviewFrame {
+  const safeViewportWidth = Math.max(1, viewportWidth)
+  const safeViewportHeight = Math.max(1, viewportHeight)
+  const safeImageWidth = Math.max(1, imageWidth)
+  const safeImageHeight = Math.max(1, imageHeight)
+  const imageRatio = safeImageWidth / safeImageHeight
+  const viewportRatio = safeViewportWidth / safeViewportHeight
+  if (imageRatio >= viewportRatio) {
+    const height = safeViewportWidth / imageRatio
+    return { x: 0, y: (safeViewportHeight - height) / 2, width: safeViewportWidth, height }
+  }
+  const width = safeViewportHeight * imageRatio
+  return { x: (safeViewportWidth - width) / 2, y: 0, width, height: safeViewportHeight }
+}
+
 export function imagePreviewGroup<T extends PreviewAttachment>(
   attachments: readonly T[],
   selectedId: string,

@@ -1,5 +1,5 @@
 import { Platform } from 'react-native'
-import PulpoAttachmentPreview from '../../modules/pulpo-attachment-preview'
+import PulpoAttachmentPreview, { type PulpoImageTransitionFrame } from '../../modules/pulpo-attachment-preview'
 
 export type AttachmentPreviewErrorCode =
   | 'ERR_ATTACHMENT_PREVIEW_BUSY'
@@ -18,6 +18,23 @@ export class AttachmentPreviewError extends Error {
 }
 
 export const supportsAttachmentPreview = Platform.OS === 'ios' && PulpoAttachmentPreview !== null
+export const supportsNativeImageTransition = Platform.OS === 'ios'
+  && typeof PulpoAttachmentPreview?.animateImageTransition === 'function'
+
+export async function animateImageTransition(
+  uri: string,
+  fromFrame: PulpoImageTransitionFrame,
+  toFrame: PulpoImageTransitionFrame,
+  opening: boolean,
+): Promise<boolean> {
+  if (!supportsNativeImageTransition || !PulpoAttachmentPreview) return false
+  try {
+    await PulpoAttachmentPreview.animateImageTransition(uri, fromFrame, toFrame, opening)
+    return true
+  } catch {
+    return false
+  }
+}
 
 export async function previewFile(uri: string, title: string): Promise<void> {
   if (!PulpoAttachmentPreview) {

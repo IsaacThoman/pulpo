@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -44,10 +44,20 @@ import Reanimated, {
 import { RefreshCw } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { GlassIconButton } from './GlassIconButton'
+import { fittedFullscreenImageFrame, type AttachmentPreviewFrame } from '../features/chat/attachmentPreviewPolicy'
+import { animateImageTransition, supportsNativeImageTransition } from '../native/attachmentPreview'
 
 export interface AttachmentImagePreviewItem {
   id: string
   name: string
+  uri?: string
+}
+
+export interface AttachmentImageTransitionOrigin extends AttachmentPreviewFrame {
+  cornerRadius: number
+  imageHeight: number
+  imageWidth: number
+  itemId: string
   uri?: string
 }
 
@@ -56,6 +66,7 @@ interface AttachmentImageViewerProps {
   items: AttachmentImagePreviewItem[]
   onClose: () => void
   onShare: (item: AttachmentImagePreviewItem) => void
+  origin?: AttachmentImageTransitionOrigin
   reduceMotion?: boolean
   reduceTransparency?: boolean
   resolveUri: (item: AttachmentImagePreviewItem) => Promise<string>
@@ -124,6 +135,7 @@ function ZoomableImage({
   item,
   onChromeToggle,
   onDismiss,
+  onResolved,
   onZoomChange,
   reduceMotion,
   resolveUri,
@@ -133,6 +145,7 @@ function ZoomableImage({
   item: AttachmentImagePreviewItem
   onChromeToggle: () => void
   onDismiss: () => void
+  onResolved: (itemId: string, uri: string) => void
   onZoomChange: (zoomed: boolean) => void
   reduceMotion: boolean
   resolveUri: (item: AttachmentImagePreviewItem) => Promise<string>
@@ -283,6 +296,7 @@ function ZoomableImage({
                   fittedHeight.value = height
                   fittedWidth.value = height * sourceRatio
                 }
+                onResolved(item.id, uri)
                 setLoading(false)
               }}
               source={{ uri }}
@@ -315,6 +329,7 @@ export function AttachmentImageViewer({
   items,
   onClose,
   onShare,
+  origin,
   reduceMotion = false,
   reduceTransparency = false,
   resolveUri,
@@ -324,16 +339,63 @@ export function AttachmentImageViewer({
   const insets = useSafeAreaInsets()
   const [index, setIndex] = useState(initialIndex)
   const [chromeVisible, setChromeVisible] = useState(true)
+  const [presentationReady, setPresentationReady] = useState(reduceMotion)
   const [zoomed, setZoomed] = useState(false)
   const listRef = useRef<FlatList<AttachmentImagePreviewItem>>(null)
+  const closingRef = useRef(false)
+  const resolvedUrisRef = useRef(new Map<string, string>())
   const chromeProgress = useSharedValue(1)
+  const presentationProgress = useSharedValue(reduceMotion ? 1 : 0)
+  const destinationFrame = useMemo(() => fittedFullscreenImageFrame(
+    width,
+    height,
+    origin?.imageWidth ?? origin?.width ?? width,
+    origin?.imageHeight ?? origin?.height ?? height,
+  ), [height, origin?.height, origin?.imageHeight, origin?.imageWidth, origin?.width, width])
+
+  const nativeFromFrame = useMemo(() => origin ? {
+    x: origin.x,
+    y: origin.y,
+    width: origin.width,
+    height: origin.height,
+    cornerRadius: origin.cornerRadius,
+  } : undefined, [origin])
+  const nativeToFrame = useMemo(() => ({
+    ...destinationFrame,
+    cornerRadius: 0,
+  }), [destinationFrame])
 
   useEffect(() => {
     if (!visible) return
+    closingRef.current = false
+    setPresentationReady(reduceMotion)
     setIndex(Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1)))
     setChromeVisible(true)
     setZoomed(false)
-  }, [initialIndex, items.length, visible])
+  }, [initialIndex, items.length, reduceMotion, visible])
+
+  useEffect(() => {
+    if (!visible) return
+    presentationProgress.value = reduceMotion ? 1 : 0
+    if (reduceMotion) return
+    presentationProgress.value = withTiming(1, { duration: 420 })
+    if (!supportsNativeImageTransition || !origin?.uri || !nativeFromFrame) {
+      const readyTimer = setTimeout(() => setPresentationReady(true), 420)
+      return () => clearTimeout(readyTimer)
+    }
+    let cancelled = false
+    const frame = requestAnimationFrame(() => {
+      void (async () => {
+        const animated = await animateImageTransition(origin.uri!, nativeFromFrame, nativeToFrame, true)
+        if (!animated) await new Promise((resolve) => setTimeout(resolve, 420))
+        if (!cancelled) setPresentationReady(true)
+      })()
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+    }
+  }, [nativeFromFrame, nativeToFrame, origin?.uri, presentationProgress, reduceMotion, visible])
 
   useEffect(() => {
     if (!visible) return
@@ -371,61 +433,95 @@ export function AttachmentImageViewer({
       offset: event.nativeEvent.layout.width * index,
     })
   }, [index])
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return
+    closingRef.current = true
+    setChromeVisible(false)
+    if (reduceMotion) {
+      onClose()
+      return
+    }
+    presentationProgress.value = withTiming(0, { duration: 420 })
+    const transitionUri = current?.id === origin?.itemId
+      ? resolvedUrisRef.current.get(current.id) ?? origin.uri
+      : undefined
+    if (supportsNativeImageTransition && transitionUri && nativeFromFrame) {
+      void (async () => {
+        const animated = await animateImageTransition(transitionUri, nativeFromFrame, nativeToFrame, false)
+        if (!animated) await new Promise((resolve) => setTimeout(resolve, 420))
+        onClose()
+      })()
+      return
+    }
+    setTimeout(onClose, 420)
+  }, [current?.id, nativeFromFrame, nativeToFrame, onClose, origin?.itemId, origin?.uri, presentationProgress, reduceMotion])
   const renderItem = useCallback(({ item }: { item: AttachmentImagePreviewItem }) => (
     <ZoomableImage
       height={height}
       item={item}
       onChromeToggle={() => setChromeVisible((value) => !value)}
-      onDismiss={onClose}
+      onDismiss={requestClose}
+      onResolved={(itemId, uri) => resolvedUrisRef.current.set(itemId, uri)}
       onZoomChange={setZoomed}
       reduceMotion={reduceMotion}
       resolveUri={resolveUri}
       width={width}
     />
-  ), [height, onClose, reduceMotion, resolveUri, width])
+  ), [height, reduceMotion, requestClose, resolveUri, width])
   const chromeStyle = useAnimatedStyle(() => ({
-    opacity: chromeProgress.value,
+    opacity: chromeProgress.value * interpolate(presentationProgress.value, [0, 0.72, 1], [0, 0, 1]),
     transform: [{ translateY: interpolate(chromeProgress.value, [0, 1], [-8, 0]) }],
+  }))
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: presentationProgress.value,
+  }))
+  const galleryStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(presentationProgress.value, [0, 0.76, 1], [0, 0, 1]),
+    transform: [{ scale: interpolate(presentationProgress.value, [0, 1], [0.985, 1]) }],
   }))
   const chromeTop = Math.max(insets.top, 16)
 
   if (!items.length) return null
   return (
     <Modal
-      animationType={reduceMotion ? 'none' : 'fade'}
-      onRequestClose={onClose}
-      presentationStyle="fullScreen"
+      animationType="none"
+      onRequestClose={requestClose}
+      presentationStyle="overFullScreen"
       statusBarTranslucent
       supportedOrientations={Platform.OS === 'ios' && Platform.isPad
         ? ['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']
         : ['portrait']}
+      transparent
       visible={visible}
     >
       <View accessibilityViewIsModal style={styles.root}>
         <StatusBar hidden style="light" />
-        <FlatList
-          key={`${Math.round(width)}x${Math.round(height)}`}
-          data={items}
-          decelerationRate="fast"
-          getItemLayout={getItemLayout}
-          horizontal
-          initialNumToRender={items.length}
-          keyExtractor={(item) => item.id}
-          onLayout={handleListLayout}
-          onMomentumScrollEnd={handleScrollEnd}
-          pagingEnabled
-          renderItem={renderItem}
-          scrollEnabled={!zoomed}
-          showsHorizontalScrollIndicator={false}
-          windowSize={3}
-          ref={listRef}
-        />
+        <Reanimated.View pointerEvents="none" style={[styles.backdrop, backdropStyle]} />
+        <Reanimated.View pointerEvents={presentationReady ? 'auto' : 'none'} style={[styles.gallery, galleryStyle]}>
+          <FlatList
+            key={`${Math.round(width)}x${Math.round(height)}`}
+            data={items}
+            decelerationRate="fast"
+            getItemLayout={getItemLayout}
+            horizontal
+            initialNumToRender={items.length}
+            keyExtractor={(item) => item.id}
+            onLayout={handleListLayout}
+            onMomentumScrollEnd={handleScrollEnd}
+            pagingEnabled
+            renderItem={renderItem}
+            scrollEnabled={!zoomed}
+            showsHorizontalScrollIndicator={false}
+            windowSize={3}
+            ref={listRef}
+          />
+        </Reanimated.View>
         <Reanimated.View
-          pointerEvents={chromeVisible ? 'box-none' : 'none'}
+          pointerEvents={presentationReady && chromeVisible ? 'box-none' : 'none'}
           style={[styles.chrome, { paddingTop: chromeTop }, chromeStyle]}
         >
           <View style={styles.topBar}>
-            <GlassIconButton colorScheme="dark" icon="xmark" label="Close image preview" onPress={onClose} />
+            <GlassIconButton colorScheme="dark" icon="xmark" label="Close image preview" onPress={requestClose} />
             <GalleryMetadata
               count={items.length > 1 ? `${index + 1} of ${items.length}` : undefined}
               name={current?.name ?? 'Image'}
@@ -446,7 +542,9 @@ export function AttachmentImageViewer({
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000000' },
+  root: { flex: 1, backgroundColor: 'transparent' },
+  backdrop: { ...StyleSheet.absoluteFill, backgroundColor: '#000000' },
+  gallery: { flex: 1 },
   imageCanvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fullImage: { width: '100%', height: '100%' },
   imageState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 10 },

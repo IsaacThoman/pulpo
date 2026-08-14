@@ -176,7 +176,7 @@ import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
-import { AttachmentImageViewer, type AttachmentImagePreviewItem } from '../components/AttachmentImageViewer';
+import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { timeAgo } from '../features/chat/format';
 import {
   MAX_COMPOSER_ATTACHMENTS,
@@ -705,10 +705,34 @@ function attachmentTint(kind: AttachmentVisualKind): string {
 function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove, onRetry }: {
   attachments: ComposerAttachment[];
   onPreviewFile: (attachment: ComposerAttachment) => void;
-  onPreviewImage: (index: number) => void;
+  onPreviewImage: (index: number, origin?: AttachmentImageTransitionOrigin) => void;
   onRemove: (localId: string) => void;
   onRetry: (localId: string) => void;
 }) {
+  const imageRefs = useRef(new Map<string, View>());
+  const imageSources = useRef(new Map<string, { height: number; uri: string; width: number }>());
+  const previewImage = useCallback((index: number, attachment: ComposerAttachment) => {
+    const view = imageRefs.current.get(attachment.localId);
+    const source = imageSources.current.get(attachment.localId);
+    if (!view || !source) {
+      onPreviewImage(index);
+      return;
+    }
+    view.measureInWindow((x, y, width, height) => {
+      if (width <= 0 || height <= 0) {
+        onPreviewImage(index);
+        return;
+      }
+      onPreviewImage(index, {
+        x, y, width, height,
+        cornerRadius: 14,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        uri: source.uri,
+      });
+    });
+  }, [onPreviewImage]);
   if (attachments.length === 0) return null;
   return (
     <ScrollView
@@ -723,7 +747,11 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
           <Pressable
             accessibilityLabel={`Preview ${attachment.name}`}
             accessibilityRole="button"
-            onPress={() => attachment.kind === 'image' ? onPreviewImage(index) : onPreviewFile(attachment)}
+            onPress={() => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment)}
+            ref={attachment.kind === 'image' ? (view) => {
+              if (view) imageRefs.current.set(attachment.localId, view);
+              else imageRefs.current.delete(attachment.localId);
+            } : undefined}
             style={({ pressed }) => [
               attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment,
               attachment.state === 'failed' && styles.failedAttachment,
@@ -732,8 +760,20 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
           >
             {attachment.kind === 'image' ? (
               attachment.uri
-                ? <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.attachmentImage} />
-                : <ResolvedAttachmentImage attachment={attachment} variant="composer" />
+                ? <Image
+                    accessibilityLabel={attachment.name}
+                    onLoad={(event) => {
+                      const { height, width } = event.nativeEvent.source;
+                      imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
+                    }}
+                    source={{ uri: attachment.uri }}
+                    style={styles.attachmentImage}
+                  />
+                : <ResolvedAttachmentImage
+                    attachment={attachment}
+                    onResolved={(source) => imageSources.current.set(attachment.localId, source)}
+                    variant="composer"
+                  />
             ) : (
               <>
                 <View style={styles.fileAttachmentIcon}>
@@ -783,20 +823,44 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
   attachment: Attachment;
   group: Attachment[];
   onPreviewFile: (attachment: Attachment) => void;
-  onPreviewImages: (attachments: Attachment[], selected: Attachment) => void;
+  onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
 }) {
+  const imageRef = useRef<View>(null);
+  const imageSourceRef = useRef<{ height: number; uri: string; width: number } | undefined>(undefined);
   const uploading = attachment.state === 'local' || attachment.state === 'uploading';
   const failed = attachment.state === 'failed';
+  const previewImage = useCallback(() => {
+    const source = imageSourceRef.current;
+    if (!imageRef.current || !source) {
+      onPreviewImages(group, attachment);
+      return;
+    }
+    imageRef.current.measureInWindow((x, y, width, height) => {
+      if (width <= 0 || height <= 0) {
+        onPreviewImages(group, attachment);
+        return;
+      }
+      onPreviewImages(group, attachment, {
+        x, y, width, height,
+        cornerRadius: 16,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        uri: source.uri,
+      });
+    });
+  }, [attachment, group, onPreviewImages]);
   if (attachment.kind === 'image') {
     return (
       <Pressable
         accessibilityLabel={`Preview ${attachment.name}${uploading ? ', uploading' : failed ? ', upload failed' : ''}`}
         accessibilityRole="button"
-        onPress={() => onPreviewImages(group, attachment)}
+        onPress={previewImage}
+        ref={imageRef}
         style={({ pressed }) => pressed && styles.attachmentPressed}
       >
         <View>
-          <ResolvedAttachmentImage attachment={attachment} variant="message" />
+          <ResolvedAttachmentImage attachment={attachment} onResolved={(source) => { imageSourceRef.current = source; }} variant="message" />
           {uploading ? (
             <View style={styles.sentAttachmentStatusOverlay}>
               <ActivityIndicator color="#ffffff" size="small" />
@@ -2285,7 +2349,11 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   );
 }
 
-function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachment; variant: 'message' | 'preview' | 'composer' }) {
+function ResolvedAttachmentImage({ attachment, onResolved, variant }: {
+  attachment: Attachment;
+  onResolved?: (source: { height: number; uri: string; width: number }) => void;
+  variant: 'message' | 'preview' | 'composer';
+}) {
   const [uri, setUri] = useState(attachment.uri);
   const [failed, setFailed] = useState(false);
   const [previewSize, setPreviewSize] = useState(() => fitAttachmentPreviewSize(0, 0));
@@ -2322,10 +2390,11 @@ function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachme
   if (uri) return (
     <Image
       accessibilityLabel={attachment.name}
-      onLoad={variant === 'preview' ? (event) => {
+      onLoad={(event) => {
         const { width, height } = event.nativeEvent.source;
-        setPreviewSize(fitAttachmentPreviewSize(width, height));
-      } : undefined}
+        onResolved?.({ height, uri, width });
+        if (variant === 'preview') setPreviewSize(fitAttachmentPreviewSize(width, height));
+      }}
       resizeMode={variant === 'preview' ? 'contain' : 'cover'}
       source={{ uri }}
       style={style}
@@ -2620,7 +2689,7 @@ const MessageRow = memo(function MessageRow({
   model: Model;
   onEdit: (message: Message, content: string) => void;
   onPreviewFile: (attachment: Attachment) => void;
-  onPreviewImages: (attachments: Attachment[], selected: Attachment) => void;
+  onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   editingLocked?: boolean;
@@ -3025,7 +3094,11 @@ function ChatView({
       return next;
     });
   }, []);
-  const [imageViewer, setImageViewer] = useState<{ attachments: Attachment[]; initialIndex: number } | null>(null);
+  const [imageViewer, setImageViewer] = useState<{
+    attachments: Attachment[];
+    initialIndex: number;
+    origin?: AttachmentImageTransitionOrigin;
+  } | null>(null);
   const [messageEdit, setMessageEdit] = useState<MessageEditSession | null>(null);
   const preservedComposerRef = useRef<{
     input: string;
@@ -3230,11 +3303,17 @@ function ChatView({
     void onEdit(message, content);
   }, [beginMessageEdit, onEdit]);
 
-  const openImageViewer = useCallback((group: Attachment[], selected: Attachment) => {
+  const openImageViewer = useCallback((
+    group: Attachment[],
+    selected: Attachment,
+    origin?: AttachmentImageTransitionOrigin,
+  ) => {
     const preview = imagePreviewGroup(group, selected.id);
     if (!preview) return;
-    Keyboard.dismiss();
-    setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex });
+    // Keep the source thumbnail stationary until the native zoom has finished.
+    if (origin) setTimeout(Keyboard.dismiss, 440);
+    else Keyboard.dismiss();
+    setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex, origin });
     Haptics.selectionAsync();
   }, []);
 
@@ -3969,9 +4048,9 @@ function ChatView({
               <AttachmentStrip
                 attachments={attachments}
                 onPreviewFile={openFilePreview}
-                onPreviewImage={(index) => {
+                onPreviewImage={(index, origin) => {
                   const selected = attachments[index];
-                  if (selected) openImageViewer(attachments, selected);
+                  if (selected) openImageViewer(attachments, selected, origin);
                 }}
                 onRetry={retryAttachment}
                 onRemove={removeComposerAttachment}
@@ -4121,6 +4200,7 @@ function ChatView({
         items={imageViewer?.attachments ?? []}
         onClose={() => setImageViewer(null)}
         onShare={shareImagePreview}
+        origin={imageViewer?.origin}
         reduceMotion={reduceMotion}
         reduceTransparency={reduceTransparency}
         resolveUri={resolvePreviewImageUri}

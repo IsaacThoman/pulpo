@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { imagePreviewGroup, previewFallbackMessage, previewSource } from './attachmentPreviewPolicy'
+import { fittedFullscreenImageFrame, imagePreviewGroup, previewFallbackMessage, previewSource } from './attachmentPreviewPolicy'
 
 describe('attachment preview policy', () => {
+  it('fits landscape and portrait images into the fullscreen viewport', () => {
+    expect(fittedFullscreenImageFrame(390, 844, 1600, 900)).toEqual({
+      x: 0,
+      y: 312.3125,
+      width: 390,
+      height: 219.375,
+    })
+    expect(fittedFullscreenImageFrame(390, 844, 600, 1600)).toEqual({
+      x: 36.75,
+      y: 0,
+      width: 316.5,
+      height: 844,
+    })
+  })
+
   const attachments = [
     { id: 'image-1', name: 'one.jpg', uri: 'file:///one.jpg', kind: 'image' as const },
     { id: 'file-1', name: 'notes.pdf', kind: 'file' as const },

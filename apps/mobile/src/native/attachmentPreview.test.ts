@@ -1,21 +1,35 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mocks = vi.hoisted(() => ({ previewFile: vi.fn(async () => undefined) }))
+const mocks = vi.hoisted(() => ({
+  animateImageTransition: vi.fn(async () => undefined),
+  previewFile: vi.fn(async () => undefined),
+}))
 
 vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
 vi.mock('expo', () => ({
   NativeModule: class {},
-  requireOptionalNativeModule: vi.fn(() => ({ previewFile: mocks.previewFile })),
+  requireOptionalNativeModule: vi.fn(() => ({
+    animateImageTransition: mocks.animateImageTransition,
+    previewFile: mocks.previewFile,
+  })),
 }))
 
-import { previewFile, supportsAttachmentPreview } from './attachmentPreview'
+import { animateImageTransition, previewFile, supportsAttachmentPreview, supportsNativeImageTransition } from './attachmentPreview'
 
 describe('attachment preview wrapper', () => {
   beforeEach(() => mocks.previewFile.mockClear())
 
   it('presents a local file through the optional Apple module', async () => {
     expect(supportsAttachmentPreview).toBe(true)
+    expect(supportsNativeImageTransition).toBe(true)
     await previewFile('file:///tmp/report.pdf', 'Quarterly report.pdf')
     expect(mocks.previewFile).toHaveBeenCalledWith('file:///tmp/report.pdf', 'Quarterly report.pdf')
+  })
+
+  it('runs the native image transition with measured frames', async () => {
+    const from = { x: 10, y: 20, width: 112, height: 112, cornerRadius: 16 }
+    const to = { x: 0, y: 200, width: 390, height: 220, cornerRadius: 0 }
+    await expect(animateImageTransition('file:///tmp/photo.jpg', from, to, true)).resolves.toBe(true)
+    expect(mocks.animateImageTransition).toHaveBeenCalledWith('file:///tmp/photo.jpg', from, to, true)
   })
 })
