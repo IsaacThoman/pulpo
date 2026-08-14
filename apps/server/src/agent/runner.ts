@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import type { CompactionItem } from '@pulpo/contracts'
+import type { CompactionItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -51,6 +51,7 @@ import {
   markModelSticky,
 } from '../responses/fallback-policy.js'
 import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -221,7 +222,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const streams = openAIResponsesApi()
   const emptyUsage = { inputTokens: 0, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, reasoningTokens: 0, totalTokens: 0 }
   const persistedUsage = record.response.usage as typeof emptyUsage | null
-  let sequence = record.response.lastSequence; let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
+  let streamProjection: ResponseSnapshot = toSnapshot(record.response)
+  let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
   let usage = persistedUsage ?? emptyUsage
   const [[previousModelCost], [previousWebToolCost]] = await Promise.all([
     db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
@@ -258,9 +260,19 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   let skipMessageCount = parentMessages.length
   const archivedDisplayMessages: AgentMessage[] = []
   let lastSnapshotAt = 0
-  const emit = async (type: string, payload: Record<string, unknown>) => {
-    sequence += 1
-    await publishResponseEvent({ responseId, sequence, type, payload, emittedAt: new Date().toISOString() })
+  let emissionQueue = Promise.resolve()
+  const emit = (type: string, payload: Record<string, unknown>): Promise<void> => {
+    const emission = emissionQueue.then(async () => {
+      const next = projectNextAgentResponseEvent(streamProjection, {
+        type,
+        payload,
+        emittedAt: new Date().toISOString(),
+      })
+      await publishResponseEvent(next.event)
+      streamProjection = next.projection
+    })
+    emissionQueue = emission
+    return emission
   }
   let agent!: Agent
   const activateFallbackRuntime = async (fromIndex: number): Promise<boolean> => {
@@ -281,26 +293,28 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     return true
   }
   const snapshot = async (terminal?: 'completed' | 'failed' | 'cancelled', errorMessage?: string) => {
-    const state = agent?.state
-    const streamingMessage = state?.streamingMessage
-    const hasStreaming = Boolean(streamingMessage && streamingMessage.role === 'assistant')
-    const stateMessages = [
-      ...(state?.messages ?? resumedMessages),
-      ...(hasStreaming ? [streamingMessage as AgentMessage] : []),
-    ]
-    const messages = [...archivedDisplayMessages, ...stateMessages.slice(skipMessageCount)]
-    const output = buildAgentOutput({
-      messages,
-      skipMessageCount: 0,
-      toolItems,
-      attachmentItems,
-      workspaceItem,
-      compactionItems,
-      turnDurationsMs,
-      streaming: hasStreaming && !terminal,
-      terminal: Boolean(terminal),
-    })
-    await db.update(responses).set({ status: terminal ?? 'in_progress', output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
+    let checkpoint = selectAgentResponseCheckpoint(streamProjection)
+    if (terminal) {
+      const state = agent?.state
+      const streamingMessage = state?.streamingMessage
+      const stateMessages = [
+        ...(state?.messages ?? resumedMessages),
+        ...(streamingMessage?.role === 'assistant' ? [streamingMessage as AgentMessage] : []),
+      ]
+      const terminalOutput = buildAgentOutput({
+        messages: [...archivedDisplayMessages, ...stateMessages.slice(skipMessageCount)],
+        skipMessageCount: 0,
+        toolItems,
+        attachmentItems,
+        workspaceItem,
+        compactionItems,
+        turnDurationsMs,
+        streaming: false,
+        terminal: true,
+      })
+      checkpoint = selectAgentResponseCheckpoint(streamProjection, { terminal: true, output: terminalOutput })
+    }
+    await db.update(responses).set({ status: terminal ?? 'in_progress', output: checkpoint.output, usage, error: errorMessage ? { message: errorMessage } : undefined, lastSequence: checkpoint.sequence, completedAt: terminal ? new Date() : undefined, updatedAt: new Date() }).where(eq(responses.id, responseId))
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
     lastSnapshotAt = Date.now()
