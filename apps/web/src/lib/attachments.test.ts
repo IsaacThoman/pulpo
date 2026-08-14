@@ -1,9 +1,34 @@
 import { describe, expect, it } from 'vitest'
 import {
+  attachmentKind,
+  attachmentTypeLabel,
   collectUploadFiles,
   isSupportedImageFile,
   nonImageAttachmentRestriction,
 } from './attachments'
+
+describe('attachment presentation', () => {
+  it.each([
+    ['photo.png', 'image/png', 'image'],
+    ['brief.pdf', 'application/octet-stream', 'pdf'],
+    ['notes.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text'],
+    ['app.tsx', 'application/octet-stream', 'code'],
+    ['budget.xlsx', 'application/octet-stream', 'spreadsheet'],
+    ['pitch.pptx', 'application/octet-stream', 'presentation'],
+    ['sources.tar.gz', 'application/gzip', 'archive'],
+    ['interview.m4a', 'application/octet-stream', 'audio'],
+    ['demo.mov', 'application/octet-stream', 'video'],
+    ['README', 'application/octet-stream', 'file'],
+  ] as const)('classifies %s as %s', (name, mimeType, expected) => {
+    expect(attachmentKind(name, mimeType)).toBe(expected)
+  })
+
+  it('uses a concise extension label and falls back to the detected kind', () => {
+    expect(attachmentTypeLabel('Quarterly Results.XLSX', 'application/octet-stream')).toBe('XLSX')
+    expect(attachmentTypeLabel('README', 'text/plain')).toBe('TEXT')
+    expect(attachmentTypeLabel('binary', 'application/octet-stream')).toBe('FILE')
+  })
+})
 
 describe('collectUploadFiles', () => {
   it('keeps arbitrary and extensionless files', () => {
