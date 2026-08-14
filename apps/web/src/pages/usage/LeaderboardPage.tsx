@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BarChart3, Clock, Save } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { BarChart3, Clock } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
@@ -8,14 +10,11 @@ import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import { cn } from '@/lib/utils'
-import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
 import { periodDays } from '@/lib/time-range'
 import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
+import { automaticProfileColor } from '@/lib/profile'
 import {
   PublicRecentUsagePanel,
   PublicTopModelsPanel,
@@ -23,7 +22,7 @@ import {
   type PublicUsageRecord,
 } from '@/components/usage/PublicUsagePanels'
 
-type LBMetric = Metric | 'balance' | 'water'
+type LBMetric = Metric | 'balance'
 
 const RANGES: { id: TimeRange; label: string }[] = [
   { id: '24h', label: '24h' },
@@ -37,10 +36,7 @@ const METRICS: { id: LBMetric; label: string }[] = [
   { id: 'tokens', label: 'Tokens' },
   { id: 'calls', label: 'Calls' },
   { id: 'balance', label: 'Balance' },
-  { id: 'water', label: 'Estimated water' },
 ]
-const BAR_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444']
-
 function metricLabel(m: LBMetric): string {
   switch (m) {
     case 'cost':
@@ -51,15 +47,12 @@ function metricLabel(m: LBMetric): string {
       return 'Calls'
     case 'balance':
       return 'Balance'
-    case 'water':
-      return 'Water'
   }
 }
 
 function formatMetric(v: number, m: LBMetric): string {
   if (m === 'balance') return formatBalance(v)
   if (m === 'cost') return formatUsd(v)
-  if (m === 'water') return `${v.toFixed(4)} Gal`
   return Math.round(v).toLocaleString()
 }
 
@@ -82,17 +75,15 @@ function rowValue(r: Row, m: LBMetric): number {
   if (m === 'tokens') return r.tokens
   if (m === 'calls') return r.calls
   if (m === 'balance') return r.user.balance
-  if (m === 'water') return r.cost / 23.04
   return r.cost
 }
 
 function displayName(u: MonitorUser): string {
-  return u.showOnLeaderboard ? (u.nickname ?? u.name) : 'Anonymous'
+  return u.name
 }
 
 function barColor(u: MonitorUser): string {
-  if (!u.showOnLeaderboard) return 'var(--muted-foreground)'
-  return u.barColor === '#fafafa' ? 'var(--primary)' : u.barColor
+  return u.profileColor ?? automaticProfileColor(u.id)
 }
 
 interface TipPayloadItem {
@@ -143,72 +134,54 @@ function LeaderboardTip({
 export function LeaderboardPage() {
   const users = useUsage((s) => s.users)
   const currentUserId = useUsage((s) => s.currentUserId)
-  const setLeaderboardPref = useUsage((s) => s.setLeaderboardPref)
   const loadLeaderboard = useUsage((s) => s.loadLeaderboard)
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
-  const [activity, setActivity] = useState<LeaderboardActivity | null>(null)
   const [records, setRecords] = useState<PublicUsageRecord[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [reload, setReload] = useState(0)
 
   const authUser = useAuth((state) => state.user)
-  const savedNickname = useSettings((state) => state.nickname)
-  const savedVisibility = useSettings((state) => state.leaderboardVisible)
-  const savedColor = useSettings((state) => state.leaderboardColor)
+  const friendsUsageQuery = useQuery({
+    queryKey: ['friends-usage', authUser?.id, range],
+    enabled: Boolean(authUser?.id),
+    queryFn: async () => {
+      const days = rangeDays(range)
+      const [, activity, recordPage] = await Promise.all([
+        loadLeaderboard(range),
+        apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?days=${days}`),
+        apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${days}&limit=50`),
+      ])
+      return { activity, recordPage }
+    },
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
   const leaderboardMe = users.find((u) => u.id === currentUserId)
   const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
-    nickname: savedNickname || null, role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
+    username: authUser?.username ?? 'pulpo', avatarUrl: authUser?.avatarUrl ?? null, profileColor: authUser?.profileColor ?? null,
+    role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
     joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
-    showOnLeaderboard: savedVisibility, barColor: savedColor,
     ...(leaderboardMe ? { balance: leaderboardMe.balance } : {}),
   }
 
-  useEffect(() => { void loadLeaderboard(range) }, [loadLeaderboard, range])
   useEffect(() => {
-    let active = true
-    const days = rangeDays(range)
-    setLoading(true)
-    setError(null)
-    setActivity(null)
     setRecords([])
     setNextCursor(null)
     setLoadMoreError(null)
-    void Promise.all([
-      apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?days=${days}`),
-      apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${days}&limit=50`),
-    ]).then(([activityResult, recordResult]) => {
-      if (!active) return
-      setActivity(activityResult)
-      setRecords(recordResult.data)
-      setNextCursor(recordResult.nextCursor)
-    }).catch((cause) => {
-      if (active) setError(cause instanceof Error ? cause.message : 'Unable to load leaderboard usage')
-    }).finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [range, reload])
-
-  // preference editor state (saved explicitly)
-  const [show, setShow] = useState(me.showOnLeaderboard)
-  const [nickname, setNickname] = useState(me.nickname ?? me.name)
-  const [color, setColor] = useState(me.barColor)
+  }, [range])
   useEffect(() => {
-    setShow(savedVisibility)
-    setNickname(savedNickname || authUser?.name || 'Pulpo user')
-    setColor(savedColor)
-  }, [authUser?.name, savedColor, savedNickname, savedVisibility])
-  const normalizedNick = nickname.trim() === '' || nickname.trim() === me.name ? null : nickname.trim()
-  const dirty =
-    show !== me.showOnLeaderboard || normalizedNick !== me.nickname || color !== me.barColor
-  const save = () => {
-    useSettings.setState({ nickname: normalizedNick ?? '', leaderboardVisible: show, leaderboardColor: color })
-    setLeaderboardPref(me.id, { showOnLeaderboard: show, nickname: normalizedNick, barColor: color })
-  }
+    if (!friendsUsageQuery.data) return
+    setRecords(friendsUsageQuery.data.recordPage.data)
+    setNextCursor(friendsUsageQuery.data.recordPage.nextCursor)
+    setLoadMoreError(null)
+  }, [friendsUsageQuery.data])
+
+  const activity = friendsUsageQuery.data?.activity ?? null
+  const loading = friendsUsageQuery.isLoading
+  const error = friendsUsageQuery.error
 
   const totals = {
     calls: activity?.summary.calls ?? 0,
@@ -245,9 +218,9 @@ export function LeaderboardPage() {
       })),
     [rows, metric]
   )
+  const hasAcceptedFriends = rows.some((row) => row.user.id !== currentUserId)
 
-  // Balance is a point-in-time ranking and water is a spend-derived estimate;
-  // OpenWebUI Monitor uses the spend series for both in the daily activity view.
+  // Balance is a point-in-time ranking, so the daily activity view uses spend.
   const dailyMetric: Metric = metric === 'tokens' || metric === 'calls' ? metric : 'cost'
 
   const loadMore = async () => {
@@ -274,45 +247,6 @@ export function LeaderboardPage() {
         </div>
       </div>
 
-      {/* your leaderboard preferences */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-        <label className="flex cursor-pointer items-center gap-2 text-sm">
-          <Switch checked={show} onCheckedChange={setShow} />
-          Show my name on the leaderboard
-        </label>
-        <Input
-          className="w-[200px]"
-          maxLength={40}
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-          placeholder={show ? me.name : 'Anonymous'}
-          disabled={!show}
-        />
-        {show && (
-          <div className="flex items-center gap-2">
-            {BAR_COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                aria-label={`Bar color ${c}`}
-                onClick={() => setColor(c)}
-                className={cn(
-                  'size-4 cursor-pointer rounded-[3px] border border-border transition-all',
-                  color === c && 'ring-2 ring-foreground ring-offset-1 ring-offset-background'
-                )}
-                style={{ backgroundColor: c }}
-              />
-            ))}
-          </div>
-        )}
-        {dirty && (
-          <Button size="sm" className="gap-2" onClick={save}>
-            <Save className="size-3.5" />
-            Save
-          </Button>
-        )}
-      </div>
-
       {/* usage overview (all users) */}
       <section>
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -334,13 +268,14 @@ export function LeaderboardPage() {
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-2 text-sm font-medium">
             <BarChart3 className="size-4" />
-            User ranking
+            Friends ranking
           </span>
           <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
         </div>
-        {chartData.length === 0 ? (
-          <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">
-            No users to show
+        {!hasAcceptedFriends ? (
+          <div className="flex h-[250px] flex-col items-center justify-center gap-3 text-xs text-muted-foreground">
+            <span>Add friends to compare usage</span>
+            <Button asChild size="sm" variant="outline"><Link to="/friends">Find friends</Link></Button>
           </div>
         ) : (
           <div className="h-[250px]">
@@ -367,10 +302,6 @@ export function LeaderboardPage() {
                       ? formatBalance(v)
                       : metric === 'cost'
                         ? axisMoney(v)
-                      : metric === 'water'
-                        ? v < 0.1
-                          ? v.toFixed(3)
-                          : v.toFixed(2)
                         : v >= 1000
                           ? `${(v / 1000).toFixed(1)}k`
                           : String(Math.round(v))
@@ -392,8 +323,8 @@ export function LeaderboardPage() {
         <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
       ) : error ? (
         <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
-          <span>{error}</span>
-          <Button size="sm" variant="outline" onClick={() => setReload((value) => value + 1)}>Try again</Button>
+          <span>{error instanceof Error ? error.message : 'Unable to load leaderboard usage'}</span>
+          <Button size="sm" variant="outline" onClick={() => void friendsUsageQuery.refetch()}>Try again</Button>
         </div>
       ) : (
         <>

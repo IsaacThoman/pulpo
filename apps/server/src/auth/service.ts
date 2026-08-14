@@ -10,6 +10,7 @@ import { hashToken, randomToken } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
 import { forbidden, unauthorized } from '../lib/errors.js'
 import { publishSessionRevocation } from '../responses/events.js'
+import { profileAvatarUrl } from '../profile/service.js'
 
 export interface AuthenticatedUser extends User {}
 
@@ -27,6 +28,9 @@ function serializeUser(row: typeof users.$inferSelect): AuthenticatedUser {
     id: row.id,
     email: row.email,
     name: row.name,
+    username: row.username,
+    avatarUrl: profileAvatarUrl(row),
+    profileColor: row.profileColor,
     role: row.role,
     balanceMicros: row.balanceMicros,
     storageLimitBytes: row.storageLimitBytes,

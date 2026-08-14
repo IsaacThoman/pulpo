@@ -3,11 +3,12 @@ import { BarChart3, MoreHorizontal, Zap } from 'lucide-react'
 import { getCatalogModel } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { formatUsd } from '@/lib/format'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
 
 export interface PublicUsageRecord {
   id: string
   createdAt: string
-  participant: { name: string; anonymous: boolean }
+  participant: { id: string; displayName: string; username: string; avatarUrl: string | null; profileColor: string | null }
   model: { id: string; name: string; logo: string | null }
   inputTokens: number
   outputTokens: number
@@ -96,7 +97,7 @@ export function PublicRecentUsagePanel({
           </colgroup>
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString()}</td>
-            <td className="px-3 py-2"><span className="block truncate">{record.participant.name}</span></td>
+            <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
             <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString()}</td>
             <td className="px-3 py-2 text-right tabular-nums">{formatUsd(record.costMicros / 1_000_000)}</td>

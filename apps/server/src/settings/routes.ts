@@ -19,13 +19,8 @@ const preferencesSchema = z.record(z.string(), z.unknown())
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
-    const [[row], [profile], [authSetting]] = await Promise.all([
+    const [[row], [authSetting]] = await Promise.all([
       db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1),
-      db.select({
-        nickname: users.nickname,
-        leaderboardVisible: users.leaderboardVisible,
-        leaderboardColor: users.leaderboardColor,
-      }).from(users).where(eq(users.id, user.id)).limit(1),
       db.select({ value: applicationSettings.value })
         .from(applicationSettings)
         .where(eq(applicationSettings.key, 'auth'))
@@ -38,9 +33,6 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         ...values,
         trashRetention: parseTrashRetention(values?.trashRetention ?? DEFAULT_TRASH_RETENTION),
         automaticChatExpiration: parseAutomaticChatExpiration(values?.automaticChatExpiration),
-        nickname: profile?.nickname ?? '',
-        leaderboardVisible: profile?.leaderboardVisible ?? false,
-        leaderboardColor: profile?.leaderboardColor ?? '#10b981',
       },
       newAccountFavoriteModelIds,
       updatedAt: row?.updatedAt.toISOString() ?? null,
@@ -59,11 +51,6 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('newChatAutoExpire' in patch && !newChatAutoExpireSchema.safeParse(patch.newChatAutoExpire).success) {
       throw new AppError(400, 'invalid_new_chat_expiration', 'Choose whether new chats should expire automatically')
     }
-    const nickname = typeof patch.nickname === 'string'
-      ? patch.nickname.trim() || null
-      : patch.nickname === null ? null : undefined
-    const leaderboardVisible = typeof patch.leaderboardVisible === 'boolean' ? patch.leaderboardVisible : undefined
-    const leaderboardColor = typeof patch.leaderboardColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(patch.leaderboardColor) ? patch.leaderboardColor : undefined
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
     let saved: typeof userPreferences.$inferSelect | undefined
     let stateRevision: number | undefined
@@ -86,7 +73,6 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
           },
         }).returning()
       const [revision] = await tx.update(users).set({
-        nickname, leaderboardVisible, leaderboardColor,
         stateRevision: sql`${users.stateRevision} + 1`,
       }).where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
       stateRevision = revision?.revision

@@ -30,6 +30,7 @@ readonly local_preview_config="$(config_path)"
 usage() {
   cat <<'EOF'
 Usage: scripts/local-preview.sh init
+       scripts/local-preview.sh refresh
        scripts/local-preview.sh reset [--yes]
 EOF
 }
@@ -155,6 +156,73 @@ confirm_reset() {
   esac
 }
 
+require_preview_runtime() {
+  require_command docker
+  require_command jq
+  require_command curl
+
+  [[ -f "${local_preview_config}" ]] || {
+    echo "Local preview config is missing: ${local_preview_config}" >&2
+    echo 'Run npm run local:preview:init first.' >&2
+    exit 1
+  }
+
+  local compose_config
+  if ! compose_config="$(compose config --format json)"; then
+    echo "Docker Compose could not parse ${local_preview_config}." >&2
+    exit 1
+  fi
+  validate_config "${compose_config}"
+
+  docker info >/dev/null 2>&1 || {
+    echo 'Docker is unavailable or the daemon is not running.' >&2
+    exit 1
+  }
+  local compose_up_help
+  compose_up_help="$(compose up --help)"
+  grep -q -- '--wait' <<< "${compose_up_help}" || {
+    echo 'The installed Docker Compose version does not support up --wait.' >&2
+    exit 1
+  }
+}
+
+refresh_stack() {
+  (( $# == 0 )) || { usage >&2; exit 2; }
+  require_preview_runtime
+
+  local source_ref source_commit
+  source_ref="$(git -C "${repository_root}" symbolic-ref --quiet --short HEAD 2>/dev/null || echo detached)"
+  source_commit="$(git -C "${repository_root}" rev-parse --short HEAD)"
+  echo "Refreshing shared local Pulpo stack from ${source_ref} (${source_commit})…"
+  echo 'Existing database and object-storage volumes will be preserved.'
+
+  if ! compose build api worker web; then
+    echo 'Local preview application image build failed; existing containers and data were preserved.' >&2
+    exit 1
+  fi
+  # This service repairs retained object-volume ownership and is expected to
+  # exit successfully, so it must not be included in Compose's --wait set.
+  if ! compose up --force-recreate --no-deps object-storage-init; then
+    echo 'Local preview object-storage initialization failed.' >&2
+    compose ps >&2 || true
+    exit 1
+  fi
+  if ! compose up --detach --wait \
+    postgres redis seaweed-master seaweed-volume seaweed-filer seaweed-s3; then
+    echo 'Local preview infrastructure failed to start.' >&2
+    compose ps >&2 || true
+    exit 1
+  fi
+  if ! compose up --detach --force-recreate --no-deps --wait api worker web; then
+    echo 'Refreshed local preview application containers failed to start.' >&2
+    compose ps >&2 || true
+    exit 1
+  fi
+
+  bash "${repository_root}/.github/scripts/wait-http-health.sh" 'http://localhost:8080/health' 'local preview'
+  echo 'Local preview stack refreshed with existing data: http://localhost:8080'
+}
+
 reset_stack() {
   local assume_yes=false
   if [[ "${1:-}" == '--yes' ]]; then
@@ -243,6 +311,10 @@ case "${1:-}" in
     shift
     (( $# == 0 )) || { usage >&2; exit 2; }
     initialize_config
+    ;;
+  refresh)
+    shift
+    refresh_stack "$@"
     ;;
   reset)
     shift

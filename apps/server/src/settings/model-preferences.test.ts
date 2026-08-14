@@ -5,6 +5,7 @@ describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       theme: 'dark', automaticChatExpiration: '24h', newChatAutoExpire: false,
+      sidebarPins: { usage: false, friends: false, apiKeys: false },
       agentModes: {}, favoriteModelIds: [], providerOrder: [],
     })
   })
@@ -26,6 +27,16 @@ describe('account model preferences', () => {
   it('rejects malformed model preference arrays', () => {
     expect(() => normalizedPreferencePatch({ providerOrder: 'lab-one' })).toThrow()
     expect(() => preferencesWithModelDefaults({ favoriteModelIds: [''] })).toThrow()
+  })
+
+  it('normalizes sidebar pins and defaults missing links to unpinned', () => {
+    expect(preferencesWithModelDefaults({ sidebarPins: { usage: true } }).sidebarPins).toEqual({
+      usage: true, friends: false, apiKeys: false,
+    })
+    expect(normalizedPreferencePatch({ sidebarPins: { friends: false } }).sidebarPins).toEqual({
+      usage: false, friends: false, apiKeys: false,
+    })
+    expect(() => normalizedPreferencePatch({ sidebarPins: { usage: 'yes' } })).toThrow()
   })
 })
 

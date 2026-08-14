@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 
 const TABS = [
   { to: '/usage', label: 'Personal', end: true },
-  { to: '/usage/leaderboard', label: 'Leaderboard', end: false },
+  { to: '/usage/friends', label: 'Friends', end: false },
 ]
 
 export function UsageLayout() {

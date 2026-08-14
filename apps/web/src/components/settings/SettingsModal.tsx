@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   Database,
+  Camera,
   Info,
   KeyRound,
   Monitor,
@@ -21,7 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
 import {
   Select,
   SelectContent,
@@ -31,7 +32,7 @@ import {
 } from '@/components/ui/select'
 import { ModelIcon } from '@/components/ModelIcon'
 import { useSettings, type AutomaticChatExpiration, type Theme, type TrashRetention } from '@/stores/settings'
-import { useAuth } from '@/stores/auth'
+import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
@@ -40,22 +41,28 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
+import { automaticProfileColor, PROFILE_COLORS } from '@/lib/profile'
 import { PasswordSettings } from './PasswordSettings'
 import { PasskeySettings } from './PasskeySettings'
 import { TwoFactorSettings } from './TwoFactorSettings'
+import { UsernameSettings } from './UsernameSettings'
+import { AvatarCropEditor } from './AvatarCropEditor'
+import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
+import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 
-const SECTIONS = [
-  { id: 'general', label: 'General', icon: SlidersHorizontal },
-  { id: 'account', label: 'Account', icon: User },
-  { id: 'personalization', label: 'Personalization', icon: Sparkles },
-  { id: 'interface', label: 'Interface', icon: Monitor },
-  { id: 'api', label: 'API keys', icon: KeyRound },
-  { id: 'data', label: 'Data controls', icon: Database },
-  { id: 'trash', label: 'Trash', icon: Trash2 },
-  { id: 'about', label: 'About', icon: Info },
-] as const
+const SECTION_CONFIG = {
+  general: { label: 'General', icon: SlidersHorizontal },
+  profile: { label: 'Profile', icon: User },
+  security: { label: 'Security', icon: ShieldCheck },
+  personalization: { label: 'Personalization', icon: Sparkles },
+  interface: { label: 'Interface', icon: Monitor },
+  api: { label: 'API keys', icon: KeyRound },
+  data: { label: 'Data controls', icon: Database },
+  trash: { label: 'Trash', icon: Trash2 },
+  about: { label: 'About', icon: Info },
+} as const satisfies Record<SettingsSectionId, { label: string; icon: typeof User }>
 
-type SectionId = (typeof SECTIONS)[number]['id']
+const SECTIONS = SETTINGS_SECTION_IDS.map((id) => ({ id, ...SECTION_CONFIG[id] }))
 
 interface Memory {
   id: string
@@ -140,11 +147,20 @@ function ThemePicker() {
   )
 }
 
-export function SettingsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [section, setSection] = useState<SectionId>('general')
+export function SettingsModal({
+  open,
+  initialSection = 'general',
+  onClose,
+}: {
+  open: boolean
+  initialSection?: SettingsSectionId
+  onClose: () => void
+}) {
+  const [section, setSection] = useState<SettingsSectionId>(initialSection)
   const s = useSettings()
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
+  const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
   const [memories, setMemories] = useState<Memory[]>([])
   const [memoriesLoading, setMemoriesLoading] = useState(false)
@@ -155,6 +171,17 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
   const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
   const [trashRetentionError, setTrashRetentionError] = useState('')
   const [trashNow, setTrashNow] = useState(() => Date.now())
+  const [profileName, setProfileName] = useState(user?.name ?? '')
+  const [profileColor, setProfileColor] = useState(() => user?.profileColor ?? automaticProfileColor(user?.id ?? 'pulpo-user'))
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [profileMessage, setProfileMessage] = useState('')
+  const [avatarCandidate, setAvatarCandidate] = useState<{ file: File; url: string } | null>(null)
+  const [avatarCrop, setAvatarCrop] = useState(DEFAULT_AVATAR_CROP)
+  const [customColorSelected, setCustomColorSelected] = useState(() => Boolean(
+    user?.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor),
+  ))
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const deletedChatsQueryKey = ['deleted-chats', user?.id] as const
   const deletedChatsQuery = useQuery({
     queryKey: deletedChatsQueryKey,
@@ -166,6 +193,80 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
     refetchOnWindowFocus: 'always',
   })
   const deletedChats = deletedChatsQuery.data ?? []
+
+  useEffect(() => {
+    if (open) setSection(initialSection)
+  }, [initialSection, open])
+
+  useEffect(() => {
+    if (!open || !user) return
+    setProfileName(user.name)
+    setProfileColor(user.profileColor ?? automaticProfileColor(user.id))
+    setCustomColorSelected(Boolean(user.profileColor && !PROFILE_COLORS.some((color) => color === user.profileColor)))
+    setProfileError('')
+  }, [open, user])
+
+  useEffect(() => { if (!open) setProfileMessage('') }, [open])
+
+  useEffect(() => () => { if (avatarCandidate) URL.revokeObjectURL(avatarCandidate.url) }, [avatarCandidate])
+
+  const profileDirty = Boolean(user) && (
+    profileName.trim() !== user!.name
+    || profileColor !== (user!.profileColor ?? automaticProfileColor(user!.id))
+  )
+  const profileColorIsPreset = PROFILE_COLORS.some((color) => color === profileColor)
+
+  const saveProfile = async () => {
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileMessage('')
+    try {
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me', {
+        method: 'PATCH',
+        body: { name: profileName, profileColor },
+      })
+      replaceUser(result.user)
+      setProfileMessage('Profile saved.')
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : 'Could not save profile')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
+  const uploadAvatar = async () => {
+    if (!avatarCandidate) return
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileMessage('')
+    try {
+      const body = new FormData()
+      body.append('file', await prepareAvatarFile(avatarCandidate.file, avatarCrop))
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'PUT', body })
+      replaceUser(result.user)
+      setAvatarCandidate(null)
+      setProfileMessage('Profile picture updated.')
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : 'Could not upload profile picture')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
+
+  const removeAvatar = async () => {
+    setProfileSaving(true)
+    setProfileError('')
+    setProfileMessage('')
+    try {
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'DELETE' })
+      replaceUser(result.user)
+      setProfileMessage('Profile picture removed.')
+    } catch (cause) {
+      setProfileError(cause instanceof Error ? cause.message : 'Could not remove profile picture')
+    } finally {
+      setProfileSaving(false)
+    }
+  }
 
   useEffect(() => {
     if (!open || section !== 'trash' || s.trashRetention === 'instant') return
@@ -409,24 +510,109 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 </div>
               )}
 
-              {section === 'account' && (
+              {section === 'profile' && (
                 <div>
-                  <h2 className="text-base font-semibold">Account</h2>
+                  <h2 className="text-base font-semibold">Profile</h2>
                   <Separator className="my-3" />
-                  <div className="flex items-center gap-4 py-3">
-                    <Avatar className="size-14">
-                      <AvatarFallback className="bg-zinc-700 text-lg font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                        {user?.initials ?? '?'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="font-medium">{user?.name}</div>
-                      <div className="text-sm text-muted-foreground">{user?.email} · {user?.role}</div>
+                  <div className="flex flex-wrap items-start gap-4 py-3">
+                    <div className="flex shrink-0 flex-col items-center">
+                      <button
+                        type="button"
+                        aria-label="Change profile picture"
+                        disabled={profileSaving}
+                        className="group relative size-14 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => avatarInputRef.current?.click()}
+                      >
+                        <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
+                        <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          <Camera className="size-4" />
+                          <span className="text-[9px] font-medium leading-none">Change</span>
+                        </span>
+                      </button>
+                      {user?.avatarUrl && <button
+                        type="button"
+                        disabled={profileSaving}
+                        className="mt-1 cursor-pointer text-[10px] leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => void removeAvatar()}
+                      >Remove</button>}
+                    </div>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0]
+                        if (file) {
+                          setProfileMessage('')
+                          setAvatarCrop(DEFAULT_AVATAR_CROP)
+                          setAvatarCandidate({ file, url: URL.createObjectURL(file) })
+                        }
+                        event.currentTarget.value = ''
+                      }}
+                    />
+                    <div className="flex h-14 min-w-0 flex-col justify-center">
+                      <span className="truncate font-medium">{user?.name}</span>
+                      {user?.username && <span className="truncate text-sm text-muted-foreground">@{user.username}</span>}
                     </div>
                     <div className="flex-1" />
-                    <Button variant="outline" size="sm">Change avatar</Button>
+                    <div className="flex h-14 items-center">
+                      <UsernameSettings buttonOnly />
+                    </div>
                   </div>
-                  <Row label="Display name"><Input defaultValue={user?.name ?? ''} className="w-52" /></Row>
+                  {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
+                    <AvatarCropEditor imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
+                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div>
+                  </div>}
+                  <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
+                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2">
+                    {PROFILE_COLORS.map((color) => <button
+                      key={color}
+                      type="button"
+                      aria-label={`Profile color ${color}`}
+                      className={cn('size-5 cursor-pointer rounded border', !customColorSelected && profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
+                      style={{ backgroundColor: color }}
+                      onClick={() => { setProfileMessage(''); setCustomColorSelected(false); setProfileColor(color) }}
+                    />)}
+                    <div className="relative size-5 shrink-0">
+                      <input
+                        type="color"
+                        aria-label="Choose a custom profile color"
+                        value={profileColor}
+                        className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
+                        onPointerDown={() => setCustomColorSelected(true)}
+                        onClick={() => setCustomColorSelected(true)}
+                        onChange={(event) => { setProfileMessage(''); setCustomColorSelected(true); setProfileColor(event.currentTarget.value) }}
+                      />
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'pointer-events-none absolute inset-0 rounded border bg-clip-padding',
+                          !customColorSelected
+                            ? 'peer-focus-visible:ring-2 peer-focus-visible:ring-foreground peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background'
+                            : 'ring-2 ring-foreground ring-offset-2 ring-offset-background',
+                        )}
+                        style={profileColorIsPreset
+                          ? { backgroundImage: 'conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ec4899, #ef4444)' }
+                          : { backgroundColor: profileColor }}
+                      />
+                    </div>
+                  </div></Row>
+                  <div className="flex min-h-10 items-center justify-end gap-3 py-2">
+                    {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
+                    {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
+                    <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? 'Saving…' : 'Save profile'}</Button>
+                  </div>
+                </div>
+              )}
+
+              {section === 'security' && (
+                <div>
+                  <h2 className="text-base font-semibold">Security</h2>
+                  <Separator className="my-3" />
+                  <Row label="Email" hint="Used to sign in to your account.">
+                    <span className="block max-w-64 truncate text-sm text-muted-foreground">{user?.email}</span>
+                  </Row>
                   <PasswordSettings />
                   <PasskeySettings />
                   <TwoFactorSettings />
@@ -441,14 +627,6 @@ export function SettingsModal({ open, onClose }: { open: boolean; onClose: () =>
                 <div>
                   <h2 className="text-base font-semibold">Personalization</h2>
                   <Separator className="my-3" />
-                  <Row label="Nickname" hint="Shown on the public leaderboard instead of your name.">
-                    <Input
-                      value={s.nickname}
-                      onChange={(e) => s.set('nickname', e.target.value)}
-                      placeholder="e.g. crazy_hamburger"
-                      className="w-52"
-                    />
-                  </Row>
                   <div className="py-3">
                     <Label className="text-sm font-medium">Custom instructions</Label>
                     <p className="mb-2 mt-0.5 text-xs text-muted-foreground">

@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
@@ -11,7 +12,13 @@ import { newId } from '../lib/ids.js'
 import { sendTwoFactorResetNotice } from '../lib/mail.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { profileAvatarUrl } from '../profile/service.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
+import {
+  bumpAccountRevisions,
+  friendPeerIds,
+  publishScopedStateChanges,
+} from '../friends/sync.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -21,16 +28,15 @@ const patchUserSchema = z.object({
   blocked: z.boolean().optional(),
   balanceMicros: z.number().int().nonnegative().optional(),
   storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
-  nickname: z.string().trim().max(80).nullable().optional(),
-  leaderboardVisible: z.boolean().optional(),
-  leaderboardColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  username: usernameSchema.optional(),
+  profileColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
 })
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/admin/users', async (request, reply) => {
     const admin = requireAdmin(request)
     const input = z.object({
-      name: z.string().trim().min(1).max(120), email: z.email(), password: z.string().min(8).max(1_000),
+      name: z.string().trim().min(1).max(120), username: usernameSchema, email: z.email(), password: z.string().min(8).max(1_000),
       role: z.enum(['pending', 'user', 'admin']).default('user'), balanceMicros: z.number().int().nonnegative().optional(),
       storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
     }).parse(request.body)
@@ -40,7 +46,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const authSettings = parseAuthSettings(setting?.value)
       const balanceMicros = input.balanceMicros ?? authSettings.defaultBalanceMicros
       const storageLimitBytes = input.storageLimitBytes ?? authSettings.defaultStorageLimitBytes
-      await tx.insert(users).values({ id, name: input.name, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
+      await tx.insert(users).values({ id, name: input.name, username: input.username, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
       await insertNewAccountPreferences(tx, id, authSettings)
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
@@ -72,7 +78,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         where ${userTotpCredentials.userId} = ${users.id}
       )`,
     }).from(users).leftJoin(usageEvents, eq(usageEvents.userId, users.id)).groupBy(users.id).orderBy(desc(users.createdAt))
-    return { data: rows.map((row) => ({ ...row, calls: Number(row.calls), spentMicros: Number(row.spentMicros), storageBytes: Number(row.storageBytes) })) }
+    return { data: rows.map((row) => {
+      const { avatarObjectKey: _avatarObjectKey, ...publicUser } = row.user
+      return {
+        ...row,
+        user: { ...publicUser, avatarUrl: profileAvatarUrl(row.user) },
+        calls: Number(row.calls), spentMicros: Number(row.spentMicros), storageBytes: Number(row.storageBytes),
+      }
+    }) }
   })
 
   app.patch('/api/admin/users/:id', async (request) => {
@@ -82,7 +95,15 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
     if (id === admin.id && (patch.blocked || (patch.role && patch.role !== 'admin'))) {
       throw new AppError(409, 'cannot_demote_self', 'You cannot block or demote your own administrator account')
     }
-    await db.transaction(async (tx) => {
+    const friendVisibleChanged = [
+      patch.name,
+      patch.username,
+      patch.profileColor,
+      patch.blocked,
+      patch.role,
+      patch.balanceMicros,
+    ].some((value) => value !== undefined)
+    const friendChanges = await db.transaction(async (tx) => {
       const [current] = await tx.select().from(users).where(eq(users.id, id)).limit(1)
       if (!current) throw notFound('User')
       const balanceChanged = patch.balanceMicros !== undefined && patch.balanceMicros !== current.balanceMicros
@@ -114,9 +135,13 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id,
         metadata: { ...userPatch, ...(password ? { passwordChanged: true } : {}) },
       })
+      if (!friendVisibleChanged) return []
+      const peers = await friendPeerIds(tx, id)
+      return bumpAccountRevisions(tx, peers)
     })
     const [updated] = await db.select().from(users).where(eq(users.id, id)).limit(1)
     await publishStateChange({ userId: id, revision: updated!.stateRevision })
+    await publishScopedStateChanges(friendChanges, ['friends'])
     return updated
   })
 

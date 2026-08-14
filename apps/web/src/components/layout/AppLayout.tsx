@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Sidebar } from './Sidebar'
 import { SearchModal } from './SearchModal'
 import { SettingsModal } from '@/components/settings/SettingsModal'
+import { SettingsDialogProvider, type SettingsSectionId } from '@/components/settings/settings-dialog'
 import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
 import { SettingsBridge } from '@/features/settings/SettingsBridge'
 import { BannerBar } from './BannerBar'
@@ -18,8 +19,14 @@ export function AppLayout() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
   const location = useLocation()
   const previousPathRef = useRef(location.pathname)
+  const openSettings = useCallback((section: SettingsSectionId = 'general') => {
+    setSettingsSection(section)
+    setSettingsOpen(true)
+  }, [])
+  const settingsController = useMemo(() => ({ openSettings }), [openSettings])
 
   useEffect(() => {
     const previousPath = previousPathRef.current
@@ -70,12 +77,12 @@ export function AppLayout() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault()
-        setSettingsOpen(true)
+        openSettings('general')
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [openSettings])
 
   useEffect(() => {
     if (!mobileOpen) return
@@ -87,59 +94,65 @@ export function AppLayout() {
   }, [mobileOpen])
 
   return (
-    <TooltipProvider delayDuration={1000}>
-      <ChatDataBridge />
-      <SettingsBridge />
-      <div className="relative flex h-full overflow-hidden">
-        <BannerBar />
-        <button
-          className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
-          onClick={() => setMobileOpen(true)}
-          aria-label="Open sidebar"
-          aria-expanded={mobileOpen}
-        >
-          <PanelLeftOpen className="size-5" />
-        </button>
-        {mobile && (
+    <SettingsDialogProvider controller={settingsController}>
+      <TooltipProvider delayDuration={1000}>
+        <ChatDataBridge />
+        <SettingsBridge />
+        <div className="relative flex h-full overflow-hidden">
+          <BannerBar />
           <button
-            className={`fixed inset-0 z-30 bg-black/55 transition-opacity duration-200 ${
-              mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
-            }`}
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close sidebar"
-            aria-hidden={!mobileOpen}
-            tabIndex={mobileOpen ? 0 : -1}
+            className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open sidebar"
+            aria-expanded={mobileOpen}
+          >
+            <PanelLeftOpen className="size-5" />
+          </button>
+          {mobile && (
+            <button
+              className={`fixed inset-0 z-30 bg-black/55 transition-opacity duration-200 ${
+                mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close sidebar"
+              aria-hidden={!mobileOpen}
+              tabIndex={mobileOpen ? 0 : -1}
+            />
+          )}
+          <Sidebar
+            collapsed={mobile ? false : collapsed || searchHasQuery}
+            mobile={mobile}
+            mobileOpen={mobileOpen}
+            transitions={sidebarTransitions}
+            onToggle={() => mobile ? setMobileOpen(false) : setCollapsed((v) => !v)}
+            onNavigate={() => setMobileOpen(false)}
+            onOpenSearch={() => {
+              setMobileOpen(false)
+              setSearchOpen(true)
+            }}
+            onOpenSettings={() => {
+              setMobileOpen(false)
+              openSettings('general')
+            }}
           />
-        )}
-        <Sidebar
-          collapsed={mobile ? false : collapsed || searchHasQuery}
-          mobile={mobile}
-          mobileOpen={mobileOpen}
-          transitions={sidebarTransitions}
-          onToggle={() => mobile ? setMobileOpen(false) : setCollapsed((v) => !v)}
-          onNavigate={() => setMobileOpen(false)}
-          onOpenSearch={() => {
-            setMobileOpen(false)
-            setSearchOpen(true)
+          <main className="app-main min-w-0 flex-1 overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
+        <SearchModal
+          open={searchOpen}
+          onClose={() => {
+            setSearchOpen(false)
+            setSearchHasQuery(false)
           }}
-          onOpenSettings={() => {
-            setMobileOpen(false)
-            setSettingsOpen(true)
-          }}
+          onQueryPresenceChange={setSearchHasQuery}
         />
-        <main className="app-main min-w-0 flex-1 overflow-hidden">
-          <Outlet />
-        </main>
-      </div>
-      <SearchModal
-        open={searchOpen}
-        onClose={() => {
-          setSearchOpen(false)
-          setSearchHasQuery(false)
-        }}
-        onQueryPresenceChange={setSearchHasQuery}
-      />
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-    </TooltipProvider>
+        <SettingsModal
+          open={settingsOpen}
+          initialSection={settingsSection}
+          onClose={() => setSettingsOpen(false)}
+        />
+      </TooltipProvider>
+    </SettingsDialogProvider>
   )
 }

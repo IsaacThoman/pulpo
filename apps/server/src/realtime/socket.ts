@@ -2,7 +2,13 @@ import type { Server as HttpServer } from 'node:http'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
-import type { ClientToServerEvents, ResponseSnapshot, ServerToClientEvents, SyncResult } from '@pulpo/contracts'
+import type {
+  ClientToServerEvents,
+  ResponseSnapshot,
+  ServerToClientEvents,
+  StateInvalidationScope,
+  SyncResult,
+} from '@pulpo/contracts'
 import { idSchema, syncRequestSchema } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
 import { getConfig, isAllowedOrigin } from '../config.js'
@@ -111,7 +117,9 @@ export async function createSocketServer(httpServer: HttpServer) {
           : []
         const result: SyncResult = {
           accountRevision: current?.revision ?? user.stateRevision,
-          invalidate: current?.revision !== input.accountRevision ? ['chats', 'models', 'usage', 'settings'] : [],
+          invalidate: current?.revision !== input.accountRevision
+            ? ['chats', 'models', 'usage', 'settings', 'friends']
+            : [],
           snapshots: [],
           events: [],
         }
@@ -233,8 +241,16 @@ export async function createSocketServer(httpServer: HttpServer) {
         io.of('/').sockets.get(socketId)?.conn.close()
       }
     } else {
-      const change = JSON.parse(message) as { userId: string; revision: number; chatId?: string }
-      io.to(`user:${change.userId}`).emit('account.revision', { revision: change.revision })
+      const change = JSON.parse(message) as {
+        userId: string
+        revision: number
+        chatId?: string
+        scopes?: StateInvalidationScope[]
+      }
+      io.to(`user:${change.userId}`).emit('account.revision', {
+        revision: change.revision,
+        ...(change.scopes?.length ? { scopes: change.scopes } : {}),
+      })
       if (change.chatId) io.to(`user:${change.userId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
     }
   })

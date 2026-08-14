@@ -43,7 +43,6 @@ import {
   type WorkspaceStep,
 } from './message-timeline'
 import { ModelIcon } from '@/components/ModelIcon'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
@@ -794,13 +793,3 @@ export const MessageItem = memo(function MessageItem({
   && previous.chat.modelId === next.chat.modelId
   && previous.chat.expired === next.chat.expired
 ))
-
-export function UserAvatar() {
-  return (
-    <Avatar className="size-7">
-      <AvatarFallback className="bg-zinc-700 text-[10px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-        IT
-      </AvatarFallback>
-    </Avatar>
-  )
-}

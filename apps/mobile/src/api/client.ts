@@ -95,9 +95,9 @@ export const mobileApi = {
     apiRequest<NativeAuthResponse>('/api/mobile/auth/login', {
       method: 'POST', auth: false, body: { email, password, deviceLabel, twoFactorCode },
     }),
-  signup: (name: string, email: string, password: string, deviceLabel: string) =>
+  signup: (name: string, username: string, email: string, password: string, deviceLabel: string) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/signup', {
-      method: 'POST', auth: false, body: { name, email, password, deviceLabel },
+      method: 'POST', auth: false, body: { name, username, email, password, deviceLabel },
     }),
   passkeyOptions: () => apiRequest<PasskeyCeremony>('/api/mobile/auth/passkey/options', { method: 'POST', auth: false }),
   verifyPasskey: (ceremonyToken: string, response: PasskeyAuthenticationResponse, deviceLabel: string) =>

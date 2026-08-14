@@ -73,6 +73,18 @@ invoking worktree, starts the stack, and verifies the seeded administrator can
 log in. For deliberate non-interactive use, run
 `npm run local:preview:reset -- --yes`. Docker build cache is preserved.
 
+To rebuild and restart the application services from the current worktree while
+preserving the existing database, Redis, and object-storage volumes, run:
+
+```bash
+npm run local:preview:refresh
+```
+
+Refresh is non-destructive and does not reseed or verify the original preview
+administrator credentials. The API still applies forward database migrations
+when it starts, so refreshing an older branch does not reverse newer schema
+changes already applied to the retained database.
+
 ## Management CLI
 
 `@isaacthoman/pulpo` is the Node.js 22+ operator client for contexts, scoped automation tokens,

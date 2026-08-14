@@ -32,6 +32,12 @@ import {
 import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 import { getConfig } from '../config.js'
+import {
+  bumpAccountRevisions,
+  friendPeerIds,
+  publishScopedStateChanges,
+  type AccountRevisionChange,
+} from '../friends/sync.js'
 
 export type ManagementSettingsMode = 'all' | 'account' | 'instance'
 
@@ -61,9 +67,8 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const [[preferenceRow], [profile], settingRows] = await Promise.all([
     database.select().from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1),
     database.select({
-      nickname: users.nickname,
-      leaderboardVisible: users.leaderboardVisible,
-      leaderboardColor: users.leaderboardColor,
+      username: users.username,
+      profileColor: users.profileColor,
     }).from(users).where(eq(users.id, userId)).limit(1),
     database.select().from(applicationSettings),
   ])
@@ -71,9 +76,8 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const rawAccount = preferencesWithModelDefaults(preferenceRow?.values as Record<string, unknown> | undefined)
   const account = managementAccountSettingsSchema.parse({
     ...rawAccount,
-    nickname: profile?.nickname ?? '',
-    leaderboardVisible: profile?.leaderboardVisible ?? false,
-    leaderboardColor: profile?.leaderboardColor ?? '#10b981',
+    username: profile?.username,
+    profileColor: profile?.profileColor ?? null,
   })
   const storedWebTools = parseWebToolsSettings(byKey.get('webTools'))
   const instance = {
@@ -189,7 +193,11 @@ export async function applyManagementSettings(
   const previousTrashRetention = current.account.trashRetention
   const changedPaths = (await planManagementSettings(userId, document, secrets, mode)).changes.map((change) => change.path)
   if (!changedPaths.length) return current
+  const publicProfileChanged = changedPaths.some((path) => (
+    path === 'account.username' || path === 'account.profileColor'
+  ))
   let publishedRevision: number | undefined
+  let friendChanges: AccountRevisionChange[] = []
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
     const lockedCurrent = await loadManagementSettings(userId, tx as unknown as typeof db)
@@ -200,13 +208,16 @@ export async function applyManagementSettings(
       await tx.insert(userPreferences).values({ userId, values: account })
         .onConflictDoUpdate({ target: userPreferences.userId, set: { values: account, updatedAt: new Date() } })
       const [revision] = await tx.update(users).set({
-        nickname: account.nickname.trim() || null,
-        leaderboardVisible: account.leaderboardVisible,
-        leaderboardColor: account.leaderboardColor,
+        username: account.username,
+        profileColor: account.profileColor,
         stateRevision: sql`${users.stateRevision} + 1`,
         updatedAt: new Date(),
       }).where(eq(users.id, userId)).returning({ revision: users.stateRevision })
       publishedRevision = revision?.revision
+      if (publicProfileChanged) {
+        const peers = await friendPeerIds(tx, userId)
+        friendChanges = await bumpAccountRevisions(tx, peers)
+      }
     }
     if (mode !== 'account') {
       const [existingWebTools] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
@@ -238,6 +249,7 @@ export async function applyManagementSettings(
     })
   })
   if (publishedRevision !== undefined) await publishStateChange({ userId, revision: publishedRevision })
+  await publishScopedStateChanges(friendChanges, ['friends'])
   if (mode !== 'instance' && previousTrashRetention !== account.trashRetention) {
     await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId } }, {
       jobId: `purge-chats-management-settings-${userId}-${Date.now()}`,

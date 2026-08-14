@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
   ChevronRight,
@@ -20,6 +21,7 @@ import {
   ShieldCheck,
   SquarePen,
   Trash2,
+  UsersRound,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react'
@@ -53,7 +55,9 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { apiRequest } from '@/lib/api'
+import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -652,7 +656,16 @@ export function Sidebar({
   const moveToFolder = useChat((s) => s.moveToFolder)
   const toggleFolder = useChat((s) => s.toggleFolder)
   const user = useAuth((s) => s.user)
+  const pendingFriendsQuery = useQuery({
+    queryKey: ['friends-pending-count', user?.id],
+    queryFn: () => apiRequest<{ count: number }>('/api/friends/pending-count'),
+    enabled: Boolean(user?.id && user.role !== 'pending'),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
+  const sidebarPins = useSettings((s) => s.sidebarPins)
+  const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
   const [newFolderOpen, setNewFolderOpen] = useState(false)
   const [folderName, setFolderName] = useState('')
@@ -828,7 +841,7 @@ export function Sidebar({
     collapsed ? 'w-9' : 'w-full'
   )
 
-  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode) => (
+  const iconBtn = (label: string, onClick: () => void, icon: React.ReactNode, badge?: number) => (
     <Tooltip
       key={label}
       open={collapsed && activeTooltip === label}
@@ -838,7 +851,7 @@ export function Sidebar({
     >
       <TooltipTrigger asChild>
         <button className={navBtn} onClick={onClick} aria-label={label}>
-          <span className="flex size-8 shrink-0 items-center justify-center">{icon}</span>
+          <span className="relative flex size-8 shrink-0 items-center justify-center">{icon}{Boolean(badge) && <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">{badge! > 99 ? '99+' : badge}</span>}</span>
           <span
             className={cn(
               'min-w-0 truncate whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
@@ -852,6 +865,43 @@ export function Sidebar({
       {collapsed && <TooltipContent side="right">{label}</TooltipContent>}
     </Tooltip>
   )
+
+  const accountNavItem = (
+    key: SidebarPinKey,
+    label: string,
+    path: string,
+    icon: React.ReactNode,
+    badge?: number,
+  ) => {
+    const pinned = sidebarPins[key]
+    const action = pinned ? 'Unpin' : 'Pin'
+    return (
+      <div key={key} className="group/account-nav relative">
+        <DropdownMenuItem className="w-full pr-9" onClick={() => go(path)}>
+          {icon}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="min-w-0 truncate">{label}</span>
+            {Boolean(badge) && <span className="grid min-w-3.5 shrink-0 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">
+              {badge! > 99 ? '99+' : badge}
+            </span>}
+          </span>
+        </DropdownMenuItem>
+        <button
+          type="button"
+          aria-label={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          title={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          className="invisible absolute right-1 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground focus-visible:visible focus-visible:ring-1 focus-visible:ring-ring group-hover/account-nav:visible group-focus-within/account-nav:visible"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            setSetting('sidebarPins', toggleSidebarPin(sidebarPins, key))
+          }}
+        >
+          {pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
+        </button>
+      </div>
+    )
+  }
 
   return (
     <aside
@@ -928,8 +978,9 @@ export function Sidebar({
         <div className="space-y-0.5 px-2">
           {iconBtn('New chat', startNewChat, <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
-          {iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
-          {apiKeysEnabled && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {sidebarPins.usage && iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
+          {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingFriendsQuery.data?.count)}
+          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -942,7 +993,7 @@ export function Sidebar({
           )}
         >
           {/* chat list */}
-          <div className="px-2 pb-4 pt-4">
+          <div className="px-2 pb-4 pt-2">
             {pinned.length > 0 && (
               <div className="mb-2">
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -1078,27 +1129,36 @@ export function Sidebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
+              className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
             >
               <span className="flex size-8 shrink-0 items-center justify-center">
-                <Avatar className="size-7">
-                  <AvatarFallback className="bg-zinc-700 text-[11px] font-semibold text-zinc-100 dark:bg-zinc-300 dark:text-zinc-900">
-                    {user?.initials ?? '?'}
-                  </AvatarFallback>
-                </Avatar>
+                <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[11px]" />
               </span>
               <div
                 className={cn(
-                  'min-w-0 flex-1 whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  'min-w-0 flex-1 whitespace-nowrap transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  !sidebarPins.friends && pendingFriendsQuery.data?.count ? 'pr-8' : 'pr-2',
                   sidebarTextTransition
                 )}
               >
                 <div className="truncate text-sm font-medium">{user?.name ?? 'Signed out'}</div>
-                <div className="truncate text-xs text-muted-foreground">{user?.email ?? ''}</div>
+                <div className="truncate text-xs text-muted-foreground">{user?.username ? `@${user.username}` : ''}</div>
               </div>
+              {!sidebarPins.friends && Boolean(pendingFriendsQuery.data?.count) && (
+                <span className={cn(
+                  'absolute grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground',
+                  collapsed ? 'right-0 top-0' : 'right-2 top-1/2 -translate-y-1/2',
+                )}>
+                  {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
+                </span>
+              )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
+            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
+            {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
               Settings

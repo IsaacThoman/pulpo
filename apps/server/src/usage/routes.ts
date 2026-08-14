@@ -1,9 +1,11 @@
-import { and, asc, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { requireAdmin, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { creditLedger, modelPresetChoices, modelPresets, models, requestLogs, usageEvents, users } from '../database/schema.js'
-import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, publicParticipant, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
+import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
+import { friendUserIds } from '../friends/routes.js'
+import { profileAvatarUrl } from '../profile/service.js'
 
 function sinceFromQuery(query: unknown): Date {
   const days = Math.min(365, Math.max(1, Number((query as { days?: string }).days ?? 30)))
@@ -17,8 +19,8 @@ function leaderboardSince(query: unknown): Date | null {
     : new Date(Date.now() - Math.min(365, Math.max(1, Number(days) || 30)) * 86_400_000)
 }
 
-function eligibleUsageFilters(since: Date | null): SQL[] {
-  return [eq(users.blocked, false), ...(since ? [gte(usageEvents.createdAt, since)] : [])]
+function eligibleUsageFilters(since: Date | null, userIds: string[]): SQL[] {
+  return [eq(users.blocked, false), inArray(users.id, userIds), ...(since ? [gte(usageEvents.createdAt, since)] : [])]
 }
 
 async function loadUsageModelAliases(): Promise<Map<string, UsageModelIdentity>> {
@@ -123,14 +125,16 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/usage/leaderboard', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
+    const circle = await friendUserIds(user.id)
     const since = leaderboardSince(request.query)
     const rows = await db.select({
       userId: users.id,
       name: users.name,
-      nickname: users.nickname,
-      visible: users.leaderboardVisible,
-      color: users.leaderboardColor,
+      username: users.username,
+      avatarObjectKey: users.avatarObjectKey,
+      avatarVersion: users.avatarVersion,
+      profileColor: users.profileColor,
       balanceMicros: users.balanceMicros,
       calls: sql<number>`count(${usageEvents.id})::int`,
       tokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)::bigint`,
@@ -141,26 +145,27 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         ? and(eq(usageEvents.userId, users.id), gte(usageEvents.createdAt, since))
         : eq(usageEvents.userId, users.id),
     )
-      .where(eq(users.blocked, false))
+      .where(and(eq(users.blocked, false), inArray(users.id, circle)))
       .groupBy(users.id).orderBy(desc(sql`coalesce(sum(${usageEvents.costMicros}), 0)`)).limit(100)
-    return { data: rows.map((row, index) => {
-      const participant = publicParticipant(row)
-      return {
-        userId: row.visible ? row.userId : `anonymous-${index + 1}`,
-        ...participant,
+    return { data: rows.map((row) => ({
+        userId: row.userId,
+        displayName: row.name,
+        username: row.username,
+        avatarUrl: profileAvatarUrl({ id: row.userId, avatarObjectKey: row.avatarObjectKey, avatarVersion: row.avatarVersion }),
+        profileColor: row.profileColor,
         balanceMicros: Number(row.balanceMicros),
         calls: Number(row.calls),
         tokens: Number(row.tokens),
         costMicros: Number(row.costMicros),
-      }
-    }) }
+      })) }
   })
 
   app.get('/api/usage/leaderboard/activity', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
+    const circle = await friendUserIds(user.id)
     const since = leaderboardSince(request.query)
-    const rangeWhere = and(...eligibleUsageFilters(since))
-    const allWhere = and(...eligibleUsageFilters(null))
+    const rangeWhere = and(...eligibleUsageFilters(since, circle))
+    const allWhere = and(...eligibleUsageFilters(null, circle))
     const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [summary, daily, contribution, topModels, aliases] = await Promise.all([
       db.select({
@@ -254,7 +259,8 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
   })
 
   app.get('/api/usage/leaderboard/records', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
+    const circle = await friendUserIds(user.id)
     const query = request.query as { days?: string; cursor?: string; limit?: string }
     const since = leaderboardSince(query)
     const limit = Math.min(100, Math.max(1, Number(query.limit ?? 50) || 50))
@@ -266,16 +272,18 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
+      userId: users.id,
       userName: users.name,
-      userNickname: users.nickname,
-      userVisible: users.leaderboardVisible,
-      userColor: users.leaderboardColor,
+      userUsername: users.username,
+      userAvatarObjectKey: users.avatarObjectKey,
+      userAvatarVersion: users.avatarVersion,
+      userProfileColor: users.profileColor,
       modelId: models.id,
       modelName: models.name,
       modelLogo: models.logo,
       modelVisible: models.visible,
     }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId)).innerJoin(models, eq(models.id, attributedModelId))
-      .where(and(...eligibleUsageFilters(since), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(limit + 1), loadUsageModelAliases()])
+      .where(and(...eligibleUsageFilters(since, circle), cursorFilter)).orderBy(desc(usageEvents.createdAt), desc(usageEvents.id)).limit(limit + 1), loadUsageModelAliases()])
     const page = rows.slice(0, limit)
     const last = page.at(-1)?.usage
     return {
@@ -287,7 +295,13 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         return {
         id: row.usage.id,
         createdAt: row.usage.createdAt.toISOString(),
-        participant: publicParticipant({ visible: row.userVisible, name: row.userName, nickname: row.userNickname, color: row.userColor }),
+        participant: {
+          id: row.userId,
+          displayName: row.userName,
+          username: row.userUsername,
+          avatarUrl: profileAvatarUrl({ id: row.userId, avatarObjectKey: row.userAvatarObjectKey, avatarVersion: row.userAvatarVersion }),
+          profileColor: row.userProfileColor,
+        },
         model: publicModel({ visible: model.modelVisible, id: model.modelId, name: model.modelName, logo: model.modelLogo }),
         inputTokens: row.usage.inputTokens,
         cacheWriteTokens: row.usage.cacheWriteTokens,

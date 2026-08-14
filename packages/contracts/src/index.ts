@@ -11,10 +11,17 @@ export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 1_000 * 1024 * 1024
 export const roleSchema = z.enum(['pending', 'user', 'admin'])
 export type Role = z.infer<typeof roleSchema>
 
+export const usernameSchema = z.string().trim().toLowerCase()
+  .regex(/^[a-z0-9][a-z0-9_]{1,28}[a-z0-9]$/, 'Use 3–30 letters, numbers, or underscores; begin and end with a letter or number')
+export const profileColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+
 export const userSchema = z.object({
   id: idSchema,
   email: z.email(),
   name: z.string().min(1).max(120),
+  username: usernameSchema,
+  avatarUrl: z.string().nullable(),
+  profileColor: profileColorSchema.nullable(),
   role: roleSchema,
   balanceMicros: z.number().int(),
   storageLimitBytes: z.number().int().nonnegative(),
@@ -32,6 +39,7 @@ export const loginInputSchema = z.object({
 
 export const signupInputSchema = z.object({
   name: z.string().trim().min(1).max(120),
+  username: usernameSchema,
   email: z.email(),
   password: z.string().min(8).max(1024),
 })
@@ -220,8 +228,51 @@ export const mobilePasskeyCodeExchangeInputSchema = z.object({
 })
 
 export const updateProfileInputSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+  name: z.string().trim().min(1).max(120).optional(),
+  username: usernameSchema.optional(),
+  profileColor: profileColorSchema.nullable().optional(),
+}).refine((value) => Object.keys(value).length > 0, 'At least one profile field is required')
+
+export const friendProfileSchema = z.object({
+  id: idSchema,
+  displayName: z.string().min(1).max(120),
+  username: usernameSchema,
+  avatarUrl: z.string().nullable(),
+  profileColor: profileColorSchema.nullable(),
 })
+export type FriendProfile = z.infer<typeof friendProfileSchema>
+
+export const friendRelationshipSchema = z.enum(['self', 'none', 'incoming', 'outgoing', 'friends'])
+export type FriendRelationship = z.infer<typeof friendRelationshipSchema>
+
+export const friendSearchResultSchema = z.object({
+  profile: friendProfileSchema,
+  relationship: friendRelationshipSchema,
+  requestId: idSchema.nullable(),
+  matchedOn: z.enum(['username', 'displayName']),
+})
+export type FriendSearchResult = z.infer<typeof friendSearchResultSchema>
+
+export const friendSearchResponseSchema = z.object({
+  results: z.array(friendSearchResultSchema).max(8),
+})
+export type FriendSearchResponse = z.infer<typeof friendSearchResponseSchema>
+
+export const friendConnectionSchema = z.object({
+  requestId: idSchema,
+  profile: friendProfileSchema,
+  requestedAt: isoDateSchema,
+  acceptedAt: isoDateSchema.nullable(),
+})
+export type FriendConnection = z.infer<typeof friendConnectionSchema>
+
+export const friendsListSchema = z.object({
+  friends: z.array(friendConnectionSchema),
+  incoming: z.array(friendConnectionSchema),
+  outgoing: z.array(friendConnectionSchema),
+  blocked: z.array(friendProfileSchema),
+})
+export type FriendsList = z.infer<typeof friendsListSchema>
 
 export const changePasswordInputSchema = z.object({
   currentPassword: z.string().min(1).max(1024),
@@ -560,6 +611,14 @@ export const modelPreferencesPatchSchema = z.object({
   providerOrder: orderedPreferenceIdsSchema.optional(),
 })
 export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
+
+/** Account-scoped visibility controls for optional primary sidebar links. */
+export const sidebarPinsSchema = z.object({
+  usage: z.boolean().default(false),
+  friends: z.boolean().default(false),
+  apiKeys: z.boolean().default(false),
+})
+export type SidebarPins = z.infer<typeof sidebarPinsSchema>
 
 /** Account-scoped Agent mode selections keyed by visible catalog model id. */
 export const agentModesSchema = z.record(z.string(), z.boolean())
@@ -937,6 +996,8 @@ export const managementAccountSettingsSchema = z.object({
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   customInstructions: z.string().max(100_000).default(''),
   nickname: z.string().max(80).default(''),
+  username: usernameSchema,
+  profileColor: profileColorSchema.nullable().default(null),
   memoryEnabled: z.boolean().default(false),
   /** Per-model composer Agent mode selections. Missing model ids default on in clients. */
   agentModes: agentModesSchema.default({}),
@@ -953,6 +1014,7 @@ export const managementAccountSettingsSchema = z.object({
   generation: z.record(z.string(), z.record(z.string(), z.string())).default({}),
   favoriteModelIds: accountPreferenceIdsSchema.default([]),
   providerOrder: accountPreferenceIdsSchema.default([]),
+  sidebarPins: sidebarPinsSchema.default(() => sidebarPinsSchema.parse({})),
 })
 
 export const managementWebToolsSettingsSchema = webToolsSettingsSchema.extend({
@@ -1207,9 +1269,12 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
+export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends'])
+export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
+
 export const syncResultSchema = z.object({
   accountRevision: z.number().int().nonnegative(),
-  invalidate: z.array(z.enum(['chats', 'models', 'usage', 'settings'])),
+  invalidate: z.array(stateInvalidationScopeSchema),
   snapshots: z.array(responseSnapshotSchema),
   events: z.array(responseEventSchema),
 })
@@ -1230,7 +1295,7 @@ export interface ServerToClientEvents {
   'response.snapshot': (snapshot: ResponseSnapshot) => void
   'response.completed': (input: { responseId: string; chatId: string; preview: string }) => void
   'chat.changed': (input: { chatId: string; revision: number }) => void
-  'account.revision': (input: { revision: number }) => void
+  'account.revision': (input: { revision: number; scopes?: StateInvalidationScope[] }) => void
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
   'sync.result': (result: SyncResult) => void
   'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void

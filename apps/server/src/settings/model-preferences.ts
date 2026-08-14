@@ -4,6 +4,7 @@ import {
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
   newChatAutoExpireSchema,
+  sidebarPinsSchema,
 } from '@pulpo/contracts'
 
 export function preferencesWithModelDefaults(values?: Record<string, unknown>): Record<string, unknown> {
@@ -14,6 +15,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     ...values,
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
+    sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     ...modelPreferencesSchema.parse({
       favoriteModelIds: values?.favoriteModelIds,
@@ -27,6 +29,12 @@ export function normalizedPreferencePatch(patch: Record<string, unknown>): Recor
     ...('favoriteModelIds' in patch ? { favoriteModelIds: patch.favoriteModelIds } : {}),
     ...('providerOrder' in patch ? { providerOrder: patch.providerOrder } : {}),
   })
+  const sidebarPins = 'sidebarPins' in patch ? sidebarPinsSchema.parse(patch.sidebarPins) : undefined
   const agentModes = 'agentModes' in patch ? agentModesSchema.parse(patch.agentModes) : undefined
-  return { ...patch, ...modelPatch, ...(agentModes === undefined ? {} : { agentModes }) }
+  return {
+    ...patch,
+    ...modelPatch,
+    ...(sidebarPins === undefined ? {} : { sidebarPins }),
+    ...(agentModes === undefined ? {} : { agentModes }),
+  }
 }

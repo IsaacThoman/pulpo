@@ -32,8 +32,10 @@ import {
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
+  sidebarPinsSchema,
   startChatSchema,
   syncRequestSchema,
+  syncResultSchema,
   updateChatSchema,
   updateProviderSchema,
   type ResponseEvent,
@@ -190,6 +192,16 @@ describe('shared contracts', () => {
     expect(result.responseCursors[responseId]).toBe(42)
   })
 
+  it('accepts friends as a reconnect invalidation scope', () => {
+    const result = syncResultSchema.parse({
+      accountRevision: 4,
+      invalidate: ['friends'],
+      snapshots: [],
+      events: [],
+    })
+    expect(result.invalidate).toEqual(['friends'])
+  })
+
   it('accepts generic composer presets', () => {
     const presets = chatPresetsSchema.parse([{
       id: 'reasoning', name: 'Reasoning', icon: 'brain', defaultChoiceId: 'medium',
@@ -233,6 +245,12 @@ describe('shared contracts', () => {
     expect(modelPreferencesSchema.parse({})).toEqual({ favoriteModelIds: [], providerOrder: [] })
     expect(modelPreferencesPatchSchema.safeParse({ favoriteModelIds: [42] }).success).toBe(false)
     expect(modelPreferencesPatchSchema.safeParse({ providerOrder: Array.from({ length: 501 }, (_, index) => `lab-${index}`) }).success).toBe(false)
+  })
+
+  it('defaults and validates account sidebar pins', () => {
+    expect(sidebarPinsSchema.parse({})).toEqual({ usage: false, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ usage: true, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.safeParse({ friends: 'no' }).success).toBe(false)
   })
 
   it('normalizes new-account model defaults while preserving favorite order', () => {
@@ -315,18 +333,25 @@ describe('shared contracts', () => {
       apiVersion: 'pulpo.dev/management/v1',
       kind: 'Settings',
       revision: 'revision-1',
-      account: {},
+      account: { username: 'pulpo_user' },
       instance: {},
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      favoriteModelIds: [], agentModes: {},
+      nickname: '', favoriteModelIds: [], agentModes: {},
+      sidebarPins: { usage: false, friends: false, apiKeys: false },
     })
-    expect(managementAccountSettingsSchema.parse({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
-    expect(managementAccountSettingsSchema.parse({ agentModes: { 'model-a': false, 'model-b': true } }).agentModes)
+    expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
+    expect(managementAccountSettingsSchema.parse({
+      username: 'pulpo_user', agentModes: { 'model-a': false, 'model-b': true },
+    }).agentModes)
       .toEqual({ 'model-a': false, 'model-b': true })
-    expect(managementAccountSettingsSchema.safeParse({ agentModes: { 'model-a': 'false' } }).success).toBe(false)
-    expect(managementAccountSettingsSchema.parse({ agentModeEnabled: false })).toMatchObject({
+    expect(managementAccountSettingsSchema.safeParse({
+      username: 'pulpo_user', agentModes: { 'model-a': 'false' },
+    }).success).toBe(false)
+    expect(managementAccountSettingsSchema.parse({
+      username: 'pulpo_user', agentModeEnabled: false,
+    })).toMatchObject({
       agentModeEnabled: false,
       agentModes: {},
     })
@@ -347,7 +372,7 @@ describe('shared contracts', () => {
       .toMatchObject({ scopes: ['instance:read'], expiresInDays: 90 })
     expect(createManagementTokenSchema.safeParse({ name: 'too long', scopes: ['instance:read'], expiresInDays: 366 }).success).toBe(false)
     expect(managementSettingsDocumentSchema.safeParse({
-      apiVersion: 'pulpo.dev/management/v1', kind: 'Settings', revision: 'revision', account: {},
+      apiVersion: 'pulpo.dev/management/v1', kind: 'Settings', revision: 'revision', account: { username: 'pulpo_user' },
       instance: { webTools: { apiKey: { fromEnv: 'PULPO_KAGI_KEY' } } },
     }).success).toBe(true)
   })
@@ -624,6 +649,37 @@ describe('response snapshot accumulation', () => {
     expect(() => editMessageSchema.parse({
       content: 'duplicate', attachmentIds: [attachmentId, attachmentId],
     })).toThrow(/unique/i)
+  })
+
+  it('normalizes usernames and validates partial profile updates', async () => {
+    const { signupInputSchema, updateProfileInputSchema, usernameSchema } = await import('./index.js')
+    expect(usernameSchema.parse('  Isaac_2 ')).toBe('isaac_2')
+    expect(signupInputSchema.parse({ name: 'Isaac', username: 'Isaac_2', email: 'isaac@example.com', password: 'password' }).username).toBe('isaac_2')
+    expect(() => signupInputSchema.parse({ name: 'Isaac', email: 'isaac@example.com', password: 'password' })).toThrow()
+    expect(updateProfileInputSchema.parse({ username: 'Isaac_2' })).toEqual({ username: 'isaac_2' })
+    expect(() => updateProfileInputSchema.parse({ username: null })).toThrow()
+    expect(updateProfileInputSchema.parse({ profileColor: '#10b981' })).toEqual({ profileColor: '#10b981' })
+    expect(() => usernameSchema.parse('_isaac')).toThrow()
+    expect(() => usernameSchema.parse('is')).toThrow()
+    expect(() => updateProfileInputSchema.parse({})).toThrow()
+  })
+
+  it('validates bounded friend search responses', async () => {
+    const { friendSearchResponseSchema } = await import('./index.js')
+    const result = {
+      profile: {
+        id: '00000000-0000-4000-8000-000000000004',
+        displayName: 'Isaac Thomas',
+        username: 'isaacthoman',
+        avatarUrl: null,
+        profileColor: '#10b981',
+      },
+      relationship: 'incoming',
+      requestId: '00000000-0000-4000-8000-000000000005',
+      matchedOn: 'displayName',
+    }
+    expect(friendSearchResponseSchema.parse({ results: [result] })).toEqual({ results: [result] })
+    expect(() => friendSearchResponseSchema.parse({ results: Array(9).fill(result) })).toThrow()
   })
 
 })

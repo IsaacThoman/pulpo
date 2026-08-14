@@ -11,6 +11,9 @@ export interface AuthUser {
   id: string
   name: string
   email: string
+  username: string
+  avatarUrl: string | null
+  profileColor: string | null
   role: AuthRole
   initials: string
   balanceMicros: number
@@ -46,9 +49,10 @@ interface AuthState {
   bootstrap: () => Promise<void>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
   passkeyLogin: (useBrowserAutofill?: boolean) => Promise<AuthResult>
-  signup: (name: string, email: string, password: string) => Promise<AuthResult>
-  setup: (name: string, email: string, password: string) => Promise<AuthResult>
+  signup: (name: string, username: string, email: string, password: string) => Promise<AuthResult>
+  setup: (name: string, username: string, email: string, password: string) => Promise<AuthResult>
   logout: () => Promise<void>
+  replaceUser: (user: ServerUser) => void
   setSignupEnabled: (value: boolean) => void
 }
 
@@ -59,7 +63,12 @@ function initials(name: string): string {
 }
 
 function normalizeUser(user: ServerUser): AuthUser {
-  return { ...user, initials: initials(user.name) }
+  return {
+    ...user,
+    avatarUrl: user.avatarUrl ?? null,
+    profileColor: user.profileColor ?? null,
+    initials: initials(user.name),
+  }
 }
 
 function readCachedProfile(): AuthUser | null {
@@ -152,10 +161,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
   },
 
-  signup: async (name, email, password) => {
+  signup: async (name, username, email, password) => {
     try {
       const response = await apiRequest<AuthResponse>('/api/auth/signup', {
-        method: 'POST', body: { name, email, password },
+        method: 'POST', body: { name, username, email, password },
       })
       const user = normalizeUser(response.user)
       cacheProfile(user)
@@ -166,10 +175,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
     }
   },
 
-  setup: async (name, email, password) => {
+  setup: async (name, username, email, password) => {
     try {
       const response = await apiRequest<AuthResponse>('/api/auth/setup', {
-        method: 'POST', body: { name, email, password },
+        method: 'POST', body: { name, username, email, password },
       })
       const user = normalizeUser(response.user)
       cacheProfile(user)
@@ -187,6 +196,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     queryClient.clear()
     if (userId) await clearLocalUserData(userId)
+  },
+
+  replaceUser: (profile) => {
+    const user = normalizeUser(profile)
+    cacheProfile(user)
+    set({ user })
   },
 
   setSignupEnabled: (signupEnabled) => set({ signupEnabled }),

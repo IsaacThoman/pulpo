@@ -13,6 +13,11 @@ import {
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
+  bumpAccountRevisions,
+  friendPeerIds,
+  publishScopedStateChanges,
+} from '../friends/sync.js'
+import {
   availableReservationCapacityMicros,
   calculateCostMicros,
   calculateReservationMicros,
@@ -111,14 +116,18 @@ export async function settleBudget(input: {
   requestCount?: number
   costMicrosOverride?: number
 }): Promise<number> {
-  return db.transaction(async (tx) => {
+  const settlement = await db.transaction(async (tx) => {
     const [reservation] = await tx
       .select()
       .from(budgetReservations)
       .where(eq(budgetReservations.responseId, input.responseId))
       .for('update')
     if (!reservation) throw new AppError(409, 'reservation_missing', 'Budget reservation is missing')
-    if (reservation.status === 'settled') return reservation.settledAmountMicros ?? 0
+    if (reservation.status === 'settled') return {
+      cost: reservation.settledAmountMicros ?? 0,
+      ownChanges: [],
+      friendChanges: [],
+    }
     const [response] = await tx.select().from(responses).where(eq(responses.id, input.responseId)).limit(1)
     const [pricing] = response?.pricingVersionId
       ? await tx.select().from(modelPricingVersions).where(eq(modelPricingVersions.id, response.pricingVersionId)).limit(1)
@@ -132,7 +141,13 @@ export async function settleBudget(input: {
       .for('update')
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
     const balanceAfter = user.balanceMicros - cost
-    await tx.update(users).set({ balanceMicros: balanceAfter, stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, user.id))
+    const [updatedUser] = await tx.update(users).set({
+      balanceMicros: balanceAfter,
+      stateRevision: sql`${users.stateRevision} + 1`,
+    }).where(eq(users.id, user.id)).returning({
+      userId: users.id,
+      revision: users.stateRevision,
+    })
     await tx.update(budgetReservations).set({
       status: 'settled',
       settledAmountMicros: cost,
@@ -162,8 +177,18 @@ export async function settleBudget(input: {
       costMicros: cost,
       latencyMs: input.latencyMs,
     }).onConflictDoNothing()
-    return cost
+    const peers = await friendPeerIds(tx, user.id, { acceptedOnly: true })
+    return {
+      cost,
+      ownChanges: updatedUser ? [updatedUser] : [],
+      friendChanges: await bumpAccountRevisions(tx, peers),
+    }
   })
+  await Promise.all([
+    publishScopedStateChanges(settlement.ownChanges, ['usage']),
+    publishScopedStateChanges(settlement.friendChanges, ['friends']),
+  ])
+  return settlement.cost
 }
 
 export async function resizeBudgetReservation(input: {

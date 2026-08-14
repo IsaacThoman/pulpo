@@ -14,6 +14,7 @@ import {
   type NativeAuthResponse,
   type ResponseEvent,
   type ResponseSnapshot,
+  type StateInvalidationScope,
   type TwoFactorEnrollment,
   type TwoFactorRecoveryCodes,
   type TwoFactorStatus,
@@ -35,6 +36,7 @@ export interface ChatTreeNode {
 export interface RevisionInvalidationBatch {
   revision: number
   chatIds: string[]
+  scopes: StateInvalidationScope[]
   /** Account revisions that have not been paired with a chat change. */
   accountOnlyRevisions: number[]
 }
@@ -42,19 +44,22 @@ export interface RevisionInvalidationBatch {
 /** Merge the paired account/chat events emitted for one server revision. */
 export function mergeRevisionInvalidation(
   current: RevisionInvalidationBatch | undefined,
-  event: { revision: number; chatId?: string },
+  event: { revision: number; chatId?: string; scopes?: StateInvalidationScope[] },
 ): RevisionInvalidationBatch {
   const chatIds = new Set(current?.chatIds ?? [])
+  const scopes = new Set(current?.scopes ?? [])
   const accountOnlyRevisions = new Set(current?.accountOnlyRevisions ?? [])
+  for (const scope of event.scopes ?? []) scopes.add(scope)
   if (event.chatId) {
     chatIds.add(event.chatId)
     accountOnlyRevisions.delete(event.revision)
-  } else if (!accountOnlyRevisions.has(event.revision)) {
+  } else if (!event.scopes?.length && !accountOnlyRevisions.has(event.revision)) {
     accountOnlyRevisions.add(event.revision)
   }
   return {
     revision: Math.max(current?.revision ?? 0, event.revision),
     chatIds: [...chatIds],
+    scopes: [...scopes],
     accountOnlyRevisions: [...accountOnlyRevisions],
   }
 }

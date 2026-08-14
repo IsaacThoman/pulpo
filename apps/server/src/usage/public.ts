@@ -21,20 +21,6 @@ export function decodeUsageCursor(value: string): UsageCursor {
   }
 }
 
-export function publicParticipant(input: {
-  visible: boolean
-  name: string
-  nickname: string | null
-  color: string
-}): { name: string; color: string | null; anonymous: boolean } {
-  if (!input.visible) return { name: 'Anonymous', color: null, anonymous: true }
-  return {
-    name: input.nickname?.trim() || input.name,
-    color: input.color,
-    anonymous: false,
-  }
-}
-
 export function publicModel(input: {
   visible: boolean
   id: string

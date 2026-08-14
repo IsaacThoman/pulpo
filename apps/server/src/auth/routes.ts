@@ -20,6 +20,7 @@ import {
 } from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
+import { hasDatabaseErrorCode } from '../database/errors.js'
 import { applicationSettings, auditEvents, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -28,6 +29,11 @@ import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
+import {
+  bumpAccountRevisions,
+  friendPeerIds,
+  publishScopedStateChanges,
+} from '../friends/sync.js'
 import {
   createPasswordHash,
   createSession,
@@ -112,6 +118,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         id: userId,
         email: input.email,
         name: input.name,
+        username: input.username,
         role: 'admin',
         balanceMicros: 100_000_000,
         storageLimitBytes: 5_000 * 1024 * 1024,
@@ -189,10 +196,14 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       if (!existingUser) throw new AppError(409, 'setup_required', 'Create the initial administrator before accepting signups')
       const [existing] = await tx.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = lower(${input.email})`).limit(1)
       if (existing) throw new AppError(409, 'email_taken', 'An account with this email already exists')
+      const [existingUsername] = await tx.select({ id: users.id }).from(users)
+        .where(sql`lower(${users.username}) = ${input.username}`).limit(1)
+      if (existingUsername) throw new AppError(409, 'username_taken', 'That username is already taken', 'invalid_request_error', 'username')
       await tx.insert(users).values({
         id: userId,
         email: input.email,
         name: input.name,
+        username: input.username,
         role: authSettings.defaultSignupRole,
         balanceMicros: authSettings.defaultBalanceMicros,
         storageLimitBytes: authSettings.defaultStorageLimitBytes,
@@ -246,13 +257,29 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.patch('/api/me', async (request) => {
     const user = requireUser(request)
     const input = updateProfileInputSchema.parse(request.body)
-    const [updated] = await db.update(users).set({
-      name: input.name,
-      stateRevision: sql`${users.stateRevision} + 1`,
-      updatedAt: new Date(),
-    }).where(eq(users.id, user.id)).returning()
+    let updated: typeof users.$inferSelect | undefined
+    let friendChanges: Awaited<ReturnType<typeof bumpAccountRevisions>> = []
+    try {
+      ;({ updated, friendChanges } = await db.transaction(async (tx) => {
+        const [updated] = await tx.update(users).set({
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.username !== undefined ? { username: input.username } : {}),
+          ...(input.profileColor !== undefined ? { profileColor: input.profileColor?.toLowerCase() ?? null } : {}),
+          stateRevision: sql`${users.stateRevision} + 1`,
+          updatedAt: new Date(),
+        }).where(eq(users.id, user.id)).returning()
+        const peers = await friendPeerIds(tx, user.id)
+        return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
+      }))
+    } catch (cause) {
+      if (hasDatabaseErrorCode(cause, '23505')) {
+        throw new AppError(409, 'username_taken', 'That username is already taken', 'invalid_request_error', 'username')
+      }
+      throw cause
+    }
     if (!updated) throw unauthorized()
     await publishStateChange({ userId: user.id, revision: updated.stateRevision })
+    await publishScopedStateChanges(friendChanges, ['friends'])
     return { user: serializeUser(updated) }
   })
 
