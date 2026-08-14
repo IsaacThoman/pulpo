@@ -1,3 +1,4 @@
+import sharp from 'sharp'
 import { describe, expect, it, vi } from 'vitest'
 import {
   aggregateOcrStatus,
@@ -69,6 +70,56 @@ describe('model-bound image OCR adapters', () => {
     ])
     expect(intercept).toHaveBeenCalledWith(enabledModel, expect.objectContaining({ data: raw, mimeType: 'image/webp' }))
     expect(input[0]!.content[1]).toHaveProperty('type', 'input_image')
+  })
+
+  it('normalizes EXIF orientation in embedded OpenAI images before model use', async () => {
+    const source = await sharp({
+      create: { width: 120, height: 80, channels: 3, background: '#22c55e' },
+    }).jpeg().withMetadata({ orientation: 6 }).toBuffer()
+    const imageUrl = `data:image/jpeg;base64,${source.toString('base64')}`
+    const input = [{ role: 'user', content: [{ type: 'input_image', image_url: imageUrl }] }]
+
+    const transformed = await interceptOpenAIInputImages(
+      input,
+      disabledModel,
+      { intercept: vi.fn().mockResolvedValue(null) },
+    ) as typeof input
+
+    const outputUrl = transformed[0]!.content[0]!.image_url
+    const output = Buffer.from(outputUrl.slice(outputUrl.indexOf(',') + 1), 'base64')
+    const metadata = await sharp(output).metadata()
+
+    expect(metadata.width).toBe(80)
+    expect(metadata.height).toBe(120)
+    expect(metadata.orientation).toBeUndefined()
+    expect(input[0]!.content[0]!.image_url).toBe(imageUrl)
+  })
+
+  it('normalizes EXIF orientation in view_image results before model use', async () => {
+    const source = await sharp({
+      create: { width: 90, height: 60, channels: 3, background: '#eab308' },
+    }).jpeg().withMetadata({ orientation: 8 }).toBuffer()
+    const raw = source.toString('base64')
+    const context = {
+      messages: [{
+        role: 'toolResult',
+        toolName: 'view_image',
+        content: [{ type: 'image', data: raw, mimeType: 'image/jpeg' }],
+      }],
+    }
+
+    const transformed = await interceptAgentContextImages(
+      context,
+      disabledModel,
+      { intercept: vi.fn().mockResolvedValue(null) },
+    )
+    const image = transformed.messages[0]!.content[0]!
+    const metadata = await sharp(Buffer.from(image.data, 'base64')).metadata()
+
+    expect(metadata.width).toBe(60)
+    expect(metadata.height).toBe(90)
+    expect(metadata.orientation).toBeUndefined()
+    expect(context.messages[0]!.content[0]!.data).toBe(raw)
   })
 
   it('keeps failed status monotonic across later successes', () => {
