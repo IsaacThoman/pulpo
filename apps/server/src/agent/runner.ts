@@ -4,7 +4,7 @@ import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -39,7 +39,7 @@ import { providerCacheRequestOptions } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
-import { messagesFromAgentContext, resolveAgentParentMessages } from './history.js'
+import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
 import {
@@ -124,12 +124,23 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow] = await Promise.all([
+  const [settingsRow, webToolsRow, preferencesRow] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
+    db.select({ values: userPreferences.values }).from(userPreferences)
+      .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
+  const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
+  const customInstructions = typeof preferenceValues.customInstructions === 'string'
+    ? preferenceValues.customInstructions
+    : ''
+  const currentAgentSystemPrompt = buildAgentSystemPrompt(
+    record.model.systemPrompt,
+    record.model.agentInstructions,
+    customInstructions,
+  )
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -153,8 +164,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   )
   const [existingRun] = await db.select().from(agentRuns).where(eq(agentRuns.responseId, responseId)).limit(1)
   const runId = existingRun?.id ?? newId()
+  const agentSystemPrompt = systemPromptFromAgentContext(existingRun?.context) ?? currentAgentSystemPrompt
   let resumedMessages = existingRun ? messagesFromAgentContext(existingRun.context) : parentMessages
-  await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
+  await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
@@ -326,7 +338,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     options: { force?: boolean; retainedTurns?: number; estimatedTokens?: number } = {},
   ): Promise<AgentMessage[]> => {
     const estimatedTokens = options.estimatedTokens ?? estimateInputTokens([
-      buildAgentSystemPrompt(active.model.systemPrompt, active.model.agentInstructions),
+      agentSystemPrompt,
       ...messages,
       ...extraContext,
     ])
@@ -461,7 +473,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
   agent = new Agent({
     initialState: {
-      systemPrompt: buildAgentSystemPrompt(record.model.systemPrompt, record.model.agentInstructions),
+      systemPrompt: agentSystemPrompt,
       model: active.piModel,
       tools: [...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile), ...configuredWebTools],
       messages: resumedMessages,
@@ -528,7 +540,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     lastRunPersistAt = Date.now()
     await db.update(agentRuns).set({
       workspaceLeaseId: manager.leaseId,
-      context: { messages: messagesForPersistence(agent.state.messages), billingTurns },
+      context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns },
       modelTurns,
       toolCalls,
       updatedAt: new Date(),
@@ -729,7 +741,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await snapshot('completed')
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (completed) await persistResponseItems(responseId, completed.output as unknown[])
-    await db.update(agentRuns).set({ status: 'completed', context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
@@ -743,7 +755,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     const cancelled = await isCancellationRequested(responseId)
     const status = cancelled ? 'cancelled' : 'failed'
     await snapshot(status, error instanceof Error ? error.message : String(error))
-    await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)

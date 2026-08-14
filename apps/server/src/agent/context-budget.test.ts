@@ -6,6 +6,7 @@ import {
   estimateAgentContextTokens,
   shouldRetryContextOverflow,
 } from './context-budget.js'
+import { buildAgentSystemPrompt } from './policy.js'
 
 function overflowMessage(text = ''): AssistantMessage {
   return {
@@ -35,6 +36,18 @@ describe('agent context budget', () => {
       tools: [{ name: 'search', description: 'Search '.repeat(500), parameters: { type: 'object' } } as NonNullable<Context['tools']>[number]],
     }
     expect(estimateAgentContextTokens(expanded)).toBeGreaterThan(estimateAgentContextTokens(base))
+  })
+
+  it('includes account custom instructions in the Agent context budget', () => {
+    const base: Context = {
+      systemPrompt: buildAgentSystemPrompt('Model policy', 'Agent policy'),
+      messages: [{ role: 'user', content: 'question', timestamp: 1 }],
+    }
+    const personalized: Context = {
+      ...base,
+      systemPrompt: buildAgentSystemPrompt('Model policy', 'Agent policy', 'Use terse answers. '.repeat(200)),
+    }
+    expect(estimateAgentContextTokens(personalized)).toBeGreaterThan(estimateAgentContextTokens(base))
   })
 
   it('uses a bounded estimate for un-intercepted image bytes', () => {
