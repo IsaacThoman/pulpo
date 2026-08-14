@@ -20,6 +20,7 @@ import {
 } from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
+import { hasDatabaseErrorCode } from '../database/errors.js'
 import { applicationSettings, auditEvents, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -271,7 +272,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         return { updated, friendChanges: await bumpAccountRevisions(tx, peers) }
       }))
     } catch (cause) {
-      if (cause && typeof cause === 'object' && 'code' in cause && cause.code === '23505') {
+      if (hasDatabaseErrorCode(cause, '23505')) {
         throw new AppError(409, 'username_taken', 'That username is already taken', 'invalid_request_error', 'username')
       }
       throw cause
