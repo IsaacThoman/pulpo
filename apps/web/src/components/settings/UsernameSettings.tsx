@@ -68,7 +68,7 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
   const trigger = <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)}>Change username</Button>
 
   return <>
-    {buttonOnly ? trigger : <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+    {buttonOnly ? trigger : <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">Username</div>
         <div className="mt-0.5 text-xs text-muted-foreground">Friends can find you using @{user?.username}.</div>

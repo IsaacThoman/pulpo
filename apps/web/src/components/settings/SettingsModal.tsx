@@ -110,12 +110,12 @@ function trashDeletesLabel(iso: string | null, now = Date.now()): string {
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+    <div className="flex min-w-0 flex-col items-stretch gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{label}</div>
         {hint && <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div>}
       </div>
-      <div className="shrink-0">{children}</div>
+      <div className="min-w-0 self-start sm:shrink-0 sm:self-auto">{children}</div>
     </div>
   )
 }
@@ -129,13 +129,13 @@ function ThemePicker() {
     { id: 'system', icon: <Monitor className="size-4" />, label: 'System' },
   ]
   return (
-    <div className="flex rounded-lg border p-0.5">
+    <div className="flex w-full rounded-lg border p-0.5 sm:w-auto">
       {opts.map((o) => (
         <button
           key={o.id}
           onClick={() => setTheme(o.id)}
           className={cn(
-            'flex cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors',
+            'flex flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors sm:flex-none sm:px-3',
             theme === o.id ? 'bg-accent font-medium' : 'text-muted-foreground hover:text-foreground'
           )}
         >
@@ -359,19 +359,19 @@ export function SettingsModal({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="flex h-[600px] max-h-[85vh] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:h-[600px] sm:max-h-[85vh] sm:max-w-[calc(100%-2rem)] lg:max-w-3xl">
         <DialogTitle className="sr-only">Settings</DialogTitle>
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sm:flex-row">
           {/* nav */}
-          <div className="flex w-52 shrink-0 flex-col border-r bg-muted/30 p-3">
-            <div className="px-2 pb-2 text-sm font-semibold">Settings</div>
-            <div className="space-y-0.5">
+          <div className="flex w-full shrink-0 flex-col border-b bg-muted/30 p-2 sm:w-52 sm:border-r sm:border-b-0 sm:p-3">
+            <div className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">Settings</div>
+            <div className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
               {SECTIONS.filter((sec) => sec.id !== 'api' || useAuth.getState().apiKeysEnabled).map((sec) => (
                 <button
                   key={sec.id}
                   onClick={() => setSection(sec.id)}
                   className={cn(
-                    'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors',
+                    'flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors sm:w-full sm:gap-2.5',
                     section === sec.id
                       ? 'bg-accent font-medium'
                       : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
@@ -383,7 +383,7 @@ export function SettingsModal({
               ))}
             </div>
             {user?.role === 'admin' && (
-              <div className="mt-auto border-t pt-3">
+              <div className="mt-auto hidden border-t pt-3 sm:block">
                 <button
                   onClick={() => {
                     onClose()
@@ -400,7 +400,7 @@ export function SettingsModal({
 
           {/* content */}
           <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-            <div className="p-6">
+            <div className="p-4 sm:p-6">
               {section === 'trash' && (
                 <div className="min-w-0">
                   <h2 className="text-base font-semibold">Trash</h2>

@@ -81,7 +81,7 @@ export function TwoFactorSettings() {
   }
 
   return <>
-    <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+    <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">Two-factor authentication</div>
         <div className="mt-0.5 text-xs text-muted-foreground">

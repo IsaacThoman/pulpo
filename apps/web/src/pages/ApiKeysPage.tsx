@@ -91,7 +91,7 @@ function LimitRow({
 }) {
   const pct = Math.min(100, (spent / amount) * 100)
   return (
-    <div className="min-w-[120px]">
+    <div className="min-w-0 lg:min-w-[120px]">
       <div className="flex items-center gap-2">
         <span className="text-sm tabular-nums">{formatCost(amount)}</span>
         <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">
@@ -203,6 +203,34 @@ export function ApiKeysPage() {
 
   const canCreate = scopes.length > 0 && (allModels || selectedModels.length > 0)
 
+  const keyActions = (key: ApiKey) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon-sm" variant="ghost" aria-label={`Actions for ${key.name}`}>
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem
+          onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
+        >
+          <Copy />
+          Copy prefix
+        </DropdownMenuItem>
+        {!key.revoked && (
+          <DropdownMenuItem onClick={() => setConfirmRevoke(key)}>
+            Revoke
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onClick={() => void deleteKey(key.id)}>
+          <Trash2 />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   if (!apiKeysEnabled) return <div className="grid h-full place-items-center p-8"><div className="max-w-md rounded-xl border p-6 text-center"><TriangleAlert className="mx-auto size-8 text-amber-500" /><h1 className="mt-3 text-lg font-semibold">API keys are disabled</h1><p className="mt-2 text-sm text-muted-foreground">The administrator has suspended API-key authentication. Existing keys remain stored and can be used again if the policy is re-enabled.</p></div></div>
 
   return (
@@ -236,8 +264,57 @@ export function ApiKeysPage() {
           />
         </div>
 
-        {/* table */}
-        <div className="overflow-hidden rounded-xl border">
+        {/* mobile list */}
+        <div className="divide-y rounded-xl border lg:hidden">
+          {filtered.length === 0 && (
+            <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+              {keys.length === 0 ? 'No keys yet — create one to get started.' : 'No keys match your search.'}
+            </p>
+          )}
+          {filtered.map((key) => (
+            <div key={key.id} className={cn('p-4', key.revoked && 'opacity-50')}>
+              <div className="flex items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-medium">{key.name}</span>
+                    {key.revoked && <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px]">revoked</Badge>}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{maskKey(key.prefix)}</div>
+                </div>
+                {keyActions(key)}
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-sm">
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Models</dt>
+                  <dd className="mt-1 truncate">{modelLabel(key.allowedModels)}</dd>
+                  <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.join(' · ')}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Last used</dt>
+                  <dd className="mt-1">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Usage</dt>
+                  <dd className="mt-1 tabular-nums">{formatCost(key.spentTotal ?? 0)}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-xs text-muted-foreground">Limit</dt>
+                  <dd className="mt-1"><LimitCell k={key} /></dd>
+                </div>
+              </dl>
+            </div>
+          ))}
+          {keys.length > 0 && (
+            <div className="px-4 py-2.5 text-xs text-muted-foreground">
+              {filtered.length === keys.length
+                ? `${keys.length} key${keys.length === 1 ? '' : 's'}`
+                : `${filtered.length} of ${keys.length} keys`}
+            </div>
+          )}
+        </div>
+
+        {/* desktop table */}
+        <div className="hidden overflow-hidden rounded-xl border lg:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
@@ -308,36 +385,7 @@ export function ApiKeysPage() {
                     <LimitCell k={k} />
                   </td>
                   <td className="px-2 py-3.5 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon-sm" variant="ghost" aria-label="Key actions">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            navigator.clipboard?.writeText(k.prefix).catch(() => {})
-                          }
-                        >
-                          <Copy />
-                          Copy prefix
-                        </DropdownMenuItem>
-                        {!k.revoked && (
-                          <DropdownMenuItem onClick={() => setConfirmRevoke(k)}>
-                            Revoke
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => void deleteKey(k.id)}
-                        >
-                          <Trash2 />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {keyActions(k)}
                   </td>
                 </tr>
               ))}
