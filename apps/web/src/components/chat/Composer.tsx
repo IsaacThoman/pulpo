@@ -707,7 +707,8 @@ export function Composer({
                 size={attachment.size}
                 mimeType={attachment.mimeType}
                 previewUrl={attachment.previewUrl}
-                attachmentId={isSupportedImageMime(attachment.mimeType) ? attachment.id : undefined}
+                attachmentId={attachment.id}
+                sourceFile={attachment.file}
                 uploading={attachment.status === 'uploading'}
                 error={attachment.status === 'error' ? attachment.error : null}
                 onDownload={() => downloadComposerAttachment(attachment)}
