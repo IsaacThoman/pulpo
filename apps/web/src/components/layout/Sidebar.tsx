@@ -878,11 +878,13 @@ export function Sidebar({
     return (
       <div key={key} className="group/account-nav relative">
         <DropdownMenuItem className="w-full pr-9" onClick={() => go(path)}>
-          {icon}
+          <span className="relative flex size-4 shrink-0 items-center justify-center">
+            {icon}
+            {Boolean(badge) && <span className="absolute -right-2 -top-2 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">
+              {badge! > 99 ? '99+' : badge}
+            </span>}
+          </span>
           <span className="min-w-0 flex-1 truncate">{label}</span>
-          {Boolean(badge) && <span className="rounded-full bg-primary px-1.5 text-[10px] leading-4 text-primary-foreground">
-            {badge! > 99 ? '99+' : badge}
-          </span>}
         </DropdownMenuItem>
         <button
           type="button"
