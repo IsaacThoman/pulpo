@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { applicationSettings, chats, memories, models, providerConnections, responses, userPreferences } from '../database/schema.js'
+import { persistGeneratedChatTitle } from '../chats/title-change.js'
 import { newId } from '../lib/ids.js'
 import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/application-settings.js'
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
@@ -20,6 +21,20 @@ export function selectPostTaskRuntime(
   selected: CatalogModelRuntime | null,
 ): CatalogModelRuntime {
   return selected ?? current
+}
+
+export async function persistGeneratedTitleResult(input: {
+  userId: string
+  chatId: string
+  outputText: string
+}): Promise<boolean> {
+  const title = parseGeneratedTitle(input.outputText)
+  if (!title) return false
+  return persistGeneratedChatTitle({
+    userId: input.userId,
+    chatId: input.chatId,
+    title,
+  })
 }
 
 export async function runPostResponseTasks(
@@ -51,8 +66,11 @@ export async function runPostResponseTasks(
         max_output_tokens: Math.min(256, runtime.model.maxOutputTokens),
       }),
     })
-    const title = parseGeneratedTitle(titleResult.output_text)
-    if (title) await db.update(chats).set({ title, updatedAt: new Date() }).where(eq(chats.id, record.response.chatId))
+    await persistGeneratedTitleResult({
+      userId: record.response.userId,
+      chatId: record.response.chatId,
+      outputText: titleResult.output_text,
+    })
   }
   const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
   const values = (preference?.values ?? {}) as { memoryEnabled?: boolean }
