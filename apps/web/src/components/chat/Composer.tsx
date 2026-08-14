@@ -549,12 +549,22 @@ export function Composer({
         </div>
       )}
       {recovery && (
-        <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 border-destructive/30 bg-destructive/5 px-3 py-2 text-sm shadow-sm">
-          <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+        <div className={cn(
+          'flex items-center gap-2 rounded-t-2xl border border-b-0 px-3 py-2 text-sm shadow-sm',
+          uploadFailed || recovery.recoveryError ? 'border-destructive/30 bg-destructive/5' : 'bg-card',
+        )}>
+          {uploadFailed || recovery.recoveryError
+            ? <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
+            : <Pencil className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
           <span className="min-w-0 flex-1">
-            <span className="font-medium">Message needs attention.</span>{' '}
+            <span className="font-medium">{uploadFailed || recovery.recoveryError ? 'Message needs attention.' : 'Editing pending message.'}</span>{' '}
             <span className="text-muted-foreground">
-              {recovery.recoveryError ?? 'Retry or remove the failed upload to continue. Later messages will wait.'}
+              {recovery.recoveryError
+                ?? (uploadFailed
+                  ? 'Retry or remove the failed upload to continue. Later messages will wait.'
+                  : uploading
+                    ? 'You can resend now; delivery will still wait for its files. Later messages remain queued.'
+                    : 'Resend or discard this message to let later messages continue.')}
             </span>
           </span>
           <button

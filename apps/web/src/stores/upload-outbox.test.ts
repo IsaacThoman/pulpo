@@ -260,4 +260,22 @@ describe('upload outbox', () => {
     expect(useUploadOutbox.getState().submissions[0]).toMatchObject({ status: 'recovery' })
     expect(useChat.getState().chats[0]?.messages.some((message) => message.content === 'edit me')).toBe(false)
   })
+
+  it('preserves a newer composer draft across recovery remounts until it is restored', () => {
+    useUploadOutbox.setState({ uploads: { newer: upload('newer', 'ready') } })
+    useUploadOutbox.getState().preserveComposerDraft(chatId, {
+      value: 'newer draft', attachmentIds: ['newer'],
+    })
+    useUploadOutbox.getState().preserveComposerDraft(chatId, {
+      value: 'empty remount', attachmentIds: [],
+    })
+    useUploadOutbox.getState().releaseDraftUploads(['newer'])
+
+    expect(useUploadOutbox.getState().uploads.newer).toBeDefined()
+    expect(useUploadOutbox.getState().takePreservedComposerDraft(chatId)).toEqual({
+      value: 'newer draft', attachmentIds: ['newer'],
+    })
+    useUploadOutbox.getState().releaseDraftUploads(['newer'])
+    expect(useUploadOutbox.getState().uploads.newer).toBeUndefined()
+  })
 })
