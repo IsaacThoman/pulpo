@@ -275,7 +275,7 @@ export function LeaderboardPage() {
         </div>
         {!hasAcceptedFriends ? (
           <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">
-            Add and accept a friend to compare usage
+            Add friends to compare usage
           </div>
         ) : (
           <div className="h-[250px]">
