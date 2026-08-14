@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   imageCanvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fullImage: { width: '100%', height: '100%' },
   imageState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 10 },
-  imageLoadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000' },
+  imageLoadingOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000' },
   imageErrorTitle: { color: '#ffffff', fontSize: 17, fontWeight: '700' },
   imageErrorText: { color: 'rgba(255,255,255,0.62)', fontSize: 13, lineHeight: 18, textAlign: 'center' },
   retryButton: { minHeight: 44, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 22, paddingHorizontal: 18, backgroundColor: 'rgba(255,255,255,0.16)' },
