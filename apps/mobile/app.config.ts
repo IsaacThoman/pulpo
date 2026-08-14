@@ -45,6 +45,13 @@ const config: ExpoConfig = {
       ITSAppUsesNonExemptEncryption: false,
       NSCameraUsageDescription: 'Allow Pulpo to take photos to attach to your chats.',
       NSPhotoLibraryUsageDescription: 'Allow Pulpo to attach photos to your chats.',
+      UISupportedInterfaceOrientations: ['UIInterfaceOrientationPortrait'],
+      'UISupportedInterfaceOrientations~ipad': [
+        'UIInterfaceOrientationPortrait',
+        'UIInterfaceOrientationPortraitUpsideDown',
+        'UIInterfaceOrientationLandscapeLeft',
+        'UIInterfaceOrientationLandscapeRight',
+      ],
     },
     privacyManifests: {
       NSPrivacyAccessedAPITypes: [

@@ -386,7 +386,9 @@ export function AttachmentImageViewer({
       onRequestClose={onClose}
       presentationStyle="fullScreen"
       statusBarTranslucent
-      supportedOrientations={['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']}
+      supportedOrientations={Platform.OS === 'ios' && Platform.isPad
+        ? ['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']
+        : ['portrait']}
       visible={visible}
     >
       <View accessibilityViewIsModal style={styles.root}>
