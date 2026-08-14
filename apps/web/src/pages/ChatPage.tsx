@@ -417,7 +417,6 @@ export function ChatPage() {
                   activeModelId={modelId}
                   onEditUserMessage={beginMessageEdit}
                   composerEditActive={composerEditActive || Boolean(messageEdit)}
-                  editDisabled={chat.messages.some((message) => message.role === 'assistant' && !message.done)}
                 />
               ))}
               <div className="h-px" />

@@ -3,10 +3,18 @@ import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt }
 
 describe('agent policy', () => {
   it('keeps the Pulpo harness first and appends configured instructions', () => {
-    const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy')
+    const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy', 'Prefer TypeScript.')
     expect(prompt).toContain('/workspace')
     expect(prompt).toContain('Use view_image')
+    expect(prompt).toContain('ImageOps.exif_transpose')
     expect(prompt.indexOf('Model policy')).toBeLessThan(prompt.indexOf('Agent policy'))
+    expect(prompt.indexOf('Agent policy')).toBeLessThan(prompt.indexOf('User-provided custom instructions:'))
+    expect(prompt).toContain('User-provided custom instructions:\nPrefer TypeScript.')
+  })
+
+  it('omits blank account custom instructions', () => {
+    expect(buildAgentSystemPrompt('Model policy', 'Agent policy', ' \n '))
+      .toBe(buildAgentSystemPrompt('Model policy', 'Agent policy'))
   })
 
   it('creates deterministic workspace paths without traversal', () => {

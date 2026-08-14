@@ -176,6 +176,7 @@ import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { timeAgo } from '../features/chat/format';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
+import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
@@ -1432,13 +1433,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }
     usePrototypeStore.getState().setPreference('newChatAutoExpire', enabled);
   }, [activePrototypeChat]);
-  const messages = activeChat?.messages ?? [];
-  const remoteAssistantStatus = messages.some((message) => message.role === 'assistant' && message.status === 'streaming')
-    ? 'streaming'
-    : messages.some((message) => message.role === 'assistant' && message.status === 'queued')
-      ? 'thinking'
-      : 'idle';
-  const effectiveAssistantStatus = assistantStatus === 'idle' ? remoteAssistantStatus : assistantStatus;
+  const messages = useMemo(() => activeChat?.messages ?? [], [activeChat?.messages]);
+  const remoteAssistantStatus = selectedAssistantStatus(messages);
+  const effectiveAssistantStatus = productionUserId
+    ? remoteAssistantStatus
+    : assistantStatus === 'idle' ? remoteAssistantStatus : assistantStatus;
 
   const abandonActiveTemporaryChat = useCallback(() => {
     if (!activeChatId) return;
@@ -1783,7 +1782,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     agentMode = Boolean(message.agentMode),
   ): Promise<boolean> => {
     const chatId = message.chatId ?? activeChatId;
-    if (!chatId || !productionUserId || effectiveAssistantStatus !== 'idle') return false;
+    if (!chatId || !productionUserId || (message.role !== 'user' && effectiveAssistantStatus !== 'idle')) return false;
     const modelId = selectedModel.id;
     const selections = { ...presetSelections };
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
@@ -1861,9 +1860,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
     setAssistantStatus('idle');
-    const responseId = activeResponseId.current;
-    activeResponseSubscription.current?.();
-    activeResponseSubscription.current = null;
+    const selectedResponseId = selectedInFlightResponseId(messages);
+    const responseId = selectedResponseId ?? activeResponseId.current;
+    if (activeResponseId.current === responseId) {
+      activeResponseId.current = null;
+      activeResponseSubscription.current?.();
+      activeResponseSubscription.current = null;
+    }
     if (responseId) {
       const store = usePrototypeStore.getState();
       const chat = store.chats.find((candidate) => candidate.messages.some((message) => message.id === responseId));
@@ -1874,7 +1877,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }
     AccessibilityInfo.announceForAccessibility('Response stopped');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  }, [messages]);
 
   return (
     <GestureDetector gesture={panelGesture}>
@@ -3003,7 +3006,7 @@ function ChatView({
   }, [attachments, chatId, cleanupEditUploads, messageEdit, restoreComposer]);
 
   const beginMessageEdit = useCallback((message: Message) => {
-    if (messageEdit || sending || assistantStatus !== 'idle') return;
+    if (messageEdit || sending) return;
     preservedComposerRef.current = { input, attachments, agentEnabled };
     const existing = message.attachments ?? [];
     setMessageEdit({ message, originalAttachmentIds: new Set(existing.map((attachment) => attachment.id)) });
@@ -3016,7 +3019,7 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, assistantStatus, attachments, input, messageEdit, onChangeInput, sending]);
+  }, [agentEnabled, attachments, input, messageEdit, onChangeInput, sending]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
     if (message.role === 'user') {
@@ -3039,7 +3042,9 @@ function ChatView({
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsMultipleSelection: true,
         mediaTypes: ['images'],
-        quality: 0.9,
+        // Keep HEIC inputs compatible without applying an extra lossy JPEG encode.
+        quality: 1,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
         selectionLimit: 6,
       });
       if (result.canceled) return;
@@ -3075,7 +3080,7 @@ function ChatView({
         );
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
       const asset = result.canceled ? null : result.assets[0];
       if (!asset) return;
       const id = `camera-${Date.now()}`;
@@ -3396,11 +3401,12 @@ function ChatView({
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
-    && assistantStatus === 'idle'
+    && (assistantStatus === 'idle' || Boolean(messageEdit))
     && !sending
     && !expired
     && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
     && !attachments.some((attachment) => attachment.state === 'uploading');
+  const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit));
 
   useEffect(() => {
     const target = headerControl.expanded ? 1 : 0;
@@ -3707,11 +3713,11 @@ function ChatView({
                       </SwiftUIButton>
                     </SwiftUIHost>
                     <NativeComposerIconButton
-                      disabled={assistantStatus === 'idle' && !canSend}
-                      label={assistantStatus !== 'idle' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
-                      onPress={() => assistantStatus !== 'idle' ? onStop() : submitMessage()}
+                      disabled={composerAction === 'submit' && !canSend}
+                      label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
+                      onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
                       prominent
-                      systemImage={assistantStatus !== 'idle' ? 'stop.fill' : 'arrow.up'}
+                      systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
                     />
                   </>
                 ) : (
@@ -3727,15 +3733,15 @@ function ChatView({
                       <Bot color={activeAgentEnabled ? COLORS.foregroundOnAccent : COLORS.muted} size={13} strokeWidth={2} />
                     </Pressable>
                     <Pressable
-                      accessibilityLabel={assistantStatus !== 'idle' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
+                      accessibilityLabel={composerAction === 'stop' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
                       accessibilityRole="button"
-                      accessibilityState={{ disabled: assistantStatus === 'idle' && !canSend }}
-                      disabled={assistantStatus === 'idle' && !canSend}
-                      onPress={() => assistantStatus !== 'idle' ? onStop() : submitMessage()}
-                      style={({ pressed }) => [styles.sendButton, assistantStatus === 'idle' && !canSend && styles.disabledButton, pressed && styles.pressed]}
+                      accessibilityState={{ disabled: composerAction === 'submit' && !canSend }}
+                      disabled={composerAction === 'submit' && !canSend}
+                      onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
+                      style={({ pressed }) => [styles.sendButton, composerAction === 'submit' && !canSend && styles.disabledButton, pressed && styles.pressed]}
                     >
                       <Icon
-                        name={assistantStatus !== 'idle' ? 'stop.fill' : 'arrow.up'}
+                        name={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
                         size={14}
                         color={COLORS.foregroundOnAccent}
                         weight="bold"

@@ -1621,6 +1621,8 @@ export const useChat = create<ChatState>()((set, get) => ({
       modelId,
     )
     const sourceResponseId = messageId.endsWith(':input') ? messageId.slice(0, -6) : messageId
+    const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    const previousActiveLeafId = cached?.activeBranchLeafId ?? cached?.activeResponseId ?? sourceResponseId
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
       chatId,
@@ -1654,7 +1656,7 @@ export const useChat = create<ChatState>()((set, get) => ({
       const message = expired
         ? 'This temporary chat has expired and cannot be recovered.'
         : error instanceof Error ? error.message : 'Unable to save and resend the message'
-      const failed = failOptimisticResponse(chatId, responseId, sourceResponseId, selectionVersion, message)
+      const failed = failOptimisticResponse(chatId, responseId, previousActiveLeafId, selectionVersion, message)
       if (failed) get().setDetailedChat(failed)
       if (expired) get().markTemporaryExpired(chatId)
       throw error

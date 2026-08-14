@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
+import type { ResponseSnapshot } from '@pulpo/contracts'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerChat } from '../../../types'
 import {
@@ -249,6 +250,84 @@ describe('optimistic response reconciliation', () => {
     expect(assistantEdit?.status).toBe('completed')
     expect(JSON.stringify(assistantEdit?.output)).toContain('Edited answer')
     expect(assistantEdit?.branches.assistant.ids).toEqual(['response-2', 'response-3'])
+  })
+
+  it.each(['queued', 'in_progress'] as const)('keeps an edited branch parallel with a %s response', (status) => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+    const initial = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))!
+    const original = initial.responses![0]!
+    const originalSnapshot: ResponseSnapshot = {
+      ...original.snapshot,
+      status,
+      sequence: status === 'in_progress' ? 1 : 0,
+      output: original.output,
+    }
+
+    cacheOptimisticBranch({
+      queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId: 'response-2',
+      modelId: 'model-1', presetSelections: {}, editedInput: 'Edited while generating',
+      createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
+    })
+
+    const optimistic = queryClient.getQueryData<ServerChat>(chatKey('chat-1'))!
+    const edited = optimistic.responses?.find((response) => response.id === 'response-2')
+    expect(optimistic.activeBranchLeafId).toBe('response-2')
+    expect(edited?.parentResponseId).toBe(original.parentResponseId)
+    expect(edited?.userMessageId).not.toBe(original.userMessageId)
+
+    const editedSnapshot: ResponseSnapshot = {
+      ...edited!.snapshot,
+      status: 'in_progress' as const,
+      sequence: 1,
+      output: edited!.output,
+    }
+    const reconciled = reconcileOptimisticResponses(namespace, {
+      ...staleChat(),
+      activeResponseId: 'response-1',
+      activeBranchLeafId: 'response-1',
+      responses: [{ ...original, status, snapshot: originalSnapshot }],
+    }, {
+      'response-1': originalSnapshot,
+      'response-2': editedSnapshot,
+    })
+    expect(reconciled.responses?.find((response) => response.id === 'response-1')?.status).toBe(status)
+    expect(reconciled.responses?.find((response) => response.id === 'response-2')?.status).toBe('in_progress')
+    expect(reconciled.activeBranchLeafId).toBe('response-2')
+  })
+
+  it('restores the exact active descendant when an earlier-message edit is rejected', () => {
+    const queryClient = new QueryClient()
+    queryClient.setQueryData(chatKey('chat-1'), staleChat())
+    seed(queryClient)
+    cacheOptimisticTurn({
+      queryClient,
+      namespace,
+      chatId: 'chat-1',
+      responseId: 'response-follow-up',
+      parentResponseId: 'response-1',
+      content: 'Follow up',
+      title: 'Follow up',
+      modelId: 'model-1',
+      temporary: false,
+      presetSelections: {},
+      agentMode: false,
+      attachments: [],
+      createdAt: Date.parse('2026-08-04T00:00:02.000Z'),
+    })
+    clearPendingOptimisticResponses()
+
+    cacheOptimisticBranch({
+      queryClient, namespace, chatId: 'chat-1', sourceResponseId: 'response-1', responseId: 'response-edit',
+      modelId: 'model-1', presetSelections: {}, editedInput: 'Edited root',
+      createdAt: Date.parse('2026-08-04T00:00:03.000Z'),
+    })
+    expect(queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.activeBranchLeafId).toBe('response-edit')
+
+    rejectOptimisticTurn({ queryClient, namespace, responseId: 'response-edit', discardChat: false })
+
+    expect(queryClient.getQueryData<ServerChat>(chatKey('chat-1'))?.activeBranchLeafId).toBe('response-follow-up')
   })
 
   it('applies a confirmed user-message cascade without waiting for a refetch', () => {

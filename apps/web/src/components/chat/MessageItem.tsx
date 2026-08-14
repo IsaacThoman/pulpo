@@ -496,7 +496,6 @@ export const MessageItem = memo(function MessageItem({
   activeModelId,
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
-  editDisabled = false,
 }: {
   chat: Chat
   message: Message
@@ -504,7 +503,6 @@ export const MessageItem = memo(function MessageItem({
   activeModelId: string
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
-  editDisabled?: boolean
 }) {
   const regenerate = useChat((state) => state.regenerate)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
@@ -585,8 +583,10 @@ export const MessageItem = memo(function MessageItem({
     return (
       <div className="group flex min-w-0 max-w-full flex-col items-end gap-1">
         <div className={cn(
-          'min-w-0 max-w-[85%] rounded-2xl rounded-br-md bg-secondary text-[15px] leading-7 [overflow-wrap:anywhere]',
-          message.content ? 'px-4 py-2.5' : 'p-2',
+          'min-w-0 max-w-[85%] text-[15px] leading-7 [overflow-wrap:anywhere]',
+          message.content
+            ? 'rounded-[1.25rem] rounded-br-md border border-foreground/[0.04] bg-secondary/85 px-4 py-2.5 shadow-sm'
+            : 'w-full',
         )}>
           {message.attachments && message.attachments.length > 0 && (
             <div className={cn(message.content ? 'mb-2' : undefined)}>
@@ -604,7 +604,7 @@ export const MessageItem = memo(function MessageItem({
                   <ActionButton
                     label="Edit"
                     onClick={() => onEditUserMessage(message)}
-                    disabled={composerEditActive || editDisabled}
+                    disabled={composerEditActive}
                   >
                     <Pencil className="size-3.5" />
                   </ActionButton>
