@@ -55,9 +55,14 @@ describe('user-owned operational records', () => {
   })
 
   it('requires usernames and uses a case-insensitive unique index', () => {
-    expect(getTableConfig(users).columns.find((column) => column.name === 'username')?.notNull).toBe(true)
-    const usernameIndex = getTableConfig(users).indexes.find((item) => item.config.name === 'users_username_unique')
+    const userConfig = getTableConfig(users)
+    expect(userConfig.columns.find((column) => column.name === 'username')?.notNull).toBe(true)
+    const usernameIndex = userConfig.indexes.find((item) => item.config.name === 'users_username_unique')
     expect(usernameIndex?.config.unique).toBe(true)
     expect(usernameIndex?.config.where).toBeUndefined()
+    expect(userConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      'users_username_trgm_idx',
+      'users_name_trgm_idx',
+    ]))
   })
 })

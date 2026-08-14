@@ -242,6 +242,22 @@ export const friendProfileSchema = z.object({
 })
 export type FriendProfile = z.infer<typeof friendProfileSchema>
 
+export const friendRelationshipSchema = z.enum(['self', 'none', 'incoming', 'outgoing', 'friends'])
+export type FriendRelationship = z.infer<typeof friendRelationshipSchema>
+
+export const friendSearchResultSchema = z.object({
+  profile: friendProfileSchema,
+  relationship: friendRelationshipSchema,
+  requestId: idSchema.nullable(),
+  matchedOn: z.enum(['username', 'displayName']),
+})
+export type FriendSearchResult = z.infer<typeof friendSearchResultSchema>
+
+export const friendSearchResponseSchema = z.object({
+  results: z.array(friendSearchResultSchema).max(8),
+})
+export type FriendSearchResponse = z.infer<typeof friendSearchResponseSchema>
+
 export const friendConnectionSchema = z.object({
   requestId: idSchema,
   profile: friendProfileSchema,

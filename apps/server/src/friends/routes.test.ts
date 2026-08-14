@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { friendRequestAction, orderedPair } from './routes.js'
+import { friendRequestAction, friendSearchRelationship, orderedPair } from './routes.js'
 
 describe('friend pair identity', () => {
   it('normalizes either request direction to the same pair', () => {
@@ -14,5 +14,13 @@ describe('friend pair identity', () => {
     expect(friendRequestAction({ status: 'pending', requestedByUserId: 'requester' }, 'requester')).toBe('keep')
     expect(friendRequestAction({ status: 'accepted', requestedByUserId: 'other' }, 'requester')).toBe('keep')
     expect(friendRequestAction({ status: 'pending', requestedByUserId: 'other' }, 'requester')).toBe('accept')
+  })
+
+  it('maps every searchable relationship state', () => {
+    expect(friendSearchRelationship('me', 'me', null)).toBe('self')
+    expect(friendSearchRelationship('other', 'me', null)).toBe('none')
+    expect(friendSearchRelationship('other', 'me', { status: 'pending', requestedByUserId: 'other' })).toBe('incoming')
+    expect(friendSearchRelationship('other', 'me', { status: 'pending', requestedByUserId: 'me' })).toBe('outgoing')
+    expect(friendSearchRelationship('other', 'me', { status: 'accepted', requestedByUserId: 'other' })).toBe('friends')
   })
 })

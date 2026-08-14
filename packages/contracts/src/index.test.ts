@@ -664,4 +664,22 @@ describe('response snapshot accumulation', () => {
     expect(() => updateProfileInputSchema.parse({})).toThrow()
   })
 
+  it('validates bounded friend search responses', async () => {
+    const { friendSearchResponseSchema } = await import('./index.js')
+    const result = {
+      profile: {
+        id: '00000000-0000-4000-8000-000000000004',
+        displayName: 'Isaac Thomas',
+        username: 'isaacthoman',
+        avatarUrl: null,
+        profileColor: '#10b981',
+      },
+      relationship: 'incoming',
+      requestId: '00000000-0000-4000-8000-000000000005',
+      matchedOn: 'displayName',
+    }
+    expect(friendSearchResponseSchema.parse({ results: [result] })).toEqual({ results: [result] })
+    expect(() => friendSearchResponseSchema.parse({ results: Array(9).fill(result) })).toThrow()
+  })
+
 })

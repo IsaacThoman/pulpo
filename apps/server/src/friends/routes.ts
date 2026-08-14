@@ -1,7 +1,7 @@
 import { and, eq, inArray, ne, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { usernameSchema } from '@pulpo/contracts'
+import type { FriendRelationship } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { friendships, userBlocks, users } from '../database/schema.js'
@@ -21,6 +21,18 @@ export function friendRequestAction(
   if (!existing) return 'create'
   if (existing.status === 'accepted' || existing.requestedByUserId === requesterUserId) return 'keep'
   return 'accept'
+}
+
+export function friendSearchRelationship(
+  targetUserId: string,
+  currentUserId: string,
+  relationship: { status: 'pending' | 'accepted'; requestedByUserId: string } | null,
+): FriendRelationship {
+  if (targetUserId === currentUserId) return 'self'
+  if (relationship?.status === 'accepted') return 'friends'
+  if (relationship?.requestedByUserId === currentUserId) return 'outgoing'
+  if (relationship) return 'incoming'
+  return 'none'
 }
 
 function pairWhere(left: string, right: string) {
@@ -122,22 +134,74 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     return { count: Number(result?.count ?? 0) }
   })
 
-  app.get('/api/friends/search', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+  app.get('/api/friends/search', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (request) => {
     const user = requireUser(request)
-    const raw = z.object({ username: z.string().trim().min(1).max(31) }).parse(request.query).username.replace(/^@/, '')
-    const username = usernameSchema.parse(raw)
-    const [target] = await db.select().from(users).where(and(
-      sql`lower(${users.username}) = ${username}`, eq(users.blocked, false), ne(users.role, 'pending'),
-    )).limit(1)
-    if (!target || (target.id !== user.id && await blockedBetween(user.id, target.id))) throw notFound('User')
-    if (target.id === user.id) return { profile: publicFriendProfile(target), relationship: 'self', requestId: null }
-    const [relationship] = await db.select().from(friendships).where(pairWhere(user.id, target.id)).limit(1)
+    const raw = z.object({ q: z.string().trim().min(3).max(120) }).parse(request.query).q
+    const query = raw.replace(/^@/, '').trim().toLowerCase()
+    if (query.length < 3) throw new AppError(400, 'invalid_search_query', 'Enter at least 3 characters')
+
+    const normalizedUsername = sql<string>`lower(${users.username})`
+    const normalizedName = sql<string>`lower(${users.name})`
+    const usernameSimilarity = sql<number>`similarity(${normalizedUsername}, ${query})`
+    const nameSimilarity = sql<number>`similarity(${normalizedName}, ${query})`
+    const matchCategory = sql<number>`case
+      when ${normalizedUsername} = ${query} then 0
+      when left(${normalizedUsername}, length(${query})) = ${query} then 1
+      when ${normalizedName} = ${query} then 2
+      when left(${normalizedName}, length(${query})) = ${query} then 3
+      else 4
+    end`
+    const relationshipPriority = sql<number>`case
+      when ${friendships.status} = 'pending' and ${friendships.requestedByUserId} <> ${user.id} then 0
+      when ${friendships.status} = 'accepted' then 1
+      when ${friendships.status} = 'pending' then 2
+      else 3
+    end`
+    const matchCondition = or(
+      sql<boolean>`strpos(${normalizedUsername}, ${query}) > 0`,
+      sql<boolean>`strpos(${normalizedName}, ${query}) > 0`,
+      sql<boolean>`${normalizedUsername} % ${query}`,
+      sql<boolean>`${normalizedName} % ${query}`,
+    )
+    const blockCondition = sql<boolean>`not exists (
+      select 1 from ${userBlocks}
+      where (${userBlocks.blockerUserId} = ${user.id} and ${userBlocks.blockedUserId} = ${users.id})
+         or (${userBlocks.blockedUserId} = ${user.id} and ${userBlocks.blockerUserId} = ${users.id})
+    )`
+    const relationshipJoin = or(
+      and(eq(friendships.userAId, user.id), eq(friendships.userBId, users.id)),
+      and(eq(friendships.userBId, user.id), eq(friendships.userAId, users.id)),
+    )
+    const rows = await db.select({
+      target: users,
+      relationshipId: friendships.id,
+      relationshipStatus: friendships.status,
+      requestedByUserId: friendships.requestedByUserId,
+      matchedOn: sql<'username' | 'displayName'>`case
+        when ${normalizedUsername} = ${query} or left(${normalizedUsername}, length(${query})) = ${query} then 'username'
+        when ${normalizedName} = ${query} or left(${normalizedName}, length(${query})) = ${query} then 'displayName'
+        when ${usernameSimilarity} >= ${nameSimilarity} then 'username'
+        else 'displayName'
+      end`,
+    }).from(users)
+      .leftJoin(friendships, relationshipJoin)
+      .where(and(matchCondition, blockCondition, eq(users.blocked, false), ne(users.role, 'pending')))
+      .orderBy(matchCategory, sql`greatest(${usernameSimilarity}, ${nameSimilarity}) desc`, relationshipPriority, normalizedUsername)
+      .limit(8)
+
     return {
-      profile: publicFriendProfile(target),
-      relationship: relationship?.status === 'accepted' ? 'friends'
-        : relationship?.requestedByUserId === user.id ? 'outgoing'
-          : relationship ? 'incoming' : 'none',
-      requestId: relationship?.id ?? null,
+      results: rows.map((row) => ({
+        profile: publicFriendProfile(row.target),
+        relationship: friendSearchRelationship(
+          row.target.id,
+          user.id,
+          row.relationshipStatus && row.requestedByUserId
+            ? { status: row.relationshipStatus, requestedByUserId: row.requestedByUserId }
+            : null,
+        ),
+        requestId: row.relationshipId,
+        matchedOn: row.matchedOn,
+      })),
     }
   })
 
