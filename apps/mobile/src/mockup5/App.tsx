@@ -2741,7 +2741,7 @@ const MessageRow = memo(function MessageRow({
             <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
             </MessageContextMenu>
-          ) : streaming ? <ResponsePendingIndicator /> : null}
+          ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
           {extraOutput.map((item, index) => {
             const details = JSON.stringify(item, null, 2).slice(0, 4000);
             return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
