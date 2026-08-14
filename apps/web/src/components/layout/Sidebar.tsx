@@ -1129,25 +1129,29 @@ export function Sidebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
+              className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
             >
-              <span className="relative flex size-8 shrink-0 items-center justify-center">
+              <span className="flex size-8 shrink-0 items-center justify-center">
                 <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-7" fallbackClassName="text-[11px]" />
-                {!sidebarPins.friends && Boolean(pendingFriendsQuery.data?.count) && (
-                  <span className="absolute right-0 top-0 grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground">
-                    {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
-                  </span>
-                )}
               </span>
               <div
                 className={cn(
-                  'min-w-0 flex-1 whitespace-nowrap pr-2 transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  'min-w-0 flex-1 whitespace-nowrap transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  !sidebarPins.friends && pendingFriendsQuery.data?.count ? 'pr-8' : 'pr-2',
                   sidebarTextTransition
                 )}
               >
                 <div className="truncate text-sm font-medium">{user?.name ?? 'Signed out'}</div>
                 <div className="truncate text-xs text-muted-foreground">{user?.email ?? ''}</div>
               </div>
+              {!sidebarPins.friends && Boolean(pendingFriendsQuery.data?.count) && (
+                <span className={cn(
+                  'absolute grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground',
+                  collapsed ? 'right-0 top-0' : 'right-2 top-1/2 -translate-y-1/2',
+                )}>
+                  {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
+                </span>
+              )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
