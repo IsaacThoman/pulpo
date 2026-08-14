@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
-import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
@@ -15,6 +14,7 @@ import { periodDays } from '@/lib/time-range'
 import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
 import { automaticProfileColor } from '@/lib/profile'
+import { flattenUsagePages, usageQueryParams } from '@/lib/usage-query'
 import {
   PublicRecentUsagePanel,
   PublicTopModelsPanel,
@@ -103,8 +103,18 @@ interface LeaderboardRecords {
   nextCursor: string | null
 }
 
-function rangeDays(range: TimeRange): string {
-  return range === '24h' ? '1' : range === '7d' ? '7' : range === '30d' ? '30' : range === '90d' ? '90' : 'all'
+interface LeaderboardResponse {
+  data: Array<{
+    userId: string
+    displayName: string
+    username: string
+    avatarUrl: string | null
+    profileColor: string | null
+    balanceMicros: number
+    calls: number
+    tokens: number
+    costMicros: number
+  }>
 }
 
 function LeaderboardTip({
@@ -132,32 +142,54 @@ function LeaderboardTip({
 }
 
 export function LeaderboardPage() {
-  const users = useUsage((s) => s.users)
-  const currentUserId = useUsage((s) => s.currentUserId)
-  const loadLeaderboard = useUsage((s) => s.loadLeaderboard)
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
-  const [records, setRecords] = useState<PublicUsageRecord[]>([])
-  const [nextCursor, setNextCursor] = useState<string | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
 
   const authUser = useAuth((state) => state.user)
   const friendsUsageQuery = useQuery({
-    queryKey: ['friends-usage', authUser?.id, range],
+    queryKey: ['friends-usage', authUser?.id, range, 'overview'],
     enabled: Boolean(authUser?.id),
-    queryFn: async () => {
-      const days = rangeDays(range)
-      const [, activity, recordPage] = await Promise.all([
-        loadLeaderboard(range),
-        apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?days=${days}`),
-        apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${days}&limit=50`),
+    queryFn: async ({ signal }) => {
+      const params = usageQueryParams(range)
+      const [leaderboard, activity] = await Promise.all([
+        apiRequest<LeaderboardResponse>(`/api/usage/leaderboard?${params}`, { signal }),
+        apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?${params}`, { signal }),
       ])
-      return { activity, recordPage }
+      return { leaderboard, activity }
     },
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
+  const recordsQuery = useInfiniteQuery({
+    queryKey: ['friends-usage', authUser?.id, range, 'records'],
+    enabled: Boolean(authUser?.id),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => {
+      const params = usageQueryParams(range)
+      params.set('limit', '50')
+      if (pageParam) params.set('cursor', pageParam)
+      return apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?${params}`, { signal })
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
+  const currentUserId = authUser?.id ?? ''
+  const users = useMemo<MonitorUser[]>(() => friendsUsageQuery.data?.leaderboard.data.map((row) => ({
+    id: row.userId,
+    name: row.displayName,
+    username: row.username,
+    avatarUrl: row.avatarUrl,
+    profileColor: row.profileColor,
+    email: '',
+    role: 'user',
+    balance: row.balanceMicros / 1_000_000,
+    joinedAt: 0,
+    blocked: false,
+    usageCalls: row.calls,
+    usageTokens: row.tokens,
+    usageCost: row.costMicros / 1_000_000,
+  })) ?? [], [friendsUsageQuery.data?.leaderboard.data])
+  const records = useMemo(() => flattenUsagePages(recordsQuery.data?.pages), [recordsQuery.data])
+  const nextCursor = recordsQuery.data?.pages.at(-1)?.nextCursor ?? null
   const leaderboardMe = users.find((u) => u.id === currentUserId)
   const me = {
     id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
@@ -167,21 +199,9 @@ export function LeaderboardPage() {
     ...(leaderboardMe ? { balance: leaderboardMe.balance } : {}),
   }
 
-  useEffect(() => {
-    setRecords([])
-    setNextCursor(null)
-    setLoadMoreError(null)
-  }, [range])
-  useEffect(() => {
-    if (!friendsUsageQuery.data) return
-    setRecords(friendsUsageQuery.data.recordPage.data)
-    setNextCursor(friendsUsageQuery.data.recordPage.nextCursor)
-    setLoadMoreError(null)
-  }, [friendsUsageQuery.data])
-
   const activity = friendsUsageQuery.data?.activity ?? null
-  const loading = friendsUsageQuery.isLoading
-  const error = friendsUsageQuery.error
+  const loading = friendsUsageQuery.isLoading || recordsQuery.isLoading
+  const error = friendsUsageQuery.error ?? recordsQuery.error
 
   const totals = {
     calls: activity?.summary.calls ?? 0,
@@ -223,21 +243,6 @@ export function LeaderboardPage() {
   // Balance is a point-in-time ranking, so the daily activity view uses spend.
   const dailyMetric: Metric = metric === 'tokens' || metric === 'calls' ? metric : 'cost'
 
-  const loadMore = async () => {
-    if (!nextCursor || loadingMore) return
-    setLoadingMore(true)
-    setLoadMoreError(null)
-    try {
-      const result = await apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?days=${rangeDays(range)}&limit=50&cursor=${encodeURIComponent(nextCursor)}`)
-      setRecords((current) => [...current, ...result.data])
-      setNextCursor(result.nextCursor)
-    } catch (cause) {
-      setLoadMoreError(cause instanceof Error ? cause.message : 'Unable to load more usage records')
-    } finally {
-      setLoadingMore(false)
-    }
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -260,11 +265,11 @@ export function LeaderboardPage() {
           </div>
           <ToggleGroup options={RANGES} value={range} onChange={setRange} />
         </div>
-        <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />
+        {!loading && !error && <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />}
       </section>
 
       {/* user ranking — shares the overview metric picker, matching OpenWebUI Monitor */}
-      <section>
+      {!loading && !error && <section>
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-2 text-sm font-medium">
             <BarChart3 className="size-4" />
@@ -317,14 +322,14 @@ export function LeaderboardPage() {
             </ResponsiveContainer>
           </div>
         )}
-      </section>
+      </section>}
 
       {loading ? (
         <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
       ) : error ? (
         <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
           <span>{error instanceof Error ? error.message : 'Unable to load leaderboard usage'}</span>
-          <Button size="sm" variant="outline" onClick={() => void friendsUsageQuery.refetch()}>Try again</Button>
+          <Button size="sm" variant="outline" onClick={() => { void friendsUsageQuery.refetch(); void recordsQuery.refetch() }}>Try again</Button>
         </div>
       ) : (
         <>
@@ -337,7 +342,13 @@ export function LeaderboardPage() {
           />
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="lg:col-span-2">
-              <PublicRecentUsagePanel records={records} nextCursor={nextCursor} loadingMore={loadingMore} error={loadMoreError} onLoadMore={() => void loadMore()} />
+              <PublicRecentUsagePanel
+                records={records}
+                nextCursor={nextCursor}
+                loadingMore={recordsQuery.isFetchingNextPage}
+                error={recordsQuery.isFetchNextPageError ? (recordsQuery.error instanceof Error ? recordsQuery.error.message : 'Unable to load more usage records') : null}
+                onLoadMore={() => void recordsQuery.fetchNextPage()}
+              />
             </div>
             <PublicTopModelsPanel models={activity?.topModels ?? []} />
           </div>

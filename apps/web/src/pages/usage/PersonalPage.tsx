@@ -1,15 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Clock } from 'lucide-react'
-import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
-import { makeDailyModelUsage } from '@/lib/mock'
 import { formatBalance, formatDate } from '@/lib/format'
-import { periodDays, rangeMs } from '@/lib/time-range'
-import type { Metric, TimeRange } from '@/lib/types'
+import { periodDays } from '@/lib/time-range'
+import type { Metric, TimeRange, UsageRecord } from '@/lib/types'
+import { flattenUsagePages, usageQueryParams } from '@/lib/usage-query'
+import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
+import { apiRequest } from '@/lib/api'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
-import { RecentUsagePanel, TopModelsPanel, type TopModelStat } from '@/components/usage/UsagePanels'
+import { RecentUsagePanel, TopModelsPanel } from '@/components/usage/UsagePanels'
+import { Button } from '@/components/ui/button'
 
 const RANGES: { id: TimeRange; label: string }[] = [
   { id: '24h', label: '24h' },
@@ -24,61 +27,87 @@ const METRICS: { id: Metric; label: string }[] = [
   { id: 'calls', label: 'Calls' },
 ]
 
+interface PersonalActivity {
+  summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; firstUsedAt: string | null }
+  daily: SettledDailyRow[]
+  contribution: SettledDailyRow[]
+  topModels: Array<{ modelId: string; calls: number; costMicros: number }>
+  balanceMicros: number
+}
+
+interface PersonalRecordRow {
+  id: string
+  createdAt: string
+  userId: string
+  modelId: string
+  inputTokens: number
+  outputTokens: number
+  costMicros: number
+  latencyMs: number
+  balanceAfterMicros: number | null
+}
+
+interface PersonalRecordsPage {
+  data: PersonalRecordRow[]
+  nextCursor: string | null
+}
+
 export function PersonalPage() {
-  const loadPersonal = useUsage((s) => s.loadPersonal)
-  const records = useUsage((s) => s.records)
-  const usageUserId = useUsage((s) => s.currentUserId)
   const authUser = useAuth((state) => state.user)
-  const userId = authUser?.id ?? usageUserId
-  const me = {
-    id: authUser?.id ?? '', name: authUser?.name ?? 'Pulpo user', email: authUser?.email ?? '',
-    username: authUser?.username ?? 'pulpo', avatarUrl: authUser?.avatarUrl ?? null, profileColor: authUser?.profileColor ?? null,
-    role: authUser?.role ?? 'user', balance: (authUser?.balanceMicros ?? 0) / 1_000_000,
-    joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(), blocked: false,
-  }
+  const userId = authUser?.id
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<Metric>('cost')
 
-  useEffect(() => { void loadPersonal() }, [loadPersonal])
+  const activityQuery = useQuery({
+    queryKey: ['usage', userId, range, 'activity'],
+    enabled: Boolean(userId),
+    queryFn: ({ signal }) => apiRequest<PersonalActivity>(`/api/usage/activity?${usageQueryParams(range)}`, { signal }),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
+  const recordsQuery = useInfiniteQuery({
+    queryKey: ['usage', userId, range, 'records'],
+    enabled: Boolean(userId),
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) => {
+      const params = usageQueryParams(range)
+      params.set('limit', '50')
+      if (pageParam) params.set('cursor', pageParam)
+      return apiRequest<PersonalRecordsPage>(`/api/usage/records?${params}`, { signal })
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+  })
 
-  const mine = useMemo(() => records.filter((r) => r.userId === userId), [records, userId])
-  const inRange = useMemo(
-    () => mine.filter((r) => Date.now() - r.timestamp <= rangeMs(range)),
-    [mine, range]
-  )
-
-  const totals = useMemo(() => {
-    const calls = inRange.length
-    const tokens = inRange.reduce((a, r) => a + r.tokensIn + r.tokensOut, 0)
-    const cost = inRange.reduce((a, r) => a + r.cost, 0)
-    return { calls, tokens, cost }
-  }, [inRange])
-
-  // full-span daily data powers the contribution graph; range-filtered powers the bars
-  const dailyAll = useMemo(() => makeDailyModelUsage(mine), [mine])
-  const dailyRange = useMemo(
-    () => dailyAll.filter((d) => Date.now() - new Date(`${d.date}T00:00:00`).getTime() <= rangeMs(range)),
-    [dailyAll, range]
-  )
-
-  const topModels = useMemo<TopModelStat[]>(() => {
-    const m = new Map<string, { calls: number; cost: number }>()
-    for (const r of inRange) {
-      const e = m.get(r.modelId) ?? { calls: 0, cost: 0 }
-      e.calls++
-      e.cost += r.cost
-      m.set(r.modelId, e)
-    }
-    return [...m.entries()]
-      .map(([modelId, s]) => ({ modelId, ...s }))
-      .sort((a, b) => b.cost - a.cost)
-  }, [inRange])
-
-  const firstUse = mine.length > 0 ? mine[mine.length - 1].timestamp : null
+  const me = {
+    name: authUser?.name ?? 'Pulpo user',
+    email: authUser?.email ?? '',
+    balance: (activityQuery.data?.balanceMicros ?? authUser?.balanceMicros ?? 0) / 1_000_000,
+    joinedAt: authUser ? Date.parse(authUser.createdAt) : Date.now(),
+  }
+  const activity = activityQuery.data
+  const totals = {
+    calls: activity?.summary.calls ?? 0,
+    tokens: (activity?.summary.inputTokens ?? 0) + (activity?.summary.outputTokens ?? 0),
+    cost: (activity?.summary.costMicros ?? 0) / 1_000_000,
+  }
+  const dailyUsage = useMemo(() => toDailyModelUsage(activity?.daily ?? []), [activity?.daily])
+  const contributionUsage = useMemo(() => toDailyModelUsage(activity?.contribution ?? []), [activity?.contribution])
+  const records = useMemo<UsageRecord[]>(() => flattenUsagePages(recordsQuery.data?.pages).map((row) => ({
+    id: row.id,
+    timestamp: Date.parse(row.createdAt),
+    userId: row.userId,
+    modelId: row.modelId,
+    tokensIn: row.inputTokens,
+    tokensOut: row.outputTokens,
+    cost: row.costMicros / 1_000_000,
+    balanceAfter: row.balanceAfterMicros === null ? null : row.balanceAfterMicros / 1_000_000,
+    latencyMs: row.latencyMs,
+  })), [recordsQuery.data])
+  const nextCursor = recordsQuery.data?.pages.at(-1)?.nextCursor ?? null
+  const error = activityQuery.error ?? recordsQuery.error
 
   return (
     <div className="space-y-6">
-      {/* profile + balance */}
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="text-lg font-medium">{me.name}</div>
@@ -94,7 +123,6 @@ export function PersonalPage() {
         </div>
       </div>
 
-      {/* usage overview */}
       <section>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
@@ -107,24 +135,43 @@ export function PersonalPage() {
           </div>
           <ToggleGroup options={RANGES} value={range} onChange={setRange} />
         </div>
-        <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />
+        {!activityQuery.isLoading && !error && <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />}
       </section>
 
-      {/* daily chart + contribution graph */}
-      <DailyUsageChart
-        data={dailyRange}
-        contributionData={dailyAll}
-        metric={metric}
-        periodDayCount={periodDays(range, firstUse)}
-      />
-
-      {/* records + model ranking */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <RecentUsagePanel records={inRange} showBalance />
+      {activityQuery.isLoading || recordsQuery.isLoading ? (
+        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
+      ) : error ? (
+        <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
+          <span>{error instanceof Error ? error.message : 'Unable to load personal usage'}</span>
+          <Button size="sm" variant="outline" onClick={() => { void activityQuery.refetch(); void recordsQuery.refetch() }}>Try again</Button>
         </div>
-        <TopModelsPanel models={topModels} />
-      </div>
+      ) : (
+        <>
+          <DailyUsageChart
+            data={dailyUsage}
+            contributionData={contributionUsage}
+            metric={metric}
+            periodDayCount={periodDays(range, activity?.summary.firstUsedAt ? Date.parse(activity.summary.firstUsedAt) : null)}
+          />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <RecentUsagePanel
+                records={records}
+                showBalance
+                nextCursor={nextCursor}
+                loadingMore={recordsQuery.isFetchingNextPage}
+                error={recordsQuery.isFetchNextPageError ? (recordsQuery.error instanceof Error ? recordsQuery.error.message : 'Unable to load more usage') : null}
+                onLoadMore={() => void recordsQuery.fetchNextPage()}
+              />
+            </div>
+            <TopModelsPanel models={(activity?.topModels ?? []).map((model) => ({
+              modelId: model.modelId,
+              calls: model.calls,
+              cost: model.costMicros / 1_000_000,
+            }))} />
+          </div>
+        </>
+      )}
     </div>
   )
 }
