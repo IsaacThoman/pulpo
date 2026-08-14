@@ -19,27 +19,17 @@ import {
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { useSettingsDialog } from '@/components/settings/settings-dialog'
-import { automaticProfileColor } from '@/lib/profile'
 import type { AuthUser } from '@/stores/auth'
 
-type FriendsProfileUser = Pick<AuthUser, 'id' | 'name' | 'username' | 'avatarUrl' | 'profileColor'>
+type FriendsProfileUser = Pick<AuthUser, 'name' | 'username' | 'avatarUrl'>
 
 export function FriendsProfileSummary({ user, onEdit }: { user: FriendsProfileUser; onEdit: () => void }) {
-  const chartColor = user.profileColor ?? automaticProfileColor(user.id)
   return (
-    <section className="flex items-center gap-4 border-b px-1 pb-5" aria-labelledby="your-profile-heading">
+    <section className="flex items-center gap-4 border-b px-1 pb-5" aria-label="Your profile">
       <ProfileAvatar name={user.name} avatarUrl={user.avatarUrl} className="size-14" fallbackClassName="text-base" />
       <div className="min-w-0 flex-1">
-        <div id="your-profile-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Your profile</div>
-        <div className="mt-0.5 truncate text-base font-medium">{user.name}</div>
-        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-          <span className="truncate">@{user.username}</span>
-          <span aria-hidden="true">·</span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-2.5 rounded-full ring-1 ring-foreground/15" style={{ backgroundColor: chartColor }} aria-label={`Friends chart color ${chartColor}`} />
-            Friends chart color
-          </span>
-        </div>
+        <div className="truncate text-base font-medium">{user.name}</div>
+        <div className="mt-0.5 truncate text-xs text-muted-foreground">@{user.username}</div>
       </div>
       <Button size="sm" variant="ghost" className="shrink-0" onClick={onEdit}><Pencil />Edit profile</Button>
     </section>
