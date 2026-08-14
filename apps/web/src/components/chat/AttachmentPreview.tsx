@@ -252,10 +252,10 @@ export function AttachmentPreviewDialog({
         data-testid="attachment-preview-dialog"
         className="flex h-[min(88dvh,52rem)] w-[min(calc(100vw-2rem),64rem)] max-w-none grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0 shadow-2xl sm:max-w-none"
       >
-        <header className="flex min-w-0 shrink-0 items-center gap-3 border-b px-4 py-3">
-          <div className="min-w-0 flex-1">
-            <DialogTitle className="truncate text-sm">{attachment.name}</DialogTitle>
-            <DialogDescription className="mt-1 text-xs">
+        <header className="flex min-w-0 shrink-0 items-center gap-3 border-b px-4 py-2">
+          <div className="flex min-w-0 flex-1 items-baseline gap-2">
+            <DialogTitle className="min-w-0 truncate text-sm">{attachment.name}</DialogTitle>
+            <DialogDescription className="shrink-0 whitespace-nowrap text-xs">
               {attachmentDescription(attachment, kind)}
             </DialogDescription>
           </div>
