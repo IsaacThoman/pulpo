@@ -27,7 +27,7 @@ export function FriendsHandle({ username }: { username: string }) {
     window.setTimeout(() => setCopied(false), 1_500)
   }
   return (
-    <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+    <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
       <span>Your handle is</span>
       <button
         type="button"
@@ -265,9 +265,9 @@ export function FriendsPage() {
       <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Friends</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
-          {user && <FriendsHandle username={user.username} />}
           <div>
             <h2 className="text-lg font-medium">Find your friends</h2>
+            {user && <FriendsHandle username={user.username} />}
           </div>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
