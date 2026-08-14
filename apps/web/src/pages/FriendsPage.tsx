@@ -21,7 +21,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 export function FriendsHandle({ username }: { username: string }) {
   const [copied, setCopied] = useState(false)
   const copyHandle = async () => {
-    await navigator.clipboard.writeText(`@${username}`)
+    await navigator.clipboard.writeText(username)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1_500)
   }
