@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { FriendConnection, FriendProfile, FriendsList } from '@pulpo/contracts'
-import { BarChart3, ChevronDown, ChevronRight, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList } from '@pulpo/contracts'
+import { BarChart3, ChevronDown, ChevronRight, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { apiRequest } from '@/lib/api'
+import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
+import { friendSearchHighlight, nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
 import { friendRequestAge } from '@/lib/friends'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
@@ -18,20 +19,25 @@ import {
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 
-interface SearchResult {
-  profile: FriendProfile
-  relationship: 'self' | 'none' | 'incoming' | 'outgoing' | 'friends'
-  requestId: string | null
+function HighlightedText({ value, query }: { value: string; query: string }) {
+  return friendSearchHighlight(value, query).map((part, index) => part.match
+    ? <mark key={index} className="bg-transparent font-semibold text-foreground">{part.text}</mark>
+    : <span key={index}>{part.text}</span>)
 }
 
-function ProfileIdentity({ profile, detail }: { profile: FriendProfile; detail?: string }) {
+function ProfileIdentity({ profile, detail, query, matchedOn }: {
+  profile: FriendProfile
+  detail?: string
+  query?: string
+  matchedOn?: FriendSearchResult['matchedOn']
+}) {
   return (
     <div className="flex min-w-0 items-center gap-3">
       <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-10" fallbackClassName="text-xs" />
       <div className="min-w-0">
-        <div className="truncate text-sm font-medium">{profile.displayName}</div>
+        <div className="truncate text-sm font-medium">{query && matchedOn === 'displayName' ? <HighlightedText value={profile.displayName} query={query} /> : profile.displayName}</div>
         <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
-          {profile.username && <span className="truncate">@{profile.username}</span>}
+          {profile.username && <span className="truncate">@{query && matchedOn === 'username' ? <HighlightedText value={profile.username} query={query} /> : profile.username}</span>}
           {detail && <><span aria-hidden="true">·</span><span className="shrink-0">{detail}</span></>}
         </div>
       </div>
@@ -77,15 +83,19 @@ export function FriendsPage() {
   const userId = useAuth((state) => state.user?.id)
   const navigate = useNavigate()
   const usernameInputRef = useRef<HTMLInputElement>(null)
-  const [username, setUsername] = useState('')
-  const [searching, setSearching] = useState(false)
-  const [searchResult, setSearchResult] = useState<SearchResult | null>(null)
-  const [searchMessage, setSearchMessage] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [searchResults, setSearchResults] = useState<FriendSearchResult[]>([])
+  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+  const [searchError, setSearchError] = useState('')
+  const [searchDismissed, setSearchDismissed] = useState(false)
+  const [activeSearchIndex, setActiveSearchIndex] = useState(-1)
   const [actionIds, setActionIds] = useState<Set<string>>(() => new Set())
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [outgoingOpen, setOutgoingOpen] = useState(false)
   const [blockedOpen, setBlockedOpen] = useState(false)
+  const searchQuery = useMemo(() => normalizedFriendSearchQuery(searchInput), [searchInput])
+  const searchReady = shouldSearchFriends(searchInput)
   const listQuery = useQuery({
     queryKey: ['friends', userId],
     queryFn: () => apiRequest<FriendsList>('/api/friends'),
@@ -98,6 +108,46 @@ export function FriendsPage() {
     void queryClient.invalidateQueries({ queryKey: ['friends-pending-count'] })
   }, [])
 
+  useEffect(() => {
+    if (!searchReady) {
+      setSearchResults([])
+      setSearchState('idle')
+      setSearchError('')
+      setActiveSearchIndex(-1)
+      return
+    }
+
+    const controller = new AbortController()
+    setSearchResults([])
+    setActiveSearchIndex(-1)
+    setSearchState('loading')
+    setSearchError('')
+    const timer = window.setTimeout(() => {
+      void apiRequest<FriendSearchResponse>(`/api/friends/search?q=${encodeURIComponent(searchQuery)}`, { signal: controller.signal })
+        .then((response) => {
+          setSearchResults(response.results)
+          setActiveSearchIndex(response.results.length ? 0 : -1)
+          setSearchState('success')
+        })
+        .catch((cause) => {
+          if (controller.signal.aborted) return
+          setSearchResults([])
+          setActiveSearchIndex(-1)
+          setSearchState('error')
+          setSearchError(cause instanceof ApiError && cause.status === 429
+            ? 'Too many searches. Wait a moment and try again.'
+            : isNetworkError(cause)
+              ? 'You appear to be offline. Reconnect to search for friends.'
+              : 'Could not search for friends. Try again.')
+        })
+    }, 250)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [searchQuery, searchReady])
+
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['friends', userId] }),
@@ -106,13 +156,13 @@ export function FriendsPage() {
     ])
   }
 
-  const act = async (key: string, operation: () => Promise<unknown>, message: string, onSuccess?: () => void) => {
+  const act = async <T,>(key: string, operation: () => Promise<T>, message: string, onSuccess?: (result: T) => void) => {
     setActionIds((current) => new Set(current).add(key))
     setActionError('')
     setActionMessage('')
     try {
-      await operation()
-      onSuccess?.()
+      const result = await operation()
+      onSuccess?.(result)
       setActionMessage(message)
       await refresh()
     } catch (cause) {
@@ -126,28 +176,60 @@ export function FriendsPage() {
     }
   }
 
-  const search = async (event: React.FormEvent) => {
-    event.preventDefault()
-    const value = username.trim().replace(/^@/, '').toLowerCase()
-    if (!value) return
-    setUsername(value)
-    setSearching(true)
-    setSearchMessage('')
-    setSearchResult(null)
-    setActionMessage('')
-    try {
-      setSearchResult(await apiRequest<SearchResult>(`/api/friends/search?username=${encodeURIComponent(value)}`))
-    } catch {
-      setSearchMessage(`No account found for @${value}. Check the username and try again.`)
-    } finally {
-      setSearching(false)
+  const updateSearchResult = (profileId: string, update: Partial<FriendSearchResult>) => {
+    setSearchResults((results) => results.map((result) => result.profile.id === profileId ? { ...result, ...update } : result))
+  }
+
+  const sendSearchRequest = (result: FriendSearchResult) => {
+    void act(
+      `request:${result.profile.id}`,
+      () => apiRequest<{ requestId: string; status: 'pending' | 'accepted' }>('/api/friends/requests', { method: 'POST', body: { userId: result.profile.id } }),
+      `Friend request sent to ${result.profile.displayName}.`,
+      (response) => updateSearchResult(result.profile.id, {
+        relationship: response.status === 'accepted' ? 'friends' : 'outgoing',
+        requestId: response.requestId,
+      }),
+    )
+  }
+
+  const acceptSearchRequest = (result: FriendSearchResult) => {
+    if (!result.requestId) return
+    void act(
+      `accept:${result.requestId}`,
+      () => apiRequest(`/api/friends/requests/${result.requestId}/accept`, { method: 'POST' }),
+      `${result.profile.displayName} is now your friend.`,
+      () => updateSearchResult(result.profile.id, { relationship: 'friends' }),
+    )
+  }
+
+  const activateSearchResult = (result: FriendSearchResult) => {
+    if (result.relationship === 'none') sendSearchRequest(result)
+    else if (result.relationship === 'incoming') acceptSearchRequest(result)
+    else if (result.relationship === 'friends') navigate('/usage/friends')
+  }
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      setSearchDismissed(true)
+      setActiveSearchIndex(-1)
+      return
+    }
+    if (!searchResults.length || searchDismissed) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      setActiveSearchIndex((index) => nextFriendSearchIndex(index, event.key === 'ArrowDown' ? 1 : -1, searchResults.length))
+      return
+    }
+    if (event.key === 'Enter' && activeSearchIndex >= 0) {
+      event.preventDefault()
+      activateSearchResult(searchResults[activeSearchIndex]!)
     }
   }
 
   const block = (profile: FriendProfile) => {
     if (!confirm(`Block ${profile.displayName}? Any friendship or pending request will be removed.`)) return
     void act(`block:${profile.id}`, () => apiRequest('/api/friends/blocks', { method: 'POST', body: { userId: profile.id } }), `${profile.displayName} was blocked.`, () => {
-      if (searchResult?.profile.id === profile.id) setSearchResult(null)
+      setSearchResults((results) => results.filter((result) => result.profile.id !== profile.id))
     })
   }
 
@@ -159,28 +241,49 @@ export function FriendsPage() {
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
           <div>
             <h2 className="text-lg font-medium">Find your friends</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Search by exact username. Usage is shared after they accept.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Search by name or username. Usage is shared after they accept.</p>
           </div>
-          <form className="flex gap-2" onSubmit={search}>
-            <div className="relative min-w-0 flex-1">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
-              <Input ref={usernameInputRef} value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').replace(/\s/g, '').toLowerCase())} className="pl-7" placeholder="username" maxLength={30} aria-label="Username" />
-            </div>
-            <Button type="submit" disabled={searching || !username.trim()}><Search />{searching ? 'Searching…' : 'Search'}</Button>
-          </form>
-          {searchMessage && <div className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">{searchMessage}</div>}
-          {searchResult && <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
-            <ProfileIdentity profile={searchResult.profile} />
-            {searchResult.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${searchResult.profile.id}`)} onClick={() => void act(
-              `request:${searchResult.profile.id}`,
-              () => apiRequest('/api/friends/requests', { method: 'POST', body: { userId: searchResult.profile.id } }),
-              `Friend request sent to ${searchResult.profile.displayName}.`,
-              () => setSearchResult((result) => result ? { ...result, relationship: 'outgoing' } : result),
-            )}><UserRoundPlus />{actionIds.has(`request:${searchResult.profile.id}`) ? 'Sending…' : 'Add friend'}</Button>}
-            {searchResult.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${searchResult.requestId}`)} onClick={() => void act(`accept:${searchResult.requestId}`, () => apiRequest(`/api/friends/requests/${searchResult.requestId}/accept`, { method: 'POST' }), `${searchResult.profile.displayName} is now your friend.`, () => setSearchResult((result) => result ? { ...result, relationship: 'friends' } : result))}>{actionIds.has(`accept:${searchResult.requestId}`) ? 'Accepting…' : 'Accept'}</Button>}
-            {searchResult.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">Request sent</span>}
-            {searchResult.relationship === 'friends' && <Button size="sm" variant="outline" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>}
-            {searchResult.relationship === 'self' && <span className="text-sm text-muted-foreground">This is you</span>}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              ref={usernameInputRef}
+              value={searchInput}
+              onChange={(event) => { setSearchInput(event.target.value); setSearchDismissed(false); setActionMessage('') }}
+              onFocus={() => setSearchDismissed(false)}
+              onKeyDown={handleSearchKeyDown}
+              className="px-9"
+              placeholder="Name or username"
+              maxLength={120}
+              aria-label="Search friends"
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={searchReady && !searchDismissed}
+              aria-controls="friend-search-results"
+              aria-activedescendant={activeSearchIndex >= 0 ? `friend-search-result-${activeSearchIndex}` : undefined}
+            />
+            {searchState === 'loading' && <LoaderCircle className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-label="Searching" />}
+          </div>
+          {searchReady && !searchDismissed && <div id="friend-search-results" role="listbox" aria-label="Friend search results" className="overflow-hidden rounded-xl border">
+            {searchState === 'loading' ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">Searching people…</div>
+              : searchState === 'error' ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">{searchError}</div>
+              : searchState === 'success' && !searchResults.length ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">No people found for “{searchInput.trim()}”</div>
+                : searchResults.map((result, index) => <div
+                  id={`friend-search-result-${index}`}
+                  key={result.profile.id}
+                  role="option"
+                  aria-selected={activeSearchIndex === index}
+                  className={`flex items-center justify-between gap-3 border-b px-4 py-3 last:border-b-0 ${activeSearchIndex === index ? 'bg-accent/50' : ''}`}
+                  onMouseEnter={() => setActiveSearchIndex(index)}
+                >
+                  <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} />
+                  <div className="flex shrink-0 items-center gap-2">
+                    {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? 'Sending…' : 'Add friend'}</Button>}
+                    {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? 'Accepting…' : 'Accept'}</Button>}
+                    {result.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">Request sent</span>}
+                    {result.relationship === 'friends' && <Button size="sm" variant="outline" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>}
+                    {result.relationship === 'self' && <span className="text-sm text-muted-foreground">You</span>}
+                  </div>
+                </div>)}
           </div>}
           {(actionError || actionMessage) && <p role="status" className={actionError ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{actionError || actionMessage}</p>}
 
@@ -216,7 +319,7 @@ export function FriendsPage() {
                 </Section> : <div className="rounded-xl border px-6 py-10 text-center">
                   <UsersRound className="mx-auto size-6 text-muted-foreground" />
                   <h2 className="mt-3 text-sm font-medium">Add friends to compare usage</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">Find someone by their exact Pulpo username.</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Find someone by their name or Pulpo username.</p>
                   <Button className="mt-4" size="sm" variant="outline" onClick={() => usernameInputRef.current?.focus()}><UserRoundPlus />Find friends</Button>
                 </div>}
 

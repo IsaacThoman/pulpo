@@ -63,7 +63,7 @@ export function SetupPage() {
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
             <Input id="setup-username" autoComplete="username" placeholder="ada_lovelace" value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" title="Use 3–30 letters, numbers, or underscores; begin and end with a letter or number" required />
           </div>
-          <p className="text-xs text-muted-foreground">Friends will use this exact username to find you.</p>
+          <p className="text-xs text-muted-foreground">Choose a unique username for friend search.</p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-password">Password</Label>

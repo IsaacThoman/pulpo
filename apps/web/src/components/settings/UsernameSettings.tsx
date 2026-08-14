@@ -88,7 +88,7 @@ export function UsernameSettings() {
         </> : <form className="space-y-4" onSubmit={(event) => void submit(event)}>
           <DialogHeader>
             <DialogTitle>Change username</DialogTitle>
-            <DialogDescription>Friends use your exact username to find you. It must be unique.</DialogDescription>
+            <DialogDescription>Friends can search by your username or display name. Your username must be unique.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
