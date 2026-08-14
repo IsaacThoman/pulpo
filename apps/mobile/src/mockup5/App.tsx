@@ -2994,7 +2994,7 @@ function ChatView({
 }) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
-  const { reduceMotion } = useAccessibilityPreferences();
+  const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
   const accessibilityLayout = fontScale >= 1.6;
@@ -4122,6 +4122,7 @@ function ChatView({
         onClose={() => setImageViewer(null)}
         onShare={shareImagePreview}
         reduceMotion={reduceMotion}
+        reduceTransparency={reduceTransparency}
         resolveUri={resolvePreviewImageUri}
         visible={Boolean(imageViewer)}
       />

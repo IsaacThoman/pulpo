@@ -15,14 +15,16 @@ import {
 import { useAppTheme } from '../theme'
 
 /** The only Router UI primitive still needed by the public-share route. */
-export function GlassIconButton({ icon, label, onPress }: {
+export function GlassIconButton({ colorScheme, icon, label, onPress }: {
+  colorScheme?: 'light' | 'dark'
   icon: string
   label: string
   onPress: () => void
 }) {
   const theme = useAppTheme()
+  const foreground = colorScheme === 'dark' ? '#ffffff' : theme.text
   if (Platform.OS === 'ios') {
-    return <SwiftUIHost matchContents style={styles.iconButton}>
+    return <SwiftUIHost colorScheme={colorScheme} matchContents style={styles.iconButton}>
       <SwiftUIButton
         onPress={onPress}
         modifiers={[
@@ -43,7 +45,7 @@ export function GlassIconButton({ icon, label, onPress }: {
     style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
   >
     <View style={[styles.glassFill, { backgroundColor: theme.fillStrong }]}>
-      <SymbolView name={icon as never} size={18} tintColor={theme.text} weight="semibold" />
+      <SymbolView name={icon as never} size={18} tintColor={foreground} weight="semibold" />
     </View>
   </Pressable>
 }

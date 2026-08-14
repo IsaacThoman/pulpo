@@ -1,28 +1,33 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   useWindowDimensions,
   View,
+  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
+import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect'
 import { StatusBar } from 'expo-status-bar'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Reanimated, {
+  interpolate,
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated'
-import { RefreshCw, Share2, X } from 'lucide-react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { RefreshCw } from 'lucide-react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { GlassIconButton } from './GlassIconButton'
 
 export interface AttachmentImagePreviewItem {
   id: string
@@ -36,8 +41,36 @@ interface AttachmentImageViewerProps {
   onClose: () => void
   onShare: (item: AttachmentImagePreviewItem) => void
   reduceMotion?: boolean
+  reduceTransparency?: boolean
   resolveUri: (item: AttachmentImagePreviewItem) => Promise<string>
   visible: boolean
+}
+
+function GalleryMetadata({ count, name, reduceTransparency }: {
+  count?: string
+  name: string
+  reduceTransparency: boolean
+}) {
+  const content = (
+    <View accessibilityRole="header" style={styles.titleBlock}>
+      <Text numberOfLines={1} style={styles.title}>{name}</Text>
+      {count ? <Text style={styles.count}>{count}</Text> : null}
+    </View>
+  )
+  if (Platform.OS !== 'ios' || reduceTransparency || !isGlassEffectAPIAvailable()) {
+    return <View style={[styles.metadataGlass, styles.metadataFallback]}>{content}</View>
+  }
+  return (
+    <GlassView
+      colorScheme="dark"
+      glassEffectStyle="regular"
+      isInteractive={false}
+      style={styles.metadataGlass}
+      tintColor="rgba(255,255,255,0.08)"
+    >
+      {content}
+    </GlassView>
+  )
 }
 
 function clamp(value: number, minimum: number, maximum: number): number {
@@ -242,13 +275,17 @@ export function AttachmentImageViewer({
   onClose,
   onShare,
   reduceMotion = false,
+  reduceTransparency = false,
   resolveUri,
   visible,
 }: AttachmentImageViewerProps) {
   const { height, width } = useWindowDimensions()
+  const insets = useSafeAreaInsets()
   const [index, setIndex] = useState(initialIndex)
   const [chromeVisible, setChromeVisible] = useState(true)
   const [zoomed, setZoomed] = useState(false)
+  const listRef = useRef<FlatList<AttachmentImagePreviewItem>>(null)
+  const chromeProgress = useSharedValue(1)
 
   useEffect(() => {
     if (!visible) return
@@ -256,6 +293,11 @@ export function AttachmentImageViewer({
     setChromeVisible(true)
     setZoomed(false)
   }, [initialIndex, items.length, visible])
+
+  useEffect(() => {
+    const target = chromeVisible ? 1 : 0
+    chromeProgress.value = reduceMotion ? target : withTiming(target, { duration: 180 })
+  }, [chromeProgress, chromeVisible, reduceMotion])
 
   const current = items[index]
   const getItemLayout = useCallback((_: ArrayLike<AttachmentImagePreviewItem> | null | undefined, itemIndex: number) => ({
@@ -267,6 +309,12 @@ export function AttachmentImageViewer({
     const next = Math.round(event.nativeEvent.contentOffset.x / Math.max(1, width))
     setIndex(Math.min(Math.max(0, next), Math.max(0, items.length - 1)))
   }, [items.length, width])
+  const handleListLayout = useCallback((event: LayoutChangeEvent) => {
+    listRef.current?.scrollToOffset({
+      animated: false,
+      offset: event.nativeEvent.layout.width * index,
+    })
+  }, [index])
   const renderItem = useCallback(({ item }: { item: AttachmentImagePreviewItem }) => (
     <ZoomableImage
       height={height}
@@ -279,7 +327,11 @@ export function AttachmentImageViewer({
       width={width}
     />
   ), [height, onClose, reduceMotion, resolveUri, width])
-  const chromeOpacity = useMemo(() => chromeVisible ? 1 : 0, [chromeVisible])
+  const chromeStyle = useAnimatedStyle(() => ({
+    opacity: chromeProgress.value,
+    transform: [{ translateY: interpolate(chromeProgress.value, [0, 1], [-8, 0]) }],
+  }))
+  const chromeTop = Math.max(insets.top, 16)
 
   if (!items.length) return null
   return (
@@ -294,40 +346,41 @@ export function AttachmentImageViewer({
       <View accessibilityViewIsModal style={styles.root}>
         <StatusBar hidden style="light" />
         <FlatList
+          key={`${Math.round(width)}x${Math.round(height)}`}
           data={items}
           decelerationRate="fast"
           getItemLayout={getItemLayout}
           horizontal
-          initialScrollIndex={Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1))}
+          initialNumToRender={items.length}
           keyExtractor={(item) => item.id}
+          onLayout={handleListLayout}
           onMomentumScrollEnd={handleScrollEnd}
           pagingEnabled
           renderItem={renderItem}
           scrollEnabled={!zoomed}
           showsHorizontalScrollIndicator={false}
           windowSize={3}
+          ref={listRef}
         />
-        <SafeAreaView pointerEvents={chromeVisible ? 'box-none' : 'none'} style={[styles.chrome, { opacity: chromeOpacity }]}>
+        <Reanimated.View
+          pointerEvents={chromeVisible ? 'box-none' : 'none'}
+          style={[styles.chrome, { paddingTop: chromeTop }, chromeStyle]}
+        >
           <View style={styles.topBar}>
-            <Pressable accessibilityLabel="Close image preview" accessibilityRole="button" hitSlop={8} onPress={onClose} style={styles.chromeButton}>
-              <X color="#ffffff" size={22} strokeWidth={2.2} />
-            </Pressable>
-            <View style={styles.titleBlock}>
-              <Text numberOfLines={1} style={styles.title}>{current?.name}</Text>
-              {items.length > 1 ? <Text style={styles.count}>{index + 1} of {items.length}</Text> : null}
-            </View>
-            <Pressable
-              accessibilityLabel={`Share ${current?.name ?? 'image'}`}
-              accessibilityRole="button"
-              disabled={!current}
-              hitSlop={8}
+            <GlassIconButton colorScheme="dark" icon="xmark" label="Close image preview" onPress={onClose} />
+            <GalleryMetadata
+              count={items.length > 1 ? `${index + 1} of ${items.length}` : undefined}
+              name={current?.name ?? 'Image'}
+              reduceTransparency={reduceTransparency}
+            />
+            <GlassIconButton
+              colorScheme="dark"
+              icon="square.and.arrow.up"
+              label={`Share ${current?.name ?? 'image'}`}
               onPress={() => current && onShare(current)}
-              style={styles.chromeButton}
-            >
-              <Share2 color="#ffffff" size={20} strokeWidth={2.1} />
-            </Pressable>
+            />
           </View>
-        </SafeAreaView>
+        </Reanimated.View>
       </View>
     </Modal>
   )
@@ -344,9 +397,10 @@ const styles = StyleSheet.create({
   retryButton: { minHeight: 44, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 22, paddingHorizontal: 18, backgroundColor: 'rgba(255,255,255,0.16)' },
   retryText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
   chrome: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'flex-start' },
-  topBar: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: 'rgba(0,0,0,0.42)' },
-  chromeButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(118,118,128,0.38)' },
-  titleBlock: { minWidth: 0, flex: 1, alignItems: 'center' },
+  topBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16 },
+  metadataGlass: { minWidth: 0, maxWidth: 520, minHeight: 44, flex: 1, borderRadius: 22, overflow: 'hidden' },
+  metadataFallback: { backgroundColor: 'rgba(44,44,46,0.86)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
+  titleBlock: { minWidth: 0, minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5 },
   title: { maxWidth: '100%', color: '#ffffff', fontSize: 14, fontWeight: '600' },
   count: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontSize: 11, fontVariant: ['tabular-nums'] },
 })
