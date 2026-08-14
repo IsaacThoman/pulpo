@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import { resolveAgentParentMessages, type AgentHistoryResponse } from './history.js'
+import { resolveAgentParentMessages, systemPromptFromAgentContext, type AgentHistoryResponse } from './history.js'
 
 const now = new Date('2026-08-08T12:00:00.000Z')
 
@@ -21,6 +21,12 @@ function text(messages: AgentMessage[]): string {
 }
 
 describe('Agent parent history', () => {
+  it('reads a snapshotted system prompt for resumed runs', () => {
+    expect(systemPromptFromAgentContext({ systemPrompt: 'original instructions' })).toBe('original instructions')
+    expect(systemPromptFromAgentContext({ systemPrompt: 42 })).toBeUndefined()
+    expect(systemPromptFromAgentContext({})).toBeUndefined()
+  })
+
   it('uses the immediate parent Agent context unchanged', () => {
     const persisted = [{ role: 'user', content: 'existing', timestamp: 1 }] as AgentMessage[]
     expect(resolveAgentParentMessages(

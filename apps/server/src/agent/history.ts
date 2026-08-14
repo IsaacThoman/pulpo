@@ -20,6 +20,12 @@ export function messagesFromAgentContext(context: unknown): AgentMessage[] {
   return Array.isArray(messages) ? messages as AgentMessage[] : []
 }
 
+export function systemPromptFromAgentContext(context: unknown): string | undefined {
+  if (!context || typeof context !== 'object') return undefined
+  const systemPrompt = (context as { systemPrompt?: unknown }).systemPrompt
+  return typeof systemPrompt === 'string' && systemPrompt ? systemPrompt : undefined
+}
+
 function timestamp(value: Date | string | null | undefined): number {
   const parsed = value instanceof Date ? value.getTime() : Date.parse(value ?? '')
   return Number.isFinite(parsed) ? parsed : Date.now()
