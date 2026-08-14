@@ -800,7 +800,7 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
           {uploading ? (
             <View style={styles.sentAttachmentStatusOverlay}>
               <ActivityIndicator color="#ffffff" size="small" />
-              <Text style={styles.sentAttachmentStatusText}>Uploading…</Text>
+              <Text numberOfLines={1} style={styles.sentAttachmentStatusText}>Uploading</Text>
             </View>
           ) : null}
           {failed ? (
@@ -827,7 +827,7 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
       <View style={styles.sentFileCopy}>
         <Text numberOfLines={1} style={styles.sentFileName}>{attachment.name}</Text>
         <Text numberOfLines={1} style={styles.sentFileMeta}>
-          {uploading ? 'Uploading…' : failed ? attachment.error ?? 'Upload failed' : attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}
+          {uploading ? 'Uploading' : failed ? attachment.error ?? 'Upload failed' : attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}
         </Text>
       </View>
       {uploading
