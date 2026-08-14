@@ -3152,7 +3152,7 @@ function ChatView({
     if (!preserved) return;
     draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
-    setAttachments(preserved.attachments);
+    setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
   }, [onChangeInput, setAttachments]);
@@ -4765,7 +4765,7 @@ const styles = StyleSheet.create({
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
-  attachmentStrip: { maxHeight: 112, marginBottom: 8 },
+  attachmentStrip: { maxHeight: 132, marginBottom: 8 },
   attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 17, paddingRight: 17 },
   attachmentUploadStatus: { color: COLORS.muted, fontSize: 10, marginTop: 3, maxWidth: 148 },
@@ -4774,7 +4774,7 @@ const styles = StyleSheet.create({
   imageAttachment: { width: 72, height: 72, borderRadius: 14, overflow: 'visible', backgroundColor: COLORS.fill },
   attachmentImage: { width: 72, height: 72, borderRadius: 14 },
   attachmentLoadingOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.34)' },
-  fileAttachment: { width: 174, height: 72, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11, backgroundColor: COLORS.fill },
+  fileAttachment: { width: 174, minHeight: 72, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11, paddingVertical: 9, backgroundColor: COLORS.fill },
   fileAttachmentIcon: { width: 32, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.fillStrong },
   fileAttachmentCopy: { flex: 1 },
   fileAttachmentName: { color: COLORS.text, fontSize: 12.5, fontWeight: '600' },

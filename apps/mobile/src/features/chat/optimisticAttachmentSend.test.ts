@@ -45,4 +45,9 @@ describe('optimistic attachment sends', () => {
     const failed = { ...uploading, state: 'failed' as const, error: 'Connection lost' }
     expect(restoreLatestDraft([uploading], new Map([[uploading.localId, failed]]))).toEqual([failed])
   })
+
+  it('restores a preserved composer with uploads completed during an atomic edit', () => {
+    const ready = { ...uploading, state: 'ready' as const, serverId: 'server-image' }
+    expect(restoreLatestDraft([uploading], new Map([[uploading.localId, ready]]))).toEqual([ready])
+  })
 })

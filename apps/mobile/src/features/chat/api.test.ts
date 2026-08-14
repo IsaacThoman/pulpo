@@ -134,6 +134,12 @@ describe('attachment uploads', () => {
     attachment: { id: 'reserved-1' }, uploadUrl: '/upload/reserved-1', uploadHeaders: {},
   }
 
+  it('validates a selected file before creating a remote reservation', async () => {
+    await expect(uploadAttachment({ ...draft, sizeBytes: 0 }, null)).rejects.toThrow()
+    expect(mocks.apiRequest).not.toHaveBeenCalled()
+    expect(mocks.fileUpload).not.toHaveBeenCalled()
+  })
+
   it('keeps the MIME type confirmed by the server', async () => {
     mocks.apiRequest
       .mockResolvedValueOnce(reservation)
