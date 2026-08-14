@@ -6,6 +6,7 @@ describe('agent policy', () => {
     const prompt = buildAgentSystemPrompt('Model policy', 'Agent policy')
     expect(prompt).toContain('/workspace')
     expect(prompt).toContain('Use view_image')
+    expect(prompt).toContain('ImageOps.exif_transpose')
     expect(prompt.indexOf('Model policy')).toBeLessThan(prompt.indexOf('Agent policy'))
   })
 

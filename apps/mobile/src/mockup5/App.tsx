@@ -3042,7 +3042,9 @@ function ChatView({
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsMultipleSelection: true,
         mediaTypes: ['images'],
-        quality: 0.9,
+        // Keep HEIC inputs compatible without applying an extra lossy JPEG encode.
+        quality: 1,
+        preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
         selectionLimit: 6,
       });
       if (result.canceled) return;
@@ -3078,7 +3080,7 @@ function ChatView({
         );
         return;
       }
-      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.9 });
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
       const asset = result.canceled ? null : result.assets[0];
       if (!asset) return;
       const id = `camera-${Date.now()}`;

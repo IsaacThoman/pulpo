@@ -31,6 +31,7 @@ import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
 import { providerCacheRequestOptions } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
+import { modelImageRendition } from './model-image.js'
 import { sanitizeOutputForClient } from './public-output.js'
 import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
@@ -115,7 +116,8 @@ async function persistItems(responseId: string, output: unknown[]): Promise<void
 
 async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor): Promise<unknown[]> {
   const prepared: unknown[] = []
-  for (const item of input) {
+  const normalizedInput = await interceptOpenAIInputImages(input, model, interceptor)
+  for (const item of normalizedInput) {
     const typed = item as { content?: unknown[] }
     if (!Array.isArray(typed.content)) {
       prepared.push(item)
@@ -132,8 +134,9 @@ async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof
       if (!attachment || attachment.status !== 'ready') throw new Error('Attachment is unavailable')
       const bytes = await getBlobStore().get(attachment.objectKey)
       if (attachment.mimeType.startsWith('image/')) {
-        const dataUrl = `data:${attachment.mimeType};base64,${Buffer.from(bytes).toString('base64')}`
-        const text = await interceptor.intercept(model, { data: bytes, mimeType: attachment.mimeType, label: attachment.originalName, attachmentId: attachment.id, sourceChecksum: attachment.checksum })
+        const rendition = await modelImageRendition(bytes, attachment.mimeType, attachment.checksum)
+        const dataUrl = `data:${rendition.mimeType};base64,${rendition.data.toString('base64')}`
+        const text = await interceptor.intercept(model, { data: rendition.data, mimeType: rendition.mimeType, label: attachment.originalName, attachmentId: attachment.id, sourceChecksum: attachment.checksum })
         content.push(text === null ? { type: 'input_image', image_url: dataUrl } : { type: 'input_text', text })
         continue
       }
@@ -150,7 +153,7 @@ async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof
     }
     prepared.push({ ...typed, content })
   }
-  return interceptOpenAIInputImages(prepared, model, interceptor)
+  return prepared
 }
 
 async function contextualInput(
