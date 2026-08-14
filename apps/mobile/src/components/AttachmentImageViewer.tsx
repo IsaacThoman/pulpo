@@ -14,7 +14,22 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
-import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect'
+import {
+  Button as SwiftUIButton,
+  Host as SwiftUIHost,
+  Text as SwiftUIText,
+  VStack as SwiftUIVStack,
+} from '@expo/ui/swift-ui'
+import {
+  accessibilityLabel,
+  buttonBorderShape,
+  buttonStyle,
+  controlSize,
+  font,
+  foregroundStyle,
+  frame,
+  lineLimit,
+} from '@expo/ui/swift-ui/modifiers'
 import { StatusBar } from 'expo-status-bar'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Reanimated, {
@@ -46,30 +61,46 @@ interface AttachmentImageViewerProps {
   visible: boolean
 }
 
-function GalleryMetadata({ count, name, reduceTransparency }: {
+function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
   count?: string
   name: string
+  onPress: () => void
   reduceTransparency: boolean
 }) {
-  const content = (
-    <View accessibilityRole="header" style={styles.titleBlock}>
-      <Text numberOfLines={1} style={styles.title}>{name}</Text>
-      {count ? <Text style={styles.count}>{count}</Text> : null}
-    </View>
-  )
-  if (Platform.OS !== 'ios' || reduceTransparency || !isGlassEffectAPIAvailable()) {
-    return <View style={[styles.metadataGlass, styles.metadataFallback]}>{content}</View>
+  const label = `${name}${count ? `, ${count}` : ''}. Hide preview controls`
+  if (Platform.OS === 'ios' && !reduceTransparency) {
+    return (
+      <SwiftUIHost colorScheme="dark" style={styles.metadataGlass}>
+        <SwiftUIButton
+          onPress={onPress}
+          modifiers={[
+            buttonStyle('glass'),
+            buttonBorderShape('capsule'),
+            controlSize('regular'),
+            frame({ maxWidth: Infinity, minHeight: 44 }),
+            accessibilityLabel(label),
+          ]}
+        >
+          <SwiftUIVStack alignment="center" spacing={1}>
+            <SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'semibold' }), lineLimit(1)]}>{name}</SwiftUIText>
+            {count ? <SwiftUIText modifiers={[font({ textStyle: 'caption2' }), foregroundStyle('secondary'), lineLimit(1)]}>{count}</SwiftUIText> : null}
+          </SwiftUIVStack>
+        </SwiftUIButton>
+      </SwiftUIHost>
+    )
   }
   return (
-    <GlassView
-      colorScheme="dark"
-      glassEffectStyle="regular"
-      isInteractive={false}
-      style={styles.metadataGlass}
-      tintColor="rgba(255,255,255,0.08)"
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.metadataGlass, styles.metadataFallback, pressed && styles.metadataPressed]}
     >
-      {content}
-    </GlassView>
+      <View style={styles.titleBlock}>
+        <Text numberOfLines={1} style={styles.title}>{name}</Text>
+        {count ? <Text style={styles.count}>{count}</Text> : null}
+      </View>
+    </Pressable>
   )
 }
 
@@ -295,6 +326,21 @@ export function AttachmentImageViewer({
   }, [initialIndex, items.length, visible])
 
   useEffect(() => {
+    if (!visible) return
+    const targetIndex = Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1))
+    let secondFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        listRef.current?.scrollToOffset({ animated: false, offset: width * targetIndex })
+      })
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      if (secondFrame) cancelAnimationFrame(secondFrame)
+    }
+  }, [height, initialIndex, items.length, visible, width])
+
+  useEffect(() => {
     const target = chromeVisible ? 1 : 0
     chromeProgress.value = reduceMotion ? target : withTiming(target, { duration: 180 })
   }, [chromeProgress, chromeVisible, reduceMotion])
@@ -371,6 +417,7 @@ export function AttachmentImageViewer({
             <GalleryMetadata
               count={items.length > 1 ? `${index + 1} of ${items.length}` : undefined}
               name={current?.name ?? 'Image'}
+              onPress={() => setChromeVisible(false)}
               reduceTransparency={reduceTransparency}
             />
             <GlassIconButton
@@ -400,6 +447,7 @@ const styles = StyleSheet.create({
   topBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16 },
   metadataGlass: { minWidth: 0, maxWidth: 520, minHeight: 44, flex: 1, borderRadius: 22, overflow: 'hidden' },
   metadataFallback: { backgroundColor: 'rgba(44,44,46,0.86)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
+  metadataPressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
   titleBlock: { minWidth: 0, minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5 },
   title: { maxWidth: '100%', color: '#ffffff', fontSize: 14, fontWeight: '600' },
   count: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontSize: 11, fontVariant: ['tabular-nums'] },
