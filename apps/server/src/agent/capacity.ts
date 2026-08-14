@@ -1,3 +1,5 @@
+import { WORKSPACE_CONTINUE_WITHOUT_AGENT_DELAY_MS } from '@pulpo/contracts'
+
 function controllerErrorCode(body: string): string | undefined {
   try {
     const parsed = JSON.parse(body) as { code?: unknown }
@@ -21,6 +23,14 @@ export function isCapacityReservationInvalidResponse(status: number, body: strin
 
 export function isCapacityReservationUnsupportedResponse(status: number): boolean {
   return status === 404
+}
+
+export function workspaceContinueWithoutAgentAvailableAt(createdAt: Date): Date {
+  return new Date(createdAt.getTime() + WORKSPACE_CONTINUE_WITHOUT_AGENT_DELAY_MS)
+}
+
+export function workspaceContinueWithoutAgentIsAvailable(createdAt: Date, now = Date.now()): boolean {
+  return now >= workspaceContinueWithoutAgentAvailableAt(createdAt).getTime()
 }
 
 export function workspaceQueuePosition(queueIds: string[], leaseId: string): number {

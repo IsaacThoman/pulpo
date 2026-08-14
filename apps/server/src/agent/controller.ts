@@ -6,7 +6,7 @@ import { getConfig } from '../config.js'
 import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
 import { attachmentWorkspacePath } from './policy.js'
-import { workspaceQueuePosition } from './capacity.js'
+import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
 import { detectImageMime } from './images.js'
@@ -89,6 +89,7 @@ export class WorkspaceManager {
         await db.update(workspaceLeases).set({ responseId: this.responseId, capacityState: 'waiting', updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
       }
       const deadline = queueLease.createdAt.getTime() + settings.workspaceWaitTimeoutSeconds * 1000
+      const continueWithoutAgentAvailableAt = workspaceContinueWithoutAgentAvailableAt(queueLease.createdAt).toISOString()
       let lastPosition = -1
       while (!this.controllerLeaseId) {
         if (signal?.aborted) {
@@ -125,7 +126,7 @@ export class WorkspaceManager {
         const position = workspaceQueuePosition(queued.map((entry) => entry.id), queueLease.id)
         if (position !== lastPosition) {
           lastPosition = position
-          await this.onLeaseEvent?.('waiting', { position: Math.max(1, position), waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds })
+          await this.onLeaseEvent?.('waiting', { position: Math.max(1, position), waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds, continueWithoutAgentAvailableAt })
         }
         if (position !== 1) { await wait(1_000); continue }
         const [claimedQueueRow] = await db.update(workspaceLeases).set({ capacityState: 'claiming', updatedAt: new Date() })
@@ -151,7 +152,7 @@ export class WorkspaceManager {
           this.capacityReservationsSupported = attempt.capacityReservationsSupported
           if (attempt.kind === 'waiting') {
             await db.update(workspaceLeases).set({ capacityState: 'waiting', error: null, updatedAt: new Date() }).where(eq(workspaceLeases.id, queueLease.id))
-            if (attempt.publicStateChanged) await this.onLeaseEvent?.('waiting', { position: 1, waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds })
+            if (attempt.publicStateChanged) await this.onLeaseEvent?.('waiting', { position: 1, waitTimeoutSeconds: settings.workspaceWaitTimeoutSeconds, continueWithoutAgentAvailableAt })
             await wait(1_000)
             continue
           }

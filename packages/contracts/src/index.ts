@@ -7,6 +7,19 @@ export const idSchema = z.uuid()
 export const isoDateSchema = z.iso.datetime()
 export const DEFAULT_MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 export const MAX_CONFIGURABLE_ATTACHMENT_BYTES = 1_000 * 1024 * 1024
+export const WORKSPACE_CONTINUE_WITHOUT_AGENT_DELAY_MS = 15_000
+
+export function workspaceContinueWithoutAgentAvailableAtMs(workspace: {
+  continueWithoutAgentAvailableAt?: string
+  startedAt?: string
+}): number | undefined {
+  const explicit = workspace.continueWithoutAgentAvailableAt
+    ? Date.parse(workspace.continueWithoutAgentAvailableAt)
+    : Number.NaN
+  if (Number.isFinite(explicit)) return explicit
+  const startedAt = workspace.startedAt ? Date.parse(workspace.startedAt) : Number.NaN
+  return Number.isFinite(startedAt) ? startedAt + WORKSPACE_CONTINUE_WITHOUT_AGENT_DELAY_MS : undefined
+}
 
 export const roleSchema = z.enum(['pending', 'user', 'admin'])
 export type Role = z.infer<typeof roleSchema>

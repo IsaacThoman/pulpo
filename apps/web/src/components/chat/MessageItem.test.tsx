@@ -65,6 +65,44 @@ describe('activityDurationMs', () => {
   })
 })
 
+describe('workspace continue timing', () => {
+  it('shows the action immediately when the server eligibility time has passed', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{
+          type: 'pulpo_workspace', state: 'waiting', startedAt: '2000-01-01T00:00:00.000Z',
+          continueWithoutAgentAvailableAt: '2000-01-01T00:00:15.000Z',
+        }],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('Continue without agent')
+  })
+
+  it('hides the action until the server eligibility time', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{
+          type: 'pulpo_workspace', state: 'waiting', startedAt: '2999-01-01T00:00:00.000Z',
+          continueWithoutAgentAvailableAt: '2999-01-01T00:00:15.000Z',
+        }],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).not.toContain('Continue without agent')
+  })
+})
+
 describe('assistant terminal error rendering', () => {
   it('keeps generated output before an appended terminal error', async () => {
     const { MessageItem } = await import('./MessageItem')

@@ -90,9 +90,17 @@ describe('buildMessageTimeline', () => {
   it('keeps work visible when reasoning is hidden', () => {
     const timeline = buildMessageTimeline([
       { type: 'reasoning', status: 'in_progress', summary: [{ text: 'secret' }] },
-      { type: 'pulpo_workspace', state: 'waiting', position: 2 },
+      {
+        type: 'pulpo_workspace', state: 'waiting', position: 2,
+        continueWithoutAgentAvailableAt: '2026-08-14T12:00:15.000Z',
+      },
     ], false)
-    expect(timeline).toMatchObject([{ kind: 'activity', active: true, steps: [{ kind: 'workspace', workspace: { position: 2 } }] }])
+    expect(timeline).toMatchObject([{
+      kind: 'activity', active: true, steps: [{
+        kind: 'workspace',
+        workspace: { position: 2, continueWithoutAgentAvailableAt: '2026-08-14T12:00:15.000Z' },
+      }],
+    }])
   })
 
   it('preserves context compaction as its own activity between assistant turns', () => {

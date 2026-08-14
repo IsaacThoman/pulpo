@@ -23,6 +23,7 @@ import {
 } from './temporary.js'
 import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, reorderQueuedMessage, updateQueuedMessage } from './message-queue.js'
 import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
+import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
 
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
   if (!enabled) return null
@@ -720,8 +721,11 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const response = row?.response
     if (!response) throw notFound('Response')
     if (!response.agentMode || !['queued', 'in_progress'].includes(response.status)) throw new AppError(409, 'agent_not_waiting', 'This response cannot continue without agent tools')
-    const [waitingLease] = await db.select({ id: workspaceLeases.id }).from(workspaceLeases).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning'), inArray(workspaceLeases.capacityState, ['waiting', 'claiming']))).limit(1)
+    const [waitingLease] = await db.select({ id: workspaceLeases.id, createdAt: workspaceLeases.createdAt }).from(workspaceLeases).where(and(eq(workspaceLeases.responseId, id), eq(workspaceLeases.status, 'provisioning'), inArray(workspaceLeases.capacityState, ['waiting', 'claiming']))).limit(1)
     if (!waitingLease) throw new AppError(409, 'agent_not_waiting', 'This response is not waiting for workspace capacity')
+    if (!workspaceContinueWithoutAgentIsAvailable(waitingLease.createdAt)) {
+      throw new AppError(409, 'agent_wait_required', 'Continue without agent tools is available after 15 seconds of waiting for workspace capacity')
+    }
     await db.update(responses).set({ agentCapacityAction: 'continue_without_agent', updatedAt: new Date() }).where(eq(responses.id, id))
     const [updated] = await db.select().from(responses).where(eq(responses.id, id)).limit(1)
     return toSnapshot(updated!)

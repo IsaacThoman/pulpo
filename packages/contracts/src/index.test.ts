@@ -38,9 +38,26 @@ import {
   syncResultSchema,
   updateChatSchema,
   updateProviderSchema,
+  workspaceContinueWithoutAgentAvailableAtMs,
   type ResponseEvent,
   type ResponseSnapshot,
 } from './index.js'
+
+describe('workspace continue timing', () => {
+  it('prefers the server eligibility timestamp', () => {
+    expect(workspaceContinueWithoutAgentAvailableAtMs({
+      startedAt: '2026-08-14T12:00:00.000Z',
+      continueWithoutAgentAvailableAt: '2026-08-14T12:00:20.000Z',
+    })).toBe(Date.parse('2026-08-14T12:00:20.000Z'))
+  })
+
+  it('falls back to fifteen seconds after the server workspace start for rolling upgrades', () => {
+    expect(workspaceContinueWithoutAgentAvailableAtMs({
+      startedAt: '2026-08-14T12:00:00.000Z',
+    })).toBe(Date.parse('2026-08-14T12:00:15.000Z'))
+    expect(workspaceContinueWithoutAgentAvailableAtMs({})).toBeUndefined()
+  })
+})
 
 const streamingSnapshot: ResponseSnapshot = {
   responseId: '00000000-0000-4000-8000-000000000001',
@@ -491,7 +508,10 @@ describe('response snapshot accumulation', () => {
       responseId, sequence, type, payload, emittedAt: `2026-08-01T00:00:0${sequence}.000Z`,
     })
     const events = [
-      event(1, 'pulpo.agent.workspace.waiting', { id: 'workspace-1', type: 'pulpo_workspace', state: 'waiting' }),
+      event(1, 'pulpo.agent.workspace.waiting', {
+        id: 'workspace-1', type: 'pulpo_workspace', state: 'waiting',
+        continueWithoutAgentAvailableAt: '2026-08-01T00:00:15.000Z',
+      }),
       event(2, 'pulpo.agent.tool.queued', { id: 'tool-1', type: 'pulpo_tool', tool: 'web_search', arguments: { query: 'x' }, status: 'queued', output: '' }),
       event(3, 'pulpo.agent.tool.started', { id: 'tool-1', type: 'pulpo_tool', status: 'running', startedAt: '2026-08-01T00:00:03.000Z' }),
       event(4, 'pulpo.agent.tool.delta', { id: 'tool-1', delta: 'partial result' }),
@@ -502,7 +522,7 @@ describe('response snapshot accumulation', () => {
     const result = events.reduce(applyResponseEventToSnapshot, streamingSnapshot)
 
     expect(result.output).toMatchObject([
-      { type: 'pulpo_workspace', state: 'waiting' },
+      { type: 'pulpo_workspace', state: 'waiting', continueWithoutAgentAvailableAt: '2026-08-01T00:00:15.000Z' },
       { id: 'tool-1', tool: 'web_search', status: 'completed', output: 'final result' },
       { id: 'compact-1', summary: 'summary' },
       { type: 'pulpo_attachment', attachment_id: 'file-1' },

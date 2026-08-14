@@ -98,6 +98,7 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
+import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
   Brain,
@@ -2244,6 +2245,27 @@ function useElapsedMs(startTs: number, active: boolean, finalMs?: number): numbe
   return Math.max(0, now - startTs);
 }
 
+function useDeadlineReached(deadlineMs: number | undefined, active: boolean): boolean {
+  const [reached, setReached] = useState(() => (
+    active && deadlineMs !== undefined && Date.now() >= deadlineMs
+  ));
+  useEffect(() => {
+    if (!active || deadlineMs === undefined) {
+      setReached(false);
+      return;
+    }
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      setReached(true);
+      return;
+    }
+    setReached(false);
+    const timer = setTimeout(() => setReached(true), remainingMs);
+    return () => clearTimeout(timer);
+  }, [active, deadlineMs]);
+  return reached;
+}
+
 function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number): string {
   const compaction = steps.find((step) => step.kind === 'compaction');
   if (compaction?.kind === 'compaction') {
@@ -2454,10 +2476,16 @@ const MessageRow = memo(function MessageRow({
   const streaming = message.status === 'streaming' || message.status === 'queued';
   const responseStartedAt = useMemo(() => message.createdAt ?? Date.now(), [message.createdAt]);
   const extraOutput = useMemo(() => otherOutputItems(message.outputItems), [message.outputItems]);
-  const capacityWorkspace = useMemo(() => (message.outputItems ?? []).some((item) => {
-    const value = item as { type?: string; state?: string };
-    return value.type === 'pulpo_workspace' && ['waiting', 'unavailable'].includes(value.state ?? '');
-  }), [message.outputItems]);
+  const capacityWorkspace = useMemo(() => (message.outputItems ?? []).find((item) => (
+    (item as { type?: string }).type === 'pulpo_workspace'
+  )) as { state?: string; startedAt?: string; continueWithoutAgentAvailableAt?: string } | undefined, [message.outputItems]);
+  const continueWithoutAgentAvailableAt = capacityWorkspace
+    ? workspaceContinueWithoutAgentAvailableAtMs(capacityWorkspace)
+    : undefined;
+  const canContinueWithoutAgent = useDeadlineReached(
+    continueWithoutAgentAvailableAt,
+    streaming && capacityWorkspace?.state === 'waiting',
+  );
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [];
     if (message.outputItems?.length) return buildMessageTimeline(message.outputItems, showReasoning);
@@ -2584,7 +2612,7 @@ const MessageRow = memo(function MessageRow({
           )}
           {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
           {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
-          {message.agentMode && streaming && capacityWorkspace && (
+          {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
             <Pressable
               accessibilityRole="button"
               disabled={capacityPending}
