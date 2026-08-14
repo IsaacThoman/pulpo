@@ -332,7 +332,6 @@ export function FriendsPage() {
 
                 {data.friends.length > 0 ? <Section title="Friends" count={data.friends.length}>
                   {data.friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} actions={<>
-                    <Button size="sm" variant="ghost" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
