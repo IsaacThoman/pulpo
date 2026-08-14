@@ -496,7 +496,6 @@ export const MessageItem = memo(function MessageItem({
   activeModelId,
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
-  editDisabled = false,
 }: {
   chat: Chat
   message: Message
@@ -504,7 +503,6 @@ export const MessageItem = memo(function MessageItem({
   activeModelId: string
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
-  editDisabled?: boolean
 }) {
   const regenerate = useChat((state) => state.regenerate)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
@@ -606,7 +604,7 @@ export const MessageItem = memo(function MessageItem({
                   <ActionButton
                     label="Edit"
                     onClick={() => onEditUserMessage(message)}
-                    disabled={composerEditActive || editDisabled}
+                    disabled={composerEditActive}
                   >
                     <Pencil className="size-3.5" />
                   </ActionButton>
