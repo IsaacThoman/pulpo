@@ -31,7 +31,7 @@ export function FriendsHandle({ username }: { username: string }) {
       <span>Your handle is</span>
       <button
         type="button"
-        className="inline-flex cursor-pointer items-center gap-1 text-foreground underline-offset-4 hover:underline"
+        className="inline-flex cursor-pointer items-center gap-1 text-foreground"
         onClick={() => void copyHandle()}
         aria-label={`Copy @${username}`}
         title={copied ? 'Copied' : 'Copy handle'}
