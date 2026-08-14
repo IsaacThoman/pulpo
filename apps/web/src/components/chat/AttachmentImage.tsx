@@ -162,13 +162,10 @@ export function MessageAttachmentList({
       {files.length > 0 && (
         <div className="grid w-full max-w-[19rem] gap-2">
           {files.map((attachment) => (
-            <button
+            <div
               key={attachment.id}
-              type="button"
-              onClick={() => performAttachmentDownload(attachment)}
-              aria-label={`Download ${attachment.name}`}
               title={attachment.name}
-              className="group/attachment flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl border bg-background/75 p-2.5 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/15 hover:bg-background hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="group/attachment flex min-w-0 items-center gap-3 rounded-2xl border bg-background/75 p-2.5 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/15 hover:bg-background hover:shadow-md"
             >
               <AttachmentTypeIcon name={attachment.name} mimeType={attachment.mimeType} />
               <span className="min-w-0 flex-1">
@@ -177,10 +174,15 @@ export function MessageAttachmentList({
                   {attachmentMeta(attachment.name, attachment.mimeType, attachment.size)}
                 </span>
               </span>
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors group-hover/attachment:bg-accent group-hover/attachment:text-foreground">
+              <button
+                type="button"
+                onClick={() => performAttachmentDownload(attachment)}
+                aria-label={`Download ${attachment.name}`}
+                className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 <Download className="size-4" aria-hidden="true" />
-              </span>
-            </button>
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -310,12 +312,7 @@ export function PendingAttachmentChip({
         'group/attachment relative w-64 max-w-full overflow-hidden rounded-2xl border bg-muted/20 shadow-sm transition-colors hover:bg-muted/35',
         error && 'border-destructive/40 bg-destructive/5',
       )} title={error ?? name}>
-        <button
-          type="button"
-          onClick={onDownload}
-          aria-label={`Download ${name}`}
-          className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 pr-10 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
+        <div className="flex w-full min-w-0 items-center gap-3 p-2.5 pr-[4.75rem] text-left">
           <AttachmentTypeIcon name={name} mimeType={mimeType} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium leading-5">{name}</span>
@@ -328,6 +325,14 @@ export function PendingAttachmentChip({
               {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
             </span>
           </span>
+        </div>
+        <button
+          type="button"
+          aria-label={`Download ${name}`}
+          onClick={onDownload}
+          className="absolute top-2 right-10 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Download className="size-3.5" />
         </button>
         <button
           type="button"
@@ -349,12 +354,7 @@ export function PendingAttachmentChip({
       )}
       title={error ?? name}
     >
-      <button
-        type="button"
-        onClick={onDownload}
-        aria-label={`Download ${name}`}
-        className="block size-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
+      <div className="size-full">
         {resolvedPreviewUrl ? (
           <img src={resolvedPreviewUrl} alt={name} className="size-full object-cover" draggable={false} />
         ) : (
@@ -369,7 +369,7 @@ export function PendingAttachmentChip({
             {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
           </span>
         </span>
-      </button>
+      </div>
       {uploading && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/45 backdrop-blur-[1px]">
           <Loader2 className="size-5 animate-spin text-foreground" />
@@ -380,6 +380,14 @@ export function PendingAttachmentChip({
           <AlertCircle className="size-5 text-destructive" />
         </span>
       )}
+      <button
+        type="button"
+        aria-label={`Download ${name}`}
+        onClick={onDownload}
+        className="absolute top-1.5 left-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Download className="size-3" />
+      </button>
       <button
         type="button"
         aria-label={`Remove ${name}`}
