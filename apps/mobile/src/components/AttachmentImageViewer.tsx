@@ -15,21 +15,9 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native'
 import {
-  Button as SwiftUIButton,
-  Host as SwiftUIHost,
-  Text as SwiftUIText,
-  VStack as SwiftUIVStack,
-} from '@expo/ui/swift-ui'
-import {
-  accessibilityLabel,
-  buttonBorderShape,
-  buttonStyle,
-  controlSize,
-  font,
-  foregroundStyle,
-  frame,
-  lineLimit,
-} from '@expo/ui/swift-ui/modifiers'
+  GlassView,
+  isGlassEffectAPIAvailable,
+} from 'expo-glass-effect'
 import { StatusBar } from 'expo-status-bar'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Reanimated, {
@@ -68,25 +56,29 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
   reduceTransparency: boolean
 }) {
   const label = `${name}${count ? `, ${count}` : ''}. Hide preview controls`
-  if (Platform.OS === 'ios' && !reduceTransparency) {
+  const content = (
+    <View pointerEvents="none" style={styles.titleBlock}>
+      <Text numberOfLines={1} style={styles.title}>{name}</Text>
+      {count ? <Text style={styles.count}>{count}</Text> : null}
+    </View>
+  )
+  if (Platform.OS === 'ios' && !reduceTransparency && isGlassEffectAPIAvailable()) {
     return (
-      <SwiftUIHost colorScheme="dark" style={styles.metadataGlass}>
-        <SwiftUIButton
-          onPress={onPress}
-          modifiers={[
-            buttonStyle('glass'),
-            buttonBorderShape('capsule'),
-            controlSize('regular'),
-            frame({ maxWidth: Infinity, minHeight: 44 }),
-            accessibilityLabel(label),
-          ]}
+      <Pressable
+        accessibilityLabel={label}
+        accessibilityRole="button"
+        onPress={onPress}
+        style={({ pressed }) => [styles.metadataGlass, pressed && styles.metadataPressed]}
+      >
+        <GlassView
+          colorScheme="dark"
+          glassEffectStyle="regular"
+          isInteractive
+          style={styles.metadataFill}
         >
-          <SwiftUIVStack alignment="center" spacing={1}>
-            <SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'semibold' }), lineLimit(1)]}>{name}</SwiftUIText>
-            {count ? <SwiftUIText modifiers={[font({ textStyle: 'caption2' }), foregroundStyle('secondary'), lineLimit(1)]}>{count}</SwiftUIText> : null}
-          </SwiftUIVStack>
-        </SwiftUIButton>
-      </SwiftUIHost>
+          {content}
+        </GlassView>
+      </Pressable>
     )
   }
   return (
@@ -96,10 +88,7 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
       onPress={onPress}
       style={({ pressed }) => [styles.metadataGlass, styles.metadataFallback, pressed && styles.metadataPressed]}
     >
-      <View style={styles.titleBlock}>
-        <Text numberOfLines={1} style={styles.title}>{name}</Text>
-        {count ? <Text style={styles.count}>{count}</Text> : null}
-      </View>
+      {content}
     </Pressable>
   )
 }
@@ -448,6 +437,7 @@ const styles = StyleSheet.create({
   chrome: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'flex-start' },
   topBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16 },
   metadataGlass: { minWidth: 0, maxWidth: 520, minHeight: 44, flex: 1, borderRadius: 22, overflow: 'hidden' },
+  metadataFill: { flex: 1, minHeight: 44, borderRadius: 22 },
   metadataFallback: { backgroundColor: 'rgba(44,44,46,0.86)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
   metadataPressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
   titleBlock: { minWidth: 0, minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5 },
