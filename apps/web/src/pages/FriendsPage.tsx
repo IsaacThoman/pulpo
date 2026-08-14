@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendSearchResponse, FriendSearchResult, FriendsList } from '@pulpo/contracts'
-import { BarChart3, ChevronDown, ChevronRight, LoaderCircle, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { BarChart3, ChevronDown, ChevronRight, LoaderCircle, MoreHorizontal, Pencil, Search, UserRoundPlus, UsersRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, apiRequest, isNetworkError } from '@/lib/api'
 import { friendSearchHighlight, nextFriendSearchIndex, normalizedFriendSearchQuery, shouldSearchFriends } from '@/lib/friend-search'
@@ -27,22 +27,21 @@ type FriendsProfileUser = Pick<AuthUser, 'id' | 'name' | 'username' | 'avatarUrl
 export function FriendsProfileSummary({ user, onEdit }: { user: FriendsProfileUser; onEdit: () => void }) {
   const chartColor = user.profileColor ?? automaticProfileColor(user.id)
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-xl border px-4 py-3" aria-labelledby="your-profile-heading">
-      <ProfileAvatar name={user.name} avatarUrl={user.avatarUrl} className="size-11" fallbackClassName="text-sm" />
+    <section className="flex items-center gap-4 border-b px-1 pb-5" aria-labelledby="your-profile-heading">
+      <ProfileAvatar name={user.name} avatarUrl={user.avatarUrl} className="size-14" fallbackClassName="text-base" />
       <div className="min-w-0 flex-1">
-        <div id="your-profile-heading" className="text-xs text-muted-foreground">Your profile</div>
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
-          <span className="truncate text-sm font-medium">{user.name}</span>
-          <span className="truncate text-xs text-muted-foreground">@{user.username}</span>
+        <div id="your-profile-heading" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Your profile</div>
+        <div className="mt-0.5 truncate text-base font-medium">{user.name}</div>
+        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+          <span className="truncate">@{user.username}</span>
+          <span aria-hidden="true">·</span>
+          <span className="flex items-center gap-1.5">
+            <span className="size-2.5 rounded-full ring-1 ring-foreground/15" style={{ backgroundColor: chartColor }} aria-label={`Friends chart color ${chartColor}`} />
+            Friends chart color
+          </span>
         </div>
       </div>
-      <div className="flex w-full items-center justify-between gap-3 sm:ml-auto sm:w-auto sm:justify-end">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="size-3 rounded-sm border" style={{ backgroundColor: chartColor }} aria-label={`Friends chart color ${chartColor}`} />
-          <span>Chart color</span>
-        </div>
-        <Button size="sm" variant="outline" onClick={onEdit}>Edit profile</Button>
-      </div>
+      <Button size="sm" variant="ghost" className="shrink-0" onClick={onEdit}><Pencil />Edit profile</Button>
     </section>
   )
 }

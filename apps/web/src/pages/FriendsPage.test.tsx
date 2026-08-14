@@ -18,7 +18,7 @@ describe('FriendsProfileSummary', () => {
     expect(html).toContain('Your profile')
     expect(html).toContain('Preview Admin')
     expect(html).toContain('@preview_admin')
-    expect(html).toContain('Chart color')
+    expect(html).toContain('Friends chart color')
     expect(html).toContain('background-color:#ec4899')
     expect(html).toContain('Edit profile')
   })
