@@ -224,7 +224,13 @@ import {
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
-import { AttachmentPreviewError, previewFile, supportsAttachmentPreview } from '../native/attachmentPreview';
+import {
+  AttachmentPreviewError,
+  previewFile,
+  previewImages as previewNativeImages,
+  supportsAttachmentPreview,
+  supportsNativeImageGallery,
+} from '../native/attachmentPreview';
 import { startAuthKeyboardHandoff } from '../auth/keyboardHandoff';
 import {
   HistoryChatContextMenuView,
@@ -3303,6 +3309,11 @@ function ChatView({
     void onEdit(message, content);
   }, [beginMessageEdit, onEdit]);
 
+  const resolvePreviewImageUri = useCallback(async (item: AttachmentImagePreviewItem): Promise<string> => {
+    const source = previewSource({ ...item, kind: 'image' });
+    return source.kind === 'local' ? source.uri : (await downloadAttachment(source.id, source.name)).uri;
+  }, []);
+
   const openImageViewer = useCallback((
     group: Attachment[],
     selected: Attachment,
@@ -3310,17 +3321,35 @@ function ChatView({
   ) => {
     const preview = imagePreviewGroup(group, selected.id);
     if (!preview) return;
-    // Keep the source thumbnail stationary until the native zoom has finished.
-    if (origin) setTimeout(Keyboard.dismiss, 440);
-    else Keyboard.dismiss();
-    setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex, origin });
     Haptics.selectionAsync();
-  }, []);
-
-  const resolvePreviewImageUri = useCallback(async (item: AttachmentImagePreviewItem): Promise<string> => {
-    const source = previewSource({ ...item, kind: 'image' });
-    return source.kind === 'local' ? source.uri : (await downloadAttachment(source.id, source.name)).uri;
-  }, []);
+    if (!supportsNativeImageGallery) {
+      Keyboard.dismiss();
+      setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex, origin });
+      return;
+    }
+    void (async () => {
+      const items = await Promise.all(preview.items.map(async (item) => ({
+        id: item.id,
+        title: item.name,
+        uri: await resolvePreviewImageUri(item),
+      })));
+      await previewNativeImages(items, preview.initialIndex, origin ? {
+        x: origin.x,
+        y: origin.y,
+        width: origin.width,
+        height: origin.height,
+        cornerRadius: origin.cornerRadius,
+      } : undefined);
+      // Keep the React Native source in place for Quick Look's native zoom.
+      if (origin) setTimeout(Keyboard.dismiss, 500);
+      else Keyboard.dismiss();
+    })().catch((error) => {
+      Alert.alert(
+        'Preview unavailable',
+        error instanceof Error ? error.message : 'The images could not be opened.',
+      );
+    });
+  }, [resolvePreviewImageUri]);
 
   const shareImagePreview = useCallback((item: AttachmentImagePreviewItem) => {
     const share = item.uri

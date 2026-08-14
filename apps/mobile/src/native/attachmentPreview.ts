@@ -1,5 +1,8 @@
 import { Platform } from 'react-native'
-import PulpoAttachmentPreview, { type PulpoImageTransitionFrame } from '../../modules/pulpo-attachment-preview'
+import PulpoAttachmentPreview, {
+  type PulpoImageGalleryItem,
+  type PulpoImageTransitionFrame,
+} from '../../modules/pulpo-attachment-preview'
 
 export type AttachmentPreviewErrorCode =
   | 'ERR_ATTACHMENT_PREVIEW_BUSY'
@@ -20,6 +23,27 @@ export class AttachmentPreviewError extends Error {
 export const supportsAttachmentPreview = Platform.OS === 'ios' && PulpoAttachmentPreview !== null
 export const supportsNativeImageTransition = Platform.OS === 'ios'
   && typeof PulpoAttachmentPreview?.animateImageTransition === 'function'
+export const supportsNativeImageGallery = Platform.OS === 'ios'
+  && typeof PulpoAttachmentPreview?.previewImages === 'function'
+
+export async function previewImages(
+  items: PulpoImageGalleryItem[],
+  initialIndex: number,
+  sourceFrame?: PulpoImageTransitionFrame,
+): Promise<void> {
+  if (!supportsNativeImageGallery || !PulpoAttachmentPreview) {
+    throw new AttachmentPreviewError('Native image previews are unavailable on this platform.', 'ERR_ATTACHMENT_PREVIEW_UNAVAILABLE')
+  }
+  try {
+    await PulpoAttachmentPreview.previewImages(items, initialIndex, sourceFrame)
+  } catch (cause) {
+    const native = cause as { code?: string; message?: string }
+    const code = native.code?.startsWith('ERR_ATTACHMENT_PREVIEW_')
+      ? native.code as AttachmentPreviewErrorCode
+      : 'ERR_ATTACHMENT_PREVIEW_UNAVAILABLE'
+    throw new AttachmentPreviewError(native.message ?? 'The images could not be previewed.', code)
+  }
+}
 
 export async function animateImageTransition(
   uri: string,

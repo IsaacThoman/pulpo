@@ -14,13 +14,94 @@ private struct PulpoImageTransitionFrame: Record {
   }
 }
 
+private struct PulpoImageGalleryItem: Record {
+  @Field var id: String = ""
+  @Field var title: String = ""
+  @Field var uri: URL?
+}
+
 private final class PulpoPreviewItem: NSObject, QLPreviewItem {
+  let id: String
   let previewItemURL: URL?
   let previewItemTitle: String?
 
-  init(url: URL, title: String) {
+  init(id: String = UUID().uuidString, url: URL, title: String) {
+    self.id = id
     previewItemURL = url
     previewItemTitle = title
+  }
+}
+
+private final class PulpoImageGalleryCoordinator: NSObject, QLPreviewControllerDataSource, QLPreviewControllerDelegate, UIAdaptivePresentationControllerDelegate {
+  let items: [PulpoPreviewItem]
+  let initialItemID: String
+  let previewController = QLPreviewController()
+  let sourceFrame: CGRect?
+  weak var sourceView: UIView?
+  var onDismiss: (() -> Void)?
+  private var dismissed = false
+
+  init(items: [PulpoPreviewItem], initialIndex: Int, sourceFrame: CGRect?, sourceView: UIView?) {
+    self.items = items
+    let safeInitialIndex = min(max(0, initialIndex), max(0, items.count - 1))
+    initialItemID = items[safeInitialIndex].id
+    self.sourceFrame = sourceFrame
+    self.sourceView = sourceView
+    super.init()
+    previewController.dataSource = self
+    previewController.delegate = self
+    previewController.currentPreviewItemIndex = safeInitialIndex
+    previewController.modalPresentationStyle = .fullScreen
+  }
+
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int { items.count }
+
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+    items[index]
+  }
+
+  func previewController(
+    _ controller: QLPreviewController,
+    frameFor item: any QLPreviewItem,
+    inSourceView view: AutoreleasingUnsafeMutablePointer<UIView?>
+  ) -> CGRect {
+    guard
+      let previewItem = item as? PulpoPreviewItem,
+      previewItem.id == initialItemID,
+      let sourceFrame,
+      let sourceView
+    else { return .zero }
+    view.pointee = sourceView
+    return sourceFrame
+  }
+
+  func previewController(
+    _ controller: QLPreviewController,
+    transitionImageFor item: any QLPreviewItem,
+    contentRect: UnsafeMutablePointer<CGRect>
+  ) -> UIImage? {
+    guard
+      let previewItem = item as? PulpoPreviewItem,
+      previewItem.id == initialItemID,
+      let url = previewItem.previewItemURL,
+      let image = UIImage(contentsOfFile: url.path)
+    else { return nil }
+    contentRect.pointee = CGRect(origin: .zero, size: image.size)
+    return image
+  }
+
+  func previewControllerDidDismiss(_ controller: QLPreviewController) {
+    finishDismissal()
+  }
+
+  func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    finishDismissal()
+  }
+
+  private func finishDismissal() {
+    guard !dismissed else { return }
+    dismissed = true
+    onDismiss?()
   }
 }
 
@@ -61,11 +142,81 @@ private final class PulpoPreviewCoordinator: NSObject, QLPreviewControllerDataSo
 
 public final class PulpoAttachmentPreviewModule: Module {
   private var activePreview: PulpoPreviewCoordinator?
+  private var activeImageGallery: PulpoImageGalleryCoordinator?
   private var activeImageTransition: UIViewPropertyAnimator?
   private weak var activeImageTransitionOverlay: UIView?
 
   public func definition() -> ModuleDefinition {
     Name("PulpoAttachmentPreview")
+
+    AsyncFunction("previewImages") { (
+      values: [PulpoImageGalleryItem],
+      initialIndex: Int,
+      sourceFrame: PulpoImageTransitionFrame?
+    ) in
+      guard self.activePreview == nil, self.activeImageGallery == nil else {
+        throw Exception(
+          name: "AttachmentPreviewBusy",
+          description: "Another attachment preview is already open.",
+          code: "ERR_ATTACHMENT_PREVIEW_BUSY"
+        )
+      }
+      guard !values.isEmpty else {
+        throw Exception(
+          name: "AttachmentPreviewMissingFile",
+          description: "There are no images available to preview.",
+          code: "ERR_ATTACHMENT_PREVIEW_MISSING_FILE"
+        )
+      }
+      let items = try values.map { value in
+        guard
+          let uri = value.uri,
+          uri.isFileURL,
+          FileManager.default.fileExists(atPath: uri.path)
+        else {
+          throw Exception(
+            name: "AttachmentPreviewMissingFile",
+            description: "An image is no longer available.",
+            code: "ERR_ATTACHMENT_PREVIEW_MISSING_FILE"
+          )
+        }
+        let item = PulpoPreviewItem(id: value.id, url: uri, title: value.title)
+        guard QLPreviewController.canPreview(item) else {
+          throw Exception(
+            name: "AttachmentPreviewUnsupported",
+            description: "iOS cannot preview this image type.",
+            code: "ERR_ATTACHMENT_PREVIEW_UNSUPPORTED"
+          )
+        }
+        return item
+      }
+      guard
+        let presenter = self.appContext?.utilities?.currentViewController(),
+        let window = presenter.viewIfLoaded?.window
+      else {
+        throw Exception(
+          name: "AttachmentPreviewUnavailable",
+          description: "The image preview could not be presented.",
+          code: "ERR_ATTACHMENT_PREVIEW_UNAVAILABLE"
+        )
+      }
+
+      let coordinator = PulpoImageGalleryCoordinator(
+        items: items,
+        initialIndex: initialIndex,
+        sourceFrame: sourceFrame?.rect,
+        sourceView: window
+      )
+      coordinator.onDismiss = { [weak self, weak coordinator] in
+        guard let self, self.activeImageGallery === coordinator else { return }
+        self.activeImageGallery = nil
+      }
+      self.activeImageGallery = coordinator
+      presenter.present(coordinator.previewController, animated: true) {
+        coordinator.previewController.presentationController?.delegate = coordinator
+      }
+    }
+    .runOnQueue(.main)
 
     AsyncFunction("animateImageTransition") { (
       uri: URL,
@@ -143,7 +294,7 @@ public final class PulpoAttachmentPreviewModule: Module {
     .runOnQueue(.main)
 
     AsyncFunction("previewFile") { (uri: URL, title: String) in
-      guard activePreview == nil else {
+      guard activePreview == nil, activeImageGallery == nil else {
         throw Exception(
           name: "AttachmentPreviewBusy",
           description: "Another attachment preview is already open.",

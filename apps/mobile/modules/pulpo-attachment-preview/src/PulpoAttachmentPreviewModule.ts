@@ -8,12 +8,23 @@ export interface PulpoImageTransitionFrame {
   cornerRadius: number
 }
 
+export interface PulpoImageGalleryItem {
+  id: string
+  title: string
+  uri: string
+}
+
 declare class PulpoAttachmentPreviewModule extends NativeModule {
   animateImageTransition(
     uri: string,
     fromFrame: PulpoImageTransitionFrame,
     toFrame: PulpoImageTransitionFrame,
     opening: boolean,
+  ): Promise<void>
+  previewImages(
+    items: PulpoImageGalleryItem[],
+    initialIndex: number,
+    sourceFrame?: PulpoImageTransitionFrame,
   ): Promise<void>
   previewFile(uri: string, title: string): Promise<void>
 }
