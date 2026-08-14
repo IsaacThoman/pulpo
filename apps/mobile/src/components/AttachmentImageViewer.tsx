@@ -73,11 +73,10 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
         <GlassView
           colorScheme="dark"
           glassEffectStyle="regular"
-          isInteractive
-          style={styles.metadataFill}
-        >
-          {content}
-        </GlassView>
+          pointerEvents="none"
+          style={styles.metadataGlassBackground}
+        />
+        {content}
       </Pressable>
     )
   }
@@ -437,10 +436,10 @@ const styles = StyleSheet.create({
   chrome: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'flex-start' },
   topBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16 },
   metadataGlass: { minWidth: 0, maxWidth: 520, minHeight: 44, flex: 1, borderRadius: 22, overflow: 'hidden' },
-  metadataFill: { flex: 1, minHeight: 44, borderRadius: 22 },
+  metadataGlassBackground: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 0, borderRadius: 22 },
   metadataFallback: { backgroundColor: 'rgba(44,44,46,0.86)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
   metadataPressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
-  titleBlock: { minWidth: 0, minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5 },
+  titleBlock: { minWidth: 0, minHeight: 44, zIndex: 1, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5, backgroundColor: 'transparent' },
   title: { maxWidth: '100%', color: '#ffffff', fontSize: 14, fontWeight: '600' },
   count: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontSize: 11, fontVariant: ['tabular-nums'] },
 })
