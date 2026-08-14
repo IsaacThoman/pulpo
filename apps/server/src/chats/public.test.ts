@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { toPublicChat, toPublicChatResponse, toPublicChatResponses, toPublicChatResponseStub } from './public.js'
+import {
+  toPublicBranchActivation,
+  toPublicChat,
+  toPublicChatResponse,
+  toPublicChatResponses,
+  toPublicChatResponseStub,
+} from './public.js'
 
 const date = new Date('2026-08-07T12:00:00.000Z')
 
@@ -115,5 +121,32 @@ describe('public chat DTOs', () => {
     expect(payload).not.toContain(imageData.slice(0, 1_000))
     expect(payload).not.toContain('inactive-1-')
     expect(payload.length).toBeLessThan(20_000)
+  })
+
+  it('returns the activated lineage body with inactive branches left as stubs', () => {
+    const rows = [0, 1].map((index) => ({
+      id: `00000000-0000-4000-8000-00000000000${index + 2}`,
+      chatId: '00000000-0000-4000-8000-000000000001', userId: 'private-user',
+      modelId: 'model-1', actualModelId: null, origin: 'web', pricingVersionId: null,
+      openaiResponseId: null, previousResponseId: null, parentResponseId: null,
+      userMessageId: `00000000-0000-4000-8000-00000000001${index}`, branchReason: 'message',
+      status: 'completed' as const, executionMode: 'stream' as const, agentMode: false,
+      agentCapacityAction: null, input: [{ role: 'user', content: `prompt ${index}` }],
+      instructions: null, presetSelections: {}, parameters: {},
+      output: [{ type: 'message', content: [{ type: 'output_text', text: `answer ${index}` }] }],
+      usage: null, error: null, lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      startedAt: date, completedAt: date, deletedAt: null,
+      createdAt: new Date(date.getTime() + index), updatedAt: date,
+    }))
+
+    const result = toPublicBranchActivation(rows, rows[1]!.id)
+
+    expect(result.activeBranchLeafId).toBe(rows[1]!.id)
+    expect(result.responses.find((response) => response.id === rows[0]!.id)).toMatchObject({
+      input: [], output: [], detailAvailable: false,
+    })
+    expect(result.responses.find((response) => response.id === rows[1]!.id)).toMatchObject({
+      input: rows[1]!.input, output: rows[1]!.output, detailAvailable: true,
+    })
   })
 })

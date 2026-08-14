@@ -1,3 +1,4 @@
+import { mergeCachedResponseDetails } from '@pulpo/client-core'
 import type { ServerChat } from '../types'
 
 export const MAX_CACHED_CHAT_DETAIL_BYTES = 5 * 1024 * 1024
@@ -48,7 +49,7 @@ export function mergeCachedChat(existing: ServerChat | null, incoming: ServerCha
   return {
     ...existing,
     ...incoming,
-    responses: incoming.responses ?? existing.responses,
+    responses: mergeCachedResponseDetails(existing.responses, incoming.responses),
     attachments: incoming.attachments ?? existing.attachments,
   }
 }

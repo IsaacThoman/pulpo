@@ -30,7 +30,27 @@ describe('mergeCachedChat', () => {
 
   it('accepts newer detailed data when it is available', () => {
     const newer = [{ id: 'response-2' }] as ServerChat['responses']
-    expect(mergeCachedChat(chat({ responses: [] }), chat({ responses: newer })).responses).toBe(newer)
+    expect(mergeCachedChat(chat({ responses: [] }), chat({ responses: newer })).responses).toEqual(newer)
+  })
+
+  it('keeps a previously fetched branch body when an active-only refresh returns a stub', () => {
+    const snapshot = {
+      responseId: 'response-1', status: 'completed' as const, sequence: 1,
+      usage: null, error: null, updatedAt: '2026-08-02T00:00:00.000Z',
+    }
+    const detailed = {
+      id: 'response-1', parentResponseId: null, previousResponseId: null, userMessageId: null,
+      modelId: 'model-1', status: 'completed' as const, input: ['prompt'], output: ['answer'],
+      presetSelections: {}, agentMode: false, usage: null, error: null,
+      createdAt: '2026-08-01T00:00:00.000Z', completedAt: '2026-08-01T00:00:01.000Z',
+      snapshot, branches: { user: { ids: ['response-1'], index: 0 }, assistant: { ids: ['response-1'], index: 0 } },
+      detailAvailable: true,
+    }
+    const stub = { ...detailed, input: [], output: [], detailAvailable: false }
+
+    const merged = mergeCachedChat(chat({ responses: [detailed] }), chat({ responses: [stub] }))
+
+    expect(merged.responses?.[0]).toMatchObject({ input: ['prompt'], output: ['answer'], detailAvailable: true })
   })
 })
 

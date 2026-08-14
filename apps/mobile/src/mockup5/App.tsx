@@ -163,8 +163,9 @@ import { clearProductionScope, hydrateProductionScope, ProductionBridge } from '
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
-import { cacheNamespace, deleteResponseCursor } from '../data/database';
+import { cacheNamespace, cacheOpenedChat, deleteResponseCursor } from '../data/database';
 import { queryKeys } from '../data/queries';
+import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
@@ -1849,6 +1850,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       chatId,
       selectedResponseId: branchId,
       request: activateServerBranch,
+      onCacheUpdated: (chat) => enqueueCacheWrite(
+        namespace,
+        () => cacheOpenedChat(namespace, chat, usePreferencesStore.getState().localChatLimit),
+      ),
     });
   }, [activeChatId, productionInstanceUrl, productionUserId, queryClient]);
 

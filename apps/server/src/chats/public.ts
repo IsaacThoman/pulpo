@@ -87,6 +87,14 @@ export function toPublicChatResponses(
     : toPublicChatResponse(response, allTurns, { compact: options.compact }))
 }
 
+/** Return the newly active lineage so clients can render it without a follow-up chat fetch. */
+export function toPublicBranchActivation(allTurns: ResponseRow[], activeBranchLeafId: string) {
+  return {
+    activeBranchLeafId,
+    responses: toPublicChatResponses(allTurns, activeBranchLeafId, { compact: true, activeOnly: true }),
+  }
+}
+
 export function toPublicChat(chat: ChatRow) {
   return {
     id: chat.id,

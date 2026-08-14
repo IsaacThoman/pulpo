@@ -93,6 +93,11 @@ export interface ServerResponse {
   detailAvailable?: boolean
 }
 
+export interface BranchActivationResult {
+  activeBranchLeafId: string
+  responses?: ServerResponse[]
+}
+
 export interface AttachmentDraft {
   localId: string
   serverId?: string
