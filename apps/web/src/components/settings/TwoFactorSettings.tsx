@@ -81,7 +81,7 @@ export function TwoFactorSettings() {
   }
 
   return <>
-    <div className="flex min-w-0 items-center justify-between gap-4 py-3">
+    <div className="flex min-w-0 flex-col items-start gap-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">Two-factor authentication</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
@@ -103,7 +103,7 @@ export function TwoFactorSettings() {
 
         {recoveryCodes.length > 0 ? <div className="space-y-4">
           <p className="text-sm text-muted-foreground">Save these codes now. Each can be used once and they will not be shown again.</p>
-          <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/40 p-4 font-mono text-sm">
+          <div className="grid grid-cols-1 gap-2 rounded-lg border bg-muted/40 p-4 font-mono text-sm sm:grid-cols-2">
             {recoveryCodes.map((code) => <div key={code}>{code}</div>)}
           </div>
           <div className="flex gap-2"><Button variant="outline" onClick={() => void copyRecoveryCodes()}>{copied ? <Check /> : <Copy />}{copied ? 'Copied' : 'Copy'}</Button><Button variant="outline" onClick={downloadRecoveryCodes}><Download />Download</Button></div>

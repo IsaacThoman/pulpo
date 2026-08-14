@@ -203,18 +203,49 @@ export function ApiKeysPage() {
 
   const canCreate = scopes.length > 0 && (allModels || selectedModels.length > 0)
 
+  const keyActions = (key: ApiKey) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="icon-sm" variant="ghost" aria-label={`Actions for ${key.name}`}>
+          <MoreHorizontal className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem
+          onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
+        >
+          <Copy />
+          Copy prefix
+        </DropdownMenuItem>
+        {!key.revoked && (
+          <DropdownMenuItem onClick={() => setConfirmRevoke(key)}>
+            Revoke
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          onClick={() => void deleteKey(key.id)}
+        >
+          <Trash2 />
+          Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   if (!apiKeysEnabled) return <div className="grid h-full place-items-center p-8"><div className="max-w-md rounded-xl border p-6 text-center"><TriangleAlert className="mx-auto size-8 text-amber-500" /><h1 className="mt-3 text-lg font-semibold">API keys are disabled</h1><p className="mt-2 text-sm text-muted-foreground">The administrator has suspended API-key authentication. Existing keys remain stored and can be used again if the policy is re-enabled.</p></div></div>
 
   return (
     <ScrollArea className="h-full">
-      <div className="mx-auto max-w-5xl space-y-5 px-6 py-8">
+      <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:px-6 sm:py-8">
         {/* header */}
-        <div className="flex items-start gap-3">
+        <div className="flex flex-col items-start gap-3 sm:flex-row">
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold tracking-tight">API Keys</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Create and manage OpenAI-compatible keys.{' '}
-              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs [overflow-wrap:anywhere]">
                 {API_BASE_URL}
               </code>
             </p>
@@ -236,9 +267,64 @@ export function ApiKeysPage() {
           />
         </div>
 
-        {/* table */}
-        <div className="overflow-hidden rounded-xl border">
-          <table className="w-full text-sm">
+        {/* mobile key cards */}
+        <div className="space-y-3 xl:hidden">
+          {filtered.length === 0 ? (
+            <div className="rounded-xl border px-4 py-10 text-center text-sm text-muted-foreground">
+              {keys.length === 0 ? 'No keys yet — create one to get started.' : 'No keys match your search.'}
+            </div>
+          ) : filtered.map((key) => (
+            <Card key={key.id} className={cn('shadow-none', key.revoked && 'opacity-60')}>
+              <CardContent className="space-y-4 p-4">
+                <div className="flex min-w-0 items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate font-medium">{key.name}</span>
+                      {key.revoked && <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">revoked</Badge>}
+                    </div>
+                    <div className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                      {maskKey(key.prefix)}
+                    </div>
+                  </div>
+                  {keyActions(key)}
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div className="min-w-0">
+                    <div className="text-xs text-muted-foreground">Models</div>
+                    <div className="mt-0.5 truncate">{modelLabel(key.allowedModels)}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {key.scopes.join(' · ')}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Last used</div>
+                    <div className="mt-0.5">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Usage</div>
+                    <div className="mt-0.5 tabular-nums">{formatCost(key.spentTotal ?? 0)}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-muted-foreground">Limit</div>
+                    <LimitCell k={key} />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+          {keys.length > 0 && (
+            <p className="px-1 text-xs text-muted-foreground">
+              {filtered.length === keys.length
+                ? `${keys.length} key${keys.length === 1 ? '' : 's'}`
+                : `${filtered.length} of ${keys.length} keys`}
+            </p>
+          )}
+        </div>
+
+        {/* desktop table */}
+        <div className="hidden overflow-x-auto rounded-xl border xl:block">
+          <table className="w-full min-w-[760px] text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-4 py-3 font-medium">Key</th>
@@ -308,36 +394,7 @@ export function ApiKeysPage() {
                     <LimitCell k={k} />
                   </td>
                   <td className="px-2 py-3.5 text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon-sm" variant="ghost" aria-label="Key actions">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end" className="w-40">
-                        <DropdownMenuItem
-                          onClick={() =>
-                            navigator.clipboard?.writeText(k.prefix).catch(() => {})
-                          }
-                        >
-                          <Copy />
-                          Copy prefix
-                        </DropdownMenuItem>
-                        {!k.revoked && (
-                          <DropdownMenuItem onClick={() => setConfirmRevoke(k)}>
-                            Revoke
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={() => void deleteKey(k.id)}
-                        >
-                          <Trash2 />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {keyActions(k)}
                   </td>
                 </tr>
               ))}
@@ -505,7 +562,7 @@ export function ApiKeysPage() {
                 </div>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="key-budget-monthly">Monthly limit</Label>
                 <div className="flex items-center gap-2">

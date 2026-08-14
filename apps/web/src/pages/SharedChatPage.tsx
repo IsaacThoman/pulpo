@@ -53,8 +53,8 @@ export function SharedChatPage() {
             const user = [...response.input].reverse().find((item) => item.role === 'user')
             const answer = response.output.filter((item) => item.type === 'message').map((item) => contentText(item.content)).join('\n')
             return [
-              <article key={`${response.id}:input`} className="ml-auto max-w-[85%] rounded-2xl bg-muted px-4 py-3 whitespace-pre-wrap">{contentText(user?.content)}</article>,
-              <article key={response.id} className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">{answer || (response.status === 'failed' ? 'This response failed.' : 'No text output.')}</article>,
+              <article key={`${response.id}:input`} className="ml-auto max-w-[85%] rounded-2xl bg-muted px-4 py-3 whitespace-pre-wrap [overflow-wrap:anywhere]">{contentText(user?.content)}</article>,
+              <article key={response.id} className="prose prose-sm max-w-none whitespace-pre-wrap [overflow-wrap:anywhere] dark:prose-invert">{answer || (response.status === 'failed' ? 'This response failed.' : 'No text output.')}</article>,
             ]
           })}
         </>}
