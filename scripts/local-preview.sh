@@ -200,8 +200,15 @@ refresh_stack() {
     echo 'Local preview application image build failed; existing containers and data were preserved.' >&2
     exit 1
   fi
+  # This service repairs retained object-volume ownership and is expected to
+  # exit successfully, so it must not be included in Compose's --wait set.
+  if ! compose up --force-recreate --no-deps object-storage-init; then
+    echo 'Local preview object-storage initialization failed.' >&2
+    compose ps >&2 || true
+    exit 1
+  fi
   if ! compose up --detach --wait \
-    postgres redis seaweed-master seaweed-volume seaweed-filer seaweed-s3 object-storage-init; then
+    postgres redis seaweed-master seaweed-volume seaweed-filer seaweed-s3; then
     echo 'Local preview infrastructure failed to start.' >&2
     compose ps >&2 || true
     exit 1
