@@ -1,0 +1,339 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native'
+import { StatusBar } from 'expo-status-bar'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Reanimated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated'
+import { RefreshCw, Share2, X } from 'lucide-react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+
+export interface AttachmentImagePreviewItem {
+  id: string
+  name: string
+  uri?: string
+}
+
+interface AttachmentImageViewerProps {
+  initialIndex: number
+  items: AttachmentImagePreviewItem[]
+  onClose: () => void
+  onShare: (item: AttachmentImagePreviewItem) => void
+  reduceMotion?: boolean
+  resolveUri: (item: AttachmentImagePreviewItem) => Promise<string>
+  visible: boolean
+}
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  'worklet'
+  return Math.min(maximum, Math.max(minimum, value))
+}
+
+function ZoomableImage({
+  height,
+  item,
+  onChromeToggle,
+  onDismiss,
+  onZoomChange,
+  reduceMotion,
+  resolveUri,
+  width,
+}: {
+  height: number
+  item: AttachmentImagePreviewItem
+  onChromeToggle: () => void
+  onDismiss: () => void
+  onZoomChange: (zoomed: boolean) => void
+  reduceMotion: boolean
+  resolveUri: (item: AttachmentImagePreviewItem) => Promise<string>
+  width: number
+}) {
+  const [uri, setUri] = useState(item.uri ?? '')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [retryRevision, setRetryRevision] = useState(0)
+  const scale = useSharedValue(1)
+  const savedScale = useSharedValue(1)
+  const translateX = useSharedValue(0)
+  const translateY = useSharedValue(0)
+  const savedX = useSharedValue(0)
+  const savedY = useSharedValue(0)
+  const fittedWidth = useSharedValue(width)
+  const fittedHeight = useSharedValue(height)
+
+  useEffect(() => {
+    let cancelled = false
+    setUri(item.uri ?? '')
+    setLoading(true)
+    setError(null)
+    if (item.uri) return () => { cancelled = true }
+    void resolveUri(item).then((resolved) => {
+      if (!cancelled) setUri(resolved)
+    }).catch((cause) => {
+      if (!cancelled) {
+        setError(cause instanceof Error ? cause.message : 'The full-resolution image could not be loaded.')
+        setLoading(false)
+      }
+    })
+    return () => { cancelled = true }
+  }, [item, resolveUri, retryRevision])
+
+  useEffect(() => {
+    scale.value = 1
+    savedScale.value = 1
+    translateX.value = 0
+    translateY.value = 0
+    savedX.value = 0
+    savedY.value = 0
+    onZoomChange(false)
+  }, [item.id, onZoomChange, savedScale, savedX, savedY, scale, translateX, translateY])
+
+  const imageStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }))
+
+  const pinch = Gesture.Pinch()
+    .onBegin(() => { savedScale.value = scale.value })
+    .onUpdate((event) => { scale.value = clamp(savedScale.value * event.scale, 1, 4) })
+    .onEnd(() => {
+      if (scale.value < 1.04) {
+        scale.value = withTiming(1)
+        translateX.value = withTiming(0)
+        translateY.value = withTiming(0)
+        runOnJS(onZoomChange)(false)
+      } else {
+        savedScale.value = scale.value
+        runOnJS(onZoomChange)(true)
+      }
+    })
+
+  const pan = Gesture.Pan()
+    .minDistance(5)
+    .onBegin(() => {
+      savedX.value = translateX.value
+      savedY.value = translateY.value
+    })
+    .onUpdate((event) => {
+      if (scale.value > 1.01) {
+        const maxX = Math.max(0, (fittedWidth.value * scale.value - width) / 2)
+        const maxY = Math.max(0, (fittedHeight.value * scale.value - height) / 2)
+        translateX.value = clamp(savedX.value + event.translationX, -maxX, maxX)
+        translateY.value = clamp(savedY.value + event.translationY, -maxY, maxY)
+        return
+      }
+      if (Math.abs(event.translationY) > Math.abs(event.translationX)) translateY.value = event.translationY
+    })
+    .onEnd((event) => {
+      if (scale.value <= 1.01) {
+        if (Math.abs(event.translationY) > 110 || Math.abs(event.velocityY) > 900) {
+          runOnJS(onDismiss)()
+          return
+        }
+        translateY.value = reduceMotion ? 0 : withSpring(0, { damping: 18, stiffness: 220 })
+      } else {
+        savedX.value = translateX.value
+        savedY.value = translateY.value
+      }
+    })
+
+  const doubleTap = Gesture.Tap().numberOfTaps(2).onEnd(() => {
+    const zooming = scale.value <= 1.01
+    const target = zooming ? 2.5 : 1
+    scale.value = reduceMotion ? target : withTiming(target, { duration: 180 })
+    if (!zooming) {
+      translateX.value = reduceMotion ? 0 : withTiming(0, { duration: 180 })
+      translateY.value = reduceMotion ? 0 : withTiming(0, { duration: 180 })
+    }
+    savedScale.value = target
+    savedX.value = 0
+    savedY.value = 0
+    runOnJS(onZoomChange)(zooming)
+  })
+  const singleTap = Gesture.Tap().numberOfTaps(1).onEnd(() => runOnJS(onChromeToggle)())
+  const taps = Gesture.Exclusive(doubleTap, singleTap)
+  const gestures = Gesture.Simultaneous(pinch, pan, taps)
+
+  return (
+    <GestureDetector gesture={gestures}>
+      <View accessibilityLabel={`Fullscreen preview of ${item.name}`} style={{ width, height }}>
+        {uri ? (
+          <Reanimated.View style={[styles.imageCanvas, imageStyle]}>
+            <Image
+              accessibilityIgnoresInvertColors
+              onError={() => {
+                setError('The full-resolution image could not be loaded.')
+                setLoading(false)
+                setUri('')
+              }}
+              onLoad={(event) => {
+                const sourceWidth = event.nativeEvent.source.width
+                const sourceHeight = event.nativeEvent.source.height
+                const sourceRatio = sourceWidth / Math.max(1, sourceHeight)
+                const canvasRatio = width / Math.max(1, height)
+                if (sourceRatio > canvasRatio) {
+                  fittedWidth.value = width
+                  fittedHeight.value = width / sourceRatio
+                } else {
+                  fittedHeight.value = height
+                  fittedWidth.value = height * sourceRatio
+                }
+                setLoading(false)
+              }}
+              source={{ uri }}
+              resizeMode="contain"
+              style={styles.fullImage}
+            />
+            {loading ? <View style={styles.imageLoadingOverlay}><ActivityIndicator color="#ffffff" size="large" /></View> : null}
+          </Reanimated.View>
+        ) : (
+          <View style={styles.imageState}>
+            {loading ? <ActivityIndicator color="#ffffff" size="large" /> : (
+              <>
+                <Text style={styles.imageErrorTitle}>Image unavailable</Text>
+                <Text style={styles.imageErrorText}>{error}</Text>
+                <Pressable accessibilityRole="button" onPress={() => setRetryRevision((value) => value + 1)} style={styles.retryButton}>
+                  <RefreshCw color="#ffffff" size={16} />
+                  <Text style={styles.retryText}>Try Again</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
+      </View>
+    </GestureDetector>
+  )
+}
+
+export function AttachmentImageViewer({
+  initialIndex,
+  items,
+  onClose,
+  onShare,
+  reduceMotion = false,
+  resolveUri,
+  visible,
+}: AttachmentImageViewerProps) {
+  const { height, width } = useWindowDimensions()
+  const [index, setIndex] = useState(initialIndex)
+  const [chromeVisible, setChromeVisible] = useState(true)
+  const [zoomed, setZoomed] = useState(false)
+
+  useEffect(() => {
+    if (!visible) return
+    setIndex(Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1)))
+    setChromeVisible(true)
+    setZoomed(false)
+  }, [initialIndex, items.length, visible])
+
+  const current = items[index]
+  const getItemLayout = useCallback((_: ArrayLike<AttachmentImagePreviewItem> | null | undefined, itemIndex: number) => ({
+    index: itemIndex,
+    length: width,
+    offset: width * itemIndex,
+  }), [width])
+  const handleScrollEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    setIndex(Math.round(event.nativeEvent.contentOffset.x / Math.max(1, width)))
+  }, [width])
+  const renderItem = useCallback(({ item }: { item: AttachmentImagePreviewItem }) => (
+    <ZoomableImage
+      height={height}
+      item={item}
+      onChromeToggle={() => setChromeVisible((value) => !value)}
+      onDismiss={onClose}
+      onZoomChange={setZoomed}
+      reduceMotion={reduceMotion}
+      resolveUri={resolveUri}
+      width={width}
+    />
+  ), [height, onClose, reduceMotion, resolveUri, width])
+  const chromeOpacity = useMemo(() => chromeVisible ? 1 : 0, [chromeVisible])
+
+  if (!items.length) return null
+  return (
+    <Modal
+      animationType={reduceMotion ? 'none' : 'fade'}
+      onRequestClose={onClose}
+      presentationStyle="fullScreen"
+      statusBarTranslucent
+      supportedOrientations={['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']}
+      visible={visible}
+    >
+      <View accessibilityViewIsModal style={styles.root}>
+        <StatusBar hidden style="light" />
+        <FlatList
+          data={items}
+          decelerationRate="fast"
+          getItemLayout={getItemLayout}
+          horizontal
+          initialScrollIndex={Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1))}
+          keyExtractor={(item) => item.id}
+          onMomentumScrollEnd={handleScrollEnd}
+          pagingEnabled
+          renderItem={renderItem}
+          scrollEnabled={!zoomed}
+          showsHorizontalScrollIndicator={false}
+          windowSize={3}
+        />
+        <SafeAreaView pointerEvents={chromeVisible ? 'box-none' : 'none'} style={[styles.chrome, { opacity: chromeOpacity }]}>
+          <View style={styles.topBar}>
+            <Pressable accessibilityLabel="Close image preview" accessibilityRole="button" hitSlop={8} onPress={onClose} style={styles.chromeButton}>
+              <X color="#ffffff" size={22} strokeWidth={2.2} />
+            </Pressable>
+            <View style={styles.titleBlock}>
+              <Text numberOfLines={1} style={styles.title}>{current?.name}</Text>
+              {items.length > 1 ? <Text style={styles.count}>{index + 1} of {items.length}</Text> : null}
+            </View>
+            <Pressable
+              accessibilityLabel={`Share ${current?.name ?? 'image'}`}
+              accessibilityRole="button"
+              disabled={!current}
+              hitSlop={8}
+              onPress={() => current && onShare(current)}
+              style={styles.chromeButton}
+            >
+              <Share2 color="#ffffff" size={20} strokeWidth={2.1} />
+            </Pressable>
+          </View>
+        </SafeAreaView>
+      </View>
+    </Modal>
+  )
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#000000' },
+  imageCanvas: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  fullImage: { width: '100%', height: '100%' },
+  imageState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, gap: 10 },
+  imageLoadingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000000' },
+  imageErrorTitle: { color: '#ffffff', fontSize: 17, fontWeight: '700' },
+  imageErrorText: { color: 'rgba(255,255,255,0.62)', fontSize: 13, lineHeight: 18, textAlign: 'center' },
+  retryButton: { minHeight: 44, marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 22, paddingHorizontal: 18, backgroundColor: 'rgba(255,255,255,0.16)' },
+  retryText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+  chrome: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'flex-start' },
+  topBar: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: 'rgba(0,0,0,0.42)' },
+  chromeButton: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(118,118,128,0.38)' },
+  titleBlock: { minWidth: 0, flex: 1, alignItems: 'center' },
+  title: { maxWidth: '100%', color: '#ffffff', fontSize: 14, fontWeight: '600' },
+  count: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontSize: 11, fontVariant: ['tabular-nums'] },
+})
