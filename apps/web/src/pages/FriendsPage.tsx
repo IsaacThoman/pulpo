@@ -1,11 +1,20 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { FriendConnection, FriendProfile, FriendsList } from '@pulpo/contracts'
-import { ChevronDown, ChevronRight, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { BarChart3, ChevronDown, ChevronRight, MoreHorizontal, Search, UserRoundPlus, UsersRound } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { apiRequest } from '@/lib/api'
+import { friendRequestAge } from '@/lib/friends'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 
@@ -15,42 +24,67 @@ interface SearchResult {
   requestId: string | null
 }
 
-function ProfileIdentity({ profile }: { profile: FriendProfile }) {
+function ProfileIdentity({ profile, detail }: { profile: FriendProfile; detail?: string }) {
   return (
     <div className="flex min-w-0 items-center gap-3">
       <ProfileAvatar name={profile.displayName} avatarUrl={profile.avatarUrl} className="size-10" fallbackClassName="text-xs" />
       <div className="min-w-0">
         <div className="truncate text-sm font-medium">{profile.displayName}</div>
-        {profile.username && <div className="truncate text-xs text-muted-foreground">@{profile.username}</div>}
+        <div className="flex min-w-0 items-center gap-1.5 truncate text-xs text-muted-foreground">
+          {profile.username && <span className="truncate">@{profile.username}</span>}
+          {detail && <><span aria-hidden="true">·</span><span className="shrink-0">{detail}</span></>}
+        </div>
       </div>
     </div>
   )
 }
 
-function Section({ title, count, empty, children }: { title: string; count: number; empty: string; children: React.ReactNode }) {
+function Section({ title, count, empty, children }: { title: string; count: number; empty?: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border">
+    <section className="overflow-hidden rounded-xl border">
       <div className="flex items-center justify-between border-b px-4 py-3">
         <h2 className="text-sm font-medium">{title}</h2>
         <span className="text-xs text-muted-foreground">{count}</span>
       </div>
-      {count ? <div className="divide-y">{children}</div> : <div className="px-4 py-8 text-center text-sm text-muted-foreground">{empty}</div>}
+      {count ? <div className="divide-y">{children}</div> : empty ? <div className="px-4 py-8 text-center text-sm text-muted-foreground">{empty}</div> : null}
     </section>
   )
 }
 
-function ConnectionRow({ connection, actions }: { connection: FriendConnection; actions: React.ReactNode }) {
-  return <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={connection.profile} /><div className="flex flex-wrap items-center gap-2">{actions}</div></div>
+function CollapsibleSection({ title, count, open, onToggle, children }: {
+  title: string
+  count: number
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border">
+      <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium hover:bg-accent/50" onClick={onToggle} aria-expanded={open}>
+        <span className="flex items-center gap-2">{open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}{title}</span>
+        <span className="text-xs text-muted-foreground">{count}</span>
+      </button>
+      {open && <div className="divide-y border-t">{children}</div>}
+    </section>
+  )
+}
+
+function ConnectionRow({ connection, detail, actions }: { connection: FriendConnection; detail?: string; actions: React.ReactNode }) {
+  return <div className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={connection.profile} detail={detail} /><div className="flex shrink-0 items-center gap-2">{actions}</div></div>
 }
 
 export function FriendsPage() {
   const userId = useAuth((state) => state.user?.id)
+  const navigate = useNavigate()
+  const usernameInputRef = useRef<HTMLInputElement>(null)
   const [username, setUsername] = useState('')
   const [searching, setSearching] = useState(false)
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null)
   const [searchMessage, setSearchMessage] = useState('')
   const [actionId, setActionId] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
+  const [actionMessage, setActionMessage] = useState('')
+  const [outgoingOpen, setOutgoingOpen] = useState(false)
   const [blockedOpen, setBlockedOpen] = useState(false)
   const listQuery = useQuery({
     queryKey: ['friends', userId],
@@ -72,12 +106,14 @@ export function FriendsPage() {
     ])
   }
 
-  const act = async (key: string, operation: () => Promise<unknown>) => {
+  const act = async (key: string, operation: () => Promise<unknown>, message: string, onSuccess?: () => void) => {
     setActionId(key)
     setActionError('')
+    setActionMessage('')
     try {
       await operation()
-      setSearchResult(null)
+      onSuccess?.()
+      setActionMessage(message)
       await refresh()
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'Could not update friends')
@@ -88,15 +124,17 @@ export function FriendsPage() {
 
   const search = async (event: React.FormEvent) => {
     event.preventDefault()
-    const value = username.trim()
+    const value = username.trim().replace(/^@/, '').toLowerCase()
     if (!value) return
+    setUsername(value)
     setSearching(true)
     setSearchMessage('')
     setSearchResult(null)
+    setActionMessage('')
     try {
       setSearchResult(await apiRequest<SearchResult>(`/api/friends/search?username=${encodeURIComponent(value)}`))
-    } catch (cause) {
-      setSearchMessage(cause instanceof Error ? cause.message : 'No user found')
+    } catch {
+      setSearchMessage(`No account found for @${value}. Check the username and try again.`)
     } finally {
       setSearching(false)
     }
@@ -104,10 +142,13 @@ export function FriendsPage() {
 
   const block = (profile: FriendProfile) => {
     if (!confirm(`Block ${profile.displayName}? Any friendship or pending request will be removed.`)) return
-    void act(`block:${profile.id}`, () => apiRequest('/api/friends/blocks', { method: 'POST', body: { userId: profile.id } }))
+    void act(`block:${profile.id}`, () => apiRequest('/api/friends/blocks', { method: 'POST', body: { userId: profile.id } }), `${profile.displayName} was blocked.`, () => {
+      if (searchResult?.profile.id === profile.id) setSearchResult(null)
+    })
   }
 
   const data = listQuery.data
+  const isCompletelyEmpty = Boolean(data && !data.friends.length && !data.incoming.length && !data.outgoing.length)
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Friends</h1></header>
@@ -115,54 +156,77 @@ export function FriendsPage() {
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
           <div>
             <h2 className="text-lg font-medium">Find your friends</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Search for an exact username. Your usage is shared only after the request is accepted.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Search by exact username. Usage is shared after they accept.</p>
           </div>
           <form className="flex gap-2" onSubmit={search}>
             <div className="relative min-w-0 flex-1">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
-              <Input value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" placeholder="username" maxLength={30} aria-label="Username" />
+              <Input ref={usernameInputRef} value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').replace(/\s/g, '').toLowerCase())} className="pl-7" placeholder="username" maxLength={30} aria-label="Username" />
             </div>
             <Button type="submit" disabled={searching || !username.trim()}><Search />{searching ? 'Searching…' : 'Search'}</Button>
           </form>
           {searchMessage && <div className="rounded-lg border px-4 py-3 text-sm text-muted-foreground">{searchMessage}</div>}
-          {searchResult && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3">
+          {searchResult && <div className="flex items-center justify-between gap-3 rounded-xl border px-4 py-3">
             <ProfileIdentity profile={searchResult.profile} />
-            {searchResult.relationship === 'none' && <Button size="sm" disabled={actionId !== null} onClick={() => void act(`request:${searchResult.profile.id}`, () => apiRequest('/api/friends/requests', { method: 'POST', body: { userId: searchResult.profile.id } }))}><UserRoundPlus />Add friend</Button>}
-            {searchResult.relationship === 'incoming' && <Button size="sm" disabled={actionId !== null} onClick={() => void act(`accept:${searchResult.requestId}`, () => apiRequest(`/api/friends/requests/${searchResult.requestId}/accept`, { method: 'POST' }))}>Accept</Button>}
+            {searchResult.relationship === 'none' && <Button size="sm" disabled={actionId === `request:${searchResult.profile.id}`} onClick={() => void act(
+              `request:${searchResult.profile.id}`,
+              () => apiRequest('/api/friends/requests', { method: 'POST', body: { userId: searchResult.profile.id } }),
+              `Friend request sent to ${searchResult.profile.displayName}.`,
+              () => setSearchResult((result) => result ? { ...result, relationship: 'outgoing' } : result),
+            )}><UserRoundPlus />{actionId === `request:${searchResult.profile.id}` ? 'Sending…' : 'Add friend'}</Button>}
+            {searchResult.relationship === 'incoming' && <Button size="sm" disabled={actionId === `accept:${searchResult.requestId}`} onClick={() => void act(`accept:${searchResult.requestId}`, () => apiRequest(`/api/friends/requests/${searchResult.requestId}/accept`, { method: 'POST' }), `${searchResult.profile.displayName} is now your friend.`, () => setSearchResult((result) => result ? { ...result, relationship: 'friends' } : result))}>{actionId === `accept:${searchResult.requestId}` ? 'Accepting…' : 'Accept'}</Button>}
             {searchResult.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">Request sent</span>}
-            {searchResult.relationship === 'friends' && <span className="text-sm text-muted-foreground">Already friends</span>}
+            {searchResult.relationship === 'friends' && <Button size="sm" variant="outline" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>}
             {searchResult.relationship === 'self' && <span className="text-sm text-muted-foreground">This is you</span>}
           </div>}
-          {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+          {(actionError || actionMessage) && <p role="status" className={actionError ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{actionError || actionMessage}</p>}
 
           {listQuery.isLoading ? <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">Loading friends…</div>
             : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>Try again</Button></div>
               : data && <div className="space-y-5">
-                <Section title="Incoming requests" count={data.incoming.length} empty="No incoming friend requests">
-                  {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} actions={<>
-                    <Button size="sm" disabled={actionId !== null} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }))}>Accept</Button>
-                    <Button size="sm" variant="outline" disabled={actionId !== null} onClick={() => void act(`decline:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }))}>Decline</Button>
-                    <Button size="sm" variant="ghost" disabled={actionId !== null} onClick={() => block(connection.profile)}>Block</Button>
+                {data.incoming.length > 0 && <Section title="Friend requests" count={data.incoming.length}>
+                  {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
+                    <Button size="sm" disabled={actionId === `accept:${connection.requestId}`} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionId === `accept:${connection.requestId}` ? 'Accepting…' : 'Accept'}</Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => void act(`decline:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request from ${connection.profile.displayName} declined.`)}>Decline request</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>Block</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>} />)}
-                </Section>
-                <Section title="Friends" count={data.friends.length} empty="Add a friend to build your private leaderboard">
+                </Section>}
+
+                {data.friends.length > 0 ? <Section title="Friends" count={data.friends.length}>
                   {data.friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} actions={<>
-                    <Button size="sm" variant="outline" disabled={actionId !== null} onClick={() => { if (confirm(`Remove ${connection.profile.displayName} from your friends?`)) void act(`unfriend:${connection.profile.id}`, () => apiRequest(`/api/friends/${connection.profile.id}`, { method: 'DELETE' })) }}>Unfriend</Button>
-                    <Button size="sm" variant="ghost" disabled={actionId !== null} onClick={() => block(connection.profile)}>Block</Button>
+                    <Button size="sm" variant="ghost" onClick={() => navigate('/usage/friends')}><BarChart3 />View usage</Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => { if (confirm(`Remove ${connection.profile.displayName} from your friends?`)) void act(`unfriend:${connection.profile.id}`, () => apiRequest(`/api/friends/${connection.profile.id}`, { method: 'DELETE' }), `${connection.profile.displayName} was removed from your friends.`) }}>Remove friend</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>Block</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>} />)}
-                </Section>
-                <Section title="Outgoing requests" count={data.outgoing.length} empty="No pending outgoing requests">
-                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} actions={<Button size="sm" variant="outline" disabled={actionId !== null} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }))}>Cancel</Button>} />)}
-                </Section>
-                <section className="rounded-xl border">
-                  <button type="button" className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium" onClick={() => setBlockedOpen((value) => !value)}>
-                    <span className="flex items-center gap-2">{blockedOpen ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}Blocked users</span>
-                    <span className="text-xs text-muted-foreground">{data.blocked.length}</span>
-                  </button>
-                  {blockedOpen && <div className="divide-y border-t">{data.blocked.length ? data.blocked.map((profile) => <div key={profile.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionId !== null} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }))}>Unblock</Button></div>) : <div className="px-4 py-8 text-center text-sm text-muted-foreground">No blocked users</div>}</div>}
-                </section>
+                </Section> : <div className="rounded-xl border px-6 py-10 text-center">
+                  <UsersRound className="mx-auto size-6 text-muted-foreground" />
+                  <h2 className="mt-3 text-sm font-medium">Add friends to compare usage</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">Find someone by their exact Pulpo username.</p>
+                  <Button className="mt-4" size="sm" variant="outline" onClick={() => usernameInputRef.current?.focus()}><UserRoundPlus />Find friends</Button>
+                </div>}
+
+                {data.outgoing.length > 0 && <CollapsibleSection title="Sent requests" count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
+                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionId === `cancel:${connection.requestId}`} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionId === `cancel:${connection.requestId}` ? 'Canceling…' : 'Cancel'}</Button>} />)}
+                </CollapsibleSection>}
+
+                {data.blocked.length > 0 && <CollapsibleSection title="Blocked users" count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
+                  {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionId === `unblock:${profile.id}`} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionId === `unblock:${profile.id}` ? 'Unblocking…' : 'Unblock'}</Button></div>)}
+                </CollapsibleSection>}
+
+                {isCompletelyEmpty && <div className="text-center text-xs text-muted-foreground">Friend requests stay private to this Pulpo instance.</div>}
               </div>}
-          {!listQuery.isLoading && data && !data.friends.length && !data.incoming.length && !data.outgoing.length && <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground"><UsersRound className="size-4" />Friend requests stay private to this Pulpo instance.</div>}
         </div>
       </div>
     </div>

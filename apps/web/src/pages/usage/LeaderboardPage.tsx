@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { BarChart3, Clock } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useUsage } from '@/stores/usage'
 import { useAuth } from '@/stores/auth'
@@ -272,8 +273,9 @@ export function LeaderboardPage() {
           <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
         </div>
         {!hasAcceptedFriends ? (
-          <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">
-            Add friends to compare usage
+          <div className="flex h-[250px] flex-col items-center justify-center gap-3 text-xs text-muted-foreground">
+            <span>Add friends to compare usage</span>
+            <Button asChild size="sm" variant="outline"><Link to="/friends">Find friends</Link></Button>
           </div>
         ) : (
           <div className="h-[250px]">
