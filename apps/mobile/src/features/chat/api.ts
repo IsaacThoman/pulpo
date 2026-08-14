@@ -4,7 +4,7 @@ import * as Sharing from 'expo-sharing'
 import { attachmentValidationError } from '@pulpo/client-core'
 import type { ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
-import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment } from '../../data/database'
+import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment, removeCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
 import type { AttachmentDraft, BranchActivationResult, ServerAttachment, ServerChat, ServerFolder } from '../../types'
 import { useRealtimeStore } from '../../providers/realtimeStore'
@@ -268,6 +268,12 @@ export async function editMessage(input: {
 
 export async function deleteUnreferencedAttachment(id: string): Promise<void> {
   await apiRequest(`/api/attachments/${id}`, { method: 'DELETE' })
+  const { instanceUrl, user } = useSessionStore.getState()
+  if (!user) return
+  const uri = await removeCachedAttachment(cacheNamespace(instanceUrl, user.id), id)
+  if (!uri) return
+  const cached = new File(uri)
+  if (cached.exists) cached.delete()
 }
 
 export async function activateBranch(id: string): Promise<BranchActivationResult> {
@@ -315,7 +321,13 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
       headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
     })
     if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
-    return await apiRequest(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
+    const confirmed = await apiRequest<ServerAttachment>(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
+    await cacheUploadedAttachment(
+      confirmed.id,
+      confirmed.originalName || draft.name,
+      draft.uri,
+    ).catch(() => undefined)
+    return confirmed
   } catch (error) {
     // Reservations are created before transferring bytes. Failed attempts are
     // never referenced by a message, so reclaim them before a retry reserves a
@@ -354,6 +366,16 @@ async function recordDownloadedAttachment(namespace: string, id: string, file: F
       // The database is authoritative; an already-removed cache file is harmless.
     }
   }
+}
+
+export async function cacheUploadedAttachment(id: string, name: string, sourceUri: string): Promise<void> {
+  const { instanceUrl, user } = useSessionStore.getState()
+  if (!user) return
+  const source = new File(sourceUri)
+  if (!source.exists) return
+  const destination = attachmentCacheDestination(id, name)
+  if (source.uri !== destination.uri) await source.copy(destination, { overwrite: true })
+  await recordDownloadedAttachment(cacheNamespace(instanceUrl, user.id), id, destination)
 }
 
 const activeAttachmentDownloads = new Map<string, Promise<File>>()
