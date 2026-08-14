@@ -10,15 +10,26 @@ import {
   Text,
   useWindowDimensions,
   View,
-  type GestureResponderEvent,
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native'
 import {
-  GlassView,
-  isGlassEffectAPIAvailable,
-} from 'expo-glass-effect'
+  Button as SwiftUIButton,
+  Host as SwiftUIHost,
+  Text as SwiftUIText,
+  VStack as SwiftUIVStack,
+} from '@expo/ui/swift-ui'
+import {
+  accessibilityLabel,
+  buttonBorderShape,
+  buttonStyle,
+  controlSize,
+  font,
+  foregroundStyle,
+  frame,
+  lineLimit,
+} from '@expo/ui/swift-ui/modifiers'
 import { StatusBar } from 'expo-status-bar'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Reanimated, {
@@ -57,54 +68,27 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
   reduceTransparency: boolean
 }) {
   const label = `${name}${count ? `, ${count}` : ''}. Hide preview controls`
-  const touchOrigin = useRef<{ x: number, y: number } | null>(null)
-  const touchDragged = useRef(false)
-  const handleGlassTouchStart = (event: GestureResponderEvent) => {
-    const touch = event.nativeEvent.touches[0] ?? event.nativeEvent.changedTouches[0]
-    touchOrigin.current = touch ? { x: touch.pageX, y: touch.pageY } : null
-    touchDragged.current = false
-  }
-  const handleGlassTouchMove = (event: GestureResponderEvent) => {
-    const origin = touchOrigin.current
-    const touch = event.nativeEvent.touches[0] ?? event.nativeEvent.changedTouches[0]
-    if (!origin || !touch) return
-    if (Math.hypot(touch.pageX - origin.x, touch.pageY - origin.y) > 10) touchDragged.current = true
-  }
-  const handleGlassTouchEnd = () => {
-    const activate = !touchDragged.current
-    touchOrigin.current = null
-    touchDragged.current = false
-    if (activate) onPress()
-  }
-  const content = (
-    <View pointerEvents="none" style={styles.titleBlock}>
-      <Text numberOfLines={1} style={styles.title}>{name}</Text>
-      {count ? <Text style={styles.count}>{count}</Text> : null}
-    </View>
-  )
-  if (Platform.OS === 'ios' && !reduceTransparency && isGlassEffectAPIAvailable()) {
+  if (Platform.OS === 'ios' && !reduceTransparency) {
     return (
-      <Pressable
-        accessibilityLabel={label}
-        accessibilityRole="button"
-        onPress={onPress}
-        style={({ pressed }) => [styles.metadataGlass, pressed && styles.metadataPressed]}
-      >
-        <GlassView
-          colorScheme="dark"
-          glassEffectStyle="regular"
-          isInteractive
-          onTouchCancel={() => {
-            touchOrigin.current = null
-            touchDragged.current = false
-          }}
-          onTouchEnd={handleGlassTouchEnd}
-          onTouchMove={handleGlassTouchMove}
-          onTouchStart={handleGlassTouchStart}
-          style={styles.metadataGlassBackground}
-        />
-        {content}
-      </Pressable>
+      <View style={styles.metadataSlot}>
+        <SwiftUIHost colorScheme="dark" matchContents style={styles.metadataNativeHost}>
+          <SwiftUIButton
+            onPress={onPress}
+            modifiers={[
+              buttonStyle('glass'),
+              buttonBorderShape('capsule'),
+              controlSize('regular'),
+              frame({ minHeight: 44 }),
+              accessibilityLabel(label),
+            ]}
+          >
+            <SwiftUIVStack alignment="center" spacing={1}>
+              <SwiftUIText modifiers={[font({ textStyle: 'subheadline', weight: 'semibold' }), lineLimit(1)]}>{name}</SwiftUIText>
+              {count ? <SwiftUIText modifiers={[font({ textStyle: 'caption2' }), foregroundStyle('secondary'), lineLimit(1)]}>{count}</SwiftUIText> : null}
+            </SwiftUIVStack>
+          </SwiftUIButton>
+        </SwiftUIHost>
+      </View>
     )
   }
   return (
@@ -114,7 +98,10 @@ function GalleryMetadata({ count, name, onPress, reduceTransparency }: {
       onPress={onPress}
       style={({ pressed }) => [styles.metadataGlass, styles.metadataFallback, pressed && styles.metadataPressed]}
     >
-      {content}
+      <View pointerEvents="none" style={styles.titleBlock}>
+        <Text numberOfLines={1} style={styles.title}>{name}</Text>
+        {count ? <Text style={styles.count}>{count}</Text> : null}
+      </View>
     </Pressable>
   )
 }
@@ -462,11 +449,12 @@ const styles = StyleSheet.create({
   retryText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
   chrome: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, justifyContent: 'flex-start' },
   topBar: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 16 },
+  metadataSlot: { minWidth: 0, flex: 1, alignItems: 'center', justifyContent: 'center' },
+  metadataNativeHost: { maxWidth: '100%', minHeight: 44, justifyContent: 'center' },
   metadataGlass: { minWidth: 0, maxWidth: 520, minHeight: 44, flex: 1, borderRadius: 22, overflow: 'hidden' },
-  metadataGlassBackground: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 0, borderRadius: 22 },
   metadataFallback: { backgroundColor: 'rgba(44,44,46,0.86)', borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.16)' },
   metadataPressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
-  titleBlock: { minWidth: 0, minHeight: 44, zIndex: 1, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5, backgroundColor: 'transparent' },
+  titleBlock: { minWidth: 0, minHeight: 44, flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14, paddingVertical: 5 },
   title: { maxWidth: '100%', color: '#ffffff', fontSize: 14, fontWeight: '600' },
   count: { marginTop: 2, color: 'rgba(255,255,255,0.62)', fontSize: 11, fontVariant: ['tabular-nums'] },
 })
