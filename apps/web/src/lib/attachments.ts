@@ -16,6 +16,78 @@ const MIME_TO_EXTENSION: Record<string, string> = {
   'image/gif': '.gif',
 }
 
+export type AttachmentKind =
+  | 'image'
+  | 'pdf'
+  | 'text'
+  | 'code'
+  | 'spreadsheet'
+  | 'presentation'
+  | 'archive'
+  | 'audio'
+  | 'video'
+  | 'file'
+
+const CODE_EXTENSIONS = new Set([
+  'c', 'cc', 'cpp', 'cs', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'jsx', 'json',
+  'kt', 'kts', 'php', 'py', 'rb', 'rs', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx', 'vue',
+  'xml', 'yaml', 'yml',
+])
+const TEXT_EXTENSIONS = new Set(['doc', 'docx', 'log', 'md', 'odt', 'pages', 'rtf', 'txt'])
+const SPREADSHEET_EXTENSIONS = new Set(['csv', 'numbers', 'ods', 'tsv', 'xls', 'xlsm', 'xlsx'])
+const PRESENTATION_EXTENSIONS = new Set(['key', 'odp', 'ppt', 'pptx'])
+const ARCHIVE_EXTENSIONS = new Set(['7z', 'bz2', 'gz', 'rar', 'tar', 'tgz', 'xz', 'zip'])
+const AUDIO_EXTENSIONS = new Set(['aac', 'flac', 'm4a', 'mp3', 'ogg', 'wav', 'wma'])
+const VIDEO_EXTENSIONS = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'webm', 'wmv'])
+
+function attachmentExtension(name: string): string | null {
+  const match = name.trim().toLowerCase().match(/\.([a-z0-9]{1,8})$/)
+  return match?.[1] ?? null
+}
+
+export function attachmentKind(name: string, mimeType: string): AttachmentKind {
+  const mime = mimeType.toLowerCase()
+  const extension = attachmentExtension(name)
+
+  if (mime.startsWith('image/')) return 'image'
+  if (mime === 'application/pdf' || extension === 'pdf') return 'pdf'
+  if (mime.startsWith('audio/') || (extension && AUDIO_EXTENSIONS.has(extension))) return 'audio'
+  if (mime.startsWith('video/') || (extension && VIDEO_EXTENSIONS.has(extension))) return 'video'
+  if (
+    mime.includes('spreadsheet') || mime.includes('excel') || mime === 'text/csv'
+    || (extension && SPREADSHEET_EXTENSIONS.has(extension))
+  ) return 'spreadsheet'
+  if (
+    mime.includes('presentation') || mime.includes('powerpoint')
+    || (extension && PRESENTATION_EXTENSIONS.has(extension))
+  ) return 'presentation'
+  if (
+    mime.includes('zip') || mime.includes('compressed') || mime.includes('archive')
+    || mime.includes('gzip') || (extension && ARCHIVE_EXTENSIONS.has(extension))
+  ) return 'archive'
+  if (
+    mime.includes('javascript') || mime.includes('json') || mime === 'application/xml'
+    || mime === 'text/xml' || mime.endsWith('+xml')
+    || mime.includes('yaml') || mime === 'text/css' || mime === 'text/html'
+    || (extension && CODE_EXTENSIONS.has(extension))
+  ) return 'code'
+  if (
+    mime.startsWith('text/') || mime.includes('wordprocessing') || mime.includes('msword')
+    || mime.includes('opendocument.text') || mime === 'application/rtf'
+    || (extension && TEXT_EXTENSIONS.has(extension))
+  ) return 'text'
+  return 'file'
+}
+
+export function attachmentTypeLabel(name: string, mimeType: string): string {
+  const extension = attachmentExtension(name)
+  if (extension) return extension.toUpperCase()
+  const kind = attachmentKind(name, mimeType)
+  if (kind === 'spreadsheet') return 'SHEET'
+  if (kind === 'presentation') return 'SLIDES'
+  return kind.toUpperCase()
+}
+
 export function isSupportedImageMime(mimeType: string): boolean {
   return IMAGE_MIME_TYPES.has(mimeType.toLowerCase())
 }

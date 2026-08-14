@@ -31,7 +31,7 @@ import { useSettings } from '@/stores/settings'
 import { chatOptionsFor, resolveSelections, useModelConfig } from '@/stores/modelConfig'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { PresetIcon } from '@/components/chat/PresetIcon'
-import { PendingImageChip } from '@/components/chat/AttachmentImage'
+import { PendingAttachmentChip } from '@/components/chat/AttachmentImage'
 import { cn } from '@/lib/utils'
 import { apiRequest } from '@/lib/api'
 import { cacheAttachmentBlob, downloadAttachment } from '@/lib/local-first/attachment-cache'
@@ -701,10 +701,11 @@ export function Composer({
         {attachments.length > 0 && (
           <div className="flex flex-wrap gap-2 px-3 pt-3">
             {attachments.map((attachment) => (
-              <PendingImageChip
+              <PendingAttachmentChip
                 key={attachment.localId}
                 name={attachment.name}
                 size={attachment.size}
+                mimeType={attachment.mimeType}
                 previewUrl={attachment.previewUrl}
                 attachmentId={isSupportedImageMime(attachment.mimeType) ? attachment.id : undefined}
                 uploading={attachment.status === 'uploading'}
