@@ -20,7 +20,7 @@ import {
   type PublicUsageRecord,
 } from '@/components/usage/PublicUsagePanels'
 
-type LBMetric = Metric | 'balance' | 'water'
+type LBMetric = Metric | 'balance'
 
 const RANGES: { id: TimeRange; label: string }[] = [
   { id: '24h', label: '24h' },
@@ -34,7 +34,6 @@ const METRICS: { id: LBMetric; label: string }[] = [
   { id: 'tokens', label: 'Tokens' },
   { id: 'calls', label: 'Calls' },
   { id: 'balance', label: 'Balance' },
-  { id: 'water', label: 'Estimated water' },
 ]
 function metricLabel(m: LBMetric): string {
   switch (m) {
@@ -46,15 +45,12 @@ function metricLabel(m: LBMetric): string {
       return 'Calls'
     case 'balance':
       return 'Balance'
-    case 'water':
-      return 'Water'
   }
 }
 
 function formatMetric(v: number, m: LBMetric): string {
   if (m === 'balance') return formatBalance(v)
   if (m === 'cost') return formatUsd(v)
-  if (m === 'water') return `${v.toFixed(4)} Gal`
   return Math.round(v).toLocaleString()
 }
 
@@ -77,7 +73,6 @@ function rowValue(r: Row, m: LBMetric): number {
   if (m === 'tokens') return r.tokens
   if (m === 'calls') return r.calls
   if (m === 'balance') return r.user.balance
-  if (m === 'water') return r.cost / 23.04
   return r.cost
 }
 
@@ -220,8 +215,7 @@ export function LeaderboardPage() {
   )
   const hasAcceptedFriends = rows.some((row) => row.user.id !== currentUserId)
 
-  // Balance is a point-in-time ranking and water is a spend-derived estimate;
-  // OpenWebUI Monitor uses the spend series for both in the daily activity view.
+  // Balance is a point-in-time ranking, so the daily activity view uses spend.
   const dailyMetric: Metric = metric === 'tokens' || metric === 'calls' ? metric : 'cost'
 
   const loadMore = async () => {
@@ -302,10 +296,6 @@ export function LeaderboardPage() {
                       ? formatBalance(v)
                       : metric === 'cost'
                         ? axisMoney(v)
-                      : metric === 'water'
-                        ? v < 0.1
-                          ? v.toFixed(3)
-                          : v.toFixed(2)
                         : v >= 1000
                           ? `${(v / 1000).toFixed(1)}k`
                           : String(Math.round(v))
