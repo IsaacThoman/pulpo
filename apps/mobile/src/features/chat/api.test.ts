@@ -5,9 +5,10 @@ const mocks = vi.hoisted(() => ({
   queueOfflineMutation: vi.fn(),
   removeSnapshot: vi.fn(),
   receiveSnapshot: vi.fn(),
+  fileUpload: vi.fn(),
 }))
 
-vi.mock('expo-file-system', () => ({ File: class {}, Paths: {} }))
+vi.mock('expo-file-system', () => ({ File: class { upload = mocks.fileUpload }, Paths: {} }))
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-id' }))
 vi.mock('expo-sharing', () => ({}))
 vi.mock('../../api/client', () => ({
@@ -37,13 +38,14 @@ vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { editMessage, persistChat, regenerateResponse, sendMessage, startChat } from './api'
+import { editMessage, persistChat, regenerateResponse, sendMessage, startChat, uploadAttachment } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
   mocks.queueOfflineMutation.mockReset()
   mocks.removeSnapshot.mockReset()
   mocks.receiveSnapshot.mockReset()
+  mocks.fileUpload.mockReset()
 })
 
 describe('temporary chat offline behavior', () => {
@@ -120,6 +122,35 @@ describe('message edits', () => {
       idempotencyKey: 'response-2',
       body: expect.objectContaining({ attachmentIds: ['attachment-2'], agentMode: true }),
     }))
+  })
+})
+
+describe('attachment uploads', () => {
+  const draft = {
+    localId: 'local-1', name: 'notes.bin', uri: 'file:///notes.bin', mimeType: 'application/octet-stream',
+    sizeBytes: 8, state: 'uploading' as const,
+  }
+  const reservation = {
+    attachment: { id: 'reserved-1' }, uploadUrl: '/upload/reserved-1', uploadHeaders: {},
+  }
+
+  it('keeps the MIME type confirmed by the server', async () => {
+    mocks.apiRequest
+      .mockResolvedValueOnce(reservation)
+      .mockResolvedValueOnce({ id: 'reserved-1', mimeType: 'text/plain' })
+    mocks.fileUpload.mockResolvedValueOnce({ status: 204 })
+
+    await expect(uploadAttachment(draft, null)).resolves.toMatchObject({
+      id: 'reserved-1', mimeType: 'text/plain',
+    })
+  })
+
+  it('deletes an unreferenced reservation when transfer fails', async () => {
+    mocks.apiRequest.mockResolvedValueOnce(reservation).mockResolvedValueOnce(undefined)
+    mocks.fileUpload.mockRejectedValueOnce(new Error('Connection lost'))
+
+    await expect(uploadAttachment(draft, null)).rejects.toThrow('Connection lost')
+    expect(mocks.apiRequest).toHaveBeenLastCalledWith('/api/attachments/reserved-1', { method: 'DELETE' })
   })
 })
 

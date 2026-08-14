@@ -306,15 +306,23 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     method: 'POST',
     body: { chatId, originalName: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
   })
-  const file = new File(draft.uri)
-  const uploadUrl = apiUrl(reservation.uploadUrl)
-  const result = await file.upload(uploadUrl, {
-    httpMethod: 'PUT',
-    mimeType: draft.mimeType,
-    headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
-  })
-  if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
-  return apiRequest(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
+  try {
+    const file = new File(draft.uri)
+    const uploadUrl = apiUrl(reservation.uploadUrl)
+    const result = await file.upload(uploadUrl, {
+      httpMethod: 'PUT',
+      mimeType: draft.mimeType,
+      headers: { ...reservation.uploadHeaders, ...nativeAuthorizationHeaders(uploadUrl) },
+    })
+    if (result.status < 200 || result.status >= 300) throw new Error(`Upload failed (${result.status})`)
+    return await apiRequest(`/api/attachments/${reservation.attachment.id}/confirm`, { method: 'POST' })
+  } catch (error) {
+    // Reservations are created before transferring bytes. Failed attempts are
+    // never referenced by a message, so reclaim them before a retry reserves a
+    // replacement. Cleanup is best-effort so the original actionable error wins.
+    await deleteUnreferencedAttachment(reservation.attachment.id).catch(() => undefined)
+    throw error
+  }
 }
 
 function safeFilename(name: string): string {
