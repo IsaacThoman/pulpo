@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ServerChat, ServerResponse } from '../../../types'
 import {
   activateOptimisticBranch,
@@ -128,7 +128,7 @@ describe('optimistic branch activation', () => {
     expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('a')
   })
 
-  it('keeps the current transcript visible while an inactive branch body refetches', async () => {
+  it('hydrates an uncached branch from the activation response without a follow-up fetch', async () => {
     const queryClient = new QueryClient()
     const initial = { ...chat(), activeResponseId: 'a', activeBranchLeafId: 'a' }
     initial.responses = initial.responses?.map((item) => ({
@@ -136,6 +136,38 @@ describe('optimistic branch activation', () => {
       detailAvailable: item.id === 'a',
     }))
     queryClient.setQueryData(key, initial)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
+    const onCacheUpdated = vi.fn()
+
+    await activateOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId,
+      selectedResponseId: 'b',
+      request: async () => ({
+        activeBranchLeafId: 'c',
+        responses: chat().responses?.map((item) => ({
+          ...item,
+          detailAvailable: item.id !== 'a',
+        })),
+      }),
+      onCacheUpdated,
+    })
+
+    expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('c')
+    expect(invalidate).not.toHaveBeenCalled()
+    expect(onCacheUpdated).toHaveBeenCalledWith(expect.objectContaining({ activeBranchLeafId: 'c' }))
+  })
+
+  it('falls back to refetching an uncached branch from an older server response', async () => {
+    const queryClient = new QueryClient()
+    const initial = { ...chat(), activeResponseId: 'a', activeBranchLeafId: 'a' }
+    initial.responses = initial.responses?.map((item) => ({
+      ...item,
+      detailAvailable: item.id === 'a',
+    }))
+    queryClient.setQueryData(key, initial)
+    const invalidate = vi.spyOn(queryClient, 'invalidateQueries')
 
     await activateOptimisticBranch({
       queryClient,
@@ -146,6 +178,30 @@ describe('optimistic branch activation', () => {
     })
 
     expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('a')
+    expect(invalidate).toHaveBeenCalledOnce()
+  })
+
+  it('does not switch when an ancestor in the selected lineage is still a stub', async () => {
+    const queryClient = new QueryClient()
+    const initial = { ...chat(), activeResponseId: 'a', activeBranchLeafId: 'a' }
+    initial.responses = initial.responses?.map((item) => ({
+      ...item,
+      detailAvailable: item.id !== 'b',
+    }))
+    queryClient.setQueryData(key, initial)
+    const request = deferred<{ activeBranchLeafId: string }>()
+
+    const activation = activateOptimisticBranch({
+      queryClient,
+      namespace,
+      chatId,
+      selectedResponseId: 'b',
+      request: () => request.promise,
+    })
+
+    expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('a')
+    request.resolve({ activeBranchLeafId: 'c' })
+    await activation
   })
 
   it('rolls back the latest selection when activation fails', async () => {
@@ -193,6 +249,39 @@ describe('optimistic branch activation', () => {
     second.resolve({ activeBranchLeafId: 'c' })
     await Promise.all([selectA, selectB])
     expect(queryClient.getQueryData<ServerChat>(key)?.activeBranchLeafId).toBe('c')
+  })
+
+  it('caches an older activation payload without overriding the newest visible selection', async () => {
+    const queryClient = new QueryClient()
+    const initial = { ...chat(), activeResponseId: 'a', activeBranchLeafId: 'a' }
+    initial.responses = initial.responses?.map((item) => ({
+      ...item,
+      detailAvailable: item.id === 'a',
+    }))
+    queryClient.setQueryData(key, initial)
+    const first = deferred<{ activeBranchLeafId: string; responses?: ServerResponse[] }>()
+    const second = deferred<{ activeBranchLeafId: string; responses?: ServerResponse[] }>()
+    const request = (id: string) => id === 'b' ? first.promise : second.promise
+
+    const selectB = activateOptimisticBranch({ queryClient, namespace, chatId, selectedResponseId: 'b', request })
+    const selectA = activateOptimisticBranch({ queryClient, namespace, chatId, selectedResponseId: 'a', request })
+    await Promise.resolve()
+    await Promise.resolve()
+    first.resolve({
+      activeBranchLeafId: 'c',
+      responses: chat().responses?.map((item) => ({ ...item, detailAvailable: item.id !== 'a' })),
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const cached = queryClient.getQueryData<ServerChat>(key)
+    expect(cached?.activeBranchLeafId).toBe('a')
+    expect(cached?.responses?.find((item) => item.id === 'c')?.detailAvailable).toBe(true)
+
+    second.resolve({ activeBranchLeafId: 'a' })
+    await Promise.all([selectA, selectB])
   })
 
   it('rolls back to the last authoritative leaf when queued selections both fail', async () => {

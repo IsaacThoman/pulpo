@@ -1,6 +1,10 @@
-import { newestDescendantId } from '@pulpo/client-core'
+import {
+  mergeCachedResponseDetails,
+  newestDescendantId,
+  responseLineageDetailsAvailable,
+} from '@pulpo/client-core'
 import type { QueryClient } from '@tanstack/react-query'
-import type { ServerChat } from '../../../types'
+import type { BranchActivationResult, ServerChat } from '../../../types'
 
 interface BranchSelection {
   namespace: string
@@ -15,7 +19,8 @@ interface ActivateOptimisticBranchInput {
   namespace: string
   chatId: string
   selectedResponseId: string
-  request: (responseId: string) => Promise<{ activeBranchLeafId: string }>
+  request: (responseId: string) => Promise<BranchActivationResult>
+  onCacheUpdated?: (chat: ServerChat) => void
 }
 
 const selections = new Map<string, BranchSelection>()
@@ -62,9 +67,9 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
   const leafId = selectedExists && responses
     ? newestDescendantId(responses, input.selectedResponseId)
     : input.selectedResponseId
-  const selectedDetailAvailable = Boolean(responses?.some((response) => (
-    response.id === leafId && response.detailAvailable !== false
-  )))
+  const selectedDetailAvailable = responses
+    ? responseLineageDetailsAvailable(responses, leafId)
+    : false
   const version = (selectionVersions.get(key) ?? 0) + 1
   selectionVersions.set(key, version)
   selections.set(key, {
@@ -78,22 +83,29 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
 
   try {
     const result = await enqueueBranchMutation(key, () => input.request(input.selectedResponseId))
+    input.queryClient.setQueryData<ServerChat>(detailKey(input.namespace, input.chatId), (chat) => chat ? {
+      ...chat,
+      responses: mergeCachedResponseDetails(chat.responses, result.responses),
+    } : chat)
     const current = selections.get(key)
     if (current?.version !== version) {
       // A newer visible choice is waiting behind this request. Record the
       // server leaf it should return to if that newer request fails.
       if (current) selections.set(key, { ...current, previousLeafId: result.activeBranchLeafId })
+      const updatedCache = input.queryClient.getQueryData<ServerChat>(detailKey(input.namespace, input.chatId))
+      if (updatedCache) input.onCacheUpdated?.(updatedCache)
       return
     }
     selections.delete(key)
     const currentResult = input.queryClient.getQueryData<ServerChat>(detailKey(input.namespace, input.chatId))
-    if (!currentResult?.responses?.some((response) => (
-      response.id === result.activeBranchLeafId && response.detailAvailable !== false
-    ))) {
+    if (!currentResult?.responses
+      || !responseLineageDetailsAvailable(currentResult.responses, result.activeBranchLeafId)) {
       await input.queryClient.invalidateQueries({ queryKey: detailKey(input.namespace, input.chatId) })
       return
     }
     setActiveLeaf(input.queryClient, input.namespace, input.chatId, result.activeBranchLeafId)
+    const updatedCache = input.queryClient.getQueryData<ServerChat>(detailKey(input.namespace, input.chatId))
+    if (updatedCache) input.onCacheUpdated?.(updatedCache)
   } catch (error) {
     const current = selections.get(key)
     if (current?.version !== version) {
@@ -111,9 +123,8 @@ export async function activateOptimisticBranch(input: ActivateOptimisticBranchIn
 /** Keep a pending local selection visible if an older transcript refetch lands. */
 export function reconcileOptimisticBranchSelection(namespace: string, chat: ServerChat): ServerChat {
   const selection = selections.get(selectionKey(namespace, chat.id))
-  if (!selection || !chat.responses?.some((response) => (
-    response.id === selection.leafId && response.detailAvailable !== false
-  ))) return chat
+  if (!selection || !chat.responses
+    || !responseLineageDetailsAvailable(chat.responses, selection.leafId)) return chat
   if (chat.activeResponseId === selection.leafId && chat.activeBranchLeafId === selection.leafId) return chat
   return {
     ...chat,

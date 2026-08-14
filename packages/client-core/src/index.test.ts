@@ -3,11 +3,13 @@ import {
   attachmentValidationError,
   hydrateEmbeddedResponseSnapshot,
   lineageFromLeaf,
+  mergeCachedResponseDetails,
   mergeRevisionInvalidation,
   normalizeInstanceUrl,
   ManagementApiError,
   PulpoManagementClient,
   reconcileResponseEvents,
+  responseLineageDetailsAvailable,
   resolvePresetActions,
 } from './index.js'
 
@@ -31,6 +33,65 @@ describe('client core', () => {
       { id: 'leaf', parentResponseId: 'right' },
     ]
     expect(lineageFromLeaf(nodes, 'leaf').map((node) => node.id)).toEqual(['root', 'right', 'leaf'])
+  })
+
+  it('requires every response body in a selected lineage', () => {
+    const nodes = [
+      { id: 'root', parentResponseId: null, detailAvailable: true },
+      { id: 'leaf', parentResponseId: 'root', detailAvailable: false },
+    ]
+    expect(responseLineageDetailsAvailable(nodes, 'leaf')).toBe(false)
+    expect(responseLineageDetailsAvailable(nodes, 'missing')).toBe(false)
+    expect(responseLineageDetailsAvailable(nodes.map((node) => ({ ...node, detailAvailable: true })), 'leaf')).toBe(true)
+  })
+
+  it('preserves cached response bodies while accepting incoming branch topology', () => {
+    const snapshot = {
+      responseId: 'response-1', status: 'completed' as const, sequence: 2,
+      usage: null, error: null, updatedAt: '2026-08-01T00:00:02.000Z',
+    }
+    const cached = [{
+      id: 'response-1', parentResponseId: null, status: 'completed' as const,
+      input: ['cached input'], output: ['cached output'], presetSelections: { style: 'cached' },
+      usage: null, error: null, snapshot, detailAvailable: true, branches: { index: 0 },
+    }, {
+      id: 'deleted-response', parentResponseId: null, status: 'completed' as const,
+      input: [], output: [], presetSelections: {}, usage: null, error: null,
+      snapshot: { ...snapshot, responseId: 'deleted-response' }, detailAvailable: true, branches: { index: 0 },
+    }]
+    const incoming = [{
+      ...cached[0]!, input: [], output: [], presetSelections: {}, detailAvailable: false,
+      branches: { index: 1 }, snapshot: { ...snapshot, sequence: 3, updatedAt: '2026-08-01T00:00:03.000Z' },
+    }]
+
+    const [merged] = mergeCachedResponseDetails(cached, incoming)!
+    expect(merged).toMatchObject({
+      input: ['cached input'], output: ['cached output'], presetSelections: { style: 'cached' },
+      detailAvailable: true, branches: { index: 1 },
+    })
+    expect(merged?.snapshot).toMatchObject({ sequence: 3 })
+    expect(mergeCachedResponseDetails(cached, incoming)).toHaveLength(1)
+  })
+
+  it('does not let an older full response replace a newer cached snapshot', () => {
+    const base = {
+      id: 'response-1', parentResponseId: null, status: 'completed' as const,
+      input: [], presetSelections: {}, usage: null, error: null, detailAvailable: true,
+    }
+    const cached = [{
+      ...base, output: ['new'], snapshot: {
+        responseId: 'response-1', status: 'completed' as const, sequence: 4, output: ['new'],
+        usage: null, error: null, updatedAt: '2026-08-01T00:00:04.000Z',
+      },
+    }]
+    const incoming = [{
+      ...base, output: ['old'], snapshot: {
+        responseId: 'response-1', status: 'completed' as const, sequence: 3,
+        usage: null, error: null, updatedAt: '2026-08-01T00:00:03.000Z',
+      },
+    }]
+
+    expect(mergeCachedResponseDetails(cached, incoming)?.[0]?.output).toEqual(['new'])
   })
 
   it('normalizes HTTPS instances and only permits local development HTTP', () => {

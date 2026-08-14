@@ -11,6 +11,7 @@ import { cascadeDeletionIds, newestDescendantId } from './branching.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
 import { replaceResponseUserInput, responseAttachmentIds, responseInputText, responseUserAttachmentIds } from './input.js'
+import { toPublicBranchActivation } from '../chats/public.js'
 import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/temporary.js'
 import { assistantEditInheritedValues } from './assistant-edit.js'
 import { resolveBranchGenerationSettings } from './generation-selection.js'
@@ -226,7 +227,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
     }
     await bumpRevision(user.id, selected.chatId)
-    return { activeBranchLeafId: leafId }
+    return toPublicBranchActivation(turns, leafId)
   })
 
   app.delete('/api/messages/:id', async (request, reply) => {

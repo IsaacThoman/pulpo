@@ -33,6 +33,17 @@ export interface ChatTreeNode {
   parentResponseId: string | null
 }
 
+export interface CacheableResponseDetail extends ChatTreeNode {
+  detailAvailable?: boolean
+  status: ResponseSnapshot['status']
+  input: unknown[]
+  output: unknown[]
+  presetSelections: unknown
+  usage: unknown
+  error: unknown
+  snapshot: ResponseSnapshot | EmbeddedResponseSnapshot
+}
+
 export interface RevisionInvalidationBatch {
   revision: number
   chatIds: string[]
@@ -87,6 +98,54 @@ export function newestDescendantId<T extends ChatTreeNode>(nodes: T[], selectedI
     if (!newest) return leafId
     leafId = newest.id
   }
+}
+
+/** A branch can render locally only when every response in its lineage has a cached body. */
+export function responseLineageDetailsAvailable<T extends ChatTreeNode & { detailAvailable?: boolean }>(
+  nodes: T[],
+  leafId: string | null,
+): boolean {
+  if (!leafId) return false
+  const lineage = lineageFromLeaf(nodes, leafId)
+  return lineage.at(-1)?.id === leafId
+    && lineage.every((response) => response.detailAvailable !== false)
+}
+
+/**
+ * Merge an active-only response graph without downgrading previously fetched
+ * bodies back to stubs. The incoming graph remains authoritative for topology
+ * and deletion, while response snapshots retain the newest known sequence.
+ */
+export function mergeCachedResponseDetails<T extends CacheableResponseDetail>(
+  cached: T[] | undefined,
+  incoming: T[] | undefined,
+): T[] | undefined {
+  if (!incoming) return cached
+  if (!cached?.length) return [...incoming]
+  const cachedById = new Map(cached.map((response) => [response.id, response]))
+  return incoming.map((response) => {
+    const existing = cachedById.get(response.id)
+    if (!existing || existing.detailAvailable === false) return response
+    const incomingHasDetail = response.detailAvailable !== false
+    const currentSnapshot = hydrateEmbeddedResponseSnapshot(existing.snapshot, existing.output)
+    const incomingSnapshot = hydrateEmbeddedResponseSnapshot(
+      response.snapshot,
+      incomingHasDetail ? response.output : existing.output,
+    )
+    const mergedSnapshot = mergeResponseSnapshots(currentSnapshot, incomingSnapshot)
+    const { output, ...snapshot } = mergedSnapshot
+    return {
+      ...response,
+      input: incomingHasDetail ? response.input : existing.input,
+      output,
+      presetSelections: incomingHasDetail ? response.presetSelections : existing.presetSelections,
+      status: mergedSnapshot.status,
+      usage: mergedSnapshot.usage,
+      error: mergedSnapshot.error,
+      snapshot,
+      detailAvailable: true,
+    } as T
+  })
 }
 
 export function reconcileResponseEvents(

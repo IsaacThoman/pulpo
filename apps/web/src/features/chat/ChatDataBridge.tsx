@@ -15,7 +15,7 @@ import { localDb } from '@/lib/local-first/database'
 import { flushOutbox } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
-import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
+import { mergeServerChatDetails, useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 
@@ -73,7 +73,10 @@ export function ChatDataBridge() {
   })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
-    queryFn: () => apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`),
+    queryFn: async () => {
+      const incoming = await apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`)
+      return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
+    },
     enabled: Boolean(userId && chatId),
     retry: false,
     refetchOnWindowFocus: false,

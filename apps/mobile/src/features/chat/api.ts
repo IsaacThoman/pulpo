@@ -6,7 +6,7 @@ import type { ResponseSnapshot } from '@pulpo/contracts'
 import { apiOrigin, apiRequest, apiUrl, isNetworkError, nativeAuthorizationHeaders } from '../../api/client'
 import { cacheNamespace, cachedAttachmentUri, recordCachedAttachment } from '../../data/database'
 import { queueOfflineMutation } from '../../data/mutations'
-import type { AttachmentDraft, ServerAttachment, ServerChat, ServerFolder } from '../../types'
+import type { AttachmentDraft, BranchActivationResult, ServerAttachment, ServerChat, ServerFolder } from '../../types'
 import { useRealtimeStore } from '../../providers/realtimeStore'
 import { usePreferencesStore } from '../../store/preferences'
 import { useSessionStore } from '../../store/session'
@@ -270,7 +270,7 @@ export async function deleteUnreferencedAttachment(id: string): Promise<void> {
   await apiRequest(`/api/attachments/${id}`, { method: 'DELETE' })
 }
 
-export async function activateBranch(id: string): Promise<{ activeBranchLeafId: string }> {
+export async function activateBranch(id: string): Promise<BranchActivationResult> {
   return apiRequest(`/api/messages/${id}/activate`, { method: 'POST' })
 }
 

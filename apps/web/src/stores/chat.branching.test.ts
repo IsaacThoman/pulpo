@@ -140,6 +140,20 @@ function detail(activeId: string, responses: ServerResponse[]): ServerChat {
   }
 }
 
+function responseStub(source: ServerResponse & { snapshot: ResponseSnapshot }): ServerResponse {
+  const { output: _output, ...snapshot } = source.snapshot
+  return {
+    ...source,
+    input: [],
+    output: [],
+    presetSelections: {},
+    usage: null,
+    error: null,
+    snapshot,
+    detailAvailable: false,
+  }
+}
+
 function visibleResponseIds(): string[] {
   return useChat.getState().chats.find((chat) => chat.id === chatId)?.messages
     .filter((message) => message.role === 'assistant')
@@ -454,6 +468,47 @@ describe('chat store branching integration', () => {
     useChat.getState().applyResponseSnapshot(completed.snapshot)
     useChat.getState().setDetailedChat(detail(responseBId, [responseA, completed]))
     await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('loads an uncached branch in one activation request and switches back from cache immediately', async () => {
+    const responseBId = '00000000-0000-4000-8000-000000000005'
+    const responseA = response(responseAId, 'completed')
+    const responseB = response(responseBId, 'completed')
+    const initial = detail(responseAId, [responseA, responseStub(responseB)])
+    queryClient.setQueryData(['chat', userId, chatId], initial)
+    useChat.getState().setDetailedChat(initial)
+
+    useChat.getState().activateBranch(chatId, responseBId)
+    expectOnly(responseAId)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+
+    const activatedB = detail(responseBId, [responseStub(responseA), responseB])
+    requests[0]!.resolve({ activeBranchLeafId: responseBId, responses: activatedB.responses })
+    await vi.waitFor(() => expectOnly(responseBId))
+    expect(requests).toHaveLength(1)
+
+    useChat.getState().activateBranch(chatId, responseAId)
+    expectOnly(responseAId)
+    await vi.waitFor(() => expect(requests).toHaveLength(2))
+    const activatedA = detail(responseAId, [responseA, responseStub(responseB)])
+    requests[1]!.resolve({ activeBranchLeafId: responseAId, responses: activatedA.responses })
+  })
+
+  it('does not downgrade a cached branch when an active-only detail refresh returns its stub', () => {
+    const responseBId = '00000000-0000-4000-8000-000000000005'
+    const responseA = response(responseAId, 'completed')
+    const responseB = response(responseBId, 'completed')
+    const cached = detail(responseBId, [responseA, responseB])
+    queryClient.setQueryData(['chat', userId, chatId], cached)
+    useChat.getState().setDetailedChat(cached)
+
+    useChat.getState().setDetailedChat(detail(responseAId, [responseA, responseStub(responseB)]))
+
+    expect(queryClient.getQueryData<ServerChat>(['chat', userId, chatId])?.responses
+      ?.find((item) => item.id === responseBId)).toMatchObject({
+      output: responseB.output,
+      detailAvailable: true,
+    })
   })
 
   it('keeps one visible turn through regenerate, back, forward, stale detail, and completion', async () => {

@@ -8,7 +8,11 @@ import {
   type ResponseSnapshot,
   type UpdateQueuedMessageInput,
 } from '@pulpo/contracts'
-import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
+import {
+  hydrateEmbeddedResponseSnapshot,
+  mergeCachedResponseDetails,
+  responseLineageDetailsAvailable,
+} from '@pulpo/client-core'
 import type { Attachment, Chat, Folder, Message } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
@@ -102,6 +106,19 @@ export interface ServerChat {
   attachments?: ServerAttachment[]
   responses?: ServerResponse[]
   queuedMessages?: QueuedMessage[]
+}
+
+interface BranchActivationResult {
+  activeBranchLeafId: string
+  responses?: ServerResponse[]
+}
+
+export function mergeServerChatDetails(cached: ServerChat | undefined, incoming: ServerChat): ServerChat {
+  if (!cached) return incoming
+  return {
+    ...incoming,
+    responses: mergeCachedResponseDetails(cached.responses, incoming.responses),
+  }
 }
 
 export interface ServerFolder {
@@ -820,7 +837,8 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
   }),
   setDetailedChat: (incoming) => {
-    const row = mergePendingOptimisticResponses(incoming)
+    const detailed = mergeServerChatDetails(queryClient.getQueryData<ServerChat>(chatKey(incoming.id)), incoming)
+    const row = mergePendingOptimisticResponses(detailed)
     if (row !== incoming) queryClient.setQueryData(chatKey(row.id), row)
     set((state) => {
       const responseSequences = { ...state.responseSequences }
@@ -1662,9 +1680,9 @@ export const useChat = create<ChatState>()((set, get) => ({
       ? newestDescendantId(cached.responses, responseId)
       : responseId
     const selectionIntent = branchSelectionIntents.select(chatId, intendedLeafId)
-    const intendedLeafAvailable = cached?.responses?.some((response) => (
-      response.id === intendedLeafId && response.detailAvailable !== false
-    ))
+    const intendedLeafAvailable = cached?.responses
+      ? responseLineageDetailsAvailable(cached.responses, intendedLeafId)
+      : false
     if (cached && intendedLeafAvailable) {
       const updated = { ...cached, activeResponseId: intendedLeafId, activeBranchLeafId: intendedLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
@@ -1672,20 +1690,25 @@ export const useChat = create<ChatState>()((set, get) => ({
     }
     void enqueueChatMutation(chatId, () => optimisticRequest('POST', `/api/messages/${responseId}/activate`, undefined, {
       queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary),
-    })).then((result) => {
-      const activeBranchLeafId = (result as { activeBranchLeafId?: string } | undefined)?.activeBranchLeafId
+    })).then((rawResult) => {
+      const result = rawResult as BranchActivationResult | undefined
+      const activeBranchLeafId = result?.activeBranchLeafId
       if (!activeBranchLeafId) return
-      if (!branchSelectionIntents.isCurrent(chatId, selectionIntent.version)) return
       const current = queryClient.getQueryData<ServerChat>(chatKey(chatId))
       if (!current) return
+      const enriched = {
+        ...current,
+        responses: mergeCachedResponseDetails(current.responses, result.responses),
+      }
+      queryClient.setQueryData(chatKey(chatId), enriched)
+      if (!branchSelectionIntents.isCurrent(chatId, selectionIntent.version)) return
       branchSelectionIntents.clear(chatId, selectionIntent.version)
-      if (!current.responses?.some((response) => (
-        response.id === activeBranchLeafId && response.detailAvailable !== false
-      ))) {
+      if (!enriched.responses
+        || !responseLineageDetailsAvailable(enriched.responses, activeBranchLeafId)) {
         void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
         return
       }
-      const updated = { ...current, activeResponseId: activeBranchLeafId, activeBranchLeafId }
+      const updated = { ...enriched, activeResponseId: activeBranchLeafId, activeBranchLeafId }
       queryClient.setQueryData(chatKey(chatId), updated)
       get().setDetailedChat(updated)
     }).catch(() => {
