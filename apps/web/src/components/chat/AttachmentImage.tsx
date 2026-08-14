@@ -16,8 +16,6 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import type { Attachment } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { downloadAttachment, getCachedAttachment } from '@/lib/local-first/attachment-cache'
@@ -28,8 +26,11 @@ import {
   attachmentKind,
   attachmentTypeLabel,
   formatBytes,
+  isSupportedImageMime,
   type AttachmentKind,
 } from '@/lib/attachments'
+import { attachmentPreviewKind } from '@/lib/attachment-previews'
+import { AttachmentPreviewDialog } from './AttachmentPreview'
 
 const ATTACHMENT_KIND_DETAILS: Record<AttachmentKind, {
   icon: LucideIcon
@@ -162,25 +163,7 @@ export function MessageAttachmentList({
       {files.length > 0 && (
         <div className="grid w-full max-w-[19rem] gap-2">
           {files.map((attachment) => (
-            <button
-              key={attachment.id}
-              type="button"
-              onClick={() => performAttachmentDownload(attachment)}
-              aria-label={`Download ${attachment.name}`}
-              title={attachment.name}
-              className="group/attachment flex min-w-0 cursor-pointer items-center gap-3 rounded-2xl border bg-background/75 p-2.5 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/15 hover:bg-background hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <AttachmentTypeIcon name={attachment.name} mimeType={attachment.mimeType} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium leading-5">{attachment.name}</span>
-                <span className="mt-0.5 block text-[11px] font-medium tracking-wide text-muted-foreground">
-                  {attachmentMeta(attachment.name, attachment.mimeType, attachment.size)}
-                </span>
-              </span>
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors group-hover/attachment:bg-accent group-hover/attachment:text-foreground">
-                <Download className="size-4" aria-hidden="true" />
-              </span>
-            </button>
+            <MessageFilePreview key={attachment.id} attachment={attachment} />
           ))}
         </div>
       )}
@@ -188,14 +171,71 @@ export function MessageAttachmentList({
   )
 }
 
-function MessageImagePreview({ attachment }: { attachment: Attachment }) {
-  const { url, loading } = useAttachmentPreviewUrl(attachment.id, true, 'thumbnail')
+function MessageFilePreview({ attachment }: { attachment: Attachment }) {
   const [previewOpen, setPreviewOpen] = useState(false)
-  const { url: fullUrl } = useAttachmentPreviewUrl(attachment.id, previewOpen, 'full')
+  const previewable = attachmentPreviewKind(attachment.name, attachment.mimeType) !== null
+  const details = (
+    <>
+      <AttachmentTypeIcon name={attachment.name} mimeType={attachment.mimeType} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium leading-5">{attachment.name}</span>
+        <span className="mt-0.5 block text-[11px] font-medium tracking-wide text-muted-foreground">
+          {attachmentMeta(attachment.name, attachment.mimeType, attachment.size)}
+        </span>
+      </span>
+    </>
+  )
+
+  return (
+    <>
+      <div
+        title={previewable ? `Preview ${attachment.name}` : attachment.name}
+        className="group/attachment flex min-w-0 items-center rounded-2xl border bg-background/75 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/15 hover:bg-background hover:shadow-md"
+      >
+        {previewable ? (
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            aria-label={`Preview ${attachment.name}`}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-l-2xl p-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            {details}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-3 p-2.5">{details}</div>
+        )}
+        <button
+          type="button"
+          onClick={() => performAttachmentDownload(attachment)}
+          aria-label={`Download ${attachment.name}`}
+          className="mr-2.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Download className="size-4" aria-hidden="true" />
+        </button>
+      </div>
+      {previewable && (
+        <AttachmentPreviewDialog
+          attachment={attachment}
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
+          onDownload={() => performAttachmentDownload(attachment)}
+        />
+      )}
+    </>
+  )
+}
+
+function MessageImagePreview({ attachment }: { attachment: Attachment }) {
+  const { url, loading } = useAttachmentPreviewUrl(
+    attachment.id,
+    true,
+    isSupportedImageMime(attachment.mimeType) ? 'thumbnail' : 'full',
+  )
+  const [previewOpen, setPreviewOpen] = useState(false)
   const handleDownload = () => performAttachmentDownload(attachment)
 
   return (
-    <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+    <>
       <figure
         title={attachment.name}
         className="group/attachment relative w-[min(19rem,100%)] max-w-full overflow-hidden rounded-2xl border bg-background/75 shadow-sm"
@@ -236,46 +276,13 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
           </button>
         </figcaption>
       </figure>
-      <DialogContent
-        showCloseButton={false}
-        className="flex h-[calc(100dvh-4rem)] w-[calc(100vw-4rem)] max-w-none items-center justify-center border-0 bg-transparent p-0 shadow-none"
-      >
-        <DialogTitle className="sr-only">Preview of {attachment.name}</DialogTitle>
-        <div className="flex max-h-full max-w-full flex-col items-end gap-2">
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              aria-label={`Download ${attachment.name}`}
-              onClick={handleDownload}
-              className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
-            >
-              <Download className="size-4" />
-            </Button>
-            <DialogClose asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-sm"
-                aria-label="Close preview"
-                className="rounded-full border-white/20 bg-black/40 text-white shadow-sm hover:bg-black/60 hover:text-white"
-              >
-                <X className="size-4" />
-              </Button>
-            </DialogClose>
-          </div>
-          {(fullUrl ?? url) && (
-            <img
-              src={fullUrl ?? url ?? undefined}
-              alt={attachment.name}
-              className="min-h-0 max-h-[calc(100dvh-7rem)] max-w-full object-contain"
-              draggable={false}
-            />
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+      <AttachmentPreviewDialog
+        attachment={attachment}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        onDownload={handleDownload}
+      />
+    </>
   )
 }
 
@@ -285,6 +292,7 @@ export function PendingAttachmentChip({
   mimeType,
   previewUrl,
   attachmentId,
+  sourceFile,
   uploading,
   error,
   onDownload,
@@ -295,68 +303,170 @@ export function PendingAttachmentChip({
   mimeType: string
   previewUrl?: string | null
   attachmentId?: string
+  sourceFile?: File
   uploading?: boolean
   error?: string | null
   onDownload: () => void
   onRemove: () => void
 }) {
   const kind = attachmentKind(name, mimeType)
-  const remotePreview = useAttachmentPreviewUrl(attachmentId, kind === 'image' && !previewUrl, 'thumbnail')
+  const remotePreview = useAttachmentPreviewUrl(
+    attachmentId,
+    kind === 'image' && !previewUrl,
+    isSupportedImageMime(mimeType) ? 'thumbnail' : 'full',
+  )
   const resolvedPreviewUrl = previewUrl ?? remotePreview.url
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const attachment: Attachment = {
+    id: attachmentId ?? `local:${name}`,
+    name,
+    mimeType,
+    type: kind === 'image' ? 'image' : 'file',
+    size,
+  }
+  const previewable = Boolean(sourceFile || attachmentId) && attachmentPreviewKind(name, mimeType) !== null
+  const previewDialog = previewable ? (
+    <AttachmentPreviewDialog
+      attachment={attachment}
+      sourceFile={sourceFile}
+      open={previewOpen}
+      onOpenChange={setPreviewOpen}
+      onDownload={onDownload}
+    />
+  ) : null
 
   if (kind !== 'image') {
+    const details = (
+      <>
+        <AttachmentTypeIcon name={name} mimeType={mimeType} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium leading-5">{name}</span>
+          <span className={cn(
+            'mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground',
+            error && 'text-destructive',
+          )}>
+            {uploading && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+            {error && <AlertCircle className="size-3" aria-hidden="true" />}
+            {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
+          </span>
+        </span>
+      </>
+    )
     return (
-      <div className={cn(
-        'group/attachment relative w-64 max-w-full overflow-hidden rounded-2xl border bg-muted/20 shadow-sm transition-colors hover:bg-muted/35',
-        error && 'border-destructive/40 bg-destructive/5',
-      )} title={error ?? name}>
+      <>
+        <div className={cn(
+          'group/attachment relative w-64 max-w-full overflow-hidden rounded-2xl border bg-muted/20 shadow-sm transition-colors hover:bg-muted/35',
+          error && 'border-destructive/40 bg-destructive/5',
+        )} title={error ?? (previewable ? `Preview ${name}` : name)}>
+          {previewable ? (
+            <button
+              type="button"
+              onClick={() => setPreviewOpen(true)}
+              aria-label={`Preview ${name}`}
+              className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 pr-[4.75rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              {details}
+            </button>
+          ) : (
+            <div className="flex w-full min-w-0 items-center gap-3 p-2.5 pr-[4.75rem] text-left">{details}</div>
+          )}
+          <button
+            type="button"
+            aria-label={`Download ${name}`}
+            onClick={onDownload}
+            className="absolute top-2 right-10 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Download className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            aria-label={`Remove ${name}`}
+            onClick={onRemove}
+            className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+        {previewDialog}
+      </>
+    )
+  }
+
+  return (
+    <>
+      <div
+        className={cn(
+          'group/attachment relative size-24 overflow-hidden rounded-2xl border bg-muted/30 shadow-sm',
+          error && 'border-destructive/50',
+        )}
+        title={error ?? (previewable ? `Preview ${name}` : name)}
+      >
+        {previewable ? (
+          <button
+            type="button"
+            onClick={() => setPreviewOpen(true)}
+            aria-label={`Preview ${name}`}
+            className="size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <PendingImageContent name={name} size={size} mimeType={mimeType} url={resolvedPreviewUrl} uploading={uploading} error={error} />
+          </button>
+        ) : (
+          <div className="size-full">
+            <PendingImageContent name={name} size={size} mimeType={mimeType} url={resolvedPreviewUrl} uploading={uploading} error={error} />
+          </div>
+        )}
+        {uploading && (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/45 backdrop-blur-[1px]">
+            <Loader2 className="size-5 animate-spin text-foreground" />
+          </span>
+        )}
+        {error && (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-destructive/10">
+            <AlertCircle className="size-5 text-destructive" />
+          </span>
+        )}
         <button
           type="button"
-          onClick={onDownload}
           aria-label={`Download ${name}`}
-          className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 pr-10 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          onClick={onDownload}
+          className="absolute top-1.5 left-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <AttachmentTypeIcon name={name} mimeType={mimeType} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium leading-5">{name}</span>
-            <span className={cn(
-              'mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground',
-              error && 'text-destructive',
-            )}>
-              {uploading && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
-              {error && <AlertCircle className="size-3" aria-hidden="true" />}
-              {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
-            </span>
-          </span>
+          <Download className="size-3" />
         </button>
         <button
           type="button"
           aria-label={`Remove ${name}`}
           onClick={onRemove}
-          className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <X className="size-3.5" />
+          <X className="size-3" />
         </button>
       </div>
-    )
-  }
+      {previewDialog}
+    </>
+  )
+}
 
+function PendingImageContent({
+  name,
+  size,
+  mimeType,
+  url,
+  uploading,
+  error,
+}: {
+  name: string
+  size: number
+  mimeType: string
+  url: string | null
+  uploading?: boolean
+  error?: string | null
+}) {
   return (
-    <div
-      className={cn(
-        'group/attachment relative size-24 overflow-hidden rounded-2xl border bg-muted/30 shadow-sm',
-        error && 'border-destructive/50',
-      )}
-      title={error ?? name}
-    >
-      <button
-        type="button"
-        onClick={onDownload}
-        aria-label={`Download ${name}`}
-        className="block size-full cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        {resolvedPreviewUrl ? (
-          <img src={resolvedPreviewUrl} alt={name} className="size-full object-cover" draggable={false} />
+    <>
+      <span className="block size-full">
+        {url ? (
+          <img src={url} alt={name} className="size-full object-cover" draggable={false} />
         ) : (
           <span className="flex size-full flex-col items-center justify-center gap-1 p-1 text-muted-foreground">
             <ImageIcon className="size-5" />
@@ -369,25 +479,7 @@ export function PendingAttachmentChip({
             {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
           </span>
         </span>
-      </button>
-      {uploading && (
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/45 backdrop-blur-[1px]">
-          <Loader2 className="size-5 animate-spin text-foreground" />
-        </span>
-      )}
-      {error && (
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-destructive/10">
-          <AlertCircle className="size-5 text-destructive" />
-        </span>
-      )}
-      <button
-        type="button"
-        aria-label={`Remove ${name}`}
-        onClick={onRemove}
-        className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <X className="size-3" />
-      </button>
-    </div>
+      </span>
+    </>
   )
 }
