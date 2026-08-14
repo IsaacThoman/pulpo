@@ -20,7 +20,7 @@ import {
   XCircle,
   Minimize2,
 } from 'lucide-react'
-import type { CompactionItem } from '@pulpo/contracts'
+import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -304,8 +304,6 @@ function workspaceLabel(item: WorkspaceItem): string {
   return 'Workspace'
 }
 
-const WORKSPACE_ACTIONS_DELAY_MS = 15_000
-
 function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
   const busy = workspaceIsActive(workspace.state)
   const failed = workspaceIsFailed(workspace.state)
@@ -382,17 +380,26 @@ function ActivityBlock({
   const workspaceBusy = workspaceIsActive(workspace?.state)
   const workspaceFailed = workspaceIsFailed(workspace?.state)
   const isWaiting = workspace?.state === 'waiting'
-  const [showWorkspaceActions, setShowWorkspaceActions] = useState(false)
+  const workspaceActionsAvailableAt = workspace ? workspaceContinueWithoutAgentAvailableAtMs(workspace) : undefined
+  const [showWorkspaceActions, setShowWorkspaceActions] = useState(() => (
+    isWaiting && workspaceActionsAvailableAt !== undefined && Date.now() >= workspaceActionsAvailableAt
+  ))
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
-    if (!isWaiting) {
+    if (!isWaiting || workspaceActionsAvailableAt === undefined) {
       setShowWorkspaceActions(false)
       return
     }
-    const timer = setTimeout(() => setShowWorkspaceActions(true), WORKSPACE_ACTIONS_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [isWaiting])
+    const remainingMs = workspaceActionsAvailableAt - Date.now()
+    if (remainingMs <= 0) {
+      setShowWorkspaceActions(true)
+      return
+    }
+    setShowWorkspaceActions(false)
+    const timer = window.setTimeout(() => setShowWorkspaceActions(true), remainingMs)
+    return () => window.clearTimeout(timer)
+  }, [isWaiting, workspaceActionsAvailableAt])
 
   const needsWorkspaceActions = isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0

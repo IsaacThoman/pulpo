@@ -17,6 +17,7 @@ export type WorkspaceItem = {
   error?: string
   startedAt?: string
   durationMs?: number
+  continueWithoutAgentAvailableAt?: string
 }
 
 export type ReasoningStep = {

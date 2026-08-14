@@ -4,6 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as k8s from '@kubernetes/client-node'
+import { CapacityReservationError, CapacityTracker, WorkspaceCapacityError } from './capacity.js'
 import { isStaleStartingPod, isUnleasedOrphanPod, podMatchesSpec, WORKSPACE_SPEC_HASH_ANNOTATION, workspaceSpecHash, type WorkspaceSpec } from './workspace-spec.js'
 import { effectiveWarmTargets, instanceIdHash, normalizeInstanceId, WORKSPACE_INSTANCE_ANNOTATION, WORKSPACE_INSTANCE_HASH_LABEL, WORKSPACE_INSTANCE_HEADER, type WarmRequest } from './tenancy.js'
 
@@ -46,6 +47,7 @@ type Lease = {
 type ClaimInput = {
   chatId?: string
   imageDigest?: string
+  capacityReservationId?: string
   resources?: Partial<Omit<WorkspaceSpec, 'imageDigest'>>
   warmCapacity?: number
   idleTimeoutSeconds?: number
@@ -58,8 +60,7 @@ const controllerWarmRequest: WarmRequest = { spec: defaultSpec, capacity: defaul
 const warmRequests = new Map<string, WarmRequest>()
 const leases = new Map<string, Lease>()
 const activeOperations = new Map<string, Set<string>>()
-const pendingClaims = new Map<string, number>()
-let pendingClaimTotal = 0
+const capacityTracker = new CapacityTracker({ maxActiveTotal: maxActiveWorkspacesTotal })
 let reconcileInFlight: Promise<void> | undefined
 let warmClaimTail: Promise<void> = Promise.resolve()
 let useControllerWarmRequest = defaultWarmCapacity > 0
@@ -134,6 +135,7 @@ async function waitForPodReady(name: string, deadline: number): Promise<k8s.V1Po
 }
 
 async function reconcileOnce(): Promise<void> {
+  capacityTracker.pruneExpired()
   const pods = (await core.listNamespacedPod({ namespace, labelSelector: 'app.kubernetes.io/name=pulpo-workspace' })).items
   const podNames = new Set(pods.flatMap((pod) => pod.metadata?.name ? [pod.metadata.name] : []))
   for (const [leaseId, lease] of leases) if (!podNames.has(lease.podName)) { leases.delete(leaseId); activeOperations.delete(leaseId) }
@@ -178,22 +180,6 @@ async function reconcile(): Promise<void> {
   const run = reconcileOnce()
   reconcileInFlight = run
   try { await run } finally { if (reconcileInFlight === run) reconcileInFlight = undefined }
-}
-
-function reserveCapacity(instanceId: string, maxActiveWorkspaces: number): void {
-  const perInstanceLimit = Math.max(1, maxActiveWorkspaces)
-  const ownerPending = pendingClaims.get(instanceId) ?? 0
-  if (activeForInstance(instanceId) + ownerPending >= perInstanceLimit) throw new Error('Maximum active workspace capacity reached for this Pulpo instance')
-  if (leases.size + pendingClaimTotal >= maxActiveWorkspacesTotal) throw new Error('Maximum controller workspace capacity reached')
-  pendingClaims.set(instanceId, ownerPending + 1)
-  pendingClaimTotal += 1
-}
-
-function releaseCapacityReservation(instanceId: string): void {
-  const ownerPending = pendingClaims.get(instanceId) ?? 1
-  if (ownerPending <= 1) pendingClaims.delete(instanceId)
-  else pendingClaims.set(instanceId, ownerPending - 1)
-  pendingClaimTotal = Math.max(0, pendingClaimTotal - 1)
 }
 
 async function claimPod(pod: k8s.V1Pod, instanceId: string, input: ClaimInput, spec: WorkspaceSpec): Promise<Lease> {
@@ -248,9 +234,15 @@ async function claim(instanceId: string, input: ClaimInput): Promise<Lease> {
   const requestedWarmCapacity = Number.isInteger(input.warmCapacity) ? Math.max(0, Math.min(100, input.warmCapacity!)) : 0
   if (requestedWarmCapacity > 0) useControllerWarmRequest = false
   warmRequests.set(instanceId, { spec, capacity: requestedWarmCapacity })
-  await reconcile()
-  reserveCapacity(instanceId, input.maxActiveWorkspaces ?? 3)
+  let capacityReservationId = input.capacityReservationId
+  if (capacityReservationId) capacityTracker.consume(capacityReservationId, instanceId)
   try {
+    await reconcile()
+    if (!capacityReservationId) {
+      const reservation = capacityTracker.reserve(instanceId, input.maxActiveWorkspaces ?? 3, activeForInstance(instanceId), leases.size)
+      capacityTracker.consume(reservation.id, instanceId)
+      capacityReservationId = reservation.id
+    }
     const deadline = Date.now() + 180_000
     let lease = await tryClaimWarmPod(instanceId, input, spec)
     if (!lease && requestedWarmCapacity > 0) {
@@ -267,7 +259,7 @@ async function claim(instanceId: string, input: ClaimInput): Promise<Lease> {
     void reconcile()
     return lease
   } finally {
-    releaseCapacityReservation(instanceId)
+    if (capacityReservationId) capacityTracker.complete(capacityReservationId)
   }
 }
 
@@ -357,6 +349,22 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
       return json(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }
     const url = new URL(request.url ?? '/', 'http://controller')
+    if (request.method === 'POST' && url.pathname === '/v1/capacity-reservations') {
+      const input = JSON.parse((await body(request)).toString('utf8') || '{}') as { maxActiveWorkspaces?: number }
+      await reconcile()
+      const reservation = capacityTracker.reserve(
+        instanceId,
+        Number.isInteger(input.maxActiveWorkspaces) ? input.maxActiveWorkspaces! : 3,
+        activeForInstance(instanceId),
+        leases.size,
+      )
+      return json(response, 201, { id: reservation.id, expiresAt: new Date(reservation.expiresAt).toISOString() })
+    }
+    const capacityReservationMatch = url.pathname.match(/^\/v1\/capacity-reservations\/([^/]+)$/)
+    if (request.method === 'DELETE' && capacityReservationMatch) {
+      const released = capacityTracker.cancel(decodeURIComponent(capacityReservationMatch[1]!), instanceId)
+      return json(response, 200, { status: released ? 'released' : 'not_released' })
+    }
     if (request.method === 'POST' && url.pathname === '/v1/leases') return json(response, 201, await claim(instanceId, JSON.parse((await body(request)).toString('utf8') || '{}')))
     if (request.method === 'GET' && url.pathname === '/v1/leases') {
       await reconcile()
@@ -391,6 +399,8 @@ const handler = async (request: IncomingMessage, response: ServerResponse) => {
     await pipeline(Readable.fromWeb(upstream.body as unknown as import('node:stream/web').ReadableStream), response)
   } catch (error) {
     if (response.headersSent) response.destroy(error instanceof Error ? error : new Error(String(error)))
+    else if (error instanceof WorkspaceCapacityError) json(response, 503, { error: error.message, code: error.code, scope: error.scope })
+    else if (error instanceof CapacityReservationError) json(response, 409, { error: error.message, code: error.code })
     else json(response, 503, { error: error instanceof Error ? error.message : String(error) })
   }
 }
