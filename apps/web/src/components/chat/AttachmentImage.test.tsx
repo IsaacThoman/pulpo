@@ -34,6 +34,7 @@ describe('attachment card actions', () => {
     />)
 
     expect(markup).toContain('aria-label="Preview notes.md"')
+    expect(markup.match(/<button[^>]+aria-label="Preview notes\.md"[^>]*>/)?.[0]).toContain('h-full')
     expect(markup).toContain('aria-label="Download notes.md"')
     expect(markup).toContain('aria-label="Remove notes.md"')
   })

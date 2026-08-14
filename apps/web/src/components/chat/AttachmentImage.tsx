@@ -363,12 +363,12 @@ export function PendingAttachmentChip({
               type="button"
               onClick={() => setPreviewOpen(true)}
               aria-label={`Preview ${name}`}
-              className="flex w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 pr-[4.75rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="flex h-full w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 pr-[4.75rem] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             >
               {details}
             </button>
           ) : (
-            <div className="flex w-full min-w-0 items-center gap-3 p-2.5 pr-[4.75rem] text-left">{details}</div>
+            <div className="flex h-full w-full min-w-0 items-center gap-3 p-2.5 pr-[4.75rem] text-left">{details}</div>
           )}
           <button
             type="button"
