@@ -123,33 +123,90 @@ beforeEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe('upload outbox', () => {
-  it('keeps later submissions local until the FIFO head is accepted', async () => {
-    useUploadOutbox.setState({ uploads: { first: upload('first', 'uploading') } })
+  it('keeps one optimistic bubble and stages later uploads directly in the queue', async () => {
+    useUploadOutbox.setState({ uploads: {
+      first: upload('first', 'uploading'),
+      second: upload('second', 'uploading'),
+    } })
     useUploadOutbox.getState().stageSubmission(draft(['first'], 'first message'))
-    useUploadOutbox.getState().stageSubmission(draft([], 'second message'))
+    const second = useUploadOutbox.getState().stageSubmission(draft(['second'], 'second message'))
     await Promise.resolve()
 
     expect(requests).toHaveLength(0)
-    expect(useChat.getState().chats[0]?.messages.filter((message) => message.deliveryStatus)).toHaveLength(2)
+    expect(useChat.getState().chats[0]?.messages.filter((message) => message.deliveryStatus)).toHaveLength(1)
+    expect(useChat.getState().chats[0]?.queuedMessages).toEqual([
+      expect.objectContaining({
+        id: second.submissionId,
+        content: 'second message',
+        pendingSubmissionId: second.submissionId,
+        attachments: [expect.objectContaining({ localUploadId: 'second' })],
+      }),
+    ])
+    expect(useUploadOutbox.getState().submissions.map((submission) => submission.placement)).toEqual([
+      'bubble', 'queue',
+    ])
 
-    useUploadOutbox.setState({ uploads: { first: upload('first', 'ready') } })
+    useUploadOutbox.setState({ uploads: {
+      first: upload('first', 'ready'),
+      second: upload('second', 'uploading'),
+    } })
     const processing = processUploadOutboxChat(chatId)
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     expect(requests[0]).toMatchObject({ path: `/api/chats/${chatId}/responses`, method: 'POST' })
     expect(requests.some((request) => request.path.includes('queued-messages'))).toBe(false)
 
     requests[0]!.resolve({})
+    await processing
+    expect(requests).toHaveLength(1)
+    expect(useChat.getState().chats[0]?.queuedMessages?.[0]).toMatchObject({
+      pendingSubmissionId: second.submissionId,
+    })
+
+    useUploadOutbox.setState({ uploads: { second: upload('second', 'ready') } })
+    const queuedProcessing = processUploadOutboxChat(chatId)
     await vi.waitFor(() => expect(requests).toHaveLength(2))
     expect(requests[1]).toMatchObject({
       path: `/api/chats/${chatId}/queued-messages`,
       method: 'POST',
       body: expect.objectContaining({ input: 'second message' }),
     })
+    expect(useChat.getState().chats[0]?.queuedMessages?.[0]).toMatchObject({
+      id: second.submissionId,
+      attachments: [expect.objectContaining({ id: 'server-second' })],
+    })
+    expect(useChat.getState().chats[0]?.queuedMessages?.[0]?.pendingSubmissionId).toBeUndefined()
     requests[1]!.resolve({ queuedMessage: null })
-    await processing
+    await queuedProcessing
 
     expect(useUploadOutbox.getState().submissions).toHaveLength(0)
     expect(useUploadOutbox.getState().uploads.first).toBeUndefined()
+    expect(useUploadOutbox.getState().uploads.second).toBeUndefined()
+  })
+
+  it('stages a submission directly in the queue while an assistant response is active', async () => {
+    useChat.setState((state) => ({
+      chats: state.chats.map((chat) => ({
+        ...chat,
+        messages: [{
+          id: 'active-response', role: 'assistant', content: '', modelId: model.id,
+          timestamp: Date.parse(createdAt), done: false,
+        }],
+      })),
+      streamingIds: ['active-response'],
+    }))
+
+    const staged = useUploadOutbox.getState().stageSubmission(draft([], 'queue me'))
+
+    expect(useChat.getState().chats[0]?.messages).toHaveLength(1)
+    expect(useChat.getState().chats[0]?.queuedMessages).toEqual([
+      expect.objectContaining({ id: staged.submissionId, content: 'queue me' }),
+    ])
+    expect(useUploadOutbox.getState().submissions[0]).toMatchObject({ placement: 'queue' })
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ path: `/api/chats/${chatId}/queued-messages`, method: 'POST' })
+    requests[0]!.resolve({ queuedMessage: null })
+    await vi.waitFor(() => expect(useUploadOutbox.getState().submissions).toHaveLength(0))
   })
 
   it('creates a provisional new chat and promotes the same bubble through the start endpoint', async () => {
@@ -165,6 +222,7 @@ describe('upload outbox', () => {
 
     const provisional = useChat.getState().chats.find((chat) => chat.id === staged.chatId)
     expect(provisional).toMatchObject({ provisional: true })
+    expect(useUploadOutbox.getState().submissions[0]).toMatchObject({ placement: 'bubble' })
     expect(provisional?.messages).toEqual([
       expect.objectContaining({
         id: `${staged.submissionId}:input`,
@@ -192,6 +250,35 @@ describe('upload outbox', () => {
     expect(useChat.getState().chats[0]?.provisional).toBe(false)
   })
 
+  it('promotes the queued follower when a provisional head is discarded', async () => {
+    useChat.setState({ chats: [], activeChatId: null })
+    useUploadOutbox.setState({ uploads: {
+      first: { ...upload('first', 'uploading'), chatId: null },
+      second: { ...upload('second', 'ready'), chatId: null },
+    } })
+    const first = useUploadOutbox.getState().stageSubmission({
+      ...draft(['first'], 'discard me'), chatId: null,
+    })
+    const second = useUploadOutbox.getState().stageSubmission({
+      ...draft(['second'], 'become first'), chatId: first.chatId,
+    })
+
+    expect(useChat.getState().chats[0]?.messages).toHaveLength(1)
+    expect(useChat.getState().chats[0]?.queuedMessages?.[0]).toMatchObject({ id: second.submissionId })
+
+    useUploadOutbox.getState().discardSubmission(first.submissionId)
+
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]).toMatchObject({ path: '/api/chats/start', method: 'POST' })
+    expect(useChat.getState().chats[0]?.messages).toEqual([
+      expect.objectContaining({ id: `${second.submissionId}:input`, content: 'become first' }),
+      expect.objectContaining({ id: second.submissionId, role: 'assistant' }),
+    ])
+    expect(useChat.getState().chats[0]?.queuedMessages).toEqual([])
+    requests[0]!.resolve({})
+    await vi.waitFor(() => expect(useUploadOutbox.getState().submissions).toHaveLength(0))
+  })
+
   it('restores a failed head and blocks later messages until it is discarded', async () => {
     useUploadOutbox.setState({ uploads: { failed: upload('failed', 'error') } })
     const first = useUploadOutbox.getState().stageSubmission(draft(['failed'], 'failed message'))
@@ -205,8 +292,8 @@ describe('upload outbox', () => {
 
     useUploadOutbox.getState().discardSubmission(first.submissionId)
     await vi.waitFor(() => expect(requests).toHaveLength(1))
-    expect(requests[0]).toMatchObject({ path: `/api/chats/${chatId}/responses`, method: 'POST' })
-    requests[0]!.resolve({})
+    expect(requests[0]).toMatchObject({ path: `/api/chats/${chatId}/queued-messages`, method: 'POST' })
+    requests[0]!.resolve({ queuedMessage: null })
     await vi.waitFor(() => expect(useUploadOutbox.getState().submissions).toHaveLength(0))
   })
 

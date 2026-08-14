@@ -137,6 +137,7 @@ export function Composer({
   const stageSubmission = useUploadOutbox((s) => s.stageSubmission)
   const resumeSubmission = useUploadOutbox((s) => s.resumeSubmission)
   const retryUpload = useUploadOutbox((s) => s.retryUpload)
+  const returnSubmissionToComposer = useUploadOutbox((s) => s.returnSubmissionToComposer)
   const discardSubmission = useUploadOutbox((s) => s.discardSubmission)
   const preserveComposerDraft = useUploadOutbox((s) => s.preserveComposerDraft)
   const takePreservedComposerDraft = useUploadOutbox((s) => s.takePreservedComposerDraft)
@@ -428,6 +429,10 @@ export function Composer({
     if (editingQueueId) return
     const message = queuedMessages.find((item) => item.id === messageId)
     if (!message) return
+    if (message.pendingSubmissionId) {
+      returnSubmissionToComposer(message.pendingSubmissionId)
+      return
+    }
     setSubmitting(true)
     setQueueError(null)
     try {
@@ -452,6 +457,11 @@ export function Composer({
 
   const removeQueuedMessage = async (messageId: string) => {
     if (!chatId || submitting) return
+    const message = queuedMessages.find((item) => item.id === messageId)
+    if (message?.pendingSubmissionId) {
+      discardSubmission(message.pendingSubmissionId)
+      return
+    }
     setSubmitting(true)
     setQueueError(null)
     try {
@@ -598,7 +608,11 @@ export function Composer({
           {queuedMessages.map((message) => {
             const editing = editingQueueId === message.id
             const anotherEditing = queuedMessages.some((item) => item.status === 'editing' && item.id !== message.id)
-            const canReorder = queuedMessages.length > 1 && !submitting && message.status !== 'dispatching'
+            const hasPendingOutboxItem = queuedMessages.some((item) => Boolean(item.pendingSubmissionId))
+            const canReorder = queuedMessages.length > 1
+              && !hasPendingOutboxItem
+              && !submitting
+              && message.status !== 'dispatching'
             const isDragging = queueDragId === message.id
             const showLineBefore = queueDrop?.id === message.id && queueDrop.edge === 'before' && !isDragging
             const showLineAfter = queueDrop?.id === message.id && queueDrop.edge === 'after' && !isDragging
@@ -634,16 +648,38 @@ export function Composer({
                 )}
                 <CornerDownRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                 <div className="min-w-0 flex-1">
-                  <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
-                    {editing
-                      ? 'Editing queued message…'
-                      : `${message.content || message.attachments.map((attachment) => attachment.name).join(', ')}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
-                  </p>
-                  {message.attachments.length > 0 && message.content && !editing && (
-                    <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                      <Paperclip className="size-3" />
-                      {message.attachments.map((attachment) => attachment.name).join(', ')}
+                  {(editing || message.content) && (
+                    <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
+                      {editing
+                        ? 'Editing queued message…'
+                        : `${message.content}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
                     </p>
+                  )}
+                  {message.attachments.length > 0 && !editing && (
+                    <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+                      {message.attachments.map((attachment) => {
+                        const upload = attachment.localUploadId ? uploads[attachment.localUploadId] : undefined
+                        const uploadStatus = upload?.status
+                        return (
+                          <span
+                            key={attachment.localUploadId ?? attachment.id}
+                            className="flex min-w-0 items-center gap-1"
+                            role={uploadStatus === 'uploading' ? 'status' : undefined}
+                            aria-label={uploadStatus === 'uploading' ? `Uploading ${attachment.name}` : undefined}
+                            title={attachment.name}
+                          >
+                            {uploadStatus === 'uploading' ? (
+                              <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+                            ) : uploadStatus === 'error' ? (
+                              <AlertCircle className="size-3 shrink-0 text-destructive" aria-hidden="true" />
+                            ) : (
+                              <Paperclip className="size-3 shrink-0" aria-hidden="true" />
+                            )}
+                            <span className="truncate">{attachment.name}</span>
+                          </span>
+                        )
+                      })}
+                    </div>
                   )}
                   {message.error && <p role="alert" className="truncate text-xs text-destructive">{message.error}</p>}
                 </div>

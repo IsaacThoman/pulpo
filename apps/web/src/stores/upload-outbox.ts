@@ -8,7 +8,7 @@ import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { useChat, waitForResponseDispatch } from '@/stores/chat'
-import { uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
+import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
 
 export type UploadStatus = 'uploading' | 'ready' | 'error'
 
@@ -40,6 +40,7 @@ export interface PendingSubmission {
   autoExpire: boolean
   attachmentIds: string[]
   createdAt: number
+  placement: 'bubble' | 'queue'
   status: 'waiting' | 'dispatching' | 'recovery'
   recoveryError?: string
 }
@@ -103,6 +104,35 @@ function readyAttachment(record: UploadRecord): Attachment | null {
     type: isSupportedImageMime(record.mimeType) ? 'image' : 'file',
     size: record.size,
   }
+}
+
+function renderSubmissionSurface(submission: PendingSubmission, records: UploadRecord[]): void {
+  const attachments = records.map(pendingAttachment)
+  if (submission.placement === 'bubble') {
+    useChat.getState().stagePendingMessage({
+      chatId: submission.chatId,
+      responseId: submission.responseId,
+      content: submission.content,
+      modelId: submission.modelId,
+      attachments,
+      temporary: submission.temporary,
+      autoExpire: submission.autoExpire,
+      createdAt: submission.createdAt,
+    })
+    return
+  }
+  useChat.getState().stagePendingQueuedMessage({
+    chatId: submission.chatId,
+    responseId: submission.responseId,
+    content: submission.content,
+    modelId: submission.modelId,
+    presetSelections: submission.presetSelections,
+    agentMode: submission.agentMode,
+    attachments,
+    temporary: submission.temporary,
+    autoExpire: submission.autoExpire,
+    createdAt: submission.createdAt,
+  })
 }
 
 function uploadChatId(record: UploadRecord): string | null {
@@ -255,12 +285,20 @@ async function processChat(chatId: string): Promise<void> {
       const restriction = restrictionMessage(submission, records)
       const chat = useChat.getState().chats.find((item) => item.id === chatId)
       if (!chat) return
+      if (submission.placement === 'queue' && chat.provisional && chat.messages.length === 0) {
+        useChat.getState().removePendingMessage(chatId, submission.responseId)
+        const promoted = { ...submission, placement: 'bubble' as const }
+        useUploadOutbox.setState((current) => ({
+          submissions: current.submissions.map((item) => item.id === submission.id ? promoted : item),
+        }))
+        renderSubmissionSurface(promoted, records)
+        continue
+      }
       const action = uploadOutboxHeadAction({
         attachmentStatuses: records.map((record) => record.status),
         restricted: Boolean(restriction),
+        placement: submission.placement,
         provisionalChat: Boolean(chat.provisional),
-        activeResponse: chat.messages.some((message) => message.role === 'assistant' && !message.done),
-        queuedMessageCount: chat.queuedMessages?.length ?? 0,
       })
       if (action === 'wait') return
       if (action === 'recover') {
@@ -297,7 +335,6 @@ async function processChat(chatId: string): Promise<void> {
         continue
       }
 
-      useChat.getState().removePendingMessage(chatId, submission.responseId)
       try {
         await useChat.getState().enqueueMessage(chatId, {
           input: submission.content,
@@ -305,7 +342,7 @@ async function processChat(chatId: string): Promise<void> {
           presetSelections: submission.presetSelections,
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
-        }, attachments)
+        }, attachments, submission.responseId)
         useUploadOutbox.setState((current) => ({
           submissions: current.submissions.filter((item) => item.id !== submission.id),
         }))
@@ -392,16 +429,31 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
     const records = draft.attachmentIds.map((id) => get().uploads[id]).filter(Boolean)
     const responseId = crypto.randomUUID()
     const createdAt = Date.now()
-    const staged = useChat.getState().stagePendingMessage({
-      chatId: draft.chatId,
-      responseId,
-      content: draft.content,
-      modelId: draft.modelId,
-      attachments: records.map(pendingAttachment),
-      temporary: draft.temporary,
-      autoExpire: draft.autoExpire,
-      createdAt,
+    const currentChat = draft.chatId
+      ? useChat.getState().chats.find((chat) => chat.id === draft.chatId)
+      : undefined
+    const placement = optimisticSubmissionPlacement({
+      hasChat: Boolean(currentChat),
+      provisionalChat: Boolean(currentChat?.provisional),
+      activeResponse: Boolean(currentChat?.messages.some((message) => message.role === 'assistant' && !message.done)),
+      queuedMessageCount: currentChat?.queuedMessages?.length ?? 0,
+      pendingSubmissionCount: draft.chatId
+        ? get().submissions.filter((submission) => submission.chatId === draft.chatId).length
+        : 0,
+      lastMessageRole: currentChat?.messages.at(-1)?.role,
     })
+    const staged = placement === 'bubble'
+      ? useChat.getState().stagePendingMessage({
+          chatId: draft.chatId,
+          responseId,
+          content: draft.content,
+          modelId: draft.modelId,
+          attachments: records.map(pendingAttachment),
+          temporary: draft.temporary,
+          autoExpire: draft.autoExpire,
+          createdAt,
+        })
+      : { chatId: draft.chatId!, responseId }
     const submission: PendingSubmission = {
       id: responseId,
       chatId: staged.chatId,
@@ -414,8 +466,10 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       autoExpire: draft.autoExpire,
       attachmentIds: draft.attachmentIds,
       createdAt,
+      placement,
       status: 'waiting',
     }
+    if (placement === 'queue') renderSubmissionSurface(submission, records)
     set((state) => ({ submissions: [...state.submissions, submission] }))
     scheduleChat(staged.chatId)
     return { chatId: staged.chatId, submissionId: submission.id }
@@ -425,27 +479,19 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
     const submission = get().submissions.find((item) => item.id === submissionId)
     if (!submission) return
     const records = draft.attachmentIds.map((id) => get().uploads[id]).filter(Boolean)
-    useChat.getState().stagePendingMessage({
-      chatId: submission.chatId,
-      responseId: submission.responseId,
+    const resumed = {
+      ...submission,
       content: draft.content,
       modelId: draft.modelId,
-      attachments: records.map(pendingAttachment),
-      temporary: submission.temporary,
-      autoExpire: submission.autoExpire,
-      createdAt: submission.createdAt,
-    })
+      presetSelections: draft.presetSelections,
+      agentMode: draft.agentMode,
+      attachmentIds: draft.attachmentIds,
+      status: 'waiting' as const,
+      recoveryError: undefined,
+    }
+    renderSubmissionSurface(resumed, records)
     set((state) => ({
-      submissions: state.submissions.map((item) => item.id === submissionId ? {
-        ...item,
-        content: draft.content,
-        modelId: draft.modelId,
-        presetSelections: draft.presetSelections,
-        agentMode: draft.agentMode,
-        attachmentIds: draft.attachmentIds,
-        status: 'waiting',
-        recoveryError: undefined,
-      } : item),
+      submissions: state.submissions.map((item) => item.id === submissionId ? resumed : item),
     }))
     scheduleChat(submission.chatId)
   },

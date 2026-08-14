@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { canSubmitComposerDraft, uploadOutboxHeadAction } from './composer-upload-policy'
+import {
+  canSubmitComposerDraft,
+  optimisticSubmissionPlacement,
+  uploadOutboxHeadAction,
+} from './composer-upload-policy'
 
 describe('composer upload policy', () => {
   it('allows a new message to be staged while its attachment uploads', () => {
@@ -39,25 +43,53 @@ describe('composer upload policy', () => {
 })
 
 describe('upload outbox head policy', () => {
-  it('waits for uploads and recovers failures before considering chat activity', () => {
+  it('waits for uploads and recovers failures before considering placement', () => {
     expect(uploadOutboxHeadAction({
       attachmentStatuses: ['uploading'], restricted: false, provisionalChat: false,
-      activeResponse: true, queuedMessageCount: 2,
+      placement: 'queue',
     })).toBe('wait')
     expect(uploadOutboxHeadAction({
       attachmentStatuses: ['ready', 'error'], restricted: false, provisionalChat: false,
-      activeResponse: false, queuedMessageCount: 0,
+      placement: 'bubble',
     })).toBe('recover')
   })
 
-  it('sends provisional heads directly and queues behind durable activity', () => {
+  it('sends bubble heads directly and waits to persist queued provisional items', () => {
     expect(uploadOutboxHeadAction({
       attachmentStatuses: ['ready'], restricted: false, provisionalChat: true,
-      activeResponse: true, queuedMessageCount: 1,
+      placement: 'bubble',
     })).toBe('send')
     expect(uploadOutboxHeadAction({
+      attachmentStatuses: ['ready'], restricted: false, provisionalChat: true,
+      placement: 'queue',
+    })).toBe('wait')
+    expect(uploadOutboxHeadAction({
       attachmentStatuses: ['ready'], restricted: false, provisionalChat: false,
-      activeResponse: true, queuedMessageCount: 0,
+      placement: 'queue',
     })).toBe('queue')
+  })
+})
+
+describe('optimistic submission placement', () => {
+  const idle = {
+    hasChat: true,
+    provisionalChat: false,
+    activeResponse: false,
+    queuedMessageCount: 0,
+    pendingSubmissionCount: 0,
+    lastMessageRole: 'assistant' as const,
+  }
+
+  it('uses the single timeline bubble only for a new or idle chat', () => {
+    expect(optimisticSubmissionPlacement({ ...idle, hasChat: false })).toBe('bubble')
+    expect(optimisticSubmissionPlacement(idle)).toBe('bubble')
+  })
+
+  it('queues immediately behind uploads, responses, provisional chats, and user bubbles', () => {
+    expect(optimisticSubmissionPlacement({ ...idle, pendingSubmissionCount: 1 })).toBe('queue')
+    expect(optimisticSubmissionPlacement({ ...idle, activeResponse: true })).toBe('queue')
+    expect(optimisticSubmissionPlacement({ ...idle, provisionalChat: true })).toBe('queue')
+    expect(optimisticSubmissionPlacement({ ...idle, queuedMessageCount: 1 })).toBe('queue')
+    expect(optimisticSubmissionPlacement({ ...idle, lastMessageRole: 'user' })).toBe('queue')
   })
 })

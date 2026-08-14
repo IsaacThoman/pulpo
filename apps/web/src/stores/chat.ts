@@ -3,7 +3,6 @@ import {
   mergeResponseSnapshots,
   type CreateQueuedMessageInput,
   type EmbeddedResponseSnapshot,
-  type QueuedMessage,
   type ResponseEvent,
   type ResponseSnapshot,
   type UpdateQueuedMessageInput,
@@ -13,7 +12,7 @@ import {
   mergeCachedResponseDetails,
   responseLineageDetailsAvailable,
 } from '@pulpo/client-core'
-import type { Attachment, Chat, Folder, Message } from '@/lib/types'
+import type { Attachment, Chat, Folder, Message, QueuedMessage } from '@/lib/types'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { queryClient } from '@/lib/query-client'
@@ -124,6 +123,13 @@ interface PendingMessageInput {
   createdAt?: number
 }
 
+interface PendingQueuedMessageInput extends Omit<PendingMessageInput, 'chatId'> {
+  chatId: string
+  responseId: string
+  presetSelections: Record<string, string>
+  agentMode: boolean
+}
+
 interface StagedSendOptions {
   targetChatId: string
   responseId: string
@@ -184,8 +190,14 @@ interface ChatState {
   deleteFolder: (id: string) => void
   sendMessage: (chatId: string | null, content: string, modelId: string, attachments?: Attachment[], temporary?: boolean, autoExpire?: boolean, staged?: StagedSendOptions) => string
   stagePendingMessage: (input: PendingMessageInput) => { chatId: string; responseId: string }
+  stagePendingQueuedMessage: (input: PendingQueuedMessageInput) => void
   removePendingMessage: (chatId: string, responseId: string) => void
-  enqueueMessage: (chatId: string, input: CreateQueuedMessageInput, attachments: Attachment[]) => Promise<void>
+  enqueueMessage: (
+    chatId: string,
+    input: CreateQueuedMessageInput,
+    attachments: Attachment[],
+    stagedQueueId?: string,
+  ) => Promise<void>
   updateQueuedMessage: (chatId: string, messageId: string, input: UpdateQueuedMessageInput, attachments?: Attachment[]) => Promise<void>
   reorderQueuedMessage: (chatId: string, messageId: string, targetMessageId: string, edge: 'before' | 'after') => Promise<void>
   deleteQueuedMessage: (chatId: string, messageId: string) => Promise<void>
@@ -1307,12 +1319,55 @@ export const useChat = create<ChatState>()((set, get) => ({
     return { chatId: id, responseId }
   },
 
-  removePendingMessage: (chatId, responseId) => set((state) => ({
-    chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
-      ...chat,
-      messages: chat.messages.filter((message) => message.id !== `${responseId}:input`),
-    }),
-  })),
+  stagePendingQueuedMessage: (input) => {
+    const timestamp = input.createdAt ?? Date.now()
+    const now = new Date(timestamp).toISOString()
+    const currentQueue = get().chats.find((chat) => chat.id === input.chatId)?.queuedMessages ?? []
+    const queuedMessage: QueuedMessage = {
+      id: input.responseId,
+      chatId: input.chatId,
+      content: input.content,
+      modelId: input.modelId,
+      presetSelections: input.presetSelections,
+      agentMode: input.agentMode,
+      position: Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
+      status: 'pending',
+      error: null,
+      attachments: input.attachments.map((attachment) => ({
+        id: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.size,
+        localUploadId: attachment.localUploadId,
+      })),
+      createdAt: now,
+      updatedAt: now,
+      pendingSubmissionId: input.responseId,
+    }
+    pendingOptimisticQueuedMessages.set(queuedMessage.id, queuedMessage)
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== input.chatId ? chat : {
+        ...chat,
+        updatedAt: timestamp,
+        queuedMessages: (chat.queuedMessages ?? []).some((message) => message.id === queuedMessage.id)
+          ? (chat.queuedMessages ?? []).map((message) => message.id === queuedMessage.id ? queuedMessage : message)
+          : [...(chat.queuedMessages ?? []), queuedMessage],
+      }),
+    }))
+  },
+
+  removePendingMessage: (chatId, responseId) => {
+    pendingOptimisticQueuedMessages.delete(responseId)
+    set((state) => ({
+      chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
+        ...chat,
+        messages: chat.messages.filter((message) => message.id !== `${responseId}:input`),
+        queuedMessages: (chat.queuedMessages ?? []).filter((message) => (
+          message.id !== responseId && message.pendingSubmissionId !== responseId
+        )),
+      }),
+    }))
+  },
 
   sendMessage: (chatId, content, modelId, attachments = [], temporary = false, autoExpire = false, staged) => {
     const userId = currentUserId()
@@ -1514,17 +1569,20 @@ export const useChat = create<ChatState>()((set, get) => ({
     return id
   },
 
-  enqueueMessage: async (chatId, input, messageAttachments) => {
+  enqueueMessage: async (chatId, input, messageAttachments, stagedQueueId) => {
     const now = new Date().toISOString()
     const currentQueue = get().chats.find((chat) => chat.id === chatId)?.queuedMessages ?? []
+    const staged = stagedQueueId
+      ? currentQueue.find((message) => message.id === stagedQueueId || message.pendingSubmissionId === stagedQueueId)
+      : undefined
     const optimistic: QueuedMessage = {
-      id: crypto.randomUUID(),
+      id: staged?.id ?? crypto.randomUUID(),
       chatId,
       content: input.input,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
       agentMode: input.agentMode,
-      position: Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
+      position: staged?.position ?? Math.max(-1, ...currentQueue.map((message) => message.position)) + 1,
       status: 'pending',
       error: null,
       attachments: messageAttachments.map((attachment) => ({
@@ -1533,14 +1591,16 @@ export const useChat = create<ChatState>()((set, get) => ({
         mimeType: attachment.mimeType,
         sizeBytes: attachment.size,
       })),
-      createdAt: now,
+      createdAt: staged?.createdAt ?? now,
       updatedAt: now,
     }
     pendingOptimisticQueuedMessages.set(optimistic.id, optimistic)
     set((state) => ({
       chats: state.chats.map((chat) => chat.id !== chatId ? chat : {
         ...chat,
-        queuedMessages: [...(chat.queuedMessages ?? []), optimistic],
+        queuedMessages: (chat.queuedMessages ?? []).some((message) => message.id === optimistic.id)
+          ? (chat.queuedMessages ?? []).map((message) => message.id === optimistic.id ? optimistic : message)
+          : [...(chat.queuedMessages ?? []), optimistic],
       }),
     }))
     try {
