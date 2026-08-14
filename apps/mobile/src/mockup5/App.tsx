@@ -2247,10 +2247,6 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
     if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
     else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
   };
-  const saveAttachment = () => {
-    if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
-    else void downloadAttachment(attachment.id, attachment.name).then(() => AccessibilityInfo.announceForAccessibility('Attachment saved')).catch((error) => Alert.alert('Couldn’t save attachment', error instanceof Error ? error.message : undefined));
-  };
   const copyAttachment = () => {
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
@@ -2280,10 +2276,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
           {message.role === 'user' && !message.text ? <>
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
-            <SwiftUIDivider />
           </> : null}
-          <SwiftUIButton label={attachment.kind === 'image' ? 'Save image' : 'Save to Files'} systemImage="square.and.arrow.down" onPress={saveAttachment} />
-          <SwiftUIButton label="Attachment info" systemImage="info.circle" onPress={() => Alert.alert(attachment.name, `${attachment.mimeType}\n${formatAttachmentSize(attachment.size)}`)} />
         </>
       )}
     >
