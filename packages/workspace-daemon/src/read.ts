@@ -211,7 +211,7 @@ export async function readTextFile(path: string, rawArgs: ReadArguments): Promis
       if (!stopped && currentLineOpen) stopped = finishLine()
     }
   } catch (error) {
-    if (error instanceof TypeError) throw new Error('File is not valid UTF-8 text')
+    if (error instanceof TypeError) throw new Error('File is not valid UTF-8 text', { cause: error })
     throw error
   } finally {
     stream.destroy()
