@@ -5,7 +5,13 @@ const persistGeneratedChatTitle = vi.hoisted(() => vi.fn(async () => true))
 
 vi.mock('../chats/title-change.js', () => ({ persistGeneratedChatTitle }))
 
-import { persistGeneratedTitleResult, selectPostTaskRuntime } from './post-tasks.js'
+import {
+  persistGeneratedTitleResult,
+  retryInvalidTitleOutput,
+  selectPostTaskRuntime,
+  TitleOutputValidationError,
+  validateGeneratedTitleResponse,
+} from './post-tasks.js'
 
 function runtime(id: string): CatalogModelRuntime {
   return { model: { id }, provider: {} } as CatalogModelRuntime
@@ -49,5 +55,44 @@ describe('post-response task model selection', () => {
     })).resolves.toBe(false)
 
     expect(persistGeneratedChatTitle).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed, incomplete, and token-limited title responses', () => {
+    expect(() => validateGeneratedTitleResponse({ output_text: 'not json' }, 1_024))
+      .toThrow('response was not valid title JSON')
+    expect(() => validateGeneratedTitleResponse({
+      output_text: '{"title":"Truncated"}',
+      status: 'incomplete',
+      incomplete_details: { reason: 'max_output_tokens' },
+    }, 1_024)).toThrow('max_output_tokens')
+    expect(() => validateGeneratedTitleResponse({
+      output_text: '{"title":"At the limit"}',
+      usage: { output_tokens: 1_024 },
+    }, 1_024)).toThrow('maximum output token limit reached')
+  })
+
+  it('accepts valid title JSON below the output limit', () => {
+    expect(validateGeneratedTitleResponse({
+      output_text: '{"title":"🐙 Reliable Titles"}',
+      usage: { output_tokens: 12 },
+    }, 1_024)).toBe('🐙 Reliable Titles')
+  })
+
+  it('retries validation failures up to the configured attempt count', async () => {
+    const invoke = vi.fn(async (attempt: number) => {
+      if (attempt < 2) throw new TitleOutputValidationError('invalid JSON')
+      return 'valid title'
+    })
+
+    await expect(retryInvalidTitleOutput(invoke)).resolves.toBe('valid title')
+    expect(invoke).toHaveBeenCalledTimes(3)
+    expect(invoke.mock.calls.map(([attempt]) => attempt)).toEqual([0, 1, 2])
+  })
+
+  it('does not add semantic retries to provider failures', async () => {
+    const invoke = vi.fn(async () => { throw new Error('provider unavailable') })
+
+    await expect(retryInvalidTitleOutput(invoke)).rejects.toThrow('provider unavailable')
+    expect(invoke).toHaveBeenCalledTimes(1)
   })
 })
