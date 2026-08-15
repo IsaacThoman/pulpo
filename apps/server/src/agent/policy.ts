@@ -1,3 +1,5 @@
+import { posix } from 'node:path'
+
 export const BASE_AGENT_PROMPT = `You are Pulpo's coding agent. Work in a disposable Ubuntu Linux workspace rooted at /workspace.
 Use tools to inspect and change files when needed. You may use passwordless sudo. Do not claim a file or command changed unless a tool result confirms it.
 Use view_image when you need to inspect an image visually.
@@ -22,6 +24,19 @@ export function buildAgentSystemPrompt(
 export function attachmentWorkspacePath(name: string, id: string): string {
   const cleaned = name.normalize('NFKC').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^\.+/, '').slice(0, 160) || 'attachment'
   return `/workspace/${id.slice(0, 8)}-${cleaned}`
+}
+
+export function restoredAttachmentWorkspacePath(attachment: {
+  id: string
+  originalName: string
+  origin: string
+  workspacePath: string | null
+}): string {
+  if (attachment.origin === 'assistant' && attachment.workspacePath?.startsWith('/workspace/')) {
+    const normalized = posix.normalize(attachment.workspacePath)
+    if (normalized.startsWith('/workspace/')) return normalized
+  }
+  return attachmentWorkspacePath(attachment.originalName, attachment.id)
 }
 
 export interface AgentAttachment {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
+import { attachmentWorkspacePath, buildAgentSystemPrompt, buildAgentUserPrompt, restoredAttachmentWorkspacePath } from './policy.js'
 
 describe('agent policy', () => {
   it('keeps the Pulpo harness first and appends configured instructions', () => {
@@ -20,6 +20,25 @@ describe('agent policy', () => {
   it('creates deterministic workspace paths without traversal', () => {
     expect(attachmentWorkspacePath('../../ secret?.txt', '12345678-abcd')).toBe('/workspace/12345678-_.._secret_.txt')
     expect(attachmentWorkspacePath('...', 'abcdefgh-1234')).toBe('/workspace/abcdefgh-attachment')
+  })
+
+  it('restores generated files to their original safe workspace path', () => {
+    expect(restoredAttachmentWorkspacePath({
+      id: '12345678-abcd', originalName: 'renamed.png', origin: 'assistant', workspacePath: '/workspace/edits/final.png',
+    })).toBe('/workspace/edits/final.png')
+    expect(restoredAttachmentWorkspacePath({
+      id: '12345678-abcd', originalName: 'renamed.png', origin: 'assistant', workspacePath: '/workspace/tmp/../final.png',
+    })).toBe('/workspace/final.png')
+  })
+
+  it('uses deterministic paths for user and legacy or unsafe generated attachments', () => {
+    const base = { id: '12345678-abcd', originalName: 'cat photo.jpg' }
+    expect(restoredAttachmentWorkspacePath({ ...base, origin: 'user', workspacePath: '/workspace/wrong.jpg' }))
+      .toBe('/workspace/12345678-cat_photo.jpg')
+    expect(restoredAttachmentWorkspacePath({ ...base, origin: 'assistant', workspacePath: null }))
+      .toBe('/workspace/12345678-cat_photo.jpg')
+    expect(restoredAttachmentWorkspacePath({ ...base, origin: 'assistant', workspacePath: '/workspace/../../etc/passwd' }))
+      .toBe('/workspace/12345678-cat_photo.jpg')
   })
 
   it('appends trusted workspace attachment context to the user prompt', () => {
