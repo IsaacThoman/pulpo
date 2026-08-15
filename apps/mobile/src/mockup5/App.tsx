@@ -197,7 +197,7 @@ import {
   type CoordinatedUpload,
   type CoordinatedUploadState,
 } from '../features/chat/attachmentUploadCoordinator';
-import { imagePreviewGroup, previewFallbackMessage, previewSource } from '../features/chat/attachmentPreviewPolicy';
+import { imagePreviewGroup, initialNativeImageSource, previewFallbackMessage, previewSource } from '../features/chat/attachmentPreviewPolicy';
 import {
   createOptimisticSendIdentity,
   readyTranscriptAttachments,
@@ -230,6 +230,7 @@ import {
   previewImages as previewNativeImages,
   supportsAttachmentPreview,
   supportsNativeImageGallery,
+  updatePreviewImage as updateNativePreviewImage,
 } from '../native/attachmentPreview';
 import { startAuthKeyboardHandoff } from '../auth/keyboardHandoff';
 import {
@@ -720,6 +721,18 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
   const previewImage = useCallback((index: number, attachment: ComposerAttachment) => {
     const view = imageRefs.current.get(attachment.localId);
     const source = imageSources.current.get(attachment.localId);
+    if (supportsNativeImageGallery) {
+      onPreviewImage(index, source ? {
+        x: 0, y: 0, width: 0, height: 0,
+        cornerRadius: 14,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.localId}`,
+        uri: source.uri,
+      } : undefined);
+      return;
+    }
     if (!view || !source) {
       onPreviewImage(index);
       return;
@@ -840,6 +853,18 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
   const failed = attachment.state === 'failed';
   const previewImage = useCallback(() => {
     const source = imageSourceRef.current;
+    if (supportsNativeImageGallery) {
+      onPreviewImages(group, attachment, source ? {
+        x: 0, y: 0, width: 0, height: 0,
+        cornerRadius: 16,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.id}`,
+        uri: source.uri,
+      } : undefined);
+      return;
+    }
     if (!imageRef.current || !source) {
       onPreviewImages(group, attachment);
       return;
@@ -3342,14 +3367,15 @@ function ChatView({
     if (nativeImagePreviewPendingRef.current) return;
     nativeImagePreviewPendingRef.current = true;
     void (async () => {
-      const items = await Promise.all(preview.items.map(async (item) => ({
+      const selectedThumbnailUri = origin?.itemId === selected.id ? origin.uri : undefined;
+      const items = preview.items.map((item) => ({
+        ...initialNativeImageSource(item, selected.id, selectedThumbnailUri),
         id: item.id,
         sourceNativeId: `pulpo-attachment-preview-${
           'localId' in item && typeof item.localId === 'string' ? item.localId : item.id
         }`,
         title: item.name,
-        uri: await resolvePreviewImageUri(item),
-      })));
+      }));
       await previewNativeImages(items, preview.initialIndex, origin ? {
         x: origin.x,
         y: origin.y,
@@ -3361,6 +3387,36 @@ function ChatView({
       // Keep the React Native source in place for Quick Look's native zoom.
       if (origin) setTimeout(Keyboard.dismiss, 500);
       else Keyboard.dismiss();
+
+      const presentationSettled = new Promise<void>((resolve) => setTimeout(resolve, 300));
+      preview.items.forEach((item, index) => {
+        const source = previewSource({ ...item, kind: 'image' });
+        if (source.kind === 'local') return;
+        const fullResolution = resolvePreviewImageUri(item).then(
+          (uri) => uri,
+          () => undefined,
+        );
+        void (async () => {
+          if (!items[index]?.uri) {
+            const thumbnail = downloadAttachmentThumbnail(item.id).then(
+              (file) => file.uri,
+              () => undefined,
+            );
+            const firstAvailable = await Promise.race([
+              thumbnail.then((uri) => uri ? { previewOnly: true, uri } : undefined),
+              fullResolution.then((uri) => uri ? { previewOnly: false, uri } : undefined),
+            ]);
+            if (firstAvailable) {
+              await updateNativePreviewImage(item.id, firstAvailable.uri, firstAvailable.previewOnly);
+              if (!firstAvailable.previewOnly) return;
+            }
+          }
+          const fullResolutionUri = await fullResolution;
+          if (!fullResolutionUri) return;
+          await presentationSettled;
+          await updateNativePreviewImage(item.id, fullResolutionUri);
+        })();
+      });
     })().catch((error) => {
       if (error instanceof AttachmentPreviewError && error.code === 'ERR_ATTACHMENT_PREVIEW_BUSY') return;
       Alert.alert(

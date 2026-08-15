@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fittedFullscreenImageFrame, imagePreviewGroup, previewFallbackMessage, previewSource } from './attachmentPreviewPolicy'
+import { fittedFullscreenImageFrame, imagePreviewGroup, initialNativeImageSource, previewFallbackMessage, previewSource } from './attachmentPreviewPolicy'
 
 describe('attachment preview policy', () => {
   it('fits landscape and portrait images into the fullscreen viewport', () => {
@@ -33,6 +33,18 @@ describe('attachment preview policy', () => {
   it('uses local files immediately and lazily downloads sent attachments', () => {
     expect(previewSource(attachments[0])).toEqual({ kind: 'local', uri: 'file:///one.jpg' })
     expect(previewSource(attachments[2])).toEqual({ kind: 'download', id: 'image-2', name: 'two.jpg' })
+  })
+
+  it('opens native galleries from local files or the selected thumbnail without waiting for downloads', () => {
+    expect(initialNativeImageSource(attachments[0], 'image-1', 'file:///thumbnail.webp')).toEqual({
+      previewOnly: false,
+      uri: 'file:///one.jpg',
+    })
+    expect(initialNativeImageSource(attachments[2], 'image-2', 'file:///thumbnail.webp')).toEqual({
+      previewOnly: true,
+      uri: 'file:///thumbnail.webp',
+    })
+    expect(initialNativeImageSource(attachments[2], 'image-1')).toEqual({ previewOnly: true })
   })
 
   it('offers a concise share fallback for unsupported and presentation failures', () => {

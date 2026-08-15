@@ -34,17 +34,22 @@ private struct PulpoImageGalleryItem: Record {
   @Field var sourceNativeId: String?
   @Field var title: String = ""
   @Field var uri: URL?
+  @Field var previewOnly: Bool = false
 }
 
 private final class PulpoPreviewItem: NSObject, QLPreviewItem {
   let id: String
-  let previewItemURL: URL?
+  private(set) var previewItemURL: URL?
   let previewItemTitle: String?
 
-  init(id: String = UUID().uuidString, url: URL, title: String) {
+  init(id: String = UUID().uuidString, url: URL?, title: String) {
     self.id = id
     previewItemURL = url
     previewItemTitle = title
+  }
+
+  func updatePreviewURL(_ url: URL?) {
+    previewItemURL = url
   }
 }
 
@@ -67,6 +72,7 @@ private final class PulpoZoomingImageCell: UICollectionViewCell, UIScrollViewDel
 
   private let scrollView = UIScrollView()
   private let imageView = UIImageView()
+  private let loadingIndicator = UIActivityIndicatorView(style: .large)
   private var imageSize = CGSize.zero
   private var laidOutSize = CGSize.zero
 
@@ -92,8 +98,11 @@ private final class PulpoZoomingImageCell: UICollectionViewCell, UIScrollViewDel
     imageView.isUserInteractionEnabled = false
     imageView.isAccessibilityElement = true
     imageView.accessibilityTraits = .image
+    loadingIndicator.color = .white
+    loadingIndicator.hidesWhenStopped = true
     scrollView.addSubview(imageView)
     contentView.addSubview(scrollView)
+    contentView.addSubview(loadingIndicator)
   }
 
   required init?(coder: NSCoder) {
@@ -103,6 +112,7 @@ private final class PulpoZoomingImageCell: UICollectionViewCell, UIScrollViewDel
   override func prepareForReuse() {
     super.prepareForReuse()
     imageView.image = nil
+    loadingIndicator.stopAnimating()
     imageSize = .zero
     laidOutSize = .zero
   }
@@ -110,16 +120,26 @@ private final class PulpoZoomingImageCell: UICollectionViewCell, UIScrollViewDel
   override func layoutSubviews() {
     super.layoutSubviews()
     scrollView.frame = contentView.bounds
+    loadingIndicator.center = CGPoint(x: contentView.bounds.midX, y: contentView.bounds.midY)
     guard imageSize != .zero, laidOutSize != bounds.size else { return }
     laidOutSize = bounds.size
     configureZoomScales()
   }
 
-  func configure(image: UIImage, title: String) {
+  func configure(image: UIImage?, title: String) {
     imageView.image = image
-    imageSize = image.size
     imageView.accessibilityLabel = title
+    imageSize = image?.size ?? .zero
     laidOutSize = .zero
+    if image == nil {
+      scrollView.setZoomScale(1, animated: false)
+      scrollView.contentInset = .zero
+      scrollView.contentSize = .zero
+      imageView.frame = .zero
+      loadingIndicator.startAnimating()
+    } else {
+      loadingIndicator.stopAnimating()
+    }
     setNeedsLayout()
   }
 
@@ -182,7 +202,7 @@ private final class PulpoZoomingImageCell: UICollectionViewCell, UIScrollViewDel
 
 private final class PulpoImageGalleryViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
   let items: [PulpoPreviewItem]
-  let images: [UIImage]
+  private var images: [UIImage?]
   let initialIndex: Int
   var onDidDismiss: (() -> Void)?
 
@@ -204,7 +224,7 @@ private final class PulpoImageGalleryViewController: UIViewController, UICollect
     collectionView.cellForItem(at: IndexPath(item: currentIndex, section: 0)) as? PulpoZoomingImageCell
   }
 
-  init(items: [PulpoPreviewItem], images: [UIImage], initialIndex: Int) {
+  init(items: [PulpoPreviewItem], images: [UIImage?], initialIndex: Int) {
     self.items = items
     self.images = images
     let safeInitialIndex = min(max(0, initialIndex), max(0, items.count - 1))
@@ -306,6 +326,17 @@ private final class PulpoImageGalleryViewController: UIViewController, UICollect
     ) as! PulpoZoomingImageCell
     cell.configure(image: images[indexPath.item], title: items[indexPath.item].previewItemTitle ?? "Image")
     return cell
+  }
+
+  func updateImage(id: String, url: URL, image: UIImage, previewOnly: Bool) -> Bool {
+    guard let index = items.firstIndex(where: { $0.id == id }) else { return false }
+    images[index] = image
+    items[index].updatePreviewURL(previewOnly ? nil : url)
+    if let cell = collectionView.cellForItem(at: IndexPath(item: index, section: 0)) as? PulpoZoomingImageCell {
+      cell.configure(image: image, title: items[index].previewItemTitle ?? "Image")
+    }
+    if index == currentIndex { updateTitleControl() }
+    return true
   }
 
   func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
@@ -424,6 +455,7 @@ private final class PulpoImageGalleryViewController: UIViewController, UICollect
     titleButton.accessibilityLabel = items.count > 1
       ? "\(title), image \(currentIndex + 1) of \(items.count)"
       : title
+    shareButton.isEnabled = items[currentIndex].previewItemURL != nil
     titleButton.menu = UIMenu(children: items.enumerated().map { index, item in
       UIAction(
         title: item.previewItemTitle ?? "Image \(index + 1)",
@@ -489,13 +521,13 @@ private final class PulpoImageGalleryCoordinator: NSObject {
   let viewController: PulpoImageGalleryViewController
   var onDismiss: (() -> Void)?
   private var dismissed = false
-  private let transitionImageSizes: [CGSize]
+  private var transitionImageSizes: [CGSize?]
   private let transitionSourceNativeIds: [String?]
   private weak var transitionSourceWindow: UIWindow?
 
   init(
     items: [PulpoPreviewItem],
-    images: [UIImage],
+    images: [UIImage?],
     sourceNativeIds: [String?],
     initialIndex: Int,
     sourceWindow: UIWindow?
@@ -503,7 +535,7 @@ private final class PulpoImageGalleryCoordinator: NSObject {
     self.items = items
     let safeInitialIndex = min(max(0, initialIndex), max(0, items.count - 1))
     viewController = PulpoImageGalleryViewController(items: items, images: images, initialIndex: safeInitialIndex)
-    transitionImageSizes = images.map(\.size)
+    transitionImageSizes = images.map { $0?.size }
     transitionSourceNativeIds = sourceNativeIds
     transitionSourceWindow = sourceWindow
     super.init()
@@ -528,7 +560,9 @@ private final class PulpoImageGalleryCoordinator: NSObject {
           let self,
           self.transitionImageSizes.indices.contains(self.viewController.currentIndexForTransition)
         else { return nil }
-        let imageSize = self.transitionImageSizes[self.viewController.currentIndexForTransition]
+        guard let imageSize = self.transitionImageSizes[self.viewController.currentIndexForTransition] else {
+          return nil
+        }
         return fittedRect(for: imageSize, in: context.zoomedViewController.view.bounds)
       }
       viewController.preferredTransition = .zoom(options: options) { [weak self] _ in
@@ -543,6 +577,12 @@ private final class PulpoImageGalleryCoordinator: NSObject {
         )
       }
     }
+  }
+
+  func updateImage(id: String, url: URL, image: UIImage, previewOnly: Bool) -> Bool {
+    guard let index = items.firstIndex(where: { $0.id == id }) else { return false }
+    transitionImageSizes[index] = image.size
+    return viewController.updateImage(id: id, url: url, image: image, previewOnly: previewOnly)
   }
 
   private func finishDismissal() {
@@ -627,19 +667,22 @@ public final class PulpoAttachmentPreviewModule: Module {
           code: "ERR_ATTACHMENT_PREVIEW_MISSING_FILE"
         )
       }
-      let resolved = try values.map { value -> (PulpoPreviewItem, UIImage) in
-        guard
-          let uri = value.uri,
-          uri.isFileURL,
-          FileManager.default.fileExists(atPath: uri.path)
-        else {
+      let resolved = try values.map { value -> (PulpoPreviewItem, UIImage?) in
+        guard let uri = value.uri else {
+          return (PulpoPreviewItem(id: value.id, url: nil, title: value.title), nil)
+        }
+        guard uri.isFileURL, FileManager.default.fileExists(atPath: uri.path) else {
           throw Exception(
             name: "AttachmentPreviewMissingFile",
             description: "An image is no longer available.",
             code: "ERR_ATTACHMENT_PREVIEW_MISSING_FILE"
           )
         }
-        let item = PulpoPreviewItem(id: value.id, url: uri, title: value.title)
+        let item = PulpoPreviewItem(
+          id: value.id,
+          url: value.previewOnly ? nil : uri,
+          title: value.title
+        )
         guard let image = UIImage(contentsOfFile: uri.path) else {
           throw Exception(
             name: "AttachmentPreviewUnsupported",
@@ -679,6 +722,23 @@ public final class PulpoAttachmentPreviewModule: Module {
       }
       self.activeImageGallery = coordinator
       presenter.present(coordinator.viewController, animated: true)
+    }
+    .runOnQueue(.main)
+
+    AsyncFunction("updatePreviewImage") { (
+      id: String,
+      uri: URL,
+      previewOnly: Bool
+    ) -> Bool in
+      guard
+        uri.isFileURL,
+        FileManager.default.fileExists(atPath: uri.path),
+        let image = UIImage(contentsOfFile: uri.path)
+      else {
+        return false
+      }
+      guard let gallery = self.activeImageGallery else { return false }
+      return gallery.updateImage(id: id, url: uri, image: image, previewOnly: previewOnly)
     }
     .runOnQueue(.main)
 

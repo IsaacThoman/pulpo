@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   animateImageTransition: vi.fn(async () => undefined),
   previewImages: vi.fn(async () => undefined),
+  updatePreviewImage: vi.fn(async () => true),
   previewFile: vi.fn(async () => undefined),
 }))
 
@@ -12,6 +13,7 @@ vi.mock('expo', () => ({
   requireOptionalNativeModule: vi.fn(() => ({
     animateImageTransition: mocks.animateImageTransition,
     previewImages: mocks.previewImages,
+    updatePreviewImage: mocks.updatePreviewImage,
     previewFile: mocks.previewFile,
   })),
 }))
@@ -23,12 +25,14 @@ import {
   supportsAttachmentPreview,
   supportsNativeImageGallery,
   supportsNativeImageTransition,
+  updatePreviewImage,
 } from './attachmentPreview'
 
 describe('attachment preview wrapper', () => {
   beforeEach(() => {
     mocks.animateImageTransition.mockReset().mockResolvedValue(undefined)
     mocks.previewImages.mockReset().mockResolvedValue(undefined)
+    mocks.updatePreviewImage.mockReset().mockResolvedValue(true)
     mocks.previewFile.mockReset().mockResolvedValue(undefined)
   })
 
@@ -73,5 +77,10 @@ describe('attachment preview wrapper', () => {
       { id: 'photo-1', title: 'Photo.jpg', uri: 'file:///tmp/photo.jpg' },
     ], 0)).resolves.toBeUndefined()
     expect(mocks.previewImages).toHaveBeenCalledTimes(2)
+  })
+
+  it('upgrades a loading gallery item without reopening the preview', async () => {
+    await expect(updatePreviewImage('photo-1', 'file:///tmp/photo.jpg')).resolves.toBe(true)
+    expect(mocks.updatePreviewImage).toHaveBeenCalledWith('photo-1', 'file:///tmp/photo.jpg', false)
   })
 })

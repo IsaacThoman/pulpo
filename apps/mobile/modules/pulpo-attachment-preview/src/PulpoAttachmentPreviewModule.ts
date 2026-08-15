@@ -11,9 +11,10 @@ export interface PulpoImageTransitionFrame {
 
 export interface PulpoImageGalleryItem {
   id: string
+  previewOnly?: boolean
   sourceNativeId?: string
   title: string
-  uri: string
+  uri?: string
 }
 
 declare class PulpoAttachmentPreviewModule extends NativeModule {
@@ -28,6 +29,7 @@ declare class PulpoAttachmentPreviewModule extends NativeModule {
     initialIndex: number,
     sourceFrame?: PulpoImageTransitionFrame,
   ): Promise<void>
+  updatePreviewImage(id: string, uri: string, previewOnly: boolean): Promise<boolean>
   previewFile(uri: string, title: string): Promise<void>
 }
 

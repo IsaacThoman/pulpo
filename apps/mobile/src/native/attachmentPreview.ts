@@ -75,6 +75,15 @@ export async function previewImages(
   }
 }
 
+export async function updatePreviewImage(id: string, uri: string, previewOnly = false): Promise<boolean> {
+  if (!PulpoAttachmentPreview || typeof PulpoAttachmentPreview.updatePreviewImage !== 'function') return false
+  try {
+    return await PulpoAttachmentPreview.updatePreviewImage(id, uri, previewOnly)
+  } catch {
+    return false
+  }
+}
+
 export async function animateImageTransition(
   uri: string,
   fromFrame: PulpoImageTransitionFrame,

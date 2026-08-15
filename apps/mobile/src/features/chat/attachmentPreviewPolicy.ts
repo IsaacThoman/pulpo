@@ -49,6 +49,19 @@ export function previewSource(attachment: PreviewAttachment):
     : { kind: 'download', id: attachment.id, name: attachment.name }
 }
 
+export function initialNativeImageSource(
+  attachment: PreviewAttachment,
+  selectedId: string,
+  selectedThumbnailUri?: string,
+): { previewOnly: boolean; uri?: string } {
+  const source = previewSource(attachment)
+  if (source.kind === 'local') return { previewOnly: false, uri: source.uri }
+  if (attachment.id === selectedId && selectedThumbnailUri) {
+    return { previewOnly: true, uri: selectedThumbnailUri }
+  }
+  return { previewOnly: true }
+}
+
 export function previewFallbackMessage(errorCode?: string): string {
   return errorCode === 'ERR_ATTACHMENT_PREVIEW_UNSUPPORTED'
     ? 'iOS cannot preview this file type, but you can open it in another app.'
