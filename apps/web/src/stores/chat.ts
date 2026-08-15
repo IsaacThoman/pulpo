@@ -157,6 +157,7 @@ interface ChatState {
   folders: Folder[]
   activeChatId: string | null
   activeTemporaryChatId: string | null
+  composerModelId: string | null
   streamingIds: string[]
   responseSequences: Record<string, number>
   responseChatIds: Record<string, string>
@@ -167,6 +168,7 @@ interface ChatState {
   applyResponseSnapshot: (snapshot: ResponseSnapshot, options?: { invalidate?: boolean }) => void
   newChat: (modelId?: string) => string
   setActive: (id: string | null) => void
+  setComposerModel: (id: string) => void
   persistTemporaryChat: (id: string) => Promise<ServerChat>
   abandonTemporaryChat: (id?: string) => void
   markTemporaryExpired: (id: string) => void
@@ -838,6 +840,7 @@ export const useChat = create<ChatState>()((set, get) => ({
   folders: [],
   activeChatId: null,
   activeTemporaryChatId: null,
+  composerModelId: null,
   streamingIds: [],
   responseSequences: {},
   responseChatIds: {},
@@ -1005,6 +1008,7 @@ export const useChat = create<ChatState>()((set, get) => ({
     return modelId ?? useCatalog.getState().models[0]?.id ?? ''
   },
   setActive: (activeChatId) => set({ activeChatId }),
+  setComposerModel: (composerModelId) => set({ composerModelId }),
 
   persistTemporaryChat: async (id) => {
     try {

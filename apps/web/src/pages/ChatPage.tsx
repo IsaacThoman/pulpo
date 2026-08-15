@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
+import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
 import type { Message } from '@/lib/types'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
@@ -105,6 +106,8 @@ export function ChatPage() {
   const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
+  const navigationState = location.state as NewChatLocationState | null
+  const carriedModelId = navigationState?.selectedModelId
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
@@ -117,11 +120,14 @@ export function ChatPage() {
   })
 
   const chatModelId = chat?.modelId
-  const shouldApplyDefaultRef = useRef(!chatId && !routeModelId)
+  const shouldApplyDefaultRef = useRef(!chatId && !routeModelId && !carriedModelId)
   const handledResetRef = useRef<unknown>(null)
   const [modelId, setModelId] = useState(
-    () => routeModelId ?? chatModelId ?? resolveDefaultModelId(models, defaultModelId)
+    () => routeModelId ?? chatModelId ?? carriedModelId ?? resolveDefaultModelId(models, defaultModelId)
   )
+  useEffect(() => {
+    useChat.getState().setComposerModel(modelId)
+  }, [modelId])
   useEffect(() => {
     if (chat || models.length === 0 || models.some((model) => model.id === modelId)) return
     setModelId(resolveDefaultModelId(models, defaultModelId))
@@ -133,10 +139,13 @@ export function ChatPage() {
     } else if (routeModelId) {
       shouldApplyDefaultRef.current = false
       setModelId(routeModelId)
+    } else if (carriedModelId) {
+      shouldApplyDefaultRef.current = false
+      setModelId(carriedModelId)
     }
-  }, [chatId, chatModelId, routeModelId])
+  }, [carriedModelId, chatId, chatModelId, routeModelId])
 
-  const resetDefaultToken = (location.state as { resetDefaultModel?: unknown } | null)?.resetDefaultModel
+  const resetDefaultToken = navigationState?.resetDefaultModel
   useEffect(() => {
     if (!resetDefaultToken || handledResetRef.current === resetDefaultToken) return
     handledResetRef.current = resetDefaultToken
@@ -161,6 +170,7 @@ export function ChatPage() {
 
   const selectModel = (id: string) => {
     shouldApplyDefaultRef.current = false
+    useChat.getState().setComposerModel(id)
     setModelId(id)
   }
 
@@ -253,10 +263,8 @@ export function ChatPage() {
     setTemporaryError(null)
     setMessageEdit(null)
     setComposerEditActive(false)
-    shouldApplyDefaultRef.current = true
-    const next = resolveDefaultModelId(models, defaultModelId)
-    if (next) setModelId(next)
-    navigate('/')
+    shouldApplyDefaultRef.current = false
+    navigate('/', { state: newChatLocationState(true, modelId) })
   }
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
