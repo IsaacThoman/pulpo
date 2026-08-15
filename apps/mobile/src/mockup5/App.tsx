@@ -3344,6 +3344,9 @@ function ChatView({
     void (async () => {
       const items = await Promise.all(preview.items.map(async (item) => ({
         id: item.id,
+        sourceNativeId: `pulpo-attachment-preview-${
+          'localId' in item && typeof item.localId === 'string' ? item.localId : item.id
+        }`,
         title: item.name,
         uri: await resolvePreviewImageUri(item),
       })));

@@ -11,6 +11,7 @@ export interface PulpoImageTransitionFrame {
 
 export interface PulpoImageGalleryItem {
   id: string
+  sourceNativeId?: string
   title: string
   uri: string
 }

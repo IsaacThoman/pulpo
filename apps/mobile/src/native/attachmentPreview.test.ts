@@ -48,10 +48,23 @@ describe('attachment preview wrapper', () => {
   })
 
   it('presents a native image gallery at the selected item', async () => {
-    const items = [{ id: 'photo-1', title: 'Photo.jpg', uri: 'file:///tmp/photo.jpg' }]
+    const items = [
+      {
+        id: 'photo-1',
+        sourceNativeId: 'pulpo-attachment-preview-photo-1',
+        title: 'Photo.jpg',
+        uri: 'file:///tmp/photo.jpg',
+      },
+      {
+        id: 'photo-2',
+        sourceNativeId: 'pulpo-attachment-preview-photo-2',
+        title: 'Another photo.jpg',
+        uri: 'file:///tmp/another-photo.jpg',
+      },
+    ]
     const source = { x: 10, y: 20, width: 112, height: 112, cornerRadius: 16 }
-    await previewImages(items, 0, source)
-    expect(mocks.previewImages).toHaveBeenCalledWith(items, 0, source)
+    await previewImages(items, 1, source)
+    expect(mocks.previewImages).toHaveBeenCalledWith(items, 1, source)
   })
 
   it('normalizes a wrapped native busy error without exposing internals', async () => {

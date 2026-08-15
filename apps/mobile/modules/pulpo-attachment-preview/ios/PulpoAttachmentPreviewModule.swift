@@ -31,6 +31,7 @@ private func findNativeView(with id: String?, in rootView: UIView) -> UIView? {
 
 private struct PulpoImageGalleryItem: Record {
   @Field var id: String = ""
+  @Field var sourceNativeId: String?
   @Field var title: String = ""
   @Field var uri: URL?
 }
@@ -214,7 +215,7 @@ private final class PulpoImageGalleryViewController: UIViewController, UICollect
     layout.minimumInteritemSpacing = 0
     collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
     super.init(nibName: nil, bundle: nil)
-    modalPresentationStyle = .fullScreen
+    modalPresentationStyle = .overFullScreen
     modalPresentationCapturesStatusBarAppearance = true
   }
 
@@ -481,27 +482,25 @@ private final class PulpoImageGalleryViewController: UIViewController, UICollect
 
 private final class PulpoImageGalleryCoordinator: NSObject {
   let items: [PulpoPreviewItem]
-  let initialItemIndex: Int
   let viewController: PulpoImageGalleryViewController
   var onDismiss: (() -> Void)?
   private var dismissed = false
-  private let transitionImageSize: CGSize
-  private let transitionSourceNativeId: String?
+  private let transitionImageSizes: [CGSize]
+  private let transitionSourceNativeIds: [String?]
   private weak var transitionSourceWindow: UIWindow?
 
   init(
     items: [PulpoPreviewItem],
     images: [UIImage],
+    sourceNativeIds: [String?],
     initialIndex: Int,
-    sourceFrame: PulpoImageTransitionFrame?,
     sourceWindow: UIWindow?
   ) {
     self.items = items
     let safeInitialIndex = min(max(0, initialIndex), max(0, items.count - 1))
-    initialItemIndex = safeInitialIndex
     viewController = PulpoImageGalleryViewController(items: items, images: images, initialIndex: safeInitialIndex)
-    transitionImageSize = images[safeInitialIndex].size
-    transitionSourceNativeId = sourceFrame?.sourceNativeId
+    transitionImageSizes = images.map(\.size)
+    transitionSourceNativeIds = sourceNativeIds
     transitionSourceWindow = sourceWindow
     super.init()
     viewController.onDidDismiss = { [weak self] in self?.finishDismissal() }
@@ -511,10 +510,11 @@ private final class PulpoImageGalleryCoordinator: NSObject {
     if
       #available(iOS 18.0, *),
       let sourceWindow,
-      findNativeView(with: transitionSourceNativeId, in: sourceWindow) != nil
+      transitionSourceNativeIds.indices.contains(safeInitialIndex),
+      findNativeView(with: transitionSourceNativeIds[safeInitialIndex], in: sourceWindow) != nil
     {
       let options = UIViewController.Transition.ZoomOptions()
-      options.dimmingColor = .black
+      options.dimmingColor = UIColor.black.withAlphaComponent(0.72)
       options.interactiveDismissShouldBegin = { [weak viewController] context in
         guard let cell = viewController?.currentCell, cell.isAtMinimumZoom else { return false }
         return abs(context.velocity.dy) > abs(context.velocity.dx)
@@ -522,19 +522,21 @@ private final class PulpoImageGalleryCoordinator: NSObject {
       options.alignmentRectProvider = { [weak self] context in
         guard
           let self,
-          self.viewController.currentIndexForTransition == self.initialItemIndex,
-          self.transitionImageSize.width > 0,
-          self.transitionImageSize.height > 0
+          self.transitionImageSizes.indices.contains(self.viewController.currentIndexForTransition)
         else { return nil }
-        return fittedRect(for: self.transitionImageSize, in: context.zoomedViewController.view.bounds)
+        let imageSize = self.transitionImageSizes[self.viewController.currentIndexForTransition]
+        return fittedRect(for: imageSize, in: context.zoomedViewController.view.bounds)
       }
       viewController.preferredTransition = .zoom(options: options) { [weak self] _ in
         guard
           let self,
-          self.viewController.currentIndexForTransition == self.initialItemIndex,
-          let sourceWindow = self.transitionSourceWindow
+          let sourceWindow = self.transitionSourceWindow,
+          self.transitionSourceNativeIds.indices.contains(self.viewController.currentIndexForTransition)
         else { return nil }
-        return findNativeView(with: self.transitionSourceNativeId, in: sourceWindow)
+        return findNativeView(
+          with: self.transitionSourceNativeIds[self.viewController.currentIndexForTransition],
+          in: sourceWindow
+        )
       }
     }
   }
@@ -639,6 +641,10 @@ public final class PulpoAttachmentPreviewModule: Module {
       }
       let items = resolved.map(\.0)
       let images = resolved.map(\.1)
+      var sourceNativeIds = values.map(\.sourceNativeId)
+      if sourceNativeIds.indices.contains(initialIndex), sourceNativeIds[initialIndex] == nil {
+        sourceNativeIds[initialIndex] = sourceFrame?.sourceNativeId
+      }
       guard
         let presenter = self.appContext?.utilities?.currentViewController(),
         let window = presenter.viewIfLoaded?.window
@@ -653,8 +659,8 @@ public final class PulpoAttachmentPreviewModule: Module {
       let coordinator = PulpoImageGalleryCoordinator(
         items: items,
         images: images,
+        sourceNativeIds: sourceNativeIds,
         initialIndex: initialIndex,
-        sourceFrame: sourceFrame,
         sourceWindow: window
       )
       coordinator.onDismiss = { [weak self, weak coordinator] in
