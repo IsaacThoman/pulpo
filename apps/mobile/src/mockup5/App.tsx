@@ -754,7 +754,6 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
           <Pressable
             accessibilityLabel={`Preview ${attachment.name}`}
             accessibilityRole="button"
-            nativeID={attachment.kind === 'image' ? `pulpo-attachment-preview-${attachment.localId}` : undefined}
             onPress={() => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment)}
             ref={attachment.kind === 'image' ? (view) => {
               if (view) imageRefs.current.set(attachment.localId, view);
@@ -770,6 +769,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
               attachment.uri
                 ? <Image
                     accessibilityLabel={attachment.name}
+                    nativeID={`pulpo-attachment-preview-${attachment.localId}`}
                     onLoad={(event) => {
                       const { height, width } = event.nativeEvent.source;
                       imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
@@ -780,6 +780,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
                 : <ResolvedAttachmentImage
                     attachment={attachment}
                     onResolved={(source) => imageSources.current.set(attachment.localId, source)}
+                    sourceNativeId={`pulpo-attachment-preview-${attachment.localId}`}
                     variant="composer"
                   />
             ) : (
@@ -864,13 +865,17 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
       <Pressable
         accessibilityLabel={`Preview ${attachment.name}${uploading ? ', uploading' : failed ? ', upload failed' : ''}`}
         accessibilityRole="button"
-        nativeID={`pulpo-attachment-preview-${attachment.id}`}
         onPress={previewImage}
         ref={imageRef}
         style={({ pressed }) => pressed && styles.attachmentPressed}
       >
         <View>
-          <ResolvedAttachmentImage attachment={attachment} onResolved={(source) => { imageSourceRef.current = source; }} variant="message" />
+          <ResolvedAttachmentImage
+            attachment={attachment}
+            onResolved={(source) => { imageSourceRef.current = source; }}
+            sourceNativeId={`pulpo-attachment-preview-${attachment.id}`}
+            variant="message"
+          />
           {uploading ? (
             <View style={styles.sentAttachmentStatusOverlay}>
               <ActivityIndicator color="#ffffff" size="small" />
@@ -2359,9 +2364,10 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   );
 }
 
-function ResolvedAttachmentImage({ attachment, onResolved, variant }: {
+function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, variant }: {
   attachment: Attachment;
   onResolved?: (source: { height: number; uri: string; width: number }) => void;
+  sourceNativeId?: string;
   variant: 'message' | 'preview' | 'composer';
 }) {
   const [uri, setUri] = useState(attachment.uri);
@@ -2400,6 +2406,7 @@ function ResolvedAttachmentImage({ attachment, onResolved, variant }: {
   if (uri) return (
     <Image
       accessibilityLabel={attachment.name}
+      nativeID={sourceNativeId}
       onLoad={(event) => {
         const { width, height } = event.nativeEvent.source;
         onResolved?.({ height, uri, width });
@@ -2411,7 +2418,7 @@ function ResolvedAttachmentImage({ attachment, onResolved, variant }: {
     />
   );
   return (
-    <View accessibilityLabel={attachment.name} style={[style, styles.attachmentImagePlaceholder]}>
+    <View accessibilityLabel={attachment.name} nativeID={sourceNativeId} style={[style, styles.attachmentImagePlaceholder]}>
       {failed
         ? <Icon name="photo.badge.exclamationmark" size={22} color={COLORS.muted} />
         : <ActivityIndicator color={COLORS.muted} size="small" />}

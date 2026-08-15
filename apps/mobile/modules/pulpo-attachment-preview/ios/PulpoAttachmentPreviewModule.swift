@@ -61,33 +61,6 @@ private func fittedRect(for imageSize: CGSize, in bounds: CGRect) -> CGRect? {
   )
 }
 
-private func makeImageTransitionSourceView(
-  image: UIImage,
-  sourceFrame: CGRect?,
-  cornerRadius: CGFloat,
-  sourceContainer: UIView?,
-  sourceWindow: UIWindow?
-) -> UIImageView? {
-  guard
-    let sourceFrame,
-    sourceFrame.width > 0,
-    sourceFrame.height > 0,
-    let sourceContainer,
-    let sourceWindow
-  else { return nil }
-
-  let imageView = UIImageView(image: image)
-  imageView.frame = sourceContainer.convert(sourceFrame, from: sourceWindow)
-  imageView.contentMode = .scaleAspectFill
-  imageView.clipsToBounds = true
-  imageView.layer.cornerCurve = .continuous
-  imageView.layer.cornerRadius = cornerRadius
-  imageView.isUserInteractionEnabled = false
-  imageView.accessibilityElementsHidden = true
-  sourceContainer.addSubview(imageView)
-  return imageView
-}
-
 private final class PulpoZoomingImageCell: UICollectionViewCell, UIScrollViewDelegate {
   static let reuseIdentifier = "PulpoZoomingImageCell"
 
@@ -512,45 +485,34 @@ private final class PulpoImageGalleryCoordinator: NSObject {
   let viewController: PulpoImageGalleryViewController
   var onDismiss: (() -> Void)?
   private var dismissed = false
-  private var transitionSourceView: UIImageView?
-  private weak var underlyingSourceView: UIView?
-  private var underlyingSourceAlpha: CGFloat = 1
+  private let transitionImageSize: CGSize
+  private let transitionSourceNativeId: String?
+  private weak var transitionSourceWindow: UIWindow?
 
   init(
     items: [PulpoPreviewItem],
     images: [UIImage],
     initialIndex: Int,
     sourceFrame: PulpoImageTransitionFrame?,
-    sourceContainer: UIView?,
     sourceWindow: UIWindow?
   ) {
     self.items = items
     let safeInitialIndex = min(max(0, initialIndex), max(0, items.count - 1))
     initialItemIndex = safeInitialIndex
     viewController = PulpoImageGalleryViewController(items: items, images: images, initialIndex: safeInitialIndex)
-    let sourceProxy = makeImageTransitionSourceView(
-      image: images[safeInitialIndex],
-      sourceFrame: sourceFrame?.rect,
-      cornerRadius: CGFloat(sourceFrame?.cornerRadius ?? 0),
-      sourceContainer: sourceContainer,
-      sourceWindow: sourceWindow
-    )
-    transitionSourceView = sourceProxy
-    if
-      sourceProxy != nil,
-      let sourceWindow,
-      let sourceView = findNativeView(with: sourceFrame?.sourceNativeId, in: sourceWindow)
-    {
-      underlyingSourceView = sourceView
-      underlyingSourceAlpha = sourceView.alpha
-      sourceView.alpha = 0
-    }
+    transitionImageSize = images[safeInitialIndex].size
+    transitionSourceNativeId = sourceFrame?.sourceNativeId
+    transitionSourceWindow = sourceWindow
     super.init()
     viewController.onDidDismiss = { [weak self] in self?.finishDismissal() }
     viewController.loadViewIfNeeded()
     viewController.view.layoutIfNeeded()
 
-    if #available(iOS 18.0, *), transitionSourceView != nil {
+    if
+      #available(iOS 18.0, *),
+      let sourceWindow,
+      findNativeView(with: transitionSourceNativeId, in: sourceWindow) != nil
+    {
       let options = UIViewController.Transition.ZoomOptions()
       options.dimmingColor = .black
       options.interactiveDismissShouldBegin = { [weak viewController] context in
@@ -561,17 +523,18 @@ private final class PulpoImageGalleryCoordinator: NSObject {
         guard
           let self,
           self.viewController.currentIndexForTransition == self.initialItemIndex,
-          let imageSize = self.transitionSourceView?.image?.size
+          self.transitionImageSize.width > 0,
+          self.transitionImageSize.height > 0
         else { return nil }
-        return fittedRect(for: imageSize, in: context.zoomedViewController.view.bounds)
+        return fittedRect(for: self.transitionImageSize, in: context.zoomedViewController.view.bounds)
       }
       viewController.preferredTransition = .zoom(options: options) { [weak self] _ in
         guard
           let self,
           self.viewController.currentIndexForTransition == self.initialItemIndex,
-          self.transitionSourceView?.window != nil
+          let sourceWindow = self.transitionSourceWindow
         else { return nil }
-        return self.transitionSourceView
+        return findNativeView(with: self.transitionSourceNativeId, in: sourceWindow)
       }
     }
   }
@@ -579,10 +542,6 @@ private final class PulpoImageGalleryCoordinator: NSObject {
   private func finishDismissal() {
     guard !dismissed else { return }
     dismissed = true
-    transitionSourceView?.removeFromSuperview()
-    transitionSourceView = nil
-    underlyingSourceView?.alpha = underlyingSourceAlpha
-    underlyingSourceView = nil
     onDismiss?()
   }
 }
@@ -696,7 +655,6 @@ public final class PulpoAttachmentPreviewModule: Module {
         images: images,
         initialIndex: initialIndex,
         sourceFrame: sourceFrame,
-        sourceContainer: presenter.view,
         sourceWindow: window
       )
       coordinator.onDismiss = { [weak self, weak coordinator] in
