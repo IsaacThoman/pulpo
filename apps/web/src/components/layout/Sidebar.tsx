@@ -58,6 +58,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
+import { newChatLocationState } from '@/lib/new-chat-navigation'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -648,6 +649,8 @@ export function Sidebar({
   )).join('|'))
   void folderListRevision
   const chats = useChat.getState().chats.filter((chat) => !chat.temporary)
+  const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
+  const composerModelId = useChat((state) => state.composerModelId)
   const folders = useChat.getState().folders
   const addFolder = useChat((s) => s.addFolder)
   const reorderFolders = useChat((s) => s.reorderFolders)
@@ -792,7 +795,7 @@ export function Sidebar({
   const startNewChat = () => {
     useChat.getState().abandonTemporaryChat()
     navigate('/', {
-      state: { resetDefaultModel: `${Date.now()}-${Math.random()}` },
+      state: newChatLocationState(Boolean(chatId || activeTemporaryChatId), composerModelId),
     })
     onNavigate()
   }
