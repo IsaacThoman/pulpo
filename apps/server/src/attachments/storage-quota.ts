@@ -41,6 +41,7 @@ export async function reserveAttachment(input: {
   mimeType: string
   sizeBytes: number
   origin?: string
+  workspacePath?: string
   sourceResponseId?: string
   sourceToolCallId?: string
 }): Promise<typeof attachments.$inferSelect> {

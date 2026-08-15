@@ -5,7 +5,7 @@ import { db } from '../database/client.js'
 import { getConfig } from '../config.js'
 import { getBlobStore } from '../storage/index.js'
 import { newId } from '../lib/ids.js'
-import { attachmentWorkspacePath } from './policy.js'
+import { restoredAttachmentWorkspacePath } from './policy.js'
 import { workspaceContinueWithoutAgentAvailableAt, workspaceQueuePosition } from './capacity.js'
 import { workspaceControllerRequest } from './controller-http.js'
 import type { RequestInit } from 'undici'
@@ -173,15 +173,13 @@ export class WorkspaceManager {
 
   private async stageAttachments(): Promise<void> {
     if (!this.controllerLeaseId) return
-    const [record] = await db.select({ input: responses.input }).from(responses).where(eq(responses.id, this.responseId)).limit(1)
-    const ids = (Array.isArray(record?.input) ? record.input : []).flatMap((item) => {
-      const content = (item as { content?: unknown }).content
-      return Array.isArray(content) ? content.flatMap((part) => (part as { attachment_id?: string }).attachment_id ? [(part as { attachment_id: string }).attachment_id] : []) : []
-    })
-    if (!ids.length) { this.staged = true; return }
-    const rows = await db.select().from(attachments).where(and(eq(attachments.userId, this.userId), inArray(attachments.id, ids), eq(attachments.status, 'ready')))
+    const rows = await db.select().from(attachments).where(and(
+      eq(attachments.userId, this.userId),
+      eq(attachments.chatId, this.chatId),
+      eq(attachments.status, 'ready'),
+    )).orderBy(asc(attachments.createdAt), asc(attachments.id))
     for (const attachment of rows) {
-      const path = attachmentWorkspacePath(attachment.originalName, attachment.id)
+      const path = restoredAttachmentWorkspacePath(attachment)
       await this.request(`/v1/leases/${this.controllerLeaseId}/v1/files?path=${encodeURIComponent(path)}`, {
         method: 'PUT',
         headers: { 'content-type': attachment.mimeType, 'content-length': String(attachment.sizeBytes) },

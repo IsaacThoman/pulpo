@@ -69,7 +69,8 @@ export async function storeGeneratedAttachment(input: {
   const objectKey = `users/${input.userId}/attachments/${id}`
   const attachment = reusablePending ? existing : await reserveAttachment({
     id, userId: input.userId, chatId: input.chatId, objectKey, originalName: name, mimeType,
-    sizeBytes: input.data.byteLength, origin: 'assistant', sourceResponseId: input.responseId, sourceToolCallId: input.toolCallId,
+    sizeBytes: input.data.byteLength, origin: 'assistant', workspacePath: input.path,
+    sourceResponseId: input.responseId, sourceToolCallId: input.toolCallId,
   })
   try {
     const checksum = createHash('sha256').update(input.data).digest('base64url')
@@ -77,7 +78,7 @@ export async function storeGeneratedAttachment(input: {
       contentType: mimeType, contentLength: input.data.byteLength,
       contentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(name)}`,
     })
-    await db.update(attachments).set({ status: 'ready', checksum, updatedAt: new Date() }).where(eq(attachments.id, id))
+    await db.update(attachments).set({ status: 'ready', workspacePath: input.path, checksum, updatedAt: new Date() }).where(eq(attachments.id, id))
     return { id, name, mimeType, sizeBytes: attachment.sizeBytes }
   } catch (error) {
     await getBlobStore().delete(objectKey).catch(() => undefined)

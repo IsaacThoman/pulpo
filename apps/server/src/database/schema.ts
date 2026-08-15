@@ -457,6 +457,7 @@ export const attachments = pgTable('attachments', {
   checksum: text('checksum'),
   openaiFileId: text('openai_file_id'),
   origin: text('origin').notNull().default('user'),
+  workspacePath: text('workspace_path'),
   sourceResponseId: uuid('source_response_id').references(() => responses.id, { onDelete: 'set null' }),
   sourceToolCallId: text('source_tool_call_id'),
   error: text('error'),
