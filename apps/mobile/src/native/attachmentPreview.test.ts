@@ -27,9 +27,9 @@ import {
 
 describe('attachment preview wrapper', () => {
   beforeEach(() => {
-    mocks.animateImageTransition.mockClear()
-    mocks.previewImages.mockClear()
-    mocks.previewFile.mockClear()
+    mocks.animateImageTransition.mockReset().mockResolvedValue(undefined)
+    mocks.previewImages.mockReset().mockResolvedValue(undefined)
+    mocks.previewFile.mockReset().mockResolvedValue(undefined)
   })
 
   it('presents a local file through the optional Apple module', async () => {
@@ -67,12 +67,11 @@ describe('attachment preview wrapper', () => {
     expect(mocks.previewImages).toHaveBeenCalledWith(items, 1, source)
   })
 
-  it('normalizes a wrapped native busy error without exposing internals', async () => {
+  it('retries a transient native busy state while the previous gallery finishes closing', async () => {
     mocks.previewImages.mockRejectedValueOnce(new Error('FunctionCallException caused by AttachmentPreviewBusy'))
-    const result = previewImages([{ id: 'photo-1', title: 'Photo.jpg', uri: 'file:///tmp/photo.jpg' }], 0)
-    await expect(result).rejects.toMatchObject({
-      code: 'ERR_ATTACHMENT_PREVIEW_BUSY',
-      message: 'Another preview is already open.',
-    })
+    await expect(previewImages([
+      { id: 'photo-1', title: 'Photo.jpg', uri: 'file:///tmp/photo.jpg' },
+    ], 0)).resolves.toBeUndefined()
+    expect(mocks.previewImages).toHaveBeenCalledTimes(2)
   })
 })

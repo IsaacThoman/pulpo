@@ -26,6 +26,12 @@ export const supportsNativeImageTransition = Platform.OS === 'ios'
 export const supportsNativeImageGallery = Platform.OS === 'ios'
   && typeof PulpoAttachmentPreview?.previewImages === 'function'
 
+const imagePreviewBusyRetryDelays = [60, 100, 160, 240]
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
 function attachmentPreviewError(cause: unknown, fallback: string): AttachmentPreviewError {
   const native = cause as { code?: string; message?: string }
   const details = `${native.code ?? ''} ${native.message ?? ''}`
@@ -56,10 +62,16 @@ export async function previewImages(
   if (!supportsNativeImageGallery || !PulpoAttachmentPreview) {
     throw new AttachmentPreviewError('Native image previews are unavailable on this platform.', 'ERR_ATTACHMENT_PREVIEW_UNAVAILABLE')
   }
-  try {
-    await PulpoAttachmentPreview.previewImages(items, initialIndex, sourceFrame)
-  } catch (cause) {
-    throw attachmentPreviewError(cause, 'The images could not be previewed.')
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await PulpoAttachmentPreview.previewImages(items, initialIndex, sourceFrame)
+      return
+    } catch (cause) {
+      const error = attachmentPreviewError(cause, 'The images could not be previewed.')
+      const retryDelay = imagePreviewBusyRetryDelays[attempt]
+      if (error.code !== 'ERR_ATTACHMENT_PREVIEW_BUSY' || retryDelay === undefined) throw error
+      await wait(retryDelay)
+    }
   }
 }
 

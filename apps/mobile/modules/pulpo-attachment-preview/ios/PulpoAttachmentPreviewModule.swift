@@ -285,7 +285,11 @@ private final class PulpoImageGalleryViewController: UIViewController, UICollect
 
   override func viewDidDisappear(_ animated: Bool) {
     super.viewDidDisappear(animated)
-    guard presentingViewController == nil || isBeingDismissed else { return }
+    // A completed interactive zoom dismissal can reach this callback before
+    // UIKit clears `presentingViewController` or updates `isBeingDismissed`.
+    // A share sheet is the only child presentation that should keep the
+    // gallery active while its view is hidden.
+    guard presentedViewController == nil else { return }
     finishDismissal()
   }
 
@@ -600,7 +604,13 @@ public final class PulpoAttachmentPreviewModule: Module {
       if let activeGallery = self.activeImageGallery {
         let controllerVisible = activeGallery.viewController.presentingViewController != nil
           || activeGallery.viewController.viewIfLoaded?.window != nil
-        if controllerVisible { return }
+        if controllerVisible {
+          throw Exception(
+            name: "AttachmentPreviewBusy",
+            description: "Another attachment preview is still closing.",
+            code: "ERR_ATTACHMENT_PREVIEW_BUSY"
+          )
+        }
         self.activeImageGallery = nil
       }
       guard self.activePreview == nil else {
