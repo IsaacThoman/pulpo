@@ -3091,6 +3091,7 @@ function ChatView({
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
   const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
+  const nativeImagePreviewPendingRef = useRef(false);
   const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
   const setAttachments = useCallback((update: SetStateAction<ComposerAttachment[]>) => {
     setAttachmentState((current) => {
@@ -3327,6 +3328,8 @@ function ChatView({
       setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex, origin });
       return;
     }
+    if (nativeImagePreviewPendingRef.current) return;
+    nativeImagePreviewPendingRef.current = true;
     void (async () => {
       const items = await Promise.all(preview.items.map(async (item) => ({
         id: item.id,
@@ -3344,10 +3347,13 @@ function ChatView({
       if (origin) setTimeout(Keyboard.dismiss, 500);
       else Keyboard.dismiss();
     })().catch((error) => {
+      if (error instanceof AttachmentPreviewError && error.code === 'ERR_ATTACHMENT_PREVIEW_BUSY') return;
       Alert.alert(
         'Preview unavailable',
         error instanceof Error ? error.message : 'The images could not be opened.',
       );
+    }).finally(() => {
+      nativeImagePreviewPendingRef.current = false;
     });
   }, [resolvePreviewImageUri]);
 

@@ -154,7 +154,13 @@ public final class PulpoAttachmentPreviewModule: Module {
       initialIndex: Int,
       sourceFrame: PulpoImageTransitionFrame?
     ) in
-      guard self.activePreview == nil, self.activeImageGallery == nil else {
+      if let activeGallery = self.activeImageGallery {
+        let controllerVisible = activeGallery.previewController.presentingViewController != nil
+          || activeGallery.previewController.viewIfLoaded?.window != nil
+        if controllerVisible { return }
+        self.activeImageGallery = nil
+      }
+      guard self.activePreview == nil else {
         throw Exception(
           name: "AttachmentPreviewBusy",
           description: "Another attachment preview is already open.",
