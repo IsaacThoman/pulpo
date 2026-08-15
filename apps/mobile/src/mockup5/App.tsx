@@ -735,6 +735,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
         imageHeight: source.height,
         imageWidth: source.width,
         itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.localId}`,
         uri: source.uri,
       });
     });
@@ -753,6 +754,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
           <Pressable
             accessibilityLabel={`Preview ${attachment.name}`}
             accessibilityRole="button"
+            nativeID={attachment.kind === 'image' ? `pulpo-attachment-preview-${attachment.localId}` : undefined}
             onPress={() => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment)}
             ref={attachment.kind === 'image' ? (view) => {
               if (view) imageRefs.current.set(attachment.localId, view);
@@ -852,6 +854,7 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
         imageHeight: source.height,
         imageWidth: source.width,
         itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.id}`,
         uri: source.uri,
       });
     });
@@ -861,6 +864,7 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
       <Pressable
         accessibilityLabel={`Preview ${attachment.name}${uploading ? ', uploading' : failed ? ', upload failed' : ''}`}
         accessibilityRole="button"
+        nativeID={`pulpo-attachment-preview-${attachment.id}`}
         onPress={previewImage}
         ref={imageRef}
         style={({ pressed }) => pressed && styles.attachmentPressed}
@@ -3342,6 +3346,7 @@ function ChatView({
         width: origin.width,
         height: origin.height,
         cornerRadius: origin.cornerRadius,
+        sourceNativeId: origin.sourceNativeId,
       } : undefined);
       // Keep the React Native source in place for Quick Look's native zoom.
       if (origin) setTimeout(Keyboard.dismiss, 500);

@@ -58,6 +58,7 @@ export interface AttachmentImageTransitionOrigin extends AttachmentPreviewFrame 
   imageHeight: number
   imageWidth: number
   itemId: string
+  sourceNativeId?: string
   uri?: string
 }
 

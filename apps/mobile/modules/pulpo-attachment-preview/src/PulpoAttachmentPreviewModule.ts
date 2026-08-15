@@ -6,6 +6,7 @@ export interface PulpoImageTransitionFrame {
   width: number
   height: number
   cornerRadius: number
+  sourceNativeId?: string
 }
 
 export interface PulpoImageGalleryItem {

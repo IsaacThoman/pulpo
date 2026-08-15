@@ -8,10 +8,25 @@ private struct PulpoImageTransitionFrame: Record {
   @Field var width: Double = 0
   @Field var height: Double = 0
   @Field var cornerRadius: Double = 0
+  @Field var sourceNativeId: String?
 
   var rect: CGRect {
     CGRect(x: x, y: y, width: width, height: height)
   }
+}
+
+private func findNativeView(with id: String?, in rootView: UIView) -> UIView? {
+  guard let id, !id.isEmpty else { return nil }
+  for key in ["nativeId", "nativeID"] {
+    let selector = NSSelectorFromString(key)
+    if rootView.responds(to: selector), rootView.value(forKey: key) as? String == id {
+      return rootView
+    }
+  }
+  for subview in rootView.subviews {
+    if let match = findNativeView(with: id, in: subview) { return match }
+  }
+  return nil
 }
 
 private struct PulpoImageGalleryItem: Record {
@@ -498,6 +513,8 @@ private final class PulpoImageGalleryCoordinator: NSObject {
   var onDismiss: (() -> Void)?
   private var dismissed = false
   private var transitionSourceView: UIImageView?
+  private weak var underlyingSourceView: UIView?
+  private var underlyingSourceAlpha: CGFloat = 1
 
   init(
     items: [PulpoPreviewItem],
@@ -511,13 +528,23 @@ private final class PulpoImageGalleryCoordinator: NSObject {
     let safeInitialIndex = min(max(0, initialIndex), max(0, items.count - 1))
     initialItemIndex = safeInitialIndex
     viewController = PulpoImageGalleryViewController(items: items, images: images, initialIndex: safeInitialIndex)
-    transitionSourceView = makeImageTransitionSourceView(
+    let sourceProxy = makeImageTransitionSourceView(
       image: images[safeInitialIndex],
       sourceFrame: sourceFrame?.rect,
       cornerRadius: CGFloat(sourceFrame?.cornerRadius ?? 0),
       sourceContainer: sourceContainer,
       sourceWindow: sourceWindow
     )
+    transitionSourceView = sourceProxy
+    if
+      sourceProxy != nil,
+      let sourceWindow,
+      let sourceView = findNativeView(with: sourceFrame?.sourceNativeId, in: sourceWindow)
+    {
+      underlyingSourceView = sourceView
+      underlyingSourceAlpha = sourceView.alpha
+      sourceView.alpha = 0
+    }
     super.init()
     viewController.onDidDismiss = { [weak self] in self?.finishDismissal() }
     viewController.loadViewIfNeeded()
@@ -554,6 +581,8 @@ private final class PulpoImageGalleryCoordinator: NSObject {
     dismissed = true
     transitionSourceView?.removeFromSuperview()
     transitionSourceView = nil
+    underlyingSourceView?.alpha = underlyingSourceAlpha
+    underlyingSourceView = nil
     onDismiss?()
   }
 }
