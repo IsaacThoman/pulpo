@@ -42,6 +42,7 @@ export function InstructionPresetButtons({
               : {
                   backgroundColor: `color-mix(in srgb, ${preset.color} 10%, transparent)`,
                   borderColor: preset.color,
+                  color: `color-mix(in srgb, ${preset.color} 45%, var(--foreground))`,
                 }}
           >
             {preset.title}

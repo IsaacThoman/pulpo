@@ -33,5 +33,6 @@ describe('instruction preset buttons', () => {
     )
     expect(markup).toContain('aria-pressed="false"')
     expect(markup).toContain('color-mix(in srgb, #8b5cf6 10%, transparent)')
+    expect(markup).toContain('color:color-mix(in srgb, #8b5cf6 45%, var(--foreground))')
   })
 })
