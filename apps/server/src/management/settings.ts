@@ -9,6 +9,7 @@ import {
   managementAccountSettingsSchema,
   managementSettingsDocumentSchema,
   managementWebToolsSettingsSchema,
+  personalizationSettingsSchema,
   webToolsSettingsSchema,
   type ManagementSettingsChange,
   type ManagementSettingsDocument,
@@ -27,6 +28,7 @@ import {
   parseInterfaceSettings,
   parseLoggingSettings,
   parseOcrSettings,
+  parsePersonalizationSettings,
   parseWebToolsSettings,
 } from '../settings/application-settings.js'
 import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
@@ -83,6 +85,7 @@ export async function loadManagementSettings(userId: string, database: typeof db
   const instance = {
     auth: parseAuthSettings(byKey.get('auth')),
     interface: parseInterfaceSettings(byKey.get('interface')),
+    personalization: parsePersonalizationSettings(byKey.get('personalization')),
     ocr: publicOcr(parseOcrSettings(byKey.get('ocr'))),
     agent: parseAgentSettings(byKey.get('agent')),
     webTools: {
@@ -181,6 +184,7 @@ export async function applyManagementSettings(
   const account = managementAccountSettingsSchema.parse(document.account)
   const auth = authSettingsSchema.parse(document.instance.auth)
   const iface = interfaceSettingsSchema.parse(document.instance.interface)
+  const personalization = personalizationSettingsSchema.parse(document.instance.personalization)
   const ocr = instanceOcrSettingsSchema.parse(document.instance.ocr)
   if (ocr.enabled && !ocr.modelId) throw new AppError(400, 'ocr_model_required', 'Select an OCR model before enabling OCR')
   const agent = agentSettingsSchema.parse(document.instance.agent)
@@ -228,6 +232,7 @@ export async function applyManagementSettings(
       const groups: Record<string, unknown> = {
         auth,
         interface: iface,
+        personalization,
         ocr,
         agent,
         webTools: {

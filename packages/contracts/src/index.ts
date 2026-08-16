@@ -636,6 +636,12 @@ export type SidebarPins = z.infer<typeof sidebarPinsSchema>
 /** Account-scoped Agent mode selections keyed by visible catalog model id. */
 export const agentModesSchema = z.record(z.string(), z.boolean())
 
+/** Account-scoped custom-instruction preset selections keyed by stable preset id. */
+export const instructionPresetSelectionsSchema = z.record(
+  z.string().trim().min(1).max(120),
+  z.boolean(),
+).refine((value) => Object.keys(value).length <= 500, 'Too many instruction preset selections')
+
 /** Instance defaults copied into each account when it is created. */
 export const newAccountModelDefaultsSchema = z.object({
   defaultModelId: z.string().trim().min(1).max(120).nullable().default(null),
@@ -985,6 +991,53 @@ export const interfaceSettingsSchema = z.object({
   suggestedPrompts: z.array(suggestedPromptItemSchema).max(50).default([...DEFAULT_SUGGESTED_PROMPTS]),
 })
 
+export const DEFAULT_CASUAL_INSTRUCTIONS = `You are chatting with the user like a familiar, casual friend.
+
+Be warm, playful, and conversational. Match the user's tone and energy.
+Use natural slang and contractions when appropriate.
+Occasionally use expressive emojis such as 😭, 😂, 💀, 😄, or 🤨, but only when they genuinely fit.
+For casual conversation, prefer short responses and natural follow-up questions.
+It's okay to joke, react, or sound amused.
+Avoid sounding like customer support, a textbook, or a stereotypical AI assistant.
+Don't over-explain simple things.
+When the user asks a technical or serious question, become clearer and more detailed while keeping the conversational tone.`
+
+export const instructionPresetSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(80),
+  instructions: z.string().trim().min(1).max(100_000),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  defaultEnabled: z.boolean(),
+})
+export type InstructionPreset = z.infer<typeof instructionPresetSchema>
+
+export const DEFAULT_INSTRUCTION_PRESETS: InstructionPreset[] = [{
+  id: 'casual',
+  title: 'Casual',
+  instructions: DEFAULT_CASUAL_INSTRUCTIONS,
+  color: '#f7b75f',
+  defaultEnabled: true,
+}]
+
+const instructionPresetsSchema = z.array(instructionPresetSchema).max(50).superRefine((presets, context) => {
+  const seen = new Set<string>()
+  presets.forEach((preset, index) => {
+    if (seen.has(preset.id)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Instruction preset ids must be unique',
+        path: [index, 'id'],
+      })
+    }
+    seen.add(preset.id)
+  })
+})
+
+export const personalizationSettingsSchema = z.object({
+  instructionPresets: instructionPresetsSchema.default(() => DEFAULT_INSTRUCTION_PRESETS.map((preset) => ({ ...preset }))),
+})
+export type PersonalizationSettings = z.infer<typeof personalizationSettingsSchema>
+
 export const instanceOcrSettingsSchema = z.object({
   enabled: z.boolean().default(false),
   cacheEnabled: z.boolean().default(true),
@@ -1012,6 +1065,7 @@ export const managementAccountSettingsSchema = z.object({
   username: usernameSchema,
   profileColor: profileColorSchema.nullable().default(null),
   memoryEnabled: z.boolean().default(false),
+  instructionPresetSelections: instructionPresetSelectionsSchema.default({}),
   /** Per-model composer Agent mode selections. Missing model ids default on in clients. */
   agentModes: agentModesSchema.default({}),
   /** @deprecated Retained so older management documents remain readable. */
@@ -1041,6 +1095,7 @@ export const managementWebToolsSettingsSchema = webToolsSettingsSchema.extend({
 export const managementInstanceSettingsSchema = z.object({
   auth: authSettingsSchema.default(() => authSettingsSchema.parse({})),
   interface: interfaceSettingsSchema.default(() => interfaceSettingsSchema.parse({})),
+  personalization: personalizationSettingsSchema.default(() => personalizationSettingsSchema.parse({})),
   ocr: instanceOcrSettingsSchema.default(() => instanceOcrSettingsSchema.parse({})),
   agent: agentSettingsSchema.default(() => agentSettingsSchema.parse({})),
   webTools: managementWebToolsSettingsSchema.default(() => managementWebToolsSettingsSchema.parse({})),

@@ -7,18 +7,21 @@ import {
   ScrollText,
   SlidersHorizontal,
   Bot,
+  Sparkles,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
 import { OcrSection } from './sections-ocr'
 import { LoggingSection } from './sections-logging'
 import { AgentSection } from './sections-agent'
+import { PersonalizationSection } from './sections-personalization'
 import { cn } from '@/lib/utils'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal, el: <GeneralSection /> },
   { id: 'auth', label: 'Authentication', icon: Lock, el: <AuthenticationSection /> },
   { id: 'interface', label: 'Interface', icon: LayoutGrid, el: <InterfaceSection /> },
+  { id: 'personalization', label: 'Personalization', icon: Sparkles, el: <PersonalizationSection /> },
   { id: 'ocr', label: 'OCR', icon: FileSearch, el: <OcrSection /> },
   { id: 'agent', label: 'Agent', icon: Bot, el: <AgentSection /> },
   { id: 'logging', label: 'Logging', icon: ScrollText, el: <LoggingSection /> },

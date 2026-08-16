@@ -18,6 +18,7 @@ interface SettingsState {
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
   customInstructions: string
+  instructionPresetSelections: Record<string, boolean>
   nickname: string
   memoryEnabled: boolean
   /** Per-model composer Agent mode selections. Missing model ids default on. */
@@ -48,6 +49,7 @@ export const DEFAULT_SETTINGS = {
   showReasoning: true,
   chatWidth: 'narrow' as const,
   customInstructions: '',
+  instructionPresetSelections: {},
   nickname: '',
   memoryEnabled: false,
   agentModes: {},

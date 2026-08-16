@@ -6,7 +6,7 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       theme: 'dark', automaticChatExpiration: '24h', newChatAutoExpire: false,
       sidebarPins: { usage: false, friends: false, apiKeys: false },
-      agentModes: {}, favoriteModelIds: [], providerOrder: [],
+      agentModes: {}, instructionPresetSelections: {}, favoriteModelIds: [], providerOrder: [],
     })
   })
 
@@ -60,5 +60,19 @@ describe('Agent mode account preferences', () => {
       agentModes: { 'model-a': false, 'model-b': true },
     })
     expect(() => normalizedPreferencePatch({ agentModes: { 'model-a': 'false' } })).toThrow()
+  })
+})
+
+describe('instruction preset account preferences', () => {
+  it('defaults missing selections and preserves explicit booleans', () => {
+    expect(preferencesWithModelDefaults({}).instructionPresetSelections).toEqual({})
+    expect(preferencesWithModelDefaults({ instructionPresetSelections: { casual: false } }).instructionPresetSelections)
+      .toEqual({ casual: false })
+  })
+
+  it('validates selection patches', () => {
+    expect(normalizedPreferencePatch({ instructionPresetSelections: { casual: true } }))
+      .toEqual({ instructionPresetSelections: { casual: true } })
+    expect(() => normalizedPreferencePatch({ instructionPresetSelections: { casual: 'true' } })).toThrow()
   })
 })

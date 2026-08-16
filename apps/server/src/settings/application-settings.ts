@@ -9,11 +9,12 @@ import {
   instanceOcrSettingsSchema,
   interfaceSettingsSchema,
   loggingSettingsSchema,
+  personalizationSettingsSchema,
   suggestedPromptItemSchema,
   webToolsSettingsSchema,
 } from '@pulpo/contracts'
 
-export { authSettingsSchema, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, interfaceSettingsSchema, loggingSettingsSchema }
+export { authSettingsSchema, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, interfaceSettingsSchema, loggingSettingsSchema, personalizationSettingsSchema }
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 export const DEFAULT_STORAGE_LIMIT_BYTES = 5_000 * 1024 * 1024
@@ -36,6 +37,7 @@ export const storedWebToolsSettingsSchema = webToolsSettingsSchema.extend({
 
 export type AuthSettings = z.infer<typeof authSettingsSchema>
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>
+export type PersonalizationSettings = z.infer<typeof personalizationSettingsSchema>
 export type SuggestedPromptItem = z.infer<typeof suggestedPromptItemSchema>
 
 export function parseAuthSettings(value: unknown): AuthSettings {
@@ -46,6 +48,11 @@ export function parseAuthSettings(value: unknown): AuthSettings {
 export function parseLoggingSettings(value: unknown): z.infer<typeof loggingSettingsSchema> {
   const parsed = loggingSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : loggingSettingsSchema.parse({})
+}
+
+export function parsePersonalizationSettings(value: unknown): PersonalizationSettings {
+  const parsed = personalizationSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : personalizationSettingsSchema.parse({})
 }
 
 export function parseOcrSettings(value: unknown): z.infer<typeof ocrSettingsSchema> {
