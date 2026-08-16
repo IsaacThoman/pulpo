@@ -25,7 +25,8 @@ import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { redis } from '../redis.js'
-import { parseLoggingSettings } from '../settings/application-settings.js'
+import { parseLoggingSettings, parsePersonalizationSettings } from '../settings/application-settings.js'
+import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
 import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
@@ -163,14 +164,19 @@ async function contextualInput(
   requestLogId: string,
   onCompactionUpdate: (item: CompactionItem) => Promise<void>,
 ): Promise<{ input: unknown[]; compactionItems: CompactionItem[] }> {
-  const [preferences] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
-  const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean }
+  const [[preferences], [personalizationRow]] = await Promise.all([
+    db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1),
+    db.select({ value: applicationSettings.value }).from(applicationSettings)
+      .where(eq(applicationSettings.key, 'personalization')).limit(1),
+  ])
+  const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
+  const customInstructions = composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
   const enabledMemories = values.memoryEnabled
     ? await db.select().from(memories).where(and(eq(memories.userId, record.response.userId), eq(memories.enabled, true)))
     : []
   const context: unknown[] = []
   if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
-  if (values.customInstructions?.trim()) context.push({ role: 'developer', content: `User-provided custom instructions:\n${values.customInstructions.trim()}` })
+  if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
   if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory.content}`).join('\n')}` })
   const existingItem = (record.response.output as unknown[]).find((raw): raw is CompactionItem => {
     const item = raw as Partial<CompactionItem>

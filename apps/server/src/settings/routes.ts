@@ -12,18 +12,22 @@ import { maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
-import { parseAuthSettings } from './application-settings.js'
+import { parseAuthSettings, parsePersonalizationSettings } from './application-settings.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
 export async function registerSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/settings', async (request) => {
     const user = requireUser(request)
-    const [[row], [authSetting]] = await Promise.all([
+    const [[row], [authSetting], [personalizationSetting]] = await Promise.all([
       db.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1),
       db.select({ value: applicationSettings.value })
         .from(applicationSettings)
         .where(eq(applicationSettings.key, 'auth'))
+        .limit(1),
+      db.select({ value: applicationSettings.value })
+        .from(applicationSettings)
+        .where(eq(applicationSettings.key, 'personalization'))
         .limit(1),
     ])
     const values = preferencesWithModelDefaults(row?.values as Record<string, unknown> | undefined)
@@ -35,6 +39,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         automaticChatExpiration: parseAutomaticChatExpiration(values?.automaticChatExpiration),
       },
       newAccountFavoriteModelIds,
+      instructionPresets: parsePersonalizationSettings(personalizationSetting?.value).instructionPresets,
       updatedAt: row?.updatedAt.toISOString() ?? null,
     }
   })

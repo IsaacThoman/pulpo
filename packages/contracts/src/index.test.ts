@@ -12,6 +12,7 @@ import {
   createProviderSchema,
   createChatResponseSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
+  DEFAULT_CASUAL_INSTRUCTIONS,
   mergeResponseSnapshots,
   managementInfoSchema,
   managementAccountSettingsSchema,
@@ -22,6 +23,7 @@ import {
   mobileConfigSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
+  personalizationSettingsSchema,
   nativeLoginInputSchema,
   passkeyAuthenticationResponseSchema,
   passkeyListSchema,
@@ -356,6 +358,7 @@ describe('shared contracts', () => {
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       nickname: '', favoriteModelIds: [], agentModes: {},
+      instructionPresetSelections: {},
       sidebarPins: { usage: false, friends: false, apiKeys: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
@@ -378,10 +381,31 @@ describe('shared contracts', () => {
         newAccountModelDefaults: { defaultModelId: null, favoriteModelIds: [] },
       },
       interface: { localTask: 'current' },
+      personalization: {
+        instructionPresets: [{ id: 'casual', title: 'Casual', defaultEnabled: true, color: '#8b5cf6' }],
+      },
       ocr: { enabled: false, modelId: null },
       webTools: { searchEnabled: false },
       logging: { payloadRetention: '7d' },
     })
+  })
+
+  it('validates custom-instruction presets and seeds Casual', () => {
+    const settings = personalizationSettingsSchema.parse({})
+    expect(settings.instructionPresets).toEqual([{
+      id: 'casual',
+      title: 'Casual',
+      instructions: DEFAULT_CASUAL_INSTRUCTIONS,
+      color: '#8b5cf6',
+      defaultEnabled: true,
+    }])
+    expect(personalizationSettingsSchema.safeParse({ instructionPresets: [
+      settings.instructionPresets[0],
+      { ...settings.instructionPresets[0], title: 'Duplicate' },
+    ] }).success).toBe(false)
+    expect(personalizationSettingsSchema.safeParse({ instructionPresets: [{
+      ...settings.instructionPresets[0], color: 'violet',
+    }] }).success).toBe(false)
   })
 
   it('bounds management tokens and secret references', () => {

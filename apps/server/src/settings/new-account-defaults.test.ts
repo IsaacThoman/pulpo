@@ -8,6 +8,7 @@ describe('new-account model defaults', () => {
     expect(newAccountPreferenceValues(settings)).toEqual({
       defaultModelId: null,
       agentModes: {},
+      instructionPresetSelections: {},
       automaticChatExpiration: '24h',
       newChatAutoExpire: false,
       favoriteModelIds: [],
@@ -26,6 +27,7 @@ describe('new-account model defaults', () => {
     expect(newAccountPreferenceValues(settings)).toEqual({
       defaultModelId: 'model-a',
       agentModes: {},
+      instructionPresetSelections: {},
       automaticChatExpiration: '24h',
       newChatAutoExpire: false,
       favoriteModelIds: ['model-c', 'model-a', 'model-b'],

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
+import type { InstructionPreset } from '@pulpo/contracts'
 import {
   Database,
   Camera,
@@ -49,6 +50,7 @@ import { UsernameSettings } from './UsernameSettings'
 import { AvatarCropEditor } from './AvatarCropEditor'
 import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
+import { InstructionPresetButtons } from './InstructionPresetButtons'
 
 const SECTION_CONFIG = {
   general: { label: 'General', icon: SlidersHorizontal },
@@ -193,6 +195,12 @@ export function SettingsModal({
     refetchOnWindowFocus: 'always',
   })
   const deletedChats = deletedChatsQuery.data ?? []
+  const personalizationQuery = useQuery({
+    queryKey: ['settings', user?.id],
+    queryFn: () => apiRequest<{ values: Record<string, unknown>; instructionPresets: InstructionPreset[] }>('/api/settings'),
+    enabled: Boolean(open && section === 'personalization' && user?.id),
+  })
+  const instructionPresets = personalizationQuery.data?.instructionPresets ?? []
 
   useEffect(() => {
     if (open) setSection(initialSection)
@@ -628,6 +636,22 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">Personalization</h2>
                   <Separator className="my-3" />
                   <div className="py-3">
+                    {instructionPresets.length > 0 && (
+                      <div className="mb-4">
+                        <Label className="text-sm font-medium">Instruction presets</Label>
+                        <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+                          Add a preset without changing your custom instructions below.
+                        </p>
+                        <InstructionPresetButtons
+                          presets={instructionPresets}
+                          selections={s.instructionPresetSelections}
+                          onToggle={(presetId, enabled) => s.set('instructionPresetSelections', {
+                            ...s.instructionPresetSelections,
+                            [presetId]: enabled,
+                          })}
+                        />
+                      </div>
+                    )}
                     <Label className="text-sm font-medium">Custom instructions</Label>
                     <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
                       Appended to every conversation as a system prompt.

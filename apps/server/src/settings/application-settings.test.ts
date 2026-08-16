@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
+import { DEFAULT_CASUAL_INSTRUCTIONS, DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -156,5 +156,21 @@ describe('interface application settings', () => {
     expect(settings.suggestedPrompts).toEqual([...DEFAULT_SUGGESTED_PROMPTS])
     expect(settings.titleIncludeFirstCharacters).toBe(8_000)
     expect(settings.titleIncludeLastCharacters).toBe(8_000)
+  })
+})
+
+describe('personalization application settings', () => {
+  it('falls back to the enabled Casual preset for legacy instances', () => {
+    expect(parsePersonalizationSettings(undefined).instructionPresets).toEqual([{
+      id: 'casual',
+      title: 'Casual',
+      instructions: DEFAULT_CASUAL_INSTRUCTIONS,
+      color: '#8b5cf6',
+      defaultEnabled: true,
+    }])
+  })
+
+  it('preserves an explicitly empty preset list', () => {
+    expect(parsePersonalizationSettings({ instructionPresets: [] }).instructionPresets).toEqual([])
   })
 })

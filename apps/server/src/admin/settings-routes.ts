@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, personalizationSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, backupJobs, banners, exportJobs, models } from '../database/schema.js'
@@ -76,6 +76,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
         if (!model) throw new AppError(400, 'task_model_unavailable', 'The selected task model is unavailable')
       }
     }
+    if (values.personalization !== undefined) values.personalization = personalizationSettingsSchema.parse(values.personalization)
     if (values.agent !== undefined) values.agent = agentSettingsSchema.parse(values.agent)
     // OCR settings use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
