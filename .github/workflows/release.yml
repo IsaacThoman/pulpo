@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled, closed]
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 permissions:
@@ -21,9 +21,7 @@ jobs:
     name: Checks / ${{ matrix.name }}
     if: >-
       github.event_name != 'pull_request' ||
-      (github.event.action != 'closed' &&
-       github.event.action != 'unlabeled' &&
-       (github.event.action != 'labeled' || github.event.label.name == 'deploy-preview'))
+      github.event.action != 'closed'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -59,9 +57,7 @@ jobs:
     name: CLI package / Node ${{ matrix.node }}
     if: >-
       github.event_name != 'pull_request' ||
-      (github.event.action != 'closed' &&
-       github.event.action != 'unlabeled' &&
-       (github.event.action != 'labeled' || github.event.label.name == 'deploy-preview'))
+      github.event.action != 'closed'
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
@@ -139,8 +135,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'deploy-preview')
+      github.event.pull_request.head.repo.full_name == github.repository
     needs: [checks, cli-package]
     runs-on: ubuntu-24.04
     permissions:
@@ -187,8 +182,7 @@ jobs:
     name: Delete Coolify preview
     if: >-
       github.event_name == 'pull_request' &&
-      (github.event.action == 'closed' ||
-       (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview')) &&
+      github.event.action == 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
