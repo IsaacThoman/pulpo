@@ -2905,6 +2905,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
+  const [labsMenuRevision, setLabsMenuRevision] = useState(0);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
   const providerOrder = usePreferencesStore((state) => state.providerOrder);
   const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
@@ -2962,7 +2963,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
         </SwiftUISection>
         <SwiftUIDivider key="divider" />
         <SwiftUIMenu
-          key="sections"
+          key={`sections:${labsMenuRevision}`}
           label={(
             <SwiftUILabel
               title="Labs"
@@ -2981,6 +2982,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
               modifiers={[menuActionDismissBehavior('disabled')]}
               onPress={() => {
                 setSection(candidateSection.id);
+                setLabsMenuRevision((current) => current + 1);
                 Haptics.selectionAsync();
               }}
             >
