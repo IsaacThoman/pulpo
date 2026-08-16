@@ -983,7 +983,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
-            buttonStyle(selected ? 'glassProminent' : 'glass'),
+            buttonStyle(selected || tinted ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
             ...(selected ? [tint(selectedTint), foregroundStyle(accent)] : []),
@@ -2938,7 +2938,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           />
         )}
         modifiers={[
-          buttonStyle('glass'),
+          buttonStyle(tinted ? 'glassProminent' : 'glass'),
           buttonBorderShape('capsule'),
           controlSize('regular'),
           ...(tinted ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(foreground)] : []),
