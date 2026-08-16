@@ -5,9 +5,39 @@ const mocks = vi.hoisted(() => ({
   queueOfflineMutation: vi.fn(),
   removeSnapshot: vi.fn(),
   receiveSnapshot: vi.fn(),
+  directoryCreate: vi.fn(),
+  fileCopy: vi.fn(),
+  fileDelete: vi.fn(),
+  fileUpload: vi.fn(),
+  recordCachedAttachment: vi.fn(),
+  removeCachedAttachment: vi.fn(),
 }))
 
-vi.mock('expo-file-system', () => ({ File: class {}, Paths: {} }))
+vi.mock('expo-file-system', () => {
+  const joinUri = (parts: Array<string | { uri: string }>) => parts
+    .map((part, index) => {
+      const value = typeof part === 'string' ? part : part.uri
+      return index === 0 ? value.replace(/\/+$/, '') : value.replace(/^\/+|\/+$/g, '')
+    })
+    .join('/')
+  return {
+    Directory: class {
+      uri: string
+      constructor(...parts: Array<string | { uri: string }>) { this.uri = joinUri(parts) }
+      create = mocks.directoryCreate
+    },
+    File: class {
+      exists = true
+      size = 8
+      uri: string
+      constructor(...parts: Array<string | { uri: string }>) { this.uri = joinUri(parts) }
+      copy = mocks.fileCopy
+      delete = mocks.fileDelete
+      upload = mocks.fileUpload
+    },
+    Paths: { cache: { uri: 'file:///cache' } },
+  }
+})
 vi.mock('expo-crypto', () => ({ randomUUID: () => 'generated-id' }))
 vi.mock('expo-sharing', () => ({}))
 vi.mock('../../api/client', () => ({
@@ -20,7 +50,8 @@ vi.mock('../../api/client', () => ({
 vi.mock('../../data/database', () => ({
   cacheNamespace: () => 'namespace',
   cachedAttachmentUri: vi.fn(),
-  recordCachedAttachment: vi.fn(),
+  recordCachedAttachment: mocks.recordCachedAttachment,
+  removeCachedAttachment: mocks.removeCachedAttachment,
 }))
 vi.mock('../../data/mutations', () => ({ queueOfflineMutation: mocks.queueOfflineMutation }))
 vi.mock('../../providers/realtimeStore', () => ({
@@ -32,18 +63,48 @@ vi.mock('../../providers/realtimeStore', () => ({
     }),
   },
 }))
-vi.mock('../../store/preferences', () => ({ usePreferencesStore: { getState: () => ({}) } }))
+vi.mock('../../store/preferences', () => ({ usePreferencesStore: { getState: () => ({ attachmentCacheMb: 256 }) } }))
 vi.mock('../../store/session', () => ({
   useSessionStore: { getState: () => ({ instanceUrl: 'https://example.com', user: { id: 'user-1' } }) },
 }))
 
-import { editMessage, persistChat, regenerateResponse, sendMessage, startChat } from './api'
+import { cacheUploadedAttachment, deleteUnreferencedAttachment, editMessage, persistChat, regenerateResponse, safeAttachmentFilename, sendMessage, startChat, uploadAttachment } from './api'
 
 beforeEach(() => {
   mocks.apiRequest.mockReset().mockRejectedValue(new TypeError('offline'))
   mocks.queueOfflineMutation.mockReset()
   mocks.removeSnapshot.mockReset()
   mocks.receiveSnapshot.mockReset()
+  mocks.directoryCreate.mockReset()
+  mocks.fileCopy.mockReset()
+  mocks.fileDelete.mockReset()
+  mocks.fileUpload.mockReset()
+  mocks.recordCachedAttachment.mockReset().mockResolvedValue([])
+  mocks.removeCachedAttachment.mockReset().mockResolvedValue(null)
+})
+
+describe('attachment cache filenames', () => {
+  it('preserves user-facing names while removing unsafe path characters', () => {
+    expect(safeAttachmentFilename('Quarterly Plan 你好.pdf')).toBe('Quarterly Plan 你好.pdf')
+    expect(safeAttachmentFilename('../draft\\notes:final?.txt')).toBe('..-draft-notes-final-.txt')
+  })
+
+  it('promotes an uploaded local file into the server attachment cache', async () => {
+    await cacheUploadedAttachment('attachment-1', 'Photo 1.jpg', 'file:///picker/Photo 1.jpg')
+
+    expect(mocks.directoryCreate).toHaveBeenCalledWith({ idempotent: true, intermediates: true })
+    expect(mocks.fileCopy).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: 'file:///cache/attachments/attachment-1/Photo 1.jpg' }),
+      { overwrite: true },
+    )
+    expect(mocks.recordCachedAttachment).toHaveBeenCalledWith(
+      'namespace',
+      'attachment-1',
+      'file:///cache/attachments/attachment-1/Photo 1.jpg',
+      8,
+      256 * 1024 * 1024,
+    )
+  })
 })
 
 describe('temporary chat offline behavior', () => {
@@ -120,6 +181,54 @@ describe('message edits', () => {
       idempotencyKey: 'response-2',
       body: expect.objectContaining({ attachmentIds: ['attachment-2'], agentMode: true }),
     }))
+  })
+})
+
+describe('attachment uploads', () => {
+  const draft = {
+    localId: 'local-1', name: 'notes.bin', uri: 'file:///notes.bin', mimeType: 'application/octet-stream',
+    sizeBytes: 8, state: 'uploading' as const,
+  }
+  const reservation = {
+    attachment: { id: 'reserved-1' }, uploadUrl: '/upload/reserved-1', uploadHeaders: {},
+  }
+
+  it('validates a selected file before creating a remote reservation', async () => {
+    await expect(uploadAttachment({ ...draft, sizeBytes: 0 }, null)).rejects.toThrow()
+    expect(mocks.apiRequest).not.toHaveBeenCalled()
+    expect(mocks.fileUpload).not.toHaveBeenCalled()
+  })
+
+  it('keeps the MIME type confirmed by the server', async () => {
+    mocks.apiRequest
+      .mockResolvedValueOnce(reservation)
+      .mockResolvedValueOnce({ id: 'reserved-1', mimeType: 'text/plain' })
+    mocks.fileUpload.mockResolvedValueOnce({ status: 204 })
+
+    await expect(uploadAttachment(draft, null)).resolves.toMatchObject({
+      id: 'reserved-1', mimeType: 'text/plain',
+    })
+    expect(mocks.recordCachedAttachment).toHaveBeenCalledWith(
+      'namespace', 'reserved-1', 'file:///cache/attachments/reserved-1/notes.bin', 8, 256 * 1024 * 1024,
+    )
+  })
+
+  it('deletes an unreferenced reservation when transfer fails', async () => {
+    mocks.apiRequest.mockResolvedValueOnce(reservation).mockResolvedValueOnce(undefined)
+    mocks.fileUpload.mockRejectedValueOnce(new Error('Connection lost'))
+
+    await expect(uploadAttachment(draft, null)).rejects.toThrow('Connection lost')
+    expect(mocks.apiRequest).toHaveBeenLastCalledWith('/api/attachments/reserved-1', { method: 'DELETE' })
+  })
+
+  it('removes the promoted cache file when an upload becomes unreferenced', async () => {
+    mocks.apiRequest.mockResolvedValueOnce(undefined)
+    mocks.removeCachedAttachment.mockResolvedValueOnce('file:///cache/attachments/reserved-1/notes.bin')
+
+    await deleteUnreferencedAttachment('reserved-1')
+
+    expect(mocks.removeCachedAttachment).toHaveBeenCalledWith('namespace', 'reserved-1')
+    expect(mocks.fileDelete).toHaveBeenCalledOnce()
   })
 })
 

@@ -1,0 +1,54 @@
+import { describe, expect, it } from 'vitest'
+import { fittedFullscreenImageFrame, imagePreviewGroup, initialNativeImageSource, previewFallbackMessage, previewSource } from './attachmentPreviewPolicy'
+
+describe('attachment preview policy', () => {
+  it('fits landscape and portrait images into the fullscreen viewport', () => {
+    expect(fittedFullscreenImageFrame(390, 844, 1600, 900)).toEqual({
+      x: 0,
+      y: 312.3125,
+      width: 390,
+      height: 219.375,
+    })
+    expect(fittedFullscreenImageFrame(390, 844, 600, 1600)).toEqual({
+      x: 36.75,
+      y: 0,
+      width: 316.5,
+      height: 844,
+    })
+  })
+
+  const attachments = [
+    { id: 'image-1', name: 'one.jpg', uri: 'file:///one.jpg', kind: 'image' as const },
+    { id: 'file-1', name: 'notes.pdf', kind: 'file' as const },
+    { id: 'image-2', name: 'two.jpg', kind: 'image' as const },
+  ]
+
+  it('groups only images from the tapped message and preserves the selected position', () => {
+    expect(imagePreviewGroup(attachments, 'image-2')).toEqual({
+      items: [attachments[0], attachments[2]], initialIndex: 1,
+    })
+    expect(imagePreviewGroup(attachments, 'file-1')).toBeNull()
+  })
+
+  it('uses local files immediately and lazily downloads sent attachments', () => {
+    expect(previewSource(attachments[0])).toEqual({ kind: 'local', uri: 'file:///one.jpg' })
+    expect(previewSource(attachments[2])).toEqual({ kind: 'download', id: 'image-2', name: 'two.jpg' })
+  })
+
+  it('opens native galleries from local files or the selected thumbnail without waiting for downloads', () => {
+    expect(initialNativeImageSource(attachments[0], 'image-1', 'file:///thumbnail.webp')).toEqual({
+      previewOnly: false,
+      uri: 'file:///one.jpg',
+    })
+    expect(initialNativeImageSource(attachments[2], 'image-2', 'file:///thumbnail.webp')).toEqual({
+      previewOnly: true,
+      uri: 'file:///thumbnail.webp',
+    })
+    expect(initialNativeImageSource(attachments[2], 'image-1')).toEqual({ previewOnly: true })
+  })
+
+  it('offers a concise share fallback for unsupported and presentation failures', () => {
+    expect(previewFallbackMessage('ERR_ATTACHMENT_PREVIEW_UNSUPPORTED')).toContain('cannot preview')
+    expect(previewFallbackMessage('ERR_ATTACHMENT_PREVIEW_UNAVAILABLE')).toContain('open it in another app')
+  })
+})

@@ -1,0 +1,36 @@
+import { NativeModule, requireOptionalNativeModule } from 'expo'
+
+export interface PulpoImageTransitionFrame {
+  x: number
+  y: number
+  width: number
+  height: number
+  cornerRadius: number
+  sourceNativeId?: string
+}
+
+export interface PulpoImageGalleryItem {
+  id: string
+  previewOnly?: boolean
+  sourceNativeId?: string
+  title: string
+  uri?: string
+}
+
+declare class PulpoAttachmentPreviewModule extends NativeModule {
+  animateImageTransition(
+    uri: string,
+    fromFrame: PulpoImageTransitionFrame,
+    toFrame: PulpoImageTransitionFrame,
+    opening: boolean,
+  ): Promise<void>
+  previewImages(
+    items: PulpoImageGalleryItem[],
+    initialIndex: number,
+    sourceFrame?: PulpoImageTransitionFrame,
+  ): Promise<void>
+  updatePreviewImage(id: string, uri: string, previewOnly: boolean): Promise<boolean>
+  previewFile(uri: string, title: string): Promise<void>
+}
+
+export default requireOptionalNativeModule<PulpoAttachmentPreviewModule>('PulpoAttachmentPreview')

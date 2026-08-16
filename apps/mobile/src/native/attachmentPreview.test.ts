@@ -1,0 +1,86 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const mocks = vi.hoisted(() => ({
+  animateImageTransition: vi.fn(async () => undefined),
+  previewImages: vi.fn(async () => undefined),
+  updatePreviewImage: vi.fn(async () => true),
+  previewFile: vi.fn(async () => undefined),
+}))
+
+vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }))
+vi.mock('expo', () => ({
+  NativeModule: class {},
+  requireOptionalNativeModule: vi.fn(() => ({
+    animateImageTransition: mocks.animateImageTransition,
+    previewImages: mocks.previewImages,
+    updatePreviewImage: mocks.updatePreviewImage,
+    previewFile: mocks.previewFile,
+  })),
+}))
+
+import {
+  animateImageTransition,
+  previewFile,
+  previewImages,
+  supportsAttachmentPreview,
+  supportsNativeImageGallery,
+  supportsNativeImageTransition,
+  updatePreviewImage,
+} from './attachmentPreview'
+
+describe('attachment preview wrapper', () => {
+  beforeEach(() => {
+    mocks.animateImageTransition.mockReset().mockResolvedValue(undefined)
+    mocks.previewImages.mockReset().mockResolvedValue(undefined)
+    mocks.updatePreviewImage.mockReset().mockResolvedValue(true)
+    mocks.previewFile.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('presents a local file through the optional Apple module', async () => {
+    expect(supportsAttachmentPreview).toBe(true)
+    expect(supportsNativeImageTransition).toBe(true)
+    expect(supportsNativeImageGallery).toBe(true)
+    await previewFile('file:///tmp/report.pdf', 'Quarterly report.pdf')
+    expect(mocks.previewFile).toHaveBeenCalledWith('file:///tmp/report.pdf', 'Quarterly report.pdf')
+  })
+
+  it('runs the native image transition with measured frames', async () => {
+    const from = { x: 10, y: 20, width: 112, height: 112, cornerRadius: 16 }
+    const to = { x: 0, y: 200, width: 390, height: 220, cornerRadius: 0 }
+    await expect(animateImageTransition('file:///tmp/photo.jpg', from, to, true)).resolves.toBe(true)
+    expect(mocks.animateImageTransition).toHaveBeenCalledWith('file:///tmp/photo.jpg', from, to, true)
+  })
+
+  it('presents a native image gallery at the selected item', async () => {
+    const items = [
+      {
+        id: 'photo-1',
+        sourceNativeId: 'pulpo-attachment-preview-photo-1',
+        title: 'Photo.jpg',
+        uri: 'file:///tmp/photo.jpg',
+      },
+      {
+        id: 'photo-2',
+        sourceNativeId: 'pulpo-attachment-preview-photo-2',
+        title: 'Another photo.jpg',
+        uri: 'file:///tmp/another-photo.jpg',
+      },
+    ]
+    const source = { x: 10, y: 20, width: 112, height: 112, cornerRadius: 16 }
+    await previewImages(items, 1, source)
+    expect(mocks.previewImages).toHaveBeenCalledWith(items, 1, source)
+  })
+
+  it('retries a transient native busy state while the previous gallery finishes closing', async () => {
+    mocks.previewImages.mockRejectedValueOnce(new Error('FunctionCallException caused by AttachmentPreviewBusy'))
+    await expect(previewImages([
+      { id: 'photo-1', title: 'Photo.jpg', uri: 'file:///tmp/photo.jpg' },
+    ], 0)).resolves.toBeUndefined()
+    expect(mocks.previewImages).toHaveBeenCalledTimes(2)
+  })
+
+  it('upgrades a loading gallery item without reopening the preview', async () => {
+    await expect(updatePreviewImage('photo-1', 'file:///tmp/photo.jpg')).resolves.toBe(true)
+    expect(mocks.updatePreviewImage).toHaveBeenCalledWith('photo-1', 'file:///tmp/photo.jpg', false)
+  })
+})

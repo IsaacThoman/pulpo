@@ -12,6 +12,7 @@ import {
   type ComponentProps,
   type RefObject,
   type ReactNode,
+  type SetStateAction,
 } from 'react';
 import {
   AccessibilityInfo,
@@ -175,7 +176,34 @@ import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
+import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { timeAgo } from '../features/chat/format';
+import {
+  MAX_COMPOSER_ATTACHMENTS,
+  attachmentMetadata,
+  attachmentVisualKind,
+  fitAttachmentPreviewSize,
+  formatAttachmentSize,
+  isImageAttachment,
+  selectAttachmentBatch,
+  type AttachmentVisualKind,
+} from '../features/chat/attachmentExperience';
+import {
+  attachmentSendPolicy,
+  cleanupServerIdOnRemoval,
+  settleUploadFailure,
+  settleUploadSuccess,
+  startUploadAttempt,
+  type CoordinatedUpload,
+  type CoordinatedUploadState,
+} from '../features/chat/attachmentUploadCoordinator';
+import { imagePreviewGroup, initialNativeImageSource, previewFallbackMessage, previewSource } from '../features/chat/attachmentPreviewPolicy';
+import {
+  createOptimisticSendIdentity,
+  readyTranscriptAttachments,
+  restoreLatestDraft,
+  stagedTranscriptAttachments,
+} from '../features/chat/optimisticAttachmentSend';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
@@ -196,6 +224,14 @@ import {
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
 import { copyFile, supportsFileClipboard } from '../native/fileClipboard';
+import {
+  AttachmentPreviewError,
+  previewFile,
+  previewImages as previewNativeImages,
+  supportsAttachmentPreview,
+  supportsNativeImageGallery,
+  updatePreviewImage as updateNativePreviewImage,
+} from '../native/attachmentPreview';
 import { startAuthKeyboardHandoff } from '../auth/keyboardHandoff';
 import {
   HistoryChatContextMenuView,
@@ -425,25 +461,14 @@ type Attachment = {
   mimeType: string;
   size?: number;
   kind: 'image' | 'file';
-};
-type ComposerAttachment = Attachment & {
-  localId: string;
-  serverId?: string;
-  state: 'local' | 'uploading' | 'ready' | 'failed';
+  state?: CoordinatedUploadState;
   error?: string;
 };
+type ComposerAttachment = Attachment & CoordinatedUpload;
 type PreparedAttachment = ComposerAttachment & { serverId: string; state: 'ready' };
 
-const SUPPORTED_RASTER_IMAGE_MIME_TYPES = new Set([
-  'image/png',
-  'image/jpeg',
-  'image/jpg',
-  'image/webp',
-  'image/gif',
-]);
-
-function attachmentKind(mimeType: string): Attachment['kind'] {
-  return SUPPORTED_RASTER_IMAGE_MIME_TYPES.has(mimeType.toLowerCase()) ? 'image' : 'file';
+function attachmentKind(name: string, mimeType: string): Attachment['kind'] {
+  return isImageAttachment(name, mimeType) ? 'image' : 'file';
 }
 
 type Message = {
@@ -469,6 +494,7 @@ type Message = {
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
 type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
   if (preference === '24h') return now + 86_400_000;
@@ -532,6 +558,8 @@ function prototypeMessageToLegacy(message: PrototypeMessage, chatId: string, cha
       mimeType: attachment.mimeType,
       size: attachment.sizeBytes,
       kind: attachment.kind,
+      state: attachment.status === 'cached' ? 'ready' : attachment.status,
+      error: attachment.error,
     })),
     thinkSeconds: message.activity?.length
       ? Math.max(1, Math.round(message.activity.reduce((sum, step) => sum + step.durationMs, 0) / 1000))
@@ -656,51 +684,155 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
   );
 }
 
-function AttachmentStrip({ attachments, onRemove, onRetry }: {
+function attachmentSymbol(kind: AttachmentVisualKind): SymbolName {
+  const symbols: Record<AttachmentVisualKind, SymbolName> = {
+    image: 'photo.fill',
+    pdf: 'doc.richtext.fill',
+    text: 'doc.text.fill',
+    code: 'chevron.left.forwardslash.chevron.right',
+    spreadsheet: 'tablecells.fill',
+    presentation: 'rectangle.on.rectangle.angled',
+    archive: 'archivebox.fill',
+    audio: 'waveform',
+    video: 'film.fill',
+    file: 'doc.fill',
+  };
+  return symbols[kind];
+}
+
+function attachmentTint(kind: AttachmentVisualKind): string {
+  const colors: Record<AttachmentVisualKind, string> = {
+    image: '#0A84FF', pdf: '#FF453A', text: '#0A84FF', code: '#BF5AF2',
+    spreadsheet: '#30D158', presentation: '#FF9F0A', archive: '#FFD60A',
+    audio: '#FF375F', video: '#64D2FF', file: '#8E8E93',
+  };
+  return colors[kind];
+}
+
+function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove, onRetry }: {
   attachments: ComposerAttachment[];
+  onPreviewFile: (attachment: ComposerAttachment) => void;
+  onPreviewImage: (index: number, origin?: AttachmentImageTransitionOrigin) => void;
   onRemove: (localId: string) => void;
   onRetry: (localId: string) => void;
 }) {
+  const imageRefs = useRef(new Map<string, View>());
+  const imageSources = useRef(new Map<string, { height: number; uri: string; width: number }>());
+  const previewImage = useCallback((index: number, attachment: ComposerAttachment) => {
+    const view = imageRefs.current.get(attachment.localId);
+    const source = imageSources.current.get(attachment.localId);
+    if (supportsNativeImageGallery) {
+      onPreviewImage(index, source ? {
+        x: 0, y: 0, width: 0, height: 0,
+        cornerRadius: 14,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.localId}`,
+        uri: source.uri,
+      } : undefined);
+      return;
+    }
+    if (!view || !source) {
+      onPreviewImage(index);
+      return;
+    }
+    view.measureInWindow((x, y, width, height) => {
+      if (width <= 0 || height <= 0) {
+        onPreviewImage(index);
+        return;
+      }
+      onPreviewImage(index, {
+        x, y, width, height,
+        cornerRadius: 14,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.localId}`,
+        uri: source.uri,
+      });
+    });
+  }, [onPreviewImage]);
   if (attachments.length === 0) return null;
   return (
     <ScrollView
+      accessibilityLabel={`${attachments.length} of ${MAX_COMPOSER_ATTACHMENTS} attachments`}
       horizontal
       contentContainerStyle={styles.attachmentStripContent}
       showsHorizontalScrollIndicator={false}
       style={styles.attachmentStrip}
     >
-      {attachments.map((attachment) => (
+      {attachments.map((attachment, index) => (
         <View key={attachment.localId} style={styles.attachmentFrame}>
-          <View style={attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment}>
+          <Pressable
+            accessibilityLabel={`Preview ${attachment.name}`}
+            accessibilityRole="button"
+            onPress={() => attachment.kind === 'image' ? previewImage(index, attachment) : onPreviewFile(attachment)}
+            ref={attachment.kind === 'image' ? (view) => {
+              if (view) imageRefs.current.set(attachment.localId, view);
+              else imageRefs.current.delete(attachment.localId);
+            } : undefined}
+            style={({ pressed }) => [
+              attachment.kind === 'image' ? styles.imageAttachment : styles.fileAttachment,
+              attachment.state === 'failed' && styles.failedAttachment,
+              pressed && styles.attachmentPressed,
+            ]}
+          >
             {attachment.kind === 'image' ? (
               attachment.uri
-                ? <Image accessibilityLabel={attachment.name} source={{ uri: attachment.uri }} style={styles.attachmentImage} />
-                : <ResolvedAttachmentImage attachment={attachment} variant="composer" />
+                ? <Image
+                    accessibilityLabel={attachment.name}
+                    nativeID={`pulpo-attachment-preview-${attachment.localId}`}
+                    onLoad={(event) => {
+                      const { height, width } = event.nativeEvent.source;
+                      imageSources.current.set(attachment.localId, { height, uri: attachment.uri!, width });
+                    }}
+                    source={{ uri: attachment.uri }}
+                    style={styles.attachmentImage}
+                  />
+                : <ResolvedAttachmentImage
+                    attachment={attachment}
+                    onResolved={(source) => imageSources.current.set(attachment.localId, source)}
+                    sourceNativeId={`pulpo-attachment-preview-${attachment.localId}`}
+                    variant="composer"
+                  />
             ) : (
               <>
-                <View style={styles.fileAttachmentIcon}><Icon name="doc.fill" size={22} color={COLORS.muted} /></View>
+                <View style={styles.fileAttachmentIcon}>
+                  <Icon name={attachmentSymbol(attachmentVisualKind(attachment.name, attachment.mimeType))} size={22} color={attachmentTint(attachmentVisualKind(attachment.name, attachment.mimeType))} />
+                </View>
                 <View style={styles.fileAttachmentCopy}>
                   <Text numberOfLines={1} style={styles.fileAttachmentName}>{attachment.name}</Text>
-                  <Text style={styles.fileAttachmentMeta}>{formatAttachmentSize(attachment.size)}</Text>
+                  <Text numberOfLines={1} style={styles.fileAttachmentMeta}>{attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}</Text>
                 </View>
               </>
             )}
+            {attachment.state === 'uploading' ? (
+              <View style={styles.attachmentLoadingOverlay}><ActivityIndicator color="#ffffff" size="small" /></View>
+            ) : null}
             <Pressable
               accessibilityLabel={`Remove ${attachment.name}`}
               accessibilityRole="button"
-              disabled={attachment.state === 'uploading'}
-              onPress={() => onRemove(attachment.localId)}
+              onPress={(event) => {
+                event.stopPropagation();
+                onRemove(attachment.localId);
+              }}
               style={styles.removeAttachmentHitTarget}
             >
               <View style={styles.removeAttachmentButton}>
                 <Icon name="xmark" size={9} color="#ffffff" weight="bold" />
               </View>
             </Pressable>
-          </View>
-          {attachment.state === 'uploading' ? <Text style={styles.attachmentUploadStatus}>Uploading…</Text> : null}
+          </Pressable>
           {attachment.state === 'failed' ? (
-            <Pressable accessibilityRole="button" onPress={() => onRetry(attachment.localId)}>
-              <Text numberOfLines={1} style={[styles.attachmentUploadStatus, styles.attachmentUploadFailed]}>Retry · {attachment.error ?? 'Upload failed'}</Text>
+            <Pressable
+              accessibilityLabel={`Retry ${attachment.name}`}
+              accessibilityRole="button"
+              onPress={() => onRetry(attachment.localId)}
+              style={styles.attachmentRetryOverlay}
+            >
+              <Icon name="arrow.clockwise" size={11} color="#ffffff" weight="bold" />
+              <Text numberOfLines={1} style={styles.attachmentRetryText}>Retry</Text>
             </Pressable>
           ) : null}
         </View>
@@ -709,10 +841,106 @@ function AttachmentStrip({ attachments, onRemove, onRetry }: {
   );
 }
 
-function formatAttachmentSize(size?: number) {
-  if (!size) return 'Document';
-  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImages }: {
+  attachment: Attachment;
+  group: Attachment[];
+  onPreviewFile: (attachment: Attachment) => void;
+  onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
+}) {
+  const imageRef = useRef<View>(null);
+  const imageSourceRef = useRef<{ height: number; uri: string; width: number } | undefined>(undefined);
+  const uploading = attachment.state === 'local' || attachment.state === 'uploading';
+  const failed = attachment.state === 'failed';
+  const previewImage = useCallback(() => {
+    const source = imageSourceRef.current;
+    if (supportsNativeImageGallery) {
+      onPreviewImages(group, attachment, source ? {
+        x: 0, y: 0, width: 0, height: 0,
+        cornerRadius: 16,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.id}`,
+        uri: source.uri,
+      } : undefined);
+      return;
+    }
+    if (!imageRef.current || !source) {
+      onPreviewImages(group, attachment);
+      return;
+    }
+    imageRef.current.measureInWindow((x, y, width, height) => {
+      if (width <= 0 || height <= 0) {
+        onPreviewImages(group, attachment);
+        return;
+      }
+      onPreviewImages(group, attachment, {
+        x, y, width, height,
+        cornerRadius: 16,
+        imageHeight: source.height,
+        imageWidth: source.width,
+        itemId: attachment.id,
+        sourceNativeId: `pulpo-attachment-preview-${attachment.id}`,
+        uri: source.uri,
+      });
+    });
+  }, [attachment, group, onPreviewImages]);
+  if (attachment.kind === 'image') {
+    return (
+      <Pressable
+        accessibilityLabel={`Preview ${attachment.name}${uploading ? ', uploading' : failed ? ', upload failed' : ''}`}
+        accessibilityRole="button"
+        onPress={previewImage}
+        ref={imageRef}
+        style={({ pressed }) => pressed && styles.attachmentPressed}
+      >
+        <View>
+          <ResolvedAttachmentImage
+            attachment={attachment}
+            onResolved={(source) => { imageSourceRef.current = source; }}
+            sourceNativeId={`pulpo-attachment-preview-${attachment.id}`}
+            variant="message"
+          />
+          {uploading ? (
+            <View style={styles.sentAttachmentStatusOverlay}>
+              <ActivityIndicator color="#ffffff" size="small" />
+              <Text numberOfLines={1} style={styles.sentAttachmentStatusText}>Uploading</Text>
+            </View>
+          ) : null}
+          {failed ? (
+            <View style={[styles.sentAttachmentStatusOverlay, styles.sentAttachmentFailureOverlay]}>
+              <Icon name="exclamationmark.triangle.fill" size={16} color="#ffffff" />
+              <Text numberOfLines={1} style={styles.sentAttachmentStatusText}>Upload failed</Text>
+            </View>
+          ) : null}
+        </View>
+      </Pressable>
+    );
+  }
+  const visualKind = attachmentVisualKind(attachment.name, attachment.mimeType);
+  return (
+    <Pressable
+      accessibilityLabel={`Preview ${attachment.name}${uploading ? ', uploading' : failed ? ', upload failed' : ''}`}
+      accessibilityRole="button"
+      onPress={() => onPreviewFile(attachment)}
+      style={({ pressed }) => [styles.sentFileAttachment, failed && styles.failedAttachment, pressed && styles.attachmentPressed]}
+    >
+      <View style={styles.sentFileIcon}>
+        <Icon name={attachmentSymbol(visualKind)} size={20} color={attachmentTint(visualKind)} />
+      </View>
+      <View style={styles.sentFileCopy}>
+        <Text numberOfLines={1} style={styles.sentFileName}>{attachment.name}</Text>
+        <Text numberOfLines={1} style={styles.sentFileMeta}>
+          {uploading ? 'Uploading' : failed ? attachment.error ?? 'Upload failed' : attachmentMetadata(attachment.name, attachment.mimeType, attachment.size)}
+        </Text>
+      </View>
+      {uploading
+        ? <ActivityIndicator color={COLORS.muted} size="small" />
+        : failed
+          ? <Icon name="exclamationmark.circle.fill" size={15} color={COLORS.critical} />
+          : <Icon name="chevron.right" size={13} color={COLORS.muted} />}
+    </Pressable>
+  );
 }
 
 const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
@@ -1563,21 +1791,29 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     Haptics.selectionAsync();
   }, [selectedModelId]);
 
-  const sendMessage = async (value = input, attachments: PreparedAttachment[] = [], options?: SendOptions): Promise<boolean> => {
+  const sendMessage = async (
+    value = input,
+    attachments: ComposerAttachment[] = [],
+    options?: SendOptions,
+    prepareAttachments?: PrepareAttachments,
+  ): Promise<boolean> => {
     const trimmed = value.trim();
     if ((!trimmed && attachments.length === 0) || effectiveAssistantStatus !== 'idle' || !selectedModel.id) return false;
     composerFollowsDefaultModel.current = false;
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
     const timestamp = Date.now();
-    const key = activeChat?.id ?? Crypto.randomUUID();
-    const responseId = Crypto.randomUUID();
-    const inputMessageId = `${responseId}:input`;
+    const identity = createOptimisticSendIdentity({
+      activeChatId: activeChat?.id,
+      content: trimmed,
+      firstAttachmentName: attachments[0]?.name,
+      createId: Crypto.randomUUID,
+    });
+    const { chatId: key, responseId, inputMessageId, title } = identity;
     const modelId = selectedModel.id;
     const parentResponseId = activePrototypeChat?.messages.filter((message) => message.role === 'assistant').at(-1)?.id ?? null;
     const agentMode = Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled);
     const selections = options?.presetSelections ?? presetSelections;
-    const title = trimmed ? trimmed.split(/\s+/).slice(0, 7).join(' ') : attachments[0]?.name ?? 'Attachment chat';
     const initialExpiresAt = options?.temporary
       ? timestamp + 48 * 60 * 60 * 1_000
       : options?.autoExpire ? automaticExpirationDeadline(automaticChatExpiration, timestamp) : null;
@@ -1605,10 +1841,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       text: trimmed,
       createdAt: timestamp,
       status: 'complete',
-      attachments: attachments.map((attachment) => ({
-        id: attachment.serverId, name: attachment.name, uri: attachment.uri, mimeType: attachment.mimeType,
-        sizeBytes: attachment.size ?? 0, kind: attachment.kind, status: 'ready',
-      })),
+      attachments: stagedTranscriptAttachments(attachments),
     });
     // Create the final response row up front. Realtime projection reuses this
     // id, so its authoritative model header never swaps from a footer into a
@@ -1623,33 +1856,42 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       outputItems: [],
       agentMode,
     });
-    if (productionNamespace) {
-      cacheOptimisticTurn({
-        queryClient,
-        namespace: productionNamespace,
-        chatId: key,
-        responseId,
-        parentResponseId,
-        content: trimmed,
-        title,
-        modelId,
-        temporary: options?.temporary ?? false,
-        expiresAt: initialExpiresAt === null ? null : new Date(initialExpiresAt).toISOString(),
-        presetSelections: selections,
-        agentMode,
-        attachments: attachments.map((attachment) => ({
-          id: attachment.serverId,
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.size ?? 0,
-        })),
-        createdAt: timestamp,
-      });
-    }
     activeResponseId.current = responseId;
     setAssistantStatus('thinking');
     let serverChatCreated = Boolean(activeChat);
     try {
+      const prepared = prepareAttachments
+        ? await prepareAttachments()
+        : attachments.filter((attachment): attachment is PreparedAttachment => (
+          attachment.state === 'ready' && Boolean(attachment.serverId)
+        ));
+      if (prepared.length !== attachments.length) throw new Error('Some attachments are not ready to send.');
+      updateStoredMessage(key, inputMessageId, {
+        attachments: readyTranscriptAttachments(prepared),
+      });
+      if (productionNamespace) {
+        cacheOptimisticTurn({
+          queryClient,
+          namespace: productionNamespace,
+          chatId: key,
+          responseId,
+          parentResponseId,
+          content: trimmed,
+          title,
+          modelId,
+          temporary: options?.temporary ?? false,
+          expiresAt: initialExpiresAt === null ? null : new Date(initialExpiresAt).toISOString(),
+          presetSelections: selections,
+          agentMode,
+          attachments: prepared.map((attachment) => ({
+            id: attachment.serverId,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.size ?? 0,
+          })),
+          createdAt: timestamp,
+        });
+      }
       let serverChatId = activeChat?.id;
       let response: Awaited<ReturnType<typeof sendServerMessage>>;
       if (!serverChatId) {
@@ -1662,7 +1904,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           autoExpire: options?.autoExpire ?? false,
           title,
           presetSelections: selections,
-          attachmentIds: attachments.map((attachment) => attachment.serverId),
+          attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
@@ -1684,7 +1926,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           modelId,
           parentResponseId,
           presetSelections: selections,
-          attachmentIds: attachments.map((attachment) => attachment.serverId),
+          attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           temporary: activePrototypeChat?.temporary ?? false,
         });
@@ -2109,10 +2351,6 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
     if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
     else void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
   };
-  const saveAttachment = () => {
-    if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
-    else void downloadAttachment(attachment.id, attachment.name).then(() => AccessibilityInfo.announceForAccessibility('Attachment saved')).catch((error) => Alert.alert('Couldn’t save attachment', error instanceof Error ? error.message : undefined));
-  };
   const copyAttachment = () => {
     void (async () => {
       const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
@@ -2142,10 +2380,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
           {message.role === 'user' && !message.text ? <>
             <SwiftUIButton label="Edit message" systemImage="pencil" onPress={() => runMessageAction('edit')} />
             <SwiftUIButton label="Delete message" role="destructive" systemImage="trash" onPress={() => runMessageAction('delete')} />
-            <SwiftUIDivider />
           </> : null}
-          <SwiftUIButton label={attachment.kind === 'image' ? 'Save image' : 'Save to Files'} systemImage="square.and.arrow.down" onPress={saveAttachment} />
-          <SwiftUIButton label="Attachment info" systemImage="info.circle" onPress={() => Alert.alert(attachment.name, `${attachment.mimeType}\n${formatAttachmentSize(attachment.size)}`)} />
         </>
       )}
     >
@@ -2154,16 +2389,23 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   );
 }
 
-function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachment; variant: 'message' | 'preview' | 'composer' }) {
+function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, variant }: {
+  attachment: Attachment;
+  onResolved?: (source: { height: number; uri: string; width: number }) => void;
+  sourceNativeId?: string;
+  variant: 'message' | 'preview' | 'composer';
+}) {
   const [uri, setUri] = useState(attachment.uri);
   const [failed, setFailed] = useState(false);
+  const [previewSize, setPreviewSize] = useState(() => fitAttachmentPreviewSize(0, 0));
   const style = variant === 'preview'
-    ? styles.attachmentContextImagePreview
+    ? [styles.attachmentContextImagePreview, previewSize]
     : variant === 'composer' ? styles.attachmentImage : styles.sentAttachmentImage;
 
   useEffect(() => {
     setUri(attachment.uri);
     setFailed(false);
+    if (variant === 'preview') setPreviewSize(fitAttachmentPreviewSize(0, 0));
     if (attachment.uri) return;
     let cancelled = false;
     const resolve = variant === 'message' || variant === 'composer'
@@ -2177,9 +2419,31 @@ function ResolvedAttachmentImage({ attachment, variant }: { attachment: Attachme
     return () => { cancelled = true; };
   }, [attachment.id, attachment.name, attachment.uri, variant]);
 
-  if (uri) return <Image accessibilityLabel={attachment.name} source={{ uri }} style={style} />;
+  useEffect(() => {
+    if (variant !== 'preview' || !uri) return;
+    let cancelled = false;
+    void Image.getSize(uri).then(({ width, height }) => {
+      if (!cancelled) setPreviewSize(fitAttachmentPreviewSize(width, height));
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [uri, variant]);
+
+  if (uri) return (
+    <Image
+      accessibilityLabel={attachment.name}
+      nativeID={sourceNativeId}
+      onLoad={(event) => {
+        const { width, height } = event.nativeEvent.source;
+        onResolved?.({ height, uri, width });
+        if (variant === 'preview') setPreviewSize(fitAttachmentPreviewSize(width, height));
+      }}
+      resizeMode={variant === 'preview' ? 'contain' : 'cover'}
+      source={{ uri }}
+      style={style}
+    />
+  );
   return (
-    <View accessibilityLabel={attachment.name} style={[style, styles.attachmentImagePlaceholder]}>
+    <View accessibilityLabel={attachment.name} nativeID={sourceNativeId} style={[style, styles.attachmentImagePlaceholder]}>
       {failed
         ? <Icon name="photo.badge.exclamationmark" size={22} color={COLORS.muted} />
         : <ActivityIndicator color={COLORS.muted} size="small" />}
@@ -2457,6 +2721,8 @@ const MessageRow = memo(function MessageRow({
   message,
   model,
   onEdit,
+  onPreviewFile,
+  onPreviewImages,
   onRegenerate,
   onActivateBranch,
   editingLocked = false,
@@ -2464,6 +2730,8 @@ const MessageRow = memo(function MessageRow({
   message: Message;
   model: Model;
   onEdit: (message: Message, content: string) => void;
+  onPreviewFile: (attachment: Attachment) => void;
+  onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   editingLocked?: boolean;
@@ -2530,14 +2798,12 @@ const MessageRow = memo(function MessageRow({
             <View style={styles.sentAttachments}>
               {message.attachments.map((attachment) => (
                 <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
-                  {attachment.kind === 'image' ? (
-                    <ResolvedAttachmentImage attachment={attachment} variant="message" />
-                  ) : (
-                    <View style={styles.sentFileAttachment}>
-                      <Icon name="doc.fill" size={17} color={COLORS.muted} />
-                      <Text numberOfLines={1} style={styles.sentFileName}>{attachment.name}</Text>
-                    </View>
-                  )}
+                  <SentAttachmentPreview
+                    attachment={attachment}
+                    group={message.attachments ?? []}
+                    onPreviewFile={onPreviewFile}
+                    onPreviewImages={onPreviewImages}
+                  />
                 </SentAttachmentContextMenu>
               ))}
             </View>
@@ -2586,7 +2852,7 @@ const MessageRow = memo(function MessageRow({
             <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
             </MessageContextMenu>
-          ) : streaming ? <ResponsePendingIndicator /> : null}
+          ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
           {extraOutput.map((item, index) => {
             const details = JSON.stringify(item, null, 2).slice(0, 4000);
             return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
@@ -2598,14 +2864,12 @@ const MessageRow = memo(function MessageRow({
             <View style={[styles.sentAttachments, styles.assistantAttachments]}>
               {message.attachments.map((attachment) => (
                 <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
-                  {attachment.kind === 'image' ? (
-                    <ResolvedAttachmentImage attachment={attachment} variant="message" />
-                  ) : (
-                    <View style={styles.sentFileAttachment}>
-                      <Icon name="doc.fill" size={17} color={COLORS.muted} />
-                      <Text numberOfLines={1} style={styles.sentFileName}>{attachment.name}</Text>
-                    </View>
-                  )}
+                  <SentAttachmentPreview
+                    attachment={attachment}
+                    group={message.attachments ?? []}
+                    onPreviewFile={onPreviewFile}
+                    onPreviewImages={onPreviewImages}
+                  />
                 </SentAttachmentContextMenu>
               ))}
             </View>
@@ -2818,7 +3082,7 @@ function ChatView({
   presetSelections: GenerationSelections;
   input: string;
   onChangeInput: (value: string) => void;
-  onSend: (value?: string, attachments?: PreparedAttachment[], options?: SendOptions) => Promise<boolean>;
+  onSend: (value?: string, attachments?: ComposerAttachment[], options?: SendOptions, prepareAttachments?: PrepareAttachments) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
   onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
   onRegenerate: (message: Message) => void;
@@ -2841,7 +3105,7 @@ function ChatView({
 }) {
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
-  const { reduceMotion } = useAccessibilityPreferences();
+  const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
   const accessibilityLayout = fontScale >= 1.6;
@@ -2859,7 +3123,25 @@ function ChatView({
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
+  const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
+  const nativeImagePreviewPendingRef = useRef(false);
+  const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
+  const setAttachments = useCallback((update: SetStateAction<ComposerAttachment[]>) => {
+    setAttachmentState((current) => {
+      const next = typeof update === 'function' ? update(current) : update;
+      attachmentsRef.current = next;
+      for (const attachment of next) latestAttachmentsRef.current.set(attachment.localId, attachment);
+      return next;
+    });
+  }, []);
+  const [imageViewer, setImageViewer] = useState<{
+    attachments: Attachment[];
+    initialIndex: number;
+    origin?: AttachmentImageTransitionOrigin;
+  } | null>(null);
   const [messageEdit, setMessageEdit] = useState<MessageEditSession | null>(null);
   const preservedComposerRef = useRef<{
     input: string;
@@ -3005,16 +3287,18 @@ function ChatView({
     preservedComposerRef.current = null;
     setMessageEdit(null);
     if (!preserved) return;
+    draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
-    setAttachments(preserved.attachments);
+    setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [onChangeInput]);
+  }, [onChangeInput, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
-      if (!attachment.serverId || session.originalAttachmentIds.has(attachment.serverId)) continue;
-      void deleteUnreferencedAttachment(attachment.serverId).catch(() => undefined);
+      const cleanupId = cleanupServerIdOnRemoval(attachment, session.originalAttachmentIds);
+      if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
+      if (attachment.managed) latestAttachmentsRef.current.delete(attachment.localId);
     }
   }, []);
 
@@ -3036,6 +3320,8 @@ function ChatView({
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending) return;
     preservedComposerRef.current = { input, attachments, agentEnabled };
+    const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
+    draftOwnerRef.current = editOwnerId;
     const existing = message.attachments ?? [];
     setMessageEdit({ message, originalAttachmentIds: new Set(existing.map((attachment) => attachment.id)) });
     onChangeInput(message.text);
@@ -3044,10 +3330,13 @@ function ChatView({
       localId: `sent:${message.id}:${attachment.id}`,
       serverId: attachment.id,
       state: 'ready' as const,
+      ownerId: editOwnerId,
+      attempt: 0,
+      managed: false,
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, input, messageEdit, onChangeInput, sending]);
+  }, [agentEnabled, attachments, input, messageEdit, onChangeInput, sending, setAttachments]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
     if (message.role === 'user') {
@@ -3057,43 +3346,184 @@ function ChatView({
     void onEdit(message, content);
   }, [beginMessageEdit, onEdit]);
 
-  const addAttachments = useCallback((incoming: ComposerAttachment[]) => {
-    setAttachments((current) => {
-      const known = new Set(current.map((attachment) => attachment.uri));
-      return [...current, ...incoming.filter((attachment) => !known.has(attachment.uri))].slice(0, 6);
-    });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  const resolvePreviewImageUri = useCallback(async (item: AttachmentImagePreviewItem): Promise<string> => {
+    const source = previewSource({ ...item, kind: 'image' });
+    return source.kind === 'local' ? source.uri : (await downloadAttachment(source.id, source.name)).uri;
   }, []);
+
+  const openImageViewer = useCallback((
+    group: Attachment[],
+    selected: Attachment,
+    origin?: AttachmentImageTransitionOrigin,
+  ) => {
+    const preview = imagePreviewGroup(group, selected.id);
+    if (!preview) return;
+    Haptics.selectionAsync();
+    if (!supportsNativeImageGallery) {
+      Keyboard.dismiss();
+      setImageViewer({ attachments: preview.items, initialIndex: preview.initialIndex, origin });
+      return;
+    }
+    if (nativeImagePreviewPendingRef.current) return;
+    nativeImagePreviewPendingRef.current = true;
+    void (async () => {
+      const selectedThumbnailUri = origin?.itemId === selected.id ? origin.uri : undefined;
+      const items = preview.items.map((item) => ({
+        ...initialNativeImageSource(item, selected.id, selectedThumbnailUri),
+        id: item.id,
+        sourceNativeId: `pulpo-attachment-preview-${
+          'localId' in item && typeof item.localId === 'string' ? item.localId : item.id
+        }`,
+        title: item.name,
+      }));
+      await previewNativeImages(items, preview.initialIndex, origin ? {
+        x: origin.x,
+        y: origin.y,
+        width: origin.width,
+        height: origin.height,
+        cornerRadius: origin.cornerRadius,
+        sourceNativeId: origin.sourceNativeId,
+      } : undefined);
+      // Keep the React Native source in place for Quick Look's native zoom.
+      if (origin) setTimeout(Keyboard.dismiss, 500);
+      else Keyboard.dismiss();
+
+      const presentationSettled = new Promise<void>((resolve) => setTimeout(resolve, 300));
+      preview.items.forEach((item, index) => {
+        const source = previewSource({ ...item, kind: 'image' });
+        if (source.kind === 'local') return;
+        const fullResolution = resolvePreviewImageUri(item).then(
+          (uri) => uri,
+          () => undefined,
+        );
+        void (async () => {
+          if (!items[index]?.uri) {
+            const thumbnail = downloadAttachmentThumbnail(item.id).then(
+              (file) => file.uri,
+              () => undefined,
+            );
+            const firstAvailable = await Promise.race([
+              thumbnail.then((uri) => uri ? { previewOnly: true, uri } : undefined),
+              fullResolution.then((uri) => uri ? { previewOnly: false, uri } : undefined),
+            ]);
+            if (firstAvailable) {
+              await updateNativePreviewImage(item.id, firstAvailable.uri, firstAvailable.previewOnly);
+              if (!firstAvailable.previewOnly) return;
+            }
+          }
+          const fullResolutionUri = await fullResolution;
+          if (!fullResolutionUri) return;
+          await presentationSettled;
+          await updateNativePreviewImage(item.id, fullResolutionUri);
+        })();
+      });
+    })().catch((error) => {
+      if (error instanceof AttachmentPreviewError && error.code === 'ERR_ATTACHMENT_PREVIEW_BUSY') return;
+      Alert.alert(
+        'Preview unavailable',
+        error instanceof Error ? error.message : 'The images could not be opened.',
+      );
+    }).finally(() => {
+      nativeImagePreviewPendingRef.current = false;
+    });
+  }, [resolvePreviewImageUri]);
+
+  const shareImagePreview = useCallback((item: AttachmentImagePreviewItem) => {
+    const share = item.uri
+      ? Share.share({ message: item.name, url: item.uri })
+      : shareServerAttachment(item.id, item.name)
+    void share
+      .catch((error) => Alert.alert('Couldn’t share image', error instanceof Error ? error.message : undefined));
+  }, []);
+
+  const shareResolvedAttachment = useCallback((attachment: Attachment) => {
+    if (attachment.uri) {
+      void Share.share({ message: attachment.name, url: attachment.uri })
+        .catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
+      return;
+    }
+    void shareServerAttachment(attachment.id, attachment.name, attachment.mimeType)
+      .catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
+  }, []);
+
+  const openFilePreview = useCallback((attachment: Attachment) => {
+    void (async () => {
+      const uri = attachment.uri || (await downloadAttachment(attachment.id, attachment.name)).uri;
+      if (!supportsAttachmentPreview) throw new AttachmentPreviewError(
+        'Native file previews are unavailable on this platform.',
+        'ERR_ATTACHMENT_PREVIEW_UNAVAILABLE',
+      );
+      await previewFile(uri, attachment.name);
+    })().catch((error) => {
+      const message = error instanceof AttachmentPreviewError
+        ? previewFallbackMessage(error.code)
+        : error instanceof Error ? error.message : previewFallbackMessage();
+      Alert.alert('Preview unavailable', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Share…', onPress: () => shareResolvedAttachment(attachment) },
+      ]);
+    });
+  }, [shareResolvedAttachment]);
+
+  const addAttachments = useCallback((incoming: Array<Omit<ComposerAttachment, 'ownerId' | 'attempt' | 'managed'>>) => {
+    const coordinated = incoming.map((attachment) => ({
+      ...attachment,
+      ownerId: draftOwnerRef.current,
+      attempt: 0,
+      managed: true,
+    }));
+    const result = selectAttachmentBatch(attachments, coordinated);
+    if (result.accepted.length) {
+      setAttachments((current) => [...current, ...result.accepted].slice(0, MAX_COMPOSER_ATTACHMENTS));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+    if (result.overflowCount > 0) {
+      Alert.alert(
+        'Attachment limit reached',
+        `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items. ${result.overflowCount} ${result.overflowCount === 1 ? 'item was' : 'items were'} not added.`,
+      );
+    }
+  }, [attachments, setAttachments]);
 
   const pickPhotos = useCallback(async () => {
     try {
+      const remaining = MAX_COMPOSER_ATTACHMENTS - attachments.length;
+      if (remaining <= 0) {
+        Alert.alert('Attachment limit reached', `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items.`);
+        return;
+      }
       const result = await ImagePicker.launchImageLibraryAsync({
         allowsMultipleSelection: true,
         mediaTypes: ['images'],
         // Keep HEIC inputs compatible without applying an extra lossy JPEG encode.
         quality: 1,
         preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Compatible,
-        selectionLimit: 6,
+        selectionLimit: remaining,
       });
       if (result.canceled) return;
-      const batchId = Date.now();
-      addAttachments(result.assets.map((asset, index) => ({
-        id: `photo-${batchId}-${index}`,
-        localId: `photo-${batchId}-${index}`,
+      addAttachments(result.assets.map((asset, index) => {
+        const localId = `photo:${Crypto.randomUUID()}`;
+        return {
+        id: localId,
+        localId,
         kind: 'image' as const,
         mimeType: asset.mimeType ?? 'image/jpeg',
         name: asset.fileName ?? `Photo ${index + 1}`,
         size: asset.fileSize,
         uri: asset.uri,
         state: 'local' as const,
-      })));
+      }}));
     } catch {
       Alert.alert('Couldn’t open Photos', 'Please try again or choose the image from Files.');
     }
-  }, [addAttachments]);
+  }, [addAttachments, attachments.length]);
 
   const takePhoto = useCallback(async () => {
     try {
+      if (attachments.length >= MAX_COMPOSER_ATTACHMENTS) {
+        Alert.alert('Attachment limit reached', `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items.`);
+        return;
+      }
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
         Alert.alert(
@@ -3111,7 +3541,7 @@ function ChatView({
       const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 1 });
       const asset = result.canceled ? null : result.assets[0];
       if (!asset) return;
-      const id = `camera-${Date.now()}`;
+      const id = `camera:${Crypto.randomUUID()}`;
       addAttachments([{
         id,
         localId: id,
@@ -3125,31 +3555,36 @@ function ChatView({
     } catch {
       Alert.alert('Camera unavailable', 'Pulpo could not open the camera on this device.');
     }
-  }, [addAttachments]);
+  }, [addAttachments, attachments.length]);
 
   const pickFiles = useCallback(async () => {
     try {
+      if (attachments.length >= MAX_COMPOSER_ATTACHMENTS) {
+        Alert.alert('Attachment limit reached', `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items.`);
+        return;
+      }
       const result = await DocumentPicker.getDocumentAsync({
         copyToCacheDirectory: true,
         multiple: true,
         type: '*/*',
       });
       if (result.canceled) return;
-      const batchId = Date.now();
-      addAttachments(result.assets.map((asset, index) => ({
-        id: `file-${batchId}-${index}`,
-        localId: `file-${batchId}-${index}`,
-        kind: attachmentKind(asset.mimeType ?? 'application/octet-stream'),
+      addAttachments(result.assets.map((asset) => {
+        const localId = `file:${Crypto.randomUUID()}`;
+        return {
+        id: localId,
+        localId,
+        kind: attachmentKind(asset.name, asset.mimeType ?? 'application/octet-stream'),
         mimeType: asset.mimeType ?? 'application/octet-stream',
         name: asset.name,
         size: asset.size,
         uri: asset.uri,
         state: 'local' as const,
-      })));
+      }}));
     } catch {
       Alert.alert('Couldn’t open Files', 'Please try choosing the file again.');
     }
-  }, [addAttachments]);
+  }, [addAttachments, attachments.length]);
 
   const armSubmittedTurnFollow = useCallback((): ChatFollowSnapshot => {
     submittedTurnFollowRevision.current += 1;
@@ -3195,95 +3630,165 @@ function ChatView({
     chatTailPending.current = snapshot.tailPending;
   }, []);
 
-  const uploadOne = useCallback(async (attachment: ComposerAttachment): Promise<PreparedAttachment | null> => {
-    if (attachment.state === 'ready' && attachment.serverId) return attachment as PreparedAttachment;
-    setAttachments((current) => current.map((item) => item.localId === attachment.localId
-      ? { ...item, state: 'uploading', error: undefined }
-      : item));
-    try {
-      const uploaded = await uploadAttachment({
-        localId: attachment.localId,
-        serverId: attachment.serverId,
-        name: attachment.name,
-        uri: attachment.uri,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.size ?? 0,
-        state: 'uploading',
-      }, chatId);
-      const ready: PreparedAttachment = {
-        ...attachment,
-        serverId: uploaded.id,
-        mimeType: uploaded.mimeType,
-        kind: attachmentKind(uploaded.mimeType),
-        state: 'ready',
-        error: undefined,
-      };
-      setAttachments((current) => current.map((item) => item.localId === attachment.localId ? ready : item));
-      return ready;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Upload failed';
-      setAttachments((current) => current.map((item) => item.localId === attachment.localId
-        ? { ...item, state: 'failed', error: message }
-        : item));
-      return null;
+  const uploadOne = useCallback((attachment: ComposerAttachment): Promise<PreparedAttachment | null> => {
+    const current = latestAttachmentsRef.current.get(attachment.localId) ?? attachment;
+    if (current.state === 'ready' && current.serverId) return Promise.resolve(current as PreparedAttachment);
+    const active = activeUploadsRef.current.get(current.localId);
+    if (active?.attempt === current.attempt) return active.promise;
+
+    const attempted = startUploadAttempt(current);
+    latestAttachmentsRef.current.set(attempted.localId, attempted);
+    setAttachments((values) => values.map((item) => item.localId === attempted.localId ? attempted : item));
+    const promise = (async (): Promise<PreparedAttachment | null> => {
+      try {
+        const uploaded = await uploadAttachment({
+          localId: attempted.localId,
+          serverId: attempted.serverId,
+          name: attempted.name,
+          uri: attempted.uri,
+          mimeType: attempted.mimeType,
+          sizeBytes: attempted.size ?? 0,
+          state: 'uploading',
+        }, null);
+        const settled = settleUploadSuccess({
+          attempted,
+          current: latestAttachmentsRef.current.get(attempted.localId),
+          serverId: uploaded.id,
+          patch: {
+            mimeType: uploaded.mimeType,
+            kind: attachmentKind(attempted.name, uploaded.mimeType),
+          },
+        });
+        if (settled.disposition === 'cleanup') {
+          void deleteUnreferencedAttachment(settled.serverId).catch(() => undefined);
+          return null;
+        }
+        const ready = settled.item as PreparedAttachment;
+        latestAttachmentsRef.current.set(ready.localId, ready);
+        setAttachments((values) => values.map((item) => item.localId === ready.localId ? ready : item));
+        return ready;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Upload failed';
+        const failed = settleUploadFailure({
+          attempted,
+          current: latestAttachmentsRef.current.get(attempted.localId),
+          error: message,
+        });
+        if (failed) {
+          latestAttachmentsRef.current.set(failed.localId, failed);
+          setAttachments((values) => values.map((item) => item.localId === failed.localId ? failed : item));
+        }
+        return null;
+      } finally {
+        const inFlight = activeUploadsRef.current.get(attempted.localId);
+        if (inFlight?.attempt === attempted.attempt) activeUploadsRef.current.delete(attempted.localId);
+      }
+    })();
+    activeUploadsRef.current.set(attempted.localId, { attempt: attempted.attempt, promise });
+    return promise;
+  }, [setAttachments]);
+
+  useEffect(() => {
+    for (const attachment of attachments) {
+      if (attachment.state === 'local') void uploadOne(attachment);
     }
-  }, [chatId]);
+  }, [attachments, uploadOne]);
 
   const retryAttachment = useCallback((localId: string) => {
-    const attachment = attachments.find((item) => item.localId === localId);
+    const attachment = latestAttachmentsRef.current.get(localId);
     if (attachment && attachment.state !== 'uploading') void uploadOne(attachment);
-  }, [attachments, uploadOne]);
+  }, [uploadOne]);
 
   const removeComposerAttachment = useCallback((localId: string) => {
     setAttachments((current) => {
       const target = current.find((attachment) => attachment.localId === localId);
-      if (messageEdit && target?.serverId && !messageEdit.originalAttachmentIds.has(target.serverId)) {
-        void deleteUnreferencedAttachment(target.serverId).catch(() => undefined);
-      }
+      const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
+      if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
+      latestAttachmentsRef.current.delete(localId);
       return current.filter((attachment) => attachment.localId !== localId);
     });
     Haptics.selectionAsync();
-  }, [messageEdit]);
+  }, [messageEdit, setAttachments]);
 
   const submitMessage = useCallback(async () => {
-    if (sending || attachments.some((attachment) => attachment.state === 'uploading')) return;
+    if (sending) return;
+    const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
+    if (!sendPolicy.allowed) {
+      Alert.alert(
+        sendPolicy.reason === 'failed' ? 'Some files couldn’t upload' : 'Uploads still in progress',
+        sendPolicy.reason === 'failed'
+          ? 'Retry or remove the failed files, then send again.'
+          : 'Wait for every attachment to finish before saving this edit.',
+      );
+      return;
+    }
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
+    const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const restoreSubmittedDraft = () => {
+      onChangeInput(submittedDraft.input);
+      setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
+      setAgentEnabled(submittedDraft.agentEnabled);
+      draftOwnerRef.current = submittedDraft.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    };
     try {
-      const prepared = await Promise.all(attachments.map(uploadOne));
-      if (prepared.some((attachment) => attachment === null)) {
-        Alert.alert('Some files couldn’t upload', 'Retry or remove the failed files, then send again.');
-        return;
-      }
       if (messageEdit) {
+        const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
+        if (prepared.some((attachment) => attachment === null)) {
+          Alert.alert('Some files couldn’t upload', 'Retry or remove the failed files, then save again.');
+          return;
+        }
         const accepted = await onEdit(
           messageEdit.message,
-          input.trim(),
+          submittedDraft.input.trim(),
           prepared as PreparedAttachment[],
           activeAgentEnabled,
         );
-        if (accepted) restoreComposer();
+        if (accepted) {
+          for (const attachment of submittedDraft.attachments) latestAttachmentsRef.current.delete(attachment.localId);
+          restoreComposer();
+        }
         return;
       }
       // Arm before invoking onSend: it inserts the optimistic rows before its
       // first network await, so arming after the promise resolves is too late.
       followSnapshot = armSubmittedTurnFollow();
-      const accepted = await onSend(input, prepared as PreparedAttachment[], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire });
+      const pendingSend = onSend(
+        submittedDraft.input,
+        submittedDraft.attachments,
+        { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+        async () => {
+          const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
+          if (prepared.some((attachment) => attachment === null)) {
+            throw new Error('Some files couldn’t upload. Retry or remove the failed files, then send again.');
+          }
+          return prepared as PreparedAttachment[];
+        },
+      );
+      onChangeInput('');
+      setAttachments([]);
+      draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
+      const accepted = await pendingSend;
       if (!accepted) {
         restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
+        restoreSubmittedDraft();
         return;
       }
       followSnapshot = null;
-      onChangeInput('');
-      setAttachments([]);
+      for (const attachment of submittedDraft.attachments) {
+        latestAttachmentsRef.current.delete(attachment.localId);
+        activeUploadsRef.current.delete(attachment.localId);
+      }
     } catch (error) {
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
-      Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your draft was kept. Please try again.');
+      if (!messageEdit) restoreSubmittedDraft();
+      Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your complete draft was restored. Please try again.');
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, temporary, uploadOne]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();
@@ -3410,13 +3915,15 @@ function ChatView({
       message={item}
       model={responseModel(item, models, model)}
       onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
+      onPreviewFile={openFilePreview}
+      onPreviewImages={openImageViewer}
       onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
       onActivateBranch={expired
         ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
         : onActivateBranch}
       editingLocked={Boolean(messageEdit)}
     />
-  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate]);
+  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -3427,13 +3934,14 @@ function ChatView({
   }));
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
+  const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
     && (assistantStatus === 'idle' || Boolean(messageEdit))
     && !sending
     && !expired
     && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
-    && !attachments.some((attachment) => attachment.state === 'uploading');
+    && attachmentPolicy.allowed;
   const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit));
 
   useEffect(() => {
@@ -3645,6 +4153,11 @@ function ChatView({
               ) : null}
               <AttachmentStrip
                 attachments={attachments}
+                onPreviewFile={openFilePreview}
+                onPreviewImage={(index, origin) => {
+                  const selected = attachments[index];
+                  if (selected) openImageViewer(attachments, selected, origin);
+                }}
                 onRetry={retryAttachment}
                 onRemove={removeComposerAttachment}
               />
@@ -3787,6 +4300,17 @@ function ChatView({
         visible={presetPickerOpen}
         onClose={() => setPresetPickerOpen(false)}
         onSelect={onSelectPreset}
+      />
+      <AttachmentImageViewer
+        initialIndex={imageViewer?.initialIndex ?? 0}
+        items={imageViewer?.attachments ?? []}
+        onClose={() => setImageViewer(null)}
+        onShare={shareImagePreview}
+        origin={imageViewer?.origin}
+        reduceMotion={reduceMotion}
+        reduceTransparency={reduceTransparency}
+        resolveUri={resolvePreviewImageUri}
+        visible={Boolean(imageViewer)}
       />
     </Reanimated.View>
   );
@@ -4367,17 +4891,24 @@ const styles = StyleSheet.create({
   sentAttachments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
   assistantAttachments: { justifyContent: 'flex-start', marginTop: 8 },
   sentImageContextHost: { width: 112, height: 112 },
-  sentFileContextHost: { maxWidth: 230, minHeight: 48 },
+  sentFileContextHost: { width: 286, maxWidth: '100%', minHeight: 62 },
   sentAttachmentImage: { width: 112, height: 112, borderRadius: 16, backgroundColor: COLORS.fill },
+  sentAttachmentStatusOverlay: { position: 'absolute', left: 6, right: 6, bottom: 6, minHeight: 30, borderRadius: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: 'rgba(28,28,30,0.76)', paddingHorizontal: 8 },
+  sentAttachmentFailureOverlay: { backgroundColor: 'rgba(196,43,37,0.88)' },
+  sentAttachmentStatusText: { flexShrink: 1, color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   attachmentImagePlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  sentFileAttachment: { maxWidth: 230, minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 9, borderRadius: 15, backgroundColor: COLORS.secondary, paddingHorizontal: 12 },
-  sentFileName: { color: COLORS.text, fontSize: 13.5, flexShrink: 1 },
+  attachmentPressed: { opacity: 0.72, transform: [{ scale: 0.985 }] },
+  sentFileAttachment: { width: 286, maxWidth: '100%', minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 17, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.secondary, paddingHorizontal: 10, paddingVertical: 8 },
+  sentFileIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.fillStrong },
+  sentFileCopy: { flex: 1, minWidth: 0 },
+  sentFileName: { color: COLORS.text, fontSize: 13.5, fontWeight: '600' },
+  sentFileMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
   messageText: { color: COLORS.text, fontSize: 15.5, lineHeight: 22.5 },
   messageContextPreview: { width: 320, maxHeight: 360, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
   messageContextPreviewUser: { backgroundColor: COLORS.secondary },
   messageContextPreviewRole: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 },
   messageContextPreviewText: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
-  attachmentContextImagePreview: { width: 320, height: 320, borderRadius: 28, backgroundColor: COLORS.elevated },
+  attachmentContextImagePreview: { borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
@@ -4440,25 +4971,27 @@ const styles = StyleSheet.create({
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   composerWrap: { paddingTop: 6 },
-  composer: { minHeight: 108, borderRadius: 28, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 4 },
+  composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
-  attachmentStrip: { maxHeight: 112, marginBottom: 8 },
-  attachmentStripContent: { gap: 8, paddingHorizontal: 2 },
-  attachmentFrame: { paddingTop: 17, paddingRight: 17 },
-  attachmentUploadStatus: { color: COLORS.muted, fontSize: 10, marginTop: 3, maxWidth: 148 },
-  attachmentUploadFailed: { color: COLORS.critical, fontWeight: '600' },
-  imageAttachment: { width: 72, height: 72, borderRadius: 14, overflow: 'visible', backgroundColor: COLORS.fill },
-  attachmentImage: { width: 72, height: 72, borderRadius: 14 },
-  fileAttachment: { width: 174, height: 72, borderRadius: 14, flexDirection: 'row', alignItems: 'center', gap: 9, paddingHorizontal: 11, backgroundColor: COLORS.fill },
-  fileAttachmentIcon: { width: 32, height: 40, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.fillStrong },
+  attachmentStrip: { height: 72, marginBottom: 3 },
+  attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
+  attachmentFrame: { paddingTop: 6, paddingRight: 6 },
+  failedAttachment: { borderWidth: 1, borderColor: 'rgba(255,69,58,0.55)' },
+  imageAttachment: { width: 64, height: 64, borderRadius: 13, overflow: 'visible', backgroundColor: COLORS.fill },
+  attachmentImage: { width: 64, height: 64, borderRadius: 13 },
+  attachmentLoadingOverlay: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.34)' },
+  fileAttachment: { width: 160, height: 64, borderRadius: 13, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: COLORS.fill },
+  fileAttachmentIcon: { width: 32, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.fillStrong },
   fileAttachmentCopy: { flex: 1 },
   fileAttachmentName: { color: COLORS.text, fontSize: 12.5, fontWeight: '600' },
   fileAttachmentMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
-  removeAttachmentHitTarget: { position: 'absolute', top: -17, right: -17, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  removeAttachmentHitTarget: { position: 'absolute', top: -12, right: -12, width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   removeAttachmentButton: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#3a3a3c', borderWidth: 2, borderColor: COLORS.elevated },
+  attachmentRetryOverlay: { position: 'absolute', left: 6, right: 6, bottom: 4, minHeight: 24, borderRadius: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: 'rgba(196,43,37,0.92)', paddingHorizontal: 7 },
+  attachmentRetryText: { color: '#ffffff', fontSize: 10.5, fontWeight: '700' },
   input: { minHeight: 30, maxHeight: 120, color: COLORS.text, fontSize: 16, lineHeight: 22, paddingHorizontal: 5, paddingTop: 0 },
   composerBar: { flexDirection: 'row', alignItems: 'center', marginTop: 'auto', gap: 1 },
   composerCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.fillStrong, alignItems: 'center', justifyContent: 'center' },

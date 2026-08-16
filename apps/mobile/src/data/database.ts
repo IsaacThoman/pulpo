@@ -159,6 +159,22 @@ export async function cachedAttachmentUri(namespace: string, attachmentId: strin
   })
 }
 
+export async function removeCachedAttachment(namespace: string, attachmentId: string): Promise<string | null> {
+  return withDatabase(async (database) => {
+    const row = await database.getFirstAsync<{ local_uri: string }>(
+      'SELECT local_uri FROM attachment_cache WHERE namespace = ? AND attachment_id = ?',
+      namespace,
+      attachmentId,
+    )
+    await database.runAsync(
+      'DELETE FROM attachment_cache WHERE namespace = ? AND attachment_id = ?',
+      namespace,
+      attachmentId,
+    )
+    return row?.local_uri ?? null
+  })
+}
+
 export async function saveDraft(namespace: string, chatId: string, body: string, attachments: unknown[]): Promise<void> {
   await withDatabase(async (database) => {
     if (!body && attachments.length === 0) {
