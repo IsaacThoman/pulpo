@@ -971,7 +971,7 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
   );
 }
 
-function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44 }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number }) {
+function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44, tinted = false }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number; tinted?: boolean }) {
   const colorScheme = useColorScheme();
   const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const ghostColor = selectedForeground;
@@ -979,7 +979,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost key={selected ? 'selected' : 'default'} matchContents style={{ width: size, height: size }}>
+      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} matchContents style={{ width: size, height: size }}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
@@ -987,6 +987,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
             buttonBorderShape('circle'),
             controlSize('regular'),
             ...(selected ? [tint(selectedTint), foregroundStyle(accent)] : []),
+            ...(tinted && !selected ? [tint(selectedTint), foregroundStyle(selectedForeground)] : []),
             ...(!selected && selectedColor === 'teal' ? [foregroundStyle('secondary')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
           ]}
@@ -1007,7 +1008,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   return (
     <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} hitSlop={8}>
       {({ pressed }) => (
-        <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]}>
+        <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]} tintColor={tinted ? selectedTint : undefined}>
           {icon === 'ghost'
             ? <Ghost color={selected ? accent : ghostColor} size={size * 0.44} strokeWidth={2} />
             : <Icon name={icon} size={size * 0.44} color={selected ? accent : selectedColor === 'teal' ? '#8E8E93' : COLORS.text} />}
@@ -2899,8 +2900,9 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
-const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
+const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, tinted = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; tinted?: boolean }) {
   const colorScheme = useColorScheme();
+  const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
@@ -2919,7 +2921,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
     : models.filter((candidate) => candidate.providerGroupId === section);
 
   return (
-    <SwiftUIHost matchContents style={styles.modelMenuHost}>
+    <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
       <SwiftUIMenu
         label={(
           <SwiftUILabel
@@ -2939,6 +2941,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
           buttonStyle('glass'),
           buttonBorderShape('capsule'),
           controlSize('regular'),
+          ...(tinted ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(foreground)] : []),
           swiftUIAccessibilityLabel(`Model, ${model.name}`),
           swiftUIAccessibilityHint('Opens models and lab sections'),
         ]}
@@ -3999,10 +4002,10 @@ function ChatView({
         <AppHeader>
           {persistentSidebar
             ? <View accessibilityElementsHidden importantForAccessibility="no" style={styles.headerButtonPlaceholder} />
-            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} />}
+            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} tinted={temporary} />}
           <Reanimated.View style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
-              <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} />
+              <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
             ) : (
               <Pressable
                 accessibilityHint="Opens the model picker"
@@ -4013,6 +4016,7 @@ function ChatView({
                 <Glass
                   interactive
                   style={styles.modelTrigger}
+                  tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
                 >
                   <ModelMark model={model} size={22} logo="lab" />
                   <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={styles.modelTriggerText}>{model.name}</Text>
