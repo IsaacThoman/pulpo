@@ -205,6 +205,7 @@ import {
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
 import {
+  historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
   reuseHistoryChatSummaries,
@@ -4573,9 +4574,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     [chats, search],
   );
   const sections = useMemo(() => {
-    const grouped = new Map<string, HistoryChatSummary[]>();
-    filtered.forEach((chat) => grouped.set(chat.section, [...(grouped.get(chat.section) ?? []), chat]));
-    return Array.from(grouped, ([title, data]) => ({ title, data }));
+    return historyChatSections(filtered);
   }, [filtered]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
