@@ -40,9 +40,9 @@ export function InstructionPresetButtons({
                   boxShadow: `0 0 0 1px ${preset.color}33`,
                 }
               : {
-                  backgroundColor: `color-mix(in srgb, ${preset.color} 10%, transparent)`,
-                  borderColor: preset.color,
-                  color: `color-mix(in srgb, ${preset.color} 45%, var(--foreground))`,
+                  backgroundColor: 'var(--muted)',
+                  borderColor: 'var(--border)',
+                  color: 'var(--muted-foreground)',
                 }}
           >
             {preset.title}

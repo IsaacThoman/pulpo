@@ -32,7 +32,8 @@ describe('instruction preset buttons', () => {
       <InstructionPresetButtons presets={[preset]} selections={{ casual: false }} onToggle={() => undefined} />,
     )
     expect(markup).toContain('aria-pressed="false"')
-    expect(markup).toContain('color-mix(in srgb, #8b5cf6 10%, transparent)')
-    expect(markup).toContain('color:color-mix(in srgb, #8b5cf6 45%, var(--foreground))')
+    expect(markup).toContain('background-color:var(--muted)')
+    expect(markup).toContain('border-color:var(--border)')
+    expect(markup).toContain('color:var(--muted-foreground)')
   })
 })
