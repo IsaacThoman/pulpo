@@ -382,7 +382,7 @@ describe('shared contracts', () => {
       },
       interface: { localTask: 'current' },
       personalization: {
-        instructionPresets: [{ id: 'casual', title: 'Casual', defaultEnabled: true, color: '#8b5cf6' }],
+        instructionPresets: [{ id: 'casual', title: 'Casual', defaultEnabled: true, color: '#f7b75f' }],
       },
       ocr: { enabled: false, modelId: null },
       webTools: { searchEnabled: false },
@@ -396,7 +396,7 @@ describe('shared contracts', () => {
       id: 'casual',
       title: 'Casual',
       instructions: DEFAULT_CASUAL_INSTRUCTIONS,
-      color: '#8b5cf6',
+      color: '#f7b75f',
       defaultEnabled: true,
     }])
     expect(personalizationSettingsSchema.safeParse({ instructionPresets: [

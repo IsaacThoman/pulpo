@@ -1015,7 +1015,7 @@ export const DEFAULT_INSTRUCTION_PRESETS: InstructionPreset[] = [{
   id: 'casual',
   title: 'Casual',
   instructions: DEFAULT_CASUAL_INSTRUCTIONS,
-  color: '#8b5cf6',
+  color: '#f7b75f',
   defaultEnabled: true,
 }]
 
