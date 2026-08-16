@@ -648,6 +648,10 @@ export function SettingsModal({
                     />
                     {instructionPresets.length > 0 && (
                       <div className="mt-3">
+                        <Label className="text-sm font-medium">Instruction presets</Label>
+                        <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
+                          Click to toggle preset behaviors.
+                        </p>
                         <InstructionPresetButtons
                           presets={instructionPresets}
                           selections={s.instructionPresetSelections}
