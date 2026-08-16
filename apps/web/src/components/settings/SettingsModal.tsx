@@ -636,22 +636,6 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">Personalization</h2>
                   <Separator className="my-3" />
                   <div className="py-3">
-                    {instructionPresets.length > 0 && (
-                      <div className="mb-4">
-                        <Label className="text-sm font-medium">Instruction presets</Label>
-                        <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-                          Add a preset without changing your custom instructions below.
-                        </p>
-                        <InstructionPresetButtons
-                          presets={instructionPresets}
-                          selections={s.instructionPresetSelections}
-                          onToggle={(presetId, enabled) => s.set('instructionPresetSelections', {
-                            ...s.instructionPresetSelections,
-                            [presetId]: enabled,
-                          })}
-                        />
-                      </div>
-                    )}
                     <Label className="text-sm font-medium">Custom instructions</Label>
                     <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
                       Appended to every conversation as a system prompt.
@@ -662,6 +646,18 @@ export function SettingsModal({
                       placeholder="e.g. Be terse. Prefer code over prose. Never apologize."
                       rows={5}
                     />
+                    {instructionPresets.length > 0 && (
+                      <div className="mt-3">
+                        <InstructionPresetButtons
+                          presets={instructionPresets}
+                          selections={s.instructionPresetSelections}
+                          onToggle={(presetId, enabled) => s.set('instructionPresetSelections', {
+                            ...s.instructionPresetSelections,
+                            [presetId]: enabled,
+                          })}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="py-3">
                     <div className="flex items-center justify-between gap-4">
