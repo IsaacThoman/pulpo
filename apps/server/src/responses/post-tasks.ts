@@ -8,6 +8,62 @@ import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
 import { trackInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
 
+export const TITLE_MAX_OUTPUT_TOKENS = 1_024
+export const TITLE_VALIDATION_ATTEMPTS = 3
+
+type TitleModelResponse = {
+  id?: string
+  output_text: string
+  status?: string
+  incomplete_details?: { reason?: string } | null
+  usage?: unknown
+}
+
+export class TitleOutputValidationError extends Error {
+  constructor(reason: string) {
+    super(`Title output validation failed: ${reason}`)
+    this.name = 'TitleOutputValidationError'
+  }
+}
+
+function responseOutputTokens(usage: unknown): number {
+  const value = (usage ?? {}) as Record<string, unknown>
+  return Number(value.output_tokens ?? value.outputTokens ?? 0)
+}
+
+export function validateGeneratedTitleResponse(response: TitleModelResponse, maxOutputTokens: number): string {
+  if (response.status === 'incomplete') {
+    throw new TitleOutputValidationError(response.incomplete_details?.reason ?? 'incomplete response')
+  }
+  if (responseOutputTokens(response.usage) >= maxOutputTokens) {
+    throw new TitleOutputValidationError('maximum output token limit reached')
+  }
+  const title = parseGeneratedTitle(response.output_text)
+  if (!title) throw new TitleOutputValidationError('response was not valid title JSON')
+  return title
+}
+
+export async function retryInvalidTitleOutput<T>(
+  invoke: (attempt: number) => Promise<T>,
+  attempts = TITLE_VALIDATION_ATTEMPTS,
+): Promise<T> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await invoke(attempt)
+    } catch (error) {
+      if (!(error instanceof TitleOutputValidationError) || attempt + 1 >= attempts) throw error
+    }
+  }
+  throw new TitleOutputValidationError('retry attempts exhausted')
+}
+
+function titleTaskPrompt(prompt: string, history: string, attempt: number): string {
+  const correction = attempt > 0
+    ? '\n\nYour previous response was invalid or truncated. Return exactly one JSON object matching {"title":"..."}, with no analysis, explanation, or Markdown.'
+    : ''
+  return `${prompt}${correction}\n\nChat history:\n${history}`
+}
+
 export async function resolvePostTaskRuntime(
   selectedModelId: string,
   current: CatalogModelRuntime,
@@ -54,22 +110,31 @@ export async function runPostResponseTasks(
       task.titleIncludeFirstCharacters,
       task.titleIncludeLastCharacters,
     )
-    const titleResult = await trackInternalModelCall({
+    const maxOutputTokens = Math.min(TITLE_MAX_OUTPUT_TOKENS, runtime.model.maxOutputTokens)
+    const titleResult = await retryInvalidTitleOutput((attempt) => trackInternalModelCall({
       requestLogId,
       modelId: runtime.model.id,
       upstreamModelId: runtime.model.upstreamModelId,
       purpose: 'title',
-      invoke: () => client.responses.create({
-        model: runtime.model.upstreamModelId,
-        input: [{ role: 'user', content: `${task.titlePrompt || DEFAULT_TITLE_PROMPT}\n\nChat history:\n${history}` }],
-        store: false,
-        max_output_tokens: Math.min(256, runtime.model.maxOutputTokens),
-      }),
-    })
-    await persistGeneratedTitleResult({
+      retryAttempt: attempt + 1,
+      invoke: async () => {
+        const response = await client.responses.create({
+          model: runtime.model.upstreamModelId,
+          input: [{ role: 'user', content: titleTaskPrompt(task.titlePrompt || DEFAULT_TITLE_PROMPT, history, attempt) }],
+          store: false,
+          max_output_tokens: maxOutputTokens,
+        })
+        return {
+          id: response.id,
+          usage: response.usage,
+          title: validateGeneratedTitleResponse(response, maxOutputTokens),
+        }
+      },
+    }))
+    await persistGeneratedChatTitle({
       userId: record.response.userId,
       chatId: record.response.chatId,
-      outputText: titleResult.output_text,
+      title: titleResult.title,
     })
   }
   const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)

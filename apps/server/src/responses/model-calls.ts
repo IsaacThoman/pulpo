@@ -3,6 +3,7 @@ import type { ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { generationAttempts } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
+import { classifyGenerationError } from './fallback-policy.js'
 
 export function modelCallUsage(usage: unknown): ResponseUsage {
   const value = (usage ?? {}) as Record<string, unknown>
@@ -32,6 +33,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
   modelId: string
   upstreamModelId: string
   purpose: 'compaction' | 'ocr' | 'title' | 'memory'
+  retryAttempt?: number
   invoke: () => Promise<T>
 }): Promise<T> {
   const id = newId()
@@ -43,7 +45,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
     upstreamModelId: input.upstreamModelId,
     source: 'tool',
     purpose: input.purpose,
-    retryAttempt: 1,
+    retryAttempt: input.retryAttempt ?? 1,
   })
   try {
     const result = await input.invoke()
@@ -63,6 +65,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
   } catch (error) {
     await db.update(generationAttempts).set({
       status: 'failed',
+      errorCategory: classifyGenerationError(error),
       errorMessage: error instanceof Error ? error.message : String(error),
       durationMs: Date.now() - startedAt,
       completedAt: new Date(),
