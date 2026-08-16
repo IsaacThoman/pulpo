@@ -71,14 +71,12 @@ import {
   accessibilityLabel as swiftUIAccessibilityLabel,
   buttonBorderShape,
   buttonStyle,
-  brightness,
   contentShape,
   controlSize,
   disabled as swiftUIDisabled,
   foregroundStyle,
   font,
   frame,
-  grayscale,
   labelStyle,
   menuActionDismissBehavior,
   padding,
@@ -973,7 +971,7 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
   );
 }
 
-function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44 }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number }) {
+function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44, tinted = false }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number; tinted?: boolean }) {
   const colorScheme = useColorScheme();
   const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const ghostColor = selectedForeground;
@@ -981,14 +979,15 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   const selectedTint = selectedColor === 'teal' ? 'rgba(20,184,166,0.20)' : 'rgba(175,82,222,0.22)';
   if (Platform.OS === 'ios') {
     return (
-      <SwiftUIHost key={selected ? 'selected' : 'default'} matchContents style={{ width: size, height: size }}>
+      <SwiftUIHost key={selected ? 'selected' : tinted ? 'tinted' : 'default'} matchContents style={{ width: size, height: size }}>
         <SwiftUIButton
           onPress={onPress}
           modifiers={[
-            buttonStyle(selected ? 'glassProminent' : 'glass'),
+            buttonStyle(selected || tinted ? 'glassProminent' : 'glass'),
             buttonBorderShape('circle'),
             controlSize('regular'),
             ...(selected ? [tint(selectedTint), foregroundStyle(accent)] : []),
+            ...(tinted && !selected ? [tint(selectedTint), foregroundStyle(selectedForeground)] : []),
             ...(!selected && selectedColor === 'teal' ? [foregroundStyle('secondary')] : []),
             swiftUIAccessibilityLabel(accessibilityLabel),
           ]}
@@ -1009,7 +1008,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
   return (
     <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress} hitSlop={8}>
       {({ pressed }) => (
-        <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]}>
+        <Glass interactive style={[styles.roundButton, { width: size, height: size, borderRadius: size / 2 }, selected && styles.roundButtonSelected, pressed && styles.pressed]} tintColor={tinted ? selectedTint : undefined}>
           {icon === 'ghost'
             ? <Ghost color={selected ? accent : ghostColor} size={size * 0.44} strokeWidth={2} />
             : <Icon name={icon} size={size * 0.44} color={selected ? accent : selectedColor === 'teal' ? '#8E8E93' : COLORS.text} />}
@@ -2901,11 +2900,12 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
-const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, temporary = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; temporary?: boolean }) {
+const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, tinted = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; tinted?: boolean }) {
   const colorScheme = useColorScheme();
-  const useWhiteArtwork = temporary && colorScheme === 'dark';
+  const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const favoritesSection = '__favorites__';
   const [section, setSection] = useState<ModelSection>(favoritesSection);
+  const [labsMenuRevision, setLabsMenuRevision] = useState(0);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
   const providerOrder = usePreferencesStore((state) => state.providerOrder);
   const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
@@ -2922,7 +2922,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
     : models.filter((candidate) => candidate.providerGroupId === section);
 
   return (
-    <SwiftUIHost key={temporary ? 'temporary' : 'default'} matchContents style={styles.modelMenuHost}>
+    <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
       <SwiftUIMenu
         label={(
           <SwiftUILabel
@@ -2933,17 +2933,16 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 modifiers={[
                   resizable(),
                   frame({ width: 22, height: 22 }),
-                  ...(useWhiteArtwork ? [grayscale(1), brightness(1)] : []),
                 ]}
               />
             )}
           />
         )}
         modifiers={[
-          buttonStyle(temporary ? 'glassProminent' : 'glass'),
+          buttonStyle(tinted ? 'glassProminent' : 'glass'),
           buttonBorderShape('capsule'),
           controlSize('regular'),
-          ...(temporary ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e')] : []),
+          ...(tinted ? [tint('rgba(175,82,222,0.22)'), foregroundStyle(foreground)] : []),
           swiftUIAccessibilityLabel(`Model, ${model.name}`),
           swiftUIAccessibilityHint('Opens models and lab sections'),
         ]}
@@ -2958,14 +2957,13 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 label={candidate.name}
                 model={candidate}
                 selected={candidate.id === model.id}
-                whiteIcons={useWhiteArtwork}
               />
             </SwiftUIButton>
           ))}
         </SwiftUISection>
         <SwiftUIDivider key="divider" />
         <SwiftUIMenu
-          key="sections"
+          key={`sections:${labsMenuRevision}`}
           label={(
             <SwiftUILabel
               title="Labs"
@@ -2984,6 +2982,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
               modifiers={[menuActionDismissBehavior('disabled')]}
               onPress={() => {
                 setSection(candidateSection.id);
+                setLabsMenuRevision((current) => current + 1);
                 Haptics.selectionAsync();
               }}
             >
@@ -2992,7 +2991,6 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
                 section={candidateSection.id}
                 models={models}
                 selected={candidateSection.id === section}
-                whiteIcons={useWhiteArtwork}
               />
             </SwiftUIButton>
           ))}
@@ -3002,31 +3000,31 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   );
 });
 
-function NativeModelMenuRow({ label, model, selected = false, whiteIcons = false }: { label: string; model: Model; selected?: boolean; whiteIcons?: boolean }) {
+function NativeModelMenuRow({ label, model, selected = false }: { label: string; model: Model; selected?: boolean }) {
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
       <SwiftUILabel
         title={label}
-        icon={<SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 }), ...(whiteIcons ? [grayscale(1), brightness(1)] : [])]} />}
+        icon={<SwiftUIImage uiImage={Image.resolveAssetSource(model.menuIcon ?? model.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />}
       />
       <SwiftUISpacer />
-      {selected && <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="checkmark" size={15} />}
+      {selected && <SwiftUIImage systemName="checkmark" size={15} />}
     </SwiftUIHStack>
   );
 }
 
-function NativeModelSectionRow({ label, section, models, selected = false, whiteIcons = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean; whiteIcons?: boolean }) {
+function NativeModelSectionRow({ label, section, models, selected = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean }) {
   const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
       <SwiftUILabel
         title={label}
         icon={labModel
-          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 }), ...(whiteIcons ? [grayscale(1), brightness(1)] : [])]} />
-          : <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 })]} />}
+          ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
+          : <SwiftUIImage systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 })]} />}
       />
       <SwiftUISpacer />
-      {selected && <SwiftUIImage color={whiteIcons ? '#f2f2f7' : undefined} systemName="checkmark" size={15} />}
+      {selected && <SwiftUIImage systemName="checkmark" size={15} />}
     </SwiftUIHStack>
   );
 }
@@ -4006,10 +4004,10 @@ function ChatView({
         <AppHeader>
           {persistentSidebar
             ? <View accessibilityElementsHidden importantForAccessibility="no" style={styles.headerButtonPlaceholder} />
-            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} selected={temporary} />}
+            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} tinted={temporary} />}
           <Reanimated.View style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
-              <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} temporary={temporary} />
+              <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
             ) : (
               <Pressable
                 accessibilityHint="Opens the model picker"
