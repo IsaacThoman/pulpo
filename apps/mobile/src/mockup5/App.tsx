@@ -4006,7 +4006,7 @@ function ChatView({
         <AppHeader>
           {persistentSidebar
             ? <View accessibilityElementsHidden importantForAccessibility="no" style={styles.headerButtonPlaceholder} />
-            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} selected={temporary} />}
+            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} />}
           <Reanimated.View style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} temporary={temporary} />
