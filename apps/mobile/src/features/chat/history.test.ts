@@ -1,10 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import {
+  historyChatSections,
   historyChatSummary,
   resolveHistoryChatExpiryMenuAction,
   reuseHistoryChatSummaries,
   visibleHistoryChats,
 } from './history'
+
+describe('historyChatSections', () => {
+  it('always places pinned chats in the first section', () => {
+    const newerUnpinned = {
+      id: 'newer', title: 'Newer', modelId: 'gpt-5', time: '1:00 PM', section: 'Today',
+      pinned: false, folderId: null, expiresAt: null,
+    }
+    const olderPinned = {
+      id: 'pinned', title: 'Pinned', modelId: 'gpt-5', time: 'Aug 1', section: 'Pinned',
+      pinned: true, folderId: null, expiresAt: null,
+    }
+
+    const sections = historyChatSections([newerUnpinned, olderPinned])
+
+    expect(sections.map((section) => section.title)).toEqual(['Pinned', 'Today'])
+    expect(sections[0]?.data).toEqual([olderPinned])
+  })
+})
 
 describe('visibleHistoryChats', () => {
   it('excludes temporary and deleted chats from mobile history', () => {
