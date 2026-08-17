@@ -57,9 +57,9 @@ function statusVariant(status: string): 'destructive' | 'secondary' | 'outline' 
   return 'outline'
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({ status, compact = false }: { status: string; compact?: boolean }) {
   const active = ['queued', 'in_progress'].includes(status)
-  return <Badge variant={statusVariant(status)} className="whitespace-nowrap font-normal">
+  return <Badge variant={statusVariant(status)} className={cn('whitespace-nowrap font-normal', compact && 'h-5 px-1.5 text-[10px]')}>
     {active && <span className="mr-1.5 size-1.5 animate-pulse rounded-full bg-blue-500" />}
     {status.replaceAll('_', ' ')}
   </Badge>
@@ -176,7 +176,7 @@ export function AdminUsagePage() {
         <SelectFilter value={searchParams.get('model')} placeholder="All models" onChange={(value) => setFilter('model', value)} options={models.map((model) => ({ value: model.id, label: model.name }))} className="w-44" />
         <Popover>
           <PopoverTrigger asChild><Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs"><Filter className="size-3.5" />More{filterCount > 0 && <Badge variant="secondary" className="h-4 min-w-4 px-1 text-[9px]">{filterCount}</Badge>}</Button></PopoverTrigger>
-          <PopoverContent align="end" className="w-80 space-y-3">
+          <PopoverContent align="center" collisionPadding={16} className="w-80 space-y-3">
             <div className="flex items-center justify-between"><span className="text-xs font-medium">Operational filters</span>{filterCount > 0 && <button className="text-xs text-muted-foreground hover:text-foreground" onClick={clearFilters}>Clear all</button>}</div>
             <div className="grid grid-cols-2 gap-2">
               <SelectFilter value={searchParams.get('agent')} placeholder="Any mode" onChange={(value) => setFilter('agent', value)} options={[{ value: 'true', label: 'Agent' }, { value: 'false', label: 'Standard' }]} className="w-full" />
@@ -224,22 +224,22 @@ function UsageChart({ data, metric, range }: { data: AdminUsageSummaryResult['da
     }
     return { rows: [...grouped.values()], series: [...top, ...(data.some((item) => !top.includes(item.modelId)) ? ['other'] : [])] }
   }, [data, metric])
-  if (!rows.length) return <div className="grid h-60 place-items-center text-xs text-muted-foreground">No usage in this period</div>
+  if (!rows.length) return <div className="grid h-28 place-items-center rounded-md border border-dashed bg-muted/10 text-xs text-muted-foreground">No usage in this period</div>
   if (rows.every((row) => series.every((key) => Number(row[key] ?? 0) === 0))) {
-    return <div className="grid h-60 place-items-center text-xs text-muted-foreground">No {metric === 'cost' ? 'billed spend' : metric} in this period</div>
+    return <div className="grid h-28 place-items-center rounded-md border border-dashed bg-muted/10 text-xs text-muted-foreground">No {metric === 'cost' ? 'billed spend' : metric} in this period</div>
   }
   const date = (value: string) => new Date(value.replace(' ', 'T'))
-  return <div className="h-64"><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+  return <div className="space-y-2">{series.length > 1 && <div className="flex min-h-5 flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] text-muted-foreground">{series.map((key, index) => <span key={key} className="flex items-center gap-1.5"><span className="size-2 rounded-sm" style={{ backgroundColor: key === 'other' ? 'hsl(220 15% 45%)' : CHART_COLORS[index % CHART_COLORS.length] }} />{key === 'other' ? 'Other' : getCatalogModel(key).name}</span>)}</div>}<div className={series.length > 1 ? 'h-60' : 'h-64'}><ResponsiveContainer width="100%" height="100%"><BarChart data={rows} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
     <CartesianGrid vertical={false} stroke="var(--border)" />
     <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} tickFormatter={(value: string) => range === '24h' ? date(value).toLocaleTimeString([], { hour: 'numeric' }) : date(value).toLocaleDateString([], { month: 'short', day: 'numeric' })} tickLine={false} axisLine={{ stroke: 'var(--border)' }} />
     <YAxis width={54} tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={false} tickFormatter={(value: number) => metric === 'cost' ? `$${value < 1 ? value.toFixed(2) : value.toFixed(0)}` : value >= 1000 ? `${(value / 1000).toFixed(1)}k` : String(value)} />
     <ChartTooltip formatter={(value, name) => [metric === 'cost' ? `$${Number(value).toFixed(4)}` : Number(value).toLocaleString(), name === 'other' ? 'Other' : getCatalogModel(String(name)).name]} labelFormatter={(value) => date(String(value)).toLocaleString()} contentStyle={{ borderRadius: 6, borderColor: 'var(--border)', background: 'var(--popover)', fontSize: 12 }} />
     {series.map((key, index) => <Bar key={key} dataKey={key} stackId="usage" fill={key === 'other' ? 'hsl(220 15% 45%)' : CHART_COLORS[index % CHART_COLORS.length]} radius={index === series.length - 1 ? [3, 3, 0, 0] : 0} maxBarSize={42} />)}
-  </BarChart></ResponsiveContainer></div>
+  </BarChart></ResponsiveContainer></div></div>
 }
 
 function CostDrivers({ summary, onFilter }: { summary: AdminUsageSummaryResult; onFilter: (key: string, value: string | null) => void }) {
-  return <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+  return <div className="grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
     <DriverPanel title="Top models" icon={<BrainCircuit />} rows={summary.topModels.map((row) => ({ key: row.id, label: row.name, meta: countLabel(row.calls, 'request'), cost: row.costMicros, onClick: () => onFilter('model', row.id) }))} />
     <DriverPanel title="Top users" icon={<UserRound />} rows={summary.topUsers.map((row) => ({ key: row.id, label: row.name || row.email, meta: countLabel(row.calls, 'request'), cost: row.costMicros, avatar: <ProfileAvatar name={row.name || row.email} avatarUrl={row.avatarUrl} className="size-5" fallbackClassName="text-[8px]" />, onClick: () => onFilter('userId', row.id) }))} />
     <DriverPanel title="Top API keys" icon={<KeyRound />} rows={summary.topApiKeys.map((row) => ({ key: row.id, label: row.name, meta: `${row.prefix} · ${countLabel(row.calls, 'request')}`, cost: row.costMicros, onClick: () => onFilter('apiKeyId', row.id) }))} />
@@ -258,24 +258,25 @@ function RequestExplorer({ rows, expanded, onExpand, onInspect, loading, loading
 }) {
   if (loading) return <div className="space-y-2 p-3">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-10" />)}</div>
   if (!rows.length) return <div className="grid h-40 place-items-center text-xs text-muted-foreground">No requests match these filters</div>
-  return <div className="overflow-x-auto"><table className="w-full min-w-[1040px] table-fixed text-left text-xs">
-    <colgroup><col className="w-8" /><col className="w-[15%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[10%]" /><col className="w-[10%]" /><col className="w-[9%]" /><col className="w-[9%]" /><col className="w-[11%]" /></colgroup>
-    <thead className="sticky top-0 z-10 bg-background text-muted-foreground"><tr className="border-b"><th /><th className="px-2 py-2 font-normal">Time / source</th><th className="px-2 py-2 font-normal">Identity</th><th className="px-2 py-2 font-normal">Model</th><th className="px-2 py-2 text-right font-normal">Turns / tools</th><th className="px-2 py-2 text-right font-normal">Tokens</th><th className="px-2 py-2 text-right font-normal">Duration</th><th className="px-2 py-2 text-right font-normal">Cost</th><th className="px-2 py-2 font-normal">Status</th></tr></thead>
+  return <div className="relative max-h-[min(68vh,48rem)] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]" tabIndex={0}><table className="w-full table-fixed text-left text-xs">
+    <colgroup><col className="w-[4%]" /><col className="w-[15%] xl:w-[16%]" /><col className="w-[15%] xl:w-[16%]" /><col className="w-[15%] xl:w-[16%]" /><col className="w-[10%]" /><col className="w-[11%]" /><col className="w-[9%]" /><col className="w-[8%]" /><col className="w-[13%] xl:w-[10%]" /></colgroup>
+    <thead className="sticky top-0 z-20 bg-background/95 text-muted-foreground shadow-[0_1px_0_var(--border)] backdrop-blur"><tr><th /><th className="px-1.5 py-2 font-normal">Time / source</th><th className="px-1.5 py-2 font-normal">Identity</th><th className="px-1.5 py-2 font-normal">Model</th><th className="px-1.5 py-2 text-right font-normal">Turns / tools</th><th className="px-1.5 py-2 text-right font-normal">Tokens</th><th className="px-1.5 py-2 text-right font-normal">Duration</th><th className="px-1.5 py-2 text-right font-normal">Cost</th><th className="px-1.5 py-2 font-normal">Status</th></tr></thead>
     <tbody className="divide-y">{rows.map((row) => <RequestRow key={row.id} row={row} open={expanded === row.id} onToggle={() => onExpand(row.id)} onInspect={() => onInspect(row.id)} />)}</tbody>
   </table>{(hasMore || loadingMore || loadError) && <div className="border-t p-3 text-center"><Button size="sm" variant="ghost" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? <><LoaderCircle className="animate-spin" />Loading…</> : loadError ? 'Retry loading requests' : 'Load more requests'}</Button>{loadError && <div className="mt-1 text-[10px] text-destructive">{loadError.message}</div>}</div>}</div>
 }
 
 function RequestRow({ row, open, onToggle, onInspect }: { row: AdminUsageRequest; open: boolean; onToggle: () => void; onInspect: () => void }) {
   const detailQuery = useQuery({ queryKey: ['admin-usage', 'request', row.id], enabled: open, queryFn: ({ signal }) => apiRequest<AdminUsageRequestDetail>(`/api/admin/usage/requests/${row.id}`, { signal }) })
+  const createdAt = new Date(row.createdAt)
   return <><tr className={cn('hover:bg-muted/30', open && 'bg-muted/20')}>
     <td className="pl-2"><button className="grid size-6 place-items-center rounded hover:bg-muted" aria-label={open ? 'Collapse request' : 'Expand request'} onClick={onToggle}>{open ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}</button></td>
-    <td className="px-2 py-2"><div className="whitespace-nowrap tabular-nums">{new Date(row.createdAt).toLocaleString()}</div><div className="mt-0.5 flex items-center gap-1 text-[10px] uppercase text-muted-foreground">{row.agentMode && <Bot className="size-3" />}{row.origin}</div></td>
-    <td className="px-2 py-2"><div className="flex min-w-0 items-center gap-1.5"><ProfileAvatar name={row.user.name} avatarUrl={row.user.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{row.apiKey?.name ?? row.user.name}</span></div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{row.apiKey ? `${row.apiKey.prefix} · ${row.user.email}` : row.user.email}</div></td>
-    <td className="px-2 py-2"><div className="flex min-w-0 items-center gap-1.5"><ModelIcon model={getCatalogModel(row.requestedModel.id)} className="size-4 shrink-0" /><span className="truncate">{row.requestedModel.name}</span></div>{row.actualModel && row.actualModel.id !== row.requestedModel.id && <div className="mt-0.5 truncate pl-5 text-[10px] text-muted-foreground">→ {row.actualModel.name}</div>}</td>
-    <td className="px-2 py-2 text-right tabular-nums"><div>{row.turns} / {row.toolCalls}</div>{(row.retryCount > 0 || row.fallbackUsed) && <div className="mt-0.5 text-[10px] text-muted-foreground">{row.retryCount ? `${row.retryCount} retry` : ''}{row.retryCount && row.fallbackUsed ? ' · ' : ''}{row.fallbackUsed ? 'fallback' : ''}</div>}</td>
-    <td className="px-2 py-2 text-right tabular-nums"><div>{formatNumber(row.inputTokens + row.outputTokens)}</div><div className="mt-0.5 text-[10px] text-muted-foreground">{formatNumber(row.inputTokens)} → {formatNumber(row.outputTokens)}</div></td>
-    <td className="px-2 py-2 text-right tabular-nums">{row.durationMs == null ? '—' : formatDuration(row.durationMs)}</td><td className="px-2 py-2 text-right font-medium tabular-nums">{formatMicros(row.costMicros)}</td>
-    <td className="px-2 py-2"><StatusBadge status={row.status} />{row.errorCategory && <div className="mt-1 truncate text-[10px] text-destructive">{row.errorCategory}</div>}</td>
+    <td className="px-1.5 py-2"><div className="truncate whitespace-nowrap tabular-nums">{createdAt.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</div><div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground"><span className="truncate tabular-nums">{createdAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span><span>·</span>{row.agentMode && <Bot className="size-3 shrink-0" />}<span className="truncate uppercase">{row.origin}</span></div></td>
+    <td className="px-1.5 py-2"><div className="flex min-w-0 items-center gap-1.5"><ProfileAvatar name={row.user.name} avatarUrl={row.user.avatarUrl} className="size-5 shrink-0" fallbackClassName="text-[8px]" /><span className="truncate">{row.apiKey?.name ?? row.user.name}</span></div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{row.apiKey ? `${row.apiKey.prefix} · ${row.user.email}` : row.user.email}</div></td>
+    <td className="px-1.5 py-2"><div className="flex min-w-0 items-center gap-1.5"><ModelIcon model={getCatalogModel(row.requestedModel.id)} className="size-4 shrink-0" /><span className="truncate">{row.requestedModel.name}</span></div>{row.actualModel && row.actualModel.id !== row.requestedModel.id && <div className="mt-0.5 truncate pl-5 text-[10px] text-muted-foreground">→ {row.actualModel.name}</div>}</td>
+    <td className="px-1.5 py-2 text-right tabular-nums"><div>{row.turns} / {row.toolCalls}</div>{(row.retryCount > 0 || row.fallbackUsed) && <div className="mt-0.5 truncate text-[10px] text-muted-foreground">{row.retryCount ? `${row.retryCount} retry` : ''}{row.retryCount && row.fallbackUsed ? ' · ' : ''}{row.fallbackUsed ? 'fallback' : ''}</div>}</td>
+    <td className="px-1.5 py-2 text-right tabular-nums"><div>{formatNumber(row.inputTokens + row.outputTokens)}</div><div className="mt-0.5 truncate text-[10px] text-muted-foreground">{formatNumber(row.inputTokens)} → {formatNumber(row.outputTokens)}</div></td>
+    <td className="px-1.5 py-2 text-right tabular-nums">{row.durationMs == null ? '—' : formatDuration(row.durationMs)}</td><td className="px-1.5 py-2 text-right font-medium tabular-nums">{formatMicros(row.costMicros)}</td>
+    <td className="overflow-hidden px-1.5 py-2"><StatusBadge status={row.status} compact />{row.errorCategory && <div className="mt-1 truncate text-[10px] text-destructive">{row.errorCategory}</div>}</td>
   </tr>{open && <tr className="bg-muted/10"><td colSpan={9} className="p-0">{detailQuery.isLoading ? <div className="flex h-24 items-center justify-center gap-2 text-xs text-muted-foreground"><LoaderCircle className="size-3.5 animate-spin" />Loading execution trace…</div> : detailQuery.error ? <div className="p-4 text-xs text-destructive">{detailQuery.error.message}</div> : detailQuery.data && <div className="p-4"><div className="mb-3 flex items-center justify-between"><span className="text-xs font-medium">Execution trace</span><Button size="sm" variant="outline" className="h-7 text-xs" onClick={onInspect}>Inspect details <ExternalLink /></Button></div><ExecutionTimeline detail={detailQuery.data} compact /></div>}</td></tr>}</>
 }
 
@@ -298,7 +299,7 @@ function CostCell({ label, value, note, warning, strong }: { label: string; valu
 function RequestInspector({ requestId, onClose }: { requestId: string | null; onClose: () => void }) {
   const detailQuery = useQuery({ queryKey: ['admin-usage', 'request', requestId], enabled: Boolean(requestId), queryFn: ({ signal }) => apiRequest<AdminUsageRequestDetail>(`/api/admin/usage/requests/${requestId}`, { signal }) })
   const detail = detailQuery.data
-  return <Dialog open={Boolean(requestId)} onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="inset-y-0 right-0 left-auto top-0 h-screen max-h-screen w-full max-w-full translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-none border-y-0 border-r-0 p-0 sm:max-w-3xl" showCloseButton>
+  return <Dialog open={Boolean(requestId)} onOpenChange={(open) => { if (!open) onClose() }}><DialogContent className="inset-y-0 right-0 left-auto top-0 flex h-screen max-h-screen w-full max-w-full translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-y-0 border-r-0 p-0 sm:max-w-3xl" showCloseButton>
     <DialogHeader className="border-b px-5 py-4 pr-12"><DialogTitle className="text-base">Request inspector</DialogTitle><DialogDescription className="truncate font-mono text-[11px]">{requestId}</DialogDescription></DialogHeader>
     {detailQuery.isLoading ? <div className="grid flex-1 place-items-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div> : detailQuery.error ? <div className="grid flex-1 place-items-center p-6 text-sm text-destructive">{detailQuery.error.message}</div> : detail && <Tabs defaultValue="summary" className="min-h-0 flex-1 gap-0"><div className="border-b px-5 pt-3"><TabsList className="h-8"><TabsTrigger value="summary" className="text-xs">Summary</TabsTrigger><TabsTrigger value="trace" className="text-xs">Trace</TabsTrigger><TabsTrigger value="billing" className="text-xs">Billing</TabsTrigger><TabsTrigger value="metadata" className="text-xs">Metadata</TabsTrigger><TabsTrigger value="payloads" className="text-xs">Payloads</TabsTrigger></TabsList></div><div className="min-h-0 flex-1 overflow-y-auto p-5"><TabsContent value="summary"><InspectorSummary detail={detail} /></TabsContent><TabsContent value="trace"><ExecutionTimeline detail={detail} /></TabsContent><TabsContent value="billing"><BillingPanel detail={detail} /></TabsContent><TabsContent value="metadata"><MetadataPanel detail={detail} /></TabsContent><TabsContent value="payloads"><PayloadPanel detail={detail} /></TabsContent></div></Tabs>}
   </DialogContent></Dialog>

@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 
@@ -13,6 +13,9 @@ const TABS = [
 ]
 
 export function AdminLayout() {
+  const { pathname } = useLocation()
+  const hasWideContent = pathname === '/admin/usage' || pathname === '/admin/usage/'
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
@@ -38,7 +41,7 @@ export function AdminLayout() {
         </nav>
       </header>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto max-w-5xl px-5 py-6">
+        <div className={cn('mx-auto w-full min-w-0 px-5 py-6', hasWideContent ? 'max-w-[1800px]' : 'max-w-5xl')}>
           <Outlet />
         </div>
       </ScrollArea>
