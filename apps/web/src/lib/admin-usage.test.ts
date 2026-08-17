@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AdminUsageRequestDetail } from '@pulpo/contracts'
-import { adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
+import { adminTimelineConnectsToNext, adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
 
 describe('admin usage dashboard helpers', () => {
   it('serializes only supported URL filters and adds range and time zone', () => {
@@ -66,6 +66,23 @@ describe('admin usage dashboard helpers', () => {
     expect(timeline.map((item) => item.id)).toEqual(['timed', 'turn', 'untimed'])
     expect(timeline[2]?.at).toBeNull()
     expect(adminTimelineItemTitle(timeline[2]!)).toBe('Run-level tool')
+  })
+
+  it('ends the timeline connector at the final recorded event', () => {
+    const items = [
+      { at: '2026-08-16T12:00:00.000Z' },
+      { at: '2026-08-16T12:00:01.000Z' },
+    ] as ReturnType<typeof adminUsageTimeline>
+    expect(adminTimelineConnectsToNext(items, 0)).toBe(true)
+    expect(adminTimelineConnectsToNext(items, 1)).toBe(false)
+  })
+
+  it('does not connect chronological events to untimed historical activity', () => {
+    const items = [
+      { at: '2026-08-16T12:00:00.000Z' },
+      { at: null },
+    ] as ReturnType<typeof adminUsageTimeline>
+    expect(adminTimelineConnectsToNext(items, 0)).toBe(false)
   })
 
   it('labels retries and ancillary model calls consistently', () => {

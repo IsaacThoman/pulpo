@@ -74,6 +74,12 @@ export function adminTimelineItemTitle(item: AdminTimelineItem): string {
   return adminUsageAttemptTitle(item.detail)
 }
 
+export function adminTimelineConnectsToNext(items: AdminTimelineItem[], index: number): boolean {
+  const current = items[index]
+  const next = items[index + 1]
+  return Boolean(current && next && current.at !== null && next.at !== null)
+}
+
 export function reconciliationMatches(detail: AdminUsageRequestDetail): boolean {
   return detail.reconciliation.remainderMicros === 0
 }

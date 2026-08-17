@@ -15,7 +15,7 @@ import {
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatDuration, formatNumber } from '@/lib/format'
-import { adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, setAdminUsageFilter } from '@/lib/admin-usage'
+import { adminTimelineConnectsToNext, adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, setAdminUsageFilter } from '@/lib/admin-usage'
 import { cn } from '@/lib/utils'
 import { useCatalog, getCatalogModel } from '@/stores/catalog'
 import { Button } from '@/components/ui/button'
@@ -285,7 +285,7 @@ function ExecutionTimeline({ detail, compact = false }: { detail: AdminUsageRequ
   const firstUntimedIndex = items.findIndex((item) => item.at === null)
   return <div>{items.length ? <div className="relative space-y-0">{items.map((item, index) => {
     const itemError = item.type === 'tool' ? item.detail.error : item.detail.errorMessage
-    const connectsToNext = item.at !== null && items[index + 1]?.at !== null
+    const connectsToNext = adminTimelineConnectsToNext(items, index)
     return <Fragment key={`${item.type}-${item.id}`}>{index === firstUntimedIndex && <div className="mt-2 flex items-center gap-2 border-t border-dashed pt-3 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"><Clock3 className="size-3" />Run-level activity · timing unavailable</div>}<div className="relative grid grid-cols-[16px_minmax(0,1fr)_auto] gap-2 py-2">
     {connectsToNext && <span aria-hidden className="absolute -bottom-[19px] left-[7px] top-[19px] w-px bg-border" />}
     <span className={cn('relative z-10 mt-1 size-[15px] rounded-full border-2 border-background', item.type === 'model' ? 'bg-blue-500' : item.type === 'tool' ? 'bg-violet-500' : 'bg-amber-500')} />
