@@ -13,6 +13,24 @@ export type HistoryChatSummary = {
   expiresAt: number | null
 }
 
+export type HistoryChatSection = {
+  title: string
+  data: HistoryChatSummary[]
+}
+
+export function historyChatSections(chats: HistoryChatSummary[]): HistoryChatSection[] {
+  const grouped = new Map<string, HistoryChatSummary[]>()
+  for (const chat of chats) {
+    grouped.set(chat.section, [...(grouped.get(chat.section) ?? []), chat])
+  }
+
+  const sections = Array.from(grouped, ([title, data]) => ({ title, data }))
+  const pinned = grouped.get('Pinned')
+  return pinned
+    ? [{ title: 'Pinned', data: pinned }, ...sections.filter((section) => section.title !== 'Pinned')]
+    : sections
+}
+
 export type HistoryChatExpiryMenuAction =
   | { kind: 'enable'; periodLabel: '24h' | '7d' }
   | { kind: 'disable' }

@@ -382,7 +382,7 @@ describe('shared contracts', () => {
       },
       interface: { localTask: 'current' },
       personalization: {
-        instructionPresets: [{ id: 'casual', title: 'Casual', defaultEnabled: true, color: '#f7b75f' }],
+        instructionPresets: [{ id: 'casual', title: 'Casual', defaultEnabled: false, color: '#f7b75f' }],
       },
       ocr: { enabled: false, modelId: null },
       webTools: { searchEnabled: false },
@@ -397,7 +397,7 @@ describe('shared contracts', () => {
       title: 'Casual',
       instructions: DEFAULT_CASUAL_INSTRUCTIONS,
       color: '#f7b75f',
-      defaultEnabled: true,
+      defaultEnabled: false,
     }])
     expect(personalizationSettingsSchema.safeParse({ instructionPresets: [
       settings.instructionPresets[0],
@@ -524,6 +524,30 @@ describe('response snapshot accumulation', () => {
       { type: 'reasoning', summary: [{ text: 'Think' }] },
       { type: 'message', content: [{ text: 'Answer' }] },
     ])
+  })
+
+  it('completes streamed reasoning with its duration before the response finishes', () => {
+    const itemId = 'agent:1:0:reasoning'
+    const reasoned = applyResponseEventToSnapshot(
+      streamingSnapshot,
+      targetedDelta('response.reasoning_summary_text.delta', 'Think', 1, itemId),
+    )
+    const completed = applyResponseEventToSnapshot(reasoned, {
+      responseId: streamingSnapshot.responseId,
+      sequence: 2,
+      type: 'pulpo.agent.reasoning.completed',
+      payload: { id: itemId, durationMs: 5_000 },
+      emittedAt: '2026-07-31T00:00:02.000Z',
+    })
+
+    expect(completed.status).toBe('in_progress')
+    expect(completed.output).toMatchObject([{
+      id: itemId,
+      type: 'reasoning',
+      status: 'completed',
+      durationMs: 5_000,
+      summary: [{ text: 'Think' }],
+    }])
   })
 
   it('projects agent tool, workspace, compaction, and attachment events without a full snapshot', () => {
