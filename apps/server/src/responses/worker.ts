@@ -39,7 +39,7 @@ import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter } from './upstream-request.js'
-import { browserChatOutputError } from './output-text.js'
+import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -243,7 +243,7 @@ async function processGenerationAttempt(
   if (record.response.executionMode === 'background' && record.response.openaiResponseId) {
     const openaiResponseId = record.response.openaiResponseId
     const compactionItems = (record.response.output as unknown[]).filter((item) => (item as { type?: string }).type === 'pulpo_compaction')
-    await db.update(responses).set({ status: 'in_progress', updatedAt: new Date() }).where(eq(responses.id, responseId))
+    await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, updatedAt: new Date() }).where(eq(responses.id, responseId))
     try {
       try {
         const resumed = await client.responses.retrieve(openaiResponseId, {
@@ -314,7 +314,7 @@ async function processGenerationAttempt(
       }
       throw new Error('Background response recovery timed out')
     } catch (error) {
-      if (options.willRetry) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Recovery failed', false)
+      if (options.willRetry) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Recovery failed', false, error)
       await db.update(responses).set({
         status: 'failed', error: { message: error instanceof Error ? error.message : 'Recovery failed' },
         completedAt: new Date(), updatedAt: new Date(),
@@ -363,9 +363,9 @@ async function processGenerationAttempt(
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   })
-  const generationStartSequence = sequence
   const input = await prepareInputFiles(client, contextual.input, record.model, imageInterceptor)
   let output: unknown[] = [...contextual.compactionItems]
+  let outputStarted = generationOutputHasStarted(output)
   let usage: ResponseUsage | null = null
   let providerCostMicros: number | undefined
   let upstreamResponseId = record.response.openaiResponseId
@@ -390,7 +390,7 @@ async function processGenerationAttempt(
   const controller = new AbortController()
   let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
   if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
-  await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
+  await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
     const parameters = resolveModelParameters(record.model, record.response.parameters, {
       publicApi: Boolean(requestLog.apiKeyId),
@@ -439,6 +439,7 @@ async function processGenerationAttempt(
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }
       output = upstreamResponse?.output ? [...contextual.compactionItems, ...upstreamResponse.output] : accumulateEventOutput(output, event)
+      outputStarted ||= generationEventHasStartedOutput(upstream.type, upstream) || generationOutputHasStarted(output)
       if (upstreamResponse?.usage) {
         usage = normalizeUsage(upstreamResponse.usage)
         if (record.model.useProviderCost) providerCostMicros = providerReportedCostMicros(upstreamResponse.usage)
@@ -470,7 +471,7 @@ async function processGenerationAttempt(
     await persistItems(responseId, output)
     const completedAt = new Date()
     await db.update(responses).set({
-      status: 'completed', output, usage, lastSequence: sequence, completedAt, updatedAt: completedAt,
+      status: 'completed', output, usage, error: null, lastSequence: sequence, completedAt, updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
     if (usage) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
     else await releaseBudget(responseId)
@@ -498,7 +499,7 @@ async function processGenerationAttempt(
       const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
-    if (!cancelled) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Generation failed', sequence > generationStartSequence)
+    if (!cancelled) throw new GenerationAttemptError(error instanceof Error ? error.message : 'Generation failed', outputStarted, error)
   }
 }
 
