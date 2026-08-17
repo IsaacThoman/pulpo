@@ -24,6 +24,8 @@ export const DEFAULT_FAT_WEEKLY_LIMIT_MICROS = 4_000_000
 export const billingSettingsSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_WEEKLY_LIMIT_MICROS),
+  lastReconciledAt: z.string().nullable().default(null),
+  lastReconcileError: z.string().nullable().default(null),
 })
 
 export type BillingSettings = z.infer<typeof billingSettingsSchema>

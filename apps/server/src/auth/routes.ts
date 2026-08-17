@@ -20,6 +20,7 @@ import {
 } from '@pulpo/contracts'
 import { z } from 'zod'
 import { db } from '../database/client.js'
+import { getConfig } from '../config.js'
 import { hasDatabaseErrorCode } from '../database/errors.js'
 import { applicationSettings, auditEvents, passwordCredentials, passwordResetTokens, sessions, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
@@ -96,7 +97,15 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .where(eq(applicationSettings.key, 'auth'))
       .limit(1)
     const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes } = parseAuthSettings(setting?.value)
-    return { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes }
+    return {
+      signupEnabled,
+      pendingDetails,
+      adminEmail,
+      pendingMessage,
+      apiKeysEnabled,
+      maxAttachmentBytes,
+      billingEnabled: getConfig().PULPO_BILLING_ENABLED,
+    }
   })
 
   app.get('/api/auth/setup-status', async () => {
