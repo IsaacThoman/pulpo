@@ -639,6 +639,20 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         eventCount: sql`${requestLogs.eventCount} + 1`,
         updatedAt: new Date(),
       }).where(eq(requestLogs.id, requestLog.id))
+      const reasoningContentIndex = Array.isArray(message.content)
+        ? message.content.findIndex((part) => {
+            const candidate = part as { type?: string; thinking?: string }
+            return candidate.type === 'thinking' && Boolean(candidate.thinking?.trim())
+          })
+        : -1
+      if (reasoningContentIndex >= 0) {
+        await emit('pulpo.agent.reasoning.completed', {
+          id: `agent:${completedTurnNumber}:${reasoningContentIndex}:reasoning`,
+          agent_turn: completedTurnNumber,
+          agent_content_index: reasoningContentIndex,
+          durationMs: turnDurationMs,
+        })
+      }
       if (!failed && isSlowCompletion(completedRuntime.runtime.model, turnDurationMs, turnUsage.outputTokens)) {
         await markModelSticky(redis, completedRuntime.runtime.model, 'slow_completion')
         if (completedRuntime.index === activeIndex) await activateFallbackRuntime(completedRuntime.index)
