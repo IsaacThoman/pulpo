@@ -146,6 +146,7 @@ export function Composer({
     : null)
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
+  const sendWithEnter = useSettings((s) => s.sendWithEnter)
   const setPresetChoice = useSettings((s) => s.setPresetChoice)
   const agentModeEnabled = useSettings((s) => s.agentModes[modelId] ?? true)
   const setAgentMode = useSettings((s) => s.setAgentMode)
@@ -762,8 +763,9 @@ export function Composer({
               key: e.key,
               metaKey: e.metaKey,
               ctrlKey: e.ctrlKey,
+              shiftKey: e.shiftKey,
               isComposing: e.nativeEvent.isComposing,
-            })) {
+            }, sendWithEnter)) {
               e.preventDefault()
               void submit()
             }
