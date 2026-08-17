@@ -368,7 +368,7 @@ export function BillingPage() {
                     {[
                       'Pay as you go',
                       'Standard workspace and file limits',
-                      'Free and open-source',
+                      'Free and source-available',
                     ].map((benefit) => (
                       <div key={benefit} className="flex items-start gap-2">
                         <Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
