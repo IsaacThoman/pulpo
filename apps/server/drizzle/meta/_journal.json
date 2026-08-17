@@ -253,6 +253,13 @@
       "when": 1786772386274,
       "tag": "0035_fair_red_hulk",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1786924057842,
+      "tag": "0036_optimal_ravenous",
+      "breakpoints": true
     }
   ]
 }

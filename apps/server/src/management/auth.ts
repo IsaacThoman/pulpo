@@ -57,3 +57,8 @@ export function requireInteractiveSession(request: FastifyRequest) {
   if (request.managementTokenId) throw forbidden('Management tokens cannot create or manage other management tokens')
   return requireUser(request)
 }
+
+export function requireInteractiveAdmin(request: FastifyRequest) {
+  if (request.managementTokenId) throw forbidden('An interactive administrator session is required')
+  return requireAdmin(request)
+}

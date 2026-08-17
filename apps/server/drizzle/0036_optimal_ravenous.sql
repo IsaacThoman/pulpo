@@ -1,0 +1,1 @@
+ALTER TABLE "tool_executions" ADD COLUMN "turn_number" integer;

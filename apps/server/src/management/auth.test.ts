@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FastifyRequest } from 'fastify'
-import { requireInteractiveSession, requireManagementScope } from './auth.js'
+import { requireInteractiveAdmin, requireInteractiveSession, requireManagementScope } from './auth.js'
 
 function request(input: { scopes?: string[] | null; role?: 'pending' | 'user' | 'admin'; token?: boolean } = {}) {
   return {
@@ -27,5 +27,11 @@ describe('management authorization', () => {
 
   it('does not let automation tokens mint more tokens', () => {
     expect(() => requireInteractiveSession(request({ token: true, scopes: ['account:read'] }))).toThrow('cannot create')
+  })
+
+  it('requires an interactive admin for sensitive admin routes', () => {
+    expect(() => requireInteractiveAdmin(request({ token: true, scopes: ['usage:read'] }))).toThrow('interactive administrator session')
+    expect(requireInteractiveAdmin(request()).role).toBe('admin')
+    expect(() => requireInteractiveAdmin(request({ role: 'user' }))).toThrow('Administrator access required')
   })
 })

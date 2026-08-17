@@ -28,6 +28,7 @@ import { storeGeneratedAttachment } from '../attachments/generated.js'
 import type { AttachmentTimelineItem } from './timeline.js'
 import { KagiClient } from './kagi.js'
 import { createWebTools, type WebProviderExecution } from './web-tools.js'
+import { toolExecutionObservability } from './tool-observability.js'
 import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
 import { estimateInputTokens } from '../accounting/pricing.js'
@@ -655,7 +656,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         output: '',
       }
       toolItems.set(event.toolCallId, item)
-      await db.insert(toolExecutions).values({ id: newId(), agentRunId: runId, operationId: event.toolCallId, toolName: event.toolName, arguments: event.args, status: 'queued' }).onConflictDoNothing()
+      await db.insert(toolExecutions).values({
+        id: newId(), agentRunId: runId, operationId: event.toolCallId,
+        toolName: event.toolName, arguments: event.args, status: 'queued',
+        ...toolExecutionObservability(modelTurns),
+      }).onConflictDoNothing()
       await emit('pulpo.agent.tool.queued', item)
       await snapshotIfDue()
     } else if (event.type === 'tool_execution_update') {

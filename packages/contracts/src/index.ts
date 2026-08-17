@@ -1183,6 +1183,224 @@ export const adminUsageEventSchema = z.object({
 })
 export type AdminUsageEvent = z.infer<typeof adminUsageEventSchema>
 
+export const adminUsageRangeSchema = z.enum(['24h', '7d', '30d', '90d', 'all'])
+export type AdminUsageRange = z.infer<typeof adminUsageRangeSchema>
+
+export const adminUsageQuerySchema = z.object({
+  range: adminUsageRangeSchema.default('24h'),
+  timeZone: z.string().trim().min(1).max(100).refine((value) => {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: value }).format(); return true } catch { return false }
+  }, 'Invalid time zone').default('UTC'),
+  status: adminUsageStatusSchema.optional(),
+  origin: z.string().trim().min(1).max(40).optional(),
+  model: z.string().trim().min(1).max(200).optional(),
+  userId: idSchema.optional(),
+  apiKeyId: idSchema.optional(),
+  agent: z.enum(['true', 'false']).optional(),
+  retry: z.enum(['true', 'false']).optional(),
+  fallback: z.enum(['true', 'false']).optional(),
+  ocr: z.string().trim().min(1).max(80).optional(),
+  errorCategory: z.string().trim().min(1).max(120).optional(),
+  tool: z.string().trim().min(1).max(120).optional(),
+  q: z.string().trim().max(200).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+})
+export type AdminUsageQuery = z.infer<typeof adminUsageQuerySchema>
+
+export const adminUsageIdentitySchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  email: z.string(),
+  avatarUrl: z.string().nullable(),
+})
+
+export const adminUsageModelSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+})
+
+export const adminUsageRequestSchema = z.object({
+  id: idSchema,
+  responseId: idSchema,
+  createdAt: isoDateSchema,
+  startedAt: isoDateSchema.nullable(),
+  completedAt: isoDateSchema.nullable(),
+  origin: z.string(),
+  status: adminUsageStatusSchema,
+  requestedModel: adminUsageModelSchema,
+  actualModel: adminUsageModelSchema.nullable(),
+  agentMode: z.boolean(),
+  user: adminUsageIdentitySchema,
+  apiKey: z.object({ id: idSchema, name: z.string(), prefix: z.string() }).nullable(),
+  turns: z.number().int().nonnegative(),
+  toolCalls: z.number().int().nonnegative(),
+  retryCount: z.number().int().nonnegative(),
+  fallbackUsed: z.boolean(),
+  stickyFallbackUsed: z.boolean(),
+  ocrStatus: z.string(),
+  errorCategory: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  reasoningTokens: z.number().int().nonnegative(),
+  costMicros: z.number().int().nonnegative(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  tokensPerSecond: z.number().nonnegative().nullable(),
+  payloadExpiresAt: isoDateSchema.nullable(),
+  hasStoredPayloads: z.boolean(),
+})
+export type AdminUsageRequest = z.infer<typeof adminUsageRequestSchema>
+
+export const adminUsageSummaryResultSchema = z.object({
+  summary: z.object({
+    requests: z.number().int().nonnegative(),
+    active: z.number().int().nonnegative(),
+    completed: z.number().int().nonnegative(),
+    errors: z.number().int().nonnegative(),
+    inputTokens: z.number().int().nonnegative(),
+    outputTokens: z.number().int().nonnegative(),
+    spendMicros: z.number().int().nonnegative(),
+    activeUsers: z.number().int().nonnegative(),
+    p95LatencyMs: z.number().nonnegative().nullable(),
+    successRate: z.number().min(0).max(1),
+    toolSpendMicros: z.number().int().nonnegative(),
+    providerToolCostMicros: z.number().int().nonnegative(),
+  }),
+  daily: z.array(z.object({
+    day: z.string(),
+    modelId: z.string(),
+    requests: z.number().int().nonnegative(),
+    tokens: z.number().int().nonnegative(),
+    costMicros: z.number().int().nonnegative(),
+    errors: z.number().int().nonnegative(),
+  })),
+  topModels: z.array(z.object({ id: z.string(), name: z.string(), calls: z.number().int().nonnegative(), costMicros: z.number().int().nonnegative() })),
+  topUsers: z.array(adminUsageIdentitySchema.extend({ calls: z.number().int().nonnegative(), costMicros: z.number().int().nonnegative() })),
+  topApiKeys: z.array(z.object({ id: idSchema, name: z.string(), prefix: z.string(), calls: z.number().int().nonnegative(), costMicros: z.number().int().nonnegative() })),
+  topTools: z.array(z.object({ name: z.string(), calls: z.number().int().nonnegative(), billedCostMicros: z.number().int().nonnegative(), providerCostMicros: z.number().int().nonnegative() })),
+})
+export type AdminUsageSummaryResult = z.infer<typeof adminUsageSummaryResultSchema>
+
+export const adminUsageRequestsResultSchema = z.object({
+  data: z.array(adminUsageRequestSchema),
+  nextCursor: z.string().nullable(),
+})
+export type AdminUsageRequestsResult = z.infer<typeof adminUsageRequestsResultSchema>
+
+export const adminUsageAttemptSchema = z.object({
+  id: idSchema,
+  model: adminUsageModelSchema,
+  upstreamModelId: z.string().nullable(),
+  source: z.string(),
+  purpose: z.string(),
+  retryAttempt: z.number().int().positive(),
+  turnNumber: z.number().int().positive().nullable(),
+  status: z.string(),
+  retryReason: z.string().nullable(),
+  fallbackFromModelId: z.string().nullable(),
+  upstreamResponseId: z.string().nullable(),
+  errorCategory: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  firstTokenMs: z.number().int().nonnegative().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  inputTokens: z.number().int().nonnegative(),
+  cachedInputTokens: z.number().int().nonnegative(),
+  cacheWriteTokens: z.number().int().nonnegative(),
+  outputTokens: z.number().int().nonnegative(),
+  reasoningTokens: z.number().int().nonnegative(),
+  costMicros: z.number().int().nonnegative(),
+  startedAt: isoDateSchema,
+  completedAt: isoDateSchema.nullable(),
+})
+export type AdminUsageAttempt = z.infer<typeof adminUsageAttemptSchema>
+
+export const adminUsageToolSchema = z.object({
+  id: idSchema,
+  turnNumber: z.number().int().positive().nullable(),
+  operationId: z.string(),
+  name: z.string(),
+  status: z.string(),
+  provider: z.string().nullable(),
+  providerAttempts: z.unknown(),
+  providerCostMicros: z.number().int().nonnegative(),
+  billedCostMicros: z.number().int().nonnegative(),
+  exitCode: z.number().int().nullable(),
+  error: z.string().nullable(),
+  startedAt: isoDateSchema.nullable(),
+  completedAt: isoDateSchema.nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+})
+export type AdminUsageTool = z.infer<typeof adminUsageToolSchema>
+
+export const adminUsageOcrAttemptSchema = z.object({
+  id: idSchema,
+  attachmentId: idSchema.nullable(),
+  providerId: idSchema.nullable(),
+  modelId: z.string().nullable(),
+  status: z.string(),
+  cached: z.boolean(),
+  errorMessage: z.string().nullable(),
+  durationMs: z.number().int().nonnegative().nullable(),
+  createdAt: isoDateSchema,
+  completedAt: isoDateSchema.nullable(),
+})
+export type AdminUsageOcrAttempt = z.infer<typeof adminUsageOcrAttemptSchema>
+
+export const adminUsagePayloadScopeSchema = z.enum([
+  'request', 'response', 'agent_context', 'ocr_request', 'ocr_response', 'tool_arguments', 'tool_output',
+])
+export type AdminUsagePayloadScope = z.infer<typeof adminUsagePayloadScopeSchema>
+
+export const adminUsagePayloadAvailabilitySchema = z.object({
+  scope: adminUsagePayloadScopeSchema,
+  resourceId: z.string().nullable(),
+  label: z.string(),
+  status: z.enum(['available', 'expired', 'not_stored']),
+  expiresAt: isoDateSchema.nullable(),
+})
+export type AdminUsagePayloadAvailability = z.infer<typeof adminUsagePayloadAvailabilitySchema>
+
+export const adminUsageRequestDetailSchema = z.object({
+  request: adminUsageRequestSchema,
+  attempts: z.array(adminUsageAttemptSchema),
+  tools: z.array(adminUsageToolSchema),
+  ocrAttempts: z.array(adminUsageOcrAttemptSchema),
+  agentRun: z.object({
+    id: idSchema,
+    status: z.string(),
+    modelTurns: z.number().int().nonnegative(),
+    toolCalls: z.number().int().nonnegative(),
+    error: z.string().nullable(),
+    startedAt: isoDateSchema.nullable(),
+    completedAt: isoDateSchema.nullable(),
+  }).nullable(),
+  reconciliation: z.object({
+    requestCostMicros: z.number().int().nonnegative(),
+    modelCostMicros: z.number().int().nonnegative(),
+    toolBilledCostMicros: z.number().int().nonnegative(),
+    toolProviderCostMicros: z.number().int().nonnegative(),
+    remainderMicros: z.number().int(),
+  }),
+  payloads: z.array(adminUsagePayloadAvailabilitySchema),
+})
+export type AdminUsageRequestDetail = z.infer<typeof adminUsageRequestDetailSchema>
+
+export const revealAdminUsagePayloadSchema = z.object({
+  scope: adminUsagePayloadScopeSchema,
+  resourceId: idSchema.nullable().default(null),
+})
+export type RevealAdminUsagePayloadInput = z.infer<typeof revealAdminUsagePayloadSchema>
+
+export const adminUsagePayloadResultSchema = z.object({
+  scope: adminUsagePayloadScopeSchema,
+  resourceId: z.string().nullable(),
+  value: z.unknown(),
+})
+export type AdminUsagePayloadResult = z.infer<typeof adminUsagePayloadResultSchema>
+
 export const createApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
   scopes: z.array(z.enum(['responses', 'models'])).min(1),

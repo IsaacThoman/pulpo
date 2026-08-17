@@ -1,42 +1,204 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, ilike, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import {
+  adminUsageQuerySchema,
+  adminUsagePayloadScopeSchema,
+  revealAdminUsagePayloadSchema,
+  type AdminUsageQuery,
+  type AdminUsageRequest,
+} from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, toolExecutions, users, workspaceLeases } from '../database/schema.js'
+import { agentRuns, apiKeys, applicationSettings, auditEvents, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, toolExecutions, users, workspaceLeases } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
+import { newId } from '../lib/ids.js'
 import { reconcileWorkspaceLeases } from '../agent/controller.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { getConfig } from '../config.js'
+import { profileAvatarUrl } from '../profile/service.js'
+import { requireInteractiveAdmin } from '../management/auth.js'
 
-const querySchema = z.object({
-  range: z.enum(['24h', '7d', '30d', '90d', 'all']).default('24h'),
-  status: z.string().optional(), origin: z.string().optional(), model: z.string().optional(),
-  identity: z.string().optional(), retry: z.enum(['true', 'false']).optional(),
-  fallback: z.enum(['true', 'false']).optional(), ocr: z.string().optional(), errorCategory: z.string().optional(),
-  cursor: z.string().optional(), limit: z.coerce.number().int().min(1).max(100).default(50),
-})
+const querySchema = adminUsageQuerySchema
+type UsageQuery = AdminUsageQuery
+export const ADMIN_USAGE_PAYLOAD_REVEAL_PATH = '/api/admin/usage-payloads/:requestId/reveal'
+
+const cursorSchema = z.object({ createdAt: z.iso.datetime(), id: z.uuid() })
+
+export function encodeAdminUsageCursor(value: { createdAt: Date; id: string }): string {
+  return Buffer.from(JSON.stringify({ createdAt: value.createdAt.toISOString(), id: value.id })).toString('base64url')
+}
+
+export function decodeAdminUsageCursor(value: string): { createdAt: Date; id: string } {
+  try {
+    const parsed = cursorSchema.parse(JSON.parse(Buffer.from(value, 'base64url').toString('utf8')))
+    return { createdAt: new Date(parsed.createdAt), id: parsed.id }
+  } catch {
+    throw new AppError(400, 'invalid_usage_cursor', 'Usage cursor is invalid')
+  }
+}
+
+export function adminUsagePayloadStatus(value: unknown, expiresAt: Date | null = null, now = Date.now()): 'available' | 'expired' | 'not_stored' {
+  if (expiresAt && expiresAt.getTime() <= now) return 'expired'
+  return value == null ? 'not_stored' : 'available'
+}
+
+export function reconcileAdminUsageCosts(input: {
+  requestCostMicros: number
+  attempts: Array<{ costMicros: number }>
+  tools: Array<{ billedCostMicros: number; providerCostMicros: number }>
+}) {
+  const modelCostMicros = input.attempts.reduce((sum, row) => sum + row.costMicros, 0)
+  const toolBilledCostMicros = input.tools.reduce((sum, row) => sum + row.billedCostMicros, 0)
+  const toolProviderCostMicros = input.tools.reduce((sum, row) => sum + row.providerCostMicros, 0)
+  return {
+    requestCostMicros: input.requestCostMicros,
+    modelCostMicros,
+    toolBilledCostMicros,
+    toolProviderCostMicros,
+    remainderMicros: input.requestCostMicros - modelCostMicros - toolBilledCostMicros,
+  }
+}
+
+export function adminUsagePayloadAudit(input: {
+  actorUserId: string
+  requestId: string
+  responseId: string
+  scope: string
+  resourceId: string | null
+  payloadExpiresAt: Date | null
+}) {
+  return {
+    id: newId(), actorUserId: input.actorUserId, action: 'usage.payload.reveal', targetType: 'request_log', targetId: input.requestId,
+    metadata: { responseId: input.responseId, scope: input.scope, resourceId: input.resourceId, payloadExpiresAt: iso(input.payloadExpiresAt) },
+  }
+}
 
 function since(range: string): Date | null {
   const duration: Record<string, number> = { '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000, '90d': 7_776_000_000 }
   return range === 'all' ? null : new Date(Date.now() - duration[range]!)
 }
 
-function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL[] {
+function filters(input: UsageQuery, includeCursor = false): SQL[] {
   const values: SQL[] = []
   const start = since(input.range)
-  if (start) values.push(gte(generationAttempts.startedAt, start))
-  if (input.status) values.push(inArray(generationAttempts.status, input.status.split(',')))
-  if (input.origin) values.push(eq(generationAttempts.source, input.origin))
-  if (input.model) values.push(sql`(${generationAttempts.modelId} = ${input.model} or ${generationAttempts.upstreamModelId} = ${input.model})`)
-  if (input.identity) values.push(sql`(${requestLogs.userId}::text = ${input.identity} or ${requestLogs.apiKeyId}::text = ${input.identity})`)
-  if (input.retry) values.push(input.retry === 'true' ? gt(generationAttempts.retryAttempt, 1) : eq(generationAttempts.retryAttempt, 1))
+  if (start) values.push(gte(requestLogs.createdAt, start))
+  if (input.status) values.push(eq(requestLogs.status, input.status))
+  if (input.origin) values.push(eq(requestLogs.origin, input.origin))
+  if (input.model) values.push(or(eq(requestLogs.requestedModelId, input.model), eq(requestLogs.actualModelId, input.model), eq(requestLogs.currentModelId, input.model))!)
+  if (input.userId) values.push(eq(requestLogs.userId, input.userId))
+  if (input.apiKeyId) values.push(eq(requestLogs.apiKeyId, input.apiKeyId))
+  if (input.agent) values.push(eq(responses.agentMode, input.agent === 'true'))
+  if (input.retry) values.push(input.retry === 'true' ? sql`${requestLogs.retryCount} > 0` : eq(requestLogs.retryCount, 0))
   if (input.fallback) values.push(eq(requestLogs.fallbackUsed, input.fallback === 'true'))
   if (input.ocr) values.push(eq(requestLogs.ocrStatus, input.ocr))
-  if (input.errorCategory) values.push(eq(generationAttempts.errorCategory, input.errorCategory))
-  if (includeCursor && input.cursor) values.push(lt(generationAttempts.startedAt, new Date(input.cursor)))
+  if (input.errorCategory) values.push(eq(requestLogs.errorCategory, input.errorCategory))
+  if (input.tool) values.push(sql`exists (
+    select 1 from ${agentRuns} ar
+    inner join ${toolExecutions} te on te.agent_run_id = ar.id
+    where ar.response_id = ${requestLogs.responseId} and te.tool_name = ${input.tool}
+  )`)
+  if (input.q) {
+    const pattern = `%${input.q}%`
+    values.push(or(
+      ilike(users.name, pattern), ilike(users.email, pattern), ilike(apiKeys.name, pattern), ilike(apiKeys.prefix, pattern),
+      sql`${requestLogs.id}::text ilike ${pattern}`, sql`${requestLogs.responseId}::text ilike ${pattern}`,
+    )!)
+  }
+  if (includeCursor && input.cursor) {
+    const cursor = decodeAdminUsageCursor(input.cursor)
+    values.push(or(lt(requestLogs.createdAt, cursor.createdAt), and(eq(requestLogs.createdAt, cursor.createdAt), lt(requestLogs.id, cursor.id)))!)
+  }
   return values
+}
+
+function bucket(input: UsageQuery): SQL<string> {
+  if (input.range === '24h') return sql<string>`date_trunc('hour', ${requestLogs.createdAt} at time zone ${input.timeZone})::text`
+  if (input.range === 'all') return sql<string>`date_trunc('month', ${requestLogs.createdAt} at time zone ${input.timeZone})::text`
+  return sql<string>`date_trunc('day', ${requestLogs.createdAt} at time zone ${input.timeZone})::text`
+}
+
+function iso(value: Date | null): string | null { return value?.toISOString() ?? null }
+
+async function modelNames(ids: Array<string | null>): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))]
+  if (!unique.length) return new Map()
+  return new Map((await db.select({ id: models.id, name: models.name }).from(models).where(inArray(models.id, unique))).map((row) => [row.id, row.name]))
+}
+
+interface RequestSelectRow {
+  log: typeof requestLogs.$inferSelect
+  response: { agentMode: boolean }
+  user: Pick<typeof users.$inferSelect, 'id' | 'name' | 'email' | 'avatarObjectKey' | 'avatarVersion'>
+  apiKey: { id: string; name: string; prefix: string } | null
+  turns: number
+  toolCalls: number
+}
+
+async function serializeRequests(rows: RequestSelectRow[]): Promise<AdminUsageRequest[]> {
+  const names = await modelNames(rows.flatMap((row) => [row.log.requestedModelId, row.log.actualModelId, row.log.currentModelId]))
+  return rows.map(({ log, response, user, apiKey, turns, toolCalls }) => {
+    const actualId = log.actualModelId ?? log.currentModelId
+    return {
+      id: log.id,
+      responseId: log.responseId,
+      createdAt: log.createdAt.toISOString(),
+      startedAt: iso(log.startedAt),
+      completedAt: iso(log.completedAt),
+      origin: log.origin,
+      status: log.status,
+      requestedModel: { id: log.requestedModelId, name: names.get(log.requestedModelId) ?? log.requestedModelId },
+      actualModel: actualId ? { id: actualId, name: names.get(actualId) ?? actualId } : null,
+      agentMode: response.agentMode,
+      user: { id: user.id, name: user.name, email: user.email, avatarUrl: profileAvatarUrl(user) },
+      apiKey,
+      turns: Number(turns),
+      toolCalls: Number(toolCalls),
+      retryCount: log.retryCount,
+      fallbackUsed: log.fallbackUsed,
+      stickyFallbackUsed: log.stickyFallbackUsed,
+      ocrStatus: log.ocrStatus,
+      errorCategory: log.errorCategory,
+      errorMessage: log.errorMessage,
+      inputTokens: log.inputTokens,
+      cachedInputTokens: log.cachedInputTokens,
+      cacheWriteTokens: log.cacheWriteTokens,
+      outputTokens: log.outputTokens,
+      reasoningTokens: log.reasoningTokens,
+      costMicros: log.costMicros,
+      durationMs: log.durationMs,
+      tokensPerSecond: log.tokensPerSecond,
+      payloadExpiresAt: iso(log.payloadExpiresAt),
+      hasStoredPayloads: log.requestPayload !== null || log.responsePayload !== null || response.agentMode || Number(toolCalls) > 0 || log.ocrStatus !== 'not_requested',
+    }
+  })
+}
+
+async function selectRequests(where: SQL | undefined, limit?: number) {
+  let query = db.select({
+    log: requestLogs,
+    response: { agentMode: responses.agentMode },
+    user: { id: users.id, name: users.name, email: users.email, avatarObjectKey: users.avatarObjectKey, avatarVersion: users.avatarVersion },
+    apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix },
+    turns: sql<number>`(
+      select case when count(*) filter (where ga.purpose = 'generation') > 0
+        then greatest(coalesce(max(ga.turn_number), 0), 1) else 0 end
+      from ${generationAttempts} ga where ga.request_log_id = ${requestLogs.id}
+    )::int`,
+    toolCalls: sql<number>`(
+      select count(*) from ${agentRuns} ar inner join ${toolExecutions} te on te.agent_run_id = ar.id
+      where ar.response_id = ${requestLogs.responseId}
+    )::int`,
+  }).from(requestLogs)
+    .innerJoin(responses, eq(requestLogs.responseId, responses.id))
+    .innerJoin(users, eq(requestLogs.userId, users.id))
+    .leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id))
+    .where(where)
+    .orderBy(desc(requestLogs.createdAt), desc(requestLogs.id))
+    .$dynamic()
+  if (limit !== undefined) query = query.limit(limit)
+  return await query
 }
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
@@ -164,64 +326,187 @@ export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<vo
     requireAdmin(request)
     const input = querySchema.parse(request.query)
     const where = and(...filters(input))
+    const modelId = sql<string>`coalesce(${requestLogs.actualModelId}, ${requestLogs.currentModelId}, ${requestLogs.requestedModelId})`
+    const day = bucket(input)
+    const errorPredicate = sql`${requestLogs.status} in ('failed', 'cancelled', 'incomplete')`
+
+    const [daily, topModelRows, topUserRows, topApiKeys, toolTotalsRows, topTools] = await Promise.all([
+      db.select({
+        day, modelId,
+        requests: sql<number>`count(*)::int`,
+        tokens: sql<number>`coalesce(sum(${requestLogs.inputTokens} + ${requestLogs.outputTokens}), 0)::bigint`,
+        costMicros: sql<number>`coalesce(sum(${requestLogs.costMicros}), 0)::bigint`,
+        errors: sql<number>`count(*) filter (where ${errorPredicate})::int`,
+      }).from(requestLogs).innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id))
+        .where(where).groupBy(sql`1`, sql`2`).orderBy(sql`1 asc`),
+      db.select({ id: modelId, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${requestLogs.costMicros}), 0)::bigint` })
+        .from(requestLogs).innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id))
+        .where(where).groupBy(modelId).orderBy(desc(sql`sum(${requestLogs.costMicros})`)).limit(10),
+      db.select({
+        id: users.id, name: users.name, email: users.email, avatarObjectKey: users.avatarObjectKey, avatarVersion: users.avatarVersion,
+        calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${requestLogs.costMicros}), 0)::bigint`,
+      }).from(requestLogs).innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id))
+        .where(where).groupBy(users.id).orderBy(desc(sql`sum(${requestLogs.costMicros})`)).limit(10),
+      db.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${requestLogs.costMicros}), 0)::bigint` })
+        .from(requestLogs).innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).innerJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id))
+        .where(where).groupBy(apiKeys.id).orderBy(desc(sql`sum(${requestLogs.costMicros})`)).limit(10),
+      db.select({
+        billedCostMicros: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint`,
+        providerCostMicros: sql<number>`coalesce(sum(${toolExecutions.providerCostMicros}), 0)::bigint`,
+      }).from(toolExecutions).innerJoin(agentRuns, eq(toolExecutions.agentRunId, agentRuns.id)).innerJoin(requestLogs, eq(agentRuns.responseId, requestLogs.responseId))
+        .innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).where(where),
+      db.select({
+        name: toolExecutions.toolName, calls: sql<number>`count(*)::int`,
+        billedCostMicros: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint`,
+        providerCostMicros: sql<number>`coalesce(sum(${toolExecutions.providerCostMicros}), 0)::bigint`,
+      }).from(toolExecutions).innerJoin(agentRuns, eq(toolExecutions.agentRunId, agentRuns.id)).innerJoin(requestLogs, eq(agentRuns.responseId, requestLogs.responseId))
+        .innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id))
+        .where(where).groupBy(toolExecutions.toolName).orderBy(desc(sql`sum(${toolExecutions.billedCostMicros})`), desc(sql`count(*)`)).limit(10),
+    ])
+
     const [summary] = await db.select({
-      total: sql<number>`count(*)::int`, queued: sql<number>`0::int`,
-      inProgress: sql<number>`count(*) filter (where ${generationAttempts.status} = 'in_progress')::int`,
-      completed: sql<number>`count(*) filter (where ${generationAttempts.status} = 'completed')::int`,
-      failed: sql<number>`count(*) filter (where ${generationAttempts.status} = 'failed')::int`,
-      cancelled: sql<number>`0::int`, incomplete: sql<number>`0::int`,
-      inputTokens: sql<number>`coalesce(sum(${generationAttempts.inputTokens}), 0)::bigint`,
-      cachedInputTokens: sql<number>`coalesce(sum(${generationAttempts.cachedInputTokens}), 0)::bigint`,
-      cacheWriteTokens: sql<number>`coalesce(sum(${generationAttempts.cacheWriteTokens}), 0)::bigint`,
-      outputTokens: sql<number>`coalesce(sum(${generationAttempts.outputTokens}), 0)::bigint`,
-      reasoningTokens: sql<number>`coalesce(sum(${generationAttempts.reasoningTokens}), 0)::bigint`,
-      spendMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint`,
-      averageLatencyMs: sql<number>`coalesce(avg(${generationAttempts.durationMs}) filter (where ${generationAttempts.durationMs} is not null), 0)::float8`,
-      averageTokensPerSecond: sql<number>`coalesce(avg((${generationAttempts.outputTokens} * 1000.0) / nullif(${generationAttempts.durationMs}, 0)) filter (where ${generationAttempts.durationMs} is not null), 0)::float8`,
-      successRate: sql<number>`coalesce(count(*) filter (where ${generationAttempts.status} = 'completed')::float / nullif(count(*) filter (where ${generationAttempts.status} <> 'in_progress'), 0), 0)::float8`,
-    }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where)
-    const daily = await db.select({
-      day: sql<string>`date_trunc('day', ${generationAttempts.startedAt})::text`, modelId: generationAttempts.modelId,
-      calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint`,
-      tokens: sql<number>`coalesce(sum(${generationAttempts.inputTokens} + ${generationAttempts.outputTokens}), 0)::bigint`,
-    }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where).groupBy(sql`date_trunc('day', ${generationAttempts.startedAt})`, generationAttempts.modelId).orderBy(asc(sql`date_trunc('day', ${generationAttempts.startedAt})`))
-    const topModels = await db.select({ id: generationAttempts.modelId, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).where(where).groupBy(generationAttempts.modelId).orderBy(desc(sql`count(*)`)).limit(10)
-    const topUsers = await db.select({ id: users.id, name: users.name, email: users.email, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).where(where).groupBy(users.id).orderBy(desc(sql`count(*)`)).limit(10)
-    const topApiKeys = await db.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix, calls: sql<number>`count(*)::int`, costMicros: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` }).from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).where(where).groupBy(apiKeys.id).orderBy(desc(sql`count(*)`)).limit(10)
-    return { summary, daily, topModels, topUsers, topApiKeys }
+      requests: sql<number>`count(*)::int`,
+      active: sql<number>`count(*) filter (where ${requestLogs.status} in ('queued', 'in_progress'))::int`,
+      completed: sql<number>`count(*) filter (where ${requestLogs.status} = 'completed')::int`,
+      errors: sql<number>`count(*) filter (where ${errorPredicate})::int`,
+      inputTokens: sql<number>`coalesce(sum(${requestLogs.inputTokens}), 0)::bigint`,
+      outputTokens: sql<number>`coalesce(sum(${requestLogs.outputTokens}), 0)::bigint`,
+      spendMicros: sql<number>`coalesce(sum(${requestLogs.costMicros}), 0)::bigint`,
+      activeUsers: sql<number>`count(distinct ${requestLogs.userId})::int`,
+      p95LatencyMs: sql<number | null>`(percentile_cont(0.95) within group (order by ${requestLogs.durationMs}) filter (where ${requestLogs.durationMs} is not null))::float8`,
+      successRate: sql<number>`coalesce(count(*) filter (where ${requestLogs.status} = 'completed')::float / nullif(count(*) filter (where ${requestLogs.status} not in ('queued', 'in_progress')), 0), 0)::float8`,
+    }).from(requestLogs).innerJoin(responses, eq(requestLogs.responseId, responses.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).where(where)
+    const names = await modelNames(topModelRows.map((row) => row.id))
+    const toolTotals = toolTotalsRows[0]
+    return {
+      summary: {
+        requests: Number(summary?.requests ?? 0), active: Number(summary?.active ?? 0), completed: Number(summary?.completed ?? 0), errors: Number(summary?.errors ?? 0),
+        inputTokens: Number(summary?.inputTokens ?? 0), outputTokens: Number(summary?.outputTokens ?? 0), spendMicros: Number(summary?.spendMicros ?? 0),
+        activeUsers: Number(summary?.activeUsers ?? 0), p95LatencyMs: summary?.p95LatencyMs == null ? null : Number(summary.p95LatencyMs),
+        successRate: Number(summary?.successRate ?? 0), toolSpendMicros: Number(toolTotals?.billedCostMicros ?? 0), providerToolCostMicros: Number(toolTotals?.providerCostMicros ?? 0),
+      },
+      daily: daily.map((row) => ({ ...row, requests: Number(row.requests), tokens: Number(row.tokens), costMicros: Number(row.costMicros), errors: Number(row.errors) })),
+      topModels: topModelRows.map((row) => ({ ...row, name: names.get(row.id) ?? row.id, calls: Number(row.calls), costMicros: Number(row.costMicros) })),
+      topUsers: topUserRows.map((row) => ({ id: row.id, name: row.name, email: row.email, avatarUrl: profileAvatarUrl(row), calls: Number(row.calls), costMicros: Number(row.costMicros) })),
+      topApiKeys: topApiKeys.map((row) => ({ ...row, calls: Number(row.calls), costMicros: Number(row.costMicros) })),
+      topTools: topTools.map((row) => ({ ...row, calls: Number(row.calls), billedCostMicros: Number(row.billedCostMicros), providerCostMicros: Number(row.providerCostMicros) })),
+    }
   })
 
   app.get('/api/admin/usage/requests', async (request) => {
     requireAdmin(request)
     const input = querySchema.parse(request.query)
-    const rows = await db.select({ call: generationAttempts, log: requestLogs, user: { id: users.id, name: users.name, email: users.email }, apiKey: { id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.prefix }, modelName: models.name })
-      .from(generationAttempts).innerJoin(requestLogs, eq(generationAttempts.requestLogId, requestLogs.id)).innerJoin(users, eq(requestLogs.userId, users.id)).leftJoin(apiKeys, eq(requestLogs.apiKeyId, apiKeys.id)).leftJoin(models, eq(generationAttempts.modelId, models.id))
-      .where(and(...filters(input, true))).orderBy(desc(generationAttempts.startedAt)).limit(input.limit + 1)
-    const page = rows.slice(0, input.limit).map(({ call, log, ...relations }) => ({
-      id: call.id, requestLogId: log.id, responseId: log.responseId, origin: call.source, purpose: call.purpose,
-      status: call.status, requestedModelId: call.upstreamModelId ?? call.modelId, actualModelId: call.modelId,
-      currentModelId: call.modelId, retryAttempt: call.retryAttempt, turnNumber: call.turnNumber,
-      retryCount: Math.max(0, call.retryAttempt - 1),
-      fallbackUsed: Boolean(call.fallbackFromModelId), stickyFallbackUsed: log.stickyFallbackUsed, ocrStatus: log.ocrStatus,
-      errorCategory: call.errorCategory, errorMessage: call.errorMessage, inputTokens: call.inputTokens,
-      cachedInputTokens: call.cachedInputTokens, cacheWriteTokens: call.cacheWriteTokens,
-      outputTokens: call.outputTokens, reasoningTokens: call.reasoningTokens,
-      costMicros: call.costMicros, durationMs: call.durationMs,
-      tokensPerSecond: call.durationMs ? (call.outputTokens * 1000) / call.durationMs : null,
-      createdAt: call.startedAt.toISOString(), ...relations,
-    }))
-    return { data: page, nextCursor: rows.length > input.limit ? rows[input.limit - 1]!.call.startedAt.toISOString() : null }
+    const rows = await selectRequests(and(...filters(input, true)), input.limit + 1)
+    const page = rows.slice(0, input.limit)
+    const data = await serializeRequests(page)
+    const last = page.at(-1)?.log
+    return { data, nextCursor: rows.length > input.limit && last ? encodeAdminUsageCursor({ createdAt: last.createdAt, id: last.id }) : null }
   })
 
   app.get('/api/admin/usage/requests/:id', async (request) => {
     requireAdmin(request)
-    const { id } = request.params as { id: string }
-    const [call] = await db.select().from(generationAttempts).where(eq(generationAttempts.id, id)).limit(1)
-    if (!call) throw notFound('Model call')
-    const [log] = await db.select().from(requestLogs).where(eq(requestLogs.id, call.requestLogId)).limit(1)
-    const ocr = await db.select().from(ocrAttempts).where(eq(ocrAttempts.requestLogId, call.requestLogId)).orderBy(asc(ocrAttempts.createdAt))
-    const [agentRun] = log ? await db.select().from(agentRuns).where(eq(agentRuns.responseId, log.responseId)).limit(1) : []
-    const tools = agentRun ? await db.select().from(toolExecutions).where(eq(toolExecutions.agentRunId, agentRun.id)).orderBy(asc(toolExecutions.createdAt)) : []
-    return { call, request: log ? { ...log, requestPayload: undefined, responsePayload: undefined } : null, ocrAttempts: ocr, toolExecutions: tools }
+    const { id } = z.object({ id: z.uuid() }).parse(request.params)
+    let requestId = id
+    let [log] = await db.select().from(requestLogs).where(eq(requestLogs.id, requestId)).limit(1)
+    if (!log) {
+      const [attempt] = await db.select({ requestLogId: generationAttempts.requestLogId }).from(generationAttempts).where(eq(generationAttempts.id, id)).limit(1)
+      if (!attempt) throw notFound('Usage request')
+      requestId = attempt.requestLogId
+      ;[log] = await db.select().from(requestLogs).where(eq(requestLogs.id, requestId)).limit(1)
+    }
+    if (!log) throw notFound('Usage request')
+    const selected = await selectRequests(eq(requestLogs.id, requestId), 1)
+    const [serialized] = await serializeRequests(selected)
+    if (!serialized) throw notFound('Usage request')
+    const [attemptRows, ocrRows, runRows] = await Promise.all([
+      db.select().from(generationAttempts).where(eq(generationAttempts.requestLogId, requestId)).orderBy(asc(generationAttempts.startedAt)),
+      db.select().from(ocrAttempts).where(eq(ocrAttempts.requestLogId, requestId)).orderBy(asc(ocrAttempts.createdAt)),
+      db.select().from(agentRuns).where(eq(agentRuns.responseId, log.responseId)).limit(1),
+    ])
+    const agentRun = runRows[0] ?? null
+    const toolRows = agentRun ? await db.select().from(toolExecutions).where(eq(toolExecutions.agentRunId, agentRun.id)).orderBy(asc(toolExecutions.createdAt)) : []
+    const names = await modelNames(attemptRows.map((row) => row.modelId))
+    const reconciliation = reconcileAdminUsageCosts({ requestCostMicros: log.costMicros, attempts: attemptRows, tools: toolRows })
+    const payloads = [
+      { scope: 'request' as const, resourceId: null, label: 'Request payload', status: adminUsagePayloadStatus(log.requestPayload, log.payloadExpiresAt), expiresAt: iso(log.payloadExpiresAt) },
+      { scope: 'response' as const, resourceId: null, label: 'Response payload', status: adminUsagePayloadStatus(log.responsePayload, log.payloadExpiresAt), expiresAt: iso(log.payloadExpiresAt) },
+      ...(agentRun ? [{ scope: 'agent_context' as const, resourceId: agentRun.id, label: 'Agent context', status: adminUsagePayloadStatus(agentRun.context), expiresAt: null }] : []),
+      ...ocrRows.flatMap((row, index) => [
+        { scope: 'ocr_request' as const, resourceId: row.id, label: `OCR ${index + 1} request`, status: adminUsagePayloadStatus(row.requestPayload, log.payloadExpiresAt), expiresAt: iso(log.payloadExpiresAt) },
+        { scope: 'ocr_response' as const, resourceId: row.id, label: `OCR ${index + 1} response`, status: adminUsagePayloadStatus(row.responsePayload, log.payloadExpiresAt), expiresAt: iso(log.payloadExpiresAt) },
+      ]),
+      ...toolRows.flatMap((row, index) => [
+        { scope: 'tool_arguments' as const, resourceId: row.id, label: `${row.toolName} ${index + 1} arguments`, status: adminUsagePayloadStatus(row.arguments), expiresAt: null },
+        { scope: 'tool_output' as const, resourceId: row.id, label: `${row.toolName} ${index + 1} output`, status: adminUsagePayloadStatus(row.output), expiresAt: null },
+      ]),
+    ]
+    return {
+      request: serialized,
+      attempts: attemptRows.map((row) => ({
+        id: row.id, model: { id: row.modelId, name: names.get(row.modelId) ?? row.modelId }, upstreamModelId: row.upstreamModelId,
+        source: row.source, purpose: row.purpose, retryAttempt: row.retryAttempt, turnNumber: row.turnNumber, status: row.status,
+        retryReason: row.retryReason, fallbackFromModelId: row.fallbackFromModelId, upstreamResponseId: row.upstreamResponseId,
+        errorCategory: row.errorCategory, errorMessage: row.errorMessage, firstTokenMs: row.firstTokenMs, durationMs: row.durationMs,
+        inputTokens: row.inputTokens, cachedInputTokens: row.cachedInputTokens, cacheWriteTokens: row.cacheWriteTokens,
+        outputTokens: row.outputTokens, reasoningTokens: row.reasoningTokens, costMicros: row.costMicros,
+        startedAt: row.startedAt.toISOString(), completedAt: iso(row.completedAt),
+      })),
+      tools: toolRows.map((row) => ({
+        id: row.id, turnNumber: row.turnNumber, operationId: row.operationId, name: row.toolName, status: row.status,
+        provider: row.provider, providerAttempts: row.providerAttempts, providerCostMicros: row.providerCostMicros, billedCostMicros: row.billedCostMicros,
+        exitCode: row.exitCode, error: row.error, startedAt: iso(row.startedAt), completedAt: iso(row.completedAt),
+        durationMs: row.startedAt && row.completedAt ? Math.max(0, row.completedAt.getTime() - row.startedAt.getTime()) : null,
+      })),
+      ocrAttempts: ocrRows.map((row) => ({
+        id: row.id, attachmentId: row.attachmentId, providerId: row.providerId, modelId: row.modelId, status: row.status,
+        cached: row.cached, errorMessage: row.errorMessage, durationMs: row.durationMs, createdAt: row.createdAt.toISOString(),
+        completedAt: ['completed', 'failed'].includes(row.status) ? row.updatedAt.toISOString() : null,
+      })),
+      agentRun: agentRun ? {
+        id: agentRun.id, status: agentRun.status, modelTurns: agentRun.modelTurns, toolCalls: agentRun.toolCalls, error: agentRun.error,
+        startedAt: iso(agentRun.startedAt), completedAt: iso(agentRun.completedAt),
+      } : null,
+      reconciliation,
+      payloads,
+    }
+  })
+
+  app.post(ADMIN_USAGE_PAYLOAD_REVEAL_PATH, async (request) => {
+    const admin = requireInteractiveAdmin(request)
+    const { requestId } = z.object({ requestId: z.uuid() }).parse(request.params)
+    const input = revealAdminUsagePayloadSchema.parse(request.body)
+    adminUsagePayloadScopeSchema.parse(input.scope)
+    const [log] = await db.select().from(requestLogs).where(eq(requestLogs.id, requestId)).limit(1)
+    if (!log) throw notFound('Usage request')
+    const expiring = ['request', 'response', 'ocr_request', 'ocr_response'].includes(input.scope)
+    if (expiring && log.payloadExpiresAt && log.payloadExpiresAt.getTime() <= Date.now()) {
+      throw new AppError(410, 'usage_payload_expired', 'The stored payload has expired')
+    }
+    let value: unknown
+    if (input.scope === 'request') value = log.requestPayload
+    else if (input.scope === 'response') value = log.responsePayload
+    else if (input.scope === 'agent_context') {
+      const [row] = await db.select({ id: agentRuns.id, context: agentRuns.context }).from(agentRuns).where(and(eq(agentRuns.responseId, log.responseId), input.resourceId ? eq(agentRuns.id, input.resourceId) : undefined)).limit(1)
+      if (!row) throw notFound('Agent context')
+      value = row.context
+    } else if (input.scope === 'ocr_request' || input.scope === 'ocr_response') {
+      if (!input.resourceId) throw new AppError(400, 'payload_resource_required', 'OCR payload resource ID is required')
+      const [row] = await db.select().from(ocrAttempts).where(and(eq(ocrAttempts.id, input.resourceId), eq(ocrAttempts.requestLogId, requestId))).limit(1)
+      if (!row) throw notFound('OCR attempt')
+      value = input.scope === 'ocr_request' ? row.requestPayload : row.responsePayload
+    } else {
+      if (!input.resourceId) throw new AppError(400, 'payload_resource_required', 'Tool payload resource ID is required')
+      const [row] = await db.select({ arguments: toolExecutions.arguments, output: toolExecutions.output }).from(toolExecutions)
+        .innerJoin(agentRuns, eq(toolExecutions.agentRunId, agentRuns.id))
+        .where(and(eq(toolExecutions.id, input.resourceId), eq(agentRuns.responseId, log.responseId))).limit(1)
+      if (!row) throw notFound('Tool execution')
+      value = input.scope === 'tool_arguments' ? row.arguments : row.output
+    }
+    if (value == null) throw new AppError(404, 'usage_payload_not_stored', 'This payload was not stored')
+    await db.insert(auditEvents).values(adminUsagePayloadAudit({
+      actorUserId: admin.id, requestId, responseId: log.responseId, scope: input.scope,
+      resourceId: input.resourceId, payloadExpiresAt: log.payloadExpiresAt,
+    }))
+    return { scope: input.scope, resourceId: input.resourceId, value }
   })
 }

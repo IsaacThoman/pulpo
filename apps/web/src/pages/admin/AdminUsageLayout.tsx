@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
 const TABS = [
-  { to: '/admin/usage', label: 'Requests', end: true },
+  { to: '/admin/usage', label: 'Analytics', end: true },
   { to: '/admin/usage/workspaces', label: 'Workspaces', end: false },
 ]
 

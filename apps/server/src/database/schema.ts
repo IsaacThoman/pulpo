@@ -503,6 +503,7 @@ export const toolExecutions = pgTable('tool_executions', {
   id: uuid('id').primaryKey(),
   agentRunId: uuid('agent_run_id').notNull().references(() => agentRuns.id, { onDelete: 'cascade' }),
   workspaceLeaseId: uuid('workspace_lease_id').references(() => workspaceLeases.id, { onDelete: 'set null' }),
+  turnNumber: integer('turn_number'),
   operationId: text('operation_id').notNull(),
   toolName: text('tool_name').notNull(),
   arguments: jsonb('arguments').notNull().default({}),
