@@ -27,7 +27,8 @@ describe('Agent fallback policy', () => {
   })
 
   it('falls back immediately for an eligible no-output provider failure', () => {
-    expect(canFallbackAgentTurn({ message: failed(), outputStarted: false, cancellationRequested: false, contextRetryAttempted: false })).toBe(true)
+    const overloaded = failed([], "We're currently processing too many requests — please try again later.")
+    expect(canFallbackAgentTurn({ message: overloaded, outputStarted: false, cancellationRequested: false, contextRetryAttempted: false })).toBe(true)
   })
 
   it('protects both text and reasoning output', () => {

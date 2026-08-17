@@ -30,7 +30,7 @@ const RETRYABLE_ERROR_CATEGORIES = new Set<GenerationErrorCategory>([
 ])
 
 export class GenerationAttemptError extends Error {
-  constructor(message: string, readonly outputStarted: boolean) {
+  constructor(message: string, readonly outputStarted: boolean, readonly upstreamError?: unknown) {
     super(message)
     this.name = 'GenerationAttemptError'
   }
@@ -71,8 +71,24 @@ export function isSlowCompletion(
 
 export function classifyGenerationError(error: unknown): GenerationErrorCategory {
   const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase()
+  const source = error instanceof GenerationAttemptError && error.upstreamError ? error.upstreamError : error
+  const errorRecord = source !== null && typeof source === 'object' ? source as Record<string, unknown> : undefined
+  const status = typeof errorRecord?.status === 'number' ? errorRecord.status : undefined
+  const code = typeof errorRecord?.code === 'string' ? errorRecord.code.toLowerCase() : ''
   if (message.includes('compaction')) return 'worker'
-  if (message.includes('rate') || message.includes('429')) return 'rate_limit'
+  if (
+    status === 429
+    || message.includes('rate')
+    || message.includes('429')
+    || message.includes('too many requests')
+    || message.includes('try again later')
+    || message.includes('overloaded')
+    || message.includes('over capacity')
+    || message.includes('resource exhausted')
+    || code.includes('rate_limit')
+    || code.includes('overload')
+    || code.includes('resource_exhausted')
+  ) return 'rate_limit'
   if (message.includes('timeout') || message.includes('timed out') || message.includes('abort')) return 'timeout'
   if (message.includes('budget') || message.includes('balance')) return 'budget'
   if (message.includes('validation') || message.includes('invalid')) return 'validation'

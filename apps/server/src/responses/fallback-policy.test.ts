@@ -47,7 +47,14 @@ describe('shared model fallback policy', () => {
 
   it('classifies retryable and non-retryable failures consistently', () => {
     expect(classifyGenerationError(new Error('429 resource unavailable'))).toBe('rate_limit')
+    expect(classifyGenerationError(new Error("We're currently processing too many requests — please try again later."))).toBe('rate_limit')
+    expect(classifyGenerationError(new Error('The service is overloaded'))).toBe('rate_limit')
+    expect(classifyGenerationError(Object.assign(new Error('Request rejected'), { status: 429 }))).toBe('rate_limit')
+    expect(classifyGenerationError(Object.assign(new Error('Request rejected'), { code: 'resource_exhausted' }))).toBe('rate_limit')
+    const structured = Object.assign(new Error('Request rejected'), { status: 429 })
+    expect(classifyGenerationError(new GenerationAttemptError(structured.message, false, structured))).toBe('rate_limit')
     expect(classifyGenerationError(new Error('upstream returned 503'))).toBe('provider_http')
+    expect(canFallbackAfterGenerationError(new Error("We're currently processing too many requests — please try again later."))).toBe(true)
     expect(canFallbackAfterGenerationError(new Error('network connection failed'))).toBe(true)
     expect(canFallbackAfterGenerationError(new Error('invalid reasoning effort'))).toBe(false)
     expect(canFallbackAfterGenerationError(new Error('Generation cancelled'))).toBe(false)
