@@ -39,6 +39,8 @@ docker compose ps
 
 Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, manage reusable lab/model artwork under Admin → Icons, create a lab and model, configure pricing, and approve pending users.
 
+Commercial billing is an optional, fail-closed integration intended for the licensed hosted instance. It is disabled by default, and the operational feature flag does not grant commercial rights beyond [LICENSE.md](./LICENSE.md). See [docs/billing.md](./docs/billing.md) for Polar product setup, sandbox verification, webhook events, reconciliation, and the production rollout order.
+
 Provider prompt-cache routing is configured under Admin → Providers. Choose the semantic transport supported by the upstream (`prompt_cache_key` for OpenAI or `x-session-affinity` for Fireworks) and its identity scope. Fireworks cache isolation is configured separately so multi-tenant privacy boundaries do not depend on routing affinity.
 
 ### Local preview stack
