@@ -39,7 +39,7 @@ export function adminUsageTimeline(detail: AdminUsageRequestDetail): AdminTimeli
   return [
     ...detail.attempts.map((attempt): AdminTimelineItem => ({
       type: 'model', id: attempt.id, at: attempt.startedAt, turnNumber: attempt.turnNumber,
-      label: attempt.purpose === 'generation' ? attempt.model.name : `${attempt.purpose} · ${attempt.model.name}`,
+      label: attempt.model.name,
       status: attempt.status, durationMs: attempt.durationMs, costMicros: attempt.costMicros, detail: attempt,
     })),
     ...detail.tools.map((tool): AdminTimelineItem => ({
@@ -51,6 +51,17 @@ export function adminUsageTimeline(detail: AdminUsageRequestDetail): AdminTimeli
       label: `OCR ${index + 1}${ocr.cached ? ' · cached' : ''}`, status: ocr.status, durationMs: ocr.durationMs, costMicros: null, detail: ocr,
     })),
   ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.type.localeCompare(b.type))
+}
+
+export function adminTimelineItemTitle(item: AdminTimelineItem): string {
+  if (item.type === 'tool') return item.turnNumber ? `Turn ${item.turnNumber} tool` : 'Run-level tool'
+  if (item.type === 'ocr') return 'OCR'
+  if (item.turnNumber) return `Turn ${item.turnNumber}`
+  if (item.detail.purpose === 'title') return 'Title generation'
+  if (item.detail.purpose === 'memory') return 'Memory update'
+  if (item.detail.purpose === 'compaction') return 'Context compaction'
+  if (item.detail.purpose === 'user_data') return 'User data extraction'
+  return 'Model call'
 }
 
 export function reconciliationMatches(detail: AdminUsageRequestDetail): boolean {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AdminUsageRequestDetail } from '@pulpo/contracts'
-import { adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
+import { adminTimelineItemTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
 
 describe('admin usage dashboard helpers', () => {
   it('serializes only supported URL filters and adds range and time zone', () => {
@@ -32,6 +32,23 @@ describe('admin usage dashboard helpers', () => {
     expect(timeline.map((item) => item.type)).toEqual(['ocr', 'tool', 'model'])
     expect(timeline[1]?.turnNumber).toBeNull()
     expect(reconciliationMatches(detail)).toBe(true)
+  })
+
+  it('keeps post-response model work in timestamp order and labels its purpose explicitly', () => {
+    const detail = {
+      request: { createdAt: '2026-08-16T12:00:00.000Z' },
+      attempts: [
+        { id: 'turn-2', startedAt: '2026-08-16T12:00:02.000Z', turnNumber: 2, purpose: 'generation', model: { name: 'Model' }, status: 'completed', durationMs: 10, costMicros: 2, inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, retryAttempt: 1 },
+        { id: 'title', startedAt: '2026-08-16T12:00:03.000Z', turnNumber: null, purpose: 'title', model: { name: 'Model' }, status: 'completed', durationMs: 10, costMicros: 2, inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, retryAttempt: 1 },
+        { id: 'turn-1', startedAt: '2026-08-16T12:00:00.000Z', turnNumber: 1, purpose: 'generation', model: { name: 'Model' }, status: 'completed', durationMs: 10, costMicros: 2, inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, retryAttempt: 1 },
+      ],
+      tools: [{ id: 'tool', startedAt: '2026-08-16T12:00:01.000Z', turnNumber: 1, name: 'bash', status: 'completed', durationMs: 5, billedCostMicros: 1 }],
+      ocrAttempts: [],
+      reconciliation: { remainderMicros: 0 },
+    } as unknown as AdminUsageRequestDetail
+    const timeline = adminUsageTimeline(detail)
+    expect(timeline.map((item) => item.id)).toEqual(['turn-1', 'tool', 'turn-2', 'title'])
+    expect(adminTimelineItemTitle(timeline[3]!)).toBe('Title generation')
   })
 
   it('formats micros densely, including negative remainders', () => {

@@ -15,7 +15,7 @@ import {
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatDuration, formatNumber } from '@/lib/format'
-import { adminUsageQueryParams, adminUsageTimeline, formatMicros, setAdminUsageFilter } from '@/lib/admin-usage'
+import { adminTimelineItemTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, setAdminUsageFilter } from '@/lib/admin-usage'
 import { cn } from '@/lib/utils'
 import { useCatalog, getCatalogModel } from '@/stores/catalog'
 import { Button } from '@/components/ui/button'
@@ -282,11 +282,12 @@ function RequestRow({ row, open, onToggle, onInspect }: { row: AdminUsageRequest
 
 function ExecutionTimeline({ detail, compact = false }: { detail: AdminUsageRequestDetail; compact?: boolean }) {
   const items = adminUsageTimeline(detail)
-  return <div><div className="relative space-y-0 before:absolute before:bottom-3 before:left-[7px] before:top-3 before:w-px before:bg-border">{items.map((item) => {
+  return <div><div className="relative space-y-0">{items.map((item, index) => {
     const itemError = item.type === 'tool' ? item.detail.error : item.detail.errorMessage
     return <div key={`${item.type}-${item.id}`} className="relative grid grid-cols-[16px_minmax(0,1fr)_auto] gap-2 py-2">
+    {index < items.length - 1 && <span aria-hidden className="absolute -bottom-[19px] left-[7px] top-[19px] w-px bg-border" />}
     <span className={cn('relative z-10 mt-1 size-[15px] rounded-full border-2 border-background', item.type === 'model' ? 'bg-blue-500' : item.type === 'tool' ? 'bg-violet-500' : 'bg-amber-500')} />
-    <div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="font-medium">{item.type === 'model' ? (item.turnNumber ? `Turn ${item.turnNumber}` : 'Model call') : item.type === 'tool' ? (item.turnNumber ? `Turn ${item.turnNumber} tool` : 'Run-level tool') : 'OCR'}</span><span className="truncate text-muted-foreground">· {item.label}</span><StatusBadge status={item.status} /></div>
+    <div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><span className="font-medium">{adminTimelineItemTitle(item)}</span><span className="truncate text-muted-foreground">· {item.label}</span><StatusBadge status={item.status} /></div>
       <div className="mt-0.5 flex flex-wrap gap-x-3 text-[10px] text-muted-foreground"><span>{new Date(item.at).toLocaleTimeString()}</span>{item.durationMs != null && <span>{formatDuration(item.durationMs)}</span>}{item.type === 'model' && <><span>{formatNumber(item.detail.inputTokens)} → {formatNumber(item.detail.outputTokens)} tokens</span>{item.detail.cachedInputTokens > 0 && <span>{formatNumber(item.detail.cachedInputTokens)} cached</span>}{item.detail.retryAttempt > 1 && <span>attempt {item.detail.retryAttempt}</span>}{item.detail.fallbackFromModelId && <span>fallback from {getCatalogModel(item.detail.fallbackFromModelId).name}</span>}{item.detail.retryReason && <span>{item.detail.retryReason}</span>}</>}{item.type === 'tool' && <><span>{item.detail.provider ?? 'local'}</span><span>{formatMicros(item.detail.providerCostMicros)} provider</span></>}{item.type === 'ocr' && <span>cost not tracked</span>}</div>
       {!compact && item.type === 'tool' && Array.isArray(item.detail.providerAttempts) && item.detail.providerAttempts.length > 1 && <div className="mt-1 text-[10px] text-muted-foreground">{item.detail.providerAttempts.length} provider attempts</div>}
       {itemError && <div className="mt-1 text-[10px] text-destructive">{itemError}</div>}
