@@ -18,6 +18,20 @@ export { authSettingsSchema, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_SUGGESTED_PRO
 
 export const DEFAULT_BALANCE_MICROS = 5_000_000
 export const DEFAULT_STORAGE_LIMIT_BYTES = 5_000 * 1024 * 1024
+export const DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS = 3_000_000
+export const DEFAULT_FAT_WEEKLY_LIMIT_MICROS = 4_000_000
+
+export const billingSettingsSchema = z.object({
+  eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS),
+  fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_WEEKLY_LIMIT_MICROS),
+})
+
+export type BillingSettings = z.infer<typeof billingSettingsSchema>
+
+export function parseBillingSettings(value: unknown): BillingSettings {
+  const parsed = billingSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : billingSettingsSchema.parse({})
+}
 
 export const ocrSettingsSchema = instanceOcrSettingsSchema.extend({
   // Retained only so provider-based settings from older releases can be mapped
