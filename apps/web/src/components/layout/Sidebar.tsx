@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
+  CreditCard,
   ChevronRight,
   Folder as FolderIcon,
   FolderInput,
@@ -982,6 +983,7 @@ export function Sidebar({
           {iconBtn('New chat', startNewChat, <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
           {sidebarPins.usage && iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
+          {sidebarPins.billing && iconBtn('Billing', () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingFriendsQuery.data?.count)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
@@ -1159,6 +1161,7 @@ export function Sidebar({
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
             {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
+            {accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
             {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
             {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
             <DropdownMenuSeparator />

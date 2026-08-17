@@ -5,6 +5,7 @@ import type { InstructionPreset } from '@pulpo/contracts'
 import {
   Database,
   Camera,
+  CreditCard,
   Info,
   KeyRound,
   Monitor,
@@ -58,6 +59,7 @@ const SECTION_CONFIG = {
   security: { label: 'Security', icon: ShieldCheck },
   personalization: { label: 'Personalization', icon: Sparkles },
   interface: { label: 'Interface', icon: Monitor },
+  billing: { label: 'Billing', icon: CreditCard },
   api: { label: 'API keys', icon: KeyRound },
   data: { label: 'Data controls', icon: Database },
   trash: { label: 'Trash', icon: Trash2 },
@@ -753,6 +755,28 @@ export function SettingsModal({
                   >
                     <KeyRound />
                     Manage API keys
+                  </Button>
+                </div>
+              )}
+
+              {section === 'billing' && (
+                <div>
+                  <h2 className="text-base font-semibold">Billing</h2>
+                  <Separator className="my-3" />
+                  <div className="py-2">
+                    <div className="text-sm font-medium">Credits and plan</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Add credits, configure auto-recharge, manage your plan, and download receipts.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      onClose()
+                      navigate('/billing')
+                    }}
+                  >
+                    <CreditCard />
+                    Manage billing
                   </Button>
                 </div>
               )}

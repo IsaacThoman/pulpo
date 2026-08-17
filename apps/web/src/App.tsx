@@ -12,6 +12,7 @@ const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((modul
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
+const BillingPage = lazy(() => import('@/pages/BillingPage').then((module) => ({ default: module.BillingPage })))
 const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
 const AdminProvidersPage = lazy(() => import('@/pages/admin/AdminProvidersPage').then((module) => ({ default: module.AdminProvidersPage })))
@@ -69,6 +70,7 @@ export default function App() {
             </Route>
             <Route path="friends" element={<FriendsPage />} />
             <Route path="api-keys" element={<ApiKeysPage />} />
+            <Route path="billing" element={<BillingPage />} />
             <Route element={<RequireAdmin />}>
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<Navigate to="users" replace />} />
