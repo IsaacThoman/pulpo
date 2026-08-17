@@ -160,13 +160,13 @@ describe('interface application settings', () => {
 })
 
 describe('personalization application settings', () => {
-  it('falls back to the enabled Casual preset for legacy instances', () => {
+  it('falls back to the disabled Casual preset for legacy instances', () => {
     expect(parsePersonalizationSettings(undefined).instructionPresets).toEqual([{
       id: 'casual',
       title: 'Casual',
       instructions: DEFAULT_CASUAL_INSTRUCTIONS,
       color: '#f7b75f',
-      defaultEnabled: true,
+      defaultEnabled: false,
     }])
   })
 
