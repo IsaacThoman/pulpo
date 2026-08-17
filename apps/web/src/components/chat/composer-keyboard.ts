@@ -2,11 +2,11 @@ interface ComposerKeyEvent {
   key: string
   metaKey: boolean
   ctrlKey: boolean
+  shiftKey: boolean
   isComposing: boolean
 }
 
-export function shouldSubmitComposerKey(event: ComposerKeyEvent): boolean {
-  return event.key === 'Enter'
-    && (event.metaKey || event.ctrlKey)
-    && !event.isComposing
+export function shouldSubmitComposerKey(event: ComposerKeyEvent, sendWithEnter: boolean): boolean {
+  if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return false
+  return sendWithEnter || event.metaKey || event.ctrlKey
 }
