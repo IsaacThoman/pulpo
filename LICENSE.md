@@ -12,7 +12,7 @@ enable billing.
 
 ## Acceptance
 
-In order to get any license under these [LICENSE.md](LICENSE.md)terms, you must agree to them
+In order to get any license under these [LICENSE.md](LICENSE.md) terms, you must agree to them
 as both strict obligations and conditions to all your licenses.
 
 ## Copyright License
