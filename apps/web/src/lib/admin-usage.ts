@@ -35,6 +35,15 @@ export type AdminTimelineItem =
   | { type: 'tool'; id: string; at: string | null; turnNumber: number | null; label: string; status: string; durationMs: number | null; costMicros: number; detail: AdminUsageRequestDetail['tools'][number] }
   | { type: 'ocr'; id: string; at: string; turnNumber: null; label: string; status: string; durationMs: number | null; costMicros: null; detail: AdminUsageRequestDetail['ocrAttempts'][number] }
 
+export interface AdminUsageRoutingSummary {
+  path: Array<{ id: string; name: string }>
+  failedAttemptCount: number
+  overheadCostMicros: number
+  overheadDurationMs: number
+  primarySkipped: boolean
+  reason: string | null
+}
+
 export function adminUsageTimeline(detail: AdminUsageRequestDetail): AdminTimelineItem[] {
   return [
     ...detail.attempts.map((attempt): AdminTimelineItem => ({
@@ -78,6 +87,39 @@ export function adminTimelineConnectsToNext(items: AdminTimelineItem[], index: n
   const current = items[index]
   const next = items[index + 1]
   return Boolean(current && next && current.at !== null && next.at !== null)
+}
+
+export function adminUsageRoutingSummary(detail: AdminUsageRequestDetail): AdminUsageRoutingSummary {
+  const attempts = [...detail.attempts].sort((left, right) => Date.parse(left.startedAt) - Date.parse(right.startedAt))
+  const names = new Map<string, string>([
+    [detail.request.requestedModel.id, detail.request.requestedModel.name],
+    ...(detail.request.actualModel ? [[detail.request.actualModel.id, detail.request.actualModel.name] as [string, string]] : []),
+    ...attempts.map((attempt): [string, string] => [attempt.model.id, attempt.model.name]),
+  ])
+  const pathIds: string[] = [detail.request.requestedModel.id]
+  const seen = new Set(pathIds)
+  const append = (id: string | null | undefined) => {
+    if (!id || seen.has(id)) return
+    seen.add(id)
+    pathIds.push(id)
+  }
+  for (const attempt of attempts) {
+    if (attempt.purpose !== 'generation' || !attempt.fallbackFromModelId) continue
+    append(attempt.fallbackFromModelId)
+    append(attempt.model.id)
+  }
+  if (detail.request.fallbackUsed || detail.request.actualModel?.id !== detail.request.requestedModel.id) append(detail.request.actualModel?.id)
+  const failedAttempts = attempts.filter((attempt) => ['failed', 'cancelled', 'incomplete', 'error'].includes(attempt.status.toLowerCase()))
+  return {
+    path: pathIds.map((id) => ({ id, name: names.get(id) ?? id })),
+    failedAttemptCount: failedAttempts.length,
+    overheadCostMicros: failedAttempts.reduce((total, attempt) => total + attempt.costMicros, 0),
+    overheadDurationMs: failedAttempts.reduce((total, attempt) => total + (attempt.durationMs ?? 0), 0),
+    primarySkipped: detail.request.stickyFallbackUsed && !attempts.some((attempt) => attempt.purpose === 'generation' && attempt.model.id === detail.request.requestedModel.id),
+    reason: attempts.find((attempt) => attempt.retryReason)?.retryReason
+      ?? failedAttempts.find((attempt) => attempt.errorCategory)?.errorCategory
+      ?? detail.request.errorCategory,
+  }
 }
 
 export function reconciliationMatches(detail: AdminUsageRequestDetail): boolean {

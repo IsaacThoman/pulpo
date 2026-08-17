@@ -221,7 +221,7 @@ async function contextualInput(
 async function processGenerationAttempt(
   responseId: string,
   modelId: string,
-  options: { willRetry?: boolean } = {},
+  options: { willRetry?: boolean; attemptId?: string; attemptStartedAt?: number } = {},
 ): Promise<void> {
   const startedAt = Date.now()
   const [record] = await db
@@ -389,6 +389,7 @@ async function processGenerationAttempt(
   }
   const controller = new AbortController()
   let firstTokenTimer: ReturnType<typeof setTimeout> | undefined
+  let firstTokenRecorded = false
   if (record.model.firstTokenTimeoutEnabled) firstTokenTimer = setTimeout(() => controller.abort(new Error('First-token timeout')), record.model.firstTokenTimeoutSeconds * 1000)
   await db.update(responses).set({ status: 'in_progress', startedAt: new Date(), updatedAt: new Date() }).where(eq(responses.id, responseId))
   try {
@@ -424,7 +425,12 @@ async function processGenerationAttempt(
         throw new Error('Generation cancelled')
       }
       const upstream = rawEvent as unknown as UpstreamEvent
-      if (firstTokenTimer && (upstream.type.includes('output_text.delta') || upstream.type.includes('content_part.added'))) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
+      const isFirstTokenEvent = upstream.type.includes('output_text.delta') || upstream.type.includes('content_part.added')
+      if (!firstTokenRecorded && isFirstTokenEvent) {
+        firstTokenRecorded = true
+        if (options.attemptId) await db.update(generationAttempts).set({ firstTokenMs: Math.max(0, Date.now() - (options.attemptStartedAt ?? startedAt)) }).where(eq(generationAttempts.id, options.attemptId))
+      }
+      if (firstTokenTimer && isFirstTokenEvent) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
       sequence += 1
       const event: ResponseEvent = {
         responseId,
@@ -553,7 +559,7 @@ export async function processGeneration(responseId: string): Promise<void> {
       try {
         const actualPricing = await getActivePricing(model.id)
         await db.update(responses).set({ pricingVersionId: actualPricing.id, actualModelId: model.id }).where(eq(responses.id, responseId))
-        await processGenerationAttempt(responseId, model.id, { willRetry: true })
+        await processGenerationAttempt(responseId, model.id, { willRetry: true, attemptId, attemptStartedAt: attemptStarted })
         const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         const usage = completed?.usage as ResponseUsage | null
         const durationMs = Date.now() - (base.log.startedAt ?? base.log.createdAt).getTime()

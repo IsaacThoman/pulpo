@@ -239,6 +239,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   let accruedWebToolCostMicros = Number(previousWebToolCost?.total ?? 0)
   const billingTurns: Array<Record<string, unknown>> = []
   const modelTurnStartedAt = new Map<number, number>()
+  const turnFirstTokenMs = new Map<number, number>()
   const turnDurationsMs = new Map<number, number>()
   const turnRuntime = new Map<number, { runtime: RuntimeModel; index: number }>()
   const turnAttemptIds = new Map<number, string>()
@@ -587,7 +588,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
-      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') turnOutputStarted.add(modelTurns)
+      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') {
+        turnOutputStarted.add(modelTurns)
+        if (!turnFirstTokenMs.has(modelTurns)) turnFirstTokenMs.set(modelTurns, Math.max(0, Date.now() - (modelTurnStartedAt.get(modelTurns) ?? Date.now())))
+      }
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
         delta: update.delta,
         item_id: `agent:${modelTurns}:${update.contentIndex}:message`,
@@ -627,7 +631,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         status: failed ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorCategory, errorMessage: message.errorMessage,
         inputTokens: turnUsage.inputTokens, cachedInputTokens: turnUsage.cachedInputTokens, cacheWriteTokens: turnUsage.cacheWriteTokens, outputTokens: turnUsage.outputTokens,
         reasoningTokens: turnUsage.reasoningTokens, costMicros: turnCost,
-        durationMs: turnDurationMs, completedAt: new Date(),
+        firstTokenMs: turnFirstTokenMs.get(completedTurnNumber), durationMs: turnDurationMs, completedAt: new Date(),
       }).where(eq(generationAttempts.id, turnAttemptIds.get(completedTurnNumber)!))
       await db.update(requestLogs).set({
         actualModelId: lastResponder?.runtime.model.id,

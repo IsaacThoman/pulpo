@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AdminUsageRequestDetail } from '@pulpo/contracts'
-import { adminTimelineConnectsToNext, adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
+import { adminTimelineConnectsToNext, adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageRoutingSummary, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
 
 describe('admin usage dashboard helpers', () => {
   it('serializes only supported URL filters and adds range and time zone', () => {
@@ -83,6 +83,42 @@ describe('admin usage dashboard helpers', () => {
       { at: null },
     ] as ReturnType<typeof adminUsageTimeline>
     expect(adminTimelineConnectsToNext(items, 0)).toBe(false)
+  })
+
+  it('summarizes a fallback path without repeating it for later agent turns', () => {
+    const detail = {
+      request: {
+        requestedModel: { id: 'primary', name: 'Primary' },
+        actualModel: { id: 'fallback', name: 'Fallback' },
+        fallbackUsed: true,
+        stickyFallbackUsed: false,
+        errorCategory: null,
+      },
+      attempts: [
+        { id: 'primary-failure', purpose: 'generation', model: { id: 'primary', name: 'Primary' }, fallbackFromModelId: null, status: 'failed', retryReason: null, errorCategory: 'provider_http', durationMs: 800, costMicros: 120, startedAt: '2026-08-16T12:00:00.000Z' },
+        { id: 'fallback-turn-1', purpose: 'generation', model: { id: 'fallback', name: 'Fallback' }, fallbackFromModelId: 'primary', status: 'completed', retryReason: null, errorCategory: null, durationMs: 1_200, costMicros: 300, startedAt: '2026-08-16T12:00:01.000Z' },
+        { id: 'fallback-turn-2', purpose: 'generation', model: { id: 'fallback', name: 'Fallback' }, fallbackFromModelId: 'primary', status: 'completed', retryReason: null, errorCategory: null, durationMs: 900, costMicros: 220, startedAt: '2026-08-16T12:00:03.000Z' },
+      ],
+    } as unknown as AdminUsageRequestDetail
+    const routing = adminUsageRoutingSummary(detail)
+    expect(routing.path.map((model) => model.name)).toEqual(['Primary', 'Fallback'])
+    expect(routing).toMatchObject({ failedAttemptCount: 1, overheadCostMicros: 120, overheadDurationMs: 800, reason: 'provider_http' })
+  })
+
+  it('identifies a sticky fallback that skipped the primary model', () => {
+    const detail = {
+      request: {
+        requestedModel: { id: 'primary', name: 'Primary' },
+        actualModel: { id: 'fallback', name: 'Fallback' },
+        fallbackUsed: true,
+        stickyFallbackUsed: true,
+        errorCategory: null,
+      },
+      attempts: [
+        { purpose: 'generation', model: { id: 'fallback', name: 'Fallback' }, fallbackFromModelId: 'primary', status: 'completed', retryReason: null, errorCategory: null, durationMs: 500, costMicros: 200, startedAt: '2026-08-16T12:00:00.000Z' },
+      ],
+    } as unknown as AdminUsageRequestDetail
+    expect(adminUsageRoutingSummary(detail)).toMatchObject({ primarySkipped: true, failedAttemptCount: 0, overheadCostMicros: 0 })
   })
 
   it('labels retries and ancillary model calls consistently', () => {
