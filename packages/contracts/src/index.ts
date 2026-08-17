@@ -1023,7 +1023,7 @@ export const DEFAULT_INSTRUCTION_PRESETS: InstructionPreset[] = [{
   title: 'Casual',
   instructions: DEFAULT_CASUAL_INSTRUCTIONS,
   color: '#f7b75f',
-  defaultEnabled: true,
+  defaultEnabled: false,
 }]
 
 const instructionPresetsSchema = z.array(instructionPresetSchema).max(50).superRefine((presets, context) => {
