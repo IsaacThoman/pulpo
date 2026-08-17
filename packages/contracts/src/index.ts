@@ -516,6 +516,13 @@ function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown
   if (event.type === 'pulpo.agent.attachment.created' && typeof payload.attachment_id === 'string') {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_attachment' && item.attachment_id === payload.attachment_id, payload)
   }
+  if (event.type === 'pulpo.agent.reasoning.completed' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.id === payload.id, {
+      ...payload,
+      type: 'reasoning',
+      status: 'completed',
+    })
+  }
   if (!event.type.startsWith('pulpo.agent.tool.') || typeof payload.id !== 'string') return output
   if (event.type === 'pulpo.agent.tool.delta') {
     return upsertOutputItem(output, (item) => item.id === payload.id, {

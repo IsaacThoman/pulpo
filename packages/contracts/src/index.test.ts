@@ -526,6 +526,30 @@ describe('response snapshot accumulation', () => {
     ])
   })
 
+  it('completes streamed reasoning with its duration before the response finishes', () => {
+    const itemId = 'agent:1:0:reasoning'
+    const reasoned = applyResponseEventToSnapshot(
+      streamingSnapshot,
+      targetedDelta('response.reasoning_summary_text.delta', 'Think', 1, itemId),
+    )
+    const completed = applyResponseEventToSnapshot(reasoned, {
+      responseId: streamingSnapshot.responseId,
+      sequence: 2,
+      type: 'pulpo.agent.reasoning.completed',
+      payload: { id: itemId, durationMs: 5_000 },
+      emittedAt: '2026-07-31T00:00:02.000Z',
+    })
+
+    expect(completed.status).toBe('in_progress')
+    expect(completed.output).toMatchObject([{
+      id: itemId,
+      type: 'reasoning',
+      status: 'completed',
+      durationMs: 5_000,
+      summary: [{ text: 'Think' }],
+    }])
+  })
+
   it('projects agent tool, workspace, compaction, and attachment events without a full snapshot', () => {
     const responseId = streamingSnapshot.responseId
     const event = (sequence: number, type: string, payload: Record<string, unknown>) => ({
