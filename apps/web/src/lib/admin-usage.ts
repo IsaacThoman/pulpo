@@ -32,7 +32,7 @@ export function formatMicros(micros: number): string {
 
 export type AdminTimelineItem =
   | { type: 'model'; id: string; at: string; turnNumber: number | null; label: string; status: string; durationMs: number | null; costMicros: number; detail: AdminUsageRequestDetail['attempts'][number] }
-  | { type: 'tool'; id: string; at: string; turnNumber: number | null; label: string; status: string; durationMs: number | null; costMicros: number; detail: AdminUsageRequestDetail['tools'][number] }
+  | { type: 'tool'; id: string; at: string | null; turnNumber: number | null; label: string; status: string; durationMs: number | null; costMicros: number; detail: AdminUsageRequestDetail['tools'][number] }
   | { type: 'ocr'; id: string; at: string; turnNumber: null; label: string; status: string; durationMs: number | null; costMicros: null; detail: AdminUsageRequestDetail['ocrAttempts'][number] }
 
 export function adminUsageTimeline(detail: AdminUsageRequestDetail): AdminTimelineItem[] {
@@ -43,25 +43,35 @@ export function adminUsageTimeline(detail: AdminUsageRequestDetail): AdminTimeli
       status: attempt.status, durationMs: attempt.durationMs, costMicros: attempt.costMicros, detail: attempt,
     })),
     ...detail.tools.map((tool): AdminTimelineItem => ({
-      type: 'tool', id: tool.id, at: tool.startedAt ?? detail.request.createdAt, turnNumber: tool.turnNumber,
+      type: 'tool', id: tool.id, at: tool.startedAt, turnNumber: tool.turnNumber,
       label: tool.name, status: tool.status, durationMs: tool.durationMs, costMicros: tool.billedCostMicros, detail: tool,
     })),
     ...detail.ocrAttempts.map((ocr, index): AdminTimelineItem => ({
       type: 'ocr', id: ocr.id, at: ocr.createdAt, turnNumber: null,
       label: `OCR ${index + 1}${ocr.cached ? ' · cached' : ''}`, status: ocr.status, durationMs: ocr.durationMs, costMicros: null, detail: ocr,
     })),
-  ].sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.type.localeCompare(b.type))
+  ].sort((a, b) => {
+    if (a.at === null) return b.at === null ? 0 : 1
+    if (b.at === null) return -1
+    return Date.parse(a.at) - Date.parse(b.at) || a.type.localeCompare(b.type)
+  })
+}
+
+export function adminUsageAttemptTitle(attempt: AdminUsageRequestDetail['attempts'][number]): string {
+  let title = 'Model call'
+  if (attempt.turnNumber) title = `Turn ${attempt.turnNumber}`
+  else if (attempt.purpose === 'title') title = 'Title generation'
+  else if (attempt.purpose === 'memory') title = 'Memory update'
+  else if (attempt.purpose === 'compaction') title = 'Context compaction'
+  else if (attempt.purpose === 'user_data') title = 'User data extraction'
+  else if (attempt.purpose === 'ocr') title = 'OCR model call'
+  return attempt.retryAttempt > 1 ? `${title} retry ${attempt.retryAttempt}` : title
 }
 
 export function adminTimelineItemTitle(item: AdminTimelineItem): string {
   if (item.type === 'tool') return item.turnNumber ? `Turn ${item.turnNumber} tool` : 'Run-level tool'
   if (item.type === 'ocr') return 'OCR'
-  if (item.turnNumber) return `Turn ${item.turnNumber}`
-  if (item.detail.purpose === 'title') return 'Title generation'
-  if (item.detail.purpose === 'memory') return 'Memory update'
-  if (item.detail.purpose === 'compaction') return 'Context compaction'
-  if (item.detail.purpose === 'user_data') return 'User data extraction'
-  return 'Model call'
+  return adminUsageAttemptTitle(item.detail)
 }
 
 export function reconciliationMatches(detail: AdminUsageRequestDetail): boolean {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AdminUsageRequestDetail } from '@pulpo/contracts'
-import { adminTimelineItemTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
+import { adminTimelineItemTitle, adminUsageAttemptTitle, adminUsageQueryParams, adminUsageTimeline, formatMicros, reconciliationMatches, setAdminUsageFilter } from './admin-usage'
 
 describe('admin usage dashboard helpers', () => {
   it('serializes only supported URL filters and adds range and time zone', () => {
@@ -49,6 +49,30 @@ describe('admin usage dashboard helpers', () => {
     const timeline = adminUsageTimeline(detail)
     expect(timeline.map((item) => item.id)).toEqual(['turn-1', 'tool', 'turn-2', 'title'])
     expect(adminTimelineItemTitle(timeline[3]!)).toBe('Title generation')
+  })
+
+  it('places historical untimed tools after chronological events without inventing a timestamp', () => {
+    const detail = {
+      request: { createdAt: '2026-08-16T12:00:00.000Z' },
+      attempts: [{ id: 'turn', startedAt: '2026-08-16T12:00:02.000Z', turnNumber: 1, purpose: 'generation', model: { name: 'Model' }, status: 'completed', durationMs: 10, costMicros: 2, inputTokens: 1, outputTokens: 1, cachedInputTokens: 0, retryAttempt: 1 }],
+      tools: [
+        { id: 'untimed', startedAt: null, turnNumber: null, name: 'legacy_tool', status: 'completed', durationMs: 5, billedCostMicros: 1 },
+        { id: 'timed', startedAt: '2026-08-16T12:00:01.000Z', turnNumber: 1, name: 'bash', status: 'completed', durationMs: 5, billedCostMicros: 1 },
+      ],
+      ocrAttempts: [],
+      reconciliation: { remainderMicros: 0 },
+    } as unknown as AdminUsageRequestDetail
+    const timeline = adminUsageTimeline(detail)
+    expect(timeline.map((item) => item.id)).toEqual(['timed', 'turn', 'untimed'])
+    expect(timeline[2]?.at).toBeNull()
+    expect(adminTimelineItemTitle(timeline[2]!)).toBe('Run-level tool')
+  })
+
+  it('labels retries and ancillary model calls consistently', () => {
+    const attempt = { turnNumber: 2, purpose: 'generation', retryAttempt: 2 } as AdminUsageRequestDetail['attempts'][number]
+    const ocr = { turnNumber: null, purpose: 'ocr', retryAttempt: 1 } as AdminUsageRequestDetail['attempts'][number]
+    expect(adminUsageAttemptTitle(attempt)).toBe('Turn 2 retry 2')
+    expect(adminUsageAttemptTitle(ocr)).toBe('OCR model call')
   })
 
   it('formats micros densely, including negative remainders', () => {
