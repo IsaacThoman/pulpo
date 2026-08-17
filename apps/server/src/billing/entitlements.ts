@@ -83,7 +83,7 @@ export async function loadBillingEntitlements(
     weeklySpentMicros,
     weeklyPendingMicros,
     weeklyRemainingMicros,
-    weeklyRemainingPercentage: remainingPercentage(weeklyLimitMicros, weeklySpentMicros),
+    weeklyRemainingPercentage: remainingPercentage(weeklyLimitMicros, weeklySpentMicros + weeklyPendingMicros),
     weeklyPeriodStart: periodStart,
     weeklyResetAt: utcWeekEnd(now),
     weeklyLimitOverridden: account?.weeklyLimitOverrideMicros !== null && account?.weeklyLimitOverrideMicros !== undefined,

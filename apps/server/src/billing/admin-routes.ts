@@ -85,10 +85,18 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     ])
     const eight = subscriberCounts.find((item) => item.plan === 'eight')
     const fat = subscriberCounts.find((item) => item.plan === 'fat')
+    const orderTotals = totals[0]
     return {
       range,
       totals: {
-        ...totals[0],
+        grossCollectedCents: Number(orderTotals?.grossCollectedCents ?? 0),
+        salesBeforeTaxCents: Number(orderTotals?.salesBeforeTaxCents ?? 0),
+        taxCollectedCents: Number(orderTotals?.taxCollectedCents ?? 0),
+        platformFeesCents: Number(orderTotals?.platformFeesCents ?? 0),
+        refundedCents: Number(orderTotals?.refundedCents ?? 0),
+        creditsGrantedMicros: Number(orderTotals?.creditsGrantedMicros ?? 0),
+        payments: Number(orderTotals?.payments ?? 0),
+        topUps: Number(orderTotals?.topUps ?? 0),
         activeSubscribers: Number(eight?.count ?? 0) + Number(fat?.count ?? 0),
         monthlyRecurringCents: Number(eight?.count ?? 0) * 800 + Number(fat?.count ?? 0) * 2_400,
         canceling: Number(eight?.canceling ?? 0) + Number(fat?.canceling ?? 0),

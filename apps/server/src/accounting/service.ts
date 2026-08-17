@@ -25,7 +25,12 @@ import {
   type Pricing,
 } from './pricing.js'
 import { loadBillingEntitlements } from '../billing/entitlements.js'
-import { splitReservationMicros } from '../billing/plans.js'
+import {
+  allocateReservationMicros,
+  allocateResizedReservationMicros,
+  allocateSettlementMicros,
+  availableAccountBalanceMicros,
+} from '../billing/allocation.js'
 
 export interface ActivePricing extends Pricing {
   id: string
@@ -65,8 +70,11 @@ export async function reserveBudget(input: {
     if (!user || user.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
     const entitlements = await loadBillingEntitlements(tx, input.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const allocation = splitReservationMicros(amount, entitlements.weeklyRemainingMicros)
-    const balanceAvailable = user.balanceMicros - entitlements.balancePendingMicros
+    const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros)
+    const balanceAvailable = availableAccountBalanceMicros({
+      balanceMicros: user.balanceMicros,
+      pendingBalanceMicros: entitlements.balancePendingMicros,
+    })
     if (balanceAvailable < allocation.balanceMicros) {
       throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the maximum request cost')
     }
@@ -146,8 +154,9 @@ export async function settleBudget(input: {
       .where(eq(users.id, reservation.userId))
       .for('update')
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
-    const weeklyCost = Math.min(cost, reservation.weeklyReservedMicros)
-    const balanceCost = cost - weeklyCost
+    const allocation = allocateSettlementMicros(cost, reservation.weeklyReservedMicros)
+    const weeklyCost = allocation.weeklyMicros
+    const balanceCost = allocation.balanceMicros
     const balanceAfter = user.balanceMicros - balanceCost
     const [updatedUser] = await tx.update(users).set({
       balanceMicros: balanceAfter,
@@ -237,12 +246,18 @@ export async function resizeBudgetReservation(input: {
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
     const entitlements = await loadBillingEntitlements(tx, reservation.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const sameWeek = reservation.weeklyPeriodStart?.getTime() === entitlements.weeklyPeriodStart.getTime()
-    const weeklyAvailable = sameWeek
-      ? entitlements.weeklyRemainingMicros + reservation.weeklyReservedMicros
-      : reservation.weeklyReservedMicros
-    const allocation = splitReservationMicros(amount, weeklyAvailable)
-    const balanceAvailable = user.balanceMicros - entitlements.balancePendingMicros + reservation.balanceReservedMicros
+    const allocation = allocateResizedReservationMicros({
+      amountMicros: amount,
+      weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
+      currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
+      reservationPeriodStart: reservation.weeklyPeriodStart,
+      currentPeriodStart: entitlements.weeklyPeriodStart,
+    })
+    const balanceAvailable = availableAccountBalanceMicros({
+      balanceMicros: user.balanceMicros,
+      pendingBalanceMicros: entitlements.balancePendingMicros,
+      currentBalanceReservedMicros: reservation.balanceReservedMicros,
+    })
     if (balanceAvailable < allocation.balanceMicros) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the next agent turn')
     await tx.update(budgetReservations).set({
       amountMicros: amount,
@@ -264,12 +279,18 @@ export async function extendBudgetReservationFixedCost(responseId: string, addit
     const entitlements = await loadBillingEntitlements(tx, reservation.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
     const amount = reservation.amountMicros + additionalMicros
-    const sameWeek = reservation.weeklyPeriodStart?.getTime() === entitlements.weeklyPeriodStart.getTime()
-    const weeklyAvailable = sameWeek
-      ? entitlements.weeklyRemainingMicros + reservation.weeklyReservedMicros
-      : reservation.weeklyReservedMicros
-    const allocation = splitReservationMicros(amount, weeklyAvailable)
-    const balanceAvailable = user.balanceMicros - entitlements.balancePendingMicros + reservation.balanceReservedMicros
+    const allocation = allocateResizedReservationMicros({
+      amountMicros: amount,
+      weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
+      currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
+      reservationPeriodStart: reservation.weeklyPeriodStart,
+      currentPeriodStart: entitlements.weeklyPeriodStart,
+    })
+    const balanceAvailable = availableAccountBalanceMicros({
+      balanceMicros: user.balanceMicros,
+      pendingBalanceMicros: entitlements.balancePendingMicros,
+      currentBalanceReservedMicros: reservation.balanceReservedMicros,
+    })
     if (balanceAvailable < allocation.balanceMicros) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the requested web tool')
     await tx.update(budgetReservations).set({
       amountMicros: amount,

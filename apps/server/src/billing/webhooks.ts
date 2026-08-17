@@ -68,6 +68,23 @@ type PolarRefund = {
   dispute: unknown | null
 }
 
+export function grantMicrosForPaidOrder(input: {
+  isCreditPurchase: boolean
+  requestedCreditCents: number | null | undefined
+  plan: 'eight' | 'fat' | null
+  billingReason: string
+  alreadyGrantedMicros: number
+}): number {
+  if (input.alreadyGrantedMicros > 0) return 0
+  if (input.isCreditPurchase) return (input.requestedCreditCents ?? 0) * 10_000
+  if (!input.plan || (input.billingReason !== 'subscription_create' && input.billingReason !== 'subscription_cycle')) return 0
+  return PLAN_MONTHLY_CREDIT_MICROS[input.plan]
+}
+
+export function isStaleProviderUpdate(existingModifiedAt: Date, providerModifiedAt: Date): boolean {
+  return providerModifiedAt < existingModifiedAt
+}
+
 function maxDate(left: Date | null, right: Date | null): Date | null {
   if (!left) return right
   if (!right) return left
@@ -130,7 +147,7 @@ async function upsertSubscriptionFromOrder(
       providerModifiedAt: modifiedAt,
     })
   } else {
-    const providerIsNewer = modifiedAt >= existing.providerModifiedAt
+    const providerIsNewer = !isStaleProviderUpdate(existing.providerModifiedAt, modifiedAt)
     await tx.update(billingSubscriptions).set({
       paidThrough: maxDate(existing.paidThrough, subscription.currentPeriodEnd),
       ...(providerIsNewer ? {
@@ -198,7 +215,6 @@ async function applyPaidOrder(tx: Transaction, order: PolarOrder, eventAt: Date,
       totalAmountCents: order.totalAmount,
       platformFeeAmountCents: order.platformFeeAmount,
       refundedAmountCents: order.refundedAmount,
-      paidAt: eventAt,
       updatedAt: new Date(),
     },
   })
@@ -206,14 +222,14 @@ async function applyPaidOrder(tx: Transaction, order: PolarOrder, eventAt: Date,
     .where(eq(billingOrders.polarOrderId, order.id)).for('update')
   if (!stored) throw new Error(`Failed to store Polar order ${order.id}`)
 
-  const shouldGrantCycleCredit = plan
-    && (order.billingReason === 'subscription_create' || order.billingReason === 'subscription_cycle')
-  const grantMicros = isCreditPurchase
-    ? checkout!.requestedCreditCents! * 10_000
-    : shouldGrantCycleCredit
-      ? PLAN_MONTHLY_CREDIT_MICROS[plan]
-      : 0
-  if (grantMicros > 0 && stored.grantedCreditMicros === 0) {
+  const grantMicros = grantMicrosForPaidOrder({
+    isCreditPurchase,
+    requestedCreditCents: checkout?.requestedCreditCents,
+    plan,
+    billingReason: order.billingReason,
+    alreadyGrantedMicros: stored.grantedCreditMicros,
+  })
+  if (grantMicros > 0) {
     const [updatedUser] = await tx.update(users).set({
       balanceMicros: sql`${users.balanceMicros} + ${grantMicros}`,
       updatedAt: new Date(),
@@ -250,7 +266,7 @@ async function applySubscription(
   const userId = existing?.userId ?? await userExists(tx, subscription.customer.externalId)
   if (!userId) return
   const providerModifiedAt = subscription.modifiedAt ?? eventAt
-  if (existing && providerModifiedAt < existing.providerModifiedAt) return
+  if (existing && isStaleProviderUpdate(existing.providerModifiedAt, providerModifiedAt)) return
   const status = eventType === 'subscription.revoked' ? 'revoked' : subscription.status
   const values = {
     userId,

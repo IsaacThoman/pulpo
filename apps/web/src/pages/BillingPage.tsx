@@ -123,6 +123,7 @@ export function BillingPage() {
       window.location.assign(result.url)
     } catch (error) {
       setTopUpError(error instanceof Error ? error.message : 'Could not start checkout.')
+      setTopUpKey(newCheckoutKey())
       setSubmitting(false)
     }
   }

@@ -38,6 +38,12 @@ describe('billing plan calculations', () => {
     expect(remainingPercentage(0, 0)).toBeNull()
   })
 
+  it('includes pending reservations in the private remaining percentage', () => {
+    const settledMicros = 500_000
+    const pendingMicros = 1_000_000
+    expect(remainingPercentage(3_000_000, settledMicros + pendingMicros)).toBe(50)
+  })
+
   it('chooses the highest currently paid plan', () => {
     const future = new Date('2026-09-01T00:00:00Z')
     const now = new Date('2026-08-17T00:00:00Z')
