@@ -724,9 +724,6 @@ export function SettingsModal({
                   <Row label="Send with Enter" hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
                   </Row>
-                  <Row label="Stream responses" hint="Render tokens as they arrive.">
-                    <Switch checked={s.streamResponses} onCheckedChange={(v) => s.set('streamResponses', v)} />
-                  </Row>
                   <Row label="Show reasoning" hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>
