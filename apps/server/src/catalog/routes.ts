@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, sensitiveActionInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -20,6 +20,7 @@ import { getConfig } from '../config.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
+import { requireSensitiveAuth } from '../auth/sensitive-action.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
@@ -186,6 +187,32 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     requireAdmin(request)
     const rows = await db.select().from(providerConnections).where(ne(providerConnections.id, INTERNAL_PROVIDER_ID))
     return { data: rows.map(({ encryptedApiKey: _, ...row }) => ({ ...row, hasApiKey: true })) }
+  })
+
+  app.post('/api/admin/providers/:id/api-key/reveal', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.uuid() }).parse(request.params)
+    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    const [provider] = await db.select({ encryptedApiKey: providerConnections.encryptedApiKey })
+      .from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
+    if (!provider) throw notFound('Provider')
+    const input = sensitiveActionInputSchema.parse(request.body)
+    try {
+      await requireSensitiveAuth(admin.id, input.currentPassword, input.verificationCode)
+    } catch (cause) {
+      await db.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'provider.api_key.reveal_denied', targetType: 'provider', targetId: id,
+      })
+      throw cause
+    }
+    const apiKey = decryptSecret(provider.encryptedApiKey, getConfig().ENCRYPTION_KEY)
+    await db.insert(auditEvents).values({
+      id: newId(), actorUserId: admin.id, action: 'provider.api_key.reveal', targetType: 'provider', targetId: id,
+    })
+    reply.header('cache-control', 'no-store')
+    return { apiKey }
   })
 
   app.post('/api/admin/providers', async (request, reply) => {

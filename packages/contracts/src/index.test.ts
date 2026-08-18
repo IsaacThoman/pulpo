@@ -34,6 +34,7 @@ import {
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
+  sensitiveActionInputSchema,
   sidebarPinsSchema,
   startChatSchema,
   syncRequestSchema,
@@ -321,6 +322,11 @@ describe('shared contracts', () => {
   })
 
   it('validates passkey names, summaries, and WebAuthn ceremony responses', () => {
+    expect(sensitiveActionInputSchema.parse({
+      currentPassword: 'password', verificationCode: ' 123456 ',
+    })).toEqual({ currentPassword: 'password', verificationCode: '123456' })
+    expect(sensitiveActionInputSchema.safeParse({ currentPassword: '' }).success).toBe(false)
+    expect(sensitiveActionInputSchema.safeParse({ currentPassword: 'password', verificationCode: '123' }).success).toBe(false)
     expect(beginPasskeyRegistrationInputSchema.parse({
       name: '  MacBook Touch ID  ', currentPassword: 'password', verificationCode: '123456',
     }).name).toBe('MacBook Touch ID')

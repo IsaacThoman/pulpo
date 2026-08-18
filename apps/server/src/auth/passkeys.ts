@@ -20,7 +20,6 @@ import {
   auditEvents,
   mobilePasskeyAuthCodes,
   passkeyCeremonies,
-  passwordCredentials,
   sessions,
   userPasskeyCredentials,
   users,
@@ -33,9 +32,8 @@ import {
   currentSessionId,
   revokeOtherSessions,
   revokeOtherSessionsById,
-  verifyPassword,
 } from './service.js'
-import { hasTwoFactor, verifySecondFactor } from './two-factor.js'
+import { hasTwoFactor } from './two-factor.js'
 
 const DIRECT_CEREMONY_TTL_MS = 5 * 60 * 1_000
 const BROWSER_REGISTRATION_TTL_MS = 2 * 60 * 1_000
@@ -233,23 +231,6 @@ async function insertVerifiedPasskey(
     }).returning()
     return created!
   })
-}
-
-export async function requirePasskeySensitiveAuth(
-  userId: string,
-  currentPassword: string,
-  verificationCode?: string,
-): Promise<void> {
-  const [credential] = await db.select({ passwordHash: passwordCredentials.passwordHash })
-    .from(passwordCredentials).where(eq(passwordCredentials.userId, userId)).limit(1)
-  if (!credential || !(await verifyPassword(credential.passwordHash, currentPassword))) {
-    throw unauthorized('Current password is incorrect')
-  }
-  if (!(await hasTwoFactor(userId))) return
-  if (!verificationCode) {
-    throw new AppError(400, 'two_factor_code_required', 'Enter your current authenticator or recovery code.')
-  }
-  await verifySecondFactor(userId, verificationCode)
 }
 
 export async function listPasskeys(userId: string): Promise<{

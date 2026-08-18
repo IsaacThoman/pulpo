@@ -41,6 +41,11 @@ required_variables=(
   PULPO_PREVIEW_ADMIN_PASSWORD
   PULPO_PREVIEW_PROVIDER_API_KEY
   PULPO_PREVIEW_WORKSPACE_IMAGE_DIGEST
+  PULPO_INSTANCE_ID
+  SERVICE_USER_POSTGRES
+  SERVICE_PASSWORD_64_POSTGRES
+  SERVICE_USER_S3
+  SERVICE_PASSWORD_64_S3
 )
 
 for key in "${required_variables[@]}"; do
@@ -63,6 +68,12 @@ done
 public_url="$(preview_value PUBLIC_URL)"
 if [[ "${public_url}" != 'https://$SERVICE_FQDN_WEB' && "${public_url}" != 'https://${SERVICE_FQDN_WEB}' ]]; then
   echo 'Preview PUBLIC_URL must derive its HTTPS origin from SERVICE_FQDN_WEB.' >&2
+  exit 1
+fi
+
+instance_id="$(preview_value PULPO_INSTANCE_ID)"
+if [[ "${instance_id}" != '$SERVICE_FQDN_WEB' && "${instance_id}" != '${SERVICE_FQDN_WEB}' ]]; then
+  echo 'Preview PULPO_INSTANCE_ID must derive from SERVICE_FQDN_WEB.' >&2
   exit 1
 fi
 
@@ -98,6 +109,18 @@ models="$(
 )"
 if ! jq -e 'any(.data[]?; .id == "gpt-5.6-luna")' <<< "${models}" >/dev/null; then
   echo 'Preview provider key does not allow gpt-5.6-luna.' >&2
+  exit 1
+fi
+
+postgres_user="$(preview_value SERVICE_USER_POSTGRES)"
+storage_user="$(preview_value SERVICE_USER_S3)"
+postgres_password="$(preview_value SERVICE_PASSWORD_64_POSTGRES)"
+storage_password="$(preview_value SERVICE_PASSWORD_64_S3)"
+if (( ${#postgres_user} < 16 )) ||
+  (( ${#storage_user} < 16 )) ||
+  (( ${#postgres_password} < 32 )) ||
+  (( ${#storage_password} < 32 )); then
+  echo 'Preview database and storage credentials must use generated strong values.' >&2
   exit 1
 fi
 

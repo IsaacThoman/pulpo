@@ -58,8 +58,8 @@ import {
   recordDirectPasskeyAdd,
   recordDirectPasskeyDelete,
   renamePasskey,
-  requirePasskeySensitiveAuth,
 } from './passkeys.js'
+import { requireSensitiveAuth } from './sensitive-action.js'
 import {
   beginTwoFactorEnrollment,
   clearTwoFactor,
@@ -318,7 +318,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const user = requireUser(request)
     const input = beginPasskeyRegistrationInputSchema.parse(request.body)
-    await requirePasskeySensitiveAuth(user.id, input.currentPassword, input.verificationCode)
+    await requireSensitiveAuth(user.id, input.currentPassword, input.verificationCode)
     reply.header('cache-control', 'no-store')
     return beginPasskeyRegistration({
       user,
@@ -346,7 +346,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   }, async (request, reply) => {
     const user = requireUser(request)
     const input = beginBrowserPasskeyRegistrationInputSchema.parse(request.body)
-    await requirePasskeySensitiveAuth(user.id, input.currentPassword, input.verificationCode)
+    await requireSensitiveAuth(user.id, input.currentPassword, input.verificationCode)
     reply.header('cache-control', 'no-store')
     return beginBrowserPasskeyRegistration({ request, user, name: input.name, state: input.state })
   })
@@ -364,7 +364,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
     const input = passkeySensitiveChangeSchema.parse(request.body)
-    await requirePasskeySensitiveAuth(user.id, input.currentPassword, input.verificationCode)
+    await requireSensitiveAuth(user.id, input.currentPassword, input.verificationCode)
     await deletePasskey(user.id, id)
     await recordDirectPasskeyDelete(request, user.id)
     reply.code(204).send()
