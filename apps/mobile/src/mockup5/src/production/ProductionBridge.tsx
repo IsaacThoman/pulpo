@@ -179,6 +179,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
 }
 
 /** Fetch one uncached transcript for a context-menu preview without selecting the chat. */
+// oxlint-disable-next-line react/only-export-components -- production preview hydration API
 export async function hydrateProductionChatPreview(
   queryClient: QueryClient,
   namespace: string,
