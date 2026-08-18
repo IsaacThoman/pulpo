@@ -32,7 +32,6 @@ type HistoryChatContextMenuNativeProps = ViewProps & {
   previewTitle: string
   previewBody: string
   previewMetadata: string
-  previewImageURI: string
   onAction: (event: ActionEvent) => void
   onChatPress: (event: PressEvent) => void
   onPreviewRequest: (event: PressEvent) => void

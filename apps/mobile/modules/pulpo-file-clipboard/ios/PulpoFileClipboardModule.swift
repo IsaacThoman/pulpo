@@ -84,9 +84,6 @@ public final class PulpoFileClipboardModule: Module {
       Prop("previewMetadata") { (view, value: String) in
         view.setPreviewMetadata(value)
       }
-      Prop("previewImageURI") { (view, value: String) in
-        view.setPreviewImageURI(value)
-      }
     }
   }
 }

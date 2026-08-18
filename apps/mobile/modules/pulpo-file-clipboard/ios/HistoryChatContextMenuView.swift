@@ -14,7 +14,6 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   private var previewTitle = ""
   private var previewBody = "Start a new conversation with your selected model."
   private var previewMetadata = ""
-  private var previewImageURI = ""
   private weak var activePreviewController: HistoryChatPreviewViewController?
 
   public required init(appContext: AppContext? = nil) {
@@ -62,11 +61,6 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     activePreviewController?.update(metadata: value)
   }
 
-  public func setPreviewImageURI(_ value: String) {
-    previewImageURI = value
-    activePreviewController?.update(imageURI: value)
-  }
-
   @objc private func handleTap() {
     onChatPress()
   }
@@ -86,8 +80,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       let controller = HistoryChatPreviewViewController(
         title: previewTitle,
         body: previewBody,
-        metadata: previewMetadata,
-        imageURI: previewImageURI
+        metadata: previewMetadata
       )
       activePreviewController = controller
       return controller
@@ -215,12 +208,11 @@ private final class HistoryChatPreviewViewController: UIViewController {
   private static let minimumHeight: CGFloat = 176
   private let previewView: HistoryChatPreviewView
 
-  init(title: String, body: String, metadata: String, imageURI: String) {
+  init(title: String, body: String, metadata: String) {
     let previewView = HistoryChatPreviewView(
       title: title,
       body: body,
-      metadata: metadata,
-      imageURI: imageURI
+      metadata: metadata
     )
     self.previewView = previewView
     super.init(nibName: nil, bundle: nil)
@@ -236,8 +228,8 @@ private final class HistoryChatPreviewViewController: UIViewController {
     preferredContentSize = previewView.bounds.size
   }
 
-  func update(title: String? = nil, body: String? = nil, metadata: String? = nil, imageURI: String? = nil) {
-    previewView.update(title: title, body: body, metadata: metadata, imageURI: imageURI)
+  func update(title: String? = nil, body: String? = nil, metadata: String? = nil) {
+    previewView.update(title: title, body: body, metadata: metadata)
     let fittingSize = previewView.systemLayoutSizeFitting(
       CGSize(width: Self.width, height: UIView.layoutFittingCompressedSize.height),
       withHorizontalFittingPriority: .required,
@@ -255,14 +247,11 @@ private final class HistoryChatPreviewViewController: UIViewController {
 }
 
 private final class HistoryChatPreviewView: UIView {
-  private static let imageCache = NSCache<NSString, UIImage>()
-  private let mark = UIImageView()
   private let titleLabel = UILabel()
   private let bodyLabel = UILabel()
   private let metadataLabel = UILabel()
-  private var imageLoadTask: URLSessionDataTask?
 
-  init(title: String, body: String, metadata: String, imageURI: String) {
+  init(title: String, body: String, metadata: String) {
     super.init(frame: .zero)
     backgroundColor = .secondarySystemBackground
     layer.cornerCurve = .continuous
@@ -270,9 +259,6 @@ private final class HistoryChatPreviewView: UIView {
     layer.borderColor = UIColor.opaqueSeparator.cgColor
     layer.borderWidth = 1 / max(traitCollection.displayScale, 1)
     clipsToBounds = true
-
-    mark.contentMode = .scaleAspectFit
-    mark.translatesAutoresizingMaskIntoConstraints = false
 
     titleLabel.attributedText = Self.attributedText(
       title,
@@ -282,11 +268,6 @@ private final class HistoryChatPreviewView: UIView {
     )
     titleLabel.lineBreakMode = .byTruncatingTail
     titleLabel.numberOfLines = 1
-
-    let header = UIStackView(arrangedSubviews: [mark, titleLabel])
-    header.axis = .horizontal
-    header.alignment = .center
-    header.spacing = 11
 
     bodyLabel.attributedText = Self.bodyText(body)
     bodyLabel.lineBreakMode = .byTruncatingTail
@@ -302,7 +283,7 @@ private final class HistoryChatPreviewView: UIView {
 
     let upperSpacer = UIView()
     let lowerSpacer = UIView()
-    let content = UIStackView(arrangedSubviews: [header, upperSpacer, bodyLabel, lowerSpacer, metadataLabel])
+    let content = UIStackView(arrangedSubviews: [titleLabel, upperSpacer, bodyLabel, lowerSpacer, metadataLabel])
     content.axis = .vertical
     content.alignment = .fill
     content.spacing = 0
@@ -314,20 +295,13 @@ private final class HistoryChatPreviewView: UIView {
       content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
       content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
       content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
-      mark.widthAnchor.constraint(equalToConstant: 32),
-      mark.heightAnchor.constraint(equalToConstant: 32),
       upperSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 18),
       lowerSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
       upperSpacer.heightAnchor.constraint(equalTo: lowerSpacer.heightAnchor, constant: 2),
     ])
-    setImage(uri: imageURI)
   }
 
-  deinit {
-    imageLoadTask?.cancel()
-  }
-
-  func update(title: String?, body: String?, metadata: String?, imageURI: String?) {
+  func update(title: String?, body: String?, metadata: String?) {
     if let title {
       titleLabel.attributedText = Self.attributedText(
         title,
@@ -344,24 +318,7 @@ private final class HistoryChatPreviewView: UIView {
         color: Self.mutedColor
       )
     }
-    if let imageURI { setImage(uri: imageURI) }
     setNeedsLayout()
-  }
-
-  private func setImage(uri: String) {
-    imageLoadTask?.cancel()
-    imageLoadTask = nil
-    mark.image = Self.image(for: uri)
-    guard mark.image == nil,
-          let url = URL(string: uri),
-          let scheme = url.scheme?.lowercased(),
-          scheme == "http" || scheme == "https" else { return }
-    imageLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-      guard let data, let image = UIImage(data: data) else { return }
-      Self.imageCache.setObject(image, forKey: uri as NSString)
-      DispatchQueue.main.async { self?.mark.image = image }
-    }
-    imageLoadTask?.resume()
   }
 
   @available(*, unavailable)
@@ -395,37 +352,101 @@ private final class HistoryChatPreviewView: UIView {
   }
 
   private static func bodyText(_ text: String) -> NSAttributedString {
+    let maximumCharacters = 2_000
+    let limited = text.count > maximumCharacters
+      ? String(text.prefix(maximumCharacters - 1)) + "…"
+      : text
+    let normalized = limited.components(separatedBy: .newlines).map { line in
+      if line.hasPrefix("- ") || line.hasPrefix("* ") {
+        return "• " + String(line.dropFirst(2))
+      }
+      return line
+    }.joined(separator: "\n")
+
+    let baseFont = UIFont.systemFont(ofSize: 14.5)
+    let result = NSMutableAttributedString(
+      string: normalized,
+      attributes: [
+        .font: baseFont,
+        .foregroundColor: UIColor.label,
+      ]
+    )
+    applyLinks(to: result)
+    applyMarkdown(
+      pattern: "(\\*\\*|__)(.+?)\\1",
+      capture: 2,
+      attributes: [.font: UIFont.systemFont(ofSize: 14.5, weight: .semibold)],
+      to: result
+    )
+    let italicDescriptor = baseFont.fontDescriptor.withSymbolicTraits(.traitItalic) ?? baseFont.fontDescriptor
+    let italicFont = UIFont(descriptor: italicDescriptor, size: 14.5)
+    applyMarkdown(
+      pattern: "(?<!\\*)\\*([^*\\n]+)\\*(?!\\*)",
+      capture: 1,
+      attributes: [.font: italicFont],
+      to: result
+    )
+    applyMarkdown(
+      pattern: "(?<!_)_([^_\\n]+)_(?!_)",
+      capture: 1,
+      attributes: [.font: italicFont],
+      to: result
+    )
+    applyMarkdown(
+      pattern: "`([^`\\n]+)`",
+      capture: 1,
+      attributes: [
+        .font: UIFont.monospacedSystemFont(ofSize: 13.5, weight: .regular),
+        .backgroundColor: UIColor.tertiarySystemFill,
+      ],
+      to: result
+    )
+
     let paragraph = NSMutableParagraphStyle()
     paragraph.minimumLineHeight = 20
     paragraph.maximumLineHeight = 20
     paragraph.lineBreakMode = .byTruncatingTail
-    return NSAttributedString(
-      string: text,
-      attributes: [
-        .font: UIFont.systemFont(ofSize: 14.5),
-        .foregroundColor: UIColor.label,
-        .paragraphStyle: paragraph,
-      ]
-    )
+    result.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: result.length))
+    return result
   }
 
-  private static func image(for uri: String) -> UIImage? {
-    guard !uri.isEmpty else { return nil }
-    if let cached = imageCache.object(forKey: uri as NSString) {
-      return cached
+  private static func applyMarkdown(
+    pattern: String,
+    capture: Int,
+    attributes: [NSAttributedString.Key: Any],
+    to text: NSMutableAttributedString
+  ) {
+    guard let expression = try? NSRegularExpression(pattern: pattern) else { return }
+    let range = NSRange(location: 0, length: text.length)
+    for match in expression.matches(in: text.string, range: range).reversed() {
+      let contentRange = match.range(at: capture)
+      guard contentRange.location != NSNotFound else { continue }
+      let content = text.attributedSubstring(from: contentRange)
+      text.replaceCharacters(in: match.range, with: content)
+      text.addAttributes(
+        attributes,
+        range: NSRange(location: match.range.location, length: content.length)
+      )
     }
+  }
 
-    let image: UIImage?
-    if let url = URL(string: uri), url.isFileURL {
-      image = UIImage(contentsOfFile: url.path)
-    } else if uri.hasPrefix("/") {
-      image = UIImage(contentsOfFile: uri)
-    } else {
-      image = UIImage(named: uri)
+  private static func applyLinks(to text: NSMutableAttributedString) {
+    guard let expression = try? NSRegularExpression(
+      pattern: "\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)\\)"
+    ) else { return }
+    let range = NSRange(location: 0, length: text.length)
+    for match in expression.matches(in: text.string, range: range).reversed() {
+      let labelRange = match.range(at: 1)
+      let urlRange = match.range(at: 2)
+      guard labelRange.location != NSNotFound,
+            urlRange.location != NSNotFound,
+            let url = URL(string: (text.string as NSString).substring(with: urlRange)) else { continue }
+      let label = text.attributedSubstring(from: labelRange)
+      text.replaceCharacters(in: match.range, with: label)
+      text.addAttributes(
+        [.link: url, .foregroundColor: UIColor.systemBlue, .underlineStyle: NSUnderlineStyle.single.rawValue],
+        range: NSRange(location: match.range.location, length: label.length)
+      )
     }
-    if let image {
-      imageCache.setObject(image, forKey: uri as NSString)
-    }
-    return image
   }
 }
