@@ -271,10 +271,7 @@ private final class HistoryChatPreviewView: UIView {
     layer.borderWidth = 1 / max(traitCollection.displayScale, 1)
     clipsToBounds = true
 
-    mark.backgroundColor = .tertiarySystemFill
     mark.contentMode = .scaleAspectFit
-    mark.layer.cornerRadius = 16
-    mark.clipsToBounds = true
     mark.translatesAutoresizingMaskIntoConstraints = false
 
     titleLabel.attributedText = Self.attributedText(
