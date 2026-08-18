@@ -176,9 +176,10 @@ workspaces plus shorter idle and hard timeouts.
 
 ### Trusted preview bootstrap
 
-Fresh CI previews at `pulpo-pr-<number>.deathgrips.org` can be provisioned with
-the built-in `ci-preview` preset. Set the following as preview-only, runtime-only
-Coolify environment variables:
+Fresh CI previews at `pulpo-pr-<number>.deathgrips.org` and
+`pulpo-dev-pr-<number>.deathgrips.org` can be provisioned with the built-in
+`ci-preview` preset. Set the following as preview-only, runtime-only Coolify
+environment variables:
 
 ```dotenv
 PULPO_BOOTSTRAP_PRESET=ci-preview
@@ -200,13 +201,29 @@ Only trusted same-repository pull requests may receive these secrets. Do not
 make the preset variables available to fork previews, and do not reuse a
 production provider key.
 
-The GitHub Actions preview workflow also requires `COOLIFY_URL` and
-`COOLIFY_PULPO_APP_UUID` as repository variables, plus `COOLIFY_TOKEN` as a
-repository secret. Enable Coolify's **Preview Deployments**, keep **Allow Public
-PR Deployments** disabled, and keep main-branch **Auto Deploy** disabled.
-Coolify creates previews for trusted same-repository pull requests; the
-GitHub Actions workflow waits for each automatic deployment, validates its
-health, and smoke-tests the bootstrap configuration.
+The GitHub Actions deployment workflows require these repository variables:
+
+```text
+COOLIFY_URL
+COOLIFY_PULPO_APP_UUID
+COOLIFY_PULPO_DEV_APP_UUID
+PULPO_DEVELOPMENT_URL=https://dev.pulpo.baby
+```
+
+They also require `COOLIFY_TOKEN` as a repository secret. Enable Coolify's
+**Preview Deployments**, keep **Allow Public PR Deployments** disabled, and keep
+**Auto Deploy** disabled for both applications. Pull requests targeting `main`
+use `pulpo-pr-<number>.deathgrips.org`; pull requests targeting `dev` use
+`pulpo-dev-pr-<number>.deathgrips.org`. The GitHub Actions workflow waits for
+each automatic deployment, validates its health, and smoke-tests the bootstrap
+configuration.
+
+Pushes to `dev` deploy the complete Compose stack to `dev.pulpo.baby` only after
+the test, build, lint, Compose, and CLI-package checks pass. The workflow pins
+the Coolify application to the validated commit while it queues the deployment,
+then restores the configured commit to `HEAD`. The development database and
+storage volumes are isolated from production and retain Pulpo's normal first-run
+administrator flow.
 
 No Pulpo service should publish `5432`, `6379`, `8080`, or `8333`
 directly on the Coolify host.
