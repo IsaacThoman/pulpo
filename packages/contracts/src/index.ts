@@ -194,10 +194,13 @@ export const passkeyListSchema = z.object({
 })
 export type PasskeyList = z.infer<typeof passkeyListSchema>
 
-export const passkeySensitiveChangeSchema = z.object({
+export const sensitiveActionInputSchema = z.object({
   currentPassword: z.string().min(1).max(1024),
   verificationCode: z.string().trim().min(6).max(32).optional(),
 })
+export type SensitiveActionInput = z.infer<typeof sensitiveActionInputSchema>
+
+export const passkeySensitiveChangeSchema = sensitiveActionInputSchema
 
 export const beginPasskeyRegistrationInputSchema = passkeySensitiveChangeSchema.extend({
   name: passkeyNameSchema,
