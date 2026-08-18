@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
@@ -91,7 +91,9 @@ jobs:
 
   release:
     name: Semantic release
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: [checks, cli-package]
     runs-on: ubuntu-24.04
     outputs:
@@ -135,6 +137,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
+      contains(fromJSON('["main", "dev"]'), github.event.pull_request.base.ref) &&
       github.event.pull_request.head.repo.full_name == github.repository
     needs: [checks, cli-package]
     runs-on: ubuntu-24.04
@@ -143,7 +146,7 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ github.event.pull_request.base.ref == 'dev' && vars.COOLIFY_PULPO_DEV_APP_UUID || vars.COOLIFY_PULPO_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
@@ -165,7 +168,7 @@ jobs:
 
       - name: Smoke-test preview bootstrap
         env:
-          PREVIEW_URL: https://pulpo-pr-${{ github.event.pull_request.number }}.deathgrips.org
+          PREVIEW_URL: ${{ github.event.pull_request.base.ref == 'dev' && format('https://pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) || format('https://pulpo-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
           PULPO_PREVIEW_SMOKE_EMAIL: ${{ secrets.PULPO_PREVIEW_SMOKE_EMAIL }}
           PULPO_PREVIEW_SMOKE_PASSWORD: ${{ secrets.PULPO_PREVIEW_SMOKE_PASSWORD }}
         run: |
@@ -183,6 +186,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action == 'closed' &&
+      contains(fromJSON('["main", "dev"]'), github.event.pull_request.base.ref) &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
@@ -190,7 +194,7 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ github.event.pull_request.base.ref == 'dev' && vars.COOLIFY_PULPO_DEV_APP_UUID || vars.COOLIFY_PULPO_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
     steps:
       - name: Check out repository
@@ -202,7 +206,7 @@ jobs:
       - name: Delete preview
         run: |
           set -euo pipefail
-          : "${COOLIFY_APP_UUID:?COOLIFY_PULPO_APP_UUID repository variable is required}"
+          : "${COOLIFY_APP_UUID:?selected Coolify application UUID is required}"
           : "${PULL_REQUEST_ID:?pull request id is required}"
           if output="$(coolify app previews delete "${COOLIFY_APP_UUID}" "${PULL_REQUEST_ID}" --force --format json 2>&1)"; then
             echo "Deleted Coolify preview for PR ${PULL_REQUEST_ID}."
@@ -212,6 +216,38 @@ jobs:
             printf '%s\n' "${output}" >&2
             exit 1
           fi
+
+  deploy-development:
+    name: Deploy Coolify development
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/dev'
+    needs: [checks, cli-package]
+    runs-on: ubuntu-24.04
+    environment: development
+    permissions:
+      contents: read
+    env:
+      COOLIFY_URL: ${{ vars.COOLIFY_URL }}
+      COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
+      DEVELOPMENT_URL: ${{ vars.PULPO_DEVELOPMENT_URL }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Coolify CLI
+        run: bash .github/scripts/setup-coolify.sh
+
+      - name: Deploy validated development commit
+        id: deploy
+        run: bash .github/scripts/deploy-coolify-commit.sh "${GITHUB_SHA}"
+
+      - name: Wait for healthy development deployment
+        run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
+
+      - name: Validate development edge health
+        run: bash .github/scripts/wait-http-health.sh "${DEVELOPMENT_URL%/}/health" development 90 2
 
   deploy-production:
     name: Deploy Coolify production

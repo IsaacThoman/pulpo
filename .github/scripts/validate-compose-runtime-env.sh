@@ -24,18 +24,22 @@ printf '%s\n' \
   > "${runtime_env}"
 
 compose_config="$(
-  PULPO_ENV_FILE="${runtime_env}" \
+  SERVICE_USER_POSTGRES='preview-db-user' \
+    SERVICE_PASSWORD_64_POSTGRES='preview-database-magic-password' \
+    SERVICE_USER_S3='preview-storage-user' \
+    SERVICE_PASSWORD_64_S3='preview-storage-magic-password' \
+    PULPO_ENV_FILE="${runtime_env}" \
     docker compose --env-file .env.example config --format json
 )"
 
 for service in api worker; do
   jq -e --arg service "${service}" '
     .services[$service].environment as $env
-    | $env.POSTGRES_USER == "preview-user"
-      and $env.POSTGRES_PASSWORD == "preview-database-password"
-      and $env.POSTGRES_DATABASE == "preview-database"
-      and $env.S3_ACCESS_KEY_ID == "preview-storage-key"
-      and $env.S3_SECRET_ACCESS_KEY == "preview-storage-secret"
+    | $env.POSTGRES_USER == "preview-db-user"
+      and $env.POSTGRES_PASSWORD == "preview-database-magic-password"
+      and $env.POSTGRES_DATABASE == "pulpo"
+      and $env.S3_ACCESS_KEY_ID == "preview-storage-user"
+      and $env.S3_SECRET_ACCESS_KEY == "preview-storage-magic-password"
       and $env.S3_PUBLIC_ENDPOINT == "https://objects.preview.example"
       and $env.ENCRYPTION_KEY == "preview-encryption-key-000000000000"
       and $env.WORKSPACE_CONTROLLER_TOKEN == "preview-controller-token"
@@ -48,6 +52,25 @@ for service in api worker; do
     exit 1
   }
 done
+
+jq -e '
+  .services.postgres.environment as $env
+  | $env.POSTGRES_USER == "preview-db-user"
+    and $env.POSTGRES_PASSWORD == "preview-database-magic-password"
+    and $env.POSTGRES_DB == "pulpo"
+' <<< "${compose_config}" >/dev/null || {
+  echo 'Compose did not preserve runtime database credentials for Postgres.' >&2
+  exit 1
+}
+
+jq -e '
+  .services["seaweed-s3"] as $service
+  | $service.environment.AWS_ACCESS_KEY_ID == "preview-storage-user"
+    and $service.environment.AWS_SECRET_ACCESS_KEY == "preview-storage-magic-password"
+' <<< "${compose_config}" >/dev/null || {
+  echo 'Compose did not preserve runtime object-storage credentials for SeaweedFS.' >&2
+  exit 1
+}
 
 local_preview_config="$(
   PULPO_ENV_FILE="${PWD}/deploy/local-preview.env.example" \
@@ -72,4 +95,4 @@ done
 
 bash -n scripts/local-preview.sh
 
-echo 'Validated Compose runtime environment precedence for API and worker services.'
+echo 'Validated Compose runtime environment precedence for application and infrastructure services.'
