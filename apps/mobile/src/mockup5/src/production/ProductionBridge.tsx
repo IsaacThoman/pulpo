@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
 import { useShallow } from 'zustand/react/shallow'
@@ -175,6 +175,32 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
       automaticChatExpiration: preferences.automaticChatExpiration,
       newChatAutoExpire: preferences.newChatAutoExpire,
     },
+  }))
+}
+
+/** Fetch one uncached transcript for a context-menu preview without selecting the chat. */
+export async function hydrateProductionChatPreview(
+  queryClient: QueryClient,
+  namespace: string,
+  chatId: string,
+  localChatLimit: number,
+): Promise<void> {
+  const current = usePrototypeStore.getState()
+  if (current.productionNamespace !== namespace) return
+  if (current.chats.find((chat) => chat.id === chatId)?.detailLoaded) return
+
+  const detail = await queryClient.fetchQuery(chatQuery(namespace, chatId, localChatLimit))
+  for (const response of detail.responses ?? []) {
+    if (response.detailAvailable === false) continue
+    useRealtimeStore.getState().receiveSnapshot(hydrateEmbeddedResponseSnapshot(response.snapshot, response.output))
+  }
+  const projected = projectChat(detail, useRealtimeStore.getState().snapshots).map(mapMessage)
+  usePrototypeStore.setState((state) => ({
+    chats: state.productionNamespace === namespace
+      ? state.chats.map((chat) => chat.id === chatId
+        ? mapChat(detail, reuseProjectedMessages(chat.messages, projected), true)
+        : chat)
+      : state.chats,
   }))
 }
 

@@ -159,7 +159,7 @@ import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
-import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
+import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
@@ -943,7 +943,6 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
 }
 
 const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
-const PULPO_MARK_URI = Image.resolveAssetSource(PULPO_MARK_SOURCE).uri;
 
 function PulpoMark({ size = 40 }: { size?: number }) {
   return (
@@ -1644,6 +1643,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const projected = visibleHistoryChats(storedChats).map((chat) => historyChatSummary(chat, now));
     return reuseHistoryChatSummaries(previousHistoryChats.current, projected);
   }, [storedChats]);
+  const loadHistoryPreview = useCallback((chatId: string) => {
+    if (!productionUserId) return;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    const localChatLimit = usePrototypeStore.getState().preferences.localChatLimit;
+    void hydrateProductionChatPreview(queryClient, namespace, chatId, localChatLimit).catch(() => undefined);
+  }, [productionInstanceUrl, productionUserId, queryClient]);
   useEffect(() => {
     previousHistoryChats.current = historyChats;
   }, [historyChats]);
@@ -2145,6 +2150,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onSelectChat={selectChat}
             onNewChat={newChatFromHistory}
             onOpenSettings={openSettingsFromHistory}
+            onPreviewRequest={loadHistoryPreview}
           />
         </Reanimated.View>
 
@@ -4461,14 +4467,16 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
-const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewText, removeChatLabel, onChatAction, onOpenActions, onSelectChat }: {
+const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewImageURI, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
   active: boolean;
   chat: HistoryChatSummary;
   expirationMenuAction: HistoryChatExpiryMenuAction;
   previewText: string;
+  previewImageURI: string;
   removeChatLabel: string;
   onChatAction: (chat: HistoryChatSummary, action: HistoryChatAction) => void;
   onOpenActions: (chat: HistoryChatSummary) => void;
+  onPreviewRequest: (chat: HistoryChatSummary) => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
@@ -4493,9 +4501,10 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       previewTitle={chat.title}
       previewBody={previewText}
       previewMetadata={`${chat.section} · ${chat.time}`}
-      previewImageURI={PULPO_MARK_URI}
+      previewImageURI={previewImageURI}
       onAction={(action) => onChatAction(chat, action)}
       onPress={() => onSelectChat(chat)}
+      onPreviewRequest={() => onPreviewRequest(chat)}
       style={styles.chatContextMenuHost}
     >
       <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>
@@ -4518,7 +4527,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
@@ -4527,12 +4536,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  onPreviewRequest: (chatId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const folders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const models = usePrototypeStore((state) => state.models);
+  const previewChats = usePrototypeStore((state) => state.chats);
+  const themePreference = usePrototypeStore((state) => state.preferences.theme);
+  const appearance = useColorScheme();
+  const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
   const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const moveChat = usePrototypeStore((state) => state.moveChat);
@@ -4645,19 +4660,29 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [dismissSearch, onSelectChat]);
 
   const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
-    const source = usePrototypeStore.getState().chats.find((chat) => chat.id === item.id);
-    const previewText = source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+    const source = previewChats.find((chat) => chat.id === item.id);
+    const previewText = source?.detailLoaded === false
+      ? 'Loading preview…'
+      : source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+    const model = models.find((candidate) => candidate.id === item.modelId);
+    const previewImageURI = Image.resolveAssetSource(aiIconSource(
+      model?.modelLogo ?? model?.labLogo,
+      isDark,
+      model?.modelCustomIcon,
+    )).uri;
     return <HistoryChatRow
       active={activeChatId === item.id}
       chat={item}
       expirationMenuAction={resolveHistoryChatExpiryMenuAction(item.expiresAt, automaticChatExpiration)}
       previewText={previewText}
+      previewImageURI={previewImageURI}
       removeChatLabel={removeChatLabel}
       onChatAction={runChatAction}
       onOpenActions={showChatActions}
+      onPreviewRequest={(chat) => onPreviewRequest(chat.id)}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, isDark, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>

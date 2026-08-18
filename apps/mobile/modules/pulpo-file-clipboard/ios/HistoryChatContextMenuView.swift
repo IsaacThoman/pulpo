@@ -4,6 +4,7 @@ import UIKit
 public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractionDelegate {
   let onAction = EventDispatcher()
   let onChatPress = EventDispatcher()
+  let onPreviewRequest = EventDispatcher()
 
   private var pinned = false
   private var removeChatLabel = "Delete chat"
@@ -14,6 +15,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   private var previewBody = "Start a new conversation with your selected model."
   private var previewMetadata = ""
   private var previewImageURI = ""
+  private weak var activePreviewController: HistoryChatPreviewViewController?
 
   public required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -47,18 +49,22 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
 
   public func setPreviewTitle(_ value: String) {
     previewTitle = value
+    activePreviewController?.update(title: value)
   }
 
   public func setPreviewBody(_ value: String) {
     previewBody = value
+    activePreviewController?.update(body: value)
   }
 
   public func setPreviewMetadata(_ value: String) {
     previewMetadata = value
+    activePreviewController?.update(metadata: value)
   }
 
   public func setPreviewImageURI(_ value: String) {
     previewImageURI = value
+    activePreviewController?.update(imageURI: value)
   }
 
   @objc private func handleTap() {
@@ -74,14 +80,17 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     _ interaction: UIContextMenuInteraction,
     configurationForMenuAtLocation location: CGPoint
   ) -> UIContextMenuConfiguration? {
+    onPreviewRequest()
     let configuration = UIContextMenuConfiguration(identifier: nil, previewProvider: { [weak self] in
       guard let self else { return nil }
-      return HistoryChatPreviewViewController(
+      let controller = HistoryChatPreviewViewController(
         title: previewTitle,
         body: previewBody,
         metadata: previewMetadata,
         imageURI: previewImageURI
       )
+      activePreviewController = controller
+      return controller
     }) { [weak self] _ in
       guard let self else { return nil }
 
@@ -130,6 +139,16 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     }
     configuration.preferredMenuElementOrder = .fixed
     return configuration
+  }
+
+  public func contextMenuInteraction(
+    _ interaction: UIContextMenuInteraction,
+    willEndFor configuration: UIContextMenuConfiguration,
+    animator: UIContextMenuInteractionAnimating?
+  ) {
+    animator?.addCompletion { [weak self] in
+      self?.activePreviewController = nil
+    }
   }
 
   private func menuAction(
@@ -194,16 +213,18 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
 private final class HistoryChatPreviewViewController: UIViewController {
   private static let width: CGFloat = 320
   private static let minimumHeight: CGFloat = 176
+  private let previewView: HistoryChatPreviewView
 
   init(title: String, body: String, metadata: String, imageURI: String) {
-    super.init(nibName: nil, bundle: nil)
-
     let previewView = HistoryChatPreviewView(
       title: title,
       body: body,
       metadata: metadata,
       imageURI: imageURI
     )
+    self.previewView = previewView
+    super.init(nibName: nil, bundle: nil)
+
     let fittingSize = previewView.systemLayoutSizeFitting(
       CGSize(width: Self.width, height: UIView.layoutFittingCompressedSize.height),
       withHorizontalFittingPriority: .required,
@@ -215,6 +236,18 @@ private final class HistoryChatPreviewViewController: UIViewController {
     preferredContentSize = previewView.bounds.size
   }
 
+  func update(title: String? = nil, body: String? = nil, metadata: String? = nil, imageURI: String? = nil) {
+    previewView.update(title: title, body: body, metadata: metadata, imageURI: imageURI)
+    let fittingSize = previewView.systemLayoutSizeFitting(
+      CGSize(width: Self.width, height: UIView.layoutFittingCompressedSize.height),
+      withHorizontalFittingPriority: .required,
+      verticalFittingPriority: .fittingSizeLevel
+    )
+    let height = max(Self.minimumHeight, ceil(fittingSize.height))
+    previewView.frame.size = CGSize(width: Self.width, height: height)
+    preferredContentSize = previewView.frame.size
+  }
+
   @available(*, unavailable)
   required init?(coder: NSCoder) {
     fatalError("init(coder:) has not been implemented")
@@ -223,6 +256,11 @@ private final class HistoryChatPreviewViewController: UIViewController {
 
 private final class HistoryChatPreviewView: UIView {
   private static let imageCache = NSCache<NSString, UIImage>()
+  private let mark = UIImageView()
+  private let titleLabel = UILabel()
+  private let bodyLabel = UILabel()
+  private let metadataLabel = UILabel()
+  private var imageLoadTask: URLSessionDataTask?
 
   init(title: String, body: String, metadata: String, imageURI: String) {
     super.init(frame: .zero)
@@ -233,22 +271,12 @@ private final class HistoryChatPreviewView: UIView {
     layer.borderWidth = 1 / max(traitCollection.displayScale, 1)
     clipsToBounds = true
 
-    let mark = UIImageView(image: Self.image(for: imageURI))
-    mark.backgroundColor = UIColor.systemYellow.withAlphaComponent(0.28)
-    mark.contentMode = .scaleAspectFill
+    mark.backgroundColor = .tertiarySystemFill
+    mark.contentMode = .scaleAspectFit
     mark.layer.cornerRadius = 16
     mark.clipsToBounds = true
     mark.translatesAutoresizingMaskIntoConstraints = false
 
-    let eyebrow = UILabel()
-    eyebrow.attributedText = Self.attributedText(
-      "PULPO CHAT",
-      font: .systemFont(ofSize: 10.5, weight: .semibold),
-      color: Self.mutedColor,
-      kern: 0.8
-    )
-
-    let titleLabel = UILabel()
     titleLabel.attributedText = Self.attributedText(
       title,
       font: .systemFont(ofSize: 18, weight: .semibold),
@@ -258,22 +286,15 @@ private final class HistoryChatPreviewView: UIView {
     titleLabel.lineBreakMode = .byTruncatingTail
     titleLabel.numberOfLines = 1
 
-    let titleStack = UIStackView(arrangedSubviews: [eyebrow, titleLabel])
-    titleStack.axis = .vertical
-    titleStack.alignment = .fill
-    titleStack.spacing = 2
-
-    let header = UIStackView(arrangedSubviews: [mark, titleStack])
+    let header = UIStackView(arrangedSubviews: [mark, titleLabel])
     header.axis = .horizontal
     header.alignment = .center
     header.spacing = 11
 
-    let bodyLabel = UILabel()
     bodyLabel.attributedText = Self.bodyText(body)
     bodyLabel.lineBreakMode = .byTruncatingTail
     bodyLabel.numberOfLines = 4
 
-    let metadataLabel = UILabel()
     metadataLabel.attributedText = Self.attributedText(
       metadata,
       font: .systemFont(ofSize: 11.5),
@@ -302,6 +323,48 @@ private final class HistoryChatPreviewView: UIView {
       lowerSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
       upperSpacer.heightAnchor.constraint(equalTo: lowerSpacer.heightAnchor, constant: 2),
     ])
+    setImage(uri: imageURI)
+  }
+
+  deinit {
+    imageLoadTask?.cancel()
+  }
+
+  func update(title: String?, body: String?, metadata: String?, imageURI: String?) {
+    if let title {
+      titleLabel.attributedText = Self.attributedText(
+        title,
+        font: .systemFont(ofSize: 18, weight: .semibold),
+        color: .label,
+        kern: -0.35
+      )
+    }
+    if let body { bodyLabel.attributedText = Self.bodyText(body) }
+    if let metadata {
+      metadataLabel.attributedText = Self.attributedText(
+        metadata,
+        font: .systemFont(ofSize: 11.5),
+        color: Self.mutedColor
+      )
+    }
+    if let imageURI { setImage(uri: imageURI) }
+    setNeedsLayout()
+  }
+
+  private func setImage(uri: String) {
+    imageLoadTask?.cancel()
+    imageLoadTask = nil
+    mark.image = Self.image(for: uri)
+    guard mark.image == nil,
+          let url = URL(string: uri),
+          let scheme = url.scheme?.lowercased(),
+          scheme == "http" || scheme == "https" else { return }
+    imageLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+      guard let data, let image = UIImage(data: data) else { return }
+      Self.imageCache.setObject(image, forKey: uri as NSString)
+      DispatchQueue.main.async { self?.mark.image = image }
+    }
+    imageLoadTask?.resume()
   }
 
   @available(*, unavailable)
