@@ -32,6 +32,7 @@ interface PublicAuthSettings {
   pendingMessage: string
   apiKeysEnabled: boolean
   maxAttachmentBytes: number
+  billingEnabled: boolean
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
 export type LoginResult = AuthResult | { ok: false; twoFactorRequired: true }
@@ -46,6 +47,7 @@ interface AuthState {
   pendingMessage: string
   apiKeysEnabled: boolean
   maxAttachmentBytes: number
+  billingEnabled: boolean
   bootstrap: () => Promise<void>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
   passkeyLogin: (useBrowserAutofill?: boolean) => Promise<AuthResult>
@@ -96,6 +98,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   pendingMessage: 'Your account is pending approval. An admin will review it shortly.',
   apiKeysEnabled: true,
   maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
+  billingEnabled: false,
 
   bootstrap: async () => {
     if (!get().checkingSession) return
@@ -110,6 +113,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       pendingMessage: get().pendingMessage,
       apiKeysEnabled: get().apiKeysEnabled,
       maxAttachmentBytes: get().maxAttachmentBytes,
+      billingEnabled: get().billingEnabled,
     }
     try {
       const response = await apiRequest<AuthResponse>('/api/me')

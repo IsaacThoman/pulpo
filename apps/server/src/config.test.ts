@@ -2,6 +2,20 @@ import { describe, expect, it } from 'vitest'
 import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, parseConfig } from './config.js'
 
 describe('server configuration', () => {
+  it('keeps billing disabled unless explicitly and completely configured', () => {
+    expect(parseConfig({}).PULPO_BILLING_ENABLED).toBe(false)
+    expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/POLAR_ENVIRONMENT/)
+    expect(parseConfig({
+      PULPO_BILLING_ENABLED: 'true',
+      POLAR_ENVIRONMENT: 'sandbox',
+      POLAR_ACCESS_TOKEN: 'polar-token',
+      POLAR_WEBHOOK_SECRET: 'polar-secret',
+      POLAR_CREDIT_PRODUCT_ID: '00000000-0000-4000-8000-000000000001',
+      POLAR_EIGHT_PRODUCT_ID: '00000000-0000-4000-8000-000000000002',
+      POLAR_FAT_PRODUCT_ID: '00000000-0000-4000-8000-000000000003',
+    }).PULPO_BILLING_ENABLED).toBe(true)
+  })
+
   it('treats empty optional workspace controller values as unset', () => {
     const config = parseConfig({
       WORKSPACE_CONTROLLER_URL: '',

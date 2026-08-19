@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Pencil, Plus, Search, ShieldOff, Trash2 } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertTriangle, Pencil, Plus, RefreshCw, Search, ShieldOff, Trash2 } from 'lucide-react'
 import { useUsage } from '@/stores/usage'
 import { formatBalance, formatDate, timeAgo } from '@/lib/format'
 import type { MonitorUser } from '@/lib/types'
@@ -9,6 +10,7 @@ import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import {
   Select,
@@ -26,6 +28,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
+interface AdminBillingUser {
+  userId: string
+  plan: 'baby' | 'eight' | 'fat'
+  weeklyLimitMicros: number
+  weeklySpentMicros: number
+  weeklyRemainingMicros: number
+  weeklyLimitOverridden: boolean
+  hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
+}
+
 export function AdminUsersPage() {
   const users = useUsage((s) => s.users)
   const [query, setQuery] = useState('')
@@ -37,8 +49,15 @@ export function AdminUsersPage() {
   const [twoFactorError, setTwoFactorError] = useState<string | null>(null)
   const [resettingTwoFactor, setResettingTwoFactor] = useState(false)
   const currentUserId = useAuth((state) => state.user?.id)
+  const billingEnabled = useAuth((state) => state.billingEnabled)
   const loadAdmin = useUsage((s) => s.loadAdmin)
   useEffect(() => { void loadAdmin() }, [loadAdmin])
+  const billingUsersQuery = useQuery({
+    queryKey: ['admin-billing-users'],
+    queryFn: () => apiRequest<{ data: AdminBillingUser[] }>('/api/admin/billing/users'),
+    enabled: billingEnabled,
+  })
+  const billingByUser = new Map(billingUsersQuery.data?.data.map((row) => [row.userId, row]) ?? [])
 
   const patchUser = async (id: string, patch: Record<string, unknown>) => {
     await apiRequest(`/api/admin/users/${id}`, { method: 'PATCH', body: patch })
@@ -92,13 +111,15 @@ export function AdminUsersPage() {
       </div>
 
       <Card className="shadow-none">
-        <CardContent className="px-0 py-0">
-          <table className="w-full text-sm">
+        <CardContent className="overflow-x-auto px-0 py-0">
+          <table className="w-full min-w-max text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th className="px-5 py-2.5 font-medium">Role</th>
                 <th className="py-2.5 font-medium">Display name</th>
                 <th className="py-2.5 font-medium">Email</th>
+                {billingEnabled && <th className="px-4 py-2.5 font-medium">Plan</th>}
+                {billingEnabled && <th className="px-4 py-2.5 text-right font-medium">Weekly limit</th>}
                 <th className="px-4 py-2.5 text-right font-medium">Balance</th>
                 <th className="px-4 py-2.5 text-right font-medium">File storage</th>
                 <th className="px-4 py-2.5 font-medium">Last active</th>
@@ -131,6 +152,8 @@ export function AdminUsersPage() {
                     </span>
                   </td>
                   <td className="py-2.5 text-muted-foreground">{u.email}</td>
+                  {billingEnabled && <td className="px-4 py-2.5"><BillingPlanCell row={billingByUser.get(u.id)} /></td>}
+                  {billingEnabled && <td className="px-4 py-2.5 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   <td className="px-4 py-2.5 text-right tabular-nums">
                     <BalanceCell user={u} />
                   </td>
@@ -143,6 +166,18 @@ export function AdminUsersPage() {
                   <td className="py-2.5 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-5 py-2.5">
                     <div className="flex justify-end gap-1">
+                      {billingEnabled && billingByUser.get(u.id)?.hold && <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        title="Clear billing hold"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => {
+                          const note = prompt('Reconciliation note required to clear this billing hold:')
+                          if (!note?.trim()) return
+                          void apiRequest(`/api/admin/billing/users/${u.id}/clear-hold`, { method: 'POST', body: { note } })
+                            .then(() => billingUsersQuery.refetch())
+                        }}
+                      ><AlertTriangle className="size-3.5" /></Button>}
                       {u.twoFactorEnabled && u.id !== currentUserId && <Button
                         size="icon-sm"
                         variant="ghost"
@@ -328,6 +363,39 @@ export function AdminUsersPage() {
       </Dialog>
     </div>
   )
+}
+
+function BillingPlanCell({ row }: { row: AdminBillingUser | undefined }) {
+  if (!row) return <span className="text-muted-foreground">—</span>
+  const label = row.plan === 'fat' ? 'Fat' : row.plan === 'eight' ? 'Eight' : 'Baby'
+  return <span className="flex items-center gap-1.5"><Badge variant={row.plan === 'baby' ? 'outline' : 'secondary'}>{label}</Badge>{row.hold && <AlertTriangle className="size-3.5 text-destructive" />}</span>
+}
+
+function WeeklyLimitCell({ row, onChanged }: { row: AdminBillingUser | undefined; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  if (!row) return <span className="text-muted-foreground">—</span>
+
+  const save = async () => {
+    const amount = Number(value)
+    setEditing(false)
+    if (!Number.isFinite(amount) || amount < 0) return
+    await apiRequest(`/api/admin/billing/users/${row.userId}/weekly-limit`, {
+      method: 'PATCH', body: { weeklyLimitMicros: Math.round(amount * 1_000_000) },
+    })
+    onChanged()
+  }
+
+  if (editing) return <Input autoFocus className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+
+  return <span className="inline-flex items-center justify-end gap-1">
+    <button type="button" title="Edit weekly limit" className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue((row.weeklyLimitMicros / 1_000_000).toFixed(2)); setEditing(true) }}>
+      {formatBalance(row.weeklySpentMicros / 1_000_000)} / {formatBalance(row.weeklyLimitMicros / 1_000_000)}
+    </button>
+    {row.weeklyLimitOverridden && <Button size="icon-sm" variant="ghost" title="Reset to plan default" onClick={() => {
+      void apiRequest(`/api/admin/billing/users/${row.userId}/weekly-limit`, { method: 'PATCH', body: { weeklyLimitMicros: null } }).then(onChanged)
+    }}><RefreshCw className="size-3.5" /></Button>}
+  </span>
 }
 
 function BalanceCell({ user }: { user: MonitorUser }) {
