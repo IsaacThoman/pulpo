@@ -28,6 +28,7 @@ describe('agent web-tool settings', () => {
     expect(markup.indexOf('Bill users for Kagi searches')).toBeGreaterThan(markup.indexOf('Kagi'))
     expect(markup.indexOf('Bill users for Firecrawl searches')).toBeGreaterThan(markup.indexOf('Firecrawl'))
     expect(markup).not.toContain('Effective cost per credit')
+    expect(markup).toContain('Bill users for agent workspaces')
   })
 
   it('reorders providers without mutating the original value', () => {

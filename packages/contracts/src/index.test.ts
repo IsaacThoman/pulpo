@@ -168,17 +168,14 @@ describe('shared contracts', () => {
     const policy = createModelSchema.pick({
       compactionEnabled: true,
       compactionThresholdTokens: true,
-      agentCompactionThresholdTokens: true,
       compactionRetainedTurns: true,
     })
     expect(policy.parse({})).toEqual({
       compactionEnabled: true,
       compactionThresholdTokens: 100_000,
-      agentCompactionThresholdTokens: 180_000,
       compactionRetainedTurns: 4,
     })
     expect(policy.safeParse({ compactionThresholdTokens: 1_999 }).success).toBe(false)
-    expect(policy.safeParse({ agentCompactionThresholdTokens: 1_000_001 }).success).toBe(false)
     expect(policy.safeParse({ compactionRetainedTurns: 33 }).success).toBe(false)
   })
 
@@ -269,8 +266,8 @@ describe('shared contracts', () => {
   })
 
   it('defaults and validates account sidebar pins', () => {
-    expect(sidebarPinsSchema.parse({})).toEqual({ usage: false, friends: false, apiKeys: false })
-    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ usage: true, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.parse({})).toEqual({ usage: false, billing: false, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ usage: true, billing: false, friends: false, apiKeys: false })
     expect(sidebarPinsSchema.safeParse({ friends: 'no' }).success).toBe(false)
   })
 
@@ -369,7 +366,7 @@ describe('shared contracts', () => {
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       nickname: '', favoriteModelIds: [], agentModes: {},
       instructionPresetSelections: {},
-      sidebarPins: { usage: false, friends: false, apiKeys: false },
+      sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(managementAccountSettingsSchema.parse({

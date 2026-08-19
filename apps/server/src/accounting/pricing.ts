@@ -57,3 +57,13 @@ export function availableReservationCapacityMicros(
 ): number {
   return balanceMicros - Math.max(0, totalPendingMicros - currentReservationMicros)
 }
+
+export function workspaceHoldMicros(timeoutSeconds: number, pricePerMinuteMicros: number): number {
+  if (pricePerMinuteMicros <= 0 || timeoutSeconds <= 0) return 0
+  return Math.ceil(timeoutSeconds / 60) * pricePerMinuteMicros
+}
+
+export function workspaceUsageMicros(readyDurationMs: number, pricePerMinuteMicros: number): number {
+  if (pricePerMinuteMicros <= 0 || readyDurationMs <= 0) return 0
+  return Math.ceil(readyDurationMs / 60_000) * pricePerMinuteMicros
+}

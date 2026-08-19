@@ -39,6 +39,8 @@ docker compose ps
 
 Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, manage reusable lab/model artwork under Admin → Icons, create a lab and model, configure pricing, and approve pending users.
 
+Commercial billing is an optional, fail-closed integration intended for the licensed hosted instance. It is disabled by default, and the operational feature flag does not grant commercial rights beyond [LICENSE.md](./LICENSE.md). See [docs/billing.md](./docs/billing.md) for Polar product setup, sandbox verification, webhook events, reconciliation, and the production rollout order.
+
 Provider prompt-cache routing is configured under Admin → Providers. Choose the semantic transport supported by the upstream (`prompt_cache_key` for OpenAI or `x-session-affinity` for Fireworks) and its identity scope. Fireworks cache isolation is configured separately so multi-tenant privacy boundaries do not depend on routing affinity.
 
 ### Local preview stack
@@ -176,9 +178,10 @@ workspaces plus shorter idle and hard timeouts.
 
 ### Trusted preview bootstrap
 
-Fresh CI previews at `pulpo-pr-<number>.deathgrips.org` can be provisioned with
-the built-in `ci-preview` preset. Set the following as preview-only, runtime-only
-Coolify environment variables:
+Fresh CI previews at `pulpo-pr-<number>.deathgrips.org` and
+`pulpo-dev-pr-<number>.deathgrips.org` can be provisioned with the built-in
+`ci-preview` preset. Set the following as preview-only, runtime-only Coolify
+environment variables:
 
 ```dotenv
 PULPO_BOOTSTRAP_PRESET=ci-preview
@@ -200,13 +203,29 @@ Only trusted same-repository pull requests may receive these secrets. Do not
 make the preset variables available to fork previews, and do not reuse a
 production provider key.
 
-The GitHub Actions preview workflow also requires `COOLIFY_URL` and
-`COOLIFY_PULPO_APP_UUID` as repository variables, plus `COOLIFY_TOKEN` as a
-repository secret. Enable Coolify's **Preview Deployments**, keep **Allow Public
-PR Deployments** disabled, and keep main-branch **Auto Deploy** disabled.
-Coolify creates previews for trusted same-repository pull requests; the
-GitHub Actions workflow waits for each automatic deployment, validates its
-health, and smoke-tests the bootstrap configuration.
+The GitHub Actions deployment workflows require these repository variables:
+
+```text
+COOLIFY_URL
+COOLIFY_PULPO_APP_UUID
+COOLIFY_PULPO_DEV_APP_UUID
+PULPO_DEVELOPMENT_URL=https://dev.pulpo.baby
+```
+
+They also require `COOLIFY_TOKEN` as a repository secret. Enable Coolify's
+**Preview Deployments**, keep **Allow Public PR Deployments** disabled, and keep
+**Auto Deploy** disabled for both applications. Pull requests targeting `main`
+use `pulpo-pr-<number>.deathgrips.org`; pull requests targeting `dev` use
+`pulpo-dev-pr-<number>.deathgrips.org`. The GitHub Actions workflow waits for
+each automatic deployment, validates its health, and smoke-tests the bootstrap
+configuration.
+
+Pushes to `dev` deploy the complete Compose stack to `dev.pulpo.baby` only after
+the test, build, lint, Compose, and CLI-package checks pass. The workflow pins
+the Coolify application to the validated commit while it queues the deployment,
+then restores the configured commit to `HEAD`. The development database and
+storage volumes are isolated from production and retain Pulpo's normal first-run
+administrator flow.
 
 No Pulpo service should publish `5432`, `6379`, `8080`, or `8333`
 directly on the Coolify host.

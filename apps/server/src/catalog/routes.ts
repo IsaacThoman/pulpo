@@ -517,7 +517,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         maxOutputTokens: input.maxOutputTokens,
         compactionEnabled: input.compactionEnabled,
         compactionThresholdTokens: input.compactionThresholdTokens,
-        agentCompactionThresholdTokens: input.agentCompactionThresholdTokens,
+        agentCompactionThresholdTokens: input.compactionThresholdTokens,
         compactionRetainedTurns: input.compactionRetainedTurns,
         executionMode: input.executionMode,
         tags: input.tags,
@@ -562,7 +562,6 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
-      agentCompactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
       compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
     }).parse(body)
     const [current] = await db.select().from(models).where(eq(models.id, id)).limit(1)
@@ -597,7 +596,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,
       compactionEnabled: compactionPatch.compactionEnabled,
       compactionThresholdTokens: compactionPatch.compactionThresholdTokens,
-      agentCompactionThresholdTokens: compactionPatch.agentCompactionThresholdTokens,
+      agentCompactionThresholdTokens: compactionPatch.compactionThresholdTokens,
       compactionRetainedTurns: compactionPatch.compactionRetainedTurns,
       executionMode: body.executionMode === 'background' ? 'background' : body.executionMode === 'stream' ? 'stream' : undefined,
       tags: Array.isArray(body.tags) ? body.tags : undefined,

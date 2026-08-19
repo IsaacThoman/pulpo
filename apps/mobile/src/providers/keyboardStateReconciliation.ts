@@ -5,29 +5,45 @@ type Subscription = { remove: () => void }
 type KeyboardStateReconciliationDependencies = {
   addAppStateChangeListener: (listener: (state: AppStateStatus) => void) => Subscription
   addKeyboardDidHideListener: (listener: () => void) => Subscription
+  addKeyboardDidShowListener: (listener: (height: number) => void) => Subscription
+  getKeyboardHeight: () => number | null
   isKeyboardVisible: () => boolean
   reset: () => void
+  syncVisible: (height: number) => void
 }
 
 export function startKeyboardStateReconciliation({
   addAppStateChangeListener,
   addKeyboardDidHideListener,
+  addKeyboardDidShowListener,
+  getKeyboardHeight,
   isKeyboardVisible,
   reset,
+  syncVisible,
 }: KeyboardStateReconciliationDependencies) {
-  const resetIfKeyboardHidden = () => {
-    if (!isKeyboardVisible()) reset()
+  const reconcile = () => {
+    if (!isKeyboardVisible()) {
+      reset()
+      return
+    }
+
+    const height = getKeyboardHeight()
+    if (height && height > 0) syncVisible(height)
   }
 
-  const keyboardSubscription = addKeyboardDidHideListener(reset)
+  const keyboardHideSubscription = addKeyboardDidHideListener(reset)
+  const keyboardShowSubscription = addKeyboardDidShowListener((height) => {
+    if (height > 0) syncVisible(height)
+  })
   const appStateSubscription = addAppStateChangeListener((state) => {
-    if (state === 'active') resetIfKeyboardHidden()
+    if (state === 'active') reconcile()
   })
 
-  resetIfKeyboardHidden()
+  reconcile()
 
   return () => {
-    keyboardSubscription.remove()
+    keyboardHideSubscription.remove()
+    keyboardShowSubscription.remove()
     appStateSubscription.remove()
   }
 }

@@ -159,7 +159,7 @@ import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
 import { apiRequest, ApiError } from '../api/client';
-import { clearProductionScope, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
+import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
@@ -943,7 +943,6 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
 }
 
 const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
-const PULPO_MARK_URI = Image.resolveAssetSource(PULPO_MARK_SOURCE).uri;
 
 function PulpoMark({ size = 40 }: { size?: number }) {
   return (
@@ -1644,6 +1643,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     const projected = visibleHistoryChats(storedChats).map((chat) => historyChatSummary(chat, now));
     return reuseHistoryChatSummaries(previousHistoryChats.current, projected);
   }, [storedChats]);
+  const loadHistoryPreview = useCallback((chatId: string) => {
+    if (!productionUserId) return;
+    const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    const localChatLimit = usePrototypeStore.getState().preferences.localChatLimit;
+    void hydrateProductionChatPreview(queryClient, namespace, chatId, localChatLimit).catch(() => undefined);
+  }, [productionInstanceUrl, productionUserId, queryClient]);
   useEffect(() => {
     previousHistoryChats.current = historyChats;
   }, [historyChats]);
@@ -2145,6 +2150,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onSelectChat={selectChat}
             onNewChat={newChatFromHistory}
             onOpenSettings={openSettingsFromHistory}
+            onPreviewRequest={loadHistoryPreview}
           />
         </Reanimated.View>
 
@@ -2296,24 +2302,34 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
 
 function MessageContextMenu({
   message,
+  model,
   onEdit,
   onRegenerate,
   children,
 }: {
   message: Message;
+  model: Model;
   onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const previewText = message.text.length > 2_000
+    ? `${message.text.slice(0, 1_999)}…`
+    : message.text;
 
   return (
     <NativeObjectContextMenu
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
       preview={(
         <View style={[styles.messageContextPreview, message.role === 'user' && styles.messageContextPreviewUser]}>
-          <Text style={styles.messageContextPreviewRole}>{message.role === 'user' ? 'YOU' : 'ASSISTANT'}</Text>
-          <Text numberOfLines={8} style={styles.messageContextPreviewText}>{message.text}</Text>
+          <View style={styles.messageContextPreviewIdentity}>
+            {message.role === 'assistant' ? <ModelMark model={model} size={23} /> : null}
+            <Text numberOfLines={1} style={[styles.messageContextPreviewRole, styles.messageContextPreviewIdentityName]}>
+              {message.role === 'user' ? 'YOU' : model.name}
+            </Text>
+          </View>
+          <SafeMarkdown containerStyle={styles.messageContextPreviewMarkdown}>{previewText}</SafeMarkdown>
         </View>
       )}
       items={(
@@ -2809,7 +2825,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.text.length > 0 && (
-            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
                 <View style={styles.userBubble}>
                   <SafeMarkdown containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
@@ -2826,7 +2842,7 @@ const MessageRow = memo(function MessageRow({
             <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
           </View>
           {timeline.length ? (
-            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.assistantContent}>
                 {timeline.map((segment, index) => {
                   if (segment.kind === 'activity') {
@@ -2849,7 +2865,7 @@ const MessageRow = memo(function MessageRow({
               </View>
             </MessageContextMenu>
           ) : message.error ? (
-            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
             </MessageContextMenu>
           ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
@@ -2875,7 +2891,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
-          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
+          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
           {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
             <Pressable
               accessibilityRole="button"
@@ -4461,14 +4477,17 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
-const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewText, removeChatLabel, onChatAction, onOpenActions, onSelectChat }: {
+const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewModelImageURI, previewModelName, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
   active: boolean;
   chat: HistoryChatSummary;
   expirationMenuAction: HistoryChatExpiryMenuAction;
+  previewModelImageURI: string;
+  previewModelName: string;
   previewText: string;
   removeChatLabel: string;
   onChatAction: (chat: HistoryChatSummary, action: HistoryChatAction) => void;
   onOpenActions: (chat: HistoryChatSummary) => void;
+  onPreviewRequest: (chat: HistoryChatSummary) => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
@@ -4491,11 +4510,13 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       expirationPeriodLabel={expirationMenuAction?.kind === 'enable' ? expirationMenuAction.periodLabel : ''}
       expiresAt={chat.expiresAt ?? 0}
       previewTitle={chat.title}
+      previewModelName={previewModelName}
+      previewModelImageURI={previewModelImageURI}
       previewBody={previewText}
       previewMetadata={`${chat.section} · ${chat.time}`}
-      previewImageURI={PULPO_MARK_URI}
       onAction={(action) => onChatAction(chat, action)}
       onPress={() => onSelectChat(chat)}
+      onPreviewRequest={() => onPreviewRequest(chat)}
       style={styles.chatContextMenuHost}
     >
       <View pointerEvents="none" style={[styles.chatRow, active && styles.chatRowActive]}>
@@ -4518,7 +4539,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
@@ -4527,12 +4548,18 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
+  onPreviewRequest: (chatId: string) => void;
 }) {
   const insets = useSafeAreaInsets();
   const folders = usePrototypeStore((state) => state.folders);
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const models = usePrototypeStore((state) => state.models);
+  const previewChats = usePrototypeStore((state) => state.chats);
+  const themePreference = usePrototypeStore((state) => state.preferences.theme);
+  const appearance = useColorScheme();
+  const isDark = themePreference === 'dark' || (themePreference === 'system' && appearance !== 'light');
   const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const moveChat = usePrototypeStore((state) => state.moveChat);
@@ -4645,19 +4672,33 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [dismissSearch, onSelectChat]);
 
   const renderHistoryChat = useCallback(({ item }: { item: HistoryChatSummary }) => {
-    const source = usePrototypeStore.getState().chats.find((chat) => chat.id === item.id);
-    const previewText = source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+    const source = previewChats.find((chat) => chat.id === item.id);
+    const previewText = source?.detailLoaded === false
+      ? 'Loading preview…'
+      : source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+    const previewModel = models.find((model) => (
+      model.id === item.modelId || model.redirectTargetModelIds?.includes(item.modelId)
+    ));
+    const previewModelName = previewModel?.name ?? item.modelId;
+    const previewModelImageURI = Image.resolveAssetSource(aiIconSource(
+      previewModel?.modelLogo ?? previewModel?.labLogo,
+      isDark,
+      previewModel?.modelCustomIcon,
+    )).uri;
     return <HistoryChatRow
       active={activeChatId === item.id}
       chat={item}
       expirationMenuAction={resolveHistoryChatExpiryMenuAction(item.expiresAt, automaticChatExpiration)}
+      previewModelImageURI={previewModelImageURI}
+      previewModelName={previewModelName}
       previewText={previewText}
       removeChatLabel={removeChatLabel}
       onChatAction={runChatAction}
       onOpenActions={showChatActions}
+      onPreviewRequest={(chat) => onPreviewRequest(chat.id)}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, isDark, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>
@@ -4901,10 +4942,12 @@ const styles = StyleSheet.create({
   sentFileName: { color: COLORS.text, fontSize: 13.5, fontWeight: '600' },
   sentFileMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
   messageText: { color: COLORS.text, fontSize: 15.5, lineHeight: 22.5 },
-  messageContextPreview: { width: 320, maxHeight: 360, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
+  messageContextPreview: { width: 320, maxHeight: 360, overflow: 'hidden', borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
   messageContextPreviewUser: { backgroundColor: COLORS.secondary },
-  messageContextPreviewRole: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 },
-  messageContextPreviewText: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
+  messageContextPreviewIdentity: { minHeight: 23, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  messageContextPreviewRole: { flexShrink: 1, color: COLORS.muted, fontSize: 11.5, fontWeight: '600', letterSpacing: 0.4 },
+  messageContextPreviewIdentityName: { color: COLORS.textSoft, fontSize: 14, letterSpacing: -0.1 },
+  messageContextPreviewMarkdown: { maxHeight: 286, overflow: 'hidden' },
   attachmentContextImagePreview: { borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },

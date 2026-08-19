@@ -100,6 +100,18 @@ describe('ci-preview bootstrap preset', () => {
     expect(store.seeds).toHaveLength(1)
   })
 
+  it('allows the isolated dev preview namespace', async () => {
+    const store = new MemoryBootstrapStore()
+    const result = await runBootstrapPreset(
+      previewConfig({ PUBLIC_URL: 'https://pulpo-dev-pr-48.deathgrips.org' }),
+      'pulpo-dev-pr-48.deathgrips.org',
+      dependencies(store),
+    )
+
+    expect(result).toBe('created')
+    expect(store.seeds).toHaveLength(1)
+  })
+
   it('does not allow the local preview identity in production', async () => {
     await expect(runBootstrapPreset(
       previewConfig({ NODE_ENV: 'production', PULPO_INSTANCE_ID: 'local-preview' }),
@@ -204,7 +216,6 @@ describe('ci-preview bootstrap preset', () => {
       maxOutputTokens: 16_384,
       agentEnabled: true,
       compactionThresholdTokens: 96_000,
-      agentCompactionThresholdTokens: 112_000,
     })
     expect(ciPreviewAgentSettings(imageDigest)).toMatchObject({
       enabled: true,

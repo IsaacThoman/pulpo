@@ -3,7 +3,36 @@ import { estimateInputTokens } from '../accounting/pricing.js'
 import { sanitizeContextForStorage } from './public-output.js'
 import { assistantOutputText } from './output-text.js'
 
-export const COMPACTION_PROMPT = 'Summarize this earlier conversation faithfully for context. Preserve decisions, facts, code constraints, and unresolved tasks.'
+export const COMPACTION_PROMPT = `Create a handoff summary for another model that will continue this conversation.
+
+Output exactly this Markdown structure and keep the section order. Do not mention that context was compacted.
+
+## Objective
+- [one or two brief sentences describing what the user is trying to accomplish]
+
+## Important Details
+- [constraints, decisions, facts, assumptions, or "(none)"]
+
+## Work State
+### Completed
+- [finished work or verified facts, or "(none)"]
+
+### Active
+- [current work or investigation state, or "(none)"]
+
+### Blocked
+- [blockers, failing commands, or unknowns, or "(none)"]
+
+## Next Move
+1. [immediate concrete action, or "(none)"]
+
+## Relevant Files
+- [path: why it matters, or "(none)"]
+
+Rules:
+- Keep every section, even when empty.
+- Use terse bullets, not prose paragraphs.
+- Preserve exact file paths, symbols, commands, error strings, URLs, and identifiers.`
 
 type HistoryResponse = {
   id: string

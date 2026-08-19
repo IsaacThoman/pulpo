@@ -30,11 +30,13 @@ type HistoryChatContextMenuNativeProps = ViewProps & {
   expirationPeriodLabel: string
   expiresAt: number
   previewTitle: string
+  previewModelName: string
+  previewModelImageURI: string
   previewBody: string
   previewMetadata: string
-  previewImageURI: string
   onAction: (event: ActionEvent) => void
   onChatPress: (event: PressEvent) => void
+  onPreviewRequest: (event: PressEvent) => void
 }
 
 const HistoryChatContextMenuNativeView =
@@ -45,15 +47,17 @@ const HistoryChatContextMenuNativeView =
 
 export type HistoryChatContextMenuViewProps = Omit<
   ComponentProps<typeof HistoryChatContextMenuNativeView>,
-  'onAction' | 'onChatPress'
+  'onAction' | 'onChatPress' | 'onPreviewRequest'
 > & {
   onAction: (action: HistoryChatContextMenuAction) => void
   onPress: () => void
+  onPreviewRequest: () => void
 }
 
 export function HistoryChatContextMenuView({
   onAction,
   onPress,
+  onPreviewRequest,
   ...props
 }: HistoryChatContextMenuViewProps) {
   return (
@@ -61,6 +65,7 @@ export function HistoryChatContextMenuView({
       {...props}
       onAction={(event) => onAction(event.nativeEvent.action)}
       onChatPress={() => onPress()}
+      onPreviewRequest={() => onPreviewRequest()}
     />
   )
 }

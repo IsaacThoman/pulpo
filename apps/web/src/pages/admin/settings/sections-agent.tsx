@@ -25,6 +25,7 @@ const defaults: AgentSettings = {
   warmCapacity: 1, maxActiveWorkspaces: 3, cpu: '2', memory: '2048Mi', ephemeralStorage: '20Gi',
   idleTimeoutSeconds: 1800, hardTimeoutSeconds: 14400, workspaceWaitTimeoutSeconds: 900, maxModelTurns: 30, maxToolCalls: 100,
   responseTimeoutSeconds: 1800, commandTimeoutSeconds: 600, maxToolOutputBytes: 100000,
+  billWorkspaces: false, workspacePricePerMinuteMicros: 10_000,
 }
 
 const webDefaults: WebToolsForm = {
@@ -167,6 +168,8 @@ export function AgentSection() {
         <label className="space-y-1 text-xs"><span>Command timeout (seconds)</span>{number('commandTimeoutSeconds', 1)}</label>
         <label className="space-y-1 text-xs"><span>Retained tool output (bytes)</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
+      <Toggle label="Bill users for agent workspaces" hint="Charges from lease ready until the response ends. Queue wait is free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
+      {value.billWorkspaces && <NumField label="Price per workspace minute" value={value.workspacePricePerMinuteMicros / 1_000_000} onChange={(usd) => setValue({ ...value, workspacePricePerMinuteMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" />}
       <div className="flex items-center gap-2 text-sm">
         {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}
         <span>{health.healthy ? 'Workspace controller is healthy' : health.configured ? health.detail ?? 'Workspace controller is unavailable' : 'Controller URL and token are not configured in deployment secrets'}</span>
