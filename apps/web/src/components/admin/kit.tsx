@@ -186,14 +186,22 @@ export function SecretField({
   value,
   onChange,
   indent,
+  configured,
+  show: controlledShow,
+  onShowChange,
 }: {
   label: string
   hint?: string
   value: string
   onChange?: (v: string) => void
   indent?: boolean
+  configured?: boolean
+  show?: boolean
+  onShowChange?: (show: boolean) => void
 }) {
-  const [show, setShow] = useState(false)
+  const [localShow, setLocalShow] = useState(false)
+  const show = controlledShow ?? localShow
+  const setShow = onShowChange ?? setLocalShow
   return (
     <Field label={label} hint={hint} indent={indent}>
       <div className="relative">
@@ -204,14 +212,14 @@ export function SecretField({
           onChange={(e) => onChange?.(e.target.value)}
           placeholder="••••••••"
         />
-        <button
+        {(value || configured) && <button
           type="button"
           className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground"
-          onClick={() => setShow((v) => !v)}
-          aria-label={show ? 'Hide' : 'Show'}
+          onClick={() => setShow(!show)}
+          aria-label={`${show ? 'Hide' : 'Show'} ${label}`}
         >
           {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-        </button>
+        </button>}
       </div>
     </Field>
   )

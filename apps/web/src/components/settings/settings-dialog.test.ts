@@ -9,6 +9,7 @@ describe('settings dialog sections', () => {
       'security',
       'personalization',
       'interface',
+      'billing',
       'api',
       'data',
       'trash',

@@ -58,7 +58,7 @@ public final class PulpoFileClipboardModule: Module {
     }
 
     View(HistoryChatContextMenuView.self) {
-      Events("onAction", "onChatPress")
+      Events("onAction", "onChatPress", "onPreviewRequest")
 
       Prop("pinned") { (view, value: Bool) in
         view.setPinned(value)
@@ -78,14 +78,17 @@ public final class PulpoFileClipboardModule: Module {
       Prop("previewTitle") { (view, value: String) in
         view.setPreviewTitle(value)
       }
+      Prop("previewModelName") { (view, value: String) in
+        view.setPreviewModelName(value)
+      }
+      Prop("previewModelImageURI") { (view, value: String) in
+        view.setPreviewModelImageURI(value)
+      }
       Prop("previewBody") { (view, value: String) in
         view.setPreviewBody(value)
       }
       Prop("previewMetadata") { (view, value: String) in
         view.setPreviewMetadata(value)
-      }
-      Prop("previewImageURI") { (view, value: String) in
-        view.setPreviewImageURI(value)
       }
     }
   }

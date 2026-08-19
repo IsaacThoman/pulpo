@@ -1,8 +1,9 @@
 import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, personalizationSettingsSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
+import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, backupJobs, banners, exportJobs, models } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
@@ -10,7 +11,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
 import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
-import { encryptSecret } from '../lib/crypto.js'
+import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { resolveLegacyOcrCatalogModel } from '../responses/catalog-model-runtime.js'
@@ -109,6 +110,38 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
     const value = parseWebToolsSettings(row?.value)
     return publicWebToolsSettings(value)
+  })
+
+  app.post('/api/admin/settings/web-tools/:provider/api-key/reveal', {
+    config: { rateLimit: { max: 10, timeWindow: '5 minutes' } },
+  }, async (request, reply) => {
+    const admin = requireAdmin(request)
+    const { provider } = z.object({ provider: webToolProviderSchema }).parse(request.params)
+    const input = secretRevealInputSchema.parse(request.body)
+    const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
+    const settings = parseWebToolsSettings(row?.value)
+    const encryptedApiKey = provider === 'kagi'
+      ? settings.encryptedKagiApiKey
+      : settings.encryptedFirecrawlApiKey
+    if (!encryptedApiKey) throw notFound('API key')
+
+    try {
+      await requireSecretRevealAuth(admin.id, input.currentPassword, input.verificationCode)
+    } catch (cause) {
+      await db.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'settings.web_tools.api_key.reveal_denied',
+        targetType: 'web_tool_provider', targetId: provider,
+      })
+      throw cause
+    }
+
+    const apiKey = decryptSecret(encryptedApiKey, getConfig().ENCRYPTION_KEY)
+    await db.insert(auditEvents).values({
+      id: newId(), actorUserId: admin.id, action: 'settings.web_tools.api_key.reveal',
+      targetType: 'web_tool_provider', targetId: provider,
+    })
+    reply.header('cache-control', 'no-store')
+    return { apiKey }
   })
 
   app.patch('/api/admin/settings/web-tools', async (request) => {

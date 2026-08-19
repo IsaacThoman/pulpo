@@ -200,6 +200,12 @@ export const sensitiveActionInputSchema = z.object({
 })
 export type SensitiveActionInput = z.infer<typeof sensitiveActionInputSchema>
 
+export const secretRevealInputSchema = z.object({
+  currentPassword: z.string().min(1).max(1024).optional(),
+  verificationCode: z.string().trim().min(6).max(32).optional(),
+}).refine((value) => value.currentPassword || value.verificationCode, 'Password or verification code is required')
+export type SecretRevealInput = z.infer<typeof secretRevealInputSchema>
+
 export const passkeySensitiveChangeSchema = sensitiveActionInputSchema
 
 export const beginPasskeyRegistrationInputSchema = passkeySensitiveChangeSchema.extend({
@@ -638,6 +644,7 @@ export type ModelPreferences = z.infer<typeof modelPreferencesSchema>
 /** Account-scoped visibility controls for optional primary sidebar links. */
 export const sidebarPinsSchema = z.object({
   usage: z.boolean().default(false),
+  billing: z.boolean().default(false),
   friends: z.boolean().default(false),
   apiKeys: z.boolean().default(false),
 })
@@ -778,7 +785,6 @@ export const createModelSchema = z.object({
   maxOutputTokens: z.number().int().positive(),
   compactionEnabled: z.boolean().default(true),
   compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(100_000),
-  agentCompactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(180_000),
   compactionRetainedTurns: z.number().int().min(1).max(32).default(4),
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),
@@ -854,6 +860,8 @@ export const agentSettingsSchema = z.object({
   responseTimeoutSeconds: z.number().int().min(60).max(86_400).default(1_800),
   commandTimeoutSeconds: z.number().int().min(1).max(3_600).default(600),
   maxToolOutputBytes: z.number().int().min(1_024).max(10_000_000).default(100_000),
+  billWorkspaces: z.boolean().default(false),
+  workspacePricePerMinuteMicros: z.number().int().min(0).max(1_000_000_000).default(10_000),
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
@@ -1347,7 +1355,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends', 'billing'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({

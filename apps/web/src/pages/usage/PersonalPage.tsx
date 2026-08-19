@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { Clock } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
@@ -54,6 +55,7 @@ interface PersonalRecordsPage {
 
 export function PersonalPage() {
   const authUser = useAuth((state) => state.user)
+  const billingEnabled = useAuth((state) => state.billingEnabled)
   const userId = authUser?.id
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<Metric>('cost')
@@ -108,7 +110,7 @@ export function PersonalPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="text-lg font-medium">{me.name}</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
@@ -120,6 +122,12 @@ export function PersonalPage() {
           <div className="text-2xl font-medium text-emerald-600 dark:text-emerald-400">
             {formatBalance(me.balance)}
           </div>
+          {billingEnabled && <Link
+            to="/billing?topup=1"
+            className="mt-1 inline-block text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          >
+            Add credits
+          </Link>}
         </div>
       </div>
 

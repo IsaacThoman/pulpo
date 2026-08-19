@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
+  CreditCard,
   ChevronRight,
   Folder as FolderIcon,
   FolderInput,
@@ -59,6 +60,7 @@ import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
+import { fetchBillingSummary } from '@/lib/billing'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -667,6 +669,14 @@ export function Sidebar({
     refetchOnWindowFocus: 'always',
   })
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
+  const billingEnabled = useAuth((s) => s.billingEnabled)
+  const billingQuery = useQuery({
+    queryKey: ['billing', user?.id],
+    queryFn: fetchBillingSummary,
+    enabled: Boolean(billingEnabled && user?.id && user.role !== 'pending'),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
   const sidebarPins = useSettings((s) => s.sidebarPins)
   const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
@@ -982,6 +992,7 @@ export function Sidebar({
           {iconBtn('New chat', startNewChat, <SquarePen className="size-4" />)}
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
           {sidebarPins.usage && iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
+          {billingEnabled && sidebarPins.billing && iconBtn('Billing', () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingFriendsQuery.data?.count)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
@@ -1158,7 +1169,25 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            {billingEnabled && billingQuery.data?.weekly && (
+              <div className="px-2 pb-2 pt-2">
+                <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
+                  <span>Weekly usage</span>
+                  <span className="tabular-nums">{billingQuery.data.weekly.remainingPercentage}% left</span>
+                </div>
+                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full bg-emerald-500 transition-[width]"
+                    style={{ width: `${billingQuery.data.weekly.remainingPercentage}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
+            {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
+            {billingEnabled && billingQuery.data?.onHold && (
+              <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">Billing usage is on hold</div>
+            )}
             {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
             {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
             <DropdownMenuSeparator />

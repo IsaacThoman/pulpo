@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { RequireAuth } from '@/components/auth/RequireAuth'
@@ -12,6 +12,7 @@ const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((modul
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
 const FriendsPage = lazy(() => import('@/pages/FriendsPage').then((module) => ({ default: module.FriendsPage })))
 const ApiKeysPage = lazy(() => import('@/pages/ApiKeysPage').then((module) => ({ default: module.ApiKeysPage })))
+const BillingPage = lazy(() => import('@/pages/BillingPage').then((module) => ({ default: module.BillingPage })))
 const AdminLayout = lazy(() => import('@/pages/admin/AdminLayout').then((module) => ({ default: module.AdminLayout })))
 const AdminUsersPage = lazy(() => import('@/pages/admin/AdminUsersPage').then((module) => ({ default: module.AdminUsersPage })))
 const AdminProvidersPage = lazy(() => import('@/pages/admin/AdminProvidersPage').then((module) => ({ default: module.AdminProvidersPage })))
@@ -22,6 +23,7 @@ const AdminUsagePage = lazy(() => import('@/pages/admin/AdminUsagePage').then((m
 const AdminUsageLayout = lazy(() => import('@/pages/admin/AdminUsageLayout').then((module) => ({ default: module.AdminUsageLayout })))
 const AdminWorkspacesPage = lazy(() => import('@/pages/admin/AdminWorkspacesPage').then((module) => ({ default: module.AdminWorkspacesPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
+const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((module) => ({ default: module.AdminBillingPage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
 const LoginOptionsPage = lazy(() => import('@/pages/auth/LoginOptionsPage').then((module) => ({ default: module.LoginOptionsPage })))
 const SetupPage = lazy(() => import('@/pages/auth/SetupPage').then((module) => ({ default: module.SetupPage })))
@@ -34,6 +36,17 @@ const PrivacyPage = lazy(() => import('@/pages/PrivacyPage').then((module) => ({
 const SupportPage = lazy(() => import('@/pages/SupportPage').then((module) => ({ default: module.SupportPage })))
 const MobilePasskeyPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyPage })))
 const MobilePasskeyEnrollmentPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyEnrollmentPage })))
+
+function RequireBilling({ children }: { children: ReactNode }) {
+  const checkingSession = useAuth((state) => state.checkingSession)
+  const billingEnabled = useAuth((state) => state.billingEnabled)
+
+  if (checkingSession) {
+    return <div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">Loading billing…</div>
+  }
+
+  return billingEnabled ? children : <Navigate to="/usage" replace />
+}
 
 export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
@@ -69,6 +82,7 @@ export default function App() {
             </Route>
             <Route path="friends" element={<FriendsPage />} />
             <Route path="api-keys" element={<ApiKeysPage />} />
+            <Route path="billing" element={<RequireBilling><BillingPage /></RequireBilling>} />
             <Route element={<RequireAdmin />}>
               <Route path="admin" element={<AdminLayout />}>
                 <Route index element={<Navigate to="users" replace />} />
@@ -81,6 +95,7 @@ export default function App() {
                   <Route index element={<AdminUsagePage />} />
                   <Route path="workspaces" element={<AdminWorkspacesPage />} />
                 </Route>
+                <Route path="billing" element={<RequireBilling><AdminBillingPage /></RequireBilling>} />
                 <Route path="settings" element={<AdminSettingsPage />} />
               </Route>
             </Route>

@@ -20,6 +20,7 @@ declare module 'fastify' {
   interface FastifyRequest {
     user: AuthenticatedUser | null
     apiKeyId: string | null
+    rawBody: string | null
   }
 }
 

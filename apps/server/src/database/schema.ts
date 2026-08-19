@@ -685,11 +685,20 @@ export const budgetReservations = pgTable('budget_reservations', {
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
+  weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
+  weeklyReservedMicros: bigint('weekly_reserved_micros', { mode: 'number' }).notNull().default(0),
+  balanceReservedMicros: bigint('balance_reserved_micros', { mode: 'number' }).notNull().default(0),
   settledAmountMicros: bigint('settled_amount_micros', { mode: 'number' }),
+  settledWeeklyMicros: bigint('settled_weekly_micros', { mode: 'number' }),
+  settledBalanceMicros: bigint('settled_balance_micros', { mode: 'number' }),
   status: reservationStatusEnum('status').notNull().default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   settledAt: timestamp('settled_at', { withTimezone: true }),
-}, (table) => [uniqueIndex('reservation_response_unique').on(table.responseId)])
+}, (table) => [
+  uniqueIndex('reservation_response_unique').on(table.responseId),
+  index('reservation_user_status_idx').on(table.userId, table.status),
+  check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.weeklyReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
+])
 
 export const creditLedger = pgTable('credit_ledger', {
   id: uuid('id').primaryKey(),
@@ -715,9 +724,113 @@ export const usageEvents = pgTable('usage_events', {
   outputTokens: integer('output_tokens').notNull(),
   reasoningTokens: integer('reasoning_tokens').notNull().default(0),
   costMicros: bigint('cost_micros', { mode: 'number' }).notNull(),
+  weeklyCostMicros: bigint('weekly_cost_micros', { mode: 'number' }).notNull().default(0),
+  balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),
+  weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('usage_response_unique').on(table.responseId), index('usage_user_created_idx').on(table.userId, table.createdAt)])
+
+export const billingAccounts = pgTable('billing_accounts', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  polarCustomerId: text('polar_customer_id'),
+  weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
+  holdAt: timestamp('hold_at', { withTimezone: true }),
+  holdReason: text('hold_reason'),
+  holdReference: text('hold_reference'),
+  holdClearedAt: timestamp('hold_cleared_at', { withTimezone: true }),
+  holdClearedBy: uuid('hold_cleared_by').references(() => users.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('billing_accounts_polar_customer_unique').on(table.polarCustomerId),
+  check('billing_accounts_weekly_override_check', sql`${table.weeklyLimitOverrideMicros} is null or ${table.weeklyLimitOverrideMicros} >= 0`),
+])
+
+export const billingSubscriptions = pgTable('billing_subscriptions', {
+  polarSubscriptionId: text('polar_subscription_id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  polarProductId: text('polar_product_id').notNull(),
+  plan: text('plan').notNull(),
+  status: text('status').notNull(),
+  cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
+  currentPeriodStart: timestamp('current_period_start', { withTimezone: true }),
+  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
+  paidThrough: timestamp('paid_through', { withTimezone: true }),
+  providerModifiedAt: timestamp('provider_modified_at', { withTimezone: true }).notNull(),
+  ...timestamps,
+}, (table) => [
+  index('billing_subscriptions_user_idx').on(table.userId),
+  index('billing_subscriptions_status_idx').on(table.status),
+  check('billing_subscriptions_plan_check', sql`${table.plan} in ('eight', 'fat')`),
+])
+
+export const billingCheckouts = pgTable('billing_checkouts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  idempotencyKey: text('idempotency_key').notNull(),
+  polarCheckoutId: text('polar_checkout_id'),
+  kind: text('kind').notNull(),
+  plan: text('plan'),
+  requestedCreditCents: integer('requested_credit_cents'),
+  chargeCents: integer('charge_cents'),
+  status: text('status').notNull().default('creating'),
+  checkoutUrl: text('checkout_url'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('billing_checkouts_user_idempotency_unique').on(table.userId, table.idempotencyKey),
+  uniqueIndex('billing_checkouts_polar_unique').on(table.polarCheckoutId),
+  index('billing_checkouts_user_created_idx').on(table.userId, table.createdAt),
+  check('billing_checkouts_kind_check', sql`${table.kind} in ('credits', 'subscription')`),
+])
+
+export const billingOrders = pgTable('billing_orders', {
+  polarOrderId: text('polar_order_id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  polarCheckoutId: text('polar_checkout_id'),
+  polarSubscriptionId: text('polar_subscription_id'),
+  polarProductId: text('polar_product_id').notNull(),
+  billingReason: text('billing_reason').notNull(),
+  status: text('status').notNull(),
+  currency: text('currency').notNull(),
+  subtotalAmountCents: integer('subtotal_amount_cents').notNull().default(0),
+  discountAmountCents: integer('discount_amount_cents').notNull().default(0),
+  netAmountCents: integer('net_amount_cents').notNull().default(0),
+  taxAmountCents: integer('tax_amount_cents').notNull().default(0),
+  totalAmountCents: integer('total_amount_cents').notNull().default(0),
+  platformFeeAmountCents: integer('platform_fee_amount_cents').notNull().default(0),
+  refundedAmountCents: integer('refunded_amount_cents').notNull().default(0),
+  requestedCreditCents: integer('requested_credit_cents'),
+  grantedCreditMicros: bigint('granted_credit_micros', { mode: 'number' }).notNull().default(0),
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index('billing_orders_user_created_idx').on(table.userId, table.createdAt),
+  index('billing_orders_subscription_idx').on(table.polarSubscriptionId),
+  index('billing_orders_paid_idx').on(table.paidAt),
+])
+
+export const billingWebhookEvents = pgTable('billing_webhook_events', {
+  providerEventId: text('provider_event_id').primaryKey(),
+  type: text('type').notNull(),
+  resourceId: text('resource_id'),
+  status: text('status').notNull().default('processing'),
+  error: text('error'),
+  receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  processedAt: timestamp('processed_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index('billing_webhook_status_idx').on(table.status, table.receivedAt)])
+
+export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.periodStart] }),
+  check('weekly_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
 
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {
   day: timestamp('day', { withTimezone: true }).notNull(),

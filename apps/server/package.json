@@ -25,6 +25,7 @@
     "@fastify/helmet": "^13.0.1",
     "@fastify/multipart": "^10.1.0",
     "@fastify/rate-limit": "^10.3.0",
+    "@polar-sh/sdk": "^0.49.0",
     "@pulpo/client-core": "0.1.0",
     "@pulpo/contracts": "0.1.0",
     "@simplewebauthn/server": "^13.3.2",

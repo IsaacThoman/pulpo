@@ -19,7 +19,7 @@ import { createWorkspaceTools } from './tools.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { buildAgentSystemPrompt, buildAgentUserPrompt } from './policy.js'
 import { runPostResponseTasks } from '../responses/post-tasks.js'
-import { calculateCostMicros } from '../accounting/pricing.js'
+import { calculateCostMicros, workspaceHoldMicros, workspaceUsageMicros } from '../accounting/pricing.js'
 import { truncateUtf8 } from './output.js'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 import { messagesForPersistence } from './context.js'
@@ -30,9 +30,16 @@ import { KagiClient } from './kagi.js'
 import { createWebTools, type WebProviderExecution } from './web-tools.js'
 import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
-import { estimateInputTokens } from '../accounting/pricing.js'
-import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
-import { trackInternalModelCall } from '../responses/model-calls.js'
+import { retainedEntries } from '../responses/compaction.js'
+import {
+  agentCompactionItemId,
+  agentCompactionPrompt,
+  compactedAgentHandoffMessage,
+  shouldCompactAgentContext,
+  shouldCompactAgentStream,
+  splitAgentContext,
+} from './compaction.js'
+import { isInsufficientBalanceError, trackBilledInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
 import { sanitizeContextForStorage, sanitizeOutputForClient } from '../responses/public-output.js'
@@ -175,8 +182,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
+  let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
     allowCache: !chatState?.temporary,
+    responseId,
+    onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
   })
   const attachmentIds = (Array.isArray(record.response.input) ? record.response.input : []).flatMap((item) => {
     const content = (item as { content?: unknown }).content
@@ -236,6 +246,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   ])
   let accruedCostMicros = Number(previousModelCost?.total ?? 0)
   let accruedWebToolCostMicros = Number(previousWebToolCost?.total ?? 0)
+  const [previousSidecarCost] = await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
+    .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'tool')))
+  sidecarCostMicros += Number(previousSidecarCost?.total ?? 0)
   const billingTurns: Array<Record<string, unknown>> = []
   const modelTurnStartedAt = new Map<number, number>()
   const turnDurationsMs = new Map<number, number>()
@@ -260,6 +273,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   ))
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
+  let workspaceReadyAtMs: number | undefined
+  let workspaceHoldMicrosAmount = 0
+  let workspaceCostMicros = 0
   let skipMessageCount = parentMessages.length
   const archivedDisplayMessages: AgentMessage[] = []
   let lastSnapshotAt = 0
@@ -333,19 +349,17 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await emit('pulpo.compaction.updated', publicItem)
     await snapshotIfDue()
   }
-  const agentCycles = (messages: AgentMessage[]): AgentMessage[][] => {
-    const cycles: AgentMessage[][] = []
-    let current: AgentMessage[] = []
-    for (const message of messages) {
-      if (message.role === 'assistant' && current.length) {
-        cycles.push(current)
-        current = []
-      }
-      current.push(message)
-    }
-    if (current.length) cycles.push(current)
-    return cycles
-  }
+  const compactionThreshold = () => effectiveAgentCompactionThreshold(
+    active.model.compactionThresholdTokens,
+    active.model.contextWindow,
+  )
+  const estimateCompactionTokens = (messages: AgentMessage[], extraContext: unknown[] = []) => estimateAgentContextTokens({
+    systemPrompt: agentSystemPrompt,
+    messages: extraContext.length
+      ? [...messages, { role: 'user', content: extraContext.map((item) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n'), timestamp: Date.now() } as AgentMessage]
+      : messages,
+    tools: agent?.state.tools,
+  } as Context)
   const compactAgentContext = async (
     messages: AgentMessage[],
     thresholdTokens: number,
@@ -354,19 +368,25 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     extraContext: unknown[] = [],
     options: { force?: boolean; retainedTurns?: number; estimatedTokens?: number } = {},
   ): Promise<AgentMessage[]> => {
-    const estimatedTokens = options.estimatedTokens ?? estimateInputTokens([
-      agentSystemPrompt,
-      ...messages,
-      ...extraContext,
-    ])
-    const cycles = agentCycles(messages)
+    const estimatedTokens = options.estimatedTokens ?? estimateCompactionTokens(messages, extraContext)
     const retainedTurnCount = options.retainedTurns ?? active.model.compactionRetainedTurns
-    if (!active.model.compactionEnabled || (!options.force && estimatedTokens <= thresholdTokens) || cycles.length <= retainedTurnCount) return messages
-    const retained = cycles.slice(-retainedTurnCount).flat()
-    const older = cycles.slice(0, -retainedTurnCount).flat()
+    const split = splitAgentContext(messages, retainedTurnCount)
+    if (!shouldCompactAgentContext({
+      enabled: active.model.compactionEnabled,
+      force: options.force,
+      estimatedTokens,
+      thresholdTokens,
+      cycleCount: split.cycles.length,
+      retainedTurns: retainedTurnCount,
+    })) return messages
+    const { retained, older, retainedCycles } = split
     const storedRetained = sanitizeContextForStorage(retained)
-    const storedRetainedTurns = sanitizeContextForStorage(cycles.slice(-retainedTurnCount)) as unknown[][]
-    const id = `${responseId}:compaction:${phase}:${beforeAgentTurn ?? 0}`
+    const storedRetainedTurns = sanitizeContextForStorage(retainedCycles) as unknown[][]
+    const id = agentCompactionItemId(responseId, phase, beforeAgentTurn)
+    const existing = compactionItems.find((item) => item.id === id && item.status === 'completed' && item.model_id === active.model.id)
+    if (existing && !options.force) {
+      return [compactedAgentHandoffMessage(existing.summary, phase), ...retained]
+    }
     const started = Date.now()
     const base: CompactionItem = {
       id,
@@ -386,25 +406,29 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await updateCompaction(base)
     try {
       const client = createCatalogModelClient(active)
-      const result = await trackInternalModelCall({
+      const compactionInput = [{ role: 'user' as const, content: `${agentCompactionPrompt(phase)}\n\n${JSON.stringify(older)}` }]
+      const maxOutputTokens = Math.min(2_000, active.model.maxOutputTokens)
+      const billed = await trackBilledInternalModelCall({
+        responseId,
         requestLogId: requestLog.id,
         modelId: active.model.id,
         upstreamModelId: active.model.upstreamModelId,
         purpose: 'compaction',
+        requestInput: compactionInput,
+        maxOutputTokens,
+        required: true,
         invoke: () => client.responses.create({
           model: active.model.upstreamModelId,
-          input: [{ role: 'user', content: `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}` }],
+          input: compactionInput,
           store: false,
-          max_output_tokens: Math.min(2_000, active.model.maxOutputTokens),
+          max_output_tokens: maxOutputTokens,
         }),
       })
-      const item: CompactionItem = { ...base, status: 'completed', summary: result.output_text, duration_ms: Date.now() - started }
+      if ('skipped' in billed) throw new Error('Insufficient balance for conversation compaction')
+      sidecarCostMicros += billed.costMicros
+      const item: CompactionItem = { ...base, status: 'completed', summary: billed.result.output_text, duration_ms: Date.now() - started }
       await updateCompaction(item)
-      return [{
-        role: 'user',
-        content: [{ type: 'text', text: `[Compacted context]\n${result.output_text}` }],
-        timestamp: Date.now(),
-      } as AgentMessage, ...retained]
+      return [compactedAgentHandoffMessage(billed.result.output_text, phase), ...retained]
     } catch (error) {
       await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
       throw error
@@ -417,9 +441,25 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     skipMessageCount = compactedMessages.length
     return true
   }
-  const manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
+  let manager!: WorkspaceManager
+  manager = new WorkspaceManager(responseId, record.response.chatId, record.response.userId, async (state, details = {}) => {
     if ((state === 'waiting' || state === 'provisioning') && workspaceStartedAtMs === undefined) {
       workspaceStartedAtMs = Date.now()
+    }
+    if (state === 'ready' && settings.billWorkspaces && workspaceReadyAtMs === undefined) {
+      const hold = workspaceHoldMicros(settings.responseTimeoutSeconds, settings.workspacePricePerMinuteMicros)
+      if (hold > 0) {
+        try {
+          await extendBudgetReservationFixedCost(responseId, hold)
+          workspaceHoldMicrosAmount = hold
+          workspaceReadyAtMs = Date.now()
+        } catch (error) {
+          if (!isInsufficientBalanceError(error)) throw error
+          manager.disableTools()
+        }
+      } else {
+        workspaceReadyAtMs = Date.now()
+      }
     }
     const durationMs = workspaceStartedAtMs !== undefined
       && (state === 'ready' || state === 'expired' || state === 'unavailable' || state === 'continuing_without_agent')
@@ -502,18 +542,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         chatId: record.response.chatId,
         runId,
       })
-      const thresholdTokens = effectiveAgentCompactionThreshold(
-        active.model.agentCompactionThresholdTokens,
-        active.model.contextWindow,
-      )
+      const thresholdTokens = compactionThreshold()
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
       const estimatedTokens = estimateAgentContextTokens(preparedContext as Context)
-      if (estimatedTokens > thresholdTokens) {
+      if (estimatedTokens > thresholdTokens && shouldCompactAgentStream(modelTurns)) {
         const originalMessages = context.messages as AgentMessage[]
         const compactedMessages = await compactAgentContext(
           originalMessages,
           thresholdTokens,
-          modelTurns > 1 ? 'agent_mid_run' : 'pre_response',
+          'agent_mid_run',
           modelTurns || undefined,
           [],
           { force: true, estimatedTokens },
@@ -569,7 +606,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       if (modelTurns > settings.maxModelTurns) agent.abort()
       if (modelTurns > 1) await resizeBudgetReservation({
         responseId,
-        accruedCostMicros: accruedCostMicros + accruedWebToolCostMicros,
+        accruedCostMicros: accruedCostMicros + accruedWebToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
         requestInput: agent.state.messages,
         maxOutputTokens: active.model.maxOutputTokens,
         pricing: await getActivePricing(active.model.id),
@@ -714,10 +751,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     if (!existingRun) {
       resumedMessages = await compactAgentContext(
         resumedMessages,
-        effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+        compactionThreshold(),
         'pre_response',
         undefined,
         [initialPrompt],
+        { estimatedTokens: estimateCompactionTokens(resumedMessages, [initialPrompt]) },
       )
       agent.state.messages = resumedMessages
       agent.state.model = active.piModel
@@ -742,7 +780,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         } as Context)
         const compactedMessages = await compactAgentContext(
           originalMessages,
-          effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+          compactionThreshold(),
           'agent_mid_run',
           modelTurns,
           [],
@@ -775,13 +813,26 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
+    const postTaskCostMicros = await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
+      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
+      return 0
+    })
+    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
+      : 0
+    const additionalCostMicros = sidecarCostMicros + postTaskCostMicros + workspaceCostMicros
+    const cost = usage.totalTokens || additionalCostMicros > 0
+      ? await settleBudget({
+        responseId,
+        usage,
+        latencyMs: Date.now() - startedAt,
+        costMicrosOverride: usage.totalTokens ? accruedCostMicros + accruedWebToolCostMicros : 0,
+        additionalCostMicros,
+      })
+      : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
     await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
-    await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
-      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
-    })
   } catch (error) {
     const cancelled = await isCancellationRequested(responseId)
     const status = cancelled ? 'cancelled' : 'failed'
@@ -789,7 +840,19 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    const cost = usage.totalTokens ? await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: accruedCostMicros + accruedWebToolCostMicros }) : (await releaseBudget(responseId), 0)
+    workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
+      ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
+      : 0
+    const additionalCostMicros = sidecarCostMicros + workspaceCostMicros
+    const cost = usage.totalTokens || additionalCostMicros > 0
+      ? await settleBudget({
+        responseId,
+        usage,
+        latencyMs: Date.now() - startedAt,
+        costMicrosOverride: usage.totalTokens ? accruedCostMicros + accruedWebToolCostMicros : 0,
+        additionalCostMicros,
+      })
+      : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
     await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)

@@ -26,7 +26,7 @@ export const CI_PREVIEW_LAB_ID = '00000000-0000-7000-8000-000000000103'
 export const CI_PREVIEW_PRICING_ID = '00000000-0000-7000-8000-000000000104'
 export const CI_PREVIEW_MODEL_ID = 'gpt-5.6-luna'
 
-const PREVIEW_HOST_PATTERN = /^pulpo-pr-[1-9]\d*\.deathgrips\.org$/
+const PREVIEW_HOST_PATTERN = /^pulpo(?:-dev)?-pr-[1-9]\d*\.deathgrips\.org$/
 const LOCAL_PREVIEW_INSTANCE_ID = 'local-preview'
 const PROVIDER_BASE_URL = 'https://pulpo.baby/v1'
 const DEVELOPMENT_ENCRYPTION_KEY = 'development-only-key-change-me-000000'
@@ -70,7 +70,6 @@ export const CI_PREVIEW_MODEL = {
   maxOutputTokens: 16_384,
   compactionEnabled: true,
   compactionThresholdTokens: 96_000,
-  agentCompactionThresholdTokens: 112_000,
   compactionRetainedTurns: 4,
   executionMode: 'stream' as const,
   tags: ['Reasoning', 'Agent'],

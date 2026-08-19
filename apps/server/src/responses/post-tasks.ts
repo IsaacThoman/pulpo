@@ -5,7 +5,7 @@ import { persistGeneratedChatTitle } from '../chats/title-change.js'
 import { newId } from '../lib/ids.js'
 import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/application-settings.js'
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
-import { trackInternalModelCall } from './model-calls.js'
+import { trackBilledInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
 
 export const TITLE_MAX_OUTPUT_TOKENS = 1_024
@@ -23,6 +23,13 @@ export class TitleOutputValidationError extends Error {
   constructor(reason: string) {
     super(`Title output validation failed: ${reason}`)
     this.name = 'TitleOutputValidationError'
+  }
+}
+
+class TitleUnfundedError extends Error {
+  constructor() {
+    super('insufficient balance for title generation')
+    this.name = 'TitleUnfundedError'
   }
 }
 
@@ -98,12 +105,13 @@ export async function runPostResponseTasks(
   current: { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect },
   output: unknown[],
   requestLogId: string,
-): Promise<void> {
+): Promise<number> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
   const task = parseInterfaceSettings(setting?.value)
   const runtime = await resolvePostTaskRuntime(task.localTask, current)
   const client = createCatalogModelClient(runtime)
   const inputText = JSON.stringify(record.response.input).slice(0, 8_000)
+  let costMicros = 0
   if (task.title !== false && !record.response.parentResponseId) {
     const history = selectTitleHistory(
       JSON.stringify([...(record.response.input as unknown[]), ...output]),
@@ -111,57 +119,78 @@ export async function runPostResponseTasks(
       task.titleIncludeLastCharacters,
     )
     const maxOutputTokens = Math.min(TITLE_MAX_OUTPUT_TOKENS, runtime.model.maxOutputTokens)
-    const titleResult = await retryInvalidTitleOutput((attempt) => trackInternalModelCall({
-      requestLogId,
-      modelId: runtime.model.id,
-      upstreamModelId: runtime.model.upstreamModelId,
-      purpose: 'title',
-      retryAttempt: attempt + 1,
-      invoke: async () => {
-        const response = await client.responses.create({
-          model: runtime.model.upstreamModelId,
-          input: [{ role: 'user', content: titleTaskPrompt(task.titlePrompt || DEFAULT_TITLE_PROMPT, history, attempt) }],
-          store: false,
-          max_output_tokens: maxOutputTokens,
+    try {
+      const titleResult = await retryInvalidTitleOutput(async (attempt) => {
+        const prompt = titleTaskPrompt(task.titlePrompt || DEFAULT_TITLE_PROMPT, history, attempt)
+        const billed = await trackBilledInternalModelCall({
+          responseId: record.response.id,
+          requestLogId,
+          modelId: runtime.model.id,
+          upstreamModelId: runtime.model.upstreamModelId,
+          purpose: 'title',
+          requestInput: [{ role: 'user', content: prompt }],
+          maxOutputTokens,
+          retryAttempt: attempt + 1,
+          invoke: async () => {
+            const response = await client.responses.create({
+              model: runtime.model.upstreamModelId,
+              input: [{ role: 'user', content: prompt }],
+              store: false,
+              max_output_tokens: maxOutputTokens,
+            })
+            return {
+              id: response.id,
+              usage: response.usage,
+              title: validateGeneratedTitleResponse(response, maxOutputTokens),
+            }
+          },
         })
-        return {
-          id: response.id,
-          usage: response.usage,
-          title: validateGeneratedTitleResponse(response, maxOutputTokens),
-        }
-      },
-    }))
-    await persistGeneratedChatTitle({
-      userId: record.response.userId,
-      chatId: record.response.chatId,
-      title: titleResult.title,
-    })
+        if ('skipped' in billed) throw new TitleUnfundedError()
+        costMicros += billed.costMicros
+        return billed.result
+      })
+      await persistGeneratedChatTitle({
+        userId: record.response.userId,
+        chatId: record.response.chatId,
+        title: titleResult.title,
+      })
+    } catch (error) {
+      if (!(error instanceof TitleUnfundedError)) throw error
+    }
   }
   const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
   const values = (preference?.values ?? {}) as { memoryEnabled?: boolean }
-  if (!values.memoryEnabled) return
+  if (!values.memoryEnabled) return costMicros
   const [chat] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
-  if (chat?.temporary) return
-  const memoryResult = await trackInternalModelCall({
+  if (chat?.temporary) return costMicros
+  const memoryInput = [{ role: 'user' as const, content: `Extract at most 3 durable user facts or preferences worth remembering from this exchange. Return a JSON array of short strings, or [] if there are none.\n\n${inputText}` }]
+  const memoryMaxOutputTokens = Math.min(200, runtime.model.maxOutputTokens)
+  const memoryResult = await trackBilledInternalModelCall({
+    responseId: record.response.id,
     requestLogId,
     modelId: runtime.model.id,
     upstreamModelId: runtime.model.upstreamModelId,
     purpose: 'memory',
+    requestInput: memoryInput,
+    maxOutputTokens: memoryMaxOutputTokens,
     invoke: () => client.responses.create({
       model: runtime.model.upstreamModelId,
-      input: [{ role: 'user', content: `Extract at most 3 durable user facts or preferences worth remembering from this exchange. Return a JSON array of short strings, or [] if there are none.\n\n${inputText}` }],
+      input: memoryInput,
       store: false,
-      max_output_tokens: Math.min(200, runtime.model.maxOutputTokens),
+      max_output_tokens: memoryMaxOutputTokens,
     }),
   })
+  if ('skipped' in memoryResult) return costMicros
+  costMicros += memoryResult.costMicros
   try {
-    const parsed = JSON.parse(memoryResult.output_text.replace(/^```json\s*|```$/g, '').trim()) as unknown
-    if (!Array.isArray(parsed)) return
+    const parsed = JSON.parse(memoryResult.result.output_text.replace(/^```json\s*|```$/g, '').trim()) as unknown
+    if (!Array.isArray(parsed)) return costMicros
     const existing = new Set((await db.select({ content: memories.content }).from(memories).where(eq(memories.userId, record.response.userId))).map((row) => row.content.toLowerCase()))
     for (const content of parsed.slice(0, 3)) {
       if (typeof content !== 'string' || !content.trim() || existing.has(content.trim().toLowerCase())) continue
       await db.insert(memories).values({ id: newId(), userId: record.response.userId, sourceChatId: record.response.chatId, content: content.trim().slice(0, 2_000) })
     }
   } catch { /* malformed task output is non-fatal */ }
+  return costMicros
 }

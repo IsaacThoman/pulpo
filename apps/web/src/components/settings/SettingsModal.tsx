@@ -5,6 +5,7 @@ import type { InstructionPreset } from '@pulpo/contracts'
 import {
   Database,
   Camera,
+  CreditCard,
   Info,
   KeyRound,
   Monitor,
@@ -58,6 +59,7 @@ const SECTION_CONFIG = {
   security: { label: 'Security', icon: ShieldCheck },
   personalization: { label: 'Personalization', icon: Sparkles },
   interface: { label: 'Interface', icon: Monitor },
+  billing: { label: 'Billing', icon: CreditCard },
   api: { label: 'API keys', icon: KeyRound },
   data: { label: 'Data controls', icon: Database },
   trash: { label: 'Trash', icon: Trash2 },
@@ -162,6 +164,7 @@ export function SettingsModal({
   const s = useSettings()
   const user = useAuth((a) => a.user)
   const logout = useAuth((a) => a.logout)
+  const billingEnabled = useAuth((a) => a.billingEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
   const [memories, setMemories] = useState<Memory[]>([])
@@ -203,8 +206,8 @@ export function SettingsModal({
   const instructionPresets = personalizationQuery.data?.instructionPresets ?? []
 
   useEffect(() => {
-    if (open) setSection(initialSection)
-  }, [initialSection, open])
+    if (open) setSection(initialSection === 'billing' && !billingEnabled ? 'general' : initialSection)
+  }, [billingEnabled, initialSection, open])
 
   useEffect(() => {
     if (!open || !user) return
@@ -374,7 +377,10 @@ export function SettingsModal({
           <div className="flex w-full shrink-0 flex-col border-b bg-muted/30 p-2 sm:w-52 sm:border-r sm:border-b-0 sm:p-3">
             <div className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">Settings</div>
             <div className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
-              {SECTIONS.filter((sec) => sec.id !== 'api' || useAuth.getState().apiKeysEnabled).map((sec) => (
+              {SECTIONS.filter((sec) => (
+                (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
+                && (sec.id !== 'billing' || billingEnabled)
+              )).map((sec) => (
                 <button
                   key={sec.id}
                   onClick={() => setSection(sec.id)}
@@ -753,6 +759,28 @@ export function SettingsModal({
                   >
                     <KeyRound />
                     Manage API keys
+                  </Button>
+                </div>
+              )}
+
+              {billingEnabled && section === 'billing' && (
+                <div>
+                  <h2 className="text-base font-semibold">Billing</h2>
+                  <Separator className="my-3" />
+                  <div className="py-2">
+                    <div className="text-sm font-medium">Credits and plan</div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Add credits, manage your plan, and review payment history.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      onClose()
+                      navigate('/billing')
+                    }}
+                  >
+                    <CreditCard />
+                    Manage billing
                   </Button>
                 </div>
               )}

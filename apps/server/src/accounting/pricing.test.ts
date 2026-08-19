@@ -4,6 +4,8 @@ import {
   calculateCostMicros,
   calculateReservationMicros,
   calculateRollingReservationMicros,
+  workspaceHoldMicros,
+  workspaceUsageMicros,
 } from './pricing.js'
 
 const pricing = {
@@ -60,6 +62,19 @@ describe('pricing', () => {
   it('makes the current reservation replaceable while preserving other pending reservations', () => {
     expect(availableReservationCapacityMicros(50_000, 30_000, 20_000)).toBe(40_000)
     expect(availableReservationCapacityMicros(50_000, 30_000, 0)).toBe(20_000)
+  })
+
+  it('reserves whole workspace minutes for the response timeout', () => {
+    expect(workspaceHoldMicros(1_800, 10_000)).toBe(300_000)
+    expect(workspaceHoldMicros(61, 10_000)).toBe(20_000)
+    expect(workspaceHoldMicros(0, 10_000)).toBe(0)
+  })
+
+  it('settles workspace time in whole billed minutes after ready', () => {
+    expect(workspaceUsageMicros(1, 10_000)).toBe(10_000)
+    expect(workspaceUsageMicros(60_000, 10_000)).toBe(10_000)
+    expect(workspaceUsageMicros(60_001, 10_000)).toBe(20_000)
+    expect(workspaceUsageMicros(0, 10_000)).toBe(0)
   })
 
   it('releases unsuccessful fixed-cost allowances on the next resize', () => {

@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, sensitiveActionInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -20,7 +20,7 @@ import { getConfig } from '../config.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
-import { requireSensitiveAuth } from '../auth/sensitive-action.js'
+import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
@@ -198,9 +198,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const [provider] = await db.select({ encryptedApiKey: providerConnections.encryptedApiKey })
       .from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
-    const input = sensitiveActionInputSchema.parse(request.body)
+    const input = secretRevealInputSchema.parse(request.body)
     try {
-      await requireSensitiveAuth(admin.id, input.currentPassword, input.verificationCode)
+      await requireSecretRevealAuth(admin.id, input.currentPassword, input.verificationCode)
     } catch (cause) {
       await db.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'provider.api_key.reveal_denied', targetType: 'provider', targetId: id,
@@ -517,7 +517,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         maxOutputTokens: input.maxOutputTokens,
         compactionEnabled: input.compactionEnabled,
         compactionThresholdTokens: input.compactionThresholdTokens,
-        agentCompactionThresholdTokens: input.agentCompactionThresholdTokens,
+        agentCompactionThresholdTokens: input.compactionThresholdTokens,
         compactionRetainedTurns: input.compactionRetainedTurns,
         executionMode: input.executionMode,
         tags: input.tags,
@@ -562,7 +562,6 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const compactionPatch = z.object({
       compactionEnabled: z.boolean().optional(),
       compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
-      agentCompactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).optional(),
       compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
     }).parse(body)
     const [current] = await db.select().from(models).where(eq(models.id, id)).limit(1)
@@ -597,7 +596,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       maxOutputTokens: typeof body.maxOutputTokens === 'number' ? body.maxOutputTokens : undefined,
       compactionEnabled: compactionPatch.compactionEnabled,
       compactionThresholdTokens: compactionPatch.compactionThresholdTokens,
-      agentCompactionThresholdTokens: compactionPatch.agentCompactionThresholdTokens,
+      agentCompactionThresholdTokens: compactionPatch.compactionThresholdTokens,
       compactionRetainedTurns: compactionPatch.compactionRetainedTurns,
       executionMode: body.executionMode === 'background' ? 'background' : body.executionMode === 'stream' ? 'stream' : undefined,
       tags: Array.isArray(body.tags) ? body.tags : undefined,
