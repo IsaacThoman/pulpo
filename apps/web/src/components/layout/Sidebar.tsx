@@ -1170,7 +1170,7 @@ export function Sidebar({
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
             {billingEnabled && billingQuery.data?.weekly && (
-              <div className="px-3 pb-2 pt-2">
+              <div className="px-2 pb-2 pt-2">
                 <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
                   <span>Weekly usage</span>
                   <span className="tabular-nums">{billingQuery.data.weekly.remainingPercentage}% left</span>
