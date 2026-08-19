@@ -150,6 +150,16 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
 
   public func contextMenuInteraction(
     _ interaction: UIContextMenuInteraction,
+    willPerformPreviewActionForMenuWith configuration: UIContextMenuConfiguration,
+    animator: UIContextMenuInteractionCommitAnimating
+  ) {
+    animator.addCompletion { [weak self] in
+      self?.onChatPress()
+    }
+  }
+
+  public func contextMenuInteraction(
+    _ interaction: UIContextMenuInteraction,
     willEndFor configuration: UIContextMenuConfiguration,
     animator: UIContextMenuInteractionAnimating?
   ) {
