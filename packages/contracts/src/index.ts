@@ -854,6 +854,8 @@ export const agentSettingsSchema = z.object({
   responseTimeoutSeconds: z.number().int().min(60).max(86_400).default(1_800),
   commandTimeoutSeconds: z.number().int().min(1).max(3_600).default(600),
   maxToolOutputBytes: z.number().int().min(1_024).max(10_000_000).default(100_000),
+  billWorkspaces: z.boolean().default(false),
+  workspacePricePerMinuteMicros: z.number().int().min(0).max(1_000_000_000).default(10_000),
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 

@@ -128,6 +128,7 @@ export async function settleBudget(input: {
   latencyMs: number
   requestCount?: number
   costMicrosOverride?: number
+  additionalCostMicros?: number
 }): Promise<number> {
   const settlement = await db.transaction(async (tx) => {
     const [reservation] = await tx
@@ -146,7 +147,8 @@ export async function settleBudget(input: {
       ? await tx.select().from(modelPricingVersions).where(eq(modelPricingVersions.id, response.pricingVersionId)).limit(1)
       : []
     if (!response || !pricing) throw new AppError(409, 'pricing_snapshot_missing', 'Pricing snapshot is missing')
-    const cost = input.costMicrosOverride ?? (calculateCostMicros(input.usage, pricing) + Math.max(0, (input.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
+    const generationCost = input.costMicrosOverride ?? (calculateCostMicros(input.usage, pricing) + Math.max(0, (input.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
+    const cost = generationCost + Math.max(0, input.additionalCostMicros ?? 0)
     if (cost > reservation.amountMicros) throw new AppError(409, 'reservation_exceeded', 'Usage exceeded the reserved budget')
     const [user] = await tx
       .select()

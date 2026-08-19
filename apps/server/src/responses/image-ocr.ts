@@ -5,7 +5,9 @@ import { applicationSettings, models, ocrAttempts, ocrCacheEntries, requestLogs 
 import { newId } from '../lib/ids.js'
 import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
-import { trackInternalModelCall } from './model-calls.js'
+import { trackBilledInternalModelCall } from './model-calls.js'
+
+export const OCR_MAX_OUTPUT_TOKENS = 4_096
 import { createCatalogModelClient, resolveAvailableCatalogModel, resolveLegacyOcrCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
 import { modelImageRendition } from './model-image.js'
 
@@ -33,7 +35,7 @@ export function aggregateOcrStatus(current: string, next: 'completed' | 'failed'
 
 export async function createModelImageInterceptor(
   requestLogId: string,
-  options: { allowCache?: boolean } = {},
+  options: { allowCache?: boolean; responseId?: string; onBilledCost?: (costMicros: number) => void } = {},
 ): Promise<ModelImageInterceptor> {
   const [ocrRow, loggingRow, requestLog] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1).then((rows) => rows[0]),
@@ -88,18 +90,28 @@ export async function createModelImageInterceptor(
         let rawResponse: unknown
         if (!text) {
           const encoded = dataUrl(image)
-          rawResponse = await trackInternalModelCall({
+          const ocrInput = [{ role: 'user' as const, content: [{ type: 'input_image' as const, image_url: encoded, detail: 'auto' as const }] }]
+          const maxOutputTokens = Math.min(OCR_MAX_OUTPUT_TOKENS, runtime.model.maxOutputTokens)
+          if (!options.responseId) throw new Error('OCR billing requires a response id')
+          const billed = await trackBilledInternalModelCall({
+            responseId: options.responseId,
             requestLogId,
             modelId: runtime.model.id,
             upstreamModelId: runtime.model.upstreamModelId,
             purpose: 'ocr',
+            requestInput: ocrInput,
+            maxOutputTokens,
             invoke: () => client.responses.create({
               model: runtime.model.upstreamModelId,
               instructions: settings.systemPrompt,
-              input: [{ role: 'user', content: [{ type: 'input_image', image_url: encoded, detail: 'auto' }] }],
+              input: ocrInput,
               store: false,
+              max_output_tokens: maxOutputTokens,
             }),
           })
+          if ('skipped' in billed) return null
+          rawResponse = billed.result
+          options.onBilledCost?.(billed.costMicros)
           text = (rawResponse as { output_text?: string }).output_text?.trim()
           if (!text) throw new Error('OCR returned no text')
           if (cacheEnabled) {

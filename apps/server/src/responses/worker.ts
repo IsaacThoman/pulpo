@@ -29,7 +29,7 @@ import { parseLoggingSettings, parsePersonalizationSettings } from '../settings/
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
-import { providerReportedCostMicros, trackInternalModelCall } from './model-calls.js'
+import { EMPTY_USAGE, providerReportedCostMicros, trackBilledInternalModelCall } from './model-calls.js'
 import { providerCacheRequestOptions } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { modelImageRendition } from './model-image.js'
@@ -81,6 +81,27 @@ function normalizeUsage(usage: unknown): ResponseUsage {
     reasoningTokens: value.output_tokens_details?.reasoning_tokens ?? 0,
     totalTokens: value.total_tokens ?? (value.input_tokens ?? 0) + (value.output_tokens ?? 0),
   }
+}
+
+async function settleWithSidecars(input: {
+  responseId: string
+  usage: ResponseUsage | null | undefined
+  latencyMs: number
+  providerCostMicros?: number
+  additionalCostMicros: number
+}): Promise<number> {
+  const hasGeneration = Boolean(input.usage && input.usage.totalTokens > 0)
+  if (!hasGeneration && input.additionalCostMicros <= 0) {
+    await releaseBudget(input.responseId)
+    return 0
+  }
+  return settleBudget({
+    responseId: input.responseId,
+    usage: input.usage ?? EMPTY_USAGE,
+    latencyMs: input.latencyMs,
+    costMicrosOverride: hasGeneration ? input.providerCostMicros : 0,
+    additionalCostMicros: input.additionalCostMicros,
+  })
 }
 
 async function persistItems(responseId: string, output: unknown[]): Promise<void> {
@@ -163,6 +184,7 @@ async function contextualInput(
   history: Array<typeof responses.$inferSelect>,
   requestLogId: string,
   onCompactionUpdate: (item: CompactionItem) => Promise<void>,
+  onBilledCost: (costMicros: number) => void,
 ): Promise<{ input: unknown[]; compactionItems: CompactionItem[] }> {
   const [[preferences], [personalizationRow]] = await Promise.all([
     db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1),
@@ -193,19 +215,27 @@ async function contextualInput(
     history,
     existingItem,
     invoke: async (older) => {
-      const summaryResponse = await trackInternalModelCall({
+      const compactionInput = [{ role: 'user' as const, content: `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}` }]
+      const maxOutputTokens = Math.min(2_000, record.model.maxOutputTokens)
+      const billed = await trackBilledInternalModelCall({
+        responseId: record.response.id,
         requestLogId,
         modelId: record.model.id,
         upstreamModelId: record.model.upstreamModelId,
         purpose: 'compaction',
+        requestInput: compactionInput,
+        maxOutputTokens,
+        required: true,
         invoke: () => client.responses.create({
           model: record.model.upstreamModelId,
-          input: [{ role: 'user', content: `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}` }],
+          input: compactionInput,
           store: false,
-          max_output_tokens: Math.min(2_000, record.model.maxOutputTokens),
+          max_output_tokens: maxOutputTokens,
         }),
       })
-      return summaryResponse.output_text
+      if ('skipped' in billed) throw new Error('Insufficient balance for conversation compaction')
+      onBilledCost(billed.costMicros)
+      return billed.result.output_text
     },
     onUpdate: onCompactionUpdate,
   })
@@ -302,12 +332,14 @@ async function processGenerationAttempt(
             ? { message: outputError }
             : recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
         }).where(eq(responses.id, responseId))
-        if (usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
-        else await releaseBudget(responseId)
+        let additionalCostMicros = 0
         if (status === 'completed') {
           const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
-          if (requestLog) await runPostResponseTasks(record, record, output, requestLog.id).catch(() => undefined)
+          if (requestLog) additionalCostMicros = await runPostResponseTasks(record, record, output, requestLog.id).catch(() => 0)
         }
+        if (usage.totalTokens > 0 || additionalCostMicros > 0) {
+          await settleWithSidecars({ responseId, usage, latencyMs: Date.now() - startedAt, providerCostMicros, additionalCostMicros })
+        } else await releaseBudget(responseId)
         const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
         if (snapshot) await publishSnapshot(toSnapshot(snapshot))
         return
@@ -343,8 +375,11 @@ async function processGenerationAttempt(
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
+  let sidecarCostMicros = 0
   const imageInterceptor = await createModelImageInterceptor(requestLog.id, {
     allowCache: !chatState?.temporary,
+    responseId,
+    onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
   })
   let sequence = record.response.lastSequence
   const contextual = await contextualInput(client, record, history, requestLog.id, async (item) => {
@@ -362,7 +397,7 @@ async function processGenerationAttempt(
     }).where(eq(responses.id, responseId))
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
-  })
+  }, (costMicros) => { sidecarCostMicros += costMicros })
   const input = await prepareInputFiles(client, contextual.input, record.model, imageInterceptor)
   let output: unknown[] = [...contextual.compactionItems]
   let outputStarted = generationOutputHasStarted(output)
@@ -473,10 +508,16 @@ async function processGenerationAttempt(
     await db.update(responses).set({
       status: 'completed', output, usage, error: null, lastSequence: sequence, completedAt, updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
-    if (usage) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
-    else await releaseBudget(responseId)
-    await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
+    const postTaskCostMicros = await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
+      return 0
+    })
+    await settleWithSidecars({
+      responseId,
+      usage,
+      latencyMs: Date.now() - startedAt,
+      providerCostMicros,
+      additionalCostMicros: sidecarCostMicros + postTaskCostMicros,
     })
     await db.update(chats).set({ updatedAt: completedAt }).where(eq(chats.id, record.response.chatId))
     const [completed] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
@@ -494,8 +535,13 @@ async function processGenerationAttempt(
       updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
     if (cancelled || !options.willRetry) {
-      if (usage && usage.totalTokens > 0) await settleBudget({ responseId, usage, latencyMs: Date.now() - startedAt, costMicrosOverride: providerCostMicros })
-      else await releaseBudget(responseId)
+      await settleWithSidecars({
+        responseId,
+        usage,
+        latencyMs: Date.now() - startedAt,
+        providerCostMicros,
+        additionalCostMicros: sidecarCostMicros,
+      })
       const [terminal] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
       if (terminal) await publishSnapshot(toSnapshot(terminal))
     }
