@@ -302,7 +302,7 @@ private final class HistoryChatPreviewView: UIView {
     modelNameLabel.attributedText = Self.attributedText(
       modelName,
       font: .systemFont(ofSize: 14, weight: .semibold),
-      color: .white,
+      color: .label,
       kern: -0.1
     )
     modelNameLabel.lineBreakMode = .byTruncatingTail
@@ -377,7 +377,7 @@ private final class HistoryChatPreviewView: UIView {
       modelNameLabel.attributedText = Self.attributedText(
         modelName,
         font: .systemFont(ofSize: 14, weight: .semibold),
-        color: .white,
+        color: .label,
         kern: -0.1
       )
     }
