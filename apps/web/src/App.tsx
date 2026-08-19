@@ -38,7 +38,13 @@ const MobilePasskeyPage = lazy(() => import('@/pages/MobilePasskeyPage').then((m
 const MobilePasskeyEnrollmentPage = lazy(() => import('@/pages/MobilePasskeyPage').then((module) => ({ default: module.MobilePasskeyEnrollmentPage })))
 
 function RequireBilling({ children }: { children: ReactNode }) {
+  const checkingSession = useAuth((state) => state.checkingSession)
   const billingEnabled = useAuth((state) => state.billingEnabled)
+
+  if (checkingSession) {
+    return <div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">Loading billing…</div>
+  }
+
   return billingEnabled ? children : <Navigate to="/usage" replace />
 }
 

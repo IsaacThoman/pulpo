@@ -199,7 +199,7 @@ export function BillingPage() {
 
           <div className="grid gap-6 lg:grid-cols-5 lg:gap-0 lg:divide-x">
             <div className="py-1 lg:col-span-3 lg:pr-6">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />Available credit</div>
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />Account balance</div>
               <div className="mt-3 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
                 {summaryQuery.isLoading ? '—' : formatBalance((summary?.balanceMicros ?? 0) / 1_000_000)}
               </div>
