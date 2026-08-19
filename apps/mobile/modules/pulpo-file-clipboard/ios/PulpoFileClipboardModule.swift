@@ -81,6 +81,9 @@ public final class PulpoFileClipboardModule: Module {
       Prop("previewModelName") { (view, value: String) in
         view.setPreviewModelName(value)
       }
+      Prop("previewModelImageURI") { (view, value: String) in
+        view.setPreviewModelImageURI(value)
+      }
       Prop("previewBody") { (view, value: String) in
         view.setPreviewBody(value)
       }

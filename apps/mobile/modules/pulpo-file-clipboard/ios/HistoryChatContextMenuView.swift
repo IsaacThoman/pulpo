@@ -13,6 +13,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   private var expiresAt: Double = 0
   private var previewTitle = ""
   private var previewModelName = ""
+  private var previewModelImageURI = ""
   private var previewBody = "Start a new conversation with your selected model."
   private var previewMetadata = ""
   private weak var activePreviewController: HistoryChatPreviewViewController?
@@ -57,6 +58,11 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     activePreviewController?.update(modelName: value)
   }
 
+  public func setPreviewModelImageURI(_ value: String) {
+    previewModelImageURI = value
+    activePreviewController?.update(modelImageURI: value)
+  }
+
   public func setPreviewBody(_ value: String) {
     previewBody = value
     activePreviewController?.update(body: value)
@@ -86,6 +92,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       let controller = HistoryChatPreviewViewController(
         title: previewTitle,
         modelName: previewModelName,
+        modelImageURI: previewModelImageURI,
         body: previewBody,
         metadata: previewMetadata
       )
@@ -215,10 +222,11 @@ private final class HistoryChatPreviewViewController: UIViewController {
   private static let minimumHeight: CGFloat = 176
   private let previewView: HistoryChatPreviewView
 
-  init(title: String, modelName: String, body: String, metadata: String) {
+  init(title: String, modelName: String, modelImageURI: String, body: String, metadata: String) {
     let previewView = HistoryChatPreviewView(
       title: title,
       modelName: modelName,
+      modelImageURI: modelImageURI,
       body: body,
       metadata: metadata
     )
@@ -236,8 +244,8 @@ private final class HistoryChatPreviewViewController: UIViewController {
     preferredContentSize = previewView.bounds.size
   }
 
-  func update(title: String? = nil, modelName: String? = nil, body: String? = nil, metadata: String? = nil) {
-    previewView.update(title: title, modelName: modelName, body: body, metadata: metadata)
+  func update(title: String? = nil, modelName: String? = nil, modelImageURI: String? = nil, body: String? = nil, metadata: String? = nil) {
+    previewView.update(title: title, modelName: modelName, modelImageURI: modelImageURI, body: body, metadata: metadata)
     let fittingSize = previewView.systemLayoutSizeFitting(
       CGSize(width: Self.width, height: UIView.layoutFittingCompressedSize.height),
       withHorizontalFittingPriority: .required,
@@ -255,12 +263,15 @@ private final class HistoryChatPreviewViewController: UIViewController {
 }
 
 private final class HistoryChatPreviewView: UIView {
+  private static let imageCache = NSCache<NSString, UIImage>()
   private let titleLabel = UILabel()
+  private let modelImageView = UIImageView()
   private let modelNameLabel = UILabel()
   private let bodyLabel = UILabel()
   private let metadataLabel = UILabel()
+  private var imageLoadTask: URLSessionDataTask?
 
-  init(title: String, modelName: String, body: String, metadata: String) {
+  init(title: String, modelName: String, modelImageURI: String, body: String, metadata: String) {
     super.init(frame: .zero)
     backgroundColor = .secondarySystemBackground
     layer.cornerCurve = .continuous
@@ -287,7 +298,15 @@ private final class HistoryChatPreviewView: UIView {
     modelNameLabel.lineBreakMode = .byTruncatingTail
     modelNameLabel.numberOfLines = 1
 
-    let header = UIStackView(arrangedSubviews: [titleLabel, modelNameLabel])
+    modelImageView.contentMode = .scaleAspectFit
+    modelImageView.translatesAutoresizingMaskIntoConstraints = false
+
+    let modelIdentity = UIStackView(arrangedSubviews: [modelImageView, modelNameLabel])
+    modelIdentity.axis = .horizontal
+    modelIdentity.alignment = .center
+    modelIdentity.spacing = 7
+
+    let header = UIStackView(arrangedSubviews: [titleLabel, modelIdentity])
     header.axis = .vertical
     header.alignment = .fill
     header.spacing = 3
@@ -318,13 +337,20 @@ private final class HistoryChatPreviewView: UIView {
       content.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 20),
       content.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -20),
       content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
+      modelImageView.widthAnchor.constraint(equalToConstant: 18),
+      modelImageView.heightAnchor.constraint(equalToConstant: 18),
       upperSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 18),
       lowerSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
       upperSpacer.heightAnchor.constraint(equalTo: lowerSpacer.heightAnchor, constant: 2),
     ])
+    setModelImage(uri: modelImageURI)
   }
 
-  func update(title: String?, modelName: String?, body: String?, metadata: String?) {
+  deinit {
+    imageLoadTask?.cancel()
+  }
+
+  func update(title: String?, modelName: String?, modelImageURI: String?, body: String?, metadata: String?) {
     if let title {
       titleLabel.attributedText = Self.attributedText(
         title,
@@ -341,6 +367,7 @@ private final class HistoryChatPreviewView: UIView {
         kern: -0.1
       )
     }
+    if let modelImageURI { setModelImage(uri: modelImageURI) }
     if let body { bodyLabel.attributedText = Self.bodyText(body) }
     if let metadata {
       metadataLabel.attributedText = Self.attributedText(
@@ -350,6 +377,22 @@ private final class HistoryChatPreviewView: UIView {
       )
     }
     setNeedsLayout()
+  }
+
+  private func setModelImage(uri: String) {
+    imageLoadTask?.cancel()
+    imageLoadTask = nil
+    modelImageView.image = Self.image(for: uri)
+    guard modelImageView.image == nil,
+          let url = URL(string: uri),
+          let scheme = url.scheme?.lowercased(),
+          scheme == "http" || scheme == "https" else { return }
+    imageLoadTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+      guard let data, let image = UIImage(data: data) else { return }
+      Self.imageCache.setObject(image, forKey: uri as NSString)
+      DispatchQueue.main.async { self?.modelImageView.image = image }
+    }
+    imageLoadTask?.resume()
   }
 
   @available(*, unavailable)
@@ -479,5 +522,20 @@ private final class HistoryChatPreviewView: UIView {
         range: NSRange(location: match.range.location, length: label.length)
       )
     }
+  }
+
+  private static func image(for uri: String) -> UIImage? {
+    guard !uri.isEmpty else { return nil }
+    if let cached = imageCache.object(forKey: uri as NSString) { return cached }
+    let image: UIImage?
+    if let url = URL(string: uri), url.isFileURL {
+      image = UIImage(contentsOfFile: url.path)
+    } else if uri.hasPrefix("/") {
+      image = UIImage(contentsOfFile: uri)
+    } else {
+      image = UIImage(named: uri)
+    }
+    if let image { imageCache.setObject(image, forKey: uri as NSString) }
+    return image
   }
 }
