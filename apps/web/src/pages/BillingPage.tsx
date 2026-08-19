@@ -215,6 +215,7 @@ export function BillingPage() {
               {summary?.weekly && <div className="mt-4">
                 <div className="flex justify-between text-xs text-muted-foreground"><span>Weekly usage</span><span>{summary.weekly.remainingPercentage}% left</span></div>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.weekly.remainingPercentage}%` }} /></div>
+                <div className="mt-1.5 text-xs text-muted-foreground">Resets {new Date(summary.weekly.resetsAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
               <Button className="mt-4" variant={summary?.plan === 'baby' ? 'default' : 'outline'} size="sm" disabled={!summary || submitting} onClick={() => summary?.plan === 'baby' ? setPlanOpen(true) : void openPortal()}>
                 {summary?.plan === 'baby' ? 'Compare plans' : 'Manage plan'}
