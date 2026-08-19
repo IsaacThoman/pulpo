@@ -12,6 +12,7 @@ import { parseAgentSettings } from './settings/application-settings.js'
 import { accessibleChatCondition } from './chats/temporary.js'
 import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
 import { isTerminalResponseStatus } from './chats/message-queue-policy.js'
+import { reconcilePolarBilling } from './billing/reconciliation.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -89,10 +90,16 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'rollup') await rebuildDailyRollups()
   if (job.data.type === 'backup') await createFullBackup(String(job.data.payload?.jobId))
   if (job.data.type === 'restore') await restoreFullBackup(String(job.data.payload?.jobId))
+  if (job.data.type === 'billing-reconcile') await reconcilePolarBilling()
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
+if (config.PULPO_BILLING_ENABLED) {
+  await maintenanceQueue.upsertJobScheduler('billing-reconcile', { every: 60 * 60 * 1_000 }, {
+    name: 'billing-reconcile', data: { type: 'billing-reconcile' },
+  })
+}
 await maintenanceQueue.add('startup-cleanup', { type: 'cleanup' }, { jobId: `startup-cleanup-${Date.now()}` })
 await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-response-binary-context' }, {
   jobId: 'response-context-scrub-v1',

@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/stores/auth'
 
 const TABS = [
   { to: '/admin/users', label: 'Users', end: false },
@@ -13,12 +14,16 @@ const TABS = [
 ]
 
 export function AdminLayout() {
+  const billingEnabled = useAuth((state) => state.billingEnabled)
+  const tabs = billingEnabled
+    ? [...TABS.slice(0, -1), { to: '/admin/billing', label: 'Billing', end: false }, TABS.at(-1)!]
+    : TABS
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
         <h1 className="text-sm font-semibold">Admin panel</h1>
         <nav className="flex items-center gap-1">
-          {TABS.map((t) => (
+          {tabs.map((t) => (
             <NavLink
               key={t.to}
               to={t.to}

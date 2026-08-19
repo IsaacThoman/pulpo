@@ -29,6 +29,8 @@ import { ensureBootstrapPreset } from './bootstrap/ci-preview.js'
 import { registerCatalogIconRoutes } from './catalog/icon-routes.js'
 import { registerFriendRoutes } from './friends/routes.js'
 import { registerProfileRoutes } from './profile/routes.js'
+import { registerBillingRoutes } from './billing/routes.js'
+import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -36,6 +38,17 @@ export async function buildApp() {
     logger: { level: config.LOG_LEVEL },
     bodyLimit: 2 * 1024 * 1024,
     requestIdHeader: 'x-request-id',
+  })
+
+  app.removeContentTypeParser('application/json')
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (request, body, done) => {
+    const rawBody = typeof body === 'string' ? body : body.toString('utf8')
+    request.rawBody = rawBody
+    try {
+      done(null, rawBody.length > 0 ? JSON.parse(rawBody) : null)
+    } catch (error) {
+      done(error as Error)
+    }
   })
 
   await registerResponseCompression(app)
@@ -52,6 +65,7 @@ export async function buildApp() {
   app.decorateRequest('apiKeyId', null)
   app.decorateRequest('managementTokenId', null)
   app.decorateRequest('managementScopes', null)
+  app.decorateRequest('rawBody', null)
 
   app.addHook('onRequest', async (request) => {
     request.user = await authenticateSession(request)
@@ -112,6 +126,8 @@ export async function buildApp() {
   await registerAdminRoutes(app)
   await registerAdminSettingsRoutes(app)
   await registerAdminUsageRoutes(app)
+  await registerAdminBillingRoutes(app)
+  await registerBillingRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
   await registerPublicApiRoutes(app)

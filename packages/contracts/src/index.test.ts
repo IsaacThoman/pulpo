@@ -268,8 +268,8 @@ describe('shared contracts', () => {
   })
 
   it('defaults and validates account sidebar pins', () => {
-    expect(sidebarPinsSchema.parse({})).toEqual({ usage: false, friends: false, apiKeys: false })
-    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ usage: true, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.parse({})).toEqual({ usage: false, billing: false, friends: false, apiKeys: false })
+    expect(sidebarPinsSchema.parse({ usage: true })).toEqual({ usage: true, billing: false, friends: false, apiKeys: false })
     expect(sidebarPinsSchema.safeParse({ friends: 'no' }).success).toBe(false)
   })
 
@@ -365,7 +365,7 @@ describe('shared contracts', () => {
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
       nickname: '', favoriteModelIds: [], agentModes: {},
       instructionPresetSelections: {},
-      sidebarPins: { usage: false, friends: false, apiKeys: false },
+      sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(managementAccountSettingsSchema.parse({
