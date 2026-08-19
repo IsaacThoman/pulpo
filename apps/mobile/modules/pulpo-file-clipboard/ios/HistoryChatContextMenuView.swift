@@ -343,8 +343,8 @@ private final class HistoryChatPreviewView: UIView {
       content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
       modelImageView.widthAnchor.constraint(equalToConstant: 18),
       modelImageView.heightAnchor.constraint(equalToConstant: 18),
-      titleSpacer.heightAnchor.constraint(equalToConstant: 8),
-      bodySpacer.heightAnchor.constraint(equalToConstant: 12),
+      titleSpacer.heightAnchor.constraint(equalToConstant: 10),
+      bodySpacer.heightAnchor.constraint(equalToConstant: 10),
       lowerSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
     ])
     setModelImage(uri: modelImageURI)
