@@ -779,7 +779,6 @@ export const createModelSchema = z.object({
   maxOutputTokens: z.number().int().positive(),
   compactionEnabled: z.boolean().default(true),
   compactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(100_000),
-  agentCompactionThresholdTokens: z.number().int().min(2_000).max(1_000_000).default(180_000),
   compactionRetainedTurns: z.number().int().min(1).max(32).default(4),
   executionMode: executionModeSchema.default('stream'),
   tags: z.array(z.string()).default([]),

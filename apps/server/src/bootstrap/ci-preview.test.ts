@@ -216,7 +216,6 @@ describe('ci-preview bootstrap preset', () => {
       maxOutputTokens: 16_384,
       agentEnabled: true,
       compactionThresholdTokens: 96_000,
-      agentCompactionThresholdTokens: 112_000,
     })
     expect(ciPreviewAgentSettings(imageDigest)).toMatchObject({
       enabled: true,

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CompactionItem } from '@pulpo/contracts'
-import { compactConversation, effectiveHistoryChunks } from './compaction.js'
+import { COMPACTION_PROMPT, compactConversation, effectiveHistoryChunks } from './compaction.js'
 
 function turn(id: string, text = id, status = 'completed') {
   return {
@@ -12,6 +12,12 @@ function turn(id: string, text = id, status = 'completed') {
 }
 
 describe('conversation compaction', () => {
+  it('asks for a structured handoff summary', () => {
+    expect(COMPACTION_PROMPT).toContain('## Objective')
+    expect(COMPACTION_PROMPT).toContain('## Next Move')
+    expect(COMPACTION_PROMPT).toContain('## Relevant Files')
+  })
+
   it('keeps the configured number of complete exchanges and excludes the current user input from the summary', async () => {
     const invoke = vi.fn(async (_older: unknown[]) => 'summary')
     const updates: CompactionItem[] = []

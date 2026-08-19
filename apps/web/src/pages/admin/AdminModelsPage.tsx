@@ -51,7 +51,6 @@ interface AdminModel {
   maxOutputTokens: number
   compactionEnabled: boolean
   compactionThresholdTokens: number
-  agentCompactionThresholdTokens: number
   compactionRetainedTurns: number
   executionMode: 'stream' | 'background'
   tags: string[]
@@ -79,7 +78,7 @@ interface Lab { id: string; name: string; logo?: string; customIconId: string | 
 const empty = (providerConnectionId = '', labId: string | null = null): AdminModel => ({
   id: '', providerConnectionId, labId, upstreamModelId: '', name: '', description: '', enabled: true, visible: true, logo: null, customIconId: null, systemPrompt: '', agentEnabled: false, agentInstructions: '', defaultParameters: {}, interceptImagesWithOcr: false,
   contextWindow: 128_000, maxOutputTokens: 16_384, executionMode: 'stream', tags: [], allowedParameters: [],
-  compactionEnabled: true, compactionThresholdTokens: 100_000, agentCompactionThresholdTokens: 180_000, compactionRetainedTurns: 4,
+  compactionEnabled: true, compactionThresholdTokens: 100_000, compactionRetainedTurns: 4,
   useProviderCost: false,
   inputPriceMicros: 0, cachedInputPriceMicros: 0, cacheWritePriceMicros: 0, outputPriceMicros: 0, perRequestPriceMicros: 0,
   presets: [],
@@ -122,7 +121,6 @@ export function AdminModelsPage() {
 
   const canSave = !!draft?.id && !!draft?.name && !!draft?.upstreamModelId && !!draft.providerConnectionId && !!draft.labId
     && draft.compactionThresholdTokens >= 2_000 && draft.compactionThresholdTokens <= 1_000_000
-    && draft.agentCompactionThresholdTokens >= 2_000 && draft.agentCompactionThresholdTokens <= 1_000_000
     && draft.compactionRetainedTurns >= 1 && draft.compactionRetainedTurns <= 32
     && presetErrors.length === 0 && presetEditorValid && paramsValid
 
@@ -413,17 +411,14 @@ function ModelEditorBody({
         <div className="mt-3 rounded-lg border bg-muted/20 p-3">
           <ToggleRow
             label="Enable context compaction"
-            description="Summarize older context with this model when its configured threshold is reached."
+            description="Summarize older context when the token threshold is reached. Chat and agent turns share this limit; agent runs also compact mid-turn if live context grows."
             checked={draft.compactionEnabled}
             onChange={(compactionEnabled) => setDraft({ ...draft, compactionEnabled })}
           />
           {draft.compactionEnabled && (
-            <div className="mt-3 grid grid-cols-3 gap-3">
-              <Field label="Chat threshold tokens">
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <Field label="Threshold tokens">
                 <Input type="number" min={2000} max={1000000} className="tabular-nums" value={draft.compactionThresholdTokens} onChange={(e) => setDraft({ ...draft, compactionThresholdTokens: Number(e.target.value) })} />
-              </Field>
-              <Field label="Agent threshold tokens">
-                <Input type="number" min={2000} max={1000000} className="tabular-nums" value={draft.agentCompactionThresholdTokens} onChange={(e) => setDraft({ ...draft, agentCompactionThresholdTokens: Number(e.target.value) })} />
               </Field>
               <Field label="Recent turns kept">
                 <Input type="number" min={1} max={32} className="tabular-nums" value={draft.compactionRetainedTurns} onChange={(e) => setDraft({ ...draft, compactionRetainedTurns: Number(e.target.value) })} />
@@ -617,7 +612,6 @@ function ModelEditorBody({
                 intercept_images_with_ocr: draft.interceptImagesWithOcr,
                 compaction_enabled: draft.compactionEnabled,
                 compaction_threshold_tokens: draft.compactionThresholdTokens,
-                agent_compaction_threshold_tokens: draft.agentCompactionThresholdTokens,
                 compaction_retained_turns: draft.compactionRetainedTurns,
                 meta: {
                   model_logo: draft.logo,
