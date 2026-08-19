@@ -2325,10 +2325,7 @@ function MessageContextMenu({
         <View style={[styles.messageContextPreview, message.role === 'user' && styles.messageContextPreviewUser]}>
           <View style={styles.messageContextPreviewIdentity}>
             {message.role === 'assistant' ? <ModelMark model={model} size={23} /> : null}
-            <Text numberOfLines={1} style={[
-              styles.messageContextPreviewRole,
-              message.role === 'assistant' && styles.messageContextPreviewModelName,
-            ]}>
+            <Text numberOfLines={1} style={[styles.messageContextPreviewRole, styles.messageContextPreviewIdentityName]}>
               {message.role === 'user' ? 'YOU' : model.name}
             </Text>
           </View>
@@ -4930,7 +4927,7 @@ const styles = StyleSheet.create({
   messageContextPreviewUser: { backgroundColor: COLORS.secondary },
   messageContextPreviewIdentity: { minHeight: 23, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
   messageContextPreviewRole: { flexShrink: 1, color: COLORS.muted, fontSize: 11.5, fontWeight: '600', letterSpacing: 0.4 },
-  messageContextPreviewModelName: { color: '#FFFFFF', fontSize: 14, letterSpacing: -0.1 },
+  messageContextPreviewIdentityName: { color: '#FFFFFF', fontSize: 14, letterSpacing: -0.1 },
   messageContextPreviewMarkdown: { maxHeight: 286, overflow: 'hidden' },
   attachmentContextImagePreview: { borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
