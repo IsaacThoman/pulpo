@@ -9,7 +9,6 @@ import {
   billingCheckouts,
   billingOrders,
   billingSubscriptions,
-  users,
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { getBillingEntitlements } from './entitlements.js'
@@ -49,8 +48,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/billing/summary', async (request) => {
     const user = requireUser(request)
-    const [account, entitlements, subscriptions, orders] = await Promise.all([
-      db.select({ balanceMicros: users.balanceMicros }).from(users).where(eq(users.id, user.id)).limit(1),
+    const [entitlements, subscriptions, orders] = await Promise.all([
       getBillingEntitlements(user.id),
       db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
         .orderBy(desc(billingSubscriptions.updatedAt)),
@@ -60,7 +58,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const subscription = subscriptions.find((item) => item.plan === entitlements.plan) ?? null
     return {
       plan: entitlements.plan,
-      balanceMicros: account[0]?.balanceMicros ?? 0,
+      balanceMicros: user.balanceMicros,
       weekly: entitlements.weeklyRemainingPercentage === null ? null : {
         remainingPercentage: entitlements.weeklyRemainingPercentage,
         resetsAt: entitlements.weeklyResetAt.toISOString(),

@@ -45,6 +45,7 @@ function newCheckoutKey(): string {
 
 export function BillingPage() {
   const userId = useAuth((state) => state.user?.id)
+  const authBalanceMicros = useAuth((state) => state.user?.balanceMicros)
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const checkoutId = searchParams.get('checkout_id')
@@ -85,6 +86,7 @@ export function BillingPage() {
   }, [checkoutQuery.data?.status, userId])
 
   const summary = summaryQuery.data
+  const accountBalanceMicros = summary?.balanceMicros ?? authBalanceMicros
   const creditCents = creditCentsFromInput(creditAmountInput)
   const validPurchase = creditCents !== null && creditCents >= 500 && creditCents <= 50_000
   const quoteQuery = useQuery({
@@ -201,7 +203,7 @@ export function BillingPage() {
             <div className="py-1 lg:col-span-3 lg:pr-6">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />Account balance</div>
               <div className="mt-3 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                {summaryQuery.isLoading ? '—' : formatBalance((summary?.balanceMicros ?? 0) / 1_000_000)}
+                {accountBalanceMicros === undefined ? '—' : formatBalance(accountBalanceMicros / 1_000_000)}
               </div>
               <p className="mt-2 max-w-md text-xs text-muted-foreground">Credits are used for chats, API calls, and other metered model usage.</p>
             </div>
