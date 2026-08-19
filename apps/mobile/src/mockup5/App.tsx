@@ -4477,10 +4477,11 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
 type HistoryChatAction = HistoryChatContextMenuAction;
 const DEFAULT_HISTORY_PREVIEW = 'Start a new conversation with your selected model.';
 
-const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
+const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMenuAction, previewModelName, previewText, removeChatLabel, onChatAction, onOpenActions, onPreviewRequest, onSelectChat }: {
   active: boolean;
   chat: HistoryChatSummary;
   expirationMenuAction: HistoryChatExpiryMenuAction;
+  previewModelName: string;
   previewText: string;
   removeChatLabel: string;
   onChatAction: (chat: HistoryChatSummary, action: HistoryChatAction) => void;
@@ -4508,6 +4509,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
       expirationPeriodLabel={expirationMenuAction?.kind === 'enable' ? expirationMenuAction.periodLabel : ''}
       expiresAt={chat.expiresAt ?? 0}
       previewTitle={chat.title}
+      previewModelName={previewModelName}
       previewBody={previewText}
       previewMetadata={`${chat.section} · ${chat.time}`}
       onAction={(action) => onChatAction(chat, action)}
@@ -4551,6 +4553,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const trashChat = usePrototypeStore((state) => state.trashChat);
   const trashRetention = usePrototypeStore((state) => state.preferences.trashRetention);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
+  const models = usePrototypeStore((state) => state.models);
   const previewChats = usePrototypeStore((state) => state.chats);
   const togglePin = usePrototypeStore((state) => state.togglePin);
   const renameChat = usePrototypeStore((state) => state.renameChat);
@@ -4668,10 +4671,14 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     const previewText = source?.detailLoaded === false
       ? 'Loading preview…'
       : source?.messages.at(-1)?.text || DEFAULT_HISTORY_PREVIEW;
+    const previewModelName = models.find((model) => (
+      model.id === item.modelId || model.redirectTargetModelIds?.includes(item.modelId)
+    ))?.name ?? item.modelId;
     return <HistoryChatRow
       active={activeChatId === item.id}
       chat={item}
       expirationMenuAction={resolveHistoryChatExpiryMenuAction(item.expiresAt, automaticChatExpiration)}
+      previewModelName={previewModelName}
       previewText={previewText}
       removeChatLabel={removeChatLabel}
       onChatAction={runChatAction}
@@ -4679,7 +4686,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       onPreviewRequest={(chat) => onPreviewRequest(chat.id)}
       onSelectChat={selectHistoryChat}
     />;
-  }, [activeChatId, automaticChatExpiration, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
+  }, [activeChatId, automaticChatExpiration, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
     <View style={styles.panelRoot}>

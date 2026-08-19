@@ -12,6 +12,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
   private var expirationPeriodLabel = ""
   private var expiresAt: Double = 0
   private var previewTitle = ""
+  private var previewModelName = ""
   private var previewBody = "Start a new conversation with your selected model."
   private var previewMetadata = ""
   private weak var activePreviewController: HistoryChatPreviewViewController?
@@ -51,6 +52,11 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
     activePreviewController?.update(title: value)
   }
 
+  public func setPreviewModelName(_ value: String) {
+    previewModelName = value
+    activePreviewController?.update(modelName: value)
+  }
+
   public func setPreviewBody(_ value: String) {
     previewBody = value
     activePreviewController?.update(body: value)
@@ -79,6 +85,7 @@ public final class HistoryChatContextMenuView: ExpoView, UIContextMenuInteractio
       guard let self else { return nil }
       let controller = HistoryChatPreviewViewController(
         title: previewTitle,
+        modelName: previewModelName,
         body: previewBody,
         metadata: previewMetadata
       )
@@ -208,9 +215,10 @@ private final class HistoryChatPreviewViewController: UIViewController {
   private static let minimumHeight: CGFloat = 176
   private let previewView: HistoryChatPreviewView
 
-  init(title: String, body: String, metadata: String) {
+  init(title: String, modelName: String, body: String, metadata: String) {
     let previewView = HistoryChatPreviewView(
       title: title,
+      modelName: modelName,
       body: body,
       metadata: metadata
     )
@@ -228,8 +236,8 @@ private final class HistoryChatPreviewViewController: UIViewController {
     preferredContentSize = previewView.bounds.size
   }
 
-  func update(title: String? = nil, body: String? = nil, metadata: String? = nil) {
-    previewView.update(title: title, body: body, metadata: metadata)
+  func update(title: String? = nil, modelName: String? = nil, body: String? = nil, metadata: String? = nil) {
+    previewView.update(title: title, modelName: modelName, body: body, metadata: metadata)
     let fittingSize = previewView.systemLayoutSizeFitting(
       CGSize(width: Self.width, height: UIView.layoutFittingCompressedSize.height),
       withHorizontalFittingPriority: .required,
@@ -248,10 +256,11 @@ private final class HistoryChatPreviewViewController: UIViewController {
 
 private final class HistoryChatPreviewView: UIView {
   private let titleLabel = UILabel()
+  private let modelNameLabel = UILabel()
   private let bodyLabel = UILabel()
   private let metadataLabel = UILabel()
 
-  init(title: String, body: String, metadata: String) {
+  init(title: String, modelName: String, body: String, metadata: String) {
     super.init(frame: .zero)
     backgroundColor = .secondarySystemBackground
     layer.cornerCurve = .continuous
@@ -269,6 +278,20 @@ private final class HistoryChatPreviewView: UIView {
     titleLabel.lineBreakMode = .byTruncatingTail
     titleLabel.numberOfLines = 1
 
+    modelNameLabel.attributedText = Self.attributedText(
+      modelName,
+      font: .systemFont(ofSize: 14, weight: .semibold),
+      color: .white,
+      kern: -0.1
+    )
+    modelNameLabel.lineBreakMode = .byTruncatingTail
+    modelNameLabel.numberOfLines = 1
+
+    let header = UIStackView(arrangedSubviews: [titleLabel, modelNameLabel])
+    header.axis = .vertical
+    header.alignment = .fill
+    header.spacing = 3
+
     bodyLabel.attributedText = Self.bodyText(body)
     bodyLabel.lineBreakMode = .byTruncatingTail
     bodyLabel.numberOfLines = 4
@@ -283,7 +306,7 @@ private final class HistoryChatPreviewView: UIView {
 
     let upperSpacer = UIView()
     let lowerSpacer = UIView()
-    let content = UIStackView(arrangedSubviews: [titleLabel, upperSpacer, bodyLabel, lowerSpacer, metadataLabel])
+    let content = UIStackView(arrangedSubviews: [header, upperSpacer, bodyLabel, lowerSpacer, metadataLabel])
     content.axis = .vertical
     content.alignment = .fill
     content.spacing = 0
@@ -301,13 +324,21 @@ private final class HistoryChatPreviewView: UIView {
     ])
   }
 
-  func update(title: String?, body: String?, metadata: String?) {
+  func update(title: String?, modelName: String?, body: String?, metadata: String?) {
     if let title {
       titleLabel.attributedText = Self.attributedText(
         title,
         font: .systemFont(ofSize: 18, weight: .semibold),
         color: .label,
         kern: -0.35
+      )
+    }
+    if let modelName {
+      modelNameLabel.attributedText = Self.attributedText(
+        modelName,
+        font: .systemFont(ofSize: 14, weight: .semibold),
+        color: .white,
+        kern: -0.1
       )
     }
     if let body { bodyLabel.attributedText = Self.bodyText(body) }
