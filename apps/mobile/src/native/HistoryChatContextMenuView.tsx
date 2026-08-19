@@ -31,6 +31,7 @@ type HistoryChatContextMenuNativeProps = ViewProps & {
   expiresAt: number
   previewTitle: string
   previewModelName: string
+  previewModelImageURI: string
   previewBody: string
   previewMetadata: string
   onAction: (event: ActionEvent) => void

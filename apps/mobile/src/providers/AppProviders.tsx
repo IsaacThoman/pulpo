@@ -23,10 +23,19 @@ function KeyboardStateReconciler({ children }: { children: React.ReactNode }) {
   useEffect(() => startKeyboardStateReconciliation({
     addAppStateChangeListener: (listener) => AppState.addEventListener('change', listener),
     addKeyboardDidHideListener: (listener) => Keyboard.addListener('keyboardDidHide', listener),
+    addKeyboardDidShowListener: (listener) => Keyboard.addListener(
+      'keyboardDidShow',
+      (event) => listener(event.endCoordinates.height),
+    ),
+    getKeyboardHeight: () => Keyboard.metrics()?.height ?? null,
     isKeyboardVisible: () => Keyboard.isVisible(),
     reset: () => {
       height.value = 0
       progress.value = 0
+    },
+    syncVisible: (keyboardHeight) => {
+      height.value = -keyboardHeight
+      progress.value = 1
     },
   }), [height, progress])
 
