@@ -132,7 +132,7 @@ export function ModelSelector({
             customIcon={selected.labCustomIcon}
             className="size-5 shrink-0"
           />
-          <span className="min-w-0 truncate text-base text-white">{selected.name}</span>
+          <span className="min-w-0 truncate">{selected.name}</span>
           <ChevronDown
             className={cn(
               'size-3.5 shrink-0 text-muted-foreground transition-transform duration-200',
