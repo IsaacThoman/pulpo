@@ -167,17 +167,14 @@ describe('shared contracts', () => {
     const policy = createModelSchema.pick({
       compactionEnabled: true,
       compactionThresholdTokens: true,
-      agentCompactionThresholdTokens: true,
       compactionRetainedTurns: true,
     })
     expect(policy.parse({})).toEqual({
       compactionEnabled: true,
       compactionThresholdTokens: 100_000,
-      agentCompactionThresholdTokens: 180_000,
       compactionRetainedTurns: 4,
     })
     expect(policy.safeParse({ compactionThresholdTokens: 1_999 }).success).toBe(false)
-    expect(policy.safeParse({ agentCompactionThresholdTokens: 1_000_001 }).success).toBe(false)
     expect(policy.safeParse({ compactionRetainedTurns: 33 }).success).toBe(false)
   })
 

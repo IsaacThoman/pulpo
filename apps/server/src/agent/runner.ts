@@ -30,8 +30,15 @@ import { KagiClient } from './kagi.js'
 import { createWebTools, type WebProviderExecution } from './web-tools.js'
 import { FirecrawlClient, firecrawlCloudRequiresApiKey } from './firecrawl.js'
 import { createModelImageInterceptor, interceptAgentContextImages } from '../responses/image-ocr.js'
-import { estimateInputTokens } from '../accounting/pricing.js'
-import { COMPACTION_PROMPT, retainedEntries } from '../responses/compaction.js'
+import { retainedEntries } from '../responses/compaction.js'
+import {
+  agentCompactionItemId,
+  agentCompactionPrompt,
+  compactedAgentHandoffMessage,
+  shouldCompactAgentContext,
+  shouldCompactAgentStream,
+  splitAgentContext,
+} from './compaction.js'
 import { trackInternalModelCall } from '../responses/model-calls.js'
 import { createCatalogModelClient } from '../responses/catalog-model-runtime.js'
 import { effectiveAgentCompactionThreshold, estimateAgentContextTokens, shouldRetryContextOverflow } from './context-budget.js'
@@ -333,19 +340,17 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await emit('pulpo.compaction.updated', publicItem)
     await snapshotIfDue()
   }
-  const agentCycles = (messages: AgentMessage[]): AgentMessage[][] => {
-    const cycles: AgentMessage[][] = []
-    let current: AgentMessage[] = []
-    for (const message of messages) {
-      if (message.role === 'assistant' && current.length) {
-        cycles.push(current)
-        current = []
-      }
-      current.push(message)
-    }
-    if (current.length) cycles.push(current)
-    return cycles
-  }
+  const compactionThreshold = () => effectiveAgentCompactionThreshold(
+    active.model.compactionThresholdTokens,
+    active.model.contextWindow,
+  )
+  const estimateCompactionTokens = (messages: AgentMessage[], extraContext: unknown[] = []) => estimateAgentContextTokens({
+    systemPrompt: agentSystemPrompt,
+    messages: extraContext.length
+      ? [...messages, { role: 'user', content: extraContext.map((item) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n'), timestamp: Date.now() } as AgentMessage]
+      : messages,
+    tools: agent?.state.tools,
+  } as Context)
   const compactAgentContext = async (
     messages: AgentMessage[],
     thresholdTokens: number,
@@ -354,19 +359,25 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     extraContext: unknown[] = [],
     options: { force?: boolean; retainedTurns?: number; estimatedTokens?: number } = {},
   ): Promise<AgentMessage[]> => {
-    const estimatedTokens = options.estimatedTokens ?? estimateInputTokens([
-      agentSystemPrompt,
-      ...messages,
-      ...extraContext,
-    ])
-    const cycles = agentCycles(messages)
+    const estimatedTokens = options.estimatedTokens ?? estimateCompactionTokens(messages, extraContext)
     const retainedTurnCount = options.retainedTurns ?? active.model.compactionRetainedTurns
-    if (!active.model.compactionEnabled || (!options.force && estimatedTokens <= thresholdTokens) || cycles.length <= retainedTurnCount) return messages
-    const retained = cycles.slice(-retainedTurnCount).flat()
-    const older = cycles.slice(0, -retainedTurnCount).flat()
+    const split = splitAgentContext(messages, retainedTurnCount)
+    if (!shouldCompactAgentContext({
+      enabled: active.model.compactionEnabled,
+      force: options.force,
+      estimatedTokens,
+      thresholdTokens,
+      cycleCount: split.cycles.length,
+      retainedTurns: retainedTurnCount,
+    })) return messages
+    const { retained, older, retainedCycles } = split
     const storedRetained = sanitizeContextForStorage(retained)
-    const storedRetainedTurns = sanitizeContextForStorage(cycles.slice(-retainedTurnCount)) as unknown[][]
-    const id = `${responseId}:compaction:${phase}:${beforeAgentTurn ?? 0}`
+    const storedRetainedTurns = sanitizeContextForStorage(retainedCycles) as unknown[][]
+    const id = agentCompactionItemId(responseId, phase, beforeAgentTurn)
+    const existing = compactionItems.find((item) => item.id === id && item.status === 'completed' && item.model_id === active.model.id)
+    if (existing && !options.force) {
+      return [compactedAgentHandoffMessage(existing.summary, phase), ...retained]
+    }
     const started = Date.now()
     const base: CompactionItem = {
       id,
@@ -393,18 +404,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         purpose: 'compaction',
         invoke: () => client.responses.create({
           model: active.model.upstreamModelId,
-          input: [{ role: 'user', content: `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}` }],
+          input: [{ role: 'user', content: `${agentCompactionPrompt(phase)}\n\n${JSON.stringify(older)}` }],
           store: false,
           max_output_tokens: Math.min(2_000, active.model.maxOutputTokens),
         }),
       })
       const item: CompactionItem = { ...base, status: 'completed', summary: result.output_text, duration_ms: Date.now() - started }
       await updateCompaction(item)
-      return [{
-        role: 'user',
-        content: [{ type: 'text', text: `[Compacted context]\n${result.output_text}` }],
-        timestamp: Date.now(),
-      } as AgentMessage, ...retained]
+      return [compactedAgentHandoffMessage(result.output_text, phase), ...retained]
     } catch (error) {
       await updateCompaction({ ...base, status: 'failed', duration_ms: Date.now() - started, error: error instanceof Error ? error.message : String(error) })
       throw error
@@ -502,18 +509,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         chatId: record.response.chatId,
         runId,
       })
-      const thresholdTokens = effectiveAgentCompactionThreshold(
-        active.model.agentCompactionThresholdTokens,
-        active.model.contextWindow,
-      )
+      const thresholdTokens = compactionThreshold()
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
       const estimatedTokens = estimateAgentContextTokens(preparedContext as Context)
-      if (estimatedTokens > thresholdTokens) {
+      if (estimatedTokens > thresholdTokens && shouldCompactAgentStream(modelTurns)) {
         const originalMessages = context.messages as AgentMessage[]
         const compactedMessages = await compactAgentContext(
           originalMessages,
           thresholdTokens,
-          modelTurns > 1 ? 'agent_mid_run' : 'pre_response',
+          'agent_mid_run',
           modelTurns || undefined,
           [],
           { force: true, estimatedTokens },
@@ -714,10 +718,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     if (!existingRun) {
       resumedMessages = await compactAgentContext(
         resumedMessages,
-        effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+        compactionThreshold(),
         'pre_response',
         undefined,
         [initialPrompt],
+        { estimatedTokens: estimateCompactionTokens(resumedMessages, [initialPrompt]) },
       )
       agent.state.messages = resumedMessages
       agent.state.model = active.piModel
@@ -742,7 +747,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         } as Context)
         const compactedMessages = await compactAgentContext(
           originalMessages,
-          effectiveAgentCompactionThreshold(active.model.agentCompactionThresholdTokens, active.model.contextWindow),
+          compactionThreshold(),
           'agent_mid_run',
           modelTurns,
           [],
