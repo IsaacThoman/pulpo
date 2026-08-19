@@ -959,13 +959,13 @@ type GlassProps = Omit<ComponentProps<typeof GlassView>, 'isInteractive'> & {
   interactive?: boolean;
 };
 
-function Glass({ children, style, interactive = false, tintColor, ...props }: GlassProps) {
+function Glass({ children, style, interactive = false, tintColor, glassEffectStyle = 'regular', ...props }: GlassProps) {
   const colorScheme = useColorScheme();
   const { reduceTransparency } = useAccessibilityPreferences();
   const available = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && !reduceTransparency;
   if (!available) return <View {...props} style={[styles.glassFallback, style]}>{children}</View>;
   return (
-    <GlassView {...props} colorScheme={colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : undefined} glassEffectStyle="regular" isInteractive={interactive} style={style} tintColor={tintColor}>
+    <GlassView {...props} colorScheme={colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : undefined} glassEffectStyle={glassEffectStyle} isInteractive={interactive} style={style} tintColor={tintColor}>
       {children}
     </GlassView>
   );
@@ -4153,6 +4153,7 @@ function ChatView({
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
         <View style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}>
             <Glass
+              glassEffectStyle="clear"
               interactive
               style={styles.composer}
               tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
