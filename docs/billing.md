@@ -46,16 +46,16 @@ The end-user API returns the account balance and a clamped whole weekly percenta
 
 ## Reconciliation and recovery
 
-The worker reconciles Polar subscriptions and paid/refunded orders hourly. Admin → Billing exposes the last successful run, the most recent error, failed webhook count, and a **Sync now** action. Reconciliation feeds the same idempotent event handlers as signed webhooks, so replays do not duplicate grants.
+The worker reconciles Polar subscriptions and paid/refunded orders hourly. Admin → Billing exposes the last successful run, the most recent error, failed webhook rows, active holds, and a **Sync now** action. Orders, subscriptions, and webhook settings link out to the Polar dashboard. Reconciliation feeds the same idempotent event handlers as signed webhooks, so replays do not duplicate grants.
 
 Polar remains the system of record for payment and subscription state. Use its [customer portal](https://polar.sh/docs/features/customer-portal/introduction) for payment methods, invoices, cancellation, and plan changes, and its dashboard for [refunds](https://polar.sh/docs/features/refunds). Pulpo remains the system of record for account credit and weekly usage allocations.
 
 If a webhook fails:
 
-1. Inspect the failed event and reconciliation error in Admin → Billing and the server logs.
+1. Inspect the failed event list and reconciliation error in Admin → Billing, Polar webhook deliveries, and the server logs.
 2. Correct configuration or data problems without manually marking the event processed.
 3. Run **Sync now**. The worker retries the event through the normal handler.
-4. For a refund or dispute, reconcile the user balance in Admin → Users before clearing the billing hold with a note.
+4. For a refund or dispute, reconcile the user balance in Admin → Users, then clear the billing hold from Admin → Billing or Users with a note.
 
 ## Rollout checklist
 
