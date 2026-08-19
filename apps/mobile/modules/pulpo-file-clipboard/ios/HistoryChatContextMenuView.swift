@@ -306,11 +306,6 @@ private final class HistoryChatPreviewView: UIView {
     modelIdentity.alignment = .center
     modelIdentity.spacing = 7
 
-    let header = UIStackView(arrangedSubviews: [titleLabel, modelIdentity])
-    header.axis = .vertical
-    header.alignment = .fill
-    header.spacing = 3
-
     bodyLabel.attributedText = Self.bodyText(body)
     bodyLabel.lineBreakMode = .byTruncatingTail
     bodyLabel.numberOfLines = 4
@@ -323,9 +318,18 @@ private final class HistoryChatPreviewView: UIView {
     metadataLabel.lineBreakMode = .byTruncatingTail
     metadataLabel.numberOfLines = 1
 
-    let upperSpacer = UIView()
+    let titleSpacer = UIView()
+    let bodySpacer = UIView()
     let lowerSpacer = UIView()
-    let content = UIStackView(arrangedSubviews: [header, upperSpacer, bodyLabel, lowerSpacer, metadataLabel])
+    let content = UIStackView(arrangedSubviews: [
+      titleLabel,
+      titleSpacer,
+      modelIdentity,
+      bodySpacer,
+      bodyLabel,
+      lowerSpacer,
+      metadataLabel,
+    ])
     content.axis = .vertical
     content.alignment = .fill
     content.spacing = 0
@@ -339,9 +343,9 @@ private final class HistoryChatPreviewView: UIView {
       content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -20),
       modelImageView.widthAnchor.constraint(equalToConstant: 18),
       modelImageView.heightAnchor.constraint(equalToConstant: 18),
-      upperSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 18),
+      titleSpacer.heightAnchor.constraint(equalToConstant: 8),
+      bodySpacer.heightAnchor.constraint(equalToConstant: 12),
       lowerSpacer.heightAnchor.constraint(greaterThanOrEqualToConstant: 16),
-      upperSpacer.heightAnchor.constraint(equalTo: lowerSpacer.heightAnchor, constant: 2),
     ])
     setModelImage(uri: modelImageURI)
   }
