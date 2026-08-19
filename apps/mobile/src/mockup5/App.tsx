@@ -2302,24 +2302,34 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
 
 function MessageContextMenu({
   message,
+  model,
   onEdit,
   onRegenerate,
   children,
 }: {
   message: Message;
+  model: Model;
   onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const previewText = message.text.length > 2_000
+    ? `${message.text.slice(0, 1_999)}…`
+    : message.text;
 
   return (
     <NativeObjectContextMenu
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
       preview={(
         <View style={[styles.messageContextPreview, message.role === 'user' && styles.messageContextPreviewUser]}>
-          <Text style={styles.messageContextPreviewRole}>{message.role === 'user' ? 'YOU' : 'ASSISTANT'}</Text>
-          <Text numberOfLines={8} style={styles.messageContextPreviewText}>{message.text}</Text>
+          <View style={styles.messageContextPreviewIdentity}>
+            {message.role === 'assistant' ? <ModelMark model={model} size={23} /> : null}
+            <Text numberOfLines={1} style={styles.messageContextPreviewRole}>
+              {message.role === 'user' ? 'YOU' : model.name}
+            </Text>
+          </View>
+          <SafeMarkdown containerStyle={styles.messageContextPreviewMarkdown}>{previewText}</SafeMarkdown>
         </View>
       )}
       items={(
@@ -2815,7 +2825,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.text.length > 0 && (
-            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
                 <View style={styles.userBubble}>
                   <SafeMarkdown containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
@@ -2832,7 +2842,7 @@ const MessageRow = memo(function MessageRow({
             <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
           </View>
           {timeline.length ? (
-            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.assistantContent}>
                 {timeline.map((segment, index) => {
                   if (segment.kind === 'activity') {
@@ -2855,7 +2865,7 @@ const MessageRow = memo(function MessageRow({
               </View>
             </MessageContextMenu>
           ) : message.error ? (
-            <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
             </MessageContextMenu>
           ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
@@ -2881,7 +2891,7 @@ const MessageRow = memo(function MessageRow({
             </View>
           )}
           {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
-          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
+          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
           {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
             <Pressable
               accessibilityRole="button"
@@ -4913,10 +4923,11 @@ const styles = StyleSheet.create({
   sentFileName: { color: COLORS.text, fontSize: 13.5, fontWeight: '600' },
   sentFileMeta: { color: COLORS.muted, fontSize: 10.5, marginTop: 3 },
   messageText: { color: COLORS.text, fontSize: 15.5, lineHeight: 22.5 },
-  messageContextPreview: { width: 320, maxHeight: 360, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
+  messageContextPreview: { width: 320, maxHeight: 360, overflow: 'hidden', borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 20 },
   messageContextPreviewUser: { backgroundColor: COLORS.secondary },
-  messageContextPreviewRole: { color: COLORS.muted, fontSize: 10.5, fontWeight: '600', letterSpacing: 0.8, marginBottom: 10 },
-  messageContextPreviewText: { color: COLORS.text, fontSize: 16, lineHeight: 24 },
+  messageContextPreviewIdentity: { minHeight: 23, flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  messageContextPreviewRole: { flexShrink: 1, color: COLORS.muted, fontSize: 11.5, fontWeight: '600', letterSpacing: 0.4 },
+  messageContextPreviewMarkdown: { maxHeight: 286, overflow: 'hidden' },
   attachmentContextImagePreview: { borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
