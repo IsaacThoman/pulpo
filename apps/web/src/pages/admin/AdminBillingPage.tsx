@@ -1,19 +1,24 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CreditCard, DollarSign, ExternalLink, RefreshCw, Repeat2, UsersRound, WalletCards } from 'lucide-react'
+import { AlertTriangle, CreditCard, ExternalLink, RefreshCw, Repeat2, UsersRound, WalletCards } from 'lucide-react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
 import { polarDashboardUrl, polarOrderUrl, polarSubscriptionUrl, polarWebhooksUrl, type PolarEnvironment } from '@/lib/polar-dashboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup } from '@/components/usage/ToggleGroup'
 
 type Range = '7d' | '30d' | '90d' | 'all'
 type ProductKind = 'eight' | 'fat' | 'credits' | 'unknown'
+
+const RANGES: { id: Range; label: string }[] = [
+  { id: '7d', label: '7d' },
+  { id: '30d', label: '30d' },
+  { id: '90d', label: '90d' },
+  { id: 'all', label: 'All' },
+]
 
 interface Dashboard {
   polar: { environment: PolarEnvironment }
@@ -158,109 +163,231 @@ export function AdminBillingPage() {
   const polarEnv = data?.polar.environment
   const chart = data?.trend.map((row) => ({ day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
   const limitsAreValid = [eightLimit, fatLimit].every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
+  const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
+  const stats = [
+    { label: 'Collected', value: formatBalance((totals?.grossCollectedCents ?? 0) / 100) },
+    { label: 'MRR', value: formatBalance((totals?.monthlyRecurringCents ?? 0) / 100) },
+    { label: 'Subscribers', value: (totals?.activeSubscribers ?? 0).toLocaleString() },
+    { label: 'Credits granted', value: formatBalance((totals?.creditsGrantedMicros ?? 0) / 1_000_000) },
+    { label: 'Payments', value: (totals?.payments ?? 0).toLocaleString() },
+    { label: 'Needs attention', value: attention.toLocaleString(), alert: attention > 0 },
+  ]
+  const breakdown = [
+    { label: 'Sales before tax', value: formatBalance((totals?.salesBeforeTaxCents ?? 0) / 100) },
+    { label: 'Tax collected', value: formatBalance((totals?.taxCollectedCents ?? 0) / 100) },
+    { label: 'Processing fees', value: formatBalance((totals?.platformFeesCents ?? 0) / 100) },
+    { label: 'Refunded', value: formatBalance((totals?.refundedCents ?? 0) / 100) },
+    { label: 'Top-ups', value: (totals?.topUps ?? 0).toLocaleString() },
+  ]
 
-  return <div className="space-y-5">
-    <div className="flex flex-wrap items-center gap-3">
-      <div><h2 className="text-lg font-semibold">Billing</h2><p className="text-xs text-muted-foreground">Payments, subscriptions, weekly allowances, and reconciliation health.</p></div>
-      <div className="flex-1" />
-      {polarEnv && <>
-        <Button variant="outline" size="sm" asChild><a href={polarDashboardUrl(polarEnv)} target="_blank" rel="noreferrer"><ExternalLink />Polar</a></Button>
-        <Button variant="outline" size="sm" asChild><a href={polarWebhooksUrl(polarEnv)} target="_blank" rel="noreferrer"><ExternalLink />Webhooks</a></Button>
-      </>}
-      <Select value={range} onValueChange={(value: Range) => setRange(value)}><SelectTrigger className="w-28"><SelectValue /></SelectTrigger><SelectContent>{(['7d', '30d', '90d', 'all'] as const).map((value) => <SelectItem key={value} value={value}>{value === 'all' ? 'All time' : value}</SelectItem>)}</SelectContent></Select>
-      <Button variant="outline" size="sm" onClick={() => void reconcile()} disabled={syncing}><RefreshCw className={syncing ? 'animate-spin' : ''} />Sync now</Button>
-    </div>
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium">Billing overview</span>
+          {polarEnv && <>
+            <div className="h-4 w-px bg-border" />
+            <PolarLink href={polarDashboardUrl(polarEnv)} />
+            <PolarLink href={polarWebhooksUrl(polarEnv)} label="Webhooks" />
+          </>}
+        </div>
+        <div className="flex items-center gap-2">
+          <ToggleGroup options={RANGES} value={range} onChange={setRange} />
+          <Button variant="outline" size="sm" onClick={() => void reconcile()} disabled={syncing}>
+            <RefreshCw className={syncing ? 'animate-spin' : ''} />Sync now
+          </Button>
+        </div>
+      </div>
 
-    {message && <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">{message}</div>}
-    {data?.reconciliation.lastError && <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"><AlertTriangle className="mt-0.5 size-3.5" />Last reconciliation failed: {data.reconciliation.lastError}</div>}
+      {message && <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">{message}</div>}
+      {data?.reconciliation.lastError && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <AlertTriangle className="mt-0.5 size-3.5" />Last reconciliation failed: {data.reconciliation.lastError}
+        </div>
+      )}
 
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-      <Metric icon={<DollarSign />} label="Collected" value={formatBalance((totals?.grossCollectedCents ?? 0) / 100)} />
-      <Metric icon={<Repeat2 />} label="MRR" value={formatBalance((totals?.monthlyRecurringCents ?? 0) / 100)} />
-      <Metric icon={<UsersRound />} label="Subscribers" value={totals?.activeSubscribers ?? 0} />
-      <Metric icon={<WalletCards />} label="Credits granted" value={formatBalance((totals?.creditsGrantedMicros ?? 0) / 1_000_000)} />
-      <Metric icon={<CreditCard />} label="Payments" value={totals?.payments ?? 0} />
-      <Metric icon={<AlertTriangle />} label="Needs attention" value={(totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)} />
-    </div>
+      <div className="grid grid-cols-2 gap-1 sm:grid-cols-3 lg:grid-cols-6 lg:gap-0 lg:divide-x">
+        {stats.map((stat) => (
+          <div key={stat.label} className="p-3 lg:first:pl-0 lg:last:pr-0">
+            <div className="mb-1 text-xs text-muted-foreground">{stat.label}</div>
+            <div className={`text-lg font-medium tabular-nums ${stat.alert ? 'text-destructive' : ''}`}>{stat.value}</div>
+          </div>
+        ))}
+      </div>
 
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-2"><CardContent className="h-64 p-4"><div className="mb-3 flex items-center justify-between"><span className="text-sm font-medium">Payment volume</span><span className="text-xs text-muted-foreground">Includes tax</span></div><ResponsiveContainer width="100%" height="88%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `$${value}`} /><Tooltip formatter={(value) => formatBalance(Number(value))} /><Bar dataKey="collected" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></CardContent></Card>
-      <Card><CardContent className="space-y-4 p-4"><div className="text-sm font-medium">Subscription health</div><Stat label="Pulpo Eight" value={data?.subscribers.eight ?? 0} /><Stat label="Le Pulpo Fat" value={data?.subscribers.fat ?? 0} /><Stat label="Canceling" value={totals?.canceling ?? 0} /><Stat label="Past due" value={totals?.pastDue ?? 0} /><Stat label="Billing holds" value={totals?.holds ?? 0} /><Stat label="Failed webhooks" value={totals?.failedWebhooks ?? 0} /></CardContent></Card>
-    </div>
-
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card><CardContent className="space-y-3 p-4"><div className="mb-1 text-sm font-medium">Payment breakdown</div><MoneyStat label="Sales before tax" cents={totals?.salesBeforeTaxCents ?? 0} /><MoneyStat label="Tax collected" cents={totals?.taxCollectedCents ?? 0} /><MoneyStat label="Processing fees" cents={totals?.platformFeesCents ?? 0} /><MoneyStat label="Refunded" cents={totals?.refundedCents ?? 0} /><Stat label="Top-ups" value={totals?.topUps ?? 0} /></CardContent></Card>
-      <Card><CardContent className="p-4"><div className="mb-4"><div className="text-sm font-medium">Default weekly limits</div><p className="mt-0.5 text-xs text-muted-foreground">USD values are internal. Users only see the percentage remaining.</p></div><div className="flex flex-wrap items-end gap-4"><LimitInput label="Pulpo Eight" value={eightLimit} onChange={setEightLimit} /><LimitInput label="Le Pulpo Fat" value={fatLimit} onChange={setFatLimit} /><Button onClick={() => void saveDefaults()} disabled={saving || !limitsAreValid}>{saving ? 'Saving…' : 'Save defaults'}</Button></div></CardContent></Card>
-    </div>
-
-    <Card>
-      <CardContent className="overflow-x-auto p-0">
-        <div className="border-b px-4 py-3 text-sm font-medium">Recent payments</div>
-        {data?.recentOrders.length ? <table className="w-full min-w-max text-xs">
-          <thead><tr className="border-b text-left text-muted-foreground"><th className="px-4 py-2 font-medium">User</th><th className="px-4 py-2 font-medium">Reason</th><th className="px-4 py-2 font-medium">Product</th><th className="px-4 py-2 text-right font-medium">Amount</th><th className="px-4 py-2 text-right font-medium">Credits</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Date</th><th className="px-4 py-2 text-right font-medium" /></tr></thead>
-          <tbody>{data.recentOrders.map((order) => <tr key={order.polarOrderId} className="border-b last:border-0">
-            <td className="max-w-48 px-4 py-2.5"><div className="truncate font-medium">{order.userName}</div><div className="truncate text-muted-foreground">{order.userEmail}</div></td>
-            <td className="px-4 py-2.5">{humanReason(order.billingReason)}</td>
-            <td className="px-4 py-2.5"><ProductBadge product={order.product} /></td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{formatBalance(order.totalAmountCents / 100)}{order.taxAmountCents > 0 && <div className="text-muted-foreground">{formatBalance(order.taxAmountCents / 100)} tax</div>}</td>
-            <td className="px-4 py-2.5 text-right tabular-nums">{order.grantedCreditMicros > 0 ? formatBalance(order.grantedCreditMicros / 1_000_000) : '—'}</td>
-            <td className="px-4 py-2.5"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? 'refunded' : order.status}</Badge></td>
-            <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{formatDate(Date.parse(order.createdAt))}</td>
-            <td className="px-4 py-2.5 text-right">{polarEnv && <PolarLink href={polarOrderUrl(polarEnv, order.polarOrderId)} />}</td>
-          </tr>)}</tbody>
-        </table> : <Empty />}
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardContent className="overflow-x-auto p-0">
-        <div className="border-b px-4 py-3 text-sm font-medium">Recent subscriptions</div>
-        {data?.recentSubscriptions.length ? <table className="w-full min-w-max text-xs">
-          <thead><tr className="border-b text-left text-muted-foreground"><th className="px-4 py-2 font-medium">User</th><th className="px-4 py-2 font-medium">Plan</th><th className="px-4 py-2 font-medium">Status</th><th className="px-4 py-2 font-medium">Paid through</th><th className="px-4 py-2 font-medium">Period end</th><th className="px-4 py-2 text-right font-medium" /></tr></thead>
-          <tbody>{data.recentSubscriptions.map((row) => <tr key={row.polarSubscriptionId} className="border-b last:border-0">
-            <td className="max-w-48 px-4 py-2.5"><div className="truncate font-medium">{row.userName}</div><div className="truncate text-muted-foreground">{row.userEmail}</div></td>
-            <td className="px-4 py-2.5"><ProductBadge product={row.plan} /></td>
-            <td className="px-4 py-2.5"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? 'canceling' : row.status}</Badge></td>
-            <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
-            <td className="whitespace-nowrap px-4 py-2.5 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
-            <td className="px-4 py-2.5 text-right">{polarEnv && <PolarLink href={polarSubscriptionUrl(polarEnv, row.polarSubscriptionId)} />}</td>
-          </tr>)}</tbody>
-        </table> : <Empty />}
-      </CardContent>
-    </Card>
-
-    <div className="grid gap-4 lg:grid-cols-2">
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          <div className="flex items-center justify-between border-b px-4 py-3"><div className="text-sm font-medium">Failed webhooks</div>{polarEnv && <PolarLink href={polarWebhooksUrl(polarEnv)} label="Polar deliveries" />}</div>
-          {data?.failedEvents.length ? <div className="divide-y">{data.failedEvents.map((event) => <div key={event.providerEventId} className="space-y-1 px-4 py-3 text-xs">
-            <div className="flex items-center gap-2"><span className="font-medium">{event.type}</span><span className="text-muted-foreground">{formatDate(Date.parse(event.receivedAt))}</span></div>
-            {event.resourceId && <div className="truncate font-mono text-[11px] text-muted-foreground">{event.resourceId}</div>}
-            {event.error && <div className="text-destructive">{event.error}</div>}
-          </div>)}</div> : <Empty label="No failed webhooks." />}
-        </CardContent>
-      </Card>
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          <div className="border-b px-4 py-3 text-sm font-medium">Billing holds</div>
-          {data?.holds.length ? <div className="divide-y">{data.holds.map((hold) => <div key={hold.userId} className="flex items-start gap-3 px-4 py-3 text-xs">
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-medium">{hold.userName}</div>
-              <div className="truncate text-muted-foreground">{hold.userEmail}</div>
-              <div className="mt-1 text-muted-foreground">{hold.holdReason?.replaceAll('_', ' ') ?? 'hold'}{hold.holdAt ? ` · ${formatDate(Date.parse(hold.holdAt))}` : ''}</div>
-              {hold.holdReference && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{hold.holdReference}</div>}
+      <div>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-medium">Payment volume</h3>
+          <span className="text-xs text-muted-foreground">Includes tax</span>
+        </div>
+        {chart.length === 0 ? (
+          <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">No payments in this period</div>
+        ) : (
+          <div className="mt-3 h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chart} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                <CartesianGrid vertical={false} stroke="var(--border)" />
+                <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} minTickGap={30} />
+                <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} width={48} tickFormatter={(value: number) => axisCost(value)} />
+                <Tooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<ChartTip />} />
+                <Bar dataKey="collected" fill="hsl(160 60% 45%)" maxBarSize={28} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 sm:gap-0 sm:divide-x">
+          {breakdown.map((row) => (
+            <div key={row.label} className="py-3 sm:px-4 sm:first:pl-0 sm:last:pr-0">
+              <div className="text-xs text-muted-foreground">{row.label}</div>
+              <div className="mt-1 text-sm font-medium tabular-nums">{row.value}</div>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {polarEnv && hold.holdReference && hold.holdReason === 'payment_reversed' && <PolarLink href={polarOrderUrl(polarEnv, hold.holdReference)} />}
-              <Button size="sm" variant="outline" onClick={() => void clearHold(hold.userId)}>Clear</Button>
-            </div>
-          </div>)}</div> : <Empty label="No billing holds." />}
-        </CardContent>
-      </Card>
-    </div>
+          ))}
+        </div>
+      </div>
 
-    <div className="text-xs text-muted-foreground">Last reconciled: {data?.reconciliation.lastReconciledAt ? new Date(data.reconciliation.lastReconciledAt).toLocaleString() : 'Never'}</div>
-  </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel icon={<UsersRound className="size-3" />} title="Subscription health">
+          <div className="divide-y">
+            <Stat label="Pulpo Eight" value={data?.subscribers.eight ?? 0} />
+            <Stat label="Le Pulpo Fat" value={data?.subscribers.fat ?? 0} />
+            <Stat label="Canceling" value={totals?.canceling ?? 0} />
+            <Stat label="Past due" value={totals?.pastDue ?? 0} alert={(totals?.pastDue ?? 0) > 0} />
+            <Stat label="Billing holds" value={totals?.holds ?? 0} alert={(totals?.holds ?? 0) > 0} />
+            <Stat label="Failed webhooks" value={totals?.failedWebhooks ?? 0} alert={(totals?.failedWebhooks ?? 0) > 0} />
+          </div>
+        </Panel>
+        <Panel
+          icon={<WalletCards className="size-3" />}
+          title="Default weekly limits"
+          extra={<Button size="sm" onClick={() => void saveDefaults()} disabled={saving || !limitsAreValid}>{saving ? 'Saving…' : 'Save'}</Button>}
+        >
+          <div className="space-y-3 px-3 py-3">
+            <p className="text-xs text-muted-foreground">USD values are internal. Users only see the percentage remaining.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <LimitInput label="Pulpo Eight" value={eightLimit} onChange={setEightLimit} />
+              <LimitInput label="Le Pulpo Fat" value={fatLimit} onChange={setFatLimit} />
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      <Panel icon={<CreditCard className="size-3" />} title="Recent payments" extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString()}</span>}>
+        {data?.recentOrders.length ? (
+          <div className="max-h-96 overflow-auto">
+            <table className="w-full min-w-max text-xs">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="px-3 py-2 font-normal">User</th>
+                  <th className="px-3 py-2 font-normal">Reason</th>
+                  <th className="px-3 py-2 font-normal">Product</th>
+                  <th className="px-3 py-2 text-right font-normal">Amount</th>
+                  <th className="px-3 py-2 text-right font-normal">Credits</th>
+                  <th className="px-3 py-2 font-normal">Status</th>
+                  <th className="px-3 py-2 font-normal">Date</th>
+                  <th className="px-3 py-2 text-right font-normal" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {data.recentOrders.map((order) => (
+                  <tr key={order.polarOrderId}>
+                    <td className="max-w-48 px-3 py-2">
+                      <div className="truncate">{order.userName}</div>
+                      <div className="truncate text-muted-foreground">{order.userEmail}</div>
+                    </td>
+                    <td className="px-3 py-2">{humanReason(order.billingReason)}</td>
+                    <td className="px-3 py-2"><ProductBadge product={order.product} /></td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatBalance(order.totalAmountCents / 100)}
+                      {order.taxAmountCents > 0 && <div className="text-muted-foreground">{formatBalance(order.taxAmountCents / 100)} tax</div>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{order.grantedCreditMicros > 0 ? formatBalance(order.grantedCreditMicros / 1_000_000) : '—'}</td>
+                    <td className="px-3 py-2"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? 'refunded' : order.status}</Badge></td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(Date.parse(order.createdAt))}</td>
+                    <td className="px-3 py-2 text-right">{polarEnv && <PolarLink href={polarOrderUrl(polarEnv, order.polarOrderId)} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty />}
+      </Panel>
+
+      <Panel icon={<Repeat2 className="size-3" />} title="Recent subscriptions" extra={<span className="text-xs text-muted-foreground">{(data?.recentSubscriptions.length ?? 0).toLocaleString()}</span>}>
+        {data?.recentSubscriptions.length ? (
+          <div className="max-h-96 overflow-auto">
+            <table className="w-full min-w-max text-xs">
+              <thead>
+                <tr className="border-b text-left text-muted-foreground">
+                  <th className="px-3 py-2 font-normal">User</th>
+                  <th className="px-3 py-2 font-normal">Plan</th>
+                  <th className="px-3 py-2 font-normal">Status</th>
+                  <th className="px-3 py-2 font-normal">Paid through</th>
+                  <th className="px-3 py-2 font-normal">Period end</th>
+                  <th className="px-3 py-2 text-right font-normal" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {data.recentSubscriptions.map((row) => (
+                  <tr key={row.polarSubscriptionId}>
+                    <td className="max-w-48 px-3 py-2">
+                      <div className="truncate">{row.userName}</div>
+                      <div className="truncate text-muted-foreground">{row.userEmail}</div>
+                    </td>
+                    <td className="px-3 py-2"><ProductBadge product={row.plan} /></td>
+                    <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? 'canceling' : row.status}</Badge></td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
+                    <td className="px-3 py-2 text-right">{polarEnv && <PolarLink href={polarSubscriptionUrl(polarEnv, row.polarSubscriptionId)} />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty />}
+      </Panel>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Panel icon={<AlertTriangle className="size-3" />} title="Failed webhooks" extra={polarEnv && <PolarLink href={polarWebhooksUrl(polarEnv)} label="Polar deliveries" />}>
+          {data?.failedEvents.length ? (
+            <div className="max-h-96 divide-y overflow-y-auto">
+              {data.failedEvents.map((event) => (
+                <div key={event.providerEventId} className="space-y-1 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span>{event.type}</span>
+                    <span className="text-muted-foreground">{formatDate(Date.parse(event.receivedAt))}</span>
+                  </div>
+                  {event.resourceId && <div className="truncate font-mono text-[11px] text-muted-foreground">{event.resourceId}</div>}
+                  {event.error && <div className="text-destructive">{event.error}</div>}
+                </div>
+              ))}
+            </div>
+          ) : <Empty label="No failed webhooks." />}
+        </Panel>
+        <Panel icon={<AlertTriangle className="size-3" />} title="Billing holds">
+          {data?.holds.length ? (
+            <div className="max-h-96 divide-y overflow-y-auto">
+              {data.holds.map((hold) => (
+                <div key={hold.userId} className="flex items-start gap-3 px-3 py-2 text-xs">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate">{hold.userName}</div>
+                    <div className="truncate text-muted-foreground">{hold.userEmail}</div>
+                    <div className="mt-1 text-muted-foreground">{hold.holdReason?.replaceAll('_', ' ') ?? 'hold'}{hold.holdAt ? ` · ${formatDate(Date.parse(hold.holdAt))}` : ''}</div>
+                    {hold.holdReference && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{hold.holdReference}</div>}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {polarEnv && hold.holdReference && hold.holdReason === 'payment_reversed' && <PolarLink href={polarOrderUrl(polarEnv, hold.holdReference)} />}
+                    <Button size="sm" variant="outline" onClick={() => void clearHold(hold.userId)}>Clear</Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <Empty label="No billing holds." />}
+        </Panel>
+      </div>
+
+      <div className="text-xs text-muted-foreground">Last reconciled: {data?.reconciliation.lastReconciledAt ? new Date(data.reconciliation.lastReconciledAt).toLocaleString() : 'Never'}</div>
+    </div>
+  )
 }
 
 function humanReason(reason: string) {
@@ -283,13 +410,68 @@ function ProductBadge({ product }: { product: ProductKind | 'eight' | 'fat' }) {
 }
 
 function PolarLink({ href, label = 'Polar' }: { href: string; label?: string }) {
-  return <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-    {label}<ExternalLink className="size-3" />
-  </a>
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+      {label}<ExternalLink className="size-3" />
+    </a>
+  )
 }
 
-function Metric({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) { return <Card><CardContent className="p-3"><div className="flex items-center gap-1.5 text-xs text-muted-foreground"><span className="[&>svg]:size-3.5">{icon}</span>{label}</div><div className="mt-2 text-xl font-semibold tabular-nums">{value}</div></CardContent></Card> }
-function Stat({ label, value }: { label: string; value: number }) { return <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{label}</span><span className="font-medium tabular-nums">{value}</span></div> }
-function MoneyStat({ label, cents }: { label: string; cents: number }) { return <div className="flex items-center justify-between text-xs"><span className="text-muted-foreground">{label}</span><span className="font-medium tabular-nums">{formatBalance(cents / 100)}</span></div> }
-function LimitInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) { return <div className="space-y-1.5"><Label>{label}</Label><div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span><Input className="w-36 pl-7 tabular-nums" type="number" min="0" step="0.01" value={value} onChange={(event) => onChange(event.target.value)} /></div></div> }
-function Empty({ label = 'No data yet.' }: { label?: string }) { return <div className="px-4 py-10 text-center text-xs text-muted-foreground">{label}</div> }
+function Panel({ icon, title, extra, children }: { icon: ReactNode; title: string; extra?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border">
+      <div className="flex items-center justify-between border-b px-3 py-2">
+        <div className="flex items-center gap-2">
+          {icon}
+          <h3 className="text-xs font-medium">{title}</h3>
+        </div>
+        {extra}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function Stat({ label, value, alert }: { label: string; value: number; alert?: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-3 py-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`tabular-nums ${alert ? 'font-medium text-destructive' : ''}`}>{value}</span>
+    </div>
+  )
+}
+
+function LimitInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="relative">
+        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
+        <Input className="h-8 w-28 pl-6 text-xs tabular-nums" type="number" min="0" step="0.01" value={value} onChange={(event) => onChange(event.target.value)} />
+      </div>
+    </label>
+  )
+}
+
+function Empty({ label = 'No data yet.' }: { label?: string }) {
+  return <div className="p-6 text-center text-xs text-muted-foreground">{label}</div>
+}
+
+function axisCost(value: number) {
+  if (value === 0) return '$0'
+  if (value < 0.01) return `$${value.toFixed(3)}`
+  if (value < 1) return `$${value.toFixed(2)}`
+  return `$${value.toFixed(1)}`
+}
+
+function ChartTip({ active, payload, label }: { active?: boolean; payload?: Array<{ value?: number }>; label?: string }) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
+      <div className="font-medium">{label}</div>
+      <div className="mt-1 text-muted-foreground">
+        Collected: <span className="font-medium text-foreground tabular-nums">{formatBalance(Number(payload[0]?.value ?? 0))}</span>
+      </div>
+    </div>
+  )
+}
