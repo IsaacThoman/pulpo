@@ -10,7 +10,7 @@ export function polarDashboardUrl(environment: PolarEnvironment, path = ''): str
 }
 
 export function polarOrderUrl(environment: PolarEnvironment, orderId: string): string {
-  return polarDashboardUrl(environment, `/sales/orders/${orderId}`)
+  return polarDashboardUrl(environment, `/sales/${orderId}`)
 }
 
 export function polarSubscriptionUrl(environment: PolarEnvironment, subscriptionId: string): string {
