@@ -52,7 +52,7 @@ export async function loadBillingEntitlements(
     }
   }
 
-  const [[account], subscriptions, [setting], [period], [pending]] = await Promise.all([
+  const [[account], subscriptions, [setting], [period], [pendingBalance], [pendingWeekly]] = await Promise.all([
     tx.select().from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1),
     tx.select({ plan: billingSubscriptions.plan, status: billingSubscriptions.status, paidThrough: billingSubscriptions.paidThrough })
       .from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
@@ -60,9 +60,15 @@ export async function loadBillingEntitlements(
     tx.select({ spentMicros: weeklyUsagePeriods.spentMicros }).from(weeklyUsagePeriods)
       .where(and(eq(weeklyUsagePeriods.userId, userId), eq(weeklyUsagePeriods.periodStart, periodStart))).limit(1),
     tx.select({
-      weekly: sql<number>`coalesce(sum(case when ${budgetReservations.weeklyPeriodStart} = ${periodStart} then ${budgetReservations.weeklyReservedMicros} else 0 end), 0)::bigint`,
       balance: sql<number>`coalesce(sum(${budgetReservations.balanceReservedMicros}), 0)::bigint`,
     }).from(budgetReservations).where(and(eq(budgetReservations.userId, userId), eq(budgetReservations.status, 'pending'))),
+    tx.select({
+      weekly: sql<number>`coalesce(sum(${budgetReservations.weeklyReservedMicros}), 0)::bigint`,
+    }).from(budgetReservations).where(and(
+      eq(budgetReservations.userId, userId),
+      eq(budgetReservations.status, 'pending'),
+      eq(budgetReservations.weeklyPeriodStart, periodStart),
+    )),
   ])
 
   const plan = effectivePlan(subscriptions, now)
@@ -74,7 +80,7 @@ export async function loadBillingEntitlements(
       : 0
   const weeklyLimitMicros = account?.weeklyLimitOverrideMicros ?? defaultLimit
   const weeklySpentMicros = period?.spentMicros ?? 0
-  const weeklyPendingMicros = Number(pending?.weekly ?? 0)
+  const weeklyPendingMicros = Number(pendingWeekly?.weekly ?? 0)
   const weeklyRemainingMicros = Math.max(0, weeklyLimitMicros - weeklySpentMicros - weeklyPendingMicros)
 
   return {
@@ -87,7 +93,7 @@ export async function loadBillingEntitlements(
     weeklyPeriodStart: periodStart,
     weeklyResetAt: utcWeekEnd(now),
     weeklyLimitOverridden: account?.weeklyLimitOverrideMicros !== null && account?.weeklyLimitOverrideMicros !== undefined,
-    balancePendingMicros: Number(pending?.balance ?? 0),
+    balancePendingMicros: Number(pendingBalance?.balance ?? 0),
     onHold: Boolean(account?.holdAt && !account.holdClearedAt),
   }
 }
