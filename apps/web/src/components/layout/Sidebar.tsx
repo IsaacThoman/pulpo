@@ -1169,10 +1169,8 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
-            {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
-            {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.weekly && (
-              <div className="px-3 pb-2 pl-8 pt-1">
+              <div className="px-3 pb-2 pt-2">
                 <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
                   <span>Weekly usage</span>
                   <span className="tabular-nums">{billingQuery.data.weekly.remainingPercentage}% left</span>
@@ -1183,9 +1181,10 @@ export function Sidebar({
                     style={{ width: `${billingQuery.data.weekly.remainingPercentage}%` }}
                   />
                 </div>
-                <div className="mt-1 text-[10px] text-muted-foreground">Resets Monday</div>
               </div>
             )}
+            {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
+            {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.onHold && (
               <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">Billing usage is on hold</div>
             )}
