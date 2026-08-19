@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useMatch } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
@@ -15,6 +15,7 @@ const TABS = [
 
 export function AdminLayout() {
   const billingEnabled = useAuth((state) => state.billingEnabled)
+  const billingPage = useMatch('/admin/billing')
   const tabs = billingEnabled
     ? [...TABS.slice(0, -1), { to: '/admin/billing', label: 'Billing', end: false }, TABS.at(-1)!]
     : TABS
@@ -43,7 +44,7 @@ export function AdminLayout() {
         </nav>
       </header>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto max-w-5xl px-5 py-6">
+        <div className={cn('mx-auto px-5 py-6', billingPage ? 'max-w-7xl' : 'max-w-5xl')}>
           <Outlet />
         </div>
       </ScrollArea>

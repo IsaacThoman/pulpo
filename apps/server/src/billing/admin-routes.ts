@@ -19,6 +19,7 @@ import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements } from './entitlements.js'
+import { planForProductId } from './polar.js'
 
 const settingsPatchSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
@@ -29,6 +30,13 @@ async function billingSettings() {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
     .where(eq(applicationSettings.key, 'billing')).limit(1)
   return parseBillingSettings(row?.value)
+}
+
+function productKind(productId: string): 'eight' | 'fat' | 'credits' | 'unknown' {
+  const plan = planForProductId(productId)
+  if (plan) return plan
+  if (productId === getConfig().POLAR_CREDIT_PRODUCT_ID) return 'credits'
+  return 'unknown'
 }
 
 async function notifyBillingChange(userId: string): Promise<void> {
@@ -46,7 +54,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     const days = range === 'all' ? null : Number.parseInt(range, 10)
     const start = days ? new Date(Date.now() - days * 86_400_000) : null
     const orderFilter = start ? gte(billingOrders.paidAt, start) : isNotNull(billingOrders.paidAt)
-    const [totals, subscriberCounts, holds, failedEvents, recentOrders, recentSubscriptions, trend, settings] = await Promise.all([
+    const [totals, subscriberCounts, holds, failedEvents, recentOrders, recentSubscriptions, trend, settings, failedWebhookRows, holdRows] = await Promise.all([
       db.select({
         grossCollectedCents: sql<number>`coalesce(sum(${billingOrders.totalAmountCents}), 0)::bigint`,
         salesBeforeTaxCents: sql<number>`coalesce(sum(${billingOrders.netAmountCents}), 0)::bigint`,
@@ -70,9 +78,34 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         .where(and(isNotNull(billingAccounts.holdAt), isNull(billingAccounts.holdClearedAt))),
       db.select({ count: sql<number>`count(*)::int` }).from(billingWebhookEvents)
         .where(eq(billingWebhookEvents.status, 'failed')),
-      db.select().from(billingOrders).orderBy(desc(billingOrders.createdAt)).limit(20),
-      db.select({ subscription: billingSubscriptions, userName: users.name, userEmail: users.email })
-        .from(billingSubscriptions).innerJoin(users, eq(users.id, billingSubscriptions.userId))
+      db.select({
+        polarOrderId: billingOrders.polarOrderId,
+        userId: billingOrders.userId,
+        userName: users.name,
+        userEmail: users.email,
+        polarProductId: billingOrders.polarProductId,
+        polarSubscriptionId: billingOrders.polarSubscriptionId,
+        billingReason: billingOrders.billingReason,
+        status: billingOrders.status,
+        totalAmountCents: billingOrders.totalAmountCents,
+        taxAmountCents: billingOrders.taxAmountCents,
+        refundedAmountCents: billingOrders.refundedAmountCents,
+        grantedCreditMicros: billingOrders.grantedCreditMicros,
+        createdAt: billingOrders.createdAt,
+      }).from(billingOrders).innerJoin(users, eq(users.id, billingOrders.userId))
+        .orderBy(desc(billingOrders.createdAt)).limit(20),
+      db.select({
+        userId: billingSubscriptions.userId,
+        userName: users.name,
+        userEmail: users.email,
+        polarSubscriptionId: billingSubscriptions.polarSubscriptionId,
+        plan: billingSubscriptions.plan,
+        status: billingSubscriptions.status,
+        cancelAtPeriodEnd: billingSubscriptions.cancelAtPeriodEnd,
+        currentPeriodEnd: billingSubscriptions.currentPeriodEnd,
+        paidThrough: billingSubscriptions.paidThrough,
+        updatedAt: billingSubscriptions.updatedAt,
+      }).from(billingSubscriptions).innerJoin(users, eq(users.id, billingSubscriptions.userId))
         .orderBy(desc(billingSubscriptions.updatedAt)).limit(20),
       db.select({
         day: sql<string>`date_trunc('day', ${billingOrders.paidAt})::text`,
@@ -82,12 +115,31 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         .groupBy(sql`date_trunc('day', ${billingOrders.paidAt})`)
         .orderBy(sql`date_trunc('day', ${billingOrders.paidAt})`),
       billingSettings(),
+      db.select({
+        providerEventId: billingWebhookEvents.providerEventId,
+        type: billingWebhookEvents.type,
+        resourceId: billingWebhookEvents.resourceId,
+        error: billingWebhookEvents.error,
+        receivedAt: billingWebhookEvents.receivedAt,
+      }).from(billingWebhookEvents).where(eq(billingWebhookEvents.status, 'failed'))
+        .orderBy(desc(billingWebhookEvents.receivedAt)).limit(20),
+      db.select({
+        userId: billingAccounts.userId,
+        userName: users.name,
+        userEmail: users.email,
+        holdAt: billingAccounts.holdAt,
+        holdReason: billingAccounts.holdReason,
+        holdReference: billingAccounts.holdReference,
+      }).from(billingAccounts).innerJoin(users, eq(users.id, billingAccounts.userId))
+        .where(and(isNotNull(billingAccounts.holdAt), isNull(billingAccounts.holdClearedAt)))
+        .orderBy(desc(billingAccounts.holdAt)),
     ])
     const eight = subscriberCounts.find((item) => item.plan === 'eight')
     const fat = subscriberCounts.find((item) => item.plan === 'fat')
     const orderTotals = totals[0]
     return {
       range,
+      polar: { environment: getConfig().POLAR_ENVIRONMENT ?? 'sandbox' },
       totals: {
         grossCollectedCents: Number(orderTotals?.grossCollectedCents ?? 0),
         salesBeforeTaxCents: Number(orderTotals?.salesBeforeTaxCents ?? 0),
@@ -106,8 +158,10 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       },
       subscribers: { eight: Number(eight?.count ?? 0), fat: Number(fat?.count ?? 0) },
       trend: trend.map((item) => ({ ...item, totalCents: Number(item.totalCents), payments: Number(item.payments) })),
-      recentOrders,
+      recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.polarProductId) })),
       recentSubscriptions,
+      failedEvents: failedWebhookRows,
+      holds: holdRows,
       reconciliation: {
         lastReconciledAt: settings.lastReconciledAt,
         lastError: settings.lastReconcileError,
