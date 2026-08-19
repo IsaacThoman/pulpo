@@ -674,8 +674,7 @@ export function Sidebar({
     queryKey: ['billing', user?.id],
     queryFn: fetchBillingSummary,
     enabled: Boolean(billingEnabled && user?.id && user.role !== 'pending'),
-    staleTime: 15_000,
-    refetchInterval: 60_000,
+    staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
   const sidebarPins = useSettings((s) => s.sidebarPins)
