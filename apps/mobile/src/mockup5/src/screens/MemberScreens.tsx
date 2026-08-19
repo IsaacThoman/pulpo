@@ -318,16 +318,20 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   const userId = useSessionStore((state) => state.user?.id);
   const storage = useQuery({
     queryKey: ['attachment-usage', instanceUrl, userId],
-    queryFn: () => apiRequest<{ usedBytes: number; reservedBytes: number; limitBytes: number }>('/api/attachments/usage'),
+    queryFn: () => apiRequest<{ usedBytes: number; limitBytes: number; remainingBytes: number }>('/api/attachments/usage'),
     enabled: section === 'data' && Boolean(userId),
   });
-  const storageUsed = storage.data ? storage.data.usedBytes + storage.data.reservedBytes : 0;
+  const storageUsed = storage.data?.usedBytes ?? 0;
   const storageProgress = storage.data?.limitBytes ? Math.min(1, storageUsed / storage.data.limitBytes) : 0;
-  const storageLabel = storage.data ? `${formatBytes(storageUsed)} of ${formatBytes(storage.data.limitBytes)}` : 'Loading…';
+  const storageLabel = storage.data
+    ? `${formatBytes(storageUsed)} of ${formatBytes(storage.data.limitBytes)}`
+    : storage.isError || !userId
+      ? 'Unavailable'
+      : 'Loading…';
   useLayoutEffect(() => {
     if (Platform.OS === 'ios') navigation.setOptions({ title: settingTitles[section] });
   }, [navigation, section]);
-  if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
+  if (Platform.OS === 'ios') return <SwiftUIHost key={section === 'data' ? storageLabel : section} modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm>
     {section === 'general' && <>
       <SwiftUISection title="Appearance">
         <NativeChoiceRow icon="circle.lefthalf.filled" title="Theme" value={preferences.theme} options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} onChange={(value) => setPreference('theme', value)} />
