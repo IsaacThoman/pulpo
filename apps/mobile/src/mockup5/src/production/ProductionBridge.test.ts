@@ -53,7 +53,7 @@ vi.mock('./optimisticBranches', () => ({
   clearOptimisticBranchSelections: vi.fn(), reconcileOptimisticBranchSelection: vi.fn((_namespace, chat) => chat),
 }))
 
-import { hydrateProductionScope } from './ProductionBridge'
+import { hydrateProductionChatPreview, hydrateProductionScope } from './ProductionBridge'
 import { createInitialState } from '../initialState'
 import { usePrototypeStore } from '../store/prototypeStore'
 
@@ -155,5 +155,44 @@ describe('production scope hydration', () => {
     await hydrateProductionScope('instance|user-a')
 
     expect(usePrototypeStore.getState().chats.map((item) => item.id)).toEqual(['saved'])
+  })
+})
+
+describe('chat preview hydration', () => {
+  it('fetches an uncached transcript without selecting the chat', async () => {
+    const summary = chat('chat-a', 'Preview me')
+    usePrototypeStore.setState({
+      productionNamespace: 'instance|user-a',
+      chats: [{
+        id: summary.id, title: summary.title, modelId: summary.modelId,
+        createdAt: Date.parse(summary.createdAt), updatedAt: Date.parse(summary.updatedAt),
+        pinned: false, folderId: null, temporary: false, detailLoaded: false,
+        messages: [], deletedAt: null, purgeAt: null,
+      }],
+    })
+    const fetchQuery = vi.fn().mockResolvedValue({ ...summary, responses: [], attachments: [] })
+
+    await hydrateProductionChatPreview({ fetchQuery } as never, 'instance|user-a', 'chat-a', 25)
+
+    expect(fetchQuery).toHaveBeenCalledOnce()
+    expect(usePrototypeStore.getState().chats[0]).toMatchObject({ id: 'chat-a', detailLoaded: true })
+  })
+
+  it('does not refetch a transcript that is already cached', async () => {
+    const summary = chat('chat-a', 'Preview me')
+    usePrototypeStore.setState({
+      productionNamespace: 'instance|user-a',
+      chats: [{
+        id: summary.id, title: summary.title, modelId: summary.modelId,
+        createdAt: Date.parse(summary.createdAt), updatedAt: Date.parse(summary.updatedAt),
+        pinned: false, folderId: null, temporary: false, detailLoaded: true,
+        messages: [], deletedAt: null, purgeAt: null,
+      }],
+    })
+    const fetchQuery = vi.fn()
+
+    await hydrateProductionChatPreview({ fetchQuery } as never, 'instance|user-a', 'chat-a', 25)
+
+    expect(fetchQuery).not.toHaveBeenCalled()
   })
 })
