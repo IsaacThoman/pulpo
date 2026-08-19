@@ -200,6 +200,12 @@ export const sensitiveActionInputSchema = z.object({
 })
 export type SensitiveActionInput = z.infer<typeof sensitiveActionInputSchema>
 
+export const secretRevealInputSchema = z.object({
+  currentPassword: z.string().min(1).max(1024).optional(),
+  verificationCode: z.string().trim().min(6).max(32).optional(),
+}).refine((value) => value.currentPassword || value.verificationCode, 'Password or verification code is required')
+export type SecretRevealInput = z.infer<typeof secretRevealInputSchema>
+
 export const passkeySensitiveChangeSchema = sensitiveActionInputSchema
 
 export const beginPasskeyRegistrationInputSchema = passkeySensitiveChangeSchema.extend({

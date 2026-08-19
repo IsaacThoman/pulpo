@@ -1,7 +1,7 @@
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { chatPresetsSchema, createModelSchema, createProviderSchema, sensitiveActionInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
+import { chatPresetsSchema, createModelSchema, createProviderSchema, secretRevealInputSchema, updateProviderSchema, type ChatPreset } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   auditEvents,
@@ -20,7 +20,7 @@ import { getConfig } from '../config.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { newId } from '../lib/ids.js'
 import { requireAdmin, requireUser } from '../auth/service.js'
-import { requireSensitiveAuth } from '../auth/sensitive-action.js'
+import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defaults.js'
@@ -198,9 +198,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const [provider] = await db.select({ encryptedApiKey: providerConnections.encryptedApiKey })
       .from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
-    const input = sensitiveActionInputSchema.parse(request.body)
+    const input = secretRevealInputSchema.parse(request.body)
     try {
-      await requireSensitiveAuth(admin.id, input.currentPassword, input.verificationCode)
+      await requireSecretRevealAuth(admin.id, input.currentPassword, input.verificationCode)
     } catch (cause) {
       await db.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'provider.api_key.reveal_denied', targetType: 'provider', targetId: id,

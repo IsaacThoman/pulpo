@@ -5,6 +5,30 @@ export type WebToolsForm = Omit<WebToolsSettings, 'kagi' | 'firecrawl'> & {
   firecrawl: WebToolsSettings['firecrawl'] & { hasApiKey: boolean }
 }
 
+export type WebToolSecretDraft = {
+  value: string
+  changed: boolean
+  visible: boolean
+}
+
+export const emptyWebToolSecretDraft = (): WebToolSecretDraft => ({ value: '', changed: false, visible: false })
+
+export function changedWebToolSecret(value: string): WebToolSecretDraft {
+  return { value, changed: true, visible: false }
+}
+
+export function revealedWebToolSecret(value: string): WebToolSecretDraft {
+  return { value, changed: false, visible: true }
+}
+
+export function hiddenWebToolSecret(draft: WebToolSecretDraft): WebToolSecretDraft {
+  return draft.changed ? { ...draft, visible: false } : emptyWebToolSecretDraft()
+}
+
+export function webToolSecretReplacement(draft: WebToolSecretDraft): string {
+  return draft.changed ? draft.value : ''
+}
+
 export function moveWebProvider(value: WebToolProvider[], index: number, offset: -1 | 1): WebToolProvider[] {
   const target = index + offset
   if (target < 0 || target >= value.length) return value

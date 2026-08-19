@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { WebToolsSettings } from '@pulpo/contracts'
 import { AgentSection } from './sections-agent'
-import { moveWebProvider, webToolsPatchBody } from './web-tools-form'
+import {
+  changedWebToolSecret,
+  hiddenWebToolSecret,
+  moveWebProvider,
+  revealedWebToolSecret,
+  webToolSecretReplacement,
+  webToolsPatchBody,
+} from './web-tools-form'
 
 describe('agent web-tool settings', () => {
   it('renders workspace controller health inside the Pi agent mode section', () => {
@@ -59,5 +66,19 @@ describe('agent web-tool settings', () => {
     expect(body.firecrawl).toMatchObject({ billExtracts: true, extractPriceMicros: 9_000 })
     expect(body.kagiApiKey).toBeUndefined()
     expect(body.firecrawlApiKey).toBe('new-firecrawl-key')
+  })
+
+  it('does not submit an unchanged revealed key and clears it when hidden', () => {
+    const revealed = revealedWebToolSecret('saved-kagi-key')
+    expect(webToolSecretReplacement(revealed)).toBe('')
+    expect(hiddenWebToolSecret(revealed)).toEqual({ value: '', changed: false, visible: false })
+  })
+
+  it('keeps a replacement key while toggling its visibility and submits it', () => {
+    const replacement = changedWebToolSecret('replacement-firecrawl-key')
+    expect(hiddenWebToolSecret({ ...replacement, visible: true })).toEqual({
+      value: 'replacement-firecrawl-key', changed: true, visible: false,
+    })
+    expect(webToolSecretReplacement(replacement)).toBe('replacement-firecrawl-key')
   })
 })

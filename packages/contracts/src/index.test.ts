@@ -34,6 +34,7 @@ import {
   ocrSettingsSchema,
   persistChatResponseSchema,
   responseEventSchema,
+  secretRevealInputSchema,
   sensitiveActionInputSchema,
   sidebarPinsSchema,
   startChatSchema,
@@ -324,6 +325,9 @@ describe('shared contracts', () => {
     })).toEqual({ currentPassword: 'password', verificationCode: '123456' })
     expect(sensitiveActionInputSchema.safeParse({ currentPassword: '' }).success).toBe(false)
     expect(sensitiveActionInputSchema.safeParse({ currentPassword: 'password', verificationCode: '123' }).success).toBe(false)
+    expect(secretRevealInputSchema.parse({ verificationCode: ' 123456 ' })).toEqual({ verificationCode: '123456' })
+    expect(secretRevealInputSchema.parse({ currentPassword: 'password' })).toEqual({ currentPassword: 'password' })
+    expect(secretRevealInputSchema.safeParse({}).success).toBe(false)
     expect(beginPasskeyRegistrationInputSchema.parse({
       name: '  MacBook Touch ID  ', currentPassword: 'password', verificationCode: '123456',
     }).name).toBe('MacBook Touch ID')
