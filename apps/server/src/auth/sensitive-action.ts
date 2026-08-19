@@ -21,3 +21,23 @@ export async function requireSensitiveAuth(
   }
   await verifySecondFactor(userId, verificationCode)
 }
+
+export async function requireSecretRevealAuth(
+  userId: string,
+  currentPassword?: string,
+  verificationCode?: string,
+): Promise<void> {
+  if (await hasTwoFactor(userId)) {
+    if (!verificationCode) {
+      throw new AppError(400, 'two_factor_code_required', 'Enter your current authenticator or recovery code.')
+    }
+    await verifySecondFactor(userId, verificationCode)
+    return
+  }
+  if (!currentPassword) throw unauthorized('Current password is required')
+  const [credential] = await db.select({ passwordHash: passwordCredentials.passwordHash })
+    .from(passwordCredentials).where(eq(passwordCredentials.userId, userId)).limit(1)
+  if (!credential || !(await verifyPassword(credential.passwordHash, currentPassword))) {
+    throw unauthorized('Current password is incorrect')
+  }
+}

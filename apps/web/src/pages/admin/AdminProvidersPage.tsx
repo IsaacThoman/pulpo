@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Eye, EyeOff, Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Activity, Eye, EyeOff, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { apiRequest } from '@/lib/api'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { hideProviderApiKey, providerApiKeyPatch } from './provider-key-state'
+import { SensitiveRevealDialog, type SensitiveRevealCredentials } from '@/components/admin/SensitiveRevealDialog'
 
 type CacheAffinityMode = 'none' | 'openai_prompt_cache_key' | 'fireworks_session_affinity'
 type CacheIsolationMode = 'none' | 'fireworks_prompt_cache_isolation'
@@ -28,7 +29,6 @@ interface AdminProvider {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -59,23 +59,11 @@ const emptyDraft = (): Draft => ({
   cacheIsolationScope: 'user',
 })
 
-type RevealConfirmation = {
-  currentPassword: string
-  verificationCode: string
-  requiresSecondFactor: boolean | null
-  loading: boolean
-  error: string
-}
-
-const emptyRevealConfirmation = (): RevealConfirmation => ({
-  currentPassword: '', verificationCode: '', requiresSecondFactor: null, loading: false, error: '',
-})
-
 export function AdminProvidersPage() {
   const [providers, setProviders] = useState<AdminProvider[]>([])
   const [draft, setDraft] = useState<Draft | null>(null)
   const [showKey, setShowKey] = useState(false)
-  const [revealConfirmation, setRevealConfirmation] = useState<RevealConfirmation | null>(null)
+  const [revealOpen, setRevealOpen] = useState(false)
 
   const load = async () => {
     const [providerResponse, modelResponse] = await Promise.all([
@@ -92,7 +80,7 @@ export function AdminProvidersPage() {
 
   const openAdd = () => {
     setShowKey(false)
-    setRevealConfirmation(null)
+    setRevealOpen(false)
     setDraft(emptyDraft())
   }
 
@@ -115,54 +103,31 @@ export function AdminProvidersPage() {
   const closeEditor = () => {
     setDraft(null)
     setShowKey(false)
-    setRevealConfirmation(null)
+    setRevealOpen(false)
   }
 
-  const beginReveal = async () => {
+  const beginReveal = () => {
     if (!draft?.id || !draft.hasSavedApiKey || draft.apiKeyChanged) {
       setShowKey(true)
       return
     }
-    setRevealConfirmation(emptyRevealConfirmation())
-    try {
-      const status = await apiRequest<{ enabled: boolean }>('/api/me/two-factor')
-      setRevealConfirmation((current) => current ? { ...current, requiresSecondFactor: status.enabled } : null)
-    } catch (error) {
-      setRevealConfirmation((current) => current ? {
-        ...current,
-        error: error instanceof Error ? error.message : 'Could not check two-factor authentication status.',
-      } : null)
-    }
+    setRevealOpen(true)
   }
 
-  const reveal = async () => {
-    if (!draft?.id || !revealConfirmation) return
+  const reveal = async (credentials: SensitiveRevealCredentials) => {
+    if (!draft?.id) return
     const providerId = draft.id
-    setRevealConfirmation({ ...revealConfirmation, loading: true, error: '' })
-    try {
-      const result = await apiRequest<{ apiKey: string }>(`/api/admin/providers/${providerId}/api-key/reveal`, {
-        method: 'POST',
-        body: {
-          currentPassword: revealConfirmation.currentPassword,
-          verificationCode: revealConfirmation.requiresSecondFactor ? revealConfirmation.verificationCode : undefined,
-        },
-      })
-      setDraft((current) => current?.id === providerId ? { ...current, apiKey: result.apiKey, apiKeyChanged: false } : current)
-      setShowKey(true)
-      setRevealConfirmation(null)
-    } catch (error) {
-      setRevealConfirmation((current) => current ? {
-        ...current,
-        loading: false,
-        error: error instanceof Error ? error.message : 'Could not reveal the provider API key.',
-      } : null)
-    }
+    const result = await apiRequest<{ apiKey: string }>(`/api/admin/providers/${providerId}/api-key/reveal`, {
+      method: 'POST', body: credentials,
+    })
+    setDraft((current) => current?.id === providerId ? { ...current, apiKey: result.apiKey, apiKeyChanged: false } : current)
+    setShowKey(true)
   }
 
   const toggleKeyVisibility = () => {
     if (!draft) return
     if (!showKey) {
-      void beginReveal()
+      beginReveal()
       return
     }
     setShowKey(false)
@@ -411,60 +376,12 @@ export function AdminProvidersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!revealConfirmation} onOpenChange={(open) => { if (!open) setRevealConfirmation(null) }}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm your identity</DialogTitle>
-            <DialogDescription>
-              Provider API keys are sensitive. Confirm your identity before revealing this saved key.
-            </DialogDescription>
-          </DialogHeader>
-          {revealConfirmation && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="provider-key-password">Current password</Label>
-                <Input
-                  id="provider-key-password"
-                  type="password"
-                  autoComplete="current-password"
-                  autoFocus
-                  value={revealConfirmation.currentPassword}
-                  onChange={(event) => setRevealConfirmation({ ...revealConfirmation, currentPassword: event.target.value, error: '' })}
-                />
-              </div>
-              {revealConfirmation.requiresSecondFactor && (
-                <div className="space-y-2">
-                  <Label htmlFor="provider-key-verification">Authenticator or recovery code</Label>
-                  <Input
-                    id="provider-key-verification"
-                    autoComplete="one-time-code"
-                    className="font-mono"
-                    value={revealConfirmation.verificationCode}
-                    onChange={(event) => setRevealConfirmation({ ...revealConfirmation, verificationCode: event.target.value.toUpperCase(), error: '' })}
-                  />
-                </div>
-              )}
-              {revealConfirmation.requiresSecondFactor === null && !revealConfirmation.error && (
-                <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Checking security requirements…</p>
-              )}
-              {revealConfirmation.error && <p className="text-sm text-destructive" role="alert">{revealConfirmation.error}</p>}
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setRevealConfirmation(null)}>Cancel</Button>
-                <Button
-                  disabled={revealConfirmation.requiresSecondFactor === null
-                    || !revealConfirmation.currentPassword
-                    || (revealConfirmation.requiresSecondFactor && revealConfirmation.verificationCode.length < 6)
-                    || revealConfirmation.loading}
-                  onClick={() => void reveal()}
-                >
-                  {revealConfirmation.loading && <Loader2 className="animate-spin" />}
-                  Reveal API key
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <SensitiveRevealDialog
+        open={revealOpen}
+        description="Provider API keys are sensitive. Confirm your identity before revealing this saved key."
+        onOpenChange={setRevealOpen}
+        onConfirm={reveal}
+      />
     </div>
   )
 }

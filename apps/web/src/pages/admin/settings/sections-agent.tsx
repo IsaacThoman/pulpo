@@ -5,7 +5,18 @@ import { apiRequest } from '@/lib/api'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { NumField, SaveBar, SecretField, Section, TextField, Toggle } from '@/components/admin/kit'
-import { moveWebProvider, webToolsPatchBody, type WebToolsForm } from './web-tools-form'
+import {
+  changedWebToolSecret,
+  emptyWebToolSecretDraft,
+  hiddenWebToolSecret,
+  revealedWebToolSecret,
+  moveWebProvider,
+  webToolsPatchBody,
+  webToolSecretReplacement,
+  type WebToolsForm,
+  type WebToolSecretDraft,
+} from './web-tools-form'
+import { SensitiveRevealDialog, type SensitiveRevealCredentials } from '@/components/admin/SensitiveRevealDialog'
 
 const defaults: AgentSettings = {
   enabled: false,
@@ -78,8 +89,9 @@ function diskGiB(quantity: string): number {
 export function AgentSection() {
   const [value, setValue] = useState(defaults)
   const [web, setWeb] = useState(webDefaults)
-  const [kagiApiKey, setKagiApiKey] = useState('')
-  const [firecrawlApiKey, setFirecrawlApiKey] = useState('')
+  const [kagiApiKey, setKagiApiKey] = useState<WebToolSecretDraft>(emptyWebToolSecretDraft)
+  const [firecrawlApiKey, setFirecrawlApiKey] = useState<WebToolSecretDraft>(emptyWebToolSecretDraft)
+  const [revealProvider, setRevealProvider] = useState<WebToolProvider | null>(null)
   const [health, setHealth] = useState<{ configured: boolean; healthy: boolean; detail?: string }>({ configured: false, healthy: false })
   useEffect(() => { void Promise.all([
     apiRequest<{ values: { agent?: Partial<AgentSettings> } }>('/api/admin/settings'),
@@ -102,12 +114,33 @@ export function AgentSection() {
     })
   }) }, [])
   const number = (key: keyof AgentSettings, min = 0) => <Input type="number" min={min} value={String(value[key])} onChange={(event) => setValue({ ...value, [key]: Number(event.target.value) })} />
-  const kagiAvailable = web.kagi.hasApiKey || Boolean(kagiApiKey.trim())
-  const firecrawlAvailable = !firecrawlCloudRequiresKey(web.firecrawl.baseUrl) || web.firecrawl.hasApiKey || Boolean(firecrawlApiKey.trim())
+  const kagiAvailable = web.kagi.hasApiKey || Boolean(kagiApiKey.value.trim())
+  const firecrawlAvailable = !firecrawlCloudRequiresKey(web.firecrawl.baseUrl) || web.firecrawl.hasApiKey || Boolean(firecrawlApiKey.value.trim())
   const capabilityAvailable = (capability: 'search' | 'extract') => web[capability === 'search' ? 'searchProviderOrder' : 'extractProviderOrder'].some((provider) => (
     web[provider][capability === 'search' ? 'searchEnabled' : 'extractEnabled']
     && (provider === 'kagi' ? kagiAvailable : firecrawlAvailable)
   ))
+  const toggleSecret = (provider: WebToolProvider) => {
+    const draft = provider === 'kagi' ? kagiApiKey : firecrawlApiKey
+    const configured = web[provider].hasApiKey
+    const setDraft = provider === 'kagi' ? setKagiApiKey : setFirecrawlApiKey
+    if (draft.visible) {
+      setDraft(hiddenWebToolSecret(draft))
+    } else if (configured && !draft.changed) {
+      setRevealProvider(provider)
+    } else {
+      setDraft({ ...draft, visible: true })
+    }
+  }
+  const revealSecret = async (credentials: SensitiveRevealCredentials) => {
+    if (!revealProvider) return
+    const provider = revealProvider
+    const result = await apiRequest<{ apiKey: string }>(`/api/admin/settings/web-tools/${provider}/api-key/reveal`, {
+      method: 'POST', body: credentials,
+    })
+    if (provider === 'kagi') setKagiApiKey(revealedWebToolSecret(result.apiKey))
+    else setFirecrawlApiKey(revealedWebToolSecret(result.apiKey))
+  }
   return <div>
     <Section title="Pi agent mode" hint="The Pulpo worker runs Pi; an external Kubernetes controller owns Kata workspaces and credentials.">
       <Toggle label="Enable agent mode" hint="Models must also be opted in individually." checked={value.enabled} onChange={(enabled) => setValue({ ...value, enabled })} />
@@ -148,7 +181,15 @@ export function AgentSection() {
       {web.extractEnabled && !capabilityAvailable('extract') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Page extraction is enabled, but no usable extraction provider is configured.</div>}
     </Section>
     <Section title="Kagi" hint="Use Kagi Search and Extract as one provider in the web-tool fallback chains.">
-      <SecretField label="Kagi API key" hint={web.kagi.hasApiKey ? 'Configured — leave blank to keep' : 'Required before Kagi can run'} value={kagiApiKey} onChange={setKagiApiKey} />
+      <SecretField
+        label="Kagi API key"
+        hint={web.kagi.hasApiKey ? 'Configured — leave blank to keep' : 'Required before Kagi can run'}
+        value={kagiApiKey.value}
+        onChange={(value) => setKagiApiKey(changedWebToolSecret(value))}
+        configured={web.kagi.hasApiKey}
+        show={kagiApiKey.visible}
+        onShowChange={() => toggleSecret('kagi')}
+      />
       <Toggle label="Use for web search" checked={web.kagi.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, kagi: { ...web.kagi, searchEnabled } })} />
       <Toggle label="Bill users for Kagi searches" checked={web.kagi.billSearches} onChange={(billSearches) => setWeb({ ...web, kagi: { ...web.kagi, billSearches } })} indent />
       {web.kagi.billSearches && <NumField label="Price per Kagi search" value={web.kagi.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
@@ -159,7 +200,15 @@ export function AgentSection() {
     </Section>
     <Section title="Firecrawl" hint="Use Firecrawl Cloud or a v2-compatible self-hosted endpoint. Secrets remain encrypted on the Pulpo server.">
       <TextField label="API base URL" hint="Private endpoints require ALLOW_PRIVATE_PROVIDER_URLS=true." value={web.firecrawl.baseUrl} onChange={(baseUrl) => setWeb({ ...web, firecrawl: { ...web.firecrawl, baseUrl } })} mono />
-      <SecretField label="Firecrawl API key" hint={web.firecrawl.hasApiKey ? 'Configured — leave blank to keep' : firecrawlCloudRequiresKey(web.firecrawl.baseUrl) ? 'Required for Firecrawl Cloud' : 'Optional for this custom endpoint'} value={firecrawlApiKey} onChange={setFirecrawlApiKey} />
+      <SecretField
+        label="Firecrawl API key"
+        hint={web.firecrawl.hasApiKey ? 'Configured — leave blank to keep' : firecrawlCloudRequiresKey(web.firecrawl.baseUrl) ? 'Required for Firecrawl Cloud' : 'Optional for this custom endpoint'}
+        value={firecrawlApiKey.value}
+        onChange={(value) => setFirecrawlApiKey(changedWebToolSecret(value))}
+        configured={web.firecrawl.hasApiKey}
+        show={firecrawlApiKey.visible}
+        onShowChange={() => toggleSecret('firecrawl')}
+      />
       <Toggle label="Use for web search" checked={web.firecrawl.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchEnabled } })} />
       <Toggle label="Bill users for Firecrawl searches" checked={web.firecrawl.billSearches} onChange={(billSearches) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billSearches } })} indent />
       {web.firecrawl.billSearches && <NumField label="Price per Firecrawl search" value={web.firecrawl.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
@@ -174,7 +223,7 @@ export function AgentSection() {
         apiRequest('/api/admin/settings', { method: 'PATCH', body: { agent: value } }),
         apiRequest<WebToolsForm>('/api/admin/settings/web-tools', {
           method: 'PATCH',
-          body: webToolsPatchBody(web, kagiApiKey, firecrawlApiKey),
+          body: webToolsPatchBody(web, webToolSecretReplacement(kagiApiKey), webToolSecretReplacement(firecrawlApiKey)),
         }),
       ])
       setWeb({
@@ -183,8 +232,14 @@ export function AgentSection() {
         kagi: { ...webDefaults.kagi, ...savedWeb.kagi },
         firecrawl: { ...webDefaults.firecrawl, ...savedWeb.firecrawl },
       })
-      setKagiApiKey('')
-      setFirecrawlApiKey('')
+      setKagiApiKey(emptyWebToolSecretDraft())
+      setFirecrawlApiKey(emptyWebToolSecretDraft())
     }} />
+    <SensitiveRevealDialog
+      open={revealProvider !== null}
+      description={`${revealProvider ? providerLabel[revealProvider] : 'Web tool'} API keys are sensitive. Confirm your identity before revealing this saved key.`}
+      onOpenChange={(open) => { if (!open) setRevealProvider(null) }}
+      onConfirm={revealSecret}
+    />
   </div>
 }

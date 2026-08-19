@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   rows: [] as Array<Record<string, unknown>>,
   audits: [] as Array<Record<string, unknown>>,
-  requireSensitiveAuth: vi.fn(),
+  requireSecretRevealAuth: vi.fn(),
 }))
 
 vi.mock('../database/client.js', () => ({
@@ -30,7 +30,7 @@ vi.mock('../auth/service.js', () => ({
   },
   requireUser: (request: FastifyRequest) => request.user,
 }))
-vi.mock('../auth/sensitive-action.js', () => ({ requireSensitiveAuth: mocks.requireSensitiveAuth }))
+vi.mock('../auth/sensitive-action.js', () => ({ requireSecretRevealAuth: mocks.requireSecretRevealAuth }))
 vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'encryption-key' }) }))
 vi.mock('../lib/crypto.js', () => ({
   decryptSecret: (value: string) => value === 'encrypted-provider-key' ? 'sk-provider-secret' : 'unexpected',
@@ -76,7 +76,7 @@ describe('admin provider key reveal', () => {
       id: '22222222-2222-4222-8222-222222222222', name: 'Provider', encryptedApiKey: 'encrypted-provider-key',
     }]
     mocks.audits = []
-    mocks.requireSensitiveAuth.mockReset().mockResolvedValue(undefined)
+    mocks.requireSecretRevealAuth.mockReset().mockResolvedValue(undefined)
   })
 
   it('keeps encrypted and plaintext keys out of provider list responses', async () => {
@@ -91,12 +91,12 @@ describe('admin provider key reveal', () => {
     await expect(handler(request({ role: 'user' }), reply())).rejects.toThrow('Administrator')
     mocks.rows = []
     await expect(handler(request(), reply())).rejects.toMatchObject({ statusCode: 404 })
-    expect(mocks.requireSensitiveAuth).not.toHaveBeenCalled()
+    expect(mocks.requireSecretRevealAuth).not.toHaveBeenCalled()
   })
 
   it('audits denied authentication without recording sensitive input', async () => {
     const handler = (await catalogHandlers()).get('POST /api/admin/providers/:id/api-key/reveal')!
-    mocks.requireSensitiveAuth.mockRejectedValue(new Error('Current password is incorrect'))
+    mocks.requireSecretRevealAuth.mockRejectedValue(new Error('Current password is incorrect'))
     await expect(handler(request({ body: { currentPassword: 'sensitive-password', verificationCode: '123456' } }), reply()))
       .rejects.toThrow('Current password')
     expect(mocks.audits).toHaveLength(1)
@@ -108,8 +108,8 @@ describe('admin provider key reveal', () => {
   it('returns the decrypted key with no-store and audits the reveal', async () => {
     const handler = (await catalogHandlers()).get('POST /api/admin/providers/:id/api-key/reveal')!
     const response = reply()
-    const result = await handler(request({ body: { currentPassword: 'password', verificationCode: '123456' } }), response)
-    expect(mocks.requireSensitiveAuth).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', 'password', '123456')
+    const result = await handler(request({ body: { verificationCode: '123456' } }), response)
+    expect(mocks.requireSecretRevealAuth).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', undefined, '123456')
     expect(result).toEqual({ apiKey: 'sk-provider-secret' })
     expect(response.header).toHaveBeenCalledWith('cache-control', 'no-store')
     expect(mocks.audits).toHaveLength(1)
