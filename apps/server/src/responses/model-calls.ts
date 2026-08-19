@@ -1,9 +1,25 @@
 import { eq } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
+import { calculateCostMicros, calculateReservationMicros, type Pricing } from '../accounting/pricing.js'
+import { extendBudgetReservationFixedCost, getActivePricing } from '../accounting/service.js'
 import { db } from '../database/client.js'
 import { generationAttempts } from '../database/schema.js'
+import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { classifyGenerationError } from './fallback-policy.js'
+
+export const EMPTY_USAGE: ResponseUsage = {
+  inputTokens: 0,
+  cachedInputTokens: 0,
+  cacheWriteTokens: 0,
+  outputTokens: 0,
+  reasoningTokens: 0,
+  totalTokens: 0,
+}
+
+export function isInsufficientBalanceError(error: unknown): boolean {
+  return error instanceof AppError && error.code === 'insufficient_balance'
+}
 
 export function modelCallUsage(usage: unknown): ResponseUsage {
   const value = (usage ?? {}) as Record<string, unknown>
@@ -34,6 +50,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
   upstreamModelId: string
   purpose: 'compaction' | 'ocr' | 'title' | 'memory'
   retryAttempt?: number
+  pricing?: Pricing
   invoke: () => Promise<T>
 }): Promise<T> {
   const id = newId()
@@ -59,6 +76,7 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
       cacheWriteTokens: usage.cacheWriteTokens,
       outputTokens: usage.outputTokens,
       reasoningTokens: usage.reasoningTokens,
+      costMicros: input.pricing ? calculateCostMicros(usage, input.pricing) : 0,
       completedAt: new Date(),
     }).where(eq(generationAttempts.id, id))
     return result
@@ -72,4 +90,57 @@ export async function trackInternalModelCall<T extends { usage?: unknown; id?: s
     }).where(eq(generationAttempts.id, id))
     throw error
   }
+}
+
+export async function reserveInternalModelCall(input: {
+  responseId: string
+  modelId: string
+  requestInput: unknown
+  maxOutputTokens: number
+  required?: boolean
+}): Promise<boolean> {
+  const pricing = await getActivePricing(input.modelId)
+  try {
+    await extendBudgetReservationFixedCost(
+      input.responseId,
+      calculateReservationMicros(input.requestInput, input.maxOutputTokens, pricing),
+    )
+    return true
+  } catch (error) {
+    if (!input.required && isInsufficientBalanceError(error)) return false
+    throw error
+  }
+}
+
+export async function trackBilledInternalModelCall<T extends { usage?: unknown; id?: string }>(input: {
+  responseId: string
+  requestLogId: string
+  modelId: string
+  upstreamModelId: string
+  purpose: 'compaction' | 'ocr' | 'title' | 'memory'
+  requestInput: unknown
+  maxOutputTokens: number
+  required?: boolean
+  retryAttempt?: number
+  invoke: () => Promise<T>
+}): Promise<{ result: T; costMicros: number } | { skipped: true; costMicros: 0 }> {
+  const reserved = await reserveInternalModelCall({
+    responseId: input.responseId,
+    modelId: input.modelId,
+    requestInput: input.requestInput,
+    maxOutputTokens: input.maxOutputTokens,
+    required: input.required,
+  })
+  if (!reserved) return { skipped: true, costMicros: 0 }
+  const pricing = await getActivePricing(input.modelId)
+  const result = await trackInternalModelCall({
+    requestLogId: input.requestLogId,
+    modelId: input.modelId,
+    upstreamModelId: input.upstreamModelId,
+    purpose: input.purpose,
+    retryAttempt: input.retryAttempt,
+    pricing,
+    invoke: input.invoke,
+  })
+  return { result, costMicros: calculateCostMicros(modelCallUsage(result.usage), pricing) }
 }

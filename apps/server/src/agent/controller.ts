@@ -282,6 +282,7 @@ export class WorkspaceManager {
 
   get leaseId(): string | undefined { return this.localLeaseId }
   get continuedWithoutAgent(): boolean { return this.toolsDisabled }
+  disableTools(): void { this.toolsDisabled = true }
 }
 
 export async function releaseWorkspaceForChat(chatId: string): Promise<void> {

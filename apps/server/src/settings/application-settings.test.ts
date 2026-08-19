@@ -53,6 +53,8 @@ describe('agent application settings', () => {
     expect(settings.workspaceWaitTimeoutSeconds).toBe(900)
     expect(settings.maxModelTurns).toBe(30)
     expect(settings.commandTimeoutSeconds).toBe(600)
+    expect(settings.billWorkspaces).toBe(false)
+    expect(settings.workspacePricePerMinuteMicros).toBe(10_000)
   })
 
   it('normalizes legacy Gi agent memory values to MiB', () => {
