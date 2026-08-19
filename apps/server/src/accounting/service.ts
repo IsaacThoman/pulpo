@@ -227,7 +227,7 @@ export async function settleBudget(input: {
     }
   })
   await Promise.all([
-    publishScopedStateChanges(settlement.ownChanges, ['usage']),
+    publishScopedStateChanges(settlement.ownChanges, ['usage', 'billing']),
     publishScopedStateChanges(settlement.friendChanges, ['friends']),
   ])
   return settlement.cost
