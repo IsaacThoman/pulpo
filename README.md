@@ -8,5 +8,5 @@ A configurable self-hostable AI platform for the web and iOS.
 ![GitHub Checks](https://img.shields.io/github/check-runs/isaacthoman/pulpo/main)
 </div>
 
-![Web Screenshot](/assets/screenshot-1.png)
+![Web Screenshot](/assets/screenshot-1-fully-transparent.png)
 
