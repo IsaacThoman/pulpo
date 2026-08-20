@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   agentSettingsSchema,
   authSettingsSchema,
+  dictationSettingsSchema,
   DEFAULT_MAX_ATTACHMENT_BYTES,
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_SUGGESTED_PROMPTS,
@@ -57,6 +58,10 @@ export const storedWebToolsSettingsSchema = webToolsSettingsSchema.extend({
   encryptedFirecrawlApiKey: z.string().nullable().default(null),
 })
 
+export const storedDictationSettingsSchema = dictationSettingsSchema.extend({
+  encryptedGroqApiKey: z.string().nullable().default(null),
+})
+
 export type AuthSettings = z.infer<typeof authSettingsSchema>
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>
 export type PersonalizationSettings = z.infer<typeof personalizationSettingsSchema>
@@ -104,6 +109,15 @@ export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebT
     encryptedKagiApiKey: legacy.encryptedKagiApiKey ?? legacy.encryptedApiKey ?? null,
   })
   return parsed.success ? parsed.data : storedWebToolsSettingsSchema.parse({})
+}
+
+export function parseDictationSettings(value: unknown): z.infer<typeof storedDictationSettingsSchema> {
+  const parsed = storedDictationSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : storedDictationSettingsSchema.parse({})
+}
+
+export function publicDictationSettings(value: z.infer<typeof storedDictationSettingsSchema>) {
+  return { enabled: value.enabled, hasApiKey: Boolean(value.encryptedGroqApiKey) }
 }
 
 export function publicWebToolsSettings(value: z.infer<typeof storedWebToolsSettingsSchema>) {

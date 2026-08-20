@@ -985,6 +985,11 @@ export const webToolsSettingsSchema = z.object({
 })
 export type WebToolsSettings = z.infer<typeof webToolsSettingsSchema>
 
+export const dictationSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+})
+export type DictationSettings = z.infer<typeof dictationSettingsSchema>
+
 export const managementScopeSchema = z.enum([
   'account:read',
   'account:write',

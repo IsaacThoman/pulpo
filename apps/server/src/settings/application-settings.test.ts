@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CASUAL_INSTRUCTIONS, DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_BABY_STORAGE_LIMIT_BYTES, DEFAULT_EIGHT_STORAGE_LIMIT_BYTES, DEFAULT_FAT_STORAGE_LIMIT_BYTES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseBillingSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_BABY_STORAGE_LIMIT_BYTES, DEFAULT_EIGHT_STORAGE_LIMIT_BYTES, DEFAULT_FAT_STORAGE_LIMIT_BYTES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings } from './application-settings.js'
+
+describe('dictation application settings', () => {
+  it('is disabled by default and redacts its API key', () => {
+    expect(parseDictationSettings(undefined)).toEqual({ enabled: false, encryptedGroqApiKey: null })
+    expect(publicDictationSettings(parseDictationSettings({ enabled: true, encryptedGroqApiKey: 'encrypted' }))).toEqual({ enabled: true, hasApiKey: true })
+  })
+})
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {

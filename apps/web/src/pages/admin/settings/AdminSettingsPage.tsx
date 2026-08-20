@@ -9,6 +9,7 @@ import {
   Bot,
   Sparkles,
   Ticket,
+  Mic,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
@@ -17,6 +18,7 @@ import { LoggingSection } from './sections-logging'
 import { AgentSection } from './sections-agent'
 import { PersonalizationSection } from './sections-personalization'
 import { InviteCodesSection } from './sections-invites'
+import { DictationSection } from './sections-dictation'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 
@@ -26,6 +28,7 @@ const SECTIONS = [
   { id: 'interface', label: 'Interface', icon: LayoutGrid, el: <InterfaceSection /> },
   { id: 'personalization', label: 'Personalization', icon: Sparkles, el: <PersonalizationSection /> },
   { id: 'ocr', label: 'OCR', icon: FileSearch, el: <OcrSection /> },
+  { id: 'dictation', label: 'Dictation', icon: Mic, el: <DictationSection /> },
   { id: 'agent', label: 'Agent', icon: Bot, el: <AgentSection /> },
   { id: 'logging', label: 'Logging', icon: ScrollText, el: <LoggingSection /> },
   { id: 'database', label: 'Database', icon: Database, el: <DatabaseSection /> },

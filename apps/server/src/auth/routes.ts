@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, sql } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   beginTwoFactorEnrollmentInputSchema,
@@ -27,7 +27,7 @@ import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
-import { parseAuthSettings } from '../settings/application-settings.js'
+import { parseAuthSettings, parseDictationSettings } from '../settings/application-settings.js'
 import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
@@ -93,11 +93,12 @@ async function recordTwoFactorChange(
 
 export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/auth/settings', async () => {
-    const [setting] = await db.select({ value: applicationSettings.value })
+    const rows = await db.select({ key: applicationSettings.key, value: applicationSettings.value })
       .from(applicationSettings)
-      .where(eq(applicationSettings.key, 'auth'))
-      .limit(1)
-    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes, inviteCodesEnabled } = parseAuthSettings(setting?.value)
+      .where(inArray(applicationSettings.key, ['auth', 'dictation']))
+    const byKey = new Map(rows.map((row) => [row.key, row.value]))
+    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes, inviteCodesEnabled } = parseAuthSettings(byKey.get('auth'))
+    const dictation = parseDictationSettings(byKey.get('dictation'))
     const billingEnabled = getConfig().PULPO_BILLING_ENABLED
     return {
       signupEnabled,
@@ -108,6 +109,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       maxAttachmentBytes,
       billingEnabled,
       inviteCodesEnabled: billingEnabled && inviteCodesEnabled,
+      dictationEnabled: dictation.enabled && Boolean(dictation.encryptedGroqApiKey),
     }
   })
 
