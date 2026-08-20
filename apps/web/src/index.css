@@ -148,6 +148,35 @@ body {
   background: transparent;
 }
 
+/* Shared compact treatment for app-owned data tables. */
+.data-table {
+  width: 100%;
+  text-align: left;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.data-table thead {
+  color: var(--color-muted-foreground);
+}
+
+.data-table th {
+  font-weight: 400;
+}
+
+.data-table tbody > tr {
+  border-bottom: 1px solid var(--color-border);
+  transition: background-color 150ms ease;
+}
+
+.data-table tbody > tr:last-child {
+  border-bottom: 0;
+}
+
+.data-table tbody > tr:hover {
+  background-color: color-mix(in oklch, var(--color-muted) 30%, transparent);
+}
+
 .settings-section-nav {
   scrollbar-width: none;
 }

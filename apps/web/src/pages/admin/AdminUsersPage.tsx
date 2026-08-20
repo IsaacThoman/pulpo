@@ -114,26 +114,26 @@ export function AdminUsersPage() {
 
       <Card className="shadow-none">
         <CardContent className="overflow-x-auto px-0 py-0">
-          <table className="w-full min-w-max text-sm">
+          <table className="data-table min-w-max">
             <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="px-5 py-2.5 font-medium">Role</th>
-                <th className="py-2.5 font-medium">Display name</th>
-                <th className="py-2.5 font-medium">Email</th>
-                {billingEnabled && <th className="px-4 py-2.5 font-medium">Plan</th>}
-                {billingEnabled && <th className="px-4 py-2.5 text-right font-medium">Weekly limit</th>}
-                {billingEnabled && <th className="px-4 py-2.5 text-right font-medium">Invites</th>}
-                <th className="px-4 py-2.5 text-right font-medium">Balance</th>
-                <th className="px-4 py-2.5 text-right font-medium">File storage</th>
-                <th className="px-4 py-2.5 font-medium">Last active</th>
-                <th className="py-2.5 font-medium">Created</th>
-                <th className="px-5 py-2.5 text-right font-medium">Actions</th>
+              <tr className="border-b">
+                <th className="px-3 py-2">Role</th>
+                <th className="px-3 py-2">Display name</th>
+                <th className="px-3 py-2">Email</th>
+                {billingEnabled && <th className="px-3 py-2">Plan</th>}
+                {billingEnabled && <th className="px-3 py-2 text-right">Weekly limit</th>}
+                {billingEnabled && <th className="px-3 py-2 text-right">Invites</th>}
+                <th className="px-3 py-2 text-right">Balance</th>
+                <th className="px-3 py-2 text-right">File storage</th>
+                <th className="px-3 py-2">Last active</th>
+                <th className="px-3 py-2">Created</th>
+                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((u) => (
-                <tr key={u.id} className="border-b last:border-0">
-                  <td className="px-5 py-2.5">
+                <tr key={u.id}>
+                  <td className="px-3 py-2">
                     <Select value={u.role} onValueChange={(role) => {
                       if (role === 'admin' && u.role !== 'admin') setPromoteUser(u)
                       else void patchUser(u.id, { role })
@@ -148,27 +148,27 @@ export function AdminUsersPage() {
                       </SelectContent>
                     </Select>
                   </td>
-                  <td className="py-2.5">
+                  <td className="px-3 py-2">
                     <span className="flex items-center gap-2">
                       <ProfileAvatar name={u.name} avatarUrl={u.avatarUrl} className="size-6" fallbackClassName="text-[9px]" />
                       <span>{u.name}<span className="ml-1.5 text-xs text-muted-foreground">@{u.username}</span></span>
                     </span>
                   </td>
-                  <td className="py-2.5 text-muted-foreground">{u.email}</td>
-                  {billingEnabled && <td className="px-4 py-2.5"><BillingPlanCell row={billingByUser.get(u.id)} /></td>}
-                  {billingEnabled && <td className="px-4 py-2.5 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
-                  {billingEnabled && <td className="px-4 py-2.5 text-right tabular-nums"><InviteQuotaCell user={u} onChanged={() => void loadAdmin()} /></td>}
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
+                  {billingEnabled && <td className="px-3 py-2"><BillingPlanCell row={billingByUser.get(u.id)} /></td>}
+                  {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
+                  {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><InviteQuotaCell user={u} onChanged={() => void loadAdmin()} /></td>}
+                  <td className="px-3 py-2 text-right tabular-nums">
                     <BalanceCell user={u} />
                   </td>
-                  <td className="px-4 py-2.5 text-right tabular-nums">
+                  <td className="px-3 py-2 text-right tabular-nums">
                     <StorageCell user={u} row={billingByUser.get(u.id)} onChanged={() => void Promise.all([loadAdmin(), billingUsersQuery.refetch()])} />
                   </td>
-                  <td className="px-4 py-2.5 text-muted-foreground">
+                  <td className="px-3 py-2 text-muted-foreground">
                     {u.lastActiveAt ? timeAgo(u.lastActiveAt) : 'Never'}
                   </td>
-                  <td className="py-2.5 text-muted-foreground">{formatDate(u.joinedAt)}</td>
-                  <td className="px-5 py-2.5">
+                  <td className="px-3 py-2 text-muted-foreground">{formatDate(u.joinedAt)}</td>
+                  <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
                       {billingEnabled && billingByUser.get(u.id)?.hold && <Button
                         size="icon-sm"
