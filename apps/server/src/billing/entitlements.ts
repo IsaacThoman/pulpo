@@ -10,6 +10,7 @@ import {
 } from '../database/schema.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
 import { effectivePlan, remainingPercentage, utcWeekEnd, utcWeekStart, type BillingPlan } from './plans.js'
+import { storageDefaultForPlan } from './storage-entitlements.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -23,6 +24,8 @@ export interface BillingEntitlements {
   weeklyPeriodStart: Date
   weeklyResetAt: Date
   weeklyLimitOverridden: boolean
+  storageLimitBytes: number
+  storageLimitOverridden: boolean
   balancePendingMicros: number
   onHold: boolean
 }
@@ -47,6 +50,8 @@ export async function loadBillingEntitlements(
       weeklyPeriodStart: periodStart,
       weeklyResetAt: utcWeekEnd(now),
       weeklyLimitOverridden: false,
+      storageLimitBytes: 0,
+      storageLimitOverridden: false,
       balancePendingMicros: Number(pending?.balance ?? 0),
       onHold: false,
     }
@@ -79,6 +84,7 @@ export async function loadBillingEntitlements(
       ? settings.fatWeeklyLimitMicros
       : 0
   const weeklyLimitMicros = account?.weeklyLimitOverrideMicros ?? defaultLimit
+  const storageLimitBytes = account?.storageLimitOverrideBytes ?? storageDefaultForPlan(settings, plan)
   const weeklySpentMicros = period?.spentMicros ?? 0
   const weeklyPendingMicros = Number(pendingWeekly?.weekly ?? 0)
   const weeklyRemainingMicros = Math.max(0, weeklyLimitMicros - weeklySpentMicros - weeklyPendingMicros)
@@ -93,6 +99,8 @@ export async function loadBillingEntitlements(
     weeklyPeriodStart: periodStart,
     weeklyResetAt: utcWeekEnd(now),
     weeklyLimitOverridden: account?.weeklyLimitOverrideMicros !== null && account?.weeklyLimitOverrideMicros !== undefined,
+    storageLimitBytes,
+    storageLimitOverridden: account?.storageLimitOverrideBytes !== null && account?.storageLimitOverrideBytes !== undefined,
     balancePendingMicros: Number(pendingBalance?.balance ?? 0),
     onHold: Boolean(account?.holdAt && !account.holdClearedAt),
   }

@@ -1,22 +1,24 @@
-import { and, desc, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { agentSettingsSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
-import { applicationSettings, auditEvents, backupJobs, banners, exportJobs, models } from '../database/schema.js'
+import { applicationSettings, auditEvents, backupJobs, banners, exportJobs, models, users } from '../database/schema.js'
 import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
+import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBillingSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { resolveLegacyOcrCatalogModel } from '../responses/catalog-model-runtime.js'
 import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
+import { refreshStorageLimit } from '../billing/storage-entitlements.js'
+import { publishStateChange } from '../responses/events.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -82,14 +84,37 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     // OCR settings use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
-    await db.transaction(async (tx) => {
+    const changes = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      let storageRevisions: Array<{ userId: string; revision: number }> = []
       for (const [key, value] of Object.entries(values)) {
         await tx.insert(applicationSettings).values({ key, value, updatedBy: admin.id })
           .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
       }
+      if (values.auth !== undefined) {
+        const defaultStorageLimitBytes = authSettingsSchema.parse(values.auth).defaultStorageLimitBytes
+        if (getConfig().PULPO_BILLING_ENABLED) {
+          const [billingRow] = await tx.select({ value: applicationSettings.value }).from(applicationSettings)
+            .where(eq(applicationSettings.key, 'billing')).limit(1)
+          const billing = { ...parseBillingSettings(billingRow?.value), babyStorageLimitBytes: defaultStorageLimitBytes }
+          await tx.insert(applicationSettings).values({ key: 'billing', value: billing, updatedBy: admin.id })
+            .onConflictDoUpdate({ target: applicationSettings.key, set: { value: billing, updatedBy: admin.id, updatedAt: new Date() } })
+        }
+        const userRows = await tx.select({ id: users.id }).from(users)
+        const changedIds: string[] = []
+        for (const { id } of userRows) {
+          if (await refreshStorageLimit(tx, id)) changedIds.push(id)
+        }
+        if (changedIds.length > 0) {
+          storageRevisions = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+            .where(inArray(users.id, changedIds)).returning({ userId: users.id, revision: users.stateRevision })
+          await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'billing.storage_defaults.refresh', targetType: 'billing', targetId: 'baby', metadata: { changedUsers: changedIds.length } })
+        }
+      }
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'settings.update', targetType: 'application', metadata: { keys: Object.keys(values) } })
+      return storageRevisions
     })
+    await Promise.all(changes.map((change) => publishStateChange({ ...change, scopes: ['billing', 'usage'] })))
     return { values }
   })
 

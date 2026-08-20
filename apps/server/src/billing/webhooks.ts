@@ -13,6 +13,7 @@ import {
 } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
+import { refreshStorageLimit } from './storage-entitlements.js'
 import { PLAN_MONTHLY_CREDIT_MICROS } from './plans.js'
 import { planForProductId } from './polar.js'
 
@@ -390,6 +391,7 @@ export async function processPolarWebhookEvent(providerEventId: string, event: P
       await tx.update(billingWebhookEvents).set({ status: 'processing', error: null, updatedAt: new Date() })
         .where(eq(billingWebhookEvents.providerEventId, providerEventId))
       await applyEvent(tx, event, changedUsers)
+      for (const userId of changedUsers) await refreshStorageLimit(tx, userId, event.timestamp)
       const revisions = changedUsers.size > 0
         ? await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
           .where(inArray(users.id, [...changedUsers]))

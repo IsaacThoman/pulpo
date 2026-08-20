@@ -35,6 +35,8 @@ interface AdminBillingUser {
   weeklySpentMicros: number
   weeklyRemainingMicros: number
   weeklyLimitOverridden: boolean
+  storageLimitBytes: number
+  storageLimitOverridden: boolean
   hold: { holdAt: string; holdReason: string | null; holdReference: string | null } | null
 }
 
@@ -160,7 +162,7 @@ export function AdminUsersPage() {
                     <BalanceCell user={u} />
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums">
-                    <StorageCell user={u} />
+                    <StorageCell user={u} row={billingByUser.get(u.id)} onChanged={() => void Promise.all([loadAdmin(), billingUsersQuery.refetch()])} />
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
                     {u.lastActiveAt ? timeAgo(u.lastActiveAt) : 'Never'}
@@ -474,28 +476,38 @@ function BalanceCell({ user }: { user: MonitorUser }) {
   )
 }
 
-function StorageCell({ user }: { user: MonitorUser }) {
+function StorageCell({ user, row, onChanged }: { user: MonitorUser; row: AdminBillingUser | undefined; onChanged: () => void }) {
   const updateStorageLimit = useUsage((s) => s.updateStorageLimit)
   const [editing, setEditing] = useState(false)
   const [value, setValue] = useState('')
-  const limitMiB = (user.storageLimitBytes ?? 0) / (1024 * 1024)
+  const limitBytes = row?.storageLimitBytes ?? user.storageLimitBytes ?? 0
+  const limitMiB = limitBytes / (1024 * 1024)
   const usedMiB = (user.storageBytes ?? 0) / (1024 * 1024)
 
-  const save = () => {
+  const save = async () => {
     const amount = Number(value)
-    if (Number.isFinite(amount) && amount >= 0) updateStorageLimit(user.id, Math.round(amount * 1024 * 1024))
     setEditing(false)
+    if (!Number.isFinite(amount) || amount < 0) return
+    const storageLimitBytes = Math.round(amount * 1024 * 1024)
+    if (!row) return updateStorageLimit(user.id, storageLimitBytes)
+    await apiRequest(`/api/admin/billing/users/${user.id}/storage-limit`, { method: 'PATCH', body: { storageLimitBytes } })
+    onChanged()
   }
 
   if (!editing) return (
-    <button
-      type="button"
-      title="Edit file storage allowance"
-      onClick={() => { setValue(String(Math.round(limitMiB))); setEditing(true) }}
-      className="-mr-1.5 cursor-pointer rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent"
-    >
-      {usedMiB.toLocaleString(undefined, { maximumFractionDigits: 1 })} / {limitMiB.toLocaleString(undefined, { maximumFractionDigits: 0 })} MiB
-    </button>
+    <span className="inline-flex items-center justify-end gap-1">
+      <button
+        type="button"
+        title="Edit file storage allowance"
+        onClick={() => { setValue(String(Math.round(limitMiB))); setEditing(true) }}
+        className="cursor-pointer rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent"
+      >
+        {usedMiB.toLocaleString(undefined, { maximumFractionDigits: 1 })} / {limitMiB.toLocaleString(undefined, { maximumFractionDigits: 0 })} MiB
+      </button>
+      {row?.storageLimitOverridden && <Button size="icon-sm" variant="ghost" title="Reset to plan default" onClick={() => {
+        void apiRequest(`/api/admin/billing/users/${user.id}/storage-limit`, { method: 'PATCH', body: { storageLimitBytes: null } }).then(onChanged)
+      }}><RefreshCw className="size-3.5" /></Button>}
+    </span>
   )
 
   return (
@@ -507,9 +519,9 @@ function StorageCell({ user }: { user: MonitorUser }) {
       value={value}
       onChange={(event) => setValue(event.target.value)}
       onFocus={(event) => event.target.select()}
-      onBlur={save}
+      onBlur={() => void save()}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') save()
+        if (event.key === 'Enter') void save()
         if (event.key === 'Escape') setEditing(false)
       }}
       className="ml-auto h-7 w-28 px-1.5 text-right tabular-nums"

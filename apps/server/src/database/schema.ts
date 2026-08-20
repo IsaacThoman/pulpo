@@ -40,7 +40,7 @@ export const users = pgTable('users', {
   name: text('name').notNull(),
   role: roleEnum('role').notNull().default('pending'),
   balanceMicros: bigint('balance_micros', { mode: 'number' }).notNull().default(0),
-  storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_242_880_000),
+  storageLimitBytes: bigint('storage_limit_bytes', { mode: 'number' }).notNull().default(5_368_709_120),
   blocked: boolean('blocked').notNull().default(false),
   stateRevision: bigint('state_revision', { mode: 'number' }).notNull().default(0),
   username: text('username').notNull(),
@@ -751,6 +751,7 @@ export const billingAccounts = pgTable('billing_accounts', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   polarCustomerId: text('polar_customer_id'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
+  storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
   holdAt: timestamp('hold_at', { withTimezone: true }),
   holdReason: text('hold_reason'),
   holdReference: text('hold_reference'),
@@ -760,6 +761,7 @@ export const billingAccounts = pgTable('billing_accounts', {
 }, (table) => [
   uniqueIndex('billing_accounts_polar_customer_unique').on(table.polarCustomerId),
   check('billing_accounts_weekly_override_check', sql`${table.weeklyLimitOverrideMicros} is null or ${table.weeklyLimitOverrideMicros} >= 0`),
+  check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),
 ])
 
 export const billingSubscriptions = pgTable('billing_subscriptions', {

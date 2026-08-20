@@ -5,7 +5,8 @@ import { usernameSchema } from '@pulpo/contracts'
 import { createPasswordHash, requireAdmin } from '../auth/service.js'
 import { clearTwoFactor, hasTwoFactor, verifySecondFactor } from '../auth/two-factor.js'
 import { db } from '../database/client.js'
-import { apiKeys, applicationSettings, attachments, auditEvents, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, users, userTotpCredentials } from '../database/schema.js'
+import { apiKeys, applicationSettings, attachments, auditEvents, billingAccounts, creditLedger, managementTokens, passwordCredentials, passwordResetTokens, sessions, usageEvents, users, userTotpCredentials } from '../database/schema.js'
+import { newUserStorageLimit, refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -46,8 +47,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       const [setting] = await tx.select({ value: applicationSettings.value }).from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
       const authSettings = parseAuthSettings(setting?.value)
       const balanceMicros = input.balanceMicros ?? authSettings.defaultBalanceMicros
-      const storageLimitBytes = input.storageLimitBytes ?? authSettings.defaultStorageLimitBytes
+      const storageLimitBytes = input.storageLimitBytes ?? await newUserStorageLimit(tx)
       await tx.insert(users).values({ id, name: input.name, username: input.username, email: input.email, role: input.role, balanceMicros, storageLimitBytes })
+      if (input.storageLimitBytes !== undefined) {
+        await tx.insert(billingAccounts).values({ userId: id, storageLimitOverrideBytes: input.storageLimitBytes })
+      }
       await tx.insert(passwordCredentials).values({ userId: id, passwordHash: await createPasswordHash(input.password) })
       await insertNewAccountPreferences(tx, id, authSettings)
       await tx.insert(auditEvents).values({ id: newId(), actorUserId: admin.id, action: 'user.create', targetType: 'user', targetId: id })
@@ -120,6 +124,11 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
           amountMicros: patch.balanceMicros! - current.balanceMicros,
           balanceAfterMicros: patch.balanceMicros!, metadata: { actorUserId: admin.id },
         })
+      }
+      if (patch.storageLimitBytes !== undefined) {
+        await tx.insert(billingAccounts).values({ userId: id, storageLimitOverrideBytes: patch.storageLimitBytes })
+          .onConflictDoUpdate({ target: billingAccounts.userId, set: { storageLimitOverrideBytes: patch.storageLimitBytes, updatedAt: new Date() } })
+        await refreshStorageLimit(tx, id)
       }
       if (updated!.blocked) {
         await tx.delete(sessions).where(eq(sessions.userId, id))

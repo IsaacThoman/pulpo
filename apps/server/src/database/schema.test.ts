@@ -78,6 +78,11 @@ describe('user-owned operational records', () => {
     expect(userConfig.checks.map((constraint) => constraint.name)).toContain('users_invite_code_quota_check')
   })
 
+  it('allows only nonnegative per-user storage overrides', () => {
+    const config = getTableConfig(billingAccounts)
+    expect(config.checks.map((constraint) => constraint.name)).toContain('billing_accounts_storage_override_check')
+  })
+
   it('stores invite codes with a case-insensitive unique code', () => {
     const config = getTableConfig(inviteCodes)
     const codeIndex = config.indexes.find((item) => item.config.name === 'invite_codes_code_unique')

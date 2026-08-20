@@ -28,6 +28,7 @@ import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
 import {
@@ -132,7 +133,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         username: input.username,
         role: 'admin',
         balanceMicros: 100_000_000,
-        storageLimitBytes: 5_000 * 1024 * 1024,
+        storageLimitBytes: await newUserStorageLimit(tx),
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
       await insertNewAccountPreferences(tx, userId, authSettings)
@@ -217,7 +218,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         username: input.username,
         role: authSettings.defaultSignupRole,
         balanceMicros: authSettings.defaultBalanceMicros,
-        storageLimitBytes: authSettings.defaultStorageLimitBytes,
+        storageLimitBytes: await newUserStorageLimit(tx),
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
       await insertNewAccountPreferences(tx, userId, authSettings)

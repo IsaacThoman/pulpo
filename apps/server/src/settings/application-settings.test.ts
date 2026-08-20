@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CASUAL_INSTRUCTIONS, DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_BABY_STORAGE_LIMIT_BYTES, DEFAULT_EIGHT_STORAGE_LIMIT_BYTES, DEFAULT_FAT_STORAGE_LIMIT_BYTES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseBillingSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicWebToolsSettings } from './application-settings.js'
 
 describe('authentication application settings', () => {
   it('defaults new-user balances to five dollars', () => {
@@ -18,6 +18,15 @@ describe('authentication application settings', () => {
 
   it('accepts an instance attachment limit override', () => {
     expect(parseAuthSettings({ maxAttachmentBytes: 50 * 1024 * 1024 }).maxAttachmentBytes).toBe(50 * 1024 * 1024)
+  })
+})
+
+describe('billing application settings', () => {
+  it('fills subscription storage defaults for legacy settings', () => {
+    const settings = parseBillingSettings({ eightWeeklyLimitMicros: 1, fatWeeklyLimitMicros: 2 })
+    expect(settings.babyStorageLimitBytes).toBe(DEFAULT_BABY_STORAGE_LIMIT_BYTES)
+    expect(settings.eightStorageLimitBytes).toBe(DEFAULT_EIGHT_STORAGE_LIMIT_BYTES)
+    expect(settings.fatStorageLimitBytes).toBe(DEFAULT_FAT_STORAGE_LIMIT_BYTES)
   })
 })
 
