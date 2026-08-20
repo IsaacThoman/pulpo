@@ -37,6 +37,7 @@ Subscribe it to `order.paid`, `order.refunded`, `refund.created`, `refund.update
 - Weekly periods run from Monday 00:00 UTC to the following Monday. Pulpo Eight defaults to $3 per week and Le Pulpo Fat to $4 per week.
 - Pulpo Baby has no default weekly allowance, although an administrator may assign an individual override.
 - New usage reserves weekly allowance first and accumulated account credit second. Pending reservations are included so concurrent work cannot overspend either source.
+- Pool members reserve the caller's account credit next, then split any remainder proportionally across other spendable member balances. Each contributor remains separately reserved, debited, and ledgered so leaving a Pool never transfers ownership of remaining credit.
 - A reservation stays attached to the UTC week in which it began. Settlement records both funding sources and deducts only the account-credit portion from the user balance.
 - A paid initial or renewal order grants $2 for Pulpo Eight or $16 for Le Pulpo Fat exactly once. Proration and plan-update orders do not grant monthly credit.
 - Top-ups grant the requested credit amount. The tax-exclusive checkout charge covers the configured 5% plus $0.50 transaction cost and is recalculated on the server.

@@ -297,6 +297,38 @@ export const friendsListSchema = z.object({
 })
 export type FriendsList = z.infer<typeof friendsListSchema>
 
+export const poolMemberSchema = z.object({
+  profile: friendProfileSchema,
+  contributionBalanceMicros: z.number().int().nonnegative(),
+  reservedMicros: z.number().int().nonnegative(),
+  joinedAt: isoDateSchema,
+  owner: z.boolean(),
+})
+export type PoolMember = z.infer<typeof poolMemberSchema>
+
+export const poolInvitationSchema = z.object({
+  id: idSchema,
+  poolId: idSchema,
+  inviter: friendProfileSchema,
+  invitee: friendProfileSchema,
+  memberCount: z.number().int().min(1).max(6),
+  createdAt: isoDateSchema,
+})
+export type PoolInvitation = z.infer<typeof poolInvitationSchema>
+
+export const poolSummarySchema = z.object({
+  accountBalanceMicros: z.number().int().nonnegative(),
+  pool: z.object({
+    id: idSchema,
+    ownerUserId: idSchema,
+    pooledBalanceMicros: z.number().int().nonnegative(),
+    members: z.array(poolMemberSchema).max(6),
+    pendingInvitations: z.array(poolInvitationSchema),
+  }).nullable(),
+  incomingInvitations: z.array(poolInvitationSchema),
+})
+export type PoolSummary = z.infer<typeof poolSummarySchema>
+
 export const inviteCodeSchema = z.object({
   id: idSchema,
   code: z.string().regex(/^[0-9A-Z]{6}$/),
@@ -1390,7 +1422,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends', 'billing'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends', 'pool', 'billing'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({

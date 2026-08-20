@@ -4,6 +4,8 @@ import {
   allocateResizedReservationMicros,
   allocateSettlementMicros,
   availableAccountBalanceMicros,
+  allocatePoolBalanceMicros,
+  allocateProportionallyMicros,
 } from './allocation.js'
 
 describe('billing source allocation', () => {
@@ -57,5 +59,29 @@ describe('billing source allocation', () => {
       pendingBalanceMicros: 2_500_000,
       currentBalanceReservedMicros: 1_000_000,
     })).toBe(1_500_000)
+  })
+
+  it('uses the caller balance before splitting the remainder proportionally', () => {
+    expect([...allocatePoolBalanceMicros({
+      amountMicros: 1_000,
+      callerUserId: 'a',
+      balances: [
+        { userId: 'a', availableMicros: 400 },
+        { userId: 'b', availableMicros: 200 },
+        { userId: 'c', availableMicros: 400 },
+      ],
+    })]).toEqual([['a', 400], ['b', 200], ['c', 400]])
+  })
+
+  it('rounds proportional micros deterministically by largest remainder and user id', () => {
+    expect([...allocateProportionallyMicros(2, [
+      { userId: 'c', availableMicros: 1 },
+      { userId: 'a', availableMicros: 1 },
+      { userId: 'b', availableMicros: 1 },
+    ])].sort()).toEqual([['a', 1], ['b', 1]])
+  })
+
+  it('returns no funding when the Pool cannot cover the amount', () => {
+    expect(allocatePoolBalanceMicros({ amountMicros: 101, callerUserId: 'a', balances: [{ userId: 'a', availableMicros: 50 }, { userId: 'b', availableMicros: 50 }] }).size).toBe(0)
   })
 })

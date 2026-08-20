@@ -5,6 +5,7 @@ import {
   applicationSettings,
   billingAccounts,
   billingSubscriptions,
+  budgetReservationFunders,
   budgetReservations,
   weeklyUsagePeriods,
 } from '../database/schema.js'
@@ -38,8 +39,9 @@ export async function loadBillingEntitlements(
   const periodStart = utcWeekStart(now)
   if (!getConfig().PULPO_BILLING_ENABLED) {
     const [pending] = await tx.select({
-      balance: sql<number>`coalesce(sum(${budgetReservations.balanceReservedMicros}), 0)::bigint`,
-    }).from(budgetReservations).where(and(eq(budgetReservations.userId, userId), eq(budgetReservations.status, 'pending')))
+      balance: sql<number>`coalesce(sum(${budgetReservationFunders.reservedMicros}), 0)::bigint`,
+    }).from(budgetReservationFunders).innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationFunders.reservationId))
+      .where(and(eq(budgetReservationFunders.userId, userId), eq(budgetReservations.status, 'pending')))
     return {
       plan: 'baby',
       weeklyLimitMicros: 0,
@@ -65,8 +67,9 @@ export async function loadBillingEntitlements(
     tx.select({ spentMicros: weeklyUsagePeriods.spentMicros }).from(weeklyUsagePeriods)
       .where(and(eq(weeklyUsagePeriods.userId, userId), eq(weeklyUsagePeriods.periodStart, periodStart))).limit(1),
     tx.select({
-      balance: sql<number>`coalesce(sum(${budgetReservations.balanceReservedMicros}), 0)::bigint`,
-    }).from(budgetReservations).where(and(eq(budgetReservations.userId, userId), eq(budgetReservations.status, 'pending'))),
+      balance: sql<number>`coalesce(sum(${budgetReservationFunders.reservedMicros}), 0)::bigint`,
+    }).from(budgetReservationFunders).innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationFunders.reservationId))
+      .where(and(eq(budgetReservationFunders.userId, userId), eq(budgetReservations.status, 'pending'))),
     tx.select({
       weekly: sql<number>`coalesce(sum(${budgetReservations.weeklyReservedMicros}), 0)::bigint`,
     }).from(budgetReservations).where(and(

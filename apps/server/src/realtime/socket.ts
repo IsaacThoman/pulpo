@@ -118,7 +118,7 @@ export async function createSocketServer(httpServer: HttpServer) {
         const result: SyncResult = {
           accountRevision: current?.revision ?? user.stateRevision,
           invalidate: current?.revision !== input.accountRevision
-            ? ['chats', 'models', 'usage', 'settings', 'friends', 'billing']
+            ? ['chats', 'models', 'usage', 'settings', 'friends', 'pool', 'billing']
             : [],
           snapshots: [],
           events: [],
