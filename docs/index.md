@@ -1,12 +1,7 @@
-<div align="center">
+# Welcome to Pulpo
 
-# Pulpo
+Pulpo is a configurable, self-hostable AI platform for the web and iOS.
 
-A configurable self-hostable AI platform for the web and iOS.
+This documentation is just getting started. More guides will be added as Pulpo develops.
 
-![GitHub Tag](https://img.shields.io/github/v/tag/isaacthoman/pulpo)
-![GitHub Checks](https://img.shields.io/github/check-runs/isaacthoman/pulpo/main)
-
-</div>
-
-![Web Screenshot](../assets/screenshot-1-fully-transparent.png)
+For source code, releases, and issue tracking, visit the [Pulpo repository on GitHub](https://github.com/IsaacThoman/pulpo).
