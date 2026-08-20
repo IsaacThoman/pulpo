@@ -1,36 +1,23 @@
----
-layout: home
-titleTemplate: false
+# Welcome to Pulpo
 
-hero:
-  name: Pulpo
-  text: Your AI workspace, on your terms
-  tagline: A local-first interface and OpenAI-compatible gateway for the web and iPhone.
-  image:
-    src: /pulpo-smiley.png
-    alt: Pulpo
-  actions:
-    - theme: brand
-      text: Get started
-      link: /getting-started
-    - theme: alt
-      text: Self-host Pulpo
-      link: /self-hosting
+Pulpo is a self-hostable, local-first AI workspace and OpenAI-compatible gateway for the web and iPhone.
 
-features:
-  - title: Fast by default
-    details: Recent chats, drafts, and pending changes stay local so the interface remains responsive and useful through brief network interruptions.
-  - title: Bring your own models
-    details: Administrators connect providers and publish a curated model catalog without exposing provider credentials to users.
-  - title: OpenAI-compatible API
-    details: Use scoped Pulpo keys with OpenAI SDKs through the Responses API and model-listing endpoints.
-  - title: Web and iPhone
-    details: Continue the same conversations in the browser or the native iPhone client, including on self-hosted Pulpo instances.
----
+It keeps recent conversations, drafts, and pending changes on your device so the interface stays responsive through brief network interruptions. Server-side workers continue model responses independently of browser connections, while PostgreSQL remains authoritative.
 
-## Choose where to begin
+## Start here
 
-- **Using Pulpo?** Start with [Getting started](/getting-started) and the [iPhone guide](/guides/iphone).
-- **Running an instance?** Follow the [self-hosting guide](/self-hosting) and learn the [management CLI](/operations/cli).
-- **Building an integration?** Read the [API overview](/api).
-- **Contributing?** Set up a checkout with the [development guide](/contributing).
+- If you use Pulpo, begin with [Getting started](/getting-started).
+- To connect from iOS, read [Pulpo for iPhone](/guides/iphone).
+- To run your own instance, follow [Self-hosting Pulpo](/self-hosting).
+- To automate administration, install the [Pulpo management CLI](/operations/cli).
+- To build an integration, use the [OpenAI-compatible API](/api).
+
+## Learn how Pulpo works
+
+Read the [architecture overview](/concepts/architecture) for the major services and repository layout. [Local-first and realtime behavior](/concepts/realtime) explains caching, queued mutations, event recovery, and background response ownership.
+
+## Contribute
+
+Pulpo's source and documentation are maintained in the [GitHub repository](https://github.com/IsaacThoman/pulpo). See [Development and contributing](/contributing) to set up a local checkout, validate changes, and understand the release process.
+
+Report problems in the [issue tracker](https://github.com/IsaacThoman/pulpo/issues). Do not include passwords, API keys, provider credentials, or private conversation content in a public issue.

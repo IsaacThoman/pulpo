@@ -61,9 +61,14 @@ export default defineConfig({
     logo: '/pulpo-smiley.png',
     siteTitle: 'Pulpo Docs',
     nav: [
-      { text: 'Guides', link: '/getting-started' },
-      { text: 'Self-hosting', link: '/self-hosting' },
-      { text: 'API', link: '/api' },
+      {
+        text: 'Documentation',
+        items: [
+          { text: 'Guides', link: '/getting-started' },
+          { text: 'Self-hosting', link: '/self-hosting' },
+          { text: 'API', link: '/api' },
+        ],
+      },
     ],
     sidebar: {
       '/getting-started': userSidebar,
