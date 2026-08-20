@@ -1,0 +1,1 @@
+ALTER TABLE "models" DROP COLUMN "agent_compaction_threshold_tokens";
