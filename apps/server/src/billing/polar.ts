@@ -197,13 +197,23 @@ async function currentPaidSubscription(userId: string) {
   return current ?? null
 }
 
+function polarErrorMessage(error: Error): string {
+  if ('body' in error && typeof error.body === 'string') {
+    try {
+      const parsed = JSON.parse(error.body) as { detail?: unknown }
+      if (typeof parsed.detail === 'string' && parsed.detail.trim()) return parsed.detail
+    } catch { /* use the SDK message */ }
+  }
+  return error.message || 'Could not update the subscription'
+}
+
 function rethrowPolar(error: unknown): never {
   if (error instanceof Error && 'statusCode' in error && typeof (error as { statusCode: unknown }).statusCode === 'number') {
     const statusCode = (error as { statusCode: number }).statusCode
     throw new AppError(
       statusCode >= 400 && statusCode < 500 ? statusCode : 502,
       'polar_request_failed',
-      error.message || 'Could not update the subscription',
+      polarErrorMessage(error),
     )
   }
   throw error
@@ -235,22 +245,25 @@ export async function changeSubscription(input: {
   }
 
   try {
-    let updated = change === 'cancel' || change === 'renew'
-      ? await getPolarClient().subscriptions.update({
+    let updated
+    if (change === 'cancel' || change === 'renew') {
+      updated = await getPolarClient().subscriptions.update({
         id: current.polarSubscriptionId,
         subscriptionUpdate: { cancelAtPeriodEnd: change === 'cancel' },
       })
-      : await getPolarClient().subscriptions.update({
+    } else {
+      if (current.cancelAtPeriodEnd) {
+        await getPolarClient().subscriptions.update({
+          id: current.polarSubscriptionId,
+          subscriptionUpdate: { cancelAtPeriodEnd: false },
+        })
+      }
+      updated = await getPolarClient().subscriptions.update({
         id: current.polarSubscriptionId,
         subscriptionUpdate: {
           productId: productIdForPlan(change === 'upgrade_fat' ? 'fat' : 'eight'),
           prorationBehavior: 'invoice',
         },
-      })
-    if ((change === 'upgrade_fat' || change === 'downgrade_eight') && updated.cancelAtPeriodEnd) {
-      updated = await getPolarClient().subscriptions.update({
-        id: current.polarSubscriptionId,
-        subscriptionUpdate: { cancelAtPeriodEnd: false },
       })
     }
     const plan = planForProductId(updated.productId)
