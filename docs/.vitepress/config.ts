@@ -3,19 +3,7 @@ import { defineConfig } from 'vitepress'
 const sidebar = [
   {
     text: 'Pulpo Docs',
-    items: [
-      { text: 'Welcome', link: '/' },
-      { text: 'Getting started', link: '/getting-started' },
-      { text: 'Pulpo for iPhone', link: '/guides/iphone' },
-      { text: 'Self-hosting', link: '/self-hosting' },
-      { text: 'Management CLI', link: '/operations/cli' },
-      { text: 'Billing and licensing', link: '/billing' },
-      { text: 'Complete operator reference', link: '/operations/reference' },
-      { text: 'Architecture', link: '/concepts/architecture' },
-      { text: 'Local-first and realtime', link: '/concepts/realtime' },
-      { text: 'OpenAI-compatible API', link: '/api' },
-      { text: 'Development and releases', link: '/contributing' },
-    ],
+    items: [{ text: 'Welcome', link: '/' }],
   },
 ]
 
@@ -23,7 +11,7 @@ export default defineConfig({
   lang: 'en-US',
   title: 'Pulpo Docs',
   titleTemplate: ':title · Pulpo Docs',
-  description: 'Guides for using, self-hosting, operating, and integrating with Pulpo.',
+  description: 'Pulpo is a configurable self-hostable AI platform for the web and iOS.',
   base: '/',
   cleanUrls: true,
   lastUpdated: true,
