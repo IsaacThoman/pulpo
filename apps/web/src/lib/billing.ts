@@ -5,6 +5,7 @@ export type BillingPlan = 'baby' | 'eight' | 'fat'
 export interface BillingSummary {
   plan: BillingPlan
   balanceMicros: number
+  poolBalanceMicros: number | null
   weekly: { remainingPercentage: number; resetsAt: string } | null
   onHold: boolean
   subscription: {

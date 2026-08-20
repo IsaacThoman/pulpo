@@ -7,6 +7,14 @@ import { creditLedger, modelPresetChoices, modelPresets, models, requestLogs, us
 import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
 import { friendUserIds } from '../friends/routes.js'
 import { profileAvatarUrl } from '../profile/service.js'
+import { activePoolMembership, poolBalanceMicros } from '../pools/service.js'
+
+async function displayedBalance(userId: string, accountBalanceMicros: number) {
+  return db.transaction(async (tx) => {
+    const membership = await activePoolMembership(tx, userId)
+    return membership ? { balanceMicros: await poolBalanceMicros(tx, membership.pool.id), balanceKind: 'pool' as const } : { balanceMicros: accountBalanceMicros, balanceKind: 'account' as const }
+  })
+}
 
 const usageRangeSchema = z.enum(['24h', '7d', '30d', '90d', 'all'])
 type UsageRange = z.infer<typeof usageRangeSchema>
@@ -205,7 +213,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
       outputTokens: Number(summary?.outputTokens ?? 0),
       costMicros: Number(summary?.costMicros ?? 0),
       averageLatencyMs: Number(summary?.averageLatencyMs ?? 0),
-      balanceMicros: user.balanceMicros,
+      ...await displayedBalance(user.id, user.balanceMicros),
       since: since.toISOString(),
     }
   })
@@ -220,7 +228,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         timeZone: query.timeZone,
         hidePrivateModels: false,
       }),
-      balanceMicros: user.balanceMicros,
+      ...await displayedBalance(user.id, user.balanceMicros),
     }
   })
 
@@ -236,13 +244,13 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
     const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
     const [rows, aliases] = await Promise.all([db.select({
       usage: usageEvents,
-      balanceAfterMicros: creditLedger.balanceAfterMicros,
+      balanceAfterMicros: sql<number | null>`coalesce(${usageEvents.poolBalanceAfterMicros}, ${creditLedger.balanceAfterMicros})`,
       displayModelId: models.id,
       displayModelName: models.name,
       displayModelLogo: models.logo,
       displayModelVisible: models.visible,
     }).from(usageEvents)
-      .leftJoin(creditLedger, eq(creditLedger.responseId, usageEvents.responseId))
+      .leftJoin(creditLedger, and(eq(creditLedger.responseId, usageEvents.responseId), eq(creditLedger.userId, user.id)))
       .leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId))
       .innerJoin(models, eq(models.id, attributedModelId))
       .where(and(eq(usageEvents.userId, user.id), since ? gte(usageEvents.createdAt, since) : undefined, cursorFilter))

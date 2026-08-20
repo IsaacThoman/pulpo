@@ -34,6 +34,7 @@ interface PersonalActivity {
   contribution: SettledDailyRow[]
   topModels: Array<{ modelId: string; calls: number; costMicros: number }>
   balanceMicros: number
+  balanceKind: 'account' | 'pool'
 }
 
 interface PersonalRecordRow {
@@ -118,7 +119,7 @@ export function PersonalPage() {
           </div>
         </div>
         <div className="text-right">
-          <div className="mb-1 text-xs text-muted-foreground">Balance</div>
+          <div className="mb-1 text-xs text-muted-foreground">{activity?.balanceKind === 'pool' ? 'Balance (pooled)' : 'Balance'}</div>
           <div className="text-2xl font-medium text-emerald-600 dark:text-emerald-400">
             {formatBalance(me.balance)}
           </div>

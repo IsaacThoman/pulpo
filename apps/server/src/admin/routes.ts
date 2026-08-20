@@ -20,6 +20,7 @@ import {
   friendPeerIds,
   publishScopedStateChanges,
 } from '../friends/sync.js'
+import { poolPeerIds } from '../pools/service.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -108,7 +109,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       patch.role,
       patch.balanceMicros,
     ].some((value) => value !== undefined)
-    const friendChanges = await db.transaction(async (tx) => {
+    const relatedChanges = await db.transaction(async (tx) => {
       const [current] = await tx.select().from(users).where(eq(users.id, id)).limit(1)
       if (!current) throw notFound('User')
       const balanceChanged = patch.balanceMicros !== undefined && patch.balanceMicros !== current.balanceMicros
@@ -145,13 +146,14 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         id: newId(), actorUserId: admin.id, action: 'user.update', targetType: 'user', targetId: id,
         metadata: { ...userPatch, ...(password ? { passwordChanged: true } : {}) },
       })
-      if (!friendVisibleChanged) return []
-      const peers = await friendPeerIds(tx, id)
-      return bumpAccountRevisions(tx, peers)
+      const friendChanges = friendVisibleChanged ? await bumpAccountRevisions(tx, await friendPeerIds(tx, id)) : []
+      const poolChanges = balanceChanged ? await bumpAccountRevisions(tx, await poolPeerIds(tx, id)) : []
+      return { friendChanges, poolChanges }
     })
     const [updated] = await db.select().from(users).where(eq(users.id, id)).limit(1)
     await publishStateChange({ userId: id, revision: updated!.stateRevision })
-    await publishScopedStateChanges(friendChanges, ['friends'])
+    await publishScopedStateChanges(relatedChanges.friendChanges, ['friends'])
+    await publishScopedStateChanges(relatedChanges.poolChanges, ['pool', 'usage', 'billing'])
     return updated
   })
 

@@ -18,6 +18,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
+import { FriendsTabs } from '@/components/FriendsTabs'
 
 export function FriendsHandle({ username }: { username: string }) {
   const [copied, setCopied] = useState(false)
@@ -260,7 +261,7 @@ export function FriendsPage() {
   const data = listQuery.data
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Friends</h1></header>
+      <FriendsTabs />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
           <div>

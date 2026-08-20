@@ -11,6 +11,7 @@ import {
   ReceiptText,
   ShieldCheck,
   WalletCards,
+  UsersRound,
 } from 'lucide-react'
 import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate } from '@/lib/format'
@@ -226,6 +227,7 @@ export function BillingPage() {
                 {accountBalanceMicros === undefined ? '—' : formatBalance(accountBalanceMicros / 1_000_000)}
               </div>
               <p className="mt-2 max-w-md text-xs text-muted-foreground">Credits are used for chats, API calls, and other metered model usage.</p>
+              {summary?.poolBalanceMicros !== null && summary?.poolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />Pool balance</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.poolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">The combined account balances available to your Pool.</p></div>}
             </div>
             <div className="py-1 lg:col-span-2 lg:pl-6">
               <div className="flex items-start justify-between gap-3">

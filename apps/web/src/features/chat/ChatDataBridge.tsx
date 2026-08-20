@@ -28,6 +28,10 @@ function invalidateStateScope(scope: StateInvalidationScope, userId: string): vo
     void queryClient.invalidateQueries({ queryKey: ['friends-usage', userId] })
     return
   }
+  if (scope === 'pool') {
+    void queryClient.invalidateQueries({ queryKey: ['pool', userId] })
+    return
+  }
   void queryClient.invalidateQueries({ queryKey: [scope, userId] })
 }
 

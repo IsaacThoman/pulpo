@@ -1,15 +1,18 @@
-import { and, eq, gte, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, eq, gte, gt, inArray, isNull, lte, or, sql } from 'drizzle-orm'
 import type { ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   apiKeys,
   budgetReservations,
+  budgetReservationFunders,
   creditLedger,
   modelPricingVersions,
   responses,
   usageEvents,
   users,
   weeklyUsagePeriods,
+  poolMembers,
+  billingAccounts,
 } from '../database/schema.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -30,7 +33,10 @@ import {
   allocateResizedReservationMicros,
   allocateSettlementMicros,
   availableAccountBalanceMicros,
+  allocatePoolBalanceMicros,
+  allocateProportionallyMicros,
 } from '../billing/allocation.js'
+import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
 
 export interface ActivePricing extends Pricing {
   id: string
@@ -62,20 +68,25 @@ export async function reserveBudget(input: {
 }): Promise<number> {
   const amount = calculateReservationMicros(input.requestInput, input.maxOutputTokens, input.pricing)
   await db.transaction(async (tx) => {
-    const [user] = await tx
-      .select()
-      .from(users)
-      .where(eq(users.id, input.userId))
-      .for('update')
+    const membership = await activePoolMembership(tx, input.userId)
+    if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
+    const poolRows = membership ? await activePoolMembers(tx, membership.pool.id) : []
+    const participantIds = membership ? poolRows.map((row) => row.user.id).sort() : [input.userId]
+    const lockedUsers = await tx.select().from(users).where(inArray(users.id, participantIds)).orderBy(users.id).for('update')
+    const user = lockedUsers.find((row) => row.id === input.userId)
     if (!user || user.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
     const entitlements = await loadBillingEntitlements(tx, input.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
     const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros)
-    const balanceAvailable = availableAccountBalanceMicros({
-      balanceMicros: user.balanceMicros,
-      pendingBalanceMicros: entitlements.balancePendingMicros,
-    })
-    if (balanceAvailable < allocation.balanceMicros) {
+    const pendingByUser = await pendingFundingByUser(tx, participantIds)
+    const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, participantIds))
+    const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
+    const balances = lockedUsers.filter((row) => !row.blocked && (row.id === input.userId || !held.has(row.id))).map((row) => ({
+      userId: row.id,
+      availableMicros: availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pendingByUser.get(row.id) ?? 0 }),
+    }))
+    const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: input.userId, balances })
+    if (allocation.balanceMicros > 0 && !funding.size) {
       throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the maximum request cost')
     }
     if (input.apiKeyId) {
@@ -104,16 +115,19 @@ export async function reserveBudget(input: {
         }
       }
     }
+    const reservationId = newId()
     await tx.insert(budgetReservations).values({
-      id: newId(),
+      id: reservationId,
       responseId: input.responseId,
       userId: input.userId,
       apiKeyId: input.apiKeyId,
+      poolId: membership?.pool.id,
       amountMicros: amount,
       weeklyPeriodStart: allocation.weeklyMicros > 0 ? entitlements.weeklyPeriodStart : null,
       weeklyReservedMicros: allocation.weeklyMicros,
       balanceReservedMicros: allocation.balanceMicros,
     })
+    if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId, userId, reservedMicros })))
     await tx.update(responses).set({ pricingVersionId: input.pricing.id }).where(eq(responses.id, input.responseId))
   })
   return amount
@@ -141,6 +155,7 @@ export async function settleBudget(input: {
       cost: reservation.settledAmountMicros ?? 0,
       ownChanges: [],
       friendChanges: [],
+      poolChanges: [],
     }
     const [response] = await tx.select().from(responses).where(eq(responses.id, input.responseId)).limit(1)
     const [pricing] = response?.pricingVersionId
@@ -150,23 +165,47 @@ export async function settleBudget(input: {
     const generationCost = input.costMicrosOverride ?? (calculateCostMicros(input.usage, pricing) + Math.max(0, (input.requestCount ?? 1) - 1) * pricing.perRequestPriceMicros)
     const cost = generationCost + Math.max(0, input.additionalCostMicros ?? 0)
     if (cost > reservation.amountMicros) throw new AppError(409, 'reservation_exceeded', 'Usage exceeded the reserved budget')
-    const [user] = await tx
-      .select()
-      .from(users)
-      .where(eq(users.id, reservation.userId))
-      .for('update')
+    const funders = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
+    const funderIds = funders.map((row) => row.userId).sort()
+    const fundingUsers = funderIds.length ? await tx.select().from(users).where(inArray(users.id, funderIds)).orderBy(users.id).for('update') : []
+    const user = fundingUsers.find((row) => row.id === reservation.userId) ?? (await tx.select().from(users).where(eq(users.id, reservation.userId)).limit(1))[0]
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
     const allocation = allocateSettlementMicros(cost, reservation.weeklyReservedMicros)
     const weeklyCost = allocation.weeklyMicros
     const balanceCost = allocation.balanceMicros
-    const balanceAfter = user.balanceMicros - balanceCost
-    const [updatedUser] = await tx.update(users).set({
-      balanceMicros: balanceAfter,
-      stateRevision: sql`${users.stateRevision} + 1`,
-    }).where(eq(users.id, user.id)).returning({
-      userId: users.id,
-      revision: users.stateRevision,
+    const callerReserved = funders.find((row) => row.userId === reservation.userId)?.reservedMicros ?? 0
+    const settledFunding = new Map<string, number>()
+    const ownCost = Math.min(balanceCost, callerReserved)
+    if (ownCost > 0) settledFunding.set(reservation.userId, ownCost)
+    const sharedCost = balanceCost - ownCost
+    if (sharedCost > 0) {
+      const shared = allocateProportionallyMicros(sharedCost, funders.filter((row) => row.userId !== reservation.userId).map((row) => ({ userId: row.userId, availableMicros: row.reservedMicros })))
+      if (!shared.size) throw new AppError(409, 'reservation_funding_missing', 'Pool reservation funding is missing')
+      for (const [userId, amount] of shared) settledFunding.set(userId, amount)
+    }
+    const ownChanges: Array<{ userId: string; revision: number }> = []
+    for (const fundingUser of fundingUsers) {
+      const debit = settledFunding.get(fundingUser.id) ?? 0
+      if (debit <= 0) continue
+      const balanceAfter = fundingUser.balanceMicros - debit
+      const [updated] = await tx.update(users).set({ balanceMicros: balanceAfter, stateRevision: sql`${users.stateRevision} + 1` })
+        .where(eq(users.id, fundingUser.id)).returning({ userId: users.id, revision: users.stateRevision })
+      if (updated) ownChanges.push(updated)
+      await tx.insert(creditLedger).values({
+        id: newId(), userId: fundingUser.id, responseId: response.id, type: 'usage', amountMicros: -debit,
+        balanceAfterMicros: balanceAfter,
+        metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, weeklyCostMicros: weeklyCost, balanceCostMicros: debit, callerUserId: reservation.userId, poolId: reservation.poolId },
+      })
+    }
+    if (balanceCost === 0) await tx.insert(creditLedger).values({
+      id: newId(), userId: user.id, responseId: response.id, type: 'usage', amountMicros: 0,
+      balanceAfterMicros: user.balanceMicros,
+      metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, weeklyCostMicros: weeklyCost, balanceCostMicros: 0, poolId: reservation.poolId },
     })
+    if (!ownChanges.some((change) => change.userId === user.id)) {
+      const [updatedCaller] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, user.id)).returning({ userId: users.id, revision: users.stateRevision })
+      if (updatedCaller) ownChanges.push(updatedCaller)
+    }
     await tx.update(budgetReservations).set({
       status: 'settled',
       settledAmountMicros: cost,
@@ -174,20 +213,7 @@ export async function settleBudget(input: {
       settledBalanceMicros: balanceCost,
       settledAt: new Date(),
     }).where(eq(budgetReservations.id, reservation.id))
-    await tx.insert(creditLedger).values({
-      id: newId(),
-      userId: user.id,
-      responseId: response.id,
-      type: 'usage',
-      amountMicros: -balanceCost,
-      balanceAfterMicros: balanceAfter,
-      metadata: {
-        reservationMicros: reservation.amountMicros,
-        totalCostMicros: cost,
-        weeklyCostMicros: weeklyCost,
-        balanceCostMicros: balanceCost,
-      },
-    })
+    for (const [userId, settledMicros] of settledFunding) await tx.update(budgetReservationFunders).set({ settledMicros }).where(and(eq(budgetReservationFunders.reservationId, reservation.id), eq(budgetReservationFunders.userId, userId)))
     if (weeklyCost > 0 && reservation.weeklyPeriodStart) {
       await tx.insert(weeklyUsagePeriods).values({
         userId: user.id,
@@ -201,6 +227,11 @@ export async function settleBudget(input: {
         },
       })
     }
+    const [poolSnapshot] = reservation.poolId ? await tx.select({ total: sql<number>`coalesce(sum(${users.balanceMicros}), 0)::bigint` })
+      .from(poolMembers).innerJoin(users, eq(users.id, poolMembers.userId)).where(and(
+        eq(poolMembers.poolId, reservation.poolId), lte(poolMembers.joinedAt, reservation.createdAt),
+        or(isNull(poolMembers.leftAt), gt(poolMembers.leftAt, reservation.createdAt)),
+      )) : []
     await tx.insert(usageEvents).values({
       id: newId(),
       userId: user.id,
@@ -216,21 +247,51 @@ export async function settleBudget(input: {
       costMicros: cost,
       weeklyCostMicros: weeklyCost,
       balanceCostMicros: balanceCost,
+      poolBalanceAfterMicros: reservation.poolId ? Number(poolSnapshot?.total ?? 0) : null,
       weeklyPeriodStart: reservation.weeklyPeriodStart,
       latencyMs: input.latencyMs,
     }).onConflictDoNothing()
     const peers = await friendPeerIds(tx, user.id, { acceptedOnly: true })
+    const poolChanges = reservation.poolId ? (await activePoolMembers(tx, reservation.poolId)).map((row) => row.user.id) : []
     return {
       cost,
-      ownChanges: updatedUser ? [updatedUser] : [],
+      ownChanges,
       friendChanges: await bumpAccountRevisions(tx, peers),
+      poolChanges: await bumpAccountRevisions(tx, poolChanges.filter((id) => !ownChanges.some((change) => change.userId === id))),
     }
   })
   await Promise.all([
     publishScopedStateChanges(settlement.ownChanges, ['usage', 'billing']),
     publishScopedStateChanges(settlement.friendChanges, ['friends']),
+    publishScopedStateChanges(settlement.poolChanges, ['pool', 'usage', 'billing']),
   ])
   return settlement.cost
+}
+
+async function replaceReservationFunding(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  reservation: typeof budgetReservations.$inferSelect,
+  balanceMicros: number,
+  errorMessage: string,
+): Promise<void> {
+  if (reservation.poolId) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${reservation.poolId}`}))`)
+  const existing = await tx.select().from(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
+  const active = reservation.poolId ? await activePoolMembers(tx, reservation.poolId) : []
+  const activeIds = new Set(active.map((row) => row.user.id))
+  const ids = [...new Set([reservation.userId, ...activeIds, ...existing.map((row) => row.userId)])].sort()
+  const lockedUsers = await tx.select().from(users).where(inArray(users.id, ids)).orderBy(users.id).for('update')
+  const pending = await pendingFundingByUser(tx, ids)
+  const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, ids))
+  const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
+  const current = new Map(existing.map((row) => [row.userId, row.reservedMicros]))
+  const balances = lockedUsers.filter((row) => !row.blocked && (row.id === reservation.userId || !held.has(row.id))).map((row) => {
+    const available = availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pending.get(row.id) ?? 0, currentBalanceReservedMicros: current.get(row.id) ?? 0 })
+    return { userId: row.id, availableMicros: activeIds.has(row.id) || row.id === reservation.userId ? available : Math.min(available, current.get(row.id) ?? 0) }
+  })
+  const funding = allocatePoolBalanceMicros({ amountMicros: balanceMicros, callerUserId: reservation.userId, balances })
+  if (balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', errorMessage)
+  await tx.delete(budgetReservationFunders).where(eq(budgetReservationFunders.reservationId, reservation.id))
+  if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId: reservation.id, userId, reservedMicros })))
 }
 
 export async function resizeBudgetReservation(input: {
@@ -244,8 +305,6 @@ export async function resizeBudgetReservation(input: {
   await db.transaction(async (tx) => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, input.responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
-    const [user] = await tx.select().from(users).where(eq(users.id, reservation.userId)).for('update')
-    if (!user) throw new AppError(409, 'user_missing', 'User is missing')
     const entitlements = await loadBillingEntitlements(tx, reservation.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
     const allocation = allocateResizedReservationMicros({
@@ -255,12 +314,7 @@ export async function resizeBudgetReservation(input: {
       reservationPeriodStart: reservation.weeklyPeriodStart,
       currentPeriodStart: entitlements.weeklyPeriodStart,
     })
-    const balanceAvailable = availableAccountBalanceMicros({
-      balanceMicros: user.balanceMicros,
-      pendingBalanceMicros: entitlements.balancePendingMicros,
-      currentBalanceReservedMicros: reservation.balanceReservedMicros,
-    })
-    if (balanceAvailable < allocation.balanceMicros) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the next agent turn')
+    await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the next agent turn')
     await tx.update(budgetReservations).set({
       amountMicros: amount,
       weeklyReservedMicros: allocation.weeklyMicros,
@@ -276,8 +330,6 @@ export async function extendBudgetReservationFixedCost(responseId: string, addit
   await db.transaction(async (tx) => {
     const [reservation] = await tx.select().from(budgetReservations).where(eq(budgetReservations.responseId, responseId)).for('update')
     if (!reservation || reservation.status !== 'pending') throw new AppError(409, 'reservation_missing', 'Agent budget reservation is unavailable')
-    const [user] = await tx.select().from(users).where(eq(users.id, reservation.userId)).for('update')
-    if (!user) throw new AppError(409, 'user_missing', 'User is missing')
     const entitlements = await loadBillingEntitlements(tx, reservation.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
     const amount = reservation.amountMicros + additionalMicros
@@ -288,12 +340,7 @@ export async function extendBudgetReservationFixedCost(responseId: string, addit
       reservationPeriodStart: reservation.weeklyPeriodStart,
       currentPeriodStart: entitlements.weeklyPeriodStart,
     })
-    const balanceAvailable = availableAccountBalanceMicros({
-      balanceMicros: user.balanceMicros,
-      pendingBalanceMicros: entitlements.balancePendingMicros,
-      currentBalanceReservedMicros: reservation.balanceReservedMicros,
-    })
-    if (balanceAvailable < allocation.balanceMicros) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for the requested web tool')
+    await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the requested web tool')
     await tx.update(budgetReservations).set({
       amountMicros: amount,
       weeklyReservedMicros: allocation.weeklyMicros,
