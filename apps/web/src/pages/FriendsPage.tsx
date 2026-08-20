@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { InviteCodesCard } from '@/components/InviteCodesCard'
 
 export function FriendsHandle({ username }: { username: string }) {
   const [copied, setCopied] = useState(false)
@@ -266,6 +267,7 @@ export function FriendsPage() {
             <h2 className="text-lg font-medium">Find your friends</h2>
             {user && <FriendsHandle username={user.username} />}
           </div>
+          <InviteCodesCard />
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input

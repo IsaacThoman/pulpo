@@ -13,6 +13,7 @@ describe('authentication application settings', () => {
     expect(settings.defaultStorageLimitBytes).toBe(DEFAULT_STORAGE_LIMIT_BYTES)
     expect(settings.maxAttachmentBytes).toBe(DEFAULT_MAX_ATTACHMENT_BYTES)
     expect(settings.newAccountModelDefaults).toEqual({ defaultModelId: null, favoriteModelIds: [] })
+    expect(settings.inviteCodesEnabled).toBe(false)
   })
 
   it('accepts an instance attachment limit override', () => {

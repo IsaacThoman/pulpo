@@ -96,7 +96,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .from(applicationSettings)
       .where(eq(applicationSettings.key, 'auth'))
       .limit(1)
-    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes } = parseAuthSettings(setting?.value)
+    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes, inviteCodesEnabled } = parseAuthSettings(setting?.value)
+    const billingEnabled = getConfig().PULPO_BILLING_ENABLED
     return {
       signupEnabled,
       pendingDetails,
@@ -104,7 +105,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       pendingMessage,
       apiKeysEnabled,
       maxAttachmentBytes,
-      billingEnabled: getConfig().PULPO_BILLING_ENABLED,
+      billingEnabled,
+      inviteCodesEnabled: billingEnabled && inviteCodesEnabled,
     }
   })
 

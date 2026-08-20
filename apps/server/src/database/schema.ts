@@ -47,12 +47,14 @@ export const users = pgTable('users', {
   profileColor: text('profile_color'),
   avatarObjectKey: text('avatar_object_key'),
   avatarVersion: integer('avatar_version').notNull().default(0),
+  inviteCodeQuota: integer('invite_code_quota').notNull().default(0),
   ...timestamps,
 }, (table) => [
   uniqueIndex('users_email_unique').on(sql`lower(${table.email})`),
   uniqueIndex('users_username_unique').on(sql`lower(${table.username})`),
   index('users_username_trgm_idx').using('gin', sql`lower(${table.username}) gin_trgm_ops`),
   index('users_name_trgm_idx').using('gin', sql`lower(${table.name}) gin_trgm_ops`),
+  check('users_invite_code_quota_check', sql`${table.inviteCodeQuota} >= 0`),
 ])
 
 export const friendships = pgTable('friendships', {
@@ -69,6 +71,20 @@ export const friendships = pgTable('friendships', {
   index('friendships_user_b_status_idx').on(table.userBId, table.status),
   check('friendships_ordered_pair_check', sql`${table.userAId} < ${table.userBId}`),
   check('friendships_requester_member_check', sql`${table.requestedByUserId} in (${table.userAId}, ${table.userBId})`),
+])
+
+export const inviteCodes = pgTable('invite_codes', {
+  id: uuid('id').primaryKey(),
+  code: text('code').notNull(),
+  createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  ownerUserId: uuid('owner_user_id').references(() => users.id, { onDelete: 'cascade' }),
+  redeemedByUserId: uuid('redeemed_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  redeemedAt: timestamp('redeemed_at', { withTimezone: true }),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('invite_codes_code_unique').on(sql`lower(${table.code})`),
+  index('invite_codes_owner_idx').on(table.ownerUserId),
 ])
 
 export const userBlocks = pgTable('user_blocks', {

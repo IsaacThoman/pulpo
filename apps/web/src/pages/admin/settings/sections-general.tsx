@@ -101,8 +101,9 @@ export function AuthenticationSection() {
     adminEmail: auth.adminEmail,
     pendingMessage: auth.pendingMessage,
     defaultSignupRole: 'pending' as 'pending' | 'user',
-    apiKeysEnabled: true,
-    newAccountModelDefaults: {
+      apiKeysEnabled: true,
+      inviteCodesEnabled: false,
+      newAccountModelDefaults: {
       defaultModelId: null as string | null,
       favoriteModelIds: [] as string[],
     },

@@ -16,7 +16,7 @@ import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
-import { billingPlanName, fetchBillingSummary, type BillingPlan } from '@/lib/billing'
+import { billingPlanName, fetchBillingSummary, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -143,7 +143,6 @@ export function BillingPage() {
   }
 
   const startSubscription = async (plan: 'eight' | 'fat') => {
-    if (summary?.plan !== 'baby') return openPortal()
     setSubmitting(true)
     setPlanError('')
     try {
@@ -153,6 +152,27 @@ export function BillingPage() {
       window.location.assign(result.url)
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not start subscription checkout.')
+      setSubmitting(false)
+    }
+  }
+
+  const changePlan = async (plan: BillingPlan) => {
+    if (!summary || (plan === summary.plan && !summary.subscription?.cancelAtPeriodEnd)) return
+    if (summary.plan === 'baby') {
+      if (plan === 'baby') return
+      return startSubscription(plan)
+    }
+    setSubmitting(true)
+    setPlanError('')
+    try {
+      await apiRequest('/api/billing/subscription', { method: 'PATCH', body: { plan } })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['billing', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['usage', userId] }),
+      ])
+    } catch (error) {
+      setPlanError(error instanceof Error ? error.message : 'Could not update your plan.')
+    } finally {
       setSubmitting(false)
     }
   }
@@ -217,7 +237,7 @@ export function BillingPage() {
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.weekly.remainingPercentage}%` }} /></div>
                 <div className="mt-1.5 text-xs text-muted-foreground">Resets {new Date(summary.weekly.resetsAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
-              <Button className="mt-4" variant={summary?.plan === 'baby' ? 'default' : 'outline'} size="sm" disabled={!summary || submitting} onClick={() => summary?.plan === 'baby' ? setPlanOpen(true) : void openPortal()}>
+              <Button className="mt-4" variant={summary?.plan === 'baby' ? 'default' : 'outline'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
                 {summary?.plan === 'baby' ? 'Compare plans' : 'Manage plan'}
               </Button>
             </div>
@@ -268,9 +288,9 @@ export function BillingPage() {
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader><DialogTitle>Compare plans</DialogTitle></DialogHeader>
           <div className="grid gap-6 py-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
-            <PlanColumn plan="baby" current={summary?.plan ?? 'baby'} benefits={['Pay as you go', 'Free and source-available']} onChoose={() => summary?.plan === 'baby' ? undefined : void openPortal()} disabled={submitting} />
-            <PlanColumn plan="eight" current={summary?.plan ?? 'baby'} benefits={['Everything in Pulpo Baby', 'High usage limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void startSubscription('eight')} disabled={submitting} />
-            <PlanColumn plan="fat" current={summary?.plan ?? 'baby'} benefits={['Everything in Pulpo Eight', 'Highest usage limits', '$16 accumulating platform credits added each month']} onChoose={() => void startSubscription('fat')} disabled={submitting} />
+            <PlanColumn plan="baby" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Share platform credits with your pool (up to 5 members)', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
+            <PlanColumn plan="eight" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', 'Higher workspace and file limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
+            <PlanColumn plan="fat" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', 'Highest workspace and file limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
           </div>
           {planError && <p className="text-center text-sm text-destructive">{planError}</p>}
         </DialogContent>
@@ -287,13 +307,12 @@ function PlanBadge({ plan }: { plan: BillingPlan }) {
   return <Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{plan === 'baby' ? 'Current plan' : 'Active'}</Badge>
 }
 
-function PlanColumn({ plan, current, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; benefits: string[]; onChoose: () => void; disabled: boolean }) {
+function PlanColumn({ plan, current, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {
   const price = plan === 'baby' ? null : plan === 'eight' ? 8 : 24
-  const isCurrent = plan === current
   return <div className={cn('flex flex-col', plan === 'baby' ? 'sm:pr-5' : plan === 'eight' ? 'sm:px-5' : 'sm:pl-5')}>
     <div className="flex items-center gap-2"><img src="/pulpo-smiley.png" alt="" className="size-7" /><Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : undefined}>{billingPlanName(plan)}</Badge></div>
     <div className="mt-4 text-2xl font-semibold">{price === null ? 'Free' : <>${price} <span className="text-sm font-normal text-muted-foreground">/ month</span></>}</div>
     <div className="mt-5 flex-1 space-y-3 text-sm">{benefits.map((benefit) => <div key={benefit} className="flex items-start gap-2"><Check className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />{benefit}</div>)}</div>
-    <Button className="mt-6 w-full" variant={plan === 'baby' ? 'outline' : 'default'} disabled={isCurrent || disabled} onClick={onChoose}>{isCurrent ? 'Current plan' : current === 'baby' && price !== null ? `Subscribe for $${price}/month` : 'Manage plan'}</Button>
+    <Button className="mt-6 w-full" variant={plan === 'baby' ? 'outline' : 'default'} disabled={disabled || planChoiceDisabled(plan, current, cancelAtPeriodEnd)} onClick={onChoose}>{planChoiceLabel(plan, current, cancelAtPeriodEnd)}</Button>
   </div>
 }

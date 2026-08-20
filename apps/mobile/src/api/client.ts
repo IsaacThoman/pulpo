@@ -110,6 +110,7 @@ export const mobileApi = {
     }),
   logout: () => apiRequest<void>('/api/mobile/auth/logout', { method: 'POST' }),
   me: () => apiRequest<{ user: User }>('/api/mobile/me'),
+  redeemInviteCode: (code: string) => apiRequest<{ user: User }>('/api/invite-codes/redeem', { method: 'POST', body: { code } }),
   updateProfile: (name: string) => apiRequest<{ user: User }>('/api/me', { method: 'PATCH', body: { name } }),
   changePassword: (currentPassword: string, newPassword: string) =>
     apiRequest<void>('/api/me/password', { method: 'POST', body: { currentPassword, newPassword } }),
