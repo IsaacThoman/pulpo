@@ -55,6 +55,7 @@ export type SubscriptionChange =
   | 'missing'
   | 'noop'
   | 'cancel'
+  | 'renew'
   | 'upgrade_fat'
   | 'unsupported'
 
@@ -63,8 +64,8 @@ export function resolveSubscriptionChange(
   target: BillingPlan,
 ): SubscriptionChange {
   if (!current) return 'missing'
-  if (target === current.plan || (target === 'baby' && current.cancelAtPeriodEnd)) return 'noop'
-  if (target === 'baby') return 'cancel'
+  if (target === current.plan) return current.cancelAtPeriodEnd ? 'renew' : 'noop'
+  if (target === 'baby') return current.cancelAtPeriodEnd ? 'noop' : 'cancel'
   if (target === 'fat' && current.plan === 'eight') return 'upgrade_fat'
   return 'unsupported'
 }

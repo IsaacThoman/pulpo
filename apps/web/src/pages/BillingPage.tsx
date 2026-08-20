@@ -157,7 +157,7 @@ export function BillingPage() {
   }
 
   const changePlan = async (plan: BillingPlan) => {
-    if (!summary || plan === summary.plan) return
+    if (!summary || (plan === summary.plan && !summary.subscription?.cancelAtPeriodEnd)) return
     if (summary.plan === 'baby') {
       if (plan === 'baby') return
       return startSubscription(plan)

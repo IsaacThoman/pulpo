@@ -12,6 +12,8 @@ describe('plan comparison choices', () => {
   it('disables the current plan and a scheduled Baby switch', () => {
     expect(planChoiceLabel('eight', 'eight', false)).toBe('Current plan')
     expect(planChoiceDisabled('eight', 'eight', false)).toBe(true)
+    expect(planChoiceLabel('eight', 'eight', true)).toBe('Renew')
+    expect(planChoiceDisabled('eight', 'eight', true)).toBe(false)
     expect(planChoiceLabel('baby', 'fat', true)).toBe('Switch scheduled')
     expect(planChoiceDisabled('baby', 'fat', true)).toBe(true)
     expect(planChoiceDisabled('eight', 'fat', false)).toBe(true)

@@ -60,6 +60,7 @@ describe('billing plan calculations', () => {
   it('resolves mid-cycle plan changes', () => {
     expect(resolveSubscriptionChange(null, 'fat')).toBe('missing')
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'eight')).toBe('noop')
+    expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: true }, 'eight')).toBe('renew')
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: true }, 'baby')).toBe('noop')
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'baby')).toBe('cancel')
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'fat')).toBe('upgrade_fat')

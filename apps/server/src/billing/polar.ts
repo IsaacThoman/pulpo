@@ -235,10 +235,10 @@ export async function changeSubscription(input: {
   }
 
   try {
-    const updated = change === 'cancel'
+    const updated = change === 'cancel' || change === 'renew'
       ? await getPolarClient().subscriptions.update({
         id: current.polarSubscriptionId,
-        subscriptionUpdate: { cancelAtPeriodEnd: true },
+        subscriptionUpdate: { cancelAtPeriodEnd: change === 'cancel' },
       })
       : await getPolarClient().subscriptions.update({
         id: current.polarSubscriptionId,
