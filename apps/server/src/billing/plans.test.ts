@@ -3,6 +3,7 @@ import {
   chargeCentsForCredits,
   effectivePlan,
   remainingPercentage,
+  resolveSubscriptionChange,
   splitReservationMicros,
   utcWeekEnd,
   utcWeekStart,
@@ -54,5 +55,14 @@ describe('billing plan calculations', () => {
     ], now)).toBe('fat')
     expect(effectivePlan([{ plan: 'fat', status: 'revoked', paidThrough: future }], now)).toBe('baby')
     expect(effectivePlan([{ plan: 'fat', status: 'past_due', paidThrough: now }], now)).toBe('baby')
+  })
+
+  it('resolves mid-cycle plan changes', () => {
+    expect(resolveSubscriptionChange(null, 'fat')).toBe('missing')
+    expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'eight')).toBe('noop')
+    expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: true }, 'baby')).toBe('noop')
+    expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'baby')).toBe('cancel')
+    expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'fat')).toBe('upgrade_fat')
+    expect(resolveSubscriptionChange({ plan: 'fat', cancelAtPeriodEnd: false }, 'eight')).toBe('unsupported')
   })
 })

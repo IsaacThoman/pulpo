@@ -7,6 +7,9 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
   chargeCentsForCredits,
+  isPaidPlan,
+  resolveSubscriptionChange,
+  type BillingPlan,
   type PaidBillingPlan,
 } from './plans.js'
 
@@ -128,7 +131,7 @@ export async function createSubscriptionCheckout(input: {
       eq(billingSubscriptions.userId, input.userId),
       inArray(billingSubscriptions.status, ['active', 'past_due']),
     )).limit(1)
-  if (current) throw new AppError(409, 'subscription_exists', 'Manage your existing subscription from the billing portal')
+  if (current) throw new AppError(409, 'subscription_exists', 'Choose an upgrade or switch to Baby from Compare plans')
 
   const prior = await existingCheckout(input.userId, input.idempotencyKey)
   if (prior?.checkoutUrl && prior.polarCheckoutId) return { url: prior.checkoutUrl, checkoutId: prior.polarCheckoutId }
@@ -184,4 +187,86 @@ export async function createCustomerPortalUrl(userId: string): Promise<string> {
     returnUrl: `${config.PUBLIC_URL}/billing`,
   })
   return session.customerPortalUrl
+}
+
+async function currentPaidSubscription(userId: string) {
+  const [current] = await db.select().from(billingSubscriptions).where(and(
+    eq(billingSubscriptions.userId, userId),
+    inArray(billingSubscriptions.status, ['active', 'past_due']),
+  )).limit(1)
+  return current ?? null
+}
+
+function rethrowPolar(error: unknown): never {
+  if (error instanceof Error && 'statusCode' in error && typeof (error as { statusCode: unknown }).statusCode === 'number') {
+    const statusCode = (error as { statusCode: number }).statusCode
+    throw new AppError(
+      statusCode >= 400 && statusCode < 500 ? statusCode : 502,
+      'polar_request_failed',
+      error.message || 'Could not update the subscription',
+    )
+  }
+  throw error
+}
+
+export async function changeSubscription(input: {
+  userId: string
+  plan: BillingPlan
+}): Promise<{
+  plan: BillingPlan
+  status: string
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: string | null
+}> {
+  const current = await currentPaidSubscription(input.userId)
+  const change = resolveSubscriptionChange(
+    current && isPaidPlan(current.plan) ? { plan: current.plan, cancelAtPeriodEnd: current.cancelAtPeriodEnd } : null,
+    input.plan,
+  )
+  if (change === 'missing') throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
+  if (change === 'unsupported') throw new AppError(409, 'subscription_change_unsupported', 'That plan change is not available')
+  if (!current || change === 'noop') {
+    return {
+      plan: current?.plan === 'fat' ? 'fat' : current?.plan === 'eight' ? 'eight' : 'baby',
+      status: current?.status ?? 'none',
+      cancelAtPeriodEnd: current?.cancelAtPeriodEnd ?? false,
+      currentPeriodEnd: current?.currentPeriodEnd?.toISOString() ?? null,
+    }
+  }
+
+  try {
+    const updated = change === 'cancel'
+      ? await getPolarClient().subscriptions.update({
+        id: current.polarSubscriptionId,
+        subscriptionUpdate: { cancelAtPeriodEnd: true },
+      })
+      : await getPolarClient().subscriptions.update({
+        id: current.polarSubscriptionId,
+        subscriptionUpdate: {
+          productId: productIdForPlan('fat'),
+          prorationBehavior: 'invoice',
+        },
+      })
+    const plan = planForProductId(updated.productId)
+    if (!plan) throw new AppError(500, 'billing_unknown_product', 'Polar returned an unknown product')
+    await db.update(billingSubscriptions).set({
+      polarProductId: updated.productId,
+      plan,
+      status: updated.status,
+      cancelAtPeriodEnd: updated.cancelAtPeriodEnd,
+      currentPeriodStart: updated.currentPeriodStart,
+      currentPeriodEnd: updated.currentPeriodEnd,
+      providerModifiedAt: updated.modifiedAt ?? new Date(),
+      updatedAt: new Date(),
+    }).where(eq(billingSubscriptions.polarSubscriptionId, current.polarSubscriptionId))
+    return {
+      plan,
+      status: updated.status,
+      cancelAtPeriodEnd: updated.cancelAtPeriodEnd,
+      currentPeriodEnd: updated.currentPeriodEnd?.toISOString() ?? null,
+    }
+  } catch (error) {
+    if (error instanceof AppError) throw error
+    rethrowPolar(error)
+  }
 }

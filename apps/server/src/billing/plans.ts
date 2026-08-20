@@ -51,6 +51,24 @@ export function isPaidPlan(value: unknown): value is PaidBillingPlan {
   return value === 'eight' || value === 'fat'
 }
 
+export type SubscriptionChange =
+  | 'missing'
+  | 'noop'
+  | 'cancel'
+  | 'upgrade_fat'
+  | 'unsupported'
+
+export function resolveSubscriptionChange(
+  current: { plan: PaidBillingPlan; cancelAtPeriodEnd: boolean } | null,
+  target: BillingPlan,
+): SubscriptionChange {
+  if (!current) return 'missing'
+  if (target === current.plan || (target === 'baby' && current.cancelAtPeriodEnd)) return 'noop'
+  if (target === 'baby') return 'cancel'
+  if (target === 'fat' && current.plan === 'eight') return 'upgrade_fat'
+  return 'unsupported'
+}
+
 export function effectivePlan(subscriptions: Array<{
   plan: string
   status: string
