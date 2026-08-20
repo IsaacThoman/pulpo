@@ -51,4 +51,4 @@ Practice restoring into a clean installation. Before upgrading, take a backup, b
 
 - Automate administration with the [Pulpo CLI](/operations/cli).
 - Understand the services in [Architecture](/concepts/architecture).
-- Configure the optional commercial integration with [Billing operations](/billing).
+- Review the [Billing Features license restrictions](/billing). The public license does not permit enabling or using Billing Features.

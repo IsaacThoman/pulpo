@@ -18,7 +18,7 @@ const operatorSidebar = [
     items: [
       { text: 'Self-hosting', link: '/self-hosting' },
       { text: 'Management CLI', link: '/operations/cli' },
-      { text: 'Billing operations', link: '/billing' },
+      { text: 'Billing and licensing', link: '/billing' },
       { text: 'Complete operator reference', link: '/operations/reference' },
     ],
   },
