@@ -1,9 +1,9 @@
-import { and, asc, desc, eq, gt, isNull, or } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { chats, chatShares, responses } from '../database/schema.js'
+import { chats, chatShares, labs, models as catalogModels, responses } from '../database/schema.js'
 import { decryptSecret, encryptSecret, hashToken, randomToken } from '../lib/crypto.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -86,11 +86,29 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
       allTurns,
       row.chat.activeBranchLeafId ?? row.chat.activeResponseId ?? allTurns.at(-1)?.id ?? null,
     )
+    const modelIds = [...new Set(turns.map((turn) => turn.actualModelId ?? turn.modelId))]
+    const modelRows = modelIds.length
+      ? await db.select({
+        id: catalogModels.id,
+        name: catalogModels.name,
+        modelLogo: catalogModels.logo,
+        labLogo: labs.logo,
+      }).from(catalogModels)
+        .leftJoin(labs, eq(catalogModels.labId, labs.id))
+        .where(inArray(catalogModels.id, modelIds))
+      : []
+    const modelById = new Map(modelRows.map((model) => [model.id, {
+      id: model.id,
+      name: model.name,
+      logo: model.modelLogo ?? model.labLogo ?? 'pulpo',
+    }]))
     return {
       id: row.share.id,
       chat: { id: row.chat.id, title: row.chat.title, modelId: row.chat.modelId, createdAt: row.chat.createdAt },
       responses: turns.map((turn) => ({
-        id: turn.id, modelId: turn.actualModelId ?? turn.modelId, status: turn.status, input: turn.input,
+        id: turn.id, modelId: turn.actualModelId ?? turn.modelId,
+        model: modelById.get(turn.actualModelId ?? turn.modelId) ?? null,
+        status: turn.status, input: turn.input,
         output: publicOutput(turn.output as unknown[]), createdAt: turn.createdAt, completedAt: turn.completedAt,
       })),
     }
