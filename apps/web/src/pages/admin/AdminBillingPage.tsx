@@ -85,6 +85,9 @@ interface Dashboard {
 interface BillingSettings {
   eightWeeklyLimitMicros: number
   fatWeeklyLimitMicros: number
+  babyStorageLimitBytes: number
+  eightStorageLimitBytes: number
+  fatStorageLimitBytes: number
   lastReconciledAt: string | null
   lastReconcileError: string | null
 }
@@ -93,6 +96,9 @@ export function AdminBillingPage() {
   const [range, setRange] = useState<Range>('30d')
   const [eightLimit, setEightLimit] = useState('3.00')
   const [fatLimit, setFatLimit] = useState('4.00')
+  const [babyStorage, setBabyStorage] = useState('5')
+  const [eightStorage, setEightStorage] = useState('25')
+  const [fatStorage, setFatStorage] = useState('100')
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [message, setMessage] = useState('')
@@ -109,6 +115,9 @@ export function AdminBillingPage() {
     if (!settingsQuery.data) return
     setEightLimit((settingsQuery.data.eightWeeklyLimitMicros / 1_000_000).toFixed(2))
     setFatLimit((settingsQuery.data.fatWeeklyLimitMicros / 1_000_000).toFixed(2))
+    setBabyStorage(String(settingsQuery.data.babyStorageLimitBytes / (1024 ** 3)))
+    setEightStorage(String(settingsQuery.data.eightStorageLimitBytes / (1024 ** 3)))
+    setFatStorage(String(settingsQuery.data.fatStorageLimitBytes / (1024 ** 3)))
   }, [settingsQuery.data])
 
   const saveDefaults = async () => {
@@ -120,9 +129,12 @@ export function AdminBillingPage() {
         body: {
           eightWeeklyLimitMicros: Math.round(Number(eightLimit) * 1_000_000),
           fatWeeklyLimitMicros: Math.round(Number(fatLimit) * 1_000_000),
+          babyStorageLimitBytes: Math.round(Number(babyStorage) * 1024 ** 3),
+          eightStorageLimitBytes: Math.round(Number(eightStorage) * 1024 ** 3),
+          fatStorageLimitBytes: Math.round(Number(fatStorage) * 1024 ** 3),
         },
       })
-      setMessage('Weekly defaults saved.')
+      setMessage('Plan defaults saved.')
       await Promise.all([settingsQuery.refetch(), dashboardQuery.refetch()])
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save defaults.')
@@ -162,7 +174,8 @@ export function AdminBillingPage() {
   const totals = data?.totals
   const polarEnv = data?.polar.environment
   const chart = data?.trend.map((row) => ({ day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
-  const limitsAreValid = [eightLimit, fatLimit].every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
+  const limitsAreValid = [eightLimit, fatLimit, babyStorage, eightStorage, fatStorage]
+    .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
   const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
   const stats = [
     { label: 'Collected', value: formatBalance((totals?.grossCollectedCents ?? 0) / 100) },
@@ -258,7 +271,7 @@ export function AdminBillingPage() {
         </Panel>
         <Panel
           icon={<WalletCards className="size-3" />}
-          title="Default weekly limits"
+          title="Plan defaults"
           extra={<Button size="sm" onClick={() => void saveDefaults()} disabled={saving || !limitsAreValid}>{saving ? 'Saving…' : 'Save'}</Button>}
         >
           <div className="space-y-3 px-3 py-3">
@@ -266,6 +279,12 @@ export function AdminBillingPage() {
             <div className="flex flex-wrap items-end gap-3">
               <LimitInput label="Pulpo Eight" value={eightLimit} onChange={setEightLimit} />
               <LimitInput label="Le Pulpo Fat" value={fatLimit} onChange={setFatLimit} />
+            </div>
+            <p className="pt-1 text-xs text-muted-foreground">File storage allowances apply immediately to users without an override.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <StorageInput label="Pulpo Baby" value={babyStorage} onChange={setBabyStorage} />
+              <StorageInput label="Pulpo Eight" value={eightStorage} onChange={setEightStorage} />
+              <StorageInput label="Le Pulpo Fat" value={fatStorage} onChange={setFatStorage} />
             </div>
           </div>
         </Panel>
@@ -448,6 +467,18 @@ function LimitInput({ label, value, onChange }: { label: string; value: string; 
       <div className="relative">
         <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
         <Input className="h-8 w-28 pl-6 text-xs tabular-nums" type="number" min="0" step="0.01" value={value} onChange={(event) => onChange(event.target.value)} />
+      </div>
+    </label>
+  )
+}
+
+function StorageInput({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="space-y-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="relative">
+        <Input className="h-8 w-28 pr-9 text-xs tabular-nums" type="number" min="0" step="1" value={value} onChange={(event) => onChange(event.target.value)} />
+        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">GiB</span>
       </div>
     </label>
   )

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Database,
   LayoutGrid,
@@ -8,6 +8,7 @@ import {
   SlidersHorizontal,
   Bot,
   Sparkles,
+  Ticket,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
@@ -15,7 +16,9 @@ import { OcrSection } from './sections-ocr'
 import { LoggingSection } from './sections-logging'
 import { AgentSection } from './sections-agent'
 import { PersonalizationSection } from './sections-personalization'
+import { InviteCodesSection } from './sections-invites'
 import { cn } from '@/lib/utils'
+import { useAuth } from '@/stores/auth'
 
 const SECTIONS = [
   { id: 'general', label: 'General', icon: SlidersHorizontal, el: <GeneralSection /> },
@@ -28,14 +31,20 @@ const SECTIONS = [
   { id: 'database', label: 'Database', icon: Database, el: <DatabaseSection /> },
 ] as const
 
+type SectionId = (typeof SECTIONS)[number]['id'] | 'invites'
+
 export function AdminSettingsPage() {
-  const [active, setActive] = useState<(typeof SECTIONS)[number]['id']>('general')
-  const current = SECTIONS.find((s) => s.id === active)!
+  const billingEnabled = useAuth((state) => state.billingEnabled)
+  const sections = useMemo(() => billingEnabled
+    ? [...SECTIONS, { id: 'invites' as const, label: 'Invite Codes', icon: Ticket, el: <InviteCodesSection /> }]
+    : [...SECTIONS], [billingEnabled])
+  const [active, setActive] = useState<SectionId>('general')
+  const current = sections.find((s) => s.id === active) ?? sections[0]!
 
   return (
     <div className="flex gap-6">
       <nav className="w-44 shrink-0 space-y-0.5">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <button
             key={s.id}
             onClick={() => setActive(s.id)}

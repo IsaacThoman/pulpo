@@ -15,6 +15,7 @@ import { getConfig } from '../config.js'
 import { AppError, unauthorized } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import {
   bearerSessionToken,
@@ -50,6 +51,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         pendingDetails: auth.pendingDetails,
         adminEmail: auth.adminEmail,
         pendingMessage: auth.pendingMessage,
+        inviteCodesEnabled: getConfig().PULPO_BILLING_ENABLED && auth.inviteCodesEnabled,
       },
       limits: { maxAttachmentBytes: auth.maxAttachmentBytes },
       capabilities: {
@@ -160,7 +162,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         username: input.username,
         role: auth.defaultSignupRole,
         balanceMicros: auth.defaultBalanceMicros,
-        storageLimitBytes: auth.defaultStorageLimitBytes,
+        storageLimitBytes: await newUserStorageLimit(tx),
       })
       await tx.insert(passwordCredentials).values({
         userId,

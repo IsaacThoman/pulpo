@@ -28,6 +28,7 @@ import { newId } from '../lib/ids.js'
 import { hashToken, randomToken } from '../lib/crypto.js'
 import { sendPasswordReset } from '../lib/mail.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
+import { newUserStorageLimit } from '../billing/storage-entitlements.js'
 import { insertNewAccountPreferences } from '../settings/new-account-defaults.js'
 import { publishStateChange } from '../responses/events.js'
 import {
@@ -96,7 +97,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .from(applicationSettings)
       .where(eq(applicationSettings.key, 'auth'))
       .limit(1)
-    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes } = parseAuthSettings(setting?.value)
+    const { signupEnabled, pendingDetails, adminEmail, pendingMessage, apiKeysEnabled, maxAttachmentBytes, inviteCodesEnabled } = parseAuthSettings(setting?.value)
+    const billingEnabled = getConfig().PULPO_BILLING_ENABLED
     return {
       signupEnabled,
       pendingDetails,
@@ -104,7 +106,8 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       pendingMessage,
       apiKeysEnabled,
       maxAttachmentBytes,
-      billingEnabled: getConfig().PULPO_BILLING_ENABLED,
+      billingEnabled,
+      inviteCodesEnabled: billingEnabled && inviteCodesEnabled,
     }
   })
 
@@ -130,7 +133,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         username: input.username,
         role: 'admin',
         balanceMicros: 100_000_000,
-        storageLimitBytes: 5_000 * 1024 * 1024,
+        storageLimitBytes: await newUserStorageLimit(tx),
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
       await insertNewAccountPreferences(tx, userId, authSettings)
@@ -215,7 +218,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
         username: input.username,
         role: authSettings.defaultSignupRole,
         balanceMicros: authSettings.defaultBalanceMicros,
-        storageLimitBytes: authSettings.defaultStorageLimitBytes,
+        storageLimitBytes: await newUserStorageLimit(tx),
       })
       await tx.insert(passwordCredentials).values({ userId, passwordHash: await createPasswordHash(input.password) })
       await insertNewAccountPreferences(tx, userId, authSettings)

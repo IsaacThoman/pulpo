@@ -86,12 +86,13 @@ export const mobileConfigSchema = z.object({
     publicUrl: z.url(),
   }),
   setupRequired: z.boolean(),
-  auth: z.object({
-    signupEnabled: z.boolean(),
-    pendingDetails: z.boolean(),
-    adminEmail: z.string(),
-    pendingMessage: z.string(),
-  }),
+      auth: z.object({
+        signupEnabled: z.boolean(),
+        pendingDetails: z.boolean(),
+        adminEmail: z.string(),
+        pendingMessage: z.string(),
+        inviteCodesEnabled: z.boolean().optional().default(false),
+      }),
   limits: z.object({
     maxAttachmentBytes: z.number().int().nonnegative().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES),
   }).default({ maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES }),
@@ -295,6 +296,39 @@ export const friendsListSchema = z.object({
   blocked: z.array(friendProfileSchema),
 })
 export type FriendsList = z.infer<typeof friendsListSchema>
+
+export const inviteCodeSchema = z.object({
+  id: idSchema,
+  code: z.string().regex(/^[0-9A-Z]{6}$/),
+  ownerUserId: idSchema.nullable(),
+  redeemedByUserId: idSchema.nullable(),
+  redeemedAt: isoDateSchema.nullable(),
+  revokedAt: isoDateSchema.nullable(),
+  createdAt: isoDateSchema,
+})
+export type InviteCode = z.infer<typeof inviteCodeSchema>
+
+export const adminInviteCodeSchema = inviteCodeSchema.extend({
+  createdByUserId: idSchema.nullable(),
+  ownerUsername: z.string().nullable(),
+  redeemedByUsername: z.string().nullable(),
+})
+export type AdminInviteCode = z.infer<typeof adminInviteCodeSchema>
+
+export const inviteCodeListSchema = z.object({
+  quota: z.number().int().nonnegative(),
+  used: z.number().int().nonnegative(),
+  codes: z.array(inviteCodeSchema),
+})
+export type InviteCodeList = z.infer<typeof inviteCodeListSchema>
+
+export const redeemInviteCodeInputSchema = z.object({
+  code: z.string().trim().min(1).max(16),
+})
+
+export const createInviteCodesInputSchema = z.object({
+  count: z.number().int().min(1).max(50).default(1),
+})
 
 export const changePasswordInputSchema = z.object({
   currentPassword: z.string().min(1).max(1024),
@@ -963,6 +997,7 @@ export const authSettingsSchema = z.object({
   pendingMessage: z.string().max(2_000).default('Your account is pending approval. An admin will review it shortly.'),
   defaultSignupRole: z.enum(['pending', 'user']).default('pending'),
   apiKeysEnabled: z.boolean().default(true),
+  inviteCodesEnabled: z.boolean().default(false),
   newAccountModelDefaults: newAccountModelDefaultsSchema.default(() => newAccountModelDefaultsSchema.parse({})),
 })
 

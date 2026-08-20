@@ -1,18 +1,97 @@
+import { useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Clock, LogOut, Mail } from 'lucide-react'
+import { LogOut, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/stores/auth'
+import { Input } from '@/components/ui/input'
+import { ApiError, apiRequest } from '@/lib/api'
+import { useAuth, type AuthUser } from '@/stores/auth'
+
+const INVITE_CODE_LENGTH = 6
+
+function cleanInviteCode(value: string): string[] {
+  return value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, INVITE_CODE_LENGTH).split('')
+}
 
 export function PendingPage() {
   const user = useAuth((s) => s.user)
   const logout = useAuth((s) => s.logout)
+  const replaceUser = useAuth((s) => s.replaceUser)
   const pendingDetails = useAuth((s) => s.pendingDetails)
   const adminEmail = useAuth((s) => s.adminEmail)
   const pendingMessage = useAuth((s) => s.pendingMessage)
+  const inviteCodesEnabled = useAuth((s) => s.inviteCodesEnabled)
   const navigate = useNavigate()
+  const codeInputRefs = useRef<Array<HTMLInputElement | null>>([])
+  const [codeCharacters, setCodeCharacters] = useState<string[]>(() => Array(INVITE_CODE_LENGTH).fill(''))
+  const [redeeming, setRedeeming] = useState(false)
+  const [redeemError, setRedeemError] = useState('')
 
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'pending') return <Navigate to="/" replace />
+
+  const code = codeCharacters.join('')
+
+  const focusCodeInput = (index: number) => {
+    const input = codeInputRefs.current[index]
+    input?.focus()
+    input?.select()
+  }
+
+  const enterCodeCharacters = (index: number, value: string) => {
+    const characters = cleanInviteCode(value)
+    if (characters.length === 0) {
+      setCodeCharacters((current) => current.map((character, characterIndex) => characterIndex === index ? '' : character))
+      return
+    }
+
+    const startIndex = characters.length === INVITE_CODE_LENGTH ? 0 : index
+    setCodeCharacters((current) => {
+      const next = [...current]
+      characters.forEach((character, offset) => {
+        if (startIndex + offset < INVITE_CODE_LENGTH) next[startIndex + offset] = character
+      })
+      return next
+    })
+    setRedeemError('')
+    focusCodeInput(Math.min(startIndex + characters.length, INVITE_CODE_LENGTH - 1))
+  }
+
+  const handleCodeKeyDown = (event: React.KeyboardEvent<HTMLInputElement>, index: number) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      focusCodeInput(Math.max(0, index - 1))
+      return
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      focusCodeInput(Math.min(INVITE_CODE_LENGTH - 1, index + 1))
+      return
+    }
+    if (event.key !== 'Backspace') return
+
+    event.preventDefault()
+    const removeIndex = codeCharacters[index] ? index : Math.max(0, index - 1)
+    setCodeCharacters((current) => current.map((character, characterIndex) => characterIndex === removeIndex ? '' : character))
+    setRedeemError('')
+    focusCodeInput(removeIndex)
+  }
+
+  const redeem = async () => {
+    setRedeeming(true)
+    setRedeemError('')
+    try {
+      const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/invite-codes/redeem', {
+        method: 'POST',
+        body: { code },
+      })
+      replaceUser(result.user)
+      navigate('/', { replace: true })
+    } catch (error) {
+      setRedeemError(error instanceof ApiError ? error.message : 'Unable to redeem this invite code.')
+    } finally {
+      setRedeeming(false)
+    }
+  }
 
   return (
     <div className="flex min-h-full flex-col items-center justify-center bg-background px-4 py-10">
@@ -22,12 +101,52 @@ export function PendingPage() {
       </div>
 
       <div className="w-full max-w-[440px] rounded-xl border bg-card p-6 shadow-xs sm:p-8">
-        <div className="mb-4 flex size-12 items-center justify-center rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
-          <Clock className="size-6" />
-        </div>
-
         <h1 className="text-lg font-semibold">Account pending approval</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pendingMessage}</p>
+
+        {inviteCodesEnabled && (
+          <form
+            className="mt-7 space-y-5"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void redeem()
+            }}
+          >
+            <div className="space-y-3">
+              <label htmlFor="invite-code-0" className="text-sm font-medium">Invite code</label>
+              <div className="grid grid-cols-6 gap-3" role="group" aria-label="Six-character invite code">
+                {codeCharacters.map((character, index) => (
+                  <Input
+                    key={index}
+                    id={`invite-code-${index}`}
+                    ref={(input) => { codeInputRefs.current[index] = input }}
+                    value={character}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onChange={(event) => enterCodeCharacters(index, event.target.value)}
+                    onPaste={(event) => {
+                      event.preventDefault()
+                      enterCodeCharacters(index, event.clipboardData.getData('text'))
+                    }}
+                    onKeyDown={(event) => handleCodeKeyDown(event, index)}
+                    className="aspect-square h-auto px-0 text-center font-mono text-xl font-medium uppercase md:text-xl"
+                    maxLength={1}
+                    autoComplete={index === 0 ? 'one-time-code' : 'off'}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    disabled={redeeming}
+                    aria-invalid={Boolean(redeemError)}
+                    aria-label={`Invite code character ${index + 1}`}
+                    aria-describedby={redeemError ? 'invite-code-error' : undefined}
+                  />
+                ))}
+              </div>
+              {redeemError && <p id="invite-code-error" className="text-sm text-destructive">{redeemError}</p>}
+            </div>
+            <Button type="submit" className="w-full" disabled={redeeming || code.length !== 6}>
+              {redeeming ? 'Redeeming…' : 'Redeem invite code'}
+            </Button>
+          </form>
+        )}
 
         {pendingDetails && adminEmail && (
           <div className="mt-5 rounded-lg border bg-muted/40 p-3">

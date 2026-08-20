@@ -11,6 +11,7 @@ import {
   dailyUsageRollups,
   exportJobs,
   friendships,
+  inviteCodes,
   twoFactorRecoveryCodes,
   userPasskeyCredentials,
   passkeyCeremonies,
@@ -74,5 +75,20 @@ describe('user-owned operational records', () => {
       'users_username_trgm_idx',
       'users_name_trgm_idx',
     ]))
+    expect(userConfig.checks.map((constraint) => constraint.name)).toContain('users_invite_code_quota_check')
+  })
+
+  it('allows only nonnegative per-user storage overrides', () => {
+    const config = getTableConfig(billingAccounts)
+    expect(config.checks.map((constraint) => constraint.name)).toContain('billing_accounts_storage_override_check')
+  })
+
+  it('stores invite codes with a case-insensitive unique code', () => {
+    const config = getTableConfig(inviteCodes)
+    const codeIndex = config.indexes.find((item) => item.config.name === 'invite_codes_code_unique')
+    expect(codeIndex?.config.unique).toBe(true)
+    expect(config.indexes.map((item) => item.config.name)).toContain('invite_codes_owner_idx')
+    const ownerFk = config.foreignKeys.find((foreignKey) => foreignKey.getName() === 'invite_codes_owner_user_id_users_id_fk')
+    expect(ownerFk?.onDelete).toBe('cascade')
   })
 })

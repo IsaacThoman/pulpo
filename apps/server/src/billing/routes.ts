@@ -18,6 +18,7 @@ import {
   MIN_TOP_UP_CENTS,
 } from './plans.js'
 import {
+  changeSubscription,
   createCreditCheckout,
   createCustomerPortalUrl,
   createSubscriptionCheckout,
@@ -112,6 +113,14 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
     const result = await createSubscriptionCheckout({ userId: user.id, ...input })
     reply.code(201)
     return result
+  })
+
+  app.patch('/api/billing/subscription', {
+    config: { rateLimit: { max: 10, timeWindow: '1 minute' } },
+  }, async (request) => {
+    const user = requireUser(request)
+    const { plan } = z.object({ plan: z.enum(['baby', 'eight', 'fat']) }).parse(request.body)
+    return changeSubscription({ userId: user.id, plan })
   })
 
   app.post('/api/billing/portal', {

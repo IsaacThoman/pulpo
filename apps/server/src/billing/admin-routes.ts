@@ -17,13 +17,17 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
-import { parseBillingSettings } from '../settings/application-settings.js'
+import { parseAuthSettings, parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements } from './entitlements.js'
 import { planForProductId } from './polar.js'
+import { refreshStorageLimit } from './storage-entitlements.js'
 
 const settingsPatchSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
 })
 
 async function billingSettings() {
@@ -179,17 +183,35 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     const patch = settingsPatchSchema.parse(request.body)
     const current = await billingSettings()
     const next = { ...current, ...patch }
-    await db.transaction(async (tx) => {
+    const [authRow] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
+      .where(eq(applicationSettings.key, 'auth')).limit(1)
+    const nextAuth = { ...parseAuthSettings(authRow?.value), defaultStorageLimitBytes: patch.babyStorageLimitBytes ?? current.babyStorageLimitBytes }
+    const changes = await db.transaction(async (tx) => {
       await tx.insert(applicationSettings).values({ key: 'billing', value: next, updatedBy: admin.id })
         .onConflictDoUpdate({
           target: applicationSettings.key,
           set: { value: next, updatedBy: admin.id, updatedAt: new Date() },
         })
+      await tx.insert(applicationSettings).values({ key: 'auth', value: nextAuth, updatedBy: admin.id })
+        .onConflictDoUpdate({
+          target: applicationSettings.key,
+          set: { value: nextAuth, updatedBy: admin.id, updatedAt: new Date() },
+        })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'billing.defaults.update', targetType: 'billing', targetId: 'defaults',
         metadata: { previous: current, next: patch },
       })
+      const userRows = await tx.select({ id: users.id }).from(users)
+      const changedIds: string[] = []
+      for (const { id } of userRows) {
+        if (await refreshStorageLimit(tx, id)) changedIds.push(id)
+      }
+      return changedIds.length > 0
+        ? tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+          .where(inArray(users.id, changedIds)).returning({ userId: users.id, revision: users.stateRevision })
+        : []
     })
+    await Promise.all(changes.map((change) => publishStateChange({ ...change, scopes: ['billing', 'usage'] })))
     return next
   })
 
@@ -210,6 +232,8 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         weeklySpentMicros: entitlements.weeklySpentMicros,
         weeklyRemainingMicros: Math.max(0, entitlements.weeklyLimitMicros - entitlements.weeklySpentMicros),
         weeklyLimitOverridden: entitlements.weeklyLimitOverridden,
+        storageLimitBytes: entitlements.storageLimitBytes,
+        storageLimitOverridden: entitlements.storageLimitOverridden,
         hold: entitlements.onHold ? account ?? null : null,
       }
     }))
@@ -238,6 +262,38 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     })
     await notifyBillingChange(id)
     return { weeklyLimitMicros }
+  })
+
+  app.patch('/api/admin/billing/users/:id/storage-limit', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { storageLimitBytes } = z.object({
+      storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    }).parse(request.body)
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1)
+    if (!user) throw new AppError(404, 'user_not_found', 'User not found')
+    const change = await db.transaction(async (tx) => {
+      await tx.insert(billingAccounts).values({ userId: id, storageLimitOverrideBytes: storageLimitBytes })
+        .onConflictDoUpdate({
+          target: billingAccounts.userId,
+          set: { storageLimitOverrideBytes: storageLimitBytes, updatedAt: new Date() },
+        })
+      await refreshStorageLimit(tx, id)
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id,
+        action: storageLimitBytes === null ? 'billing.storage_limit.reset' : 'billing.storage_limit.update',
+        targetType: 'user', targetId: id, metadata: { storageLimitBytes },
+      })
+      const [revision] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+        .where(eq(users.id, id)).returning({ userId: users.id, revision: users.stateRevision })
+      return revision
+    })
+    if (change) await publishStateChange({ ...change, scopes: ['billing', 'usage'] })
+    const entitlements = await getBillingEntitlements(id)
+    return {
+      storageLimitBytes: entitlements.storageLimitBytes,
+      storageLimitOverridden: entitlements.storageLimitOverridden,
+    }
   })
 
   app.post('/api/admin/billing/users/:id/clear-hold', async (request) => {

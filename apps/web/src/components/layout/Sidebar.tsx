@@ -1169,27 +1169,13 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
-            {billingEnabled && billingQuery.data?.weekly && (
-              <div className="px-2 pb-2 pt-2">
-                <div className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                  <span>Weekly usage</span>
-                  <span className="tabular-nums">{billingQuery.data.weekly.remainingPercentage}% left</span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-emerald-500 transition-[width]"
-                    style={{ width: `${billingQuery.data.weekly.remainingPercentage}%` }}
-                  />
-                </div>
-              </div>
-            )}
             {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
+            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
+            {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
             {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.onHold && (
               <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">Billing usage is on hold</div>
             )}
-            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
-            {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
