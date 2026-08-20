@@ -318,7 +318,6 @@ export const models = pgTable('models', {
   maxOutputTokens: integer('max_output_tokens').notNull(),
   compactionEnabled: boolean('compaction_enabled').notNull().default(true),
   compactionThresholdTokens: integer('compaction_threshold_tokens').notNull().default(100_000),
-  agentCompactionThresholdTokens: integer('agent_compaction_threshold_tokens').notNull().default(180_000),
   compactionRetainedTurns: integer('compaction_retained_turns').notNull().default(4),
   executionMode: executionModeEnum('execution_mode').notNull().default('stream'),
   tags: jsonb('tags').notNull().default([]),
