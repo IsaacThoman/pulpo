@@ -9,6 +9,7 @@ import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from './sync.js'
+import { publishPoolChanges, separatePoolOnBlock } from '../pools/service.js'
 
 export function orderedPair(left: string, right: string): [string, string] {
   return left < right ? [left, right] : [right, left]
@@ -305,13 +306,15 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     const [target] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1)
     if (!target) throw notFound('User')
     const [userAId, userBId] = orderedPair(user.id, userId)
-    const changes = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${userAId}:${userBId}`}))`)
       await tx.delete(friendships).where(pairWhere(user.id, userId))
       await tx.insert(userBlocks).values({ blockerUserId: user.id, blockedUserId: userId }).onConflictDoNothing()
-      return bumpAccountRevisions(tx, [userAId, userBId])
+      const poolUsers = await separatePoolOnBlock(tx, user.id, userId)
+      return { changes: await bumpAccountRevisions(tx, [userAId, userBId]), poolUsers }
     })
-    await publishScopedStateChanges(changes, ['friends'])
+    await publishScopedStateChanges(result.changes, ['friends'])
+    if (result.poolUsers.length) await publishPoolChanges(result.poolUsers)
     reply.code(204).send()
   })
 

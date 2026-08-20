@@ -16,6 +16,7 @@ import { publishStateChange } from '../responses/events.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 import { PLAN_MONTHLY_CREDIT_MICROS } from './plans.js'
 import { planForProductId } from './polar.js'
+import { poolPeerIds } from '../pools/service.js'
 
 export type PolarWebhookEvent = ReturnType<typeof validateEvent>
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -392,6 +393,7 @@ export async function processPolarWebhookEvent(providerEventId: string, event: P
         .where(eq(billingWebhookEvents.providerEventId, providerEventId))
       await applyEvent(tx, event, changedUsers)
       for (const userId of changedUsers) await refreshStorageLimit(tx, userId, event.timestamp)
+      for (const userId of [...changedUsers]) for (const peerId of await poolPeerIds(tx, userId)) changedUsers.add(peerId)
       const revisions = changedUsers.size > 0
         ? await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
           .where(inArray(users.id, [...changedUsers]))
@@ -406,7 +408,7 @@ export async function processPolarWebhookEvent(providerEventId: string, event: P
     })
     await Promise.all(changes.map((change) => publishStateChange({
       ...change,
-      scopes: ['usage', 'billing'],
+      scopes: ['usage', 'pool', 'billing'],
     })))
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 2_000) : String(error).slice(0, 2_000)

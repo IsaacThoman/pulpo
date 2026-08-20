@@ -73,6 +73,40 @@ export const friendships = pgTable('friendships', {
   check('friendships_requester_member_check', sql`${table.requestedByUserId} in (${table.userAId}, ${table.userBId})`),
 ])
 
+export const pools = pgTable('pools', {
+  id: uuid('id').primaryKey(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  closedAt: timestamp('closed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [index('pools_owner_idx').on(table.ownerUserId)])
+
+export const poolMembers = pgTable('pool_members', {
+  id: uuid('id').primaryKey(),
+  poolId: uuid('pool_id').notNull().references(() => pools.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
+  leftAt: timestamp('left_at', { withTimezone: true }),
+}, (table) => [
+  index('pool_members_pool_active_idx').on(table.poolId, table.leftAt),
+  uniqueIndex('pool_members_user_active_unique').on(table.userId).where(sql`${table.leftAt} is null`),
+])
+
+export const poolInvitations = pgTable('pool_invitations', {
+  id: uuid('id').primaryKey(),
+  poolId: uuid('pool_id').notNull().references(() => pools.id, { onDelete: 'cascade' }),
+  inviterUserId: uuid('inviter_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  inviteeUserId: uuid('invitee_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  inviterDisclosureAcceptedAt: timestamp('inviter_disclosure_accepted_at', { withTimezone: true }).notNull(),
+  inviteeDisclosureAcceptedAt: timestamp('invitee_disclosure_accepted_at', { withTimezone: true }),
+  respondedAt: timestamp('responded_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index('pool_invitations_invitee_status_idx').on(table.inviteeUserId, table.status),
+  uniqueIndex('pool_invitations_pool_invitee_pending_unique').on(table.poolId, table.inviteeUserId).where(sql`${table.status} = 'pending'`),
+  check('pool_invitations_status_check', sql`${table.status} in ('pending', 'accepted', 'declined', 'canceled')`),
+])
+
 export const inviteCodes = pgTable('invite_codes', {
   id: uuid('id').primaryKey(),
   code: text('code').notNull(),
@@ -700,6 +734,7 @@ export const budgetReservations = pgTable('budget_reservations', {
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   apiKeyId: uuid('api_key_id').references(() => apiKeys.id),
   responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  poolId: uuid('pool_id').references(() => pools.id, { onDelete: 'set null' }),
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
   weeklyReservedMicros: bigint('weekly_reserved_micros', { mode: 'number' }).notNull().default(0),
@@ -714,6 +749,17 @@ export const budgetReservations = pgTable('budget_reservations', {
   uniqueIndex('reservation_response_unique').on(table.responseId),
   index('reservation_user_status_idx').on(table.userId, table.status),
   check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.weeklyReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
+])
+
+export const budgetReservationFunders = pgTable('budget_reservation_funders', {
+  reservationId: uuid('reservation_id').notNull().references(() => budgetReservations.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'restrict' }),
+  reservedMicros: bigint('reserved_micros', { mode: 'number' }).notNull(),
+  settledMicros: bigint('settled_micros', { mode: 'number' }),
+}, (table) => [
+  primaryKey({ columns: [table.reservationId, table.userId] }),
+  index('budget_reservation_funders_user_idx').on(table.userId),
+  check('budget_reservation_funders_amount_check', sql`${table.reservedMicros} >= 0 and (${table.settledMicros} is null or ${table.settledMicros} >= 0)`),
 ])
 
 export const creditLedger = pgTable('credit_ledger', {
@@ -742,6 +788,7 @@ export const usageEvents = pgTable('usage_events', {
   costMicros: bigint('cost_micros', { mode: 'number' }).notNull(),
   weeklyCostMicros: bigint('weekly_cost_micros', { mode: 'number' }).notNull().default(0),
   balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),
+  poolBalanceAfterMicros: bigint('pool_balance_after_micros', { mode: 'number' }),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

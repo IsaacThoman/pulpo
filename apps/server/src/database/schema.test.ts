@@ -22,6 +22,8 @@ import {
   userTotpCredentials,
   userTotpEnrollments,
   weeklyUsagePeriods,
+  poolMembers,
+  poolInvitations,
 } from './schema.js'
 
 describe('user-owned operational records', () => {
@@ -81,6 +83,14 @@ describe('user-owned operational records', () => {
   it('allows only nonnegative per-user storage overrides', () => {
     const config = getTableConfig(billingAccounts)
     expect(config.checks.map((constraint) => constraint.name)).toContain('billing_accounts_storage_override_check')
+  })
+
+  it('enforces one active Pool membership and one pending invitation per Pool friend', () => {
+    const memberConfig = getTableConfig(poolMembers)
+    const inviteConfig = getTableConfig(poolInvitations)
+    expect(memberConfig.indexes.find((item) => item.config.name === 'pool_members_user_active_unique')?.config.unique).toBe(true)
+    expect(inviteConfig.indexes.find((item) => item.config.name === 'pool_invitations_pool_invitee_pending_unique')?.config.unique).toBe(true)
+    expect(inviteConfig.checks.map((constraint) => constraint.name)).toContain('pool_invitations_status_check')
   })
 
   it('stores invite codes with a case-insensitive unique code', () => {

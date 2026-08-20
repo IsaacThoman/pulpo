@@ -24,6 +24,7 @@ import {
   createSubscriptionCheckout,
 } from './polar.js'
 import { processPolarWebhookEvent } from './webhooks.js'
+import { activePoolMembership, poolBalanceMicros } from '../pools/service.js'
 
 const creditAmountSchema = z.number().int().min(MIN_TOP_UP_CENTS).max(MAX_TOP_UP_CENTS)
 const checkoutInputSchema = z.object({
@@ -49,17 +50,22 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/billing/summary', async (request) => {
     const user = requireUser(request)
-    const [entitlements, subscriptions, orders] = await Promise.all([
+    const [entitlements, subscriptions, orders, poolBalance] = await Promise.all([
       getBillingEntitlements(user.id),
       db.select().from(billingSubscriptions).where(eq(billingSubscriptions.userId, user.id))
         .orderBy(desc(billingSubscriptions.updatedAt)),
       db.select().from(billingOrders).where(eq(billingOrders.userId, user.id))
         .orderBy(desc(billingOrders.createdAt)).limit(50),
+      db.transaction(async (tx) => {
+        const membership = await activePoolMembership(tx, user.id)
+        return membership ? poolBalanceMicros(tx, membership.pool.id) : null
+      }),
     ])
     const subscription = subscriptions.find((item) => item.plan === entitlements.plan) ?? null
     return {
       plan: entitlements.plan,
       balanceMicros: user.balanceMicros,
+      poolBalanceMicros: poolBalance,
       weekly: entitlements.weeklyRemainingPercentage === null ? null : {
         remainingPercentage: entitlements.weeklyRemainingPercentage,
         resetsAt: entitlements.weeklyResetAt.toISOString(),

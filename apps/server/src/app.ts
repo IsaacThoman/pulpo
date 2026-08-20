@@ -28,6 +28,7 @@ import { registerManagementRoutes } from './management/routes.js'
 import { ensureBootstrapPreset } from './bootstrap/ci-preview.js'
 import { registerCatalogIconRoutes } from './catalog/icon-routes.js'
 import { registerFriendRoutes } from './friends/routes.js'
+import { registerPoolRoutes } from './pools/routes.js'
 import { registerProfileRoutes } from './profile/routes.js'
 import { registerBillingRoutes } from './billing/routes.js'
 import { registerAdminBillingRoutes } from './billing/admin-routes.js'
@@ -117,6 +118,7 @@ export async function buildApp() {
   await registerAuthRoutes(app)
   await registerProfileRoutes(app)
   await registerFriendRoutes(app)
+  await registerPoolRoutes(app)
   await registerInviteCodeRoutes(app)
   await registerCatalogRoutes(app)
   await registerCatalogIconRoutes(app)
