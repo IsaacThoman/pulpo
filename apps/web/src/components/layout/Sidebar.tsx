@@ -1172,45 +1172,9 @@ export function Sidebar({
             {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
             {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
             {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
-            {billingEnabled && (
-              <div className="group/account-nav relative">
-                <DropdownMenuItem className="w-full items-start pr-9" onClick={() => go('/billing')}>
-                  <CreditCard />
-                  <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-0.5">
-                    <span>Billing</span>
-                    {billingQuery.data?.weekly && (
-                      <>
-                        <span className="flex items-center justify-between gap-3 text-[11px] text-muted-foreground">
-                          <span>Weekly usage</span>
-                          <span className="tabular-nums">{billingQuery.data.weekly.remainingPercentage}% left</span>
-                        </span>
-                        <span className="block h-1.5 overflow-hidden rounded-full bg-muted">
-                          <span
-                            className="block h-full rounded-full bg-emerald-500 transition-[width]"
-                            style={{ width: `${billingQuery.data.weekly.remainingPercentage}%` }}
-                          />
-                        </span>
-                      </>
-                    )}
-                    {billingQuery.data?.onHold && (
-                      <span className="text-[11px] text-destructive">Billing usage is on hold</span>
-                    )}
-                  </span>
-                </DropdownMenuItem>
-                <button
-                  type="button"
-                  aria-label={`${sidebarPins.billing ? 'Unpin' : 'Pin'} Billing ${sidebarPins.billing ? 'from' : 'to'} sidebar`}
-                  title={`${sidebarPins.billing ? 'Unpin' : 'Pin'} Billing ${sidebarPins.billing ? 'from' : 'to'} sidebar`}
-                  className="invisible absolute right-1 top-1.5 z-10 flex size-6 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground focus-visible:visible focus-visible:ring-1 focus-visible:ring-ring group-hover/account-nav:visible group-focus-within/account-nav:visible"
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    setSetting('sidebarPins', toggleSidebarPin(sidebarPins, 'billing'))
-                  }}
-                >
-                  {sidebarPins.billing ? <PinOff className="size-4" /> : <Pin className="size-4" />}
-                </button>
-              </div>
+            {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
+            {billingEnabled && billingQuery.data?.onHold && (
+              <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">Billing usage is on hold</div>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
