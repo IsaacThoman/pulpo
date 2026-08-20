@@ -29,7 +29,7 @@ export function PoolPage() {
     setBusy(key); setMessage('')
     try {
       await operation(); setMessage(success)
-      await Promise.all([queryClient.invalidateQueries({ queryKey: ['pool'] }), queryClient.invalidateQueries({ queryKey: ['usage'] }), queryClient.invalidateQueries({ queryKey: ['billing'] })])
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ['pool'] }), queryClient.invalidateQueries({ queryKey: ['pool-pending-count'] }), queryClient.invalidateQueries({ queryKey: ['usage'] }), queryClient.invalidateQueries({ queryKey: ['billing'] })])
     } catch (error) { setMessage(error instanceof Error ? error.message : 'Could not update the Pool') }
     finally { setBusy('') }
   }

@@ -30,6 +30,7 @@ function invalidateStateScope(scope: StateInvalidationScope, userId: string): vo
   }
   if (scope === 'pool') {
     void queryClient.invalidateQueries({ queryKey: ['pool', userId] })
+    void queryClient.invalidateQueries({ queryKey: ['pool-pending-count', userId] })
     return
   }
   void queryClient.invalidateQueries({ queryKey: [scope, userId] })

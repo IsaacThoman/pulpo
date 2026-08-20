@@ -668,6 +668,14 @@ export function Sidebar({
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
+  const pendingPoolsQuery = useQuery({
+    queryKey: ['pool-pending-count', user?.id],
+    queryFn: () => apiRequest<{ count: number }>('/api/pools/pending-count'),
+    enabled: Boolean(user?.id && user.role !== 'pending'),
+    staleTime: 0,
+    refetchOnWindowFocus: 'always',
+  })
+  const pendingSocialCount = (pendingFriendsQuery.data?.count ?? 0) + (pendingPoolsQuery.data?.count ?? 0)
   const apiKeysEnabled = useAuth((s) => s.apiKeysEnabled)
   const billingEnabled = useAuth((s) => s.billingEnabled)
   const billingQuery = useQuery({
@@ -993,7 +1001,7 @@ export function Sidebar({
           {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
           {sidebarPins.usage && iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn('Billing', () => go('/billing'), <CreditCard className="size-4" />)}
-          {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingFriendsQuery.data?.count)}
+          {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
           {apiKeysEnabled && sidebarPins.apiKeys && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
 
@@ -1151,26 +1159,26 @@ export function Sidebar({
               <div
                 className={cn(
                   'min-w-0 flex-1 whitespace-nowrap transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
-                  !sidebarPins.friends && pendingFriendsQuery.data?.count ? 'pr-8' : 'pr-2',
+                  !sidebarPins.friends && pendingSocialCount ? 'pr-8' : 'pr-2',
                   sidebarTextTransition
                 )}
               >
                 <div className="truncate text-sm font-medium">{user?.name ?? 'Signed out'}</div>
                 <div className="truncate text-xs text-muted-foreground">{user?.username ? `@${user.username}` : ''}</div>
               </div>
-              {!sidebarPins.friends && Boolean(pendingFriendsQuery.data?.count) && (
+              {!sidebarPins.friends && Boolean(pendingSocialCount) && (
                 <span className={cn(
                   'absolute grid min-w-3.5 place-items-center rounded-full bg-primary px-1 text-[9px] leading-3.5 text-primary-foreground',
                   collapsed ? 'right-0 top-0' : 'right-2 top-1/2 -translate-y-1/2',
                 )}>
-                  {pendingFriendsQuery.data!.count > 99 ? '99+' : pendingFriendsQuery.data!.count}
+                  {pendingSocialCount > 99 ? '99+' : pendingSocialCount}
                 </span>
               )}
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
             {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
-            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingFriendsQuery.data?.count)}
+            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
             {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.onHold && (

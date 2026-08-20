@@ -24,6 +24,14 @@ async function acceptedFriends(tx: Parameters<Parameters<typeof db.transaction>[
 }
 
 export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/pools/pending-count', async (request) => {
+    const user = requireUser(request)
+    const [result] = await db.select({ count: sql<number>`count(*)::int` }).from(poolInvitations).where(and(
+      eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'),
+    ))
+    return { count: Number(result?.count ?? 0) }
+  })
+
   app.get('/api/pools/me', async (request) => {
     const user = requireUser(request)
     const membership = await db.transaction((tx) => activePoolMembership(tx, user.id))
