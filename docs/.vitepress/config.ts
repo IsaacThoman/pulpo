@@ -1,40 +1,21 @@
 import { defineConfig } from 'vitepress'
 
-const userSidebar = [
+const sidebar = [
   {
-    text: 'Start here',
+    text: 'Pulpo Docs',
     items: [
       { text: 'Welcome', link: '/' },
       { text: 'Getting started', link: '/getting-started' },
       { text: 'Pulpo for iPhone', link: '/guides/iphone' },
-    ],
-  },
-]
-
-const operatorSidebar = [
-  ...userSidebar,
-  {
-    text: 'Operate Pulpo',
-    items: [
       { text: 'Self-hosting', link: '/self-hosting' },
       { text: 'Management CLI', link: '/operations/cli' },
       { text: 'Billing and licensing', link: '/billing' },
       { text: 'Complete operator reference', link: '/operations/reference' },
-    ],
-  },
-  {
-    text: 'Understand Pulpo',
-    collapsed: true,
-    items: [
       { text: 'Architecture', link: '/concepts/architecture' },
       { text: 'Local-first and realtime', link: '/concepts/realtime' },
       { text: 'OpenAI-compatible API', link: '/api' },
+      { text: 'Development and releases', link: '/contributing' },
     ],
-  },
-  {
-    text: 'Contribute',
-    collapsed: true,
-    items: [{ text: 'Development and releases', link: '/contributing' }],
   },
 ]
 
@@ -60,21 +41,7 @@ export default defineConfig({
   themeConfig: {
     logo: '/pulpo-smiley.png',
     siteTitle: 'Pulpo Docs',
-    nav: [
-      {
-        text: 'Documentation',
-        items: [
-          { text: 'Guides', link: '/getting-started' },
-          { text: 'Self-hosting', link: '/self-hosting' },
-          { text: 'API', link: '/api' },
-        ],
-      },
-    ],
-    sidebar: {
-      '/getting-started': userSidebar,
-      '/guides/': userSidebar,
-      '/': operatorSidebar,
-    },
+    sidebar,
     search: {
       provider: 'local',
     },
