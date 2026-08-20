@@ -19,7 +19,9 @@ import {
   managementSettingsDocumentSchema,
   managementTokenSchema,
   isChatPresetIcon,
+  createInviteCodesInputSchema,
   createManagementTokenSchema,
+  inviteCodeListSchema,
   mobileConfigSchema,
   modelPreferencesPatchSchema,
   modelPreferencesSchema,
@@ -162,6 +164,10 @@ describe('shared contracts', () => {
     expect(authSettingsSchema.parse({ maxAttachmentBytes: 1_000 * 1024 * 1024 }).maxAttachmentBytes)
       .toBe(1_000 * 1024 * 1024)
     expect(authSettingsSchema.safeParse({ maxAttachmentBytes: 1_000 * 1024 * 1024 + 1 }).success).toBe(false)
+    expect(authSettingsSchema.parse({}).inviteCodesEnabled).toBe(false)
+    expect(authSettingsSchema.parse({ inviteCodesEnabled: true }).inviteCodesEnabled).toBe(true)
+    expect(createInviteCodesInputSchema.parse({}).count).toBe(1)
+    expect(inviteCodeListSchema.parse({ quota: 3, used: 1, codes: [] })).toEqual({ quota: 3, used: 1, codes: [] })
   })
 
   it('defaults and validates per-model compaction policy', () => {

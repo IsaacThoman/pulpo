@@ -151,6 +151,7 @@ export interface MonitorUser {
   blocked: boolean
   lastActiveAt?: number | null
   twoFactorEnabled?: boolean
+  inviteCodeQuota?: number
   usageCalls?: number
   usageTokens?: number
   usageCost?: number

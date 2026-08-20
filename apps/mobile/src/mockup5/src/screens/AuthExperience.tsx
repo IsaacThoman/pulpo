@@ -110,6 +110,7 @@ export function AuthExperience() {
   const [sent, setSent] = useState(false);
   const [pendingFeedback, setPendingFeedback] = useState('');
   const [passkeyFallback, setPasskeyFallback] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
 
   const goTo = (next: AuthPage) => {
     setError('');
@@ -194,6 +195,19 @@ export function AuthExperience() {
       setLoading(false);
     }
   };
+  const redeemInvite = async () => {
+    setError('');
+    setPendingFeedback('');
+    setLoading(true);
+    try {
+      await mobileApi.redeemInviteCode(inviteCode);
+      await refreshSession();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Unable to redeem this invite code.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (session.status === 'pending' && session.user) return <AuthShell colors={colors} title="Approval needed" subtitle="Your Pulpo account is ready, but an administrator needs to approve it before you can start chatting.">
     <View style={[styles.pendingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -204,6 +218,10 @@ export function AuthExperience() {
       </View>
     </View>
     <Text style={[styles.pendingHelp, { color: colors.textMuted }]}>Refresh after your administrator approves the account. Pulpo will open your chats automatically.</Text>
+    {productionConfig?.auth.inviteCodesEnabled ? <>
+      <AuthField colors={colors} icon="key" label="Invite code" value={inviteCode} onChangeText={(value) => setInviteCode(value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6))} autoCapitalize="characters" autoCorrect={false} maxLength={6} />
+      <PrimaryAuthButton label="Redeem invite code" colors={colors} loading={loading} disabled={inviteCode.length !== 6} onPress={() => { void redeemInvite(); }} />
+    </> : null}
     {pendingFeedback ? <Text accessibilityLiveRegion="polite" style={[styles.pendingHelp, { color: colors.textMuted }]}>{pendingFeedback}</Text> : null}
     {error ? <Text accessibilityRole="alert" style={[styles.error, { color: colors.destructive }]}>{error}</Text> : null}
     <PrimaryAuthButton label="Refresh status" colors={colors} loading={loading} onPress={() => { void refreshApproval(); }} />
