@@ -4,7 +4,7 @@ import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, memories, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -147,10 +147,17 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
+  const enabledMemories = preferenceValues.memoryEnabled
+    ? await db.select({ content: memories.content }).from(memories).where(and(
+      eq(memories.userId, record.response.userId),
+      eq(memories.enabled, true),
+    ))
+    : []
   const currentAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
+    enabledMemories.map((memory) => memory.content),
   )
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
