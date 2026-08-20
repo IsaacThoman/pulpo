@@ -61,6 +61,7 @@ import {
 import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
+import { createProviderCostCapture } from './provider-cost.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -265,6 +266,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const turnOutputStarted = new Set<number>()
   type ActivePricing = Awaited<ReturnType<typeof getActivePricing>>
   const turnPricing = new Map<number, ActivePricing>()
+  const turnProviderCosts = new Map<number, () => Promise<number | undefined>>()
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
   const toolItems = new Map<string, ToolTimelineItem>()
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
@@ -581,6 +583,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         active.model.firstTokenTimeoutSeconds,
         options?.signal,
       )
+      const providerCostCapture = active.model.useProviderCost ? createProviderCostCapture() : undefined
+      if (providerCostCapture) turnProviderCosts.set(modelTurns, providerCostCapture.costMicros)
       return streams.streamSimple(
         active.piModel,
         preparedContext,
@@ -595,6 +599,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           signal: firstTokenTimeout.signal,
           sessionId: cacheOptions.sessionId,
           headers: cacheOptions.headers,
+          fetch: providerCostCapture?.fetch,
         },
       )
     },
@@ -667,7 +672,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const turnUsage = { inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite, cachedInputTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens + turnUsage.cacheWriteTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
       const pricing = turnPricing.get(completedTurnNumber) ?? await getActivePricing(completedRuntime.runtime.model.id)
-      const turnCost = calculateCostMicros(turnUsage, pricing)
+      const configuredTurnCost = calculateCostMicros(turnUsage, pricing)
+      const providerTurnCost = completedRuntime.runtime.model.useProviderCost
+        ? await turnProviderCosts.get(completedTurnNumber)?.()
+        : undefined
+      const turnCost = providerTurnCost ?? configuredTurnCost
       accruedCostMicros += turnCost
       billingTurns.push({ modelId: completedRuntime.runtime.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
       const turnDurationMs = Date.now() - (modelTurnStartedAt.get(completedTurnNumber) ?? Date.now())
