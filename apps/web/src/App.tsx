@@ -79,6 +79,7 @@ export default function App() {
             <Route path="usage" element={<UsageLayout />}>
               <Route index element={<PersonalPage />} />
               <Route path="friends" element={<LeaderboardPage />} />
+              <Route path="pool" element={<LeaderboardPage scope="pool" />} />
               <Route path="leaderboard" element={<Navigate to="/usage/friends" replace />} />
             </Route>
             <Route path="friends" element={<FriendsPage />} />

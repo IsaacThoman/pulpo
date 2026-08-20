@@ -141,16 +141,18 @@ function LeaderboardTip({
   )
 }
 
-export function LeaderboardPage() {
+export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'pool' }) {
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
+  const queryKey = scope === 'pool' ? 'pool-usage' : 'friends-usage'
 
   const authUser = useAuth((state) => state.user)
-  const friendsUsageQuery = useQuery({
-    queryKey: ['friends-usage', authUser?.id, range, 'overview'],
+  const circleUsageQuery = useQuery({
+    queryKey: [queryKey, authUser?.id, range, 'overview'],
     enabled: Boolean(authUser?.id),
     queryFn: async ({ signal }) => {
       const params = usageQueryParams(range)
+      params.set('scope', scope)
       const [leaderboard, activity] = await Promise.all([
         apiRequest<LeaderboardResponse>(`/api/usage/leaderboard?${params}`, { signal }),
         apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?${params}`, { signal }),
@@ -161,11 +163,12 @@ export function LeaderboardPage() {
     refetchOnWindowFocus: 'always',
   })
   const recordsQuery = useInfiniteQuery({
-    queryKey: ['friends-usage', authUser?.id, range, 'records'],
+    queryKey: [queryKey, authUser?.id, range, 'records'],
     enabled: Boolean(authUser?.id),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => {
       const params = usageQueryParams(range)
+      params.set('scope', scope)
       params.set('limit', '50')
       if (pageParam) params.set('cursor', pageParam)
       return apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?${params}`, { signal })
@@ -173,7 +176,7 @@ export function LeaderboardPage() {
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   })
   const currentUserId = authUser?.id ?? ''
-  const users = useMemo<MonitorUser[]>(() => friendsUsageQuery.data?.leaderboard.data.map((row) => ({
+  const users = useMemo<MonitorUser[]>(() => circleUsageQuery.data?.leaderboard.data.map((row) => ({
     id: row.userId,
     name: row.displayName,
     username: row.username,
@@ -187,7 +190,7 @@ export function LeaderboardPage() {
     usageCalls: row.calls,
     usageTokens: row.tokens,
     usageCost: row.costMicros / 1_000_000,
-  })) ?? [], [friendsUsageQuery.data?.leaderboard.data])
+  })) ?? [], [circleUsageQuery.data?.leaderboard.data])
   const records = useMemo(() => flattenUsagePages(recordsQuery.data?.pages), [recordsQuery.data])
   const nextCursor = recordsQuery.data?.pages.at(-1)?.nextCursor ?? null
   const leaderboardMe = users.find((u) => u.id === currentUserId)
@@ -199,9 +202,9 @@ export function LeaderboardPage() {
     ...(leaderboardMe ? { balance: leaderboardMe.balance } : {}),
   }
 
-  const activity = friendsUsageQuery.data?.activity ?? null
-  const loading = friendsUsageQuery.isLoading || recordsQuery.isLoading
-  const error = friendsUsageQuery.error ?? recordsQuery.error
+  const activity = circleUsageQuery.data?.activity ?? null
+  const loading = circleUsageQuery.isLoading || recordsQuery.isLoading
+  const error = circleUsageQuery.error ?? recordsQuery.error
 
   const totals = {
     calls: activity?.summary.calls ?? 0,
@@ -238,7 +241,7 @@ export function LeaderboardPage() {
       })),
     [rows, metric]
   )
-  const hasAcceptedFriends = rows.some((row) => row.user.id !== currentUserId)
+  const hasOtherParticipants = rows.some((row) => row.user.id !== currentUserId)
 
   // Balance is a point-in-time ranking, so the daily activity view uses spend.
   const dailyMetric: Metric = metric === 'tokens' || metric === 'calls' ? metric : 'cost'
@@ -273,14 +276,14 @@ export function LeaderboardPage() {
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-2 text-sm font-medium">
             <BarChart3 className="size-4" />
-            Friends ranking
+            {scope === 'pool' ? 'Pool' : 'Friends'} ranking
           </span>
           <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
         </div>
-        {!hasAcceptedFriends ? (
+        {!hasOtherParticipants ? (
           <div className="flex h-[250px] flex-col items-center justify-center gap-3 text-xs text-muted-foreground">
-            <span>Add friends to compare usage</span>
-            <Button asChild size="sm" variant="outline"><Link to="/friends">Find friends</Link></Button>
+            <span>{scope === 'pool' ? 'Add Pool members to compare usage' : 'Add friends to compare usage'}</span>
+            <Button asChild size="sm" variant="outline"><Link to={scope === 'pool' ? '/friends/pool' : '/friends'}>{scope === 'pool' ? 'Manage Pool' : 'Find friends'}</Link></Button>
           </div>
         ) : (
           <div className="h-[250px]">
@@ -329,7 +332,7 @@ export function LeaderboardPage() {
       ) : error ? (
         <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
           <span>{error instanceof Error ? error.message : 'Unable to load leaderboard usage'}</span>
-          <Button size="sm" variant="outline" onClick={() => { void friendsUsageQuery.refetch(); void recordsQuery.refetch() }}>Try again</Button>
+          <Button size="sm" variant="outline" onClick={() => { void circleUsageQuery.refetch(); void recordsQuery.refetch() }}>Try again</Button>
         </div>
       ) : (
         <>

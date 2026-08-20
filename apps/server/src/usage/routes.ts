@@ -7,7 +7,7 @@ import { creditLedger, modelPresetChoices, modelPresets, models, requestLogs, us
 import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias, type UsageModelIdentity } from './public.js'
 import { friendUserIds } from '../friends/routes.js'
 import { profileAvatarUrl } from '../profile/service.js'
-import { activePoolMembership, poolBalanceMicros } from '../pools/service.js'
+import { activePoolMembers, activePoolMembership, poolBalanceMicros } from '../pools/service.js'
 
 async function displayedBalance(userId: string, accountBalanceMicros: number) {
   return db.transaction(async (tx) => {
@@ -37,6 +37,18 @@ const usageRecordsQuerySchema = usageQuerySchema.extend({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
+
+const usageCircleSchema = z.enum(['friends', 'pool'])
+const usageCircleQuerySchema = usageQuerySchema.extend({ scope: usageCircleSchema.default('friends') })
+const usageCircleRecordsQuerySchema = usageRecordsQuerySchema.extend({ scope: usageCircleSchema.default('friends') })
+
+async function usageCircleUserIds(userId: string, scope: z.infer<typeof usageCircleSchema>): Promise<string[]> {
+  if (scope === 'friends') return friendUserIds(userId)
+  return db.transaction(async (tx) => {
+    const membership = await activePoolMembership(tx, userId)
+    return membership ? (await activePoolMembers(tx, membership.pool.id)).map((row) => row.user.id) : []
+  })
+}
 
 function usageSince(range: UsageRange): Date | null {
   const durations: Record<Exclude<UsageRange, 'all'>, number> = {
@@ -290,8 +302,8 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/usage/leaderboard', async (request) => {
     const user = requireUser(request)
-    const circle = await friendUserIds(user.id)
-    const query = usageQuerySchema.parse(request.query)
+    const query = usageCircleQuerySchema.parse(request.query)
+    const circle = await usageCircleUserIds(user.id, query.scope)
     const since = usageSince(query.range)
     const rows = await db.select({
       userId: users.id,
@@ -327,8 +339,8 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/usage/leaderboard/activity', async (request) => {
     const user = requireUser(request)
-    const circle = await friendUserIds(user.id)
-    const query = usageQuerySchema.parse(request.query)
+    const query = usageCircleQuerySchema.parse(request.query)
+    const circle = await usageCircleUserIds(user.id, query.scope)
     return loadUsageActivity({
       userIds: circle,
       since: usageSince(query.range),
@@ -339,8 +351,8 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/usage/leaderboard/records', async (request) => {
     const user = requireUser(request)
-    const circle = await friendUserIds(user.id)
-    const query = usageRecordsQuerySchema.parse(request.query)
+    const query = usageCircleRecordsQuerySchema.parse(request.query)
+    const circle = await usageCircleUserIds(user.id, query.scope)
     const since = usageSince(query.range)
     const cursor = query.cursor ? decodeUsageCursor(query.cursor) : null
     const cursorFilter = cursor ? or(
