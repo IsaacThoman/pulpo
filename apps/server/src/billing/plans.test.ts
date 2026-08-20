@@ -64,6 +64,7 @@ describe('billing plan calculations', () => {
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: true }, 'baby')).toBe('noop')
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'baby')).toBe('cancel')
     expect(resolveSubscriptionChange({ plan: 'eight', cancelAtPeriodEnd: false }, 'fat')).toBe('upgrade_fat')
-    expect(resolveSubscriptionChange({ plan: 'fat', cancelAtPeriodEnd: false }, 'eight')).toBe('unsupported')
+    expect(resolveSubscriptionChange({ plan: 'fat', cancelAtPeriodEnd: false }, 'eight')).toBe('downgrade_eight')
+    expect(resolveSubscriptionChange({ plan: 'fat', cancelAtPeriodEnd: true }, 'eight')).toBe('downgrade_eight')
   })
 })

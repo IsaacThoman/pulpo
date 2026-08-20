@@ -57,6 +57,7 @@ export type SubscriptionChange =
   | 'cancel'
   | 'renew'
   | 'upgrade_fat'
+  | 'downgrade_eight'
   | 'unsupported'
 
 export function resolveSubscriptionChange(
@@ -67,6 +68,7 @@ export function resolveSubscriptionChange(
   if (target === current.plan) return current.cancelAtPeriodEnd ? 'renew' : 'noop'
   if (target === 'baby') return current.cancelAtPeriodEnd ? 'noop' : 'cancel'
   if (target === 'fat' && current.plan === 'eight') return 'upgrade_fat'
+  if (target === 'eight' && current.plan === 'fat') return 'downgrade_eight'
   return 'unsupported'
 }
 

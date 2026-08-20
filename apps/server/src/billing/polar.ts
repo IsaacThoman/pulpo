@@ -235,7 +235,7 @@ export async function changeSubscription(input: {
   }
 
   try {
-    const updated = change === 'cancel' || change === 'renew'
+    let updated = change === 'cancel' || change === 'renew'
       ? await getPolarClient().subscriptions.update({
         id: current.polarSubscriptionId,
         subscriptionUpdate: { cancelAtPeriodEnd: change === 'cancel' },
@@ -243,10 +243,16 @@ export async function changeSubscription(input: {
       : await getPolarClient().subscriptions.update({
         id: current.polarSubscriptionId,
         subscriptionUpdate: {
-          productId: productIdForPlan('fat'),
+          productId: productIdForPlan(change === 'upgrade_fat' ? 'fat' : 'eight'),
           prorationBehavior: 'invoice',
         },
       })
+    if ((change === 'upgrade_fat' || change === 'downgrade_eight') && updated.cancelAtPeriodEnd) {
+      updated = await getPolarClient().subscriptions.update({
+        id: current.polarSubscriptionId,
+        subscriptionUpdate: { cancelAtPeriodEnd: false },
+      })
+    }
     const plan = planForProductId(updated.productId)
     if (!plan) throw new AppError(500, 'billing_unknown_product', 'Polar returned an unknown product')
     await db.update(billingSubscriptions).set({

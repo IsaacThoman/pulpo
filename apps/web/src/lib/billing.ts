@@ -39,12 +39,11 @@ export function planChoiceLabel(plan: BillingPlan, current: BillingPlan, cancelA
   if (plan === 'baby') return cancelAtPeriodEnd ? 'Switch scheduled' : 'Switch to Baby'
   if (current === 'baby') return `Subscribe for $${plan === 'eight' ? 8 : 24}/month`
   if (plan === 'fat') return 'Upgrade for $24/month'
-  return 'Included in Fat'
+  return 'Downgrade to $8/month'
 }
 
 export function planChoiceDisabled(plan: BillingPlan, current: BillingPlan, cancelAtPeriodEnd: boolean): boolean {
   if (plan === current) return !cancelAtPeriodEnd
   if (plan === 'baby') return cancelAtPeriodEnd
-  if (plan === 'eight' && current === 'fat') return true
   return false
 }
