@@ -44,7 +44,7 @@ export function InviteCodesCard() {
 
   return (
     <section className="overflow-hidden rounded-xl border">
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className={`flex items-center justify-between px-4 py-3${data.codes.length || error ? ' border-b' : ''}`}>
         <div>
           <h2 className="text-sm font-medium">Invite codes</h2>
           <p className="text-xs text-muted-foreground">{remaining} of {data.quota} remaining</p>
@@ -55,7 +55,7 @@ export function InviteCodesCard() {
         </Button>
       </div>
       {error && <p className="px-4 pt-3 text-sm text-destructive">{error}</p>}
-      {data.codes.length ? (
+      {data.codes.length > 0 && (
         <div className="divide-y">
           {data.codes.map((code) => (
             <div key={code.id} className="flex items-center justify-between gap-3 px-4 py-3">
@@ -71,8 +71,6 @@ export function InviteCodesCard() {
             </div>
           ))}
         </div>
-      ) : (
-        <div className="px-4 py-8 text-center text-sm text-muted-foreground">Generate a code to share access.</div>
       )}
     </section>
   )
