@@ -50,6 +50,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         pendingDetails: auth.pendingDetails,
         adminEmail: auth.adminEmail,
         pendingMessage: auth.pendingMessage,
+        inviteCodesEnabled: getConfig().PULPO_BILLING_ENABLED && auth.inviteCodesEnabled,
       },
       limits: { maxAttachmentBytes: auth.maxAttachmentBytes },
       capabilities: {

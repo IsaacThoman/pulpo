@@ -30,6 +30,7 @@ const patchUserSchema = z.object({
   storageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   username: usernameSchema.optional(),
   profileColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
+  inviteCodeQuota: z.number().int().nonnegative().max(1_000).optional(),
 })
 
 export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {

@@ -120,6 +120,7 @@ export function AdminUsersPage() {
                 <th className="py-2.5 font-medium">Email</th>
                 {billingEnabled && <th className="px-4 py-2.5 font-medium">Plan</th>}
                 {billingEnabled && <th className="px-4 py-2.5 text-right font-medium">Weekly limit</th>}
+                {billingEnabled && <th className="px-4 py-2.5 text-right font-medium">Invites</th>}
                 <th className="px-4 py-2.5 text-right font-medium">Balance</th>
                 <th className="px-4 py-2.5 text-right font-medium">File storage</th>
                 <th className="px-4 py-2.5 font-medium">Last active</th>
@@ -154,6 +155,7 @@ export function AdminUsersPage() {
                   <td className="py-2.5 text-muted-foreground">{u.email}</td>
                   {billingEnabled && <td className="px-4 py-2.5"><BillingPlanCell row={billingByUser.get(u.id)} /></td>}
                   {billingEnabled && <td className="px-4 py-2.5 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
+                  {billingEnabled && <td className="px-4 py-2.5 text-right tabular-nums"><InviteQuotaCell user={u} onChanged={() => void loadAdmin()} /></td>}
                   <td className="px-4 py-2.5 text-right tabular-nums">
                     <BalanceCell user={u} />
                   </td>
@@ -330,7 +332,9 @@ export function AdminUsersPage() {
             const values = new FormData(event.currentTarget)
             const password = String(values.get('password') ?? '')
             void patchUser(editUser.id, {
-              name: values.get('name'), username: values.get('username'), email: values.get('email'), ...(password ? { password } : {}),
+              name: values.get('name'), username: values.get('username'), email: values.get('email'),
+              ...(billingEnabled ? { inviteCodeQuota: Number(values.get('inviteCodeQuota') ?? 0) } : {}),
+              ...(password ? { password } : {}),
             }).then(() => setEditUser(null))
           }} className="contents">
           <DialogHeader>
@@ -354,6 +358,12 @@ export function AdminUsersPage() {
               <Label>New password</Label>
               <Input name="password" type="password" minLength={8} placeholder="Leave blank to keep" />
             </div>
+            {billingEnabled && (
+              <div className="space-y-1.5">
+                <Label>Invite code quota</Label>
+                <Input name="inviteCodeQuota" type="number" min={0} max={1000} defaultValue={editUser?.inviteCodeQuota ?? 0} />
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="submit">Save</Button>
@@ -363,6 +373,26 @@ export function AdminUsersPage() {
       </Dialog>
     </div>
   )
+}
+
+function InviteQuotaCell({ user, onChanged }: { user: MonitorUser; onChanged: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const quota = user.inviteCodeQuota ?? 0
+
+  const save = async () => {
+    const amount = Number(value)
+    setEditing(false)
+    if (!Number.isFinite(amount) || amount < 0) return
+    await apiRequest(`/api/admin/users/${user.id}`, { method: 'PATCH', body: { inviteCodeQuota: Math.round(amount) } })
+    onChanged()
+  }
+
+  if (editing) return <Input autoFocus className="ml-auto h-7 w-16 text-right text-xs" type="number" min="0" max="1000" step="1" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
+
+  return <button type="button" title="Edit invite quota" className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue(String(quota)); setEditing(true) }}>
+    {quota}
+  </button>
 }
 
 function BillingPlanCell({ row }: { row: AdminBillingUser | undefined }) {

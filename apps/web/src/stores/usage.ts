@@ -9,6 +9,7 @@ interface AdminUserRow {
     role: 'pending' | 'user' | 'admin'; balanceMicros: number; createdAt: string
     storageLimitBytes: number
     blocked: boolean
+    inviteCodeQuota?: number
   }
   lastActiveAt: string | null
   storageBytes: number
@@ -33,6 +34,7 @@ function mapAdmin(row: AdminUserRow): MonitorUser {
     joinedAt: Date.parse(row.user.createdAt), blocked: row.user.blocked,
     lastActiveAt: row.lastActiveAt ? Date.parse(row.lastActiveAt) : null,
     twoFactorEnabled: row.twoFactorEnabled,
+    inviteCodeQuota: row.user.inviteCodeQuota ?? 0,
   }
 }
 
