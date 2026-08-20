@@ -12,11 +12,15 @@ export function buildAgentSystemPrompt(
   systemPrompt: string,
   agentInstructions: string,
   customInstructions = '',
+  memories: readonly string[] = [],
 ): string {
   const accountInstructions = customInstructions.trim()
     ? `User-provided custom instructions:\n${customInstructions.trim()}`
     : ''
-  return [BASE_AGENT_PROMPT, systemPrompt, agentInstructions, accountInstructions]
+  const memoryContext = memories.length
+    ? `User-approved memories:\n${memories.map((memory) => `- ${memory}`).join('\n')}`
+    : ''
+  return [BASE_AGENT_PROMPT, systemPrompt, agentInstructions, accountInstructions, memoryContext]
     .filter((value) => value.trim())
     .join('\n\n')
 }

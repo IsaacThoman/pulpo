@@ -4,11 +4,11 @@ import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, memories, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
-import { parseAgentSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { parseAgentSettings, parseLoggingSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { isCancellationRequested, publishResponseEvent, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
@@ -58,8 +58,11 @@ import {
   isSlowCompletion,
   markModelSticky,
 } from '../responses/fallback-policy.js'
-import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
+import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
+import { createProviderCostCapture } from './provider-cost.js'
+import { orderedAgentTurnPayloads } from './detailed-payloads.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -133,24 +136,33 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow, personalizationRow, preferencesRow] = await Promise.all([
+  const [settingsRow, webToolsRow, personalizationRow, loggingRow, preferencesRow] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
+    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
     db.select({ values: userPreferences.values }).from(userPreferences)
       .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
+  const detailedPayloadsEnabled = parseLoggingSettings(loggingRow?.value).logDetailedPayloads
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
   const customInstructions = composeCustomInstructions(
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
+  const enabledMemories = preferenceValues.memoryEnabled
+    ? await db.select({ content: memories.content }).from(memories).where(and(
+      eq(memories.userId, record.response.userId),
+      eq(memories.enabled, true),
+    ))
+    : []
   const currentAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
+    enabledMemories.map((memory) => memory.content),
   )
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
@@ -257,6 +269,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const turnOutputStarted = new Set<number>()
   type ActivePricing = Awaited<ReturnType<typeof getActivePricing>>
   const turnPricing = new Map<number, ActivePricing>()
+  const turnProviderCosts = new Map<number, () => Promise<number | undefined>>()
+  const turnRequestPayloads = new Map<number, unknown>()
+  const turnResponsePayloads = new Map<number, unknown>()
+  const turnRetryAttempts = new Map<number, number>()
+  let currentRetryAttempt = 1
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
   const toolItems = new Map<string, ToolTimelineItem>()
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
@@ -299,6 +316,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     const resolved = await resolveStickyRuntimeIndex(fromIndex + 1)
     activeIndex = resolved.index
     active = runtimes[activeIndex]!
+    currentRetryAttempt = 1
     if (agent) agent.state.model = active.piModel
     const pricing = await getActivePricing(active.model.id)
     await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
@@ -528,6 +546,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
   const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
+  let firstTokenTimeout: FirstTokenTimeout | undefined
   agent = new Agent({
     initialState: {
       systemPrompt: agentSystemPrompt,
@@ -566,6 +585,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       }
       const resolvedParameters = resolveAgentModelParameters(active.model, record.response.parameters, options?.reasoning)
       modelTurnStartedAt.set(modelTurns, Date.now())
+      firstTokenTimeout?.clear()
+      firstTokenTimeout = createFirstTokenTimeout(
+        active.model.firstTokenTimeoutEnabled,
+        active.model.firstTokenTimeoutSeconds,
+        options?.signal,
+      )
+      const providerCostCapture = active.model.useProviderCost ? createProviderCostCapture() : undefined
+      if (providerCostCapture) turnProviderCosts.set(modelTurns, providerCostCapture.costMicros)
       return streams.streamSimple(
         active.piModel,
         preparedContext,
@@ -576,9 +603,18 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           samplingParams: { ...options?.samplingParams, ...resolvedParameters.parameters },
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
-          maxRetries: active.model.maxRetries,
+          maxRetries: 0,
+          signal: firstTokenTimeout.signal,
           sessionId: cacheOptions.sessionId,
           headers: cacheOptions.headers,
+          fetch: providerCostCapture?.fetch,
+          onPayload: detailedPayloadsEnabled
+            ? async (payload, model) => {
+                const transformed = await options?.onPayload?.(payload, model)
+                turnRequestPayloads.set(modelTurns, transformed ?? payload)
+                return transformed
+              }
+            : options?.onPayload,
         },
       )
     },
@@ -618,11 +654,15 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       turnRuntime.set(modelTurns, { runtime: active, index: activeIndex })
       turnAttemptIds.set(modelTurns, attemptId)
       turnPricing.set(modelTurns, pricing)
-      await db.insert(generationAttempts).values({ id: attemptId, requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: 1, turnNumber: modelTurns, status: 'in_progress' })
+      turnRetryAttempts.set(modelTurns, currentRetryAttempt)
+      await db.insert(generationAttempts).values({ id: attemptId, requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: currentRetryAttempt, turnNumber: modelTurns, status: 'in_progress' })
       await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
-      await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+      await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
+      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') {
+        firstTokenTimeout?.clear()
+      }
       if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') turnOutputStarted.add(modelTurns)
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
         delta: update.delta,
@@ -641,13 +681,19 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         && Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS
       ) await snapshot()
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
+      firstTokenTimeout?.clear()
       const message = event.message as AssistantMessage
       const completedTurnNumber = modelTurns
+      if (detailedPayloadsEnabled) turnResponsePayloads.set(completedTurnNumber, message)
       const completedRuntime = turnRuntime.get(completedTurnNumber) ?? { runtime: active, index: activeIndex }
       const turnUsage = { inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite, cachedInputTokens: message.usage.cacheRead, cacheWriteTokens: message.usage.cacheWrite, outputTokens: message.usage.output, reasoningTokens: message.usage.reasoning ?? 0, totalTokens: message.usage.totalTokens }
       usage = { inputTokens: usage.inputTokens + turnUsage.inputTokens, cachedInputTokens: usage.cachedInputTokens + turnUsage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens + turnUsage.cacheWriteTokens, outputTokens: usage.outputTokens + turnUsage.outputTokens, reasoningTokens: usage.reasoningTokens + turnUsage.reasoningTokens, totalTokens: usage.totalTokens + turnUsage.totalTokens }
       const pricing = turnPricing.get(completedTurnNumber) ?? await getActivePricing(completedRuntime.runtime.model.id)
-      const turnCost = calculateCostMicros(turnUsage, pricing)
+      const configuredTurnCost = calculateCostMicros(turnUsage, pricing)
+      const providerTurnCost = completedRuntime.runtime.model.useProviderCost
+        ? await turnProviderCosts.get(completedTurnNumber)?.()
+        : undefined
+      const turnCost = providerTurnCost ?? configuredTurnCost
       accruedCostMicros += turnCost
       billingTurns.push({ modelId: completedRuntime.runtime.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
       const turnDurationMs = Date.now() - (modelTurnStartedAt.get(completedTurnNumber) ?? Date.now())
@@ -655,6 +701,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const outputStarted = turnOutputStarted.has(completedTurnNumber) || assistantMessageHasOutput(message)
       if (outputStarted) turnOutputStarted.add(completedTurnNumber)
       const failed = message.stopReason === 'error' || message.stopReason === 'aborted'
+      if (!failed) currentRetryAttempt = 1
       if (!failed || outputStarted) lastResponder = { runtime: completedRuntime.runtime, pricing }
       const errorCategory = failed
         ? message.stopReason === 'aborted' ? 'cancellation' : classifyGenerationError(new Error(message.errorMessage || 'Agent model turn failed'))
@@ -796,6 +843,25 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         continue
       }
       const cancellationRequested = await isCancellationRequested(responseId)
+      const retryAttempt = nextAgentRetryAttempt({
+        message: last,
+        currentAttempt: turnRetryAttempts.get(failedTurnNumber) ?? 1,
+        maxRetries: failedRuntime.runtime.model.maxRetries,
+        outputStarted,
+        cancellationRequested,
+      })
+      if (retryAttempt !== undefined && !overflowRetried) {
+        if (failedRuntime.runtime.model.retryDelaySeconds > 0) {
+          await new Promise((resolve) => setTimeout(resolve, failedRuntime.runtime.model.retryDelaySeconds * 1_000))
+        }
+        if (await isCancellationRequested(responseId)) break
+        currentRetryAttempt = retryAttempt
+        agent.state.messages = agent.state.messages.slice(0, -1)
+        await db.update(requestLogs).set({ retryCount: sql`${requestLogs.retryCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+        await agent.continue()
+        last = agent.state.messages.at(-1)
+        continue
+      }
       if (!canFallbackAgentTurn({ message: last, outputStarted, cancellationRequested, contextRetryAttempted: overflowRetried })) break
       if (failedRuntime.index !== activeIndex || activeIndex + 1 >= runtimes.length) break
       await markModelSticky(redis, failedRuntime.runtime.model, classifyGenerationError(new Error(last.errorMessage || 'Agent model turn failed')))
@@ -831,7 +897,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
     const cancelled = await isCancellationRequested(responseId)
@@ -854,10 +920,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw error
   } finally {
+    firstTokenTimeout?.clear()
     clearTimeout(abortTimer); clearInterval(cancellationTimer)
   }
 }

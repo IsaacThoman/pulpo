@@ -17,6 +17,21 @@ describe('agent policy', () => {
       .toBe(buildAgentSystemPrompt('Model policy', 'Agent policy'))
   })
 
+  it('appends user-approved memories after account instructions', () => {
+    const prompt = buildAgentSystemPrompt(
+      'Model policy',
+      'Agent policy',
+      'Prefer TypeScript.',
+      ['The user prefers concise answers.', 'The user works in New York.'],
+    )
+    expect(prompt).toContain('User-approved memories:\n- The user prefers concise answers.\n- The user works in New York.')
+    expect(prompt.indexOf('User-provided custom instructions:')).toBeLessThan(prompt.indexOf('User-approved memories:'))
+  })
+
+  it('omits the memory section when no memories are enabled', () => {
+    expect(buildAgentSystemPrompt('Model policy', 'Agent policy')).not.toContain('User-approved memories:')
+  })
+
   it('creates deterministic workspace paths without traversal', () => {
     expect(attachmentWorkspacePath('../../ secret?.txt', '12345678-abcd')).toBe('/workspace/12345678-_.._secret_.txt')
     expect(attachmentWorkspacePath('...', 'abcdefgh-1234')).toBe('/workspace/abcdefgh-attachment')
