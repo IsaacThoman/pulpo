@@ -314,7 +314,7 @@ export function ApiKeysPage() {
         </div>
 
         {/* desktop table */}
-        <div className="hidden overflow-hidden rounded-xl border lg:block">
+        <div className="hidden overflow-hidden rounded-lg border lg:block">
           <table className="data-table">
             <thead>
               <tr className="border-b">
@@ -329,7 +329,7 @@ export function ApiKeysPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
                     {keys.length === 0 ? 'No keys yet — create one to get started.' : 'No keys match your search.'}
                   </td>
                 </tr>

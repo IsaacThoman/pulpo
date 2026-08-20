@@ -99,7 +99,7 @@ export function AdminWorkspacesPage() {
     <div>
       <h3 className="text-sm font-semibold">Open VMs</h3>
       <p className="mb-2 text-xs text-muted-foreground">Every workspace pod currently present in the cluster, including warm capacity and terminating VMs.</p>
-      <Card><div className="overflow-x-auto"><table className="data-table min-w-[1120px]">
+      <Card className="gap-0 rounded-lg py-0 shadow-none"><div className="overflow-x-auto"><table className="data-table min-w-[1120px]">
         <thead><tr className="border-b"><th className="px-3 py-2">State</th><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Chat / model</th><th className="px-3 py-2">VM</th><th className="px-3 py-2">Open for</th><th className="px-3 py-2">Activity</th><th className="px-3 py-2">Idle closes in</th><th className="px-3 py-2">Forced close in</th><th className="px-3 py-2">Health</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
         <tbody>{openWorkspaces.length ? openWorkspaces.map((workspace) => {
           const warmPool = ['warm', 'warming'].includes(workspace.lifecycleState)
@@ -121,7 +121,7 @@ export function AdminWorkspacesPage() {
     <div>
       <h3 className="text-sm font-semibold">Lease history</h3>
       <p className="mb-2 text-xs text-muted-foreground">Recent user workspace requests, including queued, released, expired, and failed leases.</p>
-    <Card><div className="overflow-x-auto"><table className="data-table min-w-[1120px]">
+    <Card className="gap-0 rounded-lg py-0 shadow-none"><div className="overflow-x-auto"><table className="data-table min-w-[1120px]">
       <thead><tr className="border-b"><th className="px-3 py-2">State</th><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Chat / model</th><th className="px-3 py-2">Workspace</th><th className="px-3 py-2">Active for</th><th className="px-3 py-2">Idle closes in</th><th className="px-3 py-2">Forced close in</th><th className="px-3 py-2">Activity</th><th className="px-3 py-2">Last use</th></tr></thead>
       <tbody>{rows.length ? rows.map((row) => {
         const activeSince = row.claimedAt ?? row.createdAt

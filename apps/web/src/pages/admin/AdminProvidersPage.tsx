@@ -182,7 +182,7 @@ export function AdminProvidersPage() {
         Manage reusable upstream endpoints and API keys.
       </p>
 
-      <Card className="shadow-none">
+      <Card className="gap-0 rounded-lg py-0 shadow-none">
         <CardContent className="overflow-x-auto px-0 py-0">
           <table className="data-table">
             <thead>

@@ -177,6 +177,13 @@ body {
   background-color: color-mix(in oklch, var(--color-muted) 30%, transparent);
 }
 
+.data-table [data-slot='select-trigger'] {
+  height: 1.75rem;
+  padding-inline: 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
 .settings-section-nav {
   scrollbar-width: none;
 }

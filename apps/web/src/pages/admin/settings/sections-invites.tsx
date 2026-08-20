@@ -95,7 +95,7 @@ export function InviteCodesSection() {
         </div>
       </Section>
 
-      <div className="mb-7 overflow-x-auto rounded-xl border">
+      <div className="mb-7 overflow-x-auto rounded-lg border">
         <table className="data-table">
           <thead className="border-b">
             <tr>
