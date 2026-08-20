@@ -170,7 +170,6 @@ export function BillingPage() {
         queryClient.invalidateQueries({ queryKey: ['billing', userId] }),
         queryClient.invalidateQueries({ queryKey: ['usage', userId] }),
       ])
-      setPlanOpen(false)
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not update your plan.')
     } finally {
