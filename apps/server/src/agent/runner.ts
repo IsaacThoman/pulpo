@@ -60,6 +60,7 @@ import {
 } from '../responses/fallback-policy.js'
 import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
+import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -528,6 +529,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
   const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
   const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
+  let firstTokenTimeout: FirstTokenTimeout | undefined
   agent = new Agent({
     initialState: {
       systemPrompt: agentSystemPrompt,
@@ -566,6 +568,12 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       }
       const resolvedParameters = resolveAgentModelParameters(active.model, record.response.parameters, options?.reasoning)
       modelTurnStartedAt.set(modelTurns, Date.now())
+      firstTokenTimeout?.clear()
+      firstTokenTimeout = createFirstTokenTimeout(
+        active.model.firstTokenTimeoutEnabled,
+        active.model.firstTokenTimeoutSeconds,
+        options?.signal,
+      )
       return streams.streamSimple(
         active.piModel,
         preparedContext,
@@ -577,6 +585,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: active.model.maxRetries,
+          signal: firstTokenTimeout.signal,
           sessionId: cacheOptions.sessionId,
           headers: cacheOptions.headers,
         },
@@ -623,6 +632,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
+      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') {
+        firstTokenTimeout?.clear()
+      }
       if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') turnOutputStarted.add(modelTurns)
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
         delta: update.delta,
@@ -641,6 +653,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         && Date.now() - lastSnapshotAt >= config.RESPONSE_SNAPSHOT_INTERVAL_MS
       ) await snapshot()
     } else if (event.type === 'message_end' && event.message.role === 'assistant') {
+      firstTokenTimeout?.clear()
       const message = event.message as AssistantMessage
       const completedTurnNumber = modelTurns
       const completedRuntime = turnRuntime.get(completedTurnNumber) ?? { runtime: active, index: activeIndex }
@@ -858,6 +871,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw error
   } finally {
+    firstTokenTimeout?.clear()
     clearTimeout(abortTimer); clearInterval(cancellationTimer)
   }
 }
