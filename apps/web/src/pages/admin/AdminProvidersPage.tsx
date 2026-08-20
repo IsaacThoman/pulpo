@@ -182,35 +182,35 @@ export function AdminProvidersPage() {
         Manage reusable upstream endpoints and API keys.
       </p>
 
-      <Card className="shadow-none">
-        <CardContent className="px-0 py-0">
-          <table className="w-full text-sm">
+      <Card className="gap-0 rounded-lg py-0 shadow-none">
+        <CardContent className="overflow-x-auto px-0 py-0">
+          <table className="data-table">
             <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="px-5 py-2.5 font-medium">Name</th>
-                <th className="py-2.5 font-medium">Base URL</th>
-                <th className="px-4 py-2.5 font-medium">Linked models</th>
-                <th className="px-4 py-2.5 font-medium">API key</th>
-                <th className="px-4 py-2.5 font-medium">Prompt cache</th>
-                <th className="px-5 py-2.5 text-right font-medium">Actions</th>
+              <tr className="border-b">
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">Base URL</th>
+                <th className="px-3 py-2">Linked models</th>
+                <th className="px-3 py-2">API key</th>
+                <th className="px-3 py-2">Prompt cache</th>
+                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {providers.map((p) => (
-                <tr key={p.id} className="border-b last:border-0">
-                  <td className="px-5 py-3 font-medium">{p.name}</td>
-                  <td className="max-w-[280px] truncate py-3">
+                <tr key={p.id}>
+                  <td className="px-3 py-2 font-medium">{p.name}</td>
+                  <td className="max-w-[280px] truncate px-3 py-2">
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {p.baseUrl}
                     </code>
                   </td>
-                  <td className="px-4 py-3 tabular-nums text-muted-foreground">{p.modelCount}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2 tabular-nums text-muted-foreground">{p.modelCount}</td>
+                  <td className="px-3 py-2">
                     <Badge variant={p.hasApiKey ? 'secondary' : 'outline'} className="font-normal">
                       {p.hasApiKey ? 'Configured' : 'Missing'}
                     </Badge>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <Badge variant={p.cacheAffinityMode === 'none' ? 'outline' : 'secondary'} className="font-normal">
                       {p.cacheAffinityMode === 'openai_prompt_cache_key'
                         ? `OpenAI · ${p.cacheAffinityScope}`
@@ -219,7 +219,7 @@ export function AdminProvidersPage() {
                           : 'Disabled'}
                     </Badge>
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
                       <Button
                         size="icon-sm"
@@ -252,7 +252,7 @@ export function AdminProvidersPage() {
               ))}
               {!providers.length && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-muted-foreground">
+                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
                     No providers yet. Add one to reuse it across models.
                   </td>
                 </tr>

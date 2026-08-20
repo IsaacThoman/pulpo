@@ -67,7 +67,7 @@ export function PublicRecentUsagePanel({
     </div>
     {records.length === 0 ? <div className="p-6 text-center text-xs text-muted-foreground">No settled usage in this period</div> : <>
       <div className="usage-records-head border-b">
-        <table className="w-full table-fixed text-xs">
+        <table className="data-table table-fixed">
           <colgroup>
             <col className="w-[22%]" />
             <col className="w-[18%]" />
@@ -87,7 +87,7 @@ export function PublicRecentUsagePanel({
         </table>
       </div>
       <div ref={scrollRef} className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
-        <table className="w-full table-fixed text-xs">
+        <table className="data-table table-fixed">
           <colgroup>
             <col className="w-[22%]" />
             <col className="w-[18%]" />

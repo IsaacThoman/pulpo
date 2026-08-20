@@ -95,16 +95,16 @@ export function InviteCodesSection() {
         </div>
       </Section>
 
-      <div className="mb-7 overflow-hidden rounded-xl border">
-        <table className="w-full text-sm">
-          <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+      <div className="mb-7 overflow-x-auto rounded-lg border">
+        <table className="data-table">
+          <thead className="border-b">
             <tr>
-              <th className="px-4 py-2.5 font-medium">Code</th>
-              <th className="px-4 py-2.5 font-medium">Owner</th>
-              <th className="px-4 py-2.5 font-medium">Status</th>
-              <th className="px-4 py-2.5 font-medium">Redeemed by</th>
-              <th className="px-4 py-2.5 font-medium">Created</th>
-              <th className="px-4 py-2.5 text-right font-medium">Actions</th>
+              <th className="px-3 py-2">Code</th>
+              <th className="px-3 py-2">Owner</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2">Redeemed by</th>
+              <th className="px-3 py-2">Created</th>
+              <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -115,13 +115,13 @@ export function InviteCodesSection() {
             ) : codes.map((code) => {
               const status = inviteStatus(code)
               return (
-                <tr key={code.id} className="border-b last:border-0">
-                  <td className="px-4 py-2.5 font-mono tracking-wider">{code.code}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{code.ownerUsername ? `@${code.ownerUsername}` : 'Pool'}</td>
-                  <td className="px-4 py-2.5 capitalize text-muted-foreground">{status}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{code.redeemedByUsername ? `@${code.redeemedByUsername}` : '—'}</td>
-                  <td className="px-4 py-2.5 text-muted-foreground">{formatDate(Date.parse(code.createdAt))}</td>
-                  <td className="px-4 py-2.5">
+                <tr key={code.id}>
+                  <td className="px-3 py-2 font-mono tracking-wider">{code.code}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{code.ownerUsername ? `@${code.ownerUsername}` : 'Pool'}</td>
+                  <td className="px-3 py-2 capitalize text-muted-foreground">{status}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{code.redeemedByUsername ? `@${code.redeemedByUsername}` : '—'}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{formatDate(Date.parse(code.createdAt))}</td>
+                  <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
                       <Button size="icon-sm" variant="ghost" title={copiedId === code.id ? 'Copied' : 'Copy'} onClick={() => void copy(code)}>
                         <Copy className="size-3.5" />
