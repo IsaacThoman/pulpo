@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { LogOut, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -15,12 +15,15 @@ export function PendingPage() {
   const pendingMessage = useAuth((s) => s.pendingMessage)
   const inviteCodesEnabled = useAuth((s) => s.inviteCodesEnabled)
   const navigate = useNavigate()
+  const codeInputRef = useRef<HTMLInputElement>(null)
   const [code, setCode] = useState('')
   const [redeeming, setRedeeming] = useState(false)
   const [redeemError, setRedeemError] = useState('')
 
   if (!user) return <Navigate to="/login" replace />
   if (user.role !== 'pending') return <Navigate to="/" replace />
+
+  const activeCodeIndex = Math.min(code.length, 5)
 
   const redeem = async () => {
     setRedeeming(true)
@@ -58,15 +61,44 @@ export function PendingPage() {
               void redeem()
             }}
           >
-            <Input
-              value={code}
-              onChange={(event) => setCode(event.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6))}
-              placeholder="Invite code"
-              className="font-mono tracking-[0.3em]"
-              maxLength={6}
-              autoComplete="off"
-              aria-label="Invite code"
-            />
+            <label htmlFor="invite-code" className="text-sm font-medium">Invite code</label>
+            <div
+              className="group relative grid grid-cols-6 gap-2"
+              onClick={() => codeInputRef.current?.focus()}
+            >
+              <Input
+                id="invite-code"
+                ref={codeInputRef}
+                value={code}
+                onChange={(event) => {
+                  setCode(event.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6))
+                  setRedeemError('')
+                }}
+                className="absolute inset-0 z-10 h-full cursor-text opacity-0"
+                maxLength={6}
+                autoComplete="one-time-code"
+                autoCapitalize="characters"
+                spellCheck={false}
+                disabled={redeeming}
+                aria-invalid={Boolean(redeemError)}
+                aria-label="Six-character invite code"
+              />
+              {Array.from({ length: 6 }, (_, index) => (
+                <div
+                  key={index}
+                  aria-hidden="true"
+                  className={`flex aspect-square items-center justify-center rounded-lg border bg-background font-mono text-xl font-medium uppercase shadow-xs transition-[color,box-shadow] ${
+                    redeemError
+                      ? 'border-destructive'
+                      : index === activeCodeIndex
+                        ? 'group-focus-within:border-ring group-focus-within:ring-[3px] group-focus-within:ring-ring/20'
+                        : ''
+                  }`}
+                >
+                  {code[index] ?? ''}
+                </div>
+              ))}
+            </div>
             {redeemError && <p className="text-sm text-destructive">{redeemError}</p>}
             <Button type="submit" className="w-full" disabled={redeeming || code.length !== 6}>
               {redeeming ? 'Redeeming…' : 'Redeem invite code'}
