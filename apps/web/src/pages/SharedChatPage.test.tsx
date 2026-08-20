@@ -23,10 +23,12 @@ describe('SharedChatView', () => {
     )
 
     expect(markup).toContain('/pulpo-smiley.png')
+    expect(markup).toContain('<h1 class="text-2xl font-semibold tracking-tight">Markdown in shared chats</h1>')
+    expect(markup.match(/Markdown in shared chats/g)).toHaveLength(1)
     expect(markup).toContain('Pulpo Thinking')
     expect(markup).toContain('<strong class="font-semibold">Does markdown work?</strong>')
     expect(markup).toContain('<ul class="my-2 list-disc')
     expect(markup).toContain('rounded-br-md')
-    expect(markup).toContain('Read-only')
+    expect(markup).not.toContain('snapshot')
   })
 })

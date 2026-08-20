@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { AlertCircle, Loader2, LockKeyhole } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import { apiRequest } from '@/lib/api'
 import { AiLogo } from '@/components/ProviderLogo'
 import { Markdown } from '@/components/chat/Markdown'
@@ -86,12 +86,7 @@ export function SharedChatView({ share }: { share: SharedChat }) {
             <img src="/pulpo-smiley.png" alt="Pulpo" className="size-6" />
             <span className="hidden sm:inline">Pulpo</span>
           </Link>
-          <span className="text-muted-foreground">/</span>
-          <div className="min-w-0 flex-1 truncate text-sm font-medium">{share.chat.title}</div>
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground">
-            <LockKeyhole className="size-3" />
-            <span className="hidden sm:inline">Read-only </span>snapshot
-          </span>
+          <div className="flex-1" />
           <Link className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:block" to="/">
             Open Pulpo
           </Link>
@@ -99,6 +94,7 @@ export function SharedChatView({ share }: { share: SharedChat }) {
       </header>
 
       <section className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-7 px-4 py-6">
+        <h1 className="text-2xl font-semibold tracking-tight">{share.chat.title}</h1>
         {share.responses.map((response) => <SharedResponseView key={response.id} response={response} />)}
         {share.responses.length === 0 && (
           <div className="grid flex-1 place-items-center py-24 text-sm text-muted-foreground">This shared chat has no messages.</div>
