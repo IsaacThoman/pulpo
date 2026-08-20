@@ -288,9 +288,9 @@ export function BillingPage() {
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader><DialogTitle>Compare plans</DialogTitle></DialogHeader>
           <div className="grid gap-6 py-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
-            <PlanColumn plan="baby" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
-            <PlanColumn plan="eight" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
-            <PlanColumn plan="fat" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
+            <PlanColumn plan="baby" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Share platform credits with your pool (up to 5 members)', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
+            <PlanColumn plan="eight" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', 'Higher workspace and file limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
+            <PlanColumn plan="fat" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', 'Highest workspace and file limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
           </div>
           {planError && <p className="text-center text-sm text-destructive">{planError}</p>}
         </DialogContent>
