@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { budgetReservationFunders, budgetReservations, poolMembers, pools, users } from '../database/schema.js'
+import { budgetReservationFunders, budgetReservations, poolInvitations, poolMembers, pools, users } from '../database/schema.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from '../friends/sync.js'
 
 export type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -31,6 +31,18 @@ export async function poolPeerIds(tx: Transaction, userId: string): Promise<stri
   return (await activePoolMembers(tx, membership.pool.id)).map((row) => row.user.id).filter((id) => id !== userId)
 }
 
+export async function dissolveSingletonPool(tx: Transaction, poolId: string, options: { keepWhileInvited?: boolean } = {}): Promise<string[]> {
+  const members = await activePoolMembers(tx, poolId)
+  if (members.length > 1) return []
+  const pending = await tx.select().from(poolInvitations).where(and(eq(poolInvitations.poolId, poolId), eq(poolInvitations.status, 'pending')))
+  if (options.keepWhileInvited && pending.length > 0) return []
+  const now = new Date()
+  await tx.update(pools).set({ closedAt: now, updatedAt: now }).where(and(eq(pools.id, poolId), isNull(pools.closedAt)))
+  await tx.update(poolMembers).set({ leftAt: now }).where(and(eq(poolMembers.poolId, poolId), isNull(poolMembers.leftAt)))
+  await tx.update(poolInvitations).set({ status: 'canceled', respondedAt: now, updatedAt: now }).where(and(eq(poolInvitations.poolId, poolId), eq(poolInvitations.status, 'pending')))
+  return [...new Set(members.map((row) => row.user.id).concat(pending.map((row) => row.inviteeUserId)))]
+}
+
 export async function pendingFundingByUser(tx: Transaction, userIds: string[]): Promise<Map<string, number>> {
   if (!userIds.length) return new Map()
   const rows = await tx.select({
@@ -58,5 +70,6 @@ export async function separatePoolOnBlock(tx: Transaction, blockerUserId: string
   await tx.update(poolMembers).set({ leftAt: new Date() }).where(and(
     eq(poolMembers.poolId, pool.id), eq(poolMembers.userId, leavingUserId), isNull(poolMembers.leftAt),
   ))
-  return (await activePoolMembers(tx, pool.id)).map((row) => row.user.id).concat(leavingUserId)
+  const dissolved = await dissolveSingletonPool(tx, pool.id)
+  return [...new Set((await activePoolMembers(tx, pool.id)).map((row) => row.user.id).concat(leavingUserId, dissolved))]
 }

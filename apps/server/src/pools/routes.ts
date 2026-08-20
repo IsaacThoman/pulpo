@@ -7,7 +7,7 @@ import { friendships, poolInvitations, poolMembers, pools, users } from '../data
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
-import { activePoolMembers, activePoolMembership, pendingFundingByUser, publishPoolChanges } from './service.js'
+import { activePoolMembers, activePoolMembership, dissolveSingletonPool, pendingFundingByUser, publishPoolChanges } from './service.js'
 
 const disclosureSchema = z.object({ userId: z.uuid(), balanceDisclosureAccepted: z.literal(true) })
 
@@ -74,7 +74,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
         })),
         pendingInvitations: outgoing.map(invitation),
       },
-      incomingInvitations: [],
+      incomingInvitations: incoming.map(invitation),
     }
   })
 
@@ -85,7 +85,6 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
     const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool-user:${user.id}`}))`)
       if (!await acceptedFriends(tx, user.id, input.userId)) throw new AppError(409, 'pool_invitee_not_friend', 'Only accepted friends can be invited')
-      if (await activePoolMembership(tx, input.userId)) throw new AppError(409, 'pool_invitee_already_member', 'This friend is already in a Pool')
       let membership = await activePoolMembership(tx, user.id)
       if (!membership) {
         const poolId = newId()
@@ -127,8 +126,10 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
       if (Number(count?.value ?? 0) >= 6) throw new AppError(409, 'pool_full', 'This Pool is full')
       await tx.insert(poolMembers).values({ id: newId(), poolId: pool.id, userId: user.id })
       await tx.update(poolInvitations).set({ status: 'accepted', inviteeDisclosureAcceptedAt: new Date(), respondedAt: new Date(), updatedAt: new Date() }).where(eq(poolInvitations.id, id))
-      const canceled = await tx.update(poolInvitations).set({ status: 'declined', respondedAt: new Date(), updatedAt: new Date() }).where(and(eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'), ne(poolInvitations.id, id))).returning({ inviterUserId: poolInvitations.inviterUserId })
-      return [...new Set((await activePoolMembers(tx, pool.id)).map((row) => row.user.id).concat(canceled.map((row) => row.inviterUserId)))]
+      const canceled = await tx.update(poolInvitations).set({ status: 'declined', respondedAt: new Date(), updatedAt: new Date() }).where(and(eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'), ne(poolInvitations.id, id))).returning({ poolId: poolInvitations.poolId, inviterUserId: poolInvitations.inviterUserId })
+      const dissolved: string[] = []
+      for (const canceledPoolId of new Set(canceled.map((row) => row.poolId))) dissolved.push(...await dissolveSingletonPool(tx, canceledPoolId, { keepWhileInvited: true }))
+      return [...new Set((await activePoolMembers(tx, pool.id)).map((row) => row.user.id).concat(canceled.map((row) => row.inviterUserId), dissolved))]
     })
     await publishPoolChanges(affected)
     return { status: 'accepted' }
@@ -137,9 +138,12 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
   app.post('/api/pools/invitations/:id/decline', async (request, reply) => {
     const user = requireUser(request)
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
-    const rows = await db.update(poolInvitations).set({ status: 'declined', respondedAt: new Date(), updatedAt: new Date() }).where(and(eq(poolInvitations.id, id), eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'))).returning()
-    if (!rows.length) throw notFound('Pool invitation')
-    await publishPoolChanges([user.id, rows[0]!.inviterUserId])
+    const affected = await db.transaction(async (tx) => {
+      const rows = await tx.update(poolInvitations).set({ status: 'declined', respondedAt: new Date(), updatedAt: new Date() }).where(and(eq(poolInvitations.id, id), eq(poolInvitations.inviteeUserId, user.id), eq(poolInvitations.status, 'pending'))).returning()
+      if (!rows.length) throw notFound('Pool invitation')
+      return [...new Set([user.id, rows[0]!.inviterUserId, ...await dissolveSingletonPool(tx, rows[0]!.poolId, { keepWhileInvited: true })])]
+    })
+    await publishPoolChanges(affected)
     reply.code(204).send()
   })
 
@@ -150,8 +154,11 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
     if (!invite) throw notFound('Pool invitation')
     const membership = await db.transaction((tx) => activePoolMembership(tx, user.id))
     if (!membership || membership.pool.id !== invite.poolId || membership.pool.ownerUserId !== user.id) throw new AppError(403, 'pool_owner_required', 'Only the Pool owner can cancel invitations')
-    await db.update(poolInvitations).set({ status: 'canceled', respondedAt: new Date(), updatedAt: new Date() }).where(eq(poolInvitations.id, id))
-    await publishPoolChanges([user.id, invite.inviteeUserId])
+    const dissolved = await db.transaction(async (tx) => {
+      await tx.update(poolInvitations).set({ status: 'canceled', respondedAt: new Date(), updatedAt: new Date() }).where(eq(poolInvitations.id, id))
+      return dissolveSingletonPool(tx, invite.poolId, { keepWhileInvited: true })
+    })
+    await publishPoolChanges([...new Set([user.id, invite.inviteeUserId, ...dissolved])])
     reply.code(204).send()
   })
 
@@ -193,7 +200,7 @@ export async function registerPoolRoutes(app: FastifyInstance): Promise<void> {
         }
       }
       await tx.update(poolMembers).set({ leftAt: new Date() }).where(and(eq(poolMembers.poolId, membership.pool.id), eq(poolMembers.userId, userId), isNull(poolMembers.leftAt)))
-      return before.map((row) => row.user.id)
+      return [...new Set(before.map((row) => row.user.id).concat(await dissolveSingletonPool(tx, membership.pool.id)))]
     })
     await publishPoolChanges(affected)
     reply.code(204).send()
