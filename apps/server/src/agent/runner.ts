@@ -58,7 +58,7 @@ import {
   isSlowCompletion,
   markModelSticky,
 } from '../responses/fallback-policy.js'
-import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 import { createProviderCostCapture } from './provider-cost.js'
@@ -272,6 +272,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const turnProviderCosts = new Map<number, () => Promise<number | undefined>>()
   const turnRequestPayloads = new Map<number, unknown>()
   const turnResponsePayloads = new Map<number, unknown>()
+  const turnRetryAttempts = new Map<number, number>()
+  let currentRetryAttempt = 1
   let lastResponder: { runtime: RuntimeModel; pricing: ActivePricing } | undefined
   const toolItems = new Map<string, ToolTimelineItem>()
   const generatedAttachmentRows = await db.select().from(attachments).where(and(
@@ -314,6 +316,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     const resolved = await resolveStickyRuntimeIndex(fromIndex + 1)
     activeIndex = resolved.index
     active = runtimes[activeIndex]!
+    currentRetryAttempt = 1
     if (agent) agent.state.model = active.piModel
     const pricing = await getActivePricing(active.model.id)
     await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
@@ -600,7 +603,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           samplingParams: { ...options?.samplingParams, ...resolvedParameters.parameters },
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
-          maxRetries: active.model.maxRetries,
+          maxRetries: 0,
           signal: firstTokenTimeout.signal,
           sessionId: cacheOptions.sessionId,
           headers: cacheOptions.headers,
@@ -651,9 +654,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       turnRuntime.set(modelTurns, { runtime: active, index: activeIndex })
       turnAttemptIds.set(modelTurns, attemptId)
       turnPricing.set(modelTurns, pricing)
-      await db.insert(generationAttempts).values({ id: attemptId, requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: 1, turnNumber: modelTurns, status: 'in_progress' })
+      turnRetryAttempts.set(modelTurns, currentRetryAttempt)
+      await db.insert(generationAttempts).values({ id: attemptId, requestLogId: requestLog.id, modelId: active.model.id, upstreamModelId: active.model.upstreamModelId, source: 'agent', purpose: 'generation', fallbackFromModelId: activeIndex ? runtimes[activeIndex - 1]!.model.id : null, retryAttempt: currentRetryAttempt, turnNumber: modelTurns, status: 'in_progress' })
       await db.update(responses).set({ actualModelId: active.model.id, pricingVersionId: pricing.id }).where(eq(responses.id, responseId))
-      await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt: 1, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+      await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
       if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') {
@@ -697,6 +701,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const outputStarted = turnOutputStarted.has(completedTurnNumber) || assistantMessageHasOutput(message)
       if (outputStarted) turnOutputStarted.add(completedTurnNumber)
       const failed = message.stopReason === 'error' || message.stopReason === 'aborted'
+      if (!failed) currentRetryAttempt = 1
       if (!failed || outputStarted) lastResponder = { runtime: completedRuntime.runtime, pricing }
       const errorCategory = failed
         ? message.stopReason === 'aborted' ? 'cancellation' : classifyGenerationError(new Error(message.errorMessage || 'Agent model turn failed'))
@@ -838,6 +843,25 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         continue
       }
       const cancellationRequested = await isCancellationRequested(responseId)
+      const retryAttempt = nextAgentRetryAttempt({
+        message: last,
+        currentAttempt: turnRetryAttempts.get(failedTurnNumber) ?? 1,
+        maxRetries: failedRuntime.runtime.model.maxRetries,
+        outputStarted,
+        cancellationRequested,
+      })
+      if (retryAttempt !== undefined && !overflowRetried) {
+        if (failedRuntime.runtime.model.retryDelaySeconds > 0) {
+          await new Promise((resolve) => setTimeout(resolve, failedRuntime.runtime.model.retryDelaySeconds * 1_000))
+        }
+        if (await isCancellationRequested(responseId)) break
+        currentRetryAttempt = retryAttempt
+        agent.state.messages = agent.state.messages.slice(0, -1)
+        await db.update(requestLogs).set({ retryCount: sql`${requestLogs.retryCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+        await agent.continue()
+        last = agent.state.messages.at(-1)
+        continue
+      }
       if (!canFallbackAgentTurn({ message: last, outputStarted, cancellationRequested, contextRetryAttempted: overflowRetried })) break
       if (failedRuntime.index !== activeIndex || activeIndex + 1 >= runtimes.length) break
       await markModelSticky(redis, failedRuntime.runtime.model, classifyGenerationError(new Error(last.errorMessage || 'Agent model turn failed')))

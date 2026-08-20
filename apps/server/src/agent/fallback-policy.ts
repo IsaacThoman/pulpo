@@ -41,3 +41,19 @@ export function canFallbackAgentTurn(input: {
   return !isContextFallbackExcluded(error.message)
     && canFallbackAfterGenerationError(error, input.outputStarted || assistantMessageHasOutput(input.message))
 }
+
+export function nextAgentRetryAttempt(input: {
+  message: AssistantMessage
+  currentAttempt: number
+  maxRetries: number
+  outputStarted: boolean
+  cancellationRequested: boolean
+}): number | undefined {
+  if (input.currentAttempt > input.maxRetries) return undefined
+  return canFallbackAgentTurn({
+    message: input.message,
+    outputStarted: input.outputStarted,
+    cancellationRequested: input.cancellationRequested,
+    contextRetryAttempted: false,
+  }) ? input.currentAttempt + 1 : undefined
+}
