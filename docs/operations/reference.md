@@ -1,4 +1,4 @@
-# Pulpo
+# Complete operator reference
 
 Pulpo is a self-hostable, local-first interface and OpenAI-compatible gateway for the OpenAI Responses API. Chats feel immediate because recent query data, drafts, response cursors, and pending mutations live in IndexedDB; PostgreSQL remains authoritative and every tab reconciles through Socket.IO after reconnecting or waking.
 
@@ -39,7 +39,7 @@ docker compose ps
 
 Open `http://localhost:8080` by default. On an empty database, Pulpo presents a one-time setup page where you create the initial administrator. No default or environment-provided login is created. Add an OpenAI project connection under Admin → Providers, manage reusable lab/model artwork under Admin → Icons, create a lab and model, configure pricing, and approve pending users.
 
-Commercial billing is an optional, fail-closed integration intended for the licensed hosted instance. It is disabled by default, and the operational feature flag does not grant commercial rights beyond [LICENSE.md](./LICENSE.md). See [docs/billing.md](./docs/billing.md) for Polar product setup, sandbox verification, webhook events, reconciliation, and the production rollout order.
+Commercial billing is an optional, fail-closed integration intended for the licensed hosted instance. It is disabled by default, and the operational feature flag does not grant commercial rights beyond [repository license](https://github.com/IsaacThoman/pulpo/blob/main/LICENSE.md). See [Billing operations](/billing) for Polar product setup, sandbox verification, webhook events, reconciliation, and the production rollout order.
 
 Provider prompt-cache routing is configured under Admin → Providers. Choose the semantic transport supported by the upstream (`prompt_cache_key` for OpenAI or `x-session-affinity` for Fireworks) and its identity scope. Fireworks cache isolation is configured separately so multi-tenant privacy boundaries do not depend on routing affinity.
 
