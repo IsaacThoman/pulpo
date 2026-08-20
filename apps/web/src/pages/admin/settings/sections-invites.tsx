@@ -62,7 +62,7 @@ export function InviteCodesSection() {
     window.setTimeout(() => setCopiedId((current) => current === code.id ? null : current), 1_500)
   }
 
-  const codes = listQuery.data?.data ?? []
+  const codes = listQuery.data?.data.filter((code) => !code.revokedAt) ?? []
 
   return (
     <div>
