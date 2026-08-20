@@ -1,6 +1,6 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'vitest'
-import { assistantMessageHasOutput, canFallbackAgentTurn, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 
 function failed(content: AssistantMessage['content'] = [], errorMessage = '429 resource unavailable'): AssistantMessage {
   return {
@@ -17,6 +17,17 @@ function failed(content: AssistantMessage['content'] = [], errorMessage = '429 r
 }
 
 describe('Agent fallback policy', () => {
+  it('advances explicit retry attempts only while retries remain', () => {
+    const message = failed([], 'Provider overloaded')
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 3, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+  })
+
+  it('does not retry after output or cancellation', () => {
+    const message = failed([], 'Provider overloaded')
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+  })
   it('starts directly on the first non-sticky fallback model', async () => {
     const sticky = new Set(['flex', 'flex-backup'])
     await expect(resolveStickyFallbackIndex(
