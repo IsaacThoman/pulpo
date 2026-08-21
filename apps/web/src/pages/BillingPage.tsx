@@ -62,7 +62,8 @@ export function BillingPage() {
     queryKey: ['billing-checkout', checkoutId],
     queryFn: () => apiRequest<{ status: string }>(`/api/billing/checkouts/${encodeURIComponent(checkoutId!)}`),
     enabled: Boolean(checkoutReturned && checkoutId),
-    refetchInterval: (query) => ['succeeded', 'failed', 'expired'].includes(query.state.data?.status ?? '') ? false : 1_500,
+    refetchInterval: (query) => query.state.status === 'error'
+      || ['succeeded', 'failed', 'expired'].includes(query.state.data?.status ?? '') ? false : 1_500,
   })
 
   const [topUpOpen, setTopUpOpen] = useState(false)
@@ -199,12 +200,14 @@ export function BillingPage() {
           {checkoutReturned && (
             <div className={cn(
               'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm',
-              checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
+              checkoutQuery.isError || checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
                 ? 'border-destructive/30 bg-destructive/5 text-destructive'
                 : 'bg-muted/30',
             )}>
-              {!['succeeded', 'failed', 'expired'].includes(checkoutQuery.data?.status ?? '') && <Loader2 className="size-4 animate-spin" />}
-              <span>{checkoutQuery.data?.status === 'succeeded'
+              {!checkoutQuery.isError && !['succeeded', 'failed', 'expired'].includes(checkoutQuery.data?.status ?? '') && <Loader2 className="size-4 animate-spin" />}
+              <span>{checkoutQuery.isError
+                ? 'Could not confirm this checkout. Your balance and payment history may already be updated.'
+                : checkoutQuery.data?.status === 'succeeded'
                 ? 'Payment confirmed. Your billing balance is up to date.'
                 : checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
                   ? 'Checkout was not completed.'
