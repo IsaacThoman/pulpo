@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   grantMicrosForPaidOrder,
+  invoicePaymentListParams,
   isStaleProviderUpdate,
   matchingStripeOwner,
   stripeCheckoutStatus,
@@ -8,6 +9,14 @@ import {
 } from './webhooks.js'
 
 describe('billing webhook lifecycle rules', () => {
+  it('retrieves invoice payments without exceeding Stripe expansion depth', () => {
+    expect(invoicePaymentListParams('in_paid')).toEqual({
+      invoice: 'in_paid',
+      status: 'paid',
+      limit: 10,
+    })
+  })
+
   it('grants purchased credit exactly once', () => {
     expect(grantMicrosForPaidOrder({
       isCreditPurchase: true,
