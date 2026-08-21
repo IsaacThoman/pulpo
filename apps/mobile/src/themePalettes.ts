@@ -16,6 +16,27 @@ export const lightTheme = {
   fill: 'rgba(0,0,0,0.045)', fillStrong: 'rgba(0,0,0,0.08)', shadow: '#74747A',
 } as const;
 
+// Android uses Material 3 surface roles instead of mirroring the iOS glass palette.
+// These baseline roles remain predictable when a device has dynamic color disabled;
+// native Compose controls still inherit the user's Material You palette.
+export const androidDarkTheme = {
+  isDark: true,
+  background: '#141218', elevated: '#211F26', elevated2: '#2B2930', glass: '#211F26',
+  text: '#E6E1E5', secondary: '#CAC4D0', tertiary: '#938F99', separator: '#49454F',
+  accent: '#D0BCFF', accentText: '#381E72', blue: '#D0BCFF', green: '#B8F397', orange: '#FFB77D', red: '#F2B8B5',
+  disabledBackground: '#49454F', disabledText: '#938F99',
+  fill: '#1D1B20', fillStrong: '#36343B', shadow: '#000000',
+} as const;
+
+export const androidLightTheme = {
+  isDark: false,
+  background: '#FDF8FF', elevated: '#FFFBFE', elevated2: '#F3EDF7', glass: '#F3EDF7',
+  text: '#1D1B20', secondary: '#49454F', tertiary: '#79747E', separator: '#CAC4D0',
+  accent: '#6750A4', accentText: '#FFFFFF', blue: '#6750A4', green: '#386A20', orange: '#825500', red: '#B3261E',
+  disabledBackground: '#E6E0E9', disabledText: '#79747E',
+  fill: '#F7F2FA', fillStrong: '#E8DEF8', shadow: '#000000',
+} as const;
+
 export const themePalettes = { dark: darkTheme, light: lightTheme } as const;
 
-export type AppTheme = typeof darkTheme | typeof lightTheme;
+export type AppTheme = typeof darkTheme | typeof lightTheme | typeof androidDarkTheme | typeof androidLightTheme;

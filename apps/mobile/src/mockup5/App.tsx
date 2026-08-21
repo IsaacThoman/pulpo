@@ -176,6 +176,7 @@ import { aiIconSource } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { timeAgo } from '../features/chat/format';
+import { PlatformIcon } from './src/components/PlatformIcon';
 import {
   MAX_COMPOSER_ATTACHMENTS,
   attachmentMetadata,
@@ -294,10 +295,10 @@ const COLORS = {
   elevated: systemColor('secondarySystemBackground', '?attr/colorBackgroundFloating', '#f2f2f7'),
   line: systemColor('separator', '?attr/colorControlNormal', '#c6c6c8'),
   lineSoft: systemColor('opaqueSeparator', '?attr/colorControlNormal', '#c6c6c8'),
-  text: systemColor('label', '?attr/textColorPrimary', '#000000'),
-  textSoft: systemColor('label', '?attr/textColorPrimary', '#000000'),
-  muted: readableColor('#68686F', '#A1A1A8', '?attr/textColorSecondary'),
-  dim: systemColor('tertiaryLabel', '?attr/textColorSecondary', '#3c3c434d'),
+  text: systemColor('label', '?android:attr/textColorPrimary', '#000000'),
+  textSoft: systemColor('label', '?android:attr/textColorPrimary', '#000000'),
+  muted: readableColor('#68686F', '#A1A1A8', '?android:attr/textColorSecondary'),
+  dim: systemColor('tertiaryLabel', '?android:attr/textColorSecondary', '#3c3c434d'),
   fill: systemColor('tertiarySystemFill', '?attr/colorControlHighlight', '#7676801f'),
   fillStrong: systemColor('secondarySystemFill', '?attr/colorControlHighlight', '#78788029'),
   accent: systemColor('systemBlue', '?attr/colorAccent', '#007aff'),
@@ -308,6 +309,24 @@ const COLORS = {
   foregroundOnAccent: '#ffffff',
   mono: Platform.select({ ios: 'Menlo', default: 'monospace' }) as string,
 };
+
+function sameNativeColor(left: ColorValue | undefined, right: ColorValue): boolean {
+  if (left === right) return true;
+  if (!left || typeof left === 'string' || typeof right === 'string') return false;
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function androidSemanticColor(value: ColorValue | undefined, dark: boolean): ColorValue | undefined {
+  if (Platform.OS !== 'android' || !dark || !value) return undefined;
+  if (sameNativeColor(value, COLORS.text) || sameNativeColor(value, COLORS.textSoft)) return '#E6E1E5';
+  if (sameNativeColor(value, COLORS.muted)) return '#CAC4D0';
+  if (sameNativeColor(value, COLORS.dim)) return '#938F99';
+  if (sameNativeColor(value, COLORS.accent)) return '#D0BCFF';
+  if (sameNativeColor(value, COLORS.positive)) return '#B8F397';
+  if (sameNativeColor(value, COLORS.critical) || sameNativeColor(value, COLORS.criticalAction)) return '#F2B8B5';
+  if (sameNativeColor(value, COLORS.warning)) return '#FFB77D';
+  return undefined;
+}
 
 const DRAWER_ACTION_HEIGHT = 46;
 
@@ -392,13 +411,15 @@ function useAppPreferences() {
 
 function Text({ style, ...props }: TextProps) {
   const { textSize } = useAppPreferences();
+  const colorScheme = useColorScheme();
   const scale = textSize === 'Large' ? 1.12 : textSize === 'Extra Large' ? 1.25 : 1;
   const flattened = StyleSheet.flatten(style);
+  const adaptiveColor = Platform.OS === 'android' ? androidSemanticColor(flattened?.color, colorScheme === 'dark') : undefined;
   const scaledStyle = scale === 1 ? null : {
     fontSize: flattened?.fontSize ? flattened.fontSize * scale : undefined,
     lineHeight: flattened?.lineHeight ? flattened.lineHeight * scale : undefined,
   };
-  return <RNText {...props} style={[style, scaledStyle]} />;
+  return <RNText {...props} style={[style, scaledStyle, adaptiveColor ? { color: adaptiveColor } : null]} />;
 }
 
 type AccessibilityPreferences = {
@@ -615,7 +636,9 @@ function pickSuggestedPrompts(items: SuggestedPrompt[], count: number): Suggeste
 }
 
 function Icon({ name, size = 20, color = COLORS.text, weight = 'regular' }: { name: SymbolName; size?: number; color?: ColorValue; weight?: ComponentProps<typeof SymbolView>['weight'] }) {
-  return <SymbolView name={name} size={size} tintColor={color} weight={weight} />;
+  const colorScheme = useColorScheme();
+  const platformName = typeof name === 'string' ? name : name.android ?? name.ios ?? 'circle';
+  return <PlatformIcon name={platformName} size={size} color={androidSemanticColor(color, colorScheme === 'dark') ?? color} weight={weight} />;
 }
 
 type NativeButtonSystemImage = NonNullable<ComponentProps<typeof SwiftUIButton>['systemImage']>;
@@ -1224,6 +1247,69 @@ function NativeObjectContextMenu({
       </SwiftUIContextMenu>
     </SwiftUIHost>
   );
+}
+
+type AndroidSheetAction = {
+  label: string;
+  onPress: () => void;
+  destructive?: boolean;
+};
+
+function AndroidActionSheet({ title, visible, actions, onClose }: {
+  title: string;
+  visible: boolean;
+  actions: AndroidSheetAction[];
+  onClose: () => void;
+}) {
+  const dark = useColorScheme() === 'dark';
+  if (Platform.OS !== 'android') return null;
+  return <Modal animationType="slide" transparent visible={visible} onRequestClose={onClose}>
+    <Pressable accessibilityLabel="Close actions" accessibilityRole="button" onPress={onClose} style={styles.androidSheetBackdrop}>
+      <Pressable accessibilityRole="none" onPress={(event) => event.stopPropagation()} style={[styles.androidSheetSurface, { backgroundColor: dark ? '#211F26' : '#FFFBFE' }]}>
+        <View style={styles.androidSheetHandle} />
+        <Text numberOfLines={2} style={styles.androidSheetTitle}>{title}</Text>
+        {actions.map((action) => <Pressable
+          accessibilityRole="button"
+          key={action.label}
+          onPress={() => { onClose(); action.onPress(); }}
+          style={({ pressed }) => [styles.androidSheetAction, pressed && styles.androidSheetActionPressed]}
+        ><Text style={[styles.androidSheetActionText, action.destructive && styles.androidSheetActionDestructive]}>{action.label}</Text></Pressable>)}
+        <Pressable accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.androidSheetCancel, pressed && styles.androidSheetActionPressed]}><Text style={styles.androidSheetCancelText}>Cancel</Text></Pressable>
+      </Pressable>
+    </Pressable>
+  </Modal>;
+}
+
+function AndroidTextPrompt({ title, detail, initialValue = '', visible, onCancel, onSubmit }: {
+  title: string;
+  detail?: string;
+  initialValue?: string;
+  visible: boolean;
+  onCancel: () => void;
+  onSubmit: (value: string) => void;
+}) {
+  const [value, setValue] = useState(initialValue);
+  const dark = useColorScheme() === 'dark';
+  useEffect(() => { if (visible) setValue(initialValue); }, [initialValue, visible]);
+  if (Platform.OS !== 'android') return null;
+  const submit = () => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onSubmit(trimmed);
+  };
+  return <Modal animationType="fade" transparent visible={visible} onRequestClose={onCancel}>
+    <View style={styles.androidDialogBackdrop}>
+      <View accessibilityViewIsModal style={[styles.androidDialogSurface, { backgroundColor: dark ? '#211F26' : '#FFFBFE' }]}>
+        <Text style={styles.androidDialogTitle}>{title}</Text>
+        {detail ? <Text style={styles.androidDialogDetail}>{detail}</Text> : null}
+        <TextInput autoFocus accessibilityLabel={title} onChangeText={setValue} onSubmitEditing={submit} selectTextOnFocus style={[styles.androidDialogInput, dark && { color: '#E6E1E5', borderColor: '#49454F' }]} value={value} />
+        <View style={styles.androidDialogActions}>
+          <Pressable accessibilityRole="button" onPress={onCancel} style={styles.androidDialogButton}><Text style={styles.androidDialogButtonText}>Cancel</Text></Pressable>
+          <Pressable accessibilityRole="button" onPress={submit} style={styles.androidDialogButton}><Text style={styles.androidDialogButtonText}>Save</Text></Pressable>
+        </View>
+      </View>
+    </View>
+  </Modal>;
 }
 
 async function copyText(text: string, announcement = 'Copied') {
@@ -2129,7 +2215,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   return (
     <GestureDetector gesture={panelGesture}>
-      <View style={styles.root}>
+      <View style={[styles.root, Platform.OS === 'android' && { backgroundColor: isDark ? '#141218' : '#FDF8FF' }]}>
         <ProductionBridge activeChatId={activeChatId} />
         <StatusBar style="auto" />
 
@@ -2158,7 +2244,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         <Reanimated.View
           accessibilityElementsHidden={!persistentSidebar && panelOpen}
           importantForAccessibility={!persistentSidebar && panelOpen ? 'no-hide-descendants' : 'auto'}
-          style={[persistentSidebar ? styles.persistentMainView : styles.mainView, mainAnimatedStyle]}
+          style={[persistentSidebar ? styles.persistentMainView : styles.mainView, Platform.OS === 'android' && { backgroundColor: isDark ? '#141218' : '#FDF8FF' }, mainAnimatedStyle]}
         >
           <ChatView
             messages={messages}
@@ -2218,10 +2304,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
 type MessageAction = 'copy' | 'share' | 'reply' | 'edit' | 'regenerate' | 'delete';
 
-function useMessageActionRunner({ message, onEdit, onRegenerate }: {
+function useMessageActionRunner({ message, onEdit, onRegenerate, onRequestResponseEdit }: {
   message: Message;
   onEdit: (message: Message, content: string) => void;
   onRegenerate: (message: Message) => void;
+  onRequestResponseEdit?: () => void;
 }) {
   const queryClient = useQueryClient();
   const instanceUrl = useSessionStore((state) => state.instanceUrl);
@@ -2279,6 +2366,8 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
           if (!trimmed) return;
           onEdit(message, trimmed);
         }, 'plain-text', message.text);
+      } else {
+        onRequestResponseEdit?.();
       }
       return;
     }
@@ -2297,7 +2386,7 @@ function useMessageActionRunner({ message, onEdit, onRegenerate }: {
       regenerate: 'Regenerate response',
     } as const;
     Alert.alert(labels[action], message.text.slice(0, 120));
-  }, [instanceUrl, message, onEdit, onRegenerate, queryClient, refresh, userId]);
+  }, [instanceUrl, message, onEdit, onRegenerate, onRequestResponseEdit, queryClient, refresh, userId]);
 }
 
 function MessageContextMenu({
@@ -2313,10 +2402,30 @@ function MessageContextMenu({
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
-  const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
+  const [actionsVisible, setActionsVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
+  const runAction = useMessageActionRunner({ message, onEdit, onRegenerate, onRequestResponseEdit: () => setEditVisible(true) });
   const previewText = message.text.length > 2_000
     ? `${message.text.slice(0, 1_999)}…`
     : message.text;
+
+  if (Platform.OS === 'android') return <>
+    <Pressable accessibilityHint="Long press for message actions" delayLongPress={350} onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setActionsVisible(true); }}>{children}</Pressable>
+    <AndroidActionSheet
+      actions={[
+        { label: 'Copy', onPress: () => runAction('copy') },
+        { label: 'Share', onPress: () => runAction('share') },
+        { label: 'Reply', onPress: () => runAction('reply') },
+        { label: message.role === 'user' ? 'Edit message' : 'Edit response', onPress: () => runAction('edit') },
+        ...(message.role === 'assistant' ? [{ label: 'Regenerate response', onPress: () => runAction('regenerate') }] : []),
+        { label: 'Delete message', destructive: true, onPress: () => runAction('delete') },
+      ]}
+      onClose={() => setActionsVisible(false)}
+      title={message.role === 'user' ? 'Your message' : model.name}
+      visible={actionsVisible}
+    />
+    <AndroidTextPrompt detail="Saving creates a response branch." initialValue={message.text} onCancel={() => setEditVisible(false)} onSubmit={(content) => { setEditVisible(false); onEdit(message, content); }} title="Edit response" visible={editVisible} />
+  </>;
 
   return (
     <NativeObjectContextMenu
@@ -2362,6 +2471,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
+  const [actionsVisible, setActionsVisible] = useState(false);
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const shareAttachment = () => {
     if (attachment.uri) void Share.share({ message: attachment.name, url: attachment.uri });
@@ -2374,6 +2484,22 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
       AccessibilityInfo.announceForAccessibility('File copied');
     })().catch((error) => Alert.alert('Couldn’t copy file', error instanceof Error ? error.message : undefined));
   };
+  if (Platform.OS === 'android') return <>
+    <Pressable accessibilityHint="Long press for attachment actions" delayLongPress={350} onLongPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); setActionsVisible(true); }}>{children}</Pressable>
+    <AndroidActionSheet
+      actions={[
+        { label: 'Share', onPress: shareAttachment },
+        ...(supportsFileClipboard ? [{ label: 'Copy file', onPress: copyAttachment }] : []),
+        ...(message.role === 'user' && !message.text ? [
+          { label: 'Edit message', onPress: () => runMessageAction('edit') },
+          { label: 'Delete message', destructive: true, onPress: () => runMessageAction('delete') },
+        ] : []),
+      ]}
+      onClose={() => setActionsVisible(false)}
+      title={attachment.name}
+      visible={actionsVisible}
+    />
+  </>;
   return (
     <NativeObjectContextMenu
       style={attachment.kind === 'image' ? styles.sentImageContextHost : styles.sentFileContextHost}
@@ -3167,6 +3293,7 @@ function ChatView({
   const composerInputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
+  const [attachmentPickerOpen, setAttachmentPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
   const [promptConfig, setPromptConfig] = useState({
     enabled: true,
@@ -4008,7 +4135,7 @@ function ChatView({
   );
 
   return (
-    <Reanimated.View style={[styles.chatRoot, temporarySurfaceAnimatedStyle]}>
+    <Reanimated.View style={[styles.chatRoot, Platform.OS === 'android' && { backgroundColor: colorScheme === 'dark' ? '#141218' : '#FDF8FF' }, temporarySurfaceAnimatedStyle]}>
       <View
         onLayout={(event) => {
           const height = event.nativeEvent.layout.height;
@@ -4189,8 +4316,8 @@ function ChatView({
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
-                placeholderTextColor={COLORS.muted}
-                style={styles.input}
+                placeholderTextColor={androidSemanticColor(COLORS.muted, colorScheme === 'dark') ?? COLORS.muted}
+                style={[styles.input, Platform.OS === 'android' && colorScheme === 'dark' && { color: '#E6E1E5' }]}
                 value={input}
               />
               <View style={styles.composerBar}>
@@ -4200,7 +4327,10 @@ function ChatView({
                   <Pressable
                     accessibilityLabel="Add attachment"
                     accessibilityRole="button"
-                    onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setAttachmentPickerOpen(true);
+                    }}
                     style={({ pressed }) => [styles.composerCircle, pressed && styles.pressed]}
                   >
                     <Icon name="plus" size={16} />
@@ -4315,6 +4445,16 @@ function ChatView({
         visible={presetPickerOpen}
         onClose={() => setPresetPickerOpen(false)}
         onSelect={onSelectPreset}
+      />
+      <AndroidActionSheet
+        actions={[
+          { label: 'Take photo', onPress: takePhoto },
+          { label: 'Photo library', onPress: pickPhotos },
+          { label: 'Choose files', onPress: pickFiles },
+        ]}
+        onClose={() => setAttachmentPickerOpen(false)}
+        title="Add attachment"
+        visible={attachmentPickerOpen}
       />
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
@@ -4567,6 +4707,10 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const addFolder = usePrototypeStore((state) => state.addFolder);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [chatActionsTarget, setChatActionsTarget] = useState<HistoryChatSummary | null>(null);
+  const [renameTarget, setRenameTarget] = useState<HistoryChatSummary | null>(null);
+  const [foldersVisible, setFoldersVisible] = useState(false);
+  const [newFolderVisible, setNewFolderVisible] = useState(false);
   const folderItems = useMemo(() => {
     return folders.map((folder) => ({
       id: folder.id,
@@ -4632,7 +4776,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       if (Platform.OS === 'ios') {
         Alert.prompt('Rename chat', undefined, (title) => title.trim() && renameChat(chat.id, title), 'plain-text', chat.title);
       } else {
-        Alert.alert('Rename chat', 'Long-press rename is available with a native prompt on iOS.');
+        setRenameTarget(chat);
       }
       return;
     }
@@ -4658,12 +4802,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
 
   const showChatActions = useCallback((chat: HistoryChatSummary) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(chat.title, undefined, [
-      { text: 'Rename', onPress: () => runChatAction(chat, 'rename') },
-      { text: 'Share', onPress: () => runChatAction(chat, 'share') },
-      { text: removeChatLabel, style: 'destructive', onPress: () => runChatAction(chat, 'delete') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    if (Platform.OS === 'android') setChatActionsTarget(chat);
   }, [removeChatLabel, runChatAction]);
 
   const selectHistoryChat = useCallback((chat: HistoryChatSummary) => {
@@ -4701,7 +4840,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   }, [activeChatId, automaticChatExpiration, isDark, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
   return (
-    <View style={styles.panelRoot}>
+    <View style={[styles.panelRoot, Platform.OS === 'android' && { backgroundColor: isDark ? '#141218' : '#FDF8FF' }]}>
       <SafeAreaView style={styles.flex} edges={['top']}>
         <AppHeader>
           <View style={styles.profileChip}>
@@ -4712,7 +4851,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </AppHeader>
 
         {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
-          <Icon name="magnifyingglass" size={17} color="#FFFFFF" />
+          <Icon name="magnifyingglass" size={17} color={COLORS.muted} />
           <TextInput
             accessibilityLabel="Search chats"
             value={search}
@@ -4720,8 +4859,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
             onBlur={() => setSearchFocused(false)}
             onFocus={() => setSearchFocused(true)}
             placeholder="Search chats"
-            placeholderTextColor={searchFocused ? COLORS.muted : COLORS.textSoft}
-            style={styles.searchInput}
+            placeholderTextColor={androidSemanticColor(searchFocused ? COLORS.muted : COLORS.textSoft, isDark) ?? (searchFocused ? COLORS.muted : COLORS.textSoft)}
+            style={[styles.searchInput, Platform.OS === 'android' && isDark && { color: '#E6E1E5' }]}
           />
           {search.length > 0 && (
             <Pressable accessibilityLabel="Clear search" accessibilityRole="button" onPress={() => setSearch('')} style={styles.smallIconButton}>
@@ -4757,8 +4896,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
               accessibilityLabel={`Folders, ${folders.length}`}
               accessibilityRole="button"
               delayLongPress={350}
-              onLongPress={() => Platform.OS !== 'ios' && Alert.alert('Folders', 'New folder · Manage folders · Sort folders')}
-              onPress={() => Platform.OS === 'ios' ? Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)) : Haptics.selectionAsync()}
+              onLongPress={() => Platform.OS !== 'ios' && setFoldersVisible(true)}
+              onPress={() => Platform.OS === 'ios' ? Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)) : (Haptics.selectionAsync(), setFoldersVisible(true))}
               style={({ pressed }) => [styles.navRow, styles.folderNavRow, pressed && styles.navRowPressed]}
             >
               <Icon name="folder" size={17} color={COLORS.textSoft} />
@@ -4788,6 +4927,34 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           onTouchStart={dismissSearch}
         />
       </SafeAreaView>
+      <AndroidActionSheet
+        actions={chatActionsTarget ? [
+          { label: 'Rename', onPress: () => runChatAction(chatActionsTarget, 'rename') },
+          { label: chatActionsTarget.pinned ? 'Unpin' : 'Pin', onPress: () => runChatAction(chatActionsTarget, 'pin') },
+          { label: 'Move to folder', onPress: () => runChatAction(chatActionsTarget, 'move') },
+          { label: 'Duplicate', onPress: () => runChatAction(chatActionsTarget, 'duplicate') },
+          { label: 'Share', onPress: () => runChatAction(chatActionsTarget, 'share') },
+          { label: chatActionsTarget.expiresAt ? 'Disable expiration' : 'Enable expiration', onPress: () => runChatAction(chatActionsTarget, chatActionsTarget.expiresAt ? 'disable-expiration' : 'enable-expiration') },
+          { label: removeChatLabel, destructive: true, onPress: () => runChatAction(chatActionsTarget, 'delete') },
+        ] : []}
+        onClose={() => setChatActionsTarget(null)}
+        title={chatActionsTarget?.title ?? 'Chat actions'}
+        visible={Boolean(chatActionsTarget)}
+      />
+      <AndroidActionSheet
+        actions={[
+          { label: 'New folder', onPress: () => setNewFolderVisible(true) },
+          ...folderItems.map((folder) => ({
+            label: `${folder.name} (${folder.chats.length})`,
+            onPress: () => folder.chats[0] ? selectHistoryChat(folder.chats[0]) : undefined,
+          })),
+        ]}
+        onClose={() => setFoldersVisible(false)}
+        title="Folders"
+        visible={foldersVisible}
+      />
+      <AndroidTextPrompt detail="Create a folder for related chats." onCancel={() => setNewFolderVisible(false)} onSubmit={(name) => { setNewFolderVisible(false); addFolder(name); }} title="New folder" visible={newFolderVisible} />
+      <AndroidTextPrompt initialValue={renameTarget?.title ?? ''} onCancel={() => setRenameTarget(null)} onSubmit={(title) => { if (renameTarget) renameChat(renameTarget.id, title); setRenameTarget(null); }} title="Rename chat" visible={Boolean(renameTarget)} />
     </View>
   );
 });
@@ -4869,11 +5036,11 @@ const styles = StyleSheet.create({
   // Main chat view
   mainView: {
     ...StyleSheet.absoluteFill as object,
-    borderTopLeftRadius: 38,
-    borderBottomLeftRadius: 38,
+    borderTopLeftRadius: Platform.OS === 'android' ? 0 : 38,
+    borderBottomLeftRadius: Platform.OS === 'android' ? 0 : 38,
     overflow: 'hidden',
     shadowColor: COLORS.text,
-    shadowOpacity: 0.5,
+    shadowOpacity: Platform.OS === 'android' ? 0 : 0.5,
     shadowRadius: 30,
     shadowOffset: { width: -10, height: 0 },
     backgroundColor: COLORS.background,
@@ -4894,11 +5061,11 @@ const styles = StyleSheet.create({
   temporaryHeaderPrimaryAction: { position: 'absolute', left: 0, top: 0 },
   temporaryHeaderNewChatAction: { position: 'absolute', right: 0, top: 0, width: 44, height: 44 },
   temporaryHeaderIconLayer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  glassFallback: { backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
+  glassFallback: { backgroundColor: COLORS.elevated, borderWidth: Platform.OS === 'android' ? 0 : StyleSheet.hairlineWidth, borderColor: COLORS.line },
   pressed: { opacity: 0.75 },
   modelTriggerWrap: { flex: 1, alignItems: 'center' },
   modelMenuHost: { minHeight: 44, maxWidth: 230, justifyContent: 'center' },
-  modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  modelTrigger: { minHeight: Platform.OS === 'android' ? 48 : 44, maxWidth: 218, borderRadius: 24, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
   connectionBannerOffline: { backgroundColor: 'rgba(255,159,63,0.12)' },
@@ -4924,7 +5091,7 @@ const styles = StyleSheet.create({
   userMessageContextHost: { maxWidth: '85%', alignSelf: 'flex-end' },
   userMessageContextContent: { width: '100%', alignItems: 'flex-end' },
   assistantMessageContextHost: { width: '100%' },
-  userBubble: { maxWidth: '100%', backgroundColor: COLORS.secondary, borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 },
+  userBubble: { maxWidth: '100%', backgroundColor: COLORS.secondary, borderRadius: Platform.OS === 'android' ? 24 : 20, borderBottomRightRadius: Platform.OS === 'android' ? 8 : 7, paddingHorizontal: 15, paddingVertical: 11 },
   userMessageMarkdown: { alignSelf: 'flex-start' },
   sentAttachments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
   assistantAttachments: { justifyContent: 'flex-start', marginTop: 8 },
@@ -4948,6 +5115,24 @@ const styles = StyleSheet.create({
   messageContextPreviewRole: { flexShrink: 1, color: COLORS.muted, fontSize: 11.5, fontWeight: '600', letterSpacing: 0.4 },
   messageContextPreviewIdentityName: { color: COLORS.textSoft, fontSize: 14, letterSpacing: -0.1 },
   messageContextPreviewMarkdown: { maxHeight: 286, overflow: 'hidden' },
+  androidSheetBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.42)' },
+  androidSheetSurface: { backgroundColor: COLORS.elevated, borderTopLeftRadius: 32, borderTopRightRadius: 32, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 24 },
+  androidSheetHandle: { alignSelf: 'center', width: 32, height: 4, borderRadius: 2, backgroundColor: COLORS.dim, marginBottom: 16 },
+  androidSheetTitle: { color: COLORS.text, fontSize: 20, lineHeight: 26, fontWeight: '700', paddingHorizontal: 16, marginBottom: 10 },
+  androidSheetAction: { minHeight: 56, borderRadius: 20, justifyContent: 'center', paddingHorizontal: 16 },
+  androidSheetActionPressed: { backgroundColor: COLORS.secondary },
+  androidSheetActionText: { color: COLORS.text, fontSize: 16, fontWeight: '600' },
+  androidSheetActionDestructive: { color: COLORS.critical },
+  androidSheetCancel: { minHeight: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.secondary, marginTop: 8 },
+  androidSheetCancelText: { color: COLORS.text, fontSize: 15, fontWeight: '700' },
+  androidDialogBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(0,0,0,0.42)' },
+  androidDialogSurface: { width: '100%', maxWidth: 420, borderRadius: 28, backgroundColor: COLORS.elevated, padding: 24 },
+  androidDialogTitle: { color: COLORS.text, fontSize: 24, lineHeight: 30, fontWeight: '700' },
+  androidDialogDetail: { color: COLORS.muted, fontSize: 14, lineHeight: 20, marginTop: 8 },
+  androidDialogInput: { minHeight: 56, borderWidth: 1, borderColor: COLORS.line, borderRadius: 16, color: COLORS.text, fontSize: 16, paddingHorizontal: 16, marginTop: 20 },
+  androidDialogActions: { flexDirection: 'row', alignSelf: 'flex-end', gap: 8, marginTop: 16 },
+  androidDialogButton: { minWidth: 72, minHeight: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
+  androidDialogButtonText: { color: COLORS.accent, fontSize: 14, fontWeight: '700' },
   attachmentContextImagePreview: { borderRadius: 28, backgroundColor: COLORS.elevated },
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
@@ -5003,7 +5188,7 @@ const styles = StyleSheet.create({
   suggestionReveal: { width: '100%', overflow: 'hidden' },
   suggestionGrid: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 8 },
   suggestionGridAccessible: { flexDirection: 'column', flexWrap: 'nowrap' },
-  suggestionCard: { width: '48.7%', minHeight: 68, borderRadius: 13, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
+  suggestionCard: { width: '48.7%', minHeight: Platform.OS === 'android' ? 76 : 68, borderRadius: Platform.OS === 'android' ? 24 : 13, borderWidth: Platform.OS === 'android' ? 0 : StyleSheet.hairlineWidth, borderColor: COLORS.line, backgroundColor: COLORS.card, paddingHorizontal: 13, paddingVertical: 11, justifyContent: 'center' },
   temporarySuggestionCardLight: { backgroundColor: 'rgba(237,233,254,0.82)', borderColor: 'rgba(139,92,246,0.48)' },
   temporarySuggestionCardDark: { backgroundColor: 'rgba(46,16,101,0.58)', borderColor: 'rgba(124,58,237,0.52)' },
   suggestionCardAccessible: { width: '100%' },
@@ -5011,7 +5196,7 @@ const styles = StyleSheet.create({
 
   composerSticky: { position: 'absolute', left: 0, right: 0, bottom: 0 },
   composerWrap: { paddingTop: 6 },
-  composer: { minHeight: 108, borderRadius: 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: 4 },
+  composer: { minHeight: 108, borderRadius: Platform.OS === 'android' ? 32 : 28, paddingTop: 8, paddingHorizontal: 10, paddingBottom: Platform.OS === 'android' ? 8 : 4 },
   messageEditBanner: { flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 6, paddingBottom: 8 },
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },

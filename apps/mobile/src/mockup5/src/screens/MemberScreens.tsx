@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import {
-  Alert, Button as RNButton, Image, Platform, StyleSheet, Text, View,
+  Alert, Button as RNButton, Image, Platform, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import * as Network from 'expo-network';
 import * as Clipboard from 'expo-clipboard';
@@ -26,7 +26,8 @@ import {
   useNativeState,
 } from '@expo/ui/swift-ui';
 import { accessibilityHint, accessibilityValue, background, buttonStyle, contentShape, font, foregroundStyle, frame, lineLimit, multilineTextAlignment, shapes, textFieldStyle, tint } from '@expo/ui/swift-ui/modifiers';
-import { Badge, Card, EmptyState, Field, GlassIconButton, ListRow, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
+import { Badge, Card, EmptyState, Field, GlassIconButton, ListRow, MaterialActionSheet, NativeSwitch, PageHeader, PrimaryButton, Screen, SectionTitle, Segmented } from '../components/PrototypeUI';
+import { PlatformIcon } from '../components/PlatformIcon';
 import { useAppTheme } from '../theme';
 import { usePrototypeStore } from '../store/prototypeStore';
 import type { RootStackParamList, SettingsSection } from '../navigation';
@@ -279,7 +280,9 @@ export function MemberSettingsScreen({ navigation }: NativeStackScreenProps<Root
   const open = (section: SettingsDestination) => section === 'trash' ? navigation.navigate('Trash') : navigation.navigate('SettingsDetail', { section });
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection><SwiftUIButton modifiers={[buttonStyle('plain'), foregroundStyle('primary')]} onPress={() => navigation.navigate('Account')}><SwiftUIHStack spacing={12} modifiers={[contentShape(shapes.rectangle())]}><SwiftUIImage systemName="person.crop.circle.fill" size={42} /><SwiftUIVStack alignment="leading" spacing={2}><SwiftUIText modifiers={[font({ textStyle: 'headline' })]}>{session.user?.name ?? 'Pulpo Member'}</SwiftUIText><SwiftUIText modifiers={[font({ textStyle: 'footnote' }), foregroundStyle('secondary')]}>{session.user?.email ?? ''} · Member</SwiftUIText></SwiftUIVStack><SwiftUISpacer /><SwiftUIImage systemName="chevron.right" size={11} color={theme.tertiary} /></SwiftUIHStack></SwiftUIButton></SwiftUISection><SwiftUISection title="Member settings">{settingsSections.slice(0, 2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection><SwiftUISection title="Data and support">{settingsSections.slice(2).map((section) => <NativeSettingsLink key={section.id} icon={section.icon} title={section.title} detail={section.detail} onPress={() => open(section.id)} />)}</SwiftUISection></SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Settings" subtitle={new URL(instance.url).hostname} onBack={() => navigation.goBack()} />
-    <Card style={styles.profileCard}><View style={[styles.profileAvatar, { backgroundColor: theme.text }]}><Text style={[styles.profileInitials, { color: theme.background }]}>{session.user?.initials ?? '?'}</Text></View><View style={styles.flex}><Text style={[styles.profileName, { color: theme.text }]}>{session.user?.name ?? 'Pulpo Member'}</Text><Text style={[styles.profileEmail, { color: theme.secondary }]}>{session.user?.email}</Text></View><Badge label="Member" color={theme.green} /></Card>
+    <Pressable accessibilityRole="button" accessibilityLabel="Account" onPress={() => navigation.navigate('Account')}>
+      <Card style={styles.profileCard}><View style={[styles.profileAvatar, { backgroundColor: theme.text }]}><Text style={[styles.profileInitials, { color: theme.background }]}>{session.user?.initials ?? '?'}</Text></View><View style={styles.flex}><Text style={[styles.profileName, { color: theme.text }]}>{session.user?.name ?? 'Pulpo Member'}</Text><Text style={[styles.profileEmail, { color: theme.secondary }]}>{session.user?.email}</Text></View><Badge label="Member" color={theme.green} /><PlatformIcon name="chevron.right" size={13} color={theme.tertiary} weight="semibold" /></Card>
+    </Pressable>
     <SectionTitle>Member settings</SectionTitle><Card>{settingsSections.slice(0, 2).map((section, index) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === 1} onPress={() => open(section.id)} />)}</Card>
     <SectionTitle>Data and support</SectionTitle><Card>{settingsSections.slice(2).map((section, index, list) => <ListRow key={section.id} icon={section.icon} title={section.title} detail={section.detail} last={index === list.length - 1} onPress={() => open(section.id)} />)}</Card>
   </Screen>;
@@ -316,6 +319,7 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   const trashAllChats = usePrototypeStore((state) => state.trashAllChats);
   const instanceUrl = useSessionStore((state) => state.instanceUrl);
   const userId = useSessionStore((state) => state.user?.id);
+  const [expirationSheetVisible, setExpirationSheetVisible] = useState(false);
   const storage = useQuery({
     queryKey: ['attachment-usage', instanceUrl, userId],
     queryFn: () => apiRequest<{ usedBytes: number; limitBytes: number; remainingBytes: number }>('/api/attachments/usage'),
@@ -367,7 +371,12 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   return <Screen><PageHeader title={settingTitles[section]} onBack={() => navigation.goBack()} />
     {section === 'general' && <><SectionTitle>Appearance</SectionTitle><Card><ListRow title="Theme" detail="Applies across the whole app."><View style={{ width: 178 }}><Segmented options={[{ value: 'system', label: 'System' }, { value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }] as const} value={preferences.theme} onChange={(value) => setPreference('theme', value)} /></View></ListRow></Card></>}
     {section === 'interface' && <><SectionTitle>Conversation</SectionTitle><Card><Toggle title="Show reasoning" detail="Show expandable work details." value={preferences.showReasoning} onChange={(value) => setPreference('showReasoning', value)} /><Toggle title="Haptics" detail="Feedback for sends, menus, and completion." value={preferences.haptics} onChange={(value) => setPreference('haptics', value)} last /></Card><SectionTitle>Offline storage</SectionTitle><Card><ListRow title="Chats kept on device" detail="Recent chats remain instantly available." value={`${preferences.localChatLimit}`} /><ListRow title="Attachment cache" detail="Maximum local file data." value={`${preferences.attachmentCacheMb} MB`} last /></Card></>}
-    {section === 'data' && <><SectionTitle>Chat expiration</SectionTitle><Card><ListRow icon="hourglass" iconColor={theme.green} title="Automatic expiration" detail="Move chats to Trash automatically unless saved within the selected period." value={preferences.automaticChatExpiration === 'disabled' ? 'Disabled' : preferences.automaticChatExpiration} last onPress={() => Alert.alert('Automatic chat expiration', undefined, [{ text: 'Disabled', onPress: () => setPreference('automaticChatExpiration', 'disabled') }, { text: '24 hours', onPress: () => setPreference('automaticChatExpiration', '24h') }, { text: '7 days', onPress: () => setPreference('automaticChatExpiration', '7d') }, { text: 'Cancel', style: 'cancel' }])} /></Card><SectionTitle>File storage</SectionTitle><Card style={styles.storage}><View style={styles.storageLine}><Text style={[styles.storageTitle, { color: theme.text }]}>{storageLabel}</Text><Text style={[styles.storagePercent, { color: theme.secondary }]}>{`${Math.round(storageProgress * 100)}%`}</Text></View><View style={[styles.storageTrack, { backgroundColor: theme.fillStrong }]}><View style={[styles.storageBar, { backgroundColor: theme.blue, width: `${storageProgress * 100}%` }]} /></View><Text style={[styles.helper, { color: theme.secondary }]}>Uploaded files and model-created files count toward this allowance.</Text></Card><SectionTitle>Danger zone</SectionTitle><Card><ListRow icon="trash" iconColor={theme.red} title="Trash all chats" detail={`${chats.filter((chat) => chat.deletedAt === null).length} active chats`} destructive last onPress={() => Alert.alert('Trash all chats?', 'Chats remain recoverable according to your trash retention setting.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Trash all', style: 'destructive', onPress: trashAllChats }])} /></Card></>}
+    {section === 'data' && <><SectionTitle>Chat expiration</SectionTitle><Card><ListRow icon="hourglass" iconColor={theme.green} title="Automatic expiration" detail="Move chats to Trash automatically unless saved within the selected period." value={preferences.automaticChatExpiration === 'disabled' ? 'Disabled' : preferences.automaticChatExpiration} last onPress={() => setExpirationSheetVisible(true)} /></Card><SectionTitle>File storage</SectionTitle><Card style={styles.storage}><View style={styles.storageLine}><Text style={[styles.storageTitle, { color: theme.text }]}>{storageLabel}</Text><Text style={[styles.storagePercent, { color: theme.secondary }]}>{`${Math.round(storageProgress * 100)}%`}</Text></View><View style={[styles.storageTrack, { backgroundColor: theme.fillStrong }]}><View style={[styles.storageBar, { backgroundColor: theme.blue, width: `${storageProgress * 100}%` }]} /></View><Text style={[styles.helper, { color: theme.secondary }]}>Uploaded files and model-created files count toward this allowance.</Text></Card><SectionTitle>Danger zone</SectionTitle><Card><ListRow icon="trash" iconColor={theme.red} title="Trash all chats" detail={`${chats.filter((chat) => chat.deletedAt === null).length} active chats`} destructive last onPress={() => Alert.alert('Trash all chats?', 'Chats remain recoverable according to your trash retention setting.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Trash all', style: 'destructive', onPress: trashAllChats }])} /></Card></>}
+    <MaterialActionSheet title="Automatic chat expiration" detail="Move inactive chats to Trash after this period." visible={expirationSheetVisible} onClose={() => setExpirationSheetVisible(false)} actions={[
+      { label: 'Disabled', selected: preferences.automaticChatExpiration === 'disabled', onPress: () => setPreference('automaticChatExpiration', 'disabled') },
+      { label: '24 hours', selected: preferences.automaticChatExpiration === '24h', onPress: () => setPreference('automaticChatExpiration', '24h') },
+      { label: '7 days', selected: preferences.automaticChatExpiration === '7d', onPress: () => setPreference('automaticChatExpiration', '7d') },
+    ]} />
   </Screen>;
 }
 
@@ -381,6 +390,7 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
   const restore = usePrototypeStore((state) => state.restoreChat);
   const remove = usePrototypeStore((state) => state.permanentlyDeleteChat);
   const empty = usePrototypeStore((state) => state.emptyTrash);
+  const [retentionSheetVisible, setRetentionSheetVisible] = useState(false);
   const confirmEmpty = useCallback(() => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }]), [empty]);
   useLayoutEffect(() => {
     if (Platform.OS !== 'ios') return;
@@ -395,8 +405,11 @@ export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackPara
     </SwiftUISection>
   </SwiftUIForm></SwiftUIHost>;
   return <Screen><PageHeader title="Trash" subtitle={`${chats.length} recoverable chat${chats.length === 1 ? '' : 's'}`} onBack={() => navigation.goBack()} right={chats.length ? <GlassIconButton icon="trash.slash" label="Empty trash" onPress={() => Alert.alert('Empty trash?', 'This cannot be undone.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete all', style: 'destructive', onPress: empty }])} /> : undefined} />
-    <SectionTitle>Retention</SectionTitle><Card><ListRow title="Keep trashed chats" detail="Chats are permanently removed after this period." value={retention === 'indefinite' ? 'Indefinitely' : retention} last onPress={() => Alert.alert('Trash retention', undefined, ['instant', '24h', '7d', '30d', '90d', 'indefinite'].map((value) => ({ text: value === 'instant' ? 'No retention' : value, onPress: () => setPreference('trashRetention', value as typeof retention) })))} /></Card>
+    <SectionTitle>Retention</SectionTitle><Card><ListRow title="Keep trashed chats" detail="Chats are permanently removed after this period." value={retention === 'indefinite' ? 'Indefinitely' : retention} last onPress={() => setRetentionSheetVisible(true)} /></Card>
     {chats.length === 0 ? <EmptyState icon="trash" title="Trash is empty" detail="Deleted chats will appear here when retention is enabled." /> : <><SectionTitle>Trashed chats</SectionTitle><Card>{chats.map((chat, index) => <ListRow key={chat.id} icon="bubble.left" iconColor={theme.red} title={chat.title} detail={`Trashed ${relative(chat.deletedAt!)} ago · ${chat.purgeAt ? `deletes in ${Math.max(1, Math.ceil((chat.purgeAt - Date.now()) / 86_400_000))}d` : 'kept indefinitely'}`} last={index === chats.length - 1} onPress={() => Alert.alert(chat.title, `Trashed ${relative(chat.deletedAt!)} ago${chat.purgeAt ? `\nDeletes in ${relative(Date.now() - (chat.purgeAt - Date.now()))}` : '\nKept indefinitely'}`, [{ text: 'Restore', onPress: () => restore(chat.id) }, { text: 'Delete permanently', style: 'destructive', onPress: () => remove(chat.id) }, { text: 'Cancel', style: 'cancel' }])} />)}</Card></>}
+    <MaterialActionSheet title="Trash retention" detail="Choose when chats in Trash are permanently deleted." visible={retentionSheetVisible} onClose={() => setRetentionSheetVisible(false)} actions={([
+      ['instant', 'No retention'], ['24h', '24 hours'], ['7d', '7 days'], ['30d', '30 days'], ['90d', '90 days'], ['indefinite', 'Indefinitely'],
+    ] as const).map(([value, label]) => ({ label, selected: retention === value, onPress: () => setPreference('trashRetention', value) }))} />
   </Screen>;
 }
 

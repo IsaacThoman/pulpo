@@ -2,8 +2,8 @@ import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
+import { PlatformIcon } from '../components/PlatformIcon';
 import { normalizeInstanceUrl } from '../domain';
 import { mobileApi } from '../../../api/client';
 import { NativePasskeyError, PasskeyCancelledError } from '../../../auth/passkeys';
@@ -25,7 +25,7 @@ const mockupOneLight = {
 type AuthColors = Record<keyof typeof mockupOneDark, string>;
 type AuthFieldProps = ComponentProps<typeof TextInput> & {
   colors: AuthColors;
-  icon: Parameters<typeof SymbolView>[0]['name'];
+  icon: string;
   invalid?: boolean;
   label: string;
 };
@@ -50,7 +50,7 @@ function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChild
 
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
   return <View style={[styles.field, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
-    <SymbolView name={icon} tintColor={colors.textFaint} size={18} />
+    <PlatformIcon name={icon} color={colors.textFaint} size={18} />
     <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, { color: colors.text }]} {...props} />
   </View>;
 }
@@ -60,14 +60,14 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   colors: AuthColors;
   loading?: boolean;
   disabled?: boolean;
-  icon?: Parameters<typeof SymbolView>[0]['name'];
+  icon?: string;
   onPress: () => void;
 }) {
   const inactive = disabled || loading;
   const backgroundColor = inactive ? colors.border : colors.accent;
   const foregroundColor = inactive ? colors.textMuted : colors.accentText;
   return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.primaryButton, { backgroundColor }]}>
-    {loading ? <ActivityIndicator color={foregroundColor} /> : <><Text style={[styles.primaryButtonText, { color: foregroundColor }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={foregroundColor} size={16} weight="semibold" /> : null}</>}
+    {loading ? <ActivityIndicator color={foregroundColor} /> : <><Text style={[styles.primaryButtonText, { color: foregroundColor }]}>{label}</Text>{icon ? <PlatformIcon name={icon} color={foregroundColor} size={16} weight="semibold" /> : null}</>}
   </Pressable>;
 }
 
@@ -211,7 +211,7 @@ export function AuthExperience() {
 
   if (session.status === 'pending' && session.user) return <AuthShell colors={colors} title="Approval needed" subtitle="Your Pulpo account is ready, but an administrator needs to approve it before you can start chatting.">
     <View style={[styles.pendingCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <SymbolView name="person.crop.circle.badge.clock" size={28} tintColor={colors.textMuted} />
+      <PlatformIcon name="person.crop.circle.badge.clock" size={28} color={colors.textMuted} />
       <View style={styles.pendingIdentity}>
         <Text style={[styles.pendingName, { color: colors.text }]}>{session.user.name}</Text>
         <Text style={[styles.pendingEmail, { color: colors.textMuted }]}>{session.user.email}</Text>
@@ -276,7 +276,7 @@ export function AuthExperience() {
 
   return <AuthShell colors={colors} title="Welcome back" subtitle="Sign in with your Pulpo account to sync conversations, models, and settings." footer={
     <Pressable accessibilityRole="button" accessibilityLabel={`Change server, currently ${instance.url}`} onPress={() => goTo('instance')} style={styles.instanceButton}>
-      <SymbolView name="server.rack" tintColor={colors.textFaint} size={14} />
+      <PlatformIcon name="server.rack" color={colors.textFaint} size={14} />
       <Text style={[styles.instanceText, { color: colors.textMuted }]} numberOfLines={1}>{instance.url}</Text>
       <Text style={[styles.change, { color: colors.text }]}>Change</Text>
     </Pressable>
