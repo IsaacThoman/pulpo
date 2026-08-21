@@ -4806,7 +4806,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const showChatActions = useCallback((chat: HistoryChatSummary) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (Platform.OS === 'android') setChatActionsTarget(chat);
-  }, [removeChatLabel, runChatAction]);
+  }, []);
 
   const selectHistoryChat = useCallback((chat: HistoryChatSummary) => {
     dismissSearch();
