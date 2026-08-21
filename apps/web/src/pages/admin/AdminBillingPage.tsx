@@ -4,7 +4,7 @@ import { AlertTriangle, CreditCard, ExternalLink, RefreshCw, Repeat2, UsersRound
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { apiRequest } from '@/lib/api'
 import { formatBalance, formatDate } from '@/lib/format'
-import { polarDashboardUrl, polarOrderUrl, polarSubscriptionUrl, polarWebhooksUrl, type PolarEnvironment } from '@/lib/polar-dashboard'
+import { stripeDashboardUrl, stripePaymentUrl, stripeSubscriptionUrl, stripeWebhooksUrl, type StripeMode } from '@/lib/stripe-dashboard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,12 +21,13 @@ const RANGES: { id: Range; label: string }[] = [
 ]
 
 interface Dashboard {
-  polar: { environment: PolarEnvironment }
+  stripe: { mode: StripeMode }
   totals: {
     grossCollectedCents: number
     salesBeforeTaxCents: number
     taxCollectedCents: number
     platformFeesCents: number
+    processingFeesCents: number
     refundedCents: number
     creditsGrantedMicros: number
     payments: number
@@ -41,7 +42,7 @@ interface Dashboard {
   subscribers: { eight: number; fat: number }
   trend: Array<{ day: string; totalCents: number; payments: number }>
   recentOrders: Array<{
-    polarOrderId: string
+    stripePaymentId: string
     userName: string
     userEmail: string
     product: ProductKind
@@ -57,7 +58,7 @@ interface Dashboard {
     userId: string
     userName: string
     userEmail: string
-    polarSubscriptionId: string
+    stripeSubscriptionId: string
     plan: 'eight' | 'fat'
     status: string
     cancelAtPeriodEnd: boolean
@@ -172,7 +173,7 @@ export function AdminBillingPage() {
 
   const data = dashboardQuery.data
   const totals = data?.totals
-  const polarEnv = data?.polar.environment
+  const stripeMode = data?.stripe.mode
   const chart = data?.trend.map((row) => ({ day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
   const limitsAreValid = [eightLimit, fatLimit, babyStorage, eightStorage, fatStorage]
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
@@ -188,7 +189,8 @@ export function AdminBillingPage() {
   const breakdown = [
     { label: 'Sales before tax', value: formatBalance((totals?.salesBeforeTaxCents ?? 0) / 100) },
     { label: 'Tax collected', value: formatBalance((totals?.taxCollectedCents ?? 0) / 100) },
-    { label: 'Processing fees', value: formatBalance((totals?.platformFeesCents ?? 0) / 100) },
+    { label: 'Platform fees', value: formatBalance((totals?.platformFeesCents ?? 0) / 100) },
+    { label: 'Stripe fees', value: formatBalance((totals?.processingFeesCents ?? 0) / 100) },
     { label: 'Refunded', value: formatBalance((totals?.refundedCents ?? 0) / 100) },
     { label: 'Top-ups', value: (totals?.topUps ?? 0).toLocaleString() },
   ]
@@ -198,10 +200,10 @@ export function AdminBillingPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
           <span className="text-xs font-medium">Billing overview</span>
-          {polarEnv && <>
+          {stripeMode && <>
             <div className="h-4 w-px bg-border" />
-            <PolarLink href={polarDashboardUrl(polarEnv)} />
-            <PolarLink href={polarWebhooksUrl(polarEnv)} label="Webhooks" />
+            <StripeLink href={stripeDashboardUrl(stripeMode)} />
+            <StripeLink href={stripeWebhooksUrl(stripeMode)} label="Webhooks" />
           </>}
         </div>
         <div className="flex items-center gap-2">
@@ -308,7 +310,7 @@ export function AdminBillingPage() {
               </thead>
               <tbody className="divide-y">
                 {data.recentOrders.map((order) => (
-                  <tr key={order.polarOrderId}>
+                  <tr key={order.stripePaymentId}>
                     <td className="max-w-48 px-3 py-2">
                       <div className="truncate">{order.userName}</div>
                       <div className="truncate text-muted-foreground">{order.userEmail}</div>
@@ -322,7 +324,7 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2 text-right tabular-nums">{order.grantedCreditMicros > 0 ? formatBalance(order.grantedCreditMicros / 1_000_000) : '—'}</td>
                     <td className="px-3 py-2"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? 'refunded' : order.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(Date.parse(order.createdAt))}</td>
-                    <td className="px-3 py-2 text-right">{polarEnv && <PolarLink href={polarOrderUrl(polarEnv, order.polarOrderId)} />}</td>
+                    <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripePaymentUrl(stripeMode, order.stripePaymentId)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -347,7 +349,7 @@ export function AdminBillingPage() {
               </thead>
               <tbody className="divide-y">
                 {data.recentSubscriptions.map((row) => (
-                  <tr key={row.polarSubscriptionId}>
+                  <tr key={row.stripeSubscriptionId}>
                     <td className="max-w-48 px-3 py-2">
                       <div className="truncate">{row.userName}</div>
                       <div className="truncate text-muted-foreground">{row.userEmail}</div>
@@ -356,7 +358,7 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? 'canceling' : row.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
-                    <td className="px-3 py-2 text-right">{polarEnv && <PolarLink href={polarSubscriptionUrl(polarEnv, row.polarSubscriptionId)} />}</td>
+                    <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.stripeSubscriptionId)} />}</td>
                   </tr>
                 ))}
               </tbody>
@@ -366,7 +368,7 @@ export function AdminBillingPage() {
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel icon={<AlertTriangle className="size-3" />} title="Failed webhooks" extra={polarEnv && <PolarLink href={polarWebhooksUrl(polarEnv)} label="Polar deliveries" />}>
+        <Panel icon={<AlertTriangle className="size-3" />} title="Failed webhooks" extra={stripeMode && <StripeLink href={stripeWebhooksUrl(stripeMode)} label="Stripe deliveries" />}>
           {data?.failedEvents.length ? (
             <div className="max-h-96 divide-y overflow-y-auto">
               {data.failedEvents.map((event) => (
@@ -394,7 +396,7 @@ export function AdminBillingPage() {
                     {hold.holdReference && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{hold.holdReference}</div>}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    {polarEnv && hold.holdReference && hold.holdReason === 'payment_reversed' && <PolarLink href={polarOrderUrl(polarEnv, hold.holdReference)} />}
+                    {stripeMode && hold.holdReference && <StripeLink href={stripeDashboardUrl(stripeMode, `/search?query=${encodeURIComponent(hold.holdReference)}`)} />}
                     <Button size="sm" variant="outline" onClick={() => void clearHold(hold.userId)}>Clear</Button>
                   </div>
                 </div>
@@ -428,7 +430,7 @@ function ProductBadge({ product }: { product: ProductKind | 'eight' | 'fat' }) {
   return <Badge variant={product === 'fat' ? 'secondary' : 'outline'}>{productLabel(product)}</Badge>
 }
 
-function PolarLink({ href, label = 'Polar' }: { href: string; label?: string }) {
+function StripeLink({ href, label = 'Stripe' }: { href: string; label?: string }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
       {label}<ExternalLink className="size-3" />

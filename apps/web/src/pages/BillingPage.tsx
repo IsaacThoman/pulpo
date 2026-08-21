@@ -275,12 +275,12 @@ export function BillingPage() {
               {validPurchase && quoteQuery.isPending && <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-4 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Calculating total before tax…</div>}
               {quote && <Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} />}
               {quoteQuery.isError && <p className="text-xs text-destructive">Could not calculate this purchase. Try again.</p>}
-              <p className="text-xs text-muted-foreground">Estimate includes a 5% + $0.50 transaction fee. Applicable sales tax or VAT is calculated and added at checkout.</p>
+              <p className="text-xs text-muted-foreground">Estimate includes Pulpo's 5% + $0.50 platform fee. Sales tax is calculated where Pulpo is registered and the purchase is taxable.</p>
             </div>
             <DialogFooter><Button variant="outline" onClick={() => closeTopUp(false)}>Cancel</Button><Button disabled={!quote} onClick={() => setTopUpStep('review')}>Continue</Button></DialogFooter>
           </> : <>
             <DialogHeader><DialogTitle>Review purchase</DialogTitle><DialogDescription>You’ll finish payment in a secure checkout.</DialogDescription></DialogHeader>
-            <div className="space-y-4 py-2"><Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} /><div className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" />Applicable sales tax or VAT is calculated and added at checkout.</div>{topUpError && <p className="text-sm text-destructive">{topUpError}</p>}</div>
+            <div className="space-y-4 py-2"><Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} /><div className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" />Sales tax is calculated where Pulpo is registered and the purchase is taxable.</div>{topUpError && <p className="text-sm text-destructive">{topUpError}</p>}</div>
             <DialogFooter><Button variant="outline" disabled={submitting} onClick={() => setTopUpStep('amount')}><ArrowLeft />Back</Button><Button disabled={submitting} onClick={() => void startCreditCheckout()}>{submitting && <Loader2 className="animate-spin" />}Continue to checkout</Button></DialogFooter>
           </>}
         </DialogContent>
@@ -302,7 +302,7 @@ export function BillingPage() {
 }
 
 function Quote({ credits, fee, charge }: { credits: number; fee: number; charge: number }) {
-  return <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">Credits added</span><span className="tabular-nums">{formatBalance(credits)}</span></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">Transaction fee coverage</span><span className="tabular-nums">{formatBalance(fee)}</span></div><Separator className="my-2" /><div className="flex justify-between gap-4 font-medium"><span>Total before tax</span><span className="tabular-nums">{formatBalance(charge)}</span></div></div>
+  return <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">Credits added</span><span className="tabular-nums">{formatBalance(credits)}</span></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">Pulpo platform fee</span><span className="tabular-nums">{formatBalance(fee)}</span></div><Separator className="my-2" /><div className="flex justify-between gap-4 font-medium"><span>Total before tax</span><span className="tabular-nums">{formatBalance(charge)}</span></div></div>
 }
 
 function PlanBadge({ plan }: { plan: BillingPlan }) {

@@ -4,15 +4,14 @@ import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, parseCo
 describe('server configuration', () => {
   it('keeps billing disabled unless explicitly and completely configured', () => {
     expect(parseConfig({}).PULPO_BILLING_ENABLED).toBe(false)
-    expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/POLAR_ENVIRONMENT/)
+    expect(() => parseConfig({ PULPO_BILLING_ENABLED: 'true' })).toThrow(/STRIPE_SECRET_KEY/)
     expect(parseConfig({
       PULPO_BILLING_ENABLED: 'true',
-      POLAR_ENVIRONMENT: 'sandbox',
-      POLAR_ACCESS_TOKEN: 'polar-token',
-      POLAR_WEBHOOK_SECRET: 'polar-secret',
-      POLAR_CREDIT_PRODUCT_ID: '00000000-0000-4000-8000-000000000001',
-      POLAR_EIGHT_PRODUCT_ID: '00000000-0000-4000-8000-000000000002',
-      POLAR_FAT_PRODUCT_ID: '00000000-0000-4000-8000-000000000003',
+      STRIPE_SECRET_KEY: 'sk_test_example',
+      STRIPE_WEBHOOK_SECRET: 'whsec_example',
+      STRIPE_CREDIT_PRODUCT_ID: 'prod_credits',
+      STRIPE_EIGHT_PRICE_ID: 'price_eight',
+      STRIPE_FAT_PRICE_ID: 'price_fat',
     }).PULPO_BILLING_ENABLED).toBe(true)
   })
 

@@ -19,7 +19,7 @@ import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings, parseBillingSettings } from '../settings/application-settings.js'
 import { getBillingEntitlements } from './entitlements.js'
-import { planForProductId } from './polar.js'
+import { planForPriceId, stripeMode } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 
 const settingsPatchSchema = z.object({
@@ -36,10 +36,10 @@ async function billingSettings() {
   return parseBillingSettings(row?.value)
 }
 
-function productKind(productId: string): 'eight' | 'fat' | 'credits' | 'unknown' {
-  const plan = planForProductId(productId)
+function productKind(priceId: string): 'eight' | 'fat' | 'credits' | 'unknown' {
+  const plan = planForPriceId(priceId)
   if (plan) return plan
-  if (productId === getConfig().POLAR_CREDIT_PRODUCT_ID) return 'credits'
+  if (priceId === getConfig().STRIPE_CREDIT_PRODUCT_ID) return 'credits'
   return 'unknown'
 }
 
@@ -64,6 +64,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         salesBeforeTaxCents: sql<number>`coalesce(sum(${billingOrders.netAmountCents}), 0)::bigint`,
         taxCollectedCents: sql<number>`coalesce(sum(${billingOrders.taxAmountCents}), 0)::bigint`,
         platformFeesCents: sql<number>`coalesce(sum(${billingOrders.platformFeeAmountCents}), 0)::bigint`,
+        processingFeesCents: sql<number>`coalesce(sum(${billingOrders.processingFeeAmountCents}), 0)::bigint`,
         refundedCents: sql<number>`coalesce(sum(${billingOrders.refundedAmountCents}), 0)::bigint`,
         creditsGrantedMicros: sql<number>`coalesce(sum(${billingOrders.grantedCreditMicros}), 0)::bigint`,
         payments: sql<number>`count(*)::int`,
@@ -83,12 +84,12 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       db.select({ count: sql<number>`count(*)::int` }).from(billingWebhookEvents)
         .where(eq(billingWebhookEvents.status, 'failed')),
       db.select({
-        polarOrderId: billingOrders.polarOrderId,
+        stripePaymentId: billingOrders.stripePaymentId,
         userId: billingOrders.userId,
         userName: users.name,
         userEmail: users.email,
-        polarProductId: billingOrders.polarProductId,
-        polarSubscriptionId: billingOrders.polarSubscriptionId,
+        stripePriceId: billingOrders.stripePriceId,
+        stripeSubscriptionId: billingOrders.stripeSubscriptionId,
         billingReason: billingOrders.billingReason,
         status: billingOrders.status,
         totalAmountCents: billingOrders.totalAmountCents,
@@ -102,7 +103,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         userId: billingSubscriptions.userId,
         userName: users.name,
         userEmail: users.email,
-        polarSubscriptionId: billingSubscriptions.polarSubscriptionId,
+        stripeSubscriptionId: billingSubscriptions.stripeSubscriptionId,
         plan: billingSubscriptions.plan,
         status: billingSubscriptions.status,
         cancelAtPeriodEnd: billingSubscriptions.cancelAtPeriodEnd,
@@ -143,12 +144,13 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     const orderTotals = totals[0]
     return {
       range,
-      polar: { environment: getConfig().POLAR_ENVIRONMENT ?? 'sandbox' },
+      stripe: { mode: stripeMode() },
       totals: {
         grossCollectedCents: Number(orderTotals?.grossCollectedCents ?? 0),
         salesBeforeTaxCents: Number(orderTotals?.salesBeforeTaxCents ?? 0),
         taxCollectedCents: Number(orderTotals?.taxCollectedCents ?? 0),
         platformFeesCents: Number(orderTotals?.platformFeesCents ?? 0),
+        processingFeesCents: Number(orderTotals?.processingFeesCents ?? 0),
         refundedCents: Number(orderTotals?.refundedCents ?? 0),
         creditsGrantedMicros: Number(orderTotals?.creditsGrantedMicros ?? 0),
         payments: Number(orderTotals?.payments ?? 0),
@@ -162,7 +164,7 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       },
       subscribers: { eight: Number(eight?.count ?? 0), fat: Number(fat?.count ?? 0) },
       trend: trend.map((item) => ({ ...item, totalCents: Number(item.totalCents), payments: Number(item.payments) })),
-      recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.polarProductId) })),
+      recentOrders: recentOrders.map((order) => ({ ...order, product: productKind(order.stripePriceId) })),
       recentSubscriptions,
       failedEvents: failedWebhookRows,
       holds: holdRows,

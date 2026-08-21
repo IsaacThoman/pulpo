@@ -1,13 +1,29 @@
+import type Stripe from 'stripe'
 import { eq } from 'drizzle-orm'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import { applicationSettings } from '../database/schema.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
-import { getPolarClient } from './polar.js'
-import { processPolarWebhookEvent, type PolarWebhookEvent } from './webhooks.js'
+import { getStripeClient, planForPriceId } from './stripe.js'
+import { processStripeWebhookEvent } from './webhooks.js'
 
-function eventVersion(value: Date | null | undefined, fallback: Date): string {
-  return (value ?? fallback).toISOString()
+function syntheticEvent<T extends Stripe.Event.Type>(
+  id: string,
+  type: T,
+  object: Stripe.Event.Data.Object,
+  created: number,
+): Stripe.Event {
+  return {
+    id,
+    object: 'event',
+    api_version: '2026-07-29.dahlia',
+    created,
+    data: { object },
+    livemode: 'livemode' in object ? Boolean(object.livemode) : false,
+    pending_webhooks: 0,
+    request: null,
+    type,
+  } as Stripe.Event
 }
 
 async function saveReconciliationResult(error: string | null): Promise<void> {
@@ -34,46 +50,75 @@ async function saveReconciliationResult(error: string | null): Promise<void> {
   })
 }
 
-export async function reconcilePolarBilling(): Promise<void> {
-  const config = getConfig()
-  if (!config.PULPO_BILLING_ENABLED) return
+async function reconciliationStart(): Promise<number> {
+  const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
+    .where(eq(applicationSettings.key, 'billing')).limit(1)
+  const last = parseBillingSettings(row?.value).lastReconciledAt
+  const fallback = Date.now() - 30 * 24 * 60 * 60 * 1_000
+  const parsed = last ? Date.parse(last) : fallback
+  const overlapStart = (Number.isNaN(parsed) ? fallback : parsed) - 48 * 60 * 60 * 1_000
+  return Math.floor(overlapStart / 1_000)
+}
+
+export async function reconcileStripeBilling(): Promise<void> {
+  if (!getConfig().PULPO_BILLING_ENABLED) return
   try {
-    const polar = getPolarClient()
-    const subscriptions = await polar.subscriptions.list({
-      productId: [config.POLAR_EIGHT_PRODUCT_ID!, config.POLAR_FAT_PRODUCT_ID!],
-      limit: 100,
-    })
-    for await (const page of subscriptions) {
-      for (const subscription of page.result.items) {
-        const timestamp = subscription.modifiedAt ?? subscription.createdAt
-        await processPolarWebhookEvent(
-          `reconcile:subscription:${subscription.id}:${eventVersion(subscription.modifiedAt, subscription.createdAt)}`,
-          { type: 'subscription.updated', timestamp, data: subscription } as PolarWebhookEvent,
-        )
-      }
+    const stripe = getStripeClient()
+    const createdGte = await reconciliationStart()
+
+    for await (const subscription of stripe.subscriptions.list({ status: 'all', limit: 100 })) {
+      const item = subscription.items.data[0]
+      if (!planForPriceId(item?.price.id)) continue
+      const version = [subscription.status, subscription.cancel_at_period_end, item?.price.id, item?.current_period_end].join(':')
+      await processStripeWebhookEvent(syntheticEvent(
+        `reconcile:subscription:${subscription.id}:${version}`,
+        subscription.status === 'canceled' ? 'customer.subscription.deleted' : 'customer.subscription.updated',
+        subscription,
+        Math.floor(Date.now() / 1_000),
+      ))
     }
 
-    const orders = await polar.orders.list({
-      productId: [config.POLAR_CREDIT_PRODUCT_ID!, config.POLAR_EIGHT_PRODUCT_ID!, config.POLAR_FAT_PRODUCT_ID!],
-      limit: 100,
-      sorting: ['created_at'],
-    })
-    for await (const page of orders) {
-      for (const order of page.result.items) {
-        const timestamp = order.modifiedAt ?? order.createdAt
-        if (order.paid) {
-          await processPolarWebhookEvent(
-            `reconcile:order-paid:${order.id}:${eventVersion(order.modifiedAt, order.createdAt)}`,
-            { type: 'order.paid', timestamp, data: order } as PolarWebhookEvent,
-          )
-        }
-        if (order.refundedAmount > 0) {
-          await processPolarWebhookEvent(
-            `reconcile:order-refunded:${order.id}:${eventVersion(order.modifiedAt, order.createdAt)}`,
-            { type: 'order.refunded', timestamp, data: order } as PolarWebhookEvent,
-          )
-        }
-      }
+    for await (const invoice of stripe.invoices.list({ status: 'paid', created: { gte: createdGte }, limit: 100 })) {
+      await processStripeWebhookEvent(syntheticEvent(
+        `reconcile:invoice:${invoice.id}:${invoice.status_transitions.paid_at ?? invoice.created}`,
+        'invoice.paid',
+        invoice,
+        invoice.status_transitions.paid_at ?? invoice.created,
+      ))
+    }
+
+    for await (const checkout of stripe.checkout.sessions.list({ created: { gte: createdGte }, limit: 100 })) {
+      if (checkout.mode !== 'payment' || checkout.metadata?.pulpo_kind !== 'credits') continue
+      if (checkout.status !== 'complete' && checkout.status !== 'expired') continue
+      const type = checkout.status === 'expired' ? 'checkout.session.expired' : 'checkout.session.completed'
+      await processStripeWebhookEvent(syntheticEvent(
+        `reconcile:checkout:${checkout.id}:${checkout.status}:${checkout.payment_status}`,
+        type,
+        checkout,
+        checkout.created,
+      ))
+    }
+
+    for await (const paymentIntent of stripe.paymentIntents.list({ created: { gte: createdGte }, limit: 100 })) {
+      if (paymentIntent.status !== 'succeeded' || paymentIntent.metadata.pulpo_kind !== 'credits') continue
+      const sessions = await stripe.checkout.sessions.list({ payment_intent: paymentIntent.id, limit: 1 })
+      const checkout = sessions.data[0]
+      if (!checkout) continue
+      await processStripeWebhookEvent(syntheticEvent(
+        `reconcile:payment-intent:${paymentIntent.id}:${paymentIntent.status}`,
+        'checkout.session.completed',
+        checkout,
+        paymentIntent.created,
+      ))
+    }
+
+    for await (const refund of stripe.refunds.list({ created: { gte: createdGte }, limit: 100 })) {
+      await processStripeWebhookEvent(syntheticEvent(
+        `reconcile:refund:${refund.id}:${refund.status}`,
+        'refund.updated',
+        refund,
+        refund.created,
+      ))
     }
     await saveReconciliationResult(null)
   } catch (error) {

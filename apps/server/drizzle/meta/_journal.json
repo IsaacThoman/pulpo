@@ -288,6 +288,13 @@
       "when": 1787254979172,
       "tag": "0040_left_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1787338682281,
+      "tag": "0041_young_victor_mancha",
+      "breakpoints": true
     }
   ]
 }
