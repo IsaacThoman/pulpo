@@ -317,14 +317,17 @@ function sameNativeColor(left: ColorValue | undefined, right: ColorValue): boole
 }
 
 function androidSemanticColor(value: ColorValue | undefined, dark: boolean): ColorValue | undefined {
-  if (Platform.OS !== 'android' || !dark || !value) return undefined;
-  if (sameNativeColor(value, COLORS.text) || sameNativeColor(value, COLORS.textSoft)) return '#E6E1E5';
-  if (sameNativeColor(value, COLORS.muted)) return '#CAC4D0';
-  if (sameNativeColor(value, COLORS.dim)) return '#938F99';
-  if (sameNativeColor(value, COLORS.accent)) return '#D0BCFF';
-  if (sameNativeColor(value, COLORS.positive)) return '#B8F397';
-  if (sameNativeColor(value, COLORS.critical) || sameNativeColor(value, COLORS.criticalAction)) return '#F2B8B5';
-  if (sameNativeColor(value, COLORS.warning)) return '#FFB77D';
+  if (Platform.OS !== 'android' || !value) return undefined;
+  // Attribute-backed Android colors can resolve against the activity rather than
+  // a React Native Modal or transformed drawer's theme. Use Material 3 roles for
+  // foreground content so labels remain visible in every native surface.
+  if (sameNativeColor(value, COLORS.text) || sameNativeColor(value, COLORS.textSoft)) return dark ? '#E6E1E5' : '#1D1B20';
+  if (sameNativeColor(value, COLORS.muted)) return dark ? '#CAC4D0' : '#49454F';
+  if (sameNativeColor(value, COLORS.dim)) return dark ? '#938F99' : '#79747E';
+  if (sameNativeColor(value, COLORS.accent)) return dark ? '#D0BCFF' : '#6750A4';
+  if (sameNativeColor(value, COLORS.positive)) return dark ? '#B8F397' : '#386A20';
+  if (sameNativeColor(value, COLORS.critical) || sameNativeColor(value, COLORS.criticalAction)) return dark ? '#F2B8B5' : '#B3261E';
+  if (sameNativeColor(value, COLORS.warning)) return dark ? '#FFB77D' : '#8A4F00';
   return undefined;
 }
 
