@@ -541,13 +541,14 @@ async function paymentDetailsForIntent(value: string | Stripe.PaymentIntent | nu
   }
 }
 
+export function invoicePaymentListParams(invoiceId: string): Stripe.InvoicePaymentListParams {
+  return { invoice: invoiceId, status: 'paid', limit: 10 }
+}
+
 async function invoicePaymentDetails(invoiceId: string): Promise<PaymentDetails> {
-  const payments = await getStripeClient().invoicePayments.list({
-    invoice: invoiceId,
-    status: 'paid',
-    limit: 10,
-    expand: ['data.payment.payment_intent.latest_charge.balance_transaction'],
-  })
+  // Expanding through the list item, PaymentIntent, charge, and balance transaction
+  // exceeds Stripe's four-level expansion limit. Retrieve the PaymentIntent separately.
+  const payments = await getStripeClient().invoicePayments.list(invoicePaymentListParams(invoiceId))
   const paymentIntent = payments.data.find((item) => item.payment.type === 'payment_intent')?.payment.payment_intent
   return paymentDetailsForIntent(paymentIntent ?? null)
 }
