@@ -105,6 +105,7 @@ export const mobileConfigSchema = z.object({
     folders: z.literal(true),
     twoFactorAuth: z.boolean().optional().default(false),
     passkeys: z.boolean().optional().default(false),
+    dictation: z.boolean().optional().default(false),
   }),
 })
 export type MobileConfig = z.infer<typeof mobileConfigSchema>

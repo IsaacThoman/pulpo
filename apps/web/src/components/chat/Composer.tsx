@@ -47,7 +47,13 @@ import { canSubmitComposerDraft } from '@/components/chat/composer-upload-policy
 import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { apiRequest } from '@/lib/api'
-import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
+import {
+  DICTATION_AUDIO_BITS_PER_SECOND,
+  MAX_DICTATION_DURATION_MS,
+  dictationFilename,
+  insertDictationText,
+  preferredDictationMimeType,
+} from '@/lib/dictation'
 
 export interface ComposerMessageEdit {
   messageId: string
@@ -266,9 +272,14 @@ export function Composer({
       return
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, sampleRate: 16_000 },
+      })
       const preferredType = preferredDictationMimeType()
-      const recorder = preferredType ? new MediaRecorder(stream, { mimeType: preferredType }) : new MediaRecorder(stream)
+      const recorder = new MediaRecorder(stream, {
+        audioBitsPerSecond: DICTATION_AUDIO_BITS_PER_SECOND,
+        ...(preferredType ? { mimeType: preferredType } : {}),
+      })
       mediaStreamRef.current = stream
       mediaRecorderRef.current = recorder
       dictationChunksRef.current = []
@@ -293,7 +304,7 @@ export function Composer({
       }
       recorder.start()
       setDictationState('recording')
-      dictationTimerRef.current = window.setTimeout(() => stopDictation(), 90_000)
+      dictationTimerRef.current = window.setTimeout(() => stopDictation(), MAX_DICTATION_DURATION_MS)
     } catch (error) {
       releaseMicrophone()
       setDictationState('idle')

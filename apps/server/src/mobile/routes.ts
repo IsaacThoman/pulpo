@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import {
   mobileConfigSchema,
@@ -32,16 +32,18 @@ import {
   finishPasskeyAuthentication,
   issueMobilePasskeyAuthCode,
 } from '../auth/passkeys.js'
+import { mobileDictationEnabled } from './config.js'
 
 export async function registerMobileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/mobile/config', async () => {
     const config = getConfig()
-    const [[existingUser], [setting]] = await Promise.all([
+    const [[existingUser], settings] = await Promise.all([
       db.select({ id: users.id }).from(users).limit(1),
-      db.select({ value: applicationSettings.value }).from(applicationSettings)
-        .where(eq(applicationSettings.key, 'auth')).limit(1),
+      db.select({ key: applicationSettings.key, value: applicationSettings.value }).from(applicationSettings)
+        .where(inArray(applicationSettings.key, ['auth', 'dictation'])),
     ])
-    const auth = parseAuthSettings(setting?.value)
+    const settingsByKey = new Map(settings.map((setting) => [setting.key, setting.value]))
+    const auth = parseAuthSettings(settingsByKey.get('auth'))
     return mobileConfigSchema.parse({
       mobileApiVersion: 1,
       instance: { name: config.INSTANCE_NAME, version: config.PULPO_VERSION, publicUrl: config.PUBLIC_URL },
@@ -63,6 +65,7 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
         folders: true,
         twoFactorAuth: true,
         passkeys: true,
+        dictation: mobileDictationEnabled(settingsByKey.get('dictation')),
       },
     })
   })

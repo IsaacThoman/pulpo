@@ -90,6 +90,12 @@ const config: ExpoConfig = {
           NSPrivacyCollectedDataTypeTracking: false,
           NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
         },
+        {
+          NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeAudioData',
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ['NSPrivacyCollectedDataTypePurposeAppFunctionality'],
+        },
       ],
       NSPrivacyTracking: false,
     },
@@ -103,6 +109,14 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-secure-store',
     'expo-sqlite',
+    [
+      'expo-audio',
+      {
+        microphonePermission: 'Allow Pulpo to dictate messages.',
+        recordAudioAndroid: false,
+        enableBackgroundRecording: false,
+      },
+    ],
     [
       'expo-build-properties',
       { ios: { deploymentTarget: '26.0', useFrameworks: 'dynamic', buildReactNativeFromSource: true } },

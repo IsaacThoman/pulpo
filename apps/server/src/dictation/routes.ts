@@ -11,7 +11,9 @@ import { GroqTranscriptionError, transcribeWithGroq } from './groq.js'
 import { chargeMeteredUsage } from '../accounting/service.js'
 import { dictationUsageMicros } from './billing.js'
 
-export const MAX_DICTATION_BYTES = 10 * 1024 * 1024
+export const MAX_DICTATION_BYTES = 25 * 1024 * 1024
+const MAX_DICTATION_MEGABYTES = MAX_DICTATION_BYTES / (1024 * 1024)
+const DICTATION_PROVIDER_TIMEOUT_MS = 120_000
 const SUPPORTED_AUDIO_TYPES = new Set([
   'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav',
 ])
@@ -33,7 +35,7 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
       part = await request.file({ limits: { files: 1, fileSize: MAX_DICTATION_BYTES } })
     } catch (cause) {
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'FST_REQ_FILE_TOO_LARGE') {
-        throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
+        throw new AppError(413, 'dictation_audio_too_large', `Dictation recordings must be ${MAX_DICTATION_MEGABYTES} MB or smaller`)
       }
       throw cause
     }
@@ -46,10 +48,10 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
     try {
       audio = await part.toBuffer()
     } catch (cause) {
-      if (part.file.truncated) throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
+      if (part.file.truncated) throw new AppError(413, 'dictation_audio_too_large', `Dictation recordings must be ${MAX_DICTATION_MEGABYTES} MB or smaller`)
       throw cause
     }
-    if (part.file.truncated) throw new AppError(413, 'dictation_audio_too_large', 'Dictation recordings must be 10 MB or smaller')
+    if (part.file.truncated) throw new AppError(413, 'dictation_audio_too_large', `Dictation recordings must be ${MAX_DICTATION_MEGABYTES} MB or smaller`)
     if (audio.length === 0) throw new AppError(400, 'dictation_audio_empty', 'The audio recording is empty')
 
     let transcript: Awaited<ReturnType<typeof transcribeWithGroq>>
@@ -59,7 +61,7 @@ export async function registerDictationRoutes(app: FastifyInstance): Promise<voi
         audio,
         filename: part.filename || 'dictation.webm',
         mimeType,
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(DICTATION_PROVIDER_TIMEOUT_MS),
       })
     } catch (cause) {
       request.log.warn({ err: cause }, 'Groq dictation transcription failed')

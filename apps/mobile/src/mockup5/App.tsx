@@ -18,6 +18,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  AppState,
   Appearance,
   type ColorValue,
   DynamicColorIOS,
@@ -86,9 +87,17 @@ import {
   tint,
 } from '@expo/ui/swift-ui/modifiers';
 import { GlassView, isGlassEffectAPIAvailable } from 'expo-glass-effect';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  type RecordingStatus,
+} from 'expo-audio';
 import * as Clipboard from 'expo-clipboard';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
+import { File } from 'expo-file-system';
 import * as ExpoHaptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Network from 'expo-network';
@@ -204,6 +213,15 @@ import {
 } from '../features/chat/optimisticAttachmentSend';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
+import {
+  DICTATION_AUDIO_BIT_RATE,
+  DICTATION_AUDIO_SAMPLE_RATE,
+  MAX_DICTATION_DURATION_SECONDS,
+  insertDictationText,
+  shouldApplyDictationResult,
+  transcribeDictation,
+  type DictationSelection,
+} from '../features/chat/dictation';
 import {
   historyChatSections,
   historyChatSummary,
@@ -602,6 +620,23 @@ const DEFAULT_SUGGESTED_PROMPTS: SuggestedPrompt[] = [
   { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
 ];
 
+const DICTATION_RECORDING_OPTIONS = {
+  ...RecordingPresets.HIGH_QUALITY,
+  sampleRate: DICTATION_AUDIO_SAMPLE_RATE,
+  numberOfChannels: 1,
+  bitRate: DICTATION_AUDIO_BIT_RATE,
+};
+
+function deleteDictationRecording(uri: string | null | undefined): void {
+  if (!uri) return;
+  try {
+    const file = new File(uri);
+    if (file.exists) file.delete();
+  } catch {
+    // The cache may already have evicted a completed or interrupted recording.
+  }
+}
+
 function pickSuggestedPrompts(items: SuggestedPrompt[], count: number): SuggestedPrompt[] {
   if (count <= 0 || items.length === 0) return [];
   const pool = [...items];
@@ -626,12 +661,14 @@ function NativeComposerIconButton({
   onPress,
   disabled = false,
   prominent = false,
+  accentTint,
 }: {
   label: string;
   systemImage: NativeButtonSystemImage;
   onPress: () => void;
   disabled?: boolean;
   prominent?: boolean;
+  accentTint?: string;
 }) {
   const colorScheme = useColorScheme();
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
@@ -647,8 +684,8 @@ function NativeComposerIconButton({
           buttonBorderShape('circle'),
           controlSize('regular'),
           labelStyle('iconOnly'),
-          ...(prominent ? [tint(prominentTint)] : []),
-          ...(prominent ? [foregroundStyle(prominentForeground)] : []),
+          ...(prominent ? [tint(accentTint ?? prominentTint)] : []),
+          ...(prominent ? [foregroundStyle(accentTint ? '#ffffff' : prominentForeground)] : []),
           swiftUIDisabled(disabled),
           swiftUIAccessibilityLabel(label),
         ]}
@@ -3135,6 +3172,7 @@ function ChatView({
   const measuredContentHeight = useRef(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
+  const dictationAvailable = useSessionStore((state) => state.config?.capabilities.dictation ?? false);
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
@@ -3165,6 +3203,20 @@ function ChatView({
   } | null>(null);
   const messageEditChatIdRef = useRef(chatId);
   const composerInputRef = useRef<TextInput>(null);
+  const inputRef = useRef(input);
+  const inputSelectionRef = useRef<DictationSelection>({ start: input.length, end: input.length });
+  const dictationSelectionRef = useRef<DictationSelection>(inputSelectionRef.current);
+  const dictationStatusHandlerRef = useRef<(status: RecordingStatus) => void>(() => undefined);
+  const dictationRecorder = useAudioRecorder(
+    DICTATION_RECORDING_OPTIONS,
+    (status) => dictationStatusHandlerRef.current(status),
+  );
+  const [dictationState, setDictationState] = useState<'idle' | 'recording' | 'transcribing'>('idle');
+  const [dictationStarting, setDictationStarting] = useState(false);
+  const dictationStateRef = useRef(dictationState);
+  const dictationSessionRef = useRef(0);
+  const activeDictationRef = useRef<number | null>(null);
+  const dictationAbortRef = useRef<AbortController | null>(null);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
@@ -3189,6 +3241,8 @@ function ChatView({
     syncError,
   });
   const isEmptyConversation = messages.length === 0;
+  inputRef.current = input;
+  dictationStateRef.current = dictationState;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
     // Re-roll when opening a new empty chat.
@@ -3296,6 +3350,175 @@ function ChatView({
     }
     Haptics.selectionAsync();
   }, [activeAgentEnabled, canUseAgent, messageEdit, model.id]);
+
+  const finishDictation = useCallback(async (
+    session: number,
+    uri: string | null,
+    recordingError?: string,
+  ) => {
+    if (activeDictationRef.current !== session) return;
+    activeDictationRef.current = null;
+    void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    if (recordingError || !uri) {
+      deleteDictationRecording(uri);
+      dictationStateRef.current = 'idle';
+      setDictationState('idle');
+      Alert.alert('Recording failed', recordingError ?? 'Pulpo could not save this recording. Please try again.');
+      return;
+    }
+
+    dictationStateRef.current = 'transcribing';
+    setDictationState('transcribing');
+    const controller = new AbortController();
+    dictationAbortRef.current = controller;
+    try {
+      const result = await transcribeDictation(uri, controller.signal);
+      if (!shouldApplyDictationResult(session, dictationSessionRef.current, controller.signal.aborted)) return;
+      if (!result.text.trim()) throw new Error('No speech was detected in the recording');
+      const inserted = insertDictationText(inputRef.current, result.text, dictationSelectionRef.current);
+      inputSelectionRef.current = inserted.selection;
+      onChangeInput(inserted.value);
+      requestAnimationFrame(() => {
+        composerInputRef.current?.focus();
+        composerInputRef.current?.setNativeProps({ selection: inserted.selection });
+      });
+    } catch (error) {
+      if (shouldApplyDictationResult(session, dictationSessionRef.current, controller.signal.aborted)) {
+        Alert.alert(
+          'Couldn’t transcribe recording',
+          error instanceof Error ? error.message : 'Please try recording again.',
+        );
+      }
+    } finally {
+      deleteDictationRecording(uri);
+      if (dictationAbortRef.current === controller) dictationAbortRef.current = null;
+      if (dictationSessionRef.current === session) {
+        dictationStateRef.current = 'idle';
+        setDictationState('idle');
+      }
+    }
+  }, [onChangeInput]);
+
+  dictationStatusHandlerRef.current = (status) => {
+    if (!status.isFinished) return;
+    const session = activeDictationRef.current;
+    if (session === null) return;
+    void finishDictation(session, status.url ?? dictationRecorder.uri, status.hasError
+      ? status.error ?? 'Microphone recording was interrupted.'
+      : undefined);
+  };
+
+  const stopDictation = useCallback(async () => {
+    if (dictationStateRef.current !== 'recording') return;
+    const session = activeDictationRef.current;
+    if (session === null) return;
+    dictationStateRef.current = 'transcribing';
+    setDictationState('transcribing');
+    try {
+      await dictationRecorder.stop();
+      await finishDictation(session, dictationRecorder.uri);
+    } catch (error) {
+      await finishDictation(
+        session,
+        dictationRecorder.uri,
+        error instanceof Error ? error.message : 'Microphone recording failed.',
+      );
+    }
+  }, [dictationRecorder, finishDictation]);
+
+  const dictationStartingRef = useRef(false);
+  const startDictation = useCallback(async () => {
+    if (!dictationAvailable || Platform.OS !== 'ios' || dictationStateRef.current !== 'idle' || dictationStartingRef.current) return;
+    dictationStartingRef.current = true;
+    setDictationStarting(true);
+    const session = ++dictationSessionRef.current;
+    dictationSelectionRef.current = inputSelectionRef.current;
+    try {
+      const permission = await requestRecordingPermissionsAsync();
+      if (dictationSessionRef.current !== session) return;
+      if (!permission.granted) {
+        Alert.alert(
+          'Microphone access needed',
+          'Allow microphone access in Settings to dictate messages in Pulpo.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+          ],
+        );
+        return;
+      }
+      if (AppState.currentState !== 'active') return;
+      await setAudioModeAsync({
+        allowsRecording: true,
+        allowsBackgroundRecording: false,
+        playsInSilentMode: true,
+      });
+      if (dictationSessionRef.current !== session) {
+        void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        return;
+      }
+      await dictationRecorder.prepareToRecordAsync(DICTATION_RECORDING_OPTIONS);
+      if (dictationSessionRef.current !== session) {
+        deleteDictationRecording(dictationRecorder.uri);
+        void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        return;
+      }
+      activeDictationRef.current = session;
+      dictationRecorder.record({ forDuration: MAX_DICTATION_DURATION_SECONDS });
+      dictationStateRef.current = 'recording';
+      setDictationState('recording');
+      void ExpoHaptics.impactAsync(ExpoHaptics.ImpactFeedbackStyle.Medium);
+    } catch (error) {
+      activeDictationRef.current = null;
+      void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+      dictationStateRef.current = 'idle';
+      setDictationState('idle');
+      Alert.alert(
+        'Microphone unavailable',
+        error instanceof Error ? error.message : 'Pulpo could not start recording. Please try again.',
+      );
+    } finally {
+      dictationStartingRef.current = false;
+      setDictationStarting(false);
+    }
+  }, [dictationAvailable, dictationRecorder]);
+
+  const cancelDictation = useCallback((updateState: boolean) => {
+    dictationSessionRef.current += 1;
+    dictationStartingRef.current = false;
+    activeDictationRef.current = null;
+    dictationAbortRef.current?.abort();
+    dictationAbortRef.current = null;
+    if (dictationRecorder.isRecording) {
+      void dictationRecorder.stop()
+        .then(() => deleteDictationRecording(dictationRecorder.uri))
+        .catch(() => undefined);
+    } else {
+      deleteDictationRecording(dictationRecorder.uri);
+    }
+    void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    if (updateState) {
+      setDictationStarting(false);
+      dictationStateRef.current = 'idle';
+      setDictationState('idle');
+    }
+  }, [dictationRecorder]);
+
+  const dictationChatIdRef = useRef(chatId);
+  useEffect(() => {
+    if (dictationChatIdRef.current === chatId) return;
+    dictationChatIdRef.current = chatId;
+    cancelDictation(true);
+  }, [cancelDictation, chatId]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && dictationStateRef.current !== 'idle') cancelDictation(true);
+    });
+    return () => subscription.remove();
+  }, [cancelDictation]);
+
+  useEffect(() => () => cancelDictation(false), [cancelDictation]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
@@ -3953,6 +4176,8 @@ function ChatView({
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
     && (assistantStatus === 'idle' || Boolean(messageEdit))
+    && dictationState === 'idle'
+    && !dictationStarting
     && !sending
     && !expired
     && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
@@ -4188,6 +4413,9 @@ function ChatView({
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
+                onSelectionChange={(event) => {
+                  inputSelectionRef.current = event.nativeEvent.selection;
+                }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
                 style={styles.input}
@@ -4268,6 +4496,27 @@ function ChatView({
                         </SwiftUIRNHostView>
                       </SwiftUIButton>
                     </SwiftUIHost>
+                    {dictationAvailable ? (
+                      <NativeComposerIconButton
+                        accentTint={dictationState === 'recording' ? '#FF3B30' : undefined}
+                        disabled={dictationStarting || dictationState === 'transcribing'}
+                        label={dictationStarting
+                          ? 'Starting dictation'
+                          : dictationState === 'recording'
+                          ? 'Stop dictation'
+                          : dictationState === 'transcribing' ? 'Transcribing dictation' : 'Start dictation'}
+                        onPress={() => {
+                          if (dictationState === 'recording') {
+                            void ExpoHaptics.selectionAsync();
+                            void stopDictation();
+                          } else {
+                            void startDictation();
+                          }
+                        }}
+                        prominent={dictationState === 'recording'}
+                        systemImage={dictationState === 'transcribing' ? 'waveform' : 'mic.fill'}
+                      />
+                    ) : null}
                     <NativeComposerIconButton
                       disabled={composerAction === 'submit' && !canSend}
                       label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}

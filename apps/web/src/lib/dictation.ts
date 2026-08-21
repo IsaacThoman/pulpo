@@ -1,3 +1,6 @@
+export const MAX_DICTATION_DURATION_MS = 60 * 60 * 1_000
+export const DICTATION_AUDIO_BITS_PER_SECOND = 32_000
+
 export function preferredDictationMimeType(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined
   return [

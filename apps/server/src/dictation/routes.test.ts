@@ -31,7 +31,7 @@ vi.mock('./groq.js', () => ({
   transcribeWithGroq: mocks.transcribeWithGroq,
 }))
 
-import { registerDictationRoutes } from './routes.js'
+import { MAX_DICTATION_BYTES, registerDictationRoutes } from './routes.js'
 
 type Handler = (request: FastifyRequest) => Promise<unknown>
 
@@ -55,6 +55,10 @@ function request(mimeType = 'audio/webm'): FastifyRequest {
 }
 
 describe('dictation route', () => {
+  it('accepts compressed hour-long recordings up to the provider free-tier limit', () => {
+    expect(MAX_DICTATION_BYTES).toBe(25 * 1024 * 1024)
+  })
+
   beforeEach(() => {
     mocks.settings = { enabled: false, encryptedGroqApiKey: null }
     mocks.requireUser.mockReset()

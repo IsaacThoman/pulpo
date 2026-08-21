@@ -49,7 +49,11 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers = new Headers(options.headers)
-  if (options.body !== undefined) headers.set('content-type', 'application/json')
+  const multipart = options.body instanceof FormData
+  const requestBody: BodyInit | undefined = options.body === undefined
+    ? undefined
+    : options.body instanceof FormData ? options.body : JSON.stringify(options.body)
+  if (options.body !== undefined && !multipart) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
   if (options.auth !== false && sessionToken) headers.set('authorization', `Bearer ${sessionToken}`)
   const controller = new AbortController()
@@ -62,7 +66,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
       ...options,
       headers,
       signal: controller.signal,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body: requestBody,
     })
   } catch (error) {
     if (controller.signal.aborted && !options.signal?.aborted) {
