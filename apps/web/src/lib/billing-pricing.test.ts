@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chargeCentsForCredits, creditCentsFromInput } from './billing-pricing'
 
-describe('Polar Starter credit pricing', () => {
+describe('Pulpo platform credit pricing', () => {
   it.each([
     [500, 579],
     [1_000, 1_106],

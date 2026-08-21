@@ -17,12 +17,11 @@ const configSchema = z.object({
   INSTANCE_NAME: z.string().trim().min(1).default('Pulpo'),
   PULPO_VERSION: z.string().trim().min(1).default('0.1.0'),
   PULPO_BILLING_ENABLED: booleanString,
-  POLAR_ENVIRONMENT: optionalEnvironmentValue(z.enum(['sandbox', 'production'])),
-  POLAR_ACCESS_TOKEN: optionalEnvironmentValue(z.string().min(1)),
-  POLAR_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().min(1)),
-  POLAR_CREDIT_PRODUCT_ID: optionalEnvironmentValue(z.string().uuid()),
-  POLAR_EIGHT_PRODUCT_ID: optionalEnvironmentValue(z.string().uuid()),
-  POLAR_FAT_PRODUCT_ID: optionalEnvironmentValue(z.string().uuid()),
+  STRIPE_SECRET_KEY: optionalEnvironmentValue(z.string().regex(/^sk_(?:test|live)_/)),
+  STRIPE_WEBHOOK_SECRET: optionalEnvironmentValue(z.string().startsWith('whsec_')),
+  STRIPE_CREDIT_PRODUCT_ID: optionalEnvironmentValue(z.string().startsWith('prod_')),
+  STRIPE_EIGHT_PRICE_ID: optionalEnvironmentValue(z.string().startsWith('price_')),
+  STRIPE_FAT_PRICE_ID: optionalEnvironmentValue(z.string().startsWith('price_')),
   DATABASE_URL: z.string().min(1).optional(),
   POSTGRES_HOST: z.string().min(1).default('localhost'),
   POSTGRES_PORT: z.coerce.number().int().positive().default(5432),
@@ -86,12 +85,11 @@ export function parseConfig(environment: NodeJS.ProcessEnv): Config {
   })
   if (config.PULPO_BILLING_ENABLED) {
     const required = [
-      'POLAR_ENVIRONMENT',
-      'POLAR_ACCESS_TOKEN',
-      'POLAR_WEBHOOK_SECRET',
-      'POLAR_CREDIT_PRODUCT_ID',
-      'POLAR_EIGHT_PRODUCT_ID',
-      'POLAR_FAT_PRODUCT_ID',
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+      'STRIPE_CREDIT_PRODUCT_ID',
+      'STRIPE_EIGHT_PRICE_ID',
+      'STRIPE_FAT_PRICE_ID',
     ] as const
     const missing = required.filter((key) => !config[key])
     if (missing.length > 0) {
