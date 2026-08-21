@@ -987,6 +987,8 @@ export type WebToolsSettings = z.infer<typeof webToolsSettingsSchema>
 
 export const dictationSettingsSchema = z.object({
   enabled: z.boolean().default(false),
+  billUsers: z.boolean().default(false),
+  pricePerMinuteMicros: z.number().int().min(0).max(1_000_000_000).default(10_000),
 })
 export type DictationSettings = z.infer<typeof dictationSettingsSchema>
 

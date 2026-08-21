@@ -117,7 +117,12 @@ export function parseDictationSettings(value: unknown): z.infer<typeof storedDic
 }
 
 export function publicDictationSettings(value: z.infer<typeof storedDictationSettingsSchema>) {
-  return { enabled: value.enabled, hasApiKey: Boolean(value.encryptedGroqApiKey) }
+  return {
+    enabled: value.enabled,
+    billUsers: value.billUsers,
+    pricePerMinuteMicros: value.pricePerMinuteMicros,
+    hasApiKey: Boolean(value.encryptedGroqApiKey),
+  }
 }
 
 export function publicWebToolsSettings(value: z.infer<typeof storedWebToolsSettingsSchema>) {

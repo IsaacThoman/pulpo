@@ -136,6 +136,79 @@ export async function reserveBudget(input: {
 function nowYear(): number { return new Date().getUTCFullYear() }
 function nowMonth(): number { return new Date().getUTCMonth() }
 
+export async function chargeMeteredUsage(input: {
+  userId: string
+  costMicros: number
+  type: string
+  metadata?: Record<string, unknown>
+}): Promise<void> {
+  if (!Number.isSafeInteger(input.costMicros) || input.costMicros < 0) throw new AppError(400, 'invalid_metered_cost', 'Metered usage cost is invalid')
+  if (input.costMicros === 0) return
+  const changes = await db.transaction(async (tx) => {
+    const membership = await activePoolMembership(tx, input.userId)
+    if (membership) await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pool:${membership.pool.id}`}))`)
+    const poolRows = membership ? await activePoolMembers(tx, membership.pool.id) : []
+    const participantIds = membership ? poolRows.map((row) => row.user.id).sort() : [input.userId]
+    const lockedUsers = await tx.select().from(users).where(inArray(users.id, participantIds)).orderBy(users.id).for('update')
+    const caller = lockedUsers.find((row) => row.id === input.userId)
+    if (!caller || caller.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
+    const entitlements = await loadBillingEntitlements(tx, input.userId)
+    if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
+    const allocation = allocateReservationMicros(input.costMicros, entitlements.weeklyRemainingMicros)
+    const pendingByUser = await pendingFundingByUser(tx, participantIds)
+    const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, participantIds))
+    const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
+    const balances = lockedUsers.filter((row) => !row.blocked && (row.id === input.userId || !held.has(row.id))).map((row) => ({
+      userId: row.id,
+      availableMicros: availableAccountBalanceMicros({ balanceMicros: row.balanceMicros, pendingBalanceMicros: pendingByUser.get(row.id) ?? 0 }),
+    }))
+    const funding = allocatePoolBalanceMicros({ amountMicros: allocation.balanceMicros, callerUserId: input.userId, balances })
+    if (allocation.balanceMicros > 0 && !funding.size) throw new AppError(402, 'insufficient_balance', 'Insufficient balance for dictation')
+
+    const ownChanges: Array<{ userId: string; revision: number }> = []
+    for (const fundingUser of lockedUsers) {
+      const debit = funding.get(fundingUser.id) ?? 0
+      if (debit <= 0) continue
+      const balanceAfter = fundingUser.balanceMicros - debit
+      const [updated] = await tx.update(users).set({ balanceMicros: balanceAfter, stateRevision: sql`${users.stateRevision} + 1` })
+        .where(eq(users.id, fundingUser.id)).returning({ userId: users.id, revision: users.stateRevision })
+      if (updated) ownChanges.push(updated)
+      await tx.insert(creditLedger).values({
+        id: newId(), userId: fundingUser.id, responseId: null, type: input.type, amountMicros: -debit, balanceAfterMicros: balanceAfter,
+        metadata: { ...input.metadata, totalCostMicros: input.costMicros, weeklyCostMicros: allocation.weeklyMicros, balanceCostMicros: debit, callerUserId: input.userId, poolId: membership?.pool.id ?? null },
+      })
+    }
+    if (allocation.balanceMicros === 0) await tx.insert(creditLedger).values({
+      id: newId(), userId: caller.id, responseId: null, type: input.type, amountMicros: 0, balanceAfterMicros: caller.balanceMicros,
+      metadata: { ...input.metadata, totalCostMicros: input.costMicros, weeklyCostMicros: allocation.weeklyMicros, balanceCostMicros: 0, poolId: membership?.pool.id ?? null },
+    })
+    if (allocation.weeklyMicros > 0) {
+      await tx.insert(weeklyUsagePeriods).values({
+        userId: caller.id, periodStart: entitlements.weeklyPeriodStart, spentMicros: allocation.weeklyMicros,
+      }).onConflictDoUpdate({
+        target: [weeklyUsagePeriods.userId, weeklyUsagePeriods.periodStart],
+        set: { spentMicros: sql`${weeklyUsagePeriods.spentMicros} + ${allocation.weeklyMicros}`, updatedAt: new Date() },
+      })
+    }
+    if (!ownChanges.some((change) => change.userId === caller.id)) {
+      const [updated] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, caller.id)).returning({ userId: users.id, revision: users.stateRevision })
+      if (updated) ownChanges.push(updated)
+    }
+    const peers = await friendPeerIds(tx, caller.id, { acceptedOnly: true })
+    const poolIds = membership ? poolRows.map((row) => row.user.id).filter((id) => !ownChanges.some((change) => change.userId === id)) : []
+    return {
+      ownChanges,
+      friendChanges: await bumpAccountRevisions(tx, peers),
+      poolChanges: await bumpAccountRevisions(tx, poolIds),
+    }
+  })
+  await Promise.all([
+    publishScopedStateChanges(changes.ownChanges, ['usage', 'billing']),
+    publishScopedStateChanges(changes.friendChanges, ['friends']),
+    publishScopedStateChanges(changes.poolChanges, ['pool', 'usage', 'billing']),
+  ])
+}
+
 export async function settleBudget(input: {
   responseId: string
   usage: ResponseUsage

@@ -155,6 +155,8 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       const old = parseDictationSettings(existing?.value)
       const next = storedDictationSettingsSchema.parse({
         enabled: input.enabled,
+        billUsers: input.billUsers,
+        pricePerMinuteMicros: input.pricePerMinuteMicros,
         encryptedGroqApiKey: input.groqApiKey
           ? encryptSecret(input.groqApiKey, getConfig().ENCRYPTION_KEY)
           : old.encryptedGroqApiKey,
@@ -166,7 +168,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
         .onConflictDoUpdate({ target: applicationSettings.key, set: { value: next, updatedBy: admin.id, updatedAt: new Date() } })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'settings.dictation.update', targetType: 'application',
-        metadata: { enabled: next.enabled, hasApiKey: Boolean(next.encryptedGroqApiKey) },
+        metadata: { enabled: next.enabled, billUsers: next.billUsers, pricePerMinuteMicros: next.pricePerMinuteMicros, hasApiKey: Boolean(next.encryptedGroqApiKey) },
       })
       return next
     })

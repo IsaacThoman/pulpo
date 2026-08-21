@@ -4,8 +4,8 @@ import { DEFAULT_BALANCE_MICROS, DEFAULT_BABY_STORAGE_LIMIT_BYTES, DEFAULT_EIGHT
 
 describe('dictation application settings', () => {
   it('is disabled by default and redacts its API key', () => {
-    expect(parseDictationSettings(undefined)).toEqual({ enabled: false, encryptedGroqApiKey: null })
-    expect(publicDictationSettings(parseDictationSettings({ enabled: true, encryptedGroqApiKey: 'encrypted' }))).toEqual({ enabled: true, hasApiKey: true })
+    expect(parseDictationSettings(undefined)).toEqual({ enabled: false, billUsers: false, pricePerMinuteMicros: 10_000, encryptedGroqApiKey: null })
+    expect(publicDictationSettings(parseDictationSettings({ enabled: true, encryptedGroqApiKey: 'encrypted' }))).toEqual({ enabled: true, billUsers: false, pricePerMinuteMicros: 10_000, hasApiKey: true })
   })
 })
 

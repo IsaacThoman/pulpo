@@ -2,9 +2,15 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  settings: { enabled: false, encryptedGroqApiKey: null as string | null },
+  settings: { enabled: false, encryptedGroqApiKey: null } as {
+    enabled: boolean
+    encryptedGroqApiKey: string | null
+    billUsers?: boolean
+    pricePerMinuteMicros?: number
+  },
   requireUser: vi.fn(),
   transcribeWithGroq: vi.fn(),
+  chargeMeteredUsage: vi.fn(),
 }))
 
 vi.mock('../database/client.js', () => ({
@@ -19,6 +25,7 @@ vi.mock('../database/client.js', () => ({
 vi.mock('../auth/service.js', () => ({ requireUser: mocks.requireUser }))
 vi.mock('../config.js', () => ({ getConfig: () => ({ ENCRYPTION_KEY: 'encryption-key' }) }))
 vi.mock('../lib/crypto.js', () => ({ decryptSecret: () => 'groq-secret' }))
+vi.mock('../accounting/service.js', () => ({ chargeMeteredUsage: mocks.chargeMeteredUsage }))
 vi.mock('./groq.js', () => ({
   GroqTranscriptionError: class GroqTranscriptionError extends Error {},
   transcribeWithGroq: mocks.transcribeWithGroq,
@@ -51,7 +58,21 @@ describe('dictation route', () => {
   beforeEach(() => {
     mocks.settings = { enabled: false, encryptedGroqApiKey: null }
     mocks.requireUser.mockReset()
-    mocks.transcribeWithGroq.mockReset().mockResolvedValue('Transcribed draft')
+    mocks.requireUser.mockReturnValue({ id: '11111111-1111-4111-8111-111111111111' })
+    mocks.transcribeWithGroq.mockReset().mockResolvedValue({ text: 'Transcribed draft', durationSeconds: 12.1 })
+    mocks.chargeMeteredUsage.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('bills successful transcription to the second when configured', async () => {
+    mocks.settings = { enabled: true, encryptedGroqApiKey: 'encrypted-groq-key', billUsers: true, pricePerMinuteMicros: 10_000 }
+    const handler = await routeHandler()
+    await expect(handler(request())).resolves.toEqual({ text: 'Transcribed draft' })
+    expect(mocks.chargeMeteredUsage).toHaveBeenCalledWith({
+      userId: '11111111-1111-4111-8111-111111111111',
+      costMicros: 2_167,
+      type: 'dictation',
+      metadata: expect.objectContaining({ durationSeconds: 12.1, billedSeconds: 13, pricePerMinuteMicros: 10_000 }),
+    })
   })
 
   it('authenticates before rejecting a disabled feature', async () => {
