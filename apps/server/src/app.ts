@@ -33,6 +33,7 @@ import { registerProfileRoutes } from './profile/routes.js'
 import { registerBillingRoutes } from './billing/routes.js'
 import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
+import { registerDictationRoutes } from './dictation/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -134,6 +135,7 @@ export async function buildApp() {
   await registerBillingRoutes(app)
   await registerMessageRoutes(app)
   await registerAttachmentRoutes(app)
+  await registerDictationRoutes(app)
   await registerPublicApiRoutes(app)
   await registerManagementRoutes(app)
 
