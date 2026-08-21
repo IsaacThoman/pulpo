@@ -3,6 +3,7 @@ import {
   attachmentKind,
   attachmentTypeLabel,
   collectUploadFiles,
+  formatBytes,
   isSupportedImageFile,
   nonImageAttachmentRestriction,
 } from './attachments'
@@ -46,6 +47,18 @@ describe('collectUploadFiles', () => {
     expect(file?.name).toBe('photo.JPEG')
     expect(file?.type).toBe('image/jpeg')
     expect(file && isSupportedImageFile(file)).toBe(true)
+  })
+})
+
+describe('formatBytes', () => {
+  it.each([
+    [0, '0 B'],
+    [1_536, '1.5 KiB'],
+    [5 * 1024 ** 2, '5.0 MiB'],
+    [100 * 1024 ** 3, '100 GiB'],
+    [2 * 1024 ** 4, '2.0 TiB'],
+  ])('formats %d bytes using binary units', (bytes, expected) => {
+    expect(formatBytes(bytes)).toBe(expected)
   })
 })
 
