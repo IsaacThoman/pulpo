@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, apiRequest, apiUrl, configureApi, isNetworkError, nativeAuthorizationHeaders } from './client'
+import { ApiError, apiRequest, apiUrl, configureApi, isNetworkError, mobileApi, nativeAuthorizationHeaders } from './client'
 
 describe('attachment URL resolution', () => {
   afterEach(() => configureApi({ instanceUrl: 'https://pulpo.baby', token: null }))
@@ -73,5 +73,61 @@ describe('multipart API requests', () => {
       code: 'dictation_no_speech',
       message: 'No speech was detected in the recording',
     })
+  })
+})
+
+describe('mobile dictation capability discovery', () => {
+  const baseConfig = {
+    mobileApiVersion: 1 as const,
+    instance: { name: 'Pulpo', version: '0.1.0', publicUrl: 'https://chat.example.test' },
+    setupRequired: false,
+    auth: { signupEnabled: true, pendingDetails: false, adminEmail: '', pendingMessage: '' },
+    limits: { maxAttachmentBytes: 25 * 1024 * 1024 },
+    capabilities: {
+      bearerSessions: true as const,
+      realtime: true as const,
+      chatDuplication: true as const,
+      publicSharing: true as const,
+      attachments: true as const,
+      folders: true as const,
+      twoFactorAuth: true,
+      passkeys: true,
+      dictation: false,
+    },
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    configureApi({ instanceUrl: 'https://pulpo.baby', token: null })
+  })
+
+  it('falls back to the existing web setting on servers without the mobile capability', async () => {
+    const legacyConfig = {
+      ...baseConfig,
+      capabilities: Object.fromEntries(
+        Object.entries(baseConfig.capabilities).filter(([key]) => key !== 'dictation'),
+      ),
+    }
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(legacyConfig), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ dictationEnabled: true }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    configureApi({ instanceUrl: 'https://chat.example.test', token: 'session-token' })
+
+    await expect(mobileApi.config()).resolves.toMatchObject({ capabilities: { dictation: true } })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1]![0]).toBe('https://chat.example.test/api/auth/settings')
+    expect(new Headers((fetchMock.mock.calls[1]![1] as RequestInit).headers).get('authorization')).toBeNull()
+  })
+
+  it('uses the native capability without an extra settings request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ...baseConfig,
+      capabilities: { ...baseConfig.capabilities, dictation: true },
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(mobileApi.config()).resolves.toMatchObject({ capabilities: { dictation: true } })
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })

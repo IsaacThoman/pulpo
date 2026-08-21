@@ -93,8 +93,22 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return body as T
 }
 
+async function discoverMobileConfig(): Promise<MobileConfig> {
+  const config = await apiRequest<MobileConfig>('/api/mobile/config', { auth: false })
+  if (config.capabilities.dictation) return config
+  try {
+    const settings = await apiRequest<{ dictationEnabled?: boolean }>('/api/auth/settings', { auth: false })
+    if (!settings.dictationEnabled) return config
+    return { ...config, capabilities: { ...config.capabilities, dictation: true } }
+  } catch {
+    // Older or customized instances may not expose web auth settings. Their
+    // mobile config remains usable, with dictation unavailable by default.
+    return config
+  }
+}
+
 export const mobileApi = {
-  config: () => apiRequest<MobileConfig>('/api/mobile/config', { auth: false }),
+  config: discoverMobileConfig,
   login: (email: string, password: string, deviceLabel: string, twoFactorCode?: string) =>
     apiRequest<NativeAuthResponse>('/api/mobile/auth/login', {
       method: 'POST', auth: false, body: { email, password, deviceLabel, twoFactorCode },
