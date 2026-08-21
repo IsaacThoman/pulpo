@@ -1,14 +1,17 @@
-import { and, asc, desc, eq, gt, gte, inArray, lt, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lt, or, sql, type SQL } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { requireAdmin } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, toolExecutions, users, workspaceLeases } from '../database/schema.js'
+import { agentRuns, apiKeys, applicationSettings, chats, generationAttempts, models, ocrAttempts, requestLogs, responses, toolExecutions, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { reconcileWorkspaceLeases } from '../agent/controller.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { getConfig } from '../config.js'
+import { profileAvatarUrl } from '../profile/service.js'
+import { decodeUsageCursor, encodeUsageCursor, resolveUsageModelAlias } from '../usage/public.js'
+import { eligibleUsageFilters, loadUsageActivity, loadUsageModelAliases, usageQuerySchema, usageRecordsQuerySchema, usageSince } from '../usage/routes.js'
 
 const querySchema = z.object({
   range: z.enum(['24h', '7d', '30d', '90d', 'all']).default('24h'),
@@ -40,6 +43,128 @@ function filters(input: z.infer<typeof querySchema>, includeCursor = false): SQL
 }
 
 export async function registerAdminUsageRoutes(app: FastifyInstance): Promise<void> {
+  app.get('/api/admin/usage/leaderboard', async (request) => {
+    requireAdmin(request)
+    const query = usageQuerySchema.parse(request.query)
+    const start = usageSince(query.range)
+    const rows = await db.select({
+      userId: users.id,
+      name: users.name,
+      username: users.username,
+      avatarObjectKey: users.avatarObjectKey,
+      avatarVersion: users.avatarVersion,
+      profileColor: users.profileColor,
+      balanceMicros: users.balanceMicros,
+      calls: sql<number>`count(${usageEvents.id})::int`,
+      tokens: sql<number>`coalesce(sum(${usageEvents.inputTokens} + ${usageEvents.outputTokens}), 0)::bigint`,
+      costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+    }).from(users).innerJoin(
+      usageEvents,
+      start
+        ? and(eq(usageEvents.userId, users.id), gte(usageEvents.createdAt, start))
+        : eq(usageEvents.userId, users.id),
+    )
+      .where(eq(users.blocked, false))
+      .groupBy(users.id)
+      .orderBy(desc(sql`coalesce(sum(${usageEvents.costMicros}), 0)`))
+
+    return { data: rows.map((row) => ({
+      userId: row.userId,
+      displayName: row.name,
+      username: row.username,
+      avatarUrl: profileAvatarUrl({
+        id: row.userId,
+        avatarObjectKey: row.avatarObjectKey,
+        avatarVersion: row.avatarVersion,
+      }),
+      profileColor: row.profileColor,
+      balanceMicros: Number(row.balanceMicros),
+      calls: Number(row.calls),
+      tokens: Number(row.tokens),
+      costMicros: Number(row.costMicros),
+    })) }
+  })
+
+  app.get('/api/admin/usage/leaderboard/activity', async (request) => {
+    requireAdmin(request)
+    const query = usageQuerySchema.parse(request.query)
+    return loadUsageActivity({
+      userIds: null,
+      since: usageSince(query.range),
+      timeZone: query.timeZone,
+      hidePrivateModels: false,
+    })
+  })
+
+  app.get('/api/admin/usage/leaderboard/records', async (request) => {
+    requireAdmin(request)
+    const query = usageRecordsQuerySchema.parse(request.query)
+    const start = usageSince(query.range)
+    const cursor = query.cursor ? decodeUsageCursor(query.cursor) : null
+    const cursorFilter = cursor ? or(
+      lt(usageEvents.createdAt, cursor.createdAt),
+      and(eq(usageEvents.createdAt, cursor.createdAt), lt(usageEvents.id, cursor.id)),
+    ) : undefined
+    const attributedModelId = sql<string>`coalesce(${requestLogs.requestedModelId}, ${usageEvents.modelId})`
+    const [rows, aliases] = await Promise.all([db.select({
+      usage: usageEvents,
+      userId: users.id,
+      userName: users.name,
+      userUsername: users.username,
+      userAvatarObjectKey: users.avatarObjectKey,
+      userAvatarVersion: users.avatarVersion,
+      userProfileColor: users.profileColor,
+      modelId: models.id,
+      modelName: models.name,
+      modelLogo: models.logo,
+      modelVisible: models.visible,
+    }).from(usageEvents)
+      .innerJoin(users, eq(usageEvents.userId, users.id))
+      .leftJoin(requestLogs, eq(requestLogs.responseId, usageEvents.responseId))
+      .innerJoin(models, eq(models.id, attributedModelId))
+      .where(and(...eligibleUsageFilters(start, null), cursorFilter))
+      .orderBy(desc(usageEvents.createdAt), desc(usageEvents.id))
+      .limit(query.limit + 1), loadUsageModelAliases()])
+    const page = rows.slice(0, query.limit)
+    const last = page.at(-1)?.usage
+
+    return {
+      data: page.map((row) => {
+        const model = resolveUsageModelAlias({
+          modelId: row.modelId,
+          modelName: row.modelName,
+          modelLogo: row.modelLogo,
+          modelVisible: row.modelVisible,
+          calls: 1,
+          costMicros: Number(row.usage.costMicros),
+        }, aliases)
+        return {
+          id: row.usage.id,
+          createdAt: row.usage.createdAt.toISOString(),
+          participant: {
+            id: row.userId,
+            displayName: row.userName,
+            username: row.userUsername,
+            avatarUrl: profileAvatarUrl({
+              id: row.userId,
+              avatarObjectKey: row.userAvatarObjectKey,
+              avatarVersion: row.userAvatarVersion,
+            }),
+            profileColor: row.userProfileColor,
+          },
+          model: { id: model.modelId, name: model.modelName, logo: model.modelLogo },
+          inputTokens: row.usage.inputTokens,
+          cacheWriteTokens: row.usage.cacheWriteTokens,
+          outputTokens: row.usage.outputTokens,
+          costMicros: Number(row.usage.costMicros),
+        }
+      }),
+      nextCursor: rows.length > query.limit && last
+        ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id })
+        : null,
+    }
+  })
+
   app.delete('/api/admin/usage/workspaces/orphans/:name', async (request) => {
     requireAdmin(request)
     const { name } = z.object({ name: z.string().min(1).max(253).regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/) }).parse(request.params)

@@ -141,10 +141,12 @@ function LeaderboardTip({
   )
 }
 
-export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'pool' }) {
+export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'pool' | 'instance' }) {
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
-  const queryKey = scope === 'pool' ? 'pool-usage' : 'friends-usage'
+  const instanceMode = scope === 'instance'
+  const queryKey = scope === 'pool' ? 'pool-usage' : instanceMode ? 'instance-usage' : 'friends-usage'
+  const leaderboardEndpoint = instanceMode ? '/api/admin/usage/leaderboard' : '/api/usage/leaderboard'
 
   const authUser = useAuth((state) => state.user)
   const circleUsageQuery = useQuery({
@@ -152,10 +154,10 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
     enabled: Boolean(authUser?.id),
     queryFn: async ({ signal }) => {
       const params = usageQueryParams(range)
-      params.set('scope', scope)
+      if (!instanceMode) params.set('scope', scope)
       const [leaderboard, activity] = await Promise.all([
-        apiRequest<LeaderboardResponse>(`/api/usage/leaderboard?${params}`, { signal }),
-        apiRequest<LeaderboardActivity>(`/api/usage/leaderboard/activity?${params}`, { signal }),
+        apiRequest<LeaderboardResponse>(`${leaderboardEndpoint}?${params}`, { signal }),
+        apiRequest<LeaderboardActivity>(`${leaderboardEndpoint}/activity?${params}`, { signal }),
       ])
       return { leaderboard, activity }
     },
@@ -168,10 +170,10 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) => {
       const params = usageQueryParams(range)
-      params.set('scope', scope)
+      if (!instanceMode) params.set('scope', scope)
       params.set('limit', '50')
       if (pageParam) params.set('cursor', pageParam)
-      return apiRequest<LeaderboardRecords>(`/api/usage/leaderboard/records?${params}`, { signal })
+      return apiRequest<LeaderboardRecords>(`${leaderboardEndpoint}/records?${params}`, { signal })
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   })
@@ -242,18 +244,24 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
     [rows, metric]
   )
   const hasOtherParticipants = rows.some((row) => row.user.id !== currentUserId)
+  const hasRankingParticipants = instanceMode ? rows.length > 0 : hasOtherParticipants
 
   // Balance is a point-in-time ranking, so the daily activity view uses spend.
   const dailyMetric: Metric = metric === 'tokens' || metric === 'calls' ? metric : 'cost'
 
   return (
     <div className="space-y-6">
-      <div>
+      {instanceMode ? <div>
+        <div className="text-lg font-medium">Instance leaderboard</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">
+          {circleUsageQuery.isLoading ? 'Loading active participants…' : `${users.length.toLocaleString()} active users with settled usage in this period`}
+        </div>
+      </div> : <div>
         <div className="text-lg font-medium">{me.name}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
           {me.email} · Joined {formatDate(me.joinedAt)}
         </div>
-      </div>
+      </div>}
 
       {/* usage overview (all users) */}
       <section>
@@ -276,14 +284,14 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-2 text-sm font-medium">
             <BarChart3 className="size-4" />
-            {scope === 'pool' ? 'Pool' : 'Friends'} ranking
+            {scope === 'pool' ? 'Pool' : instanceMode ? 'Instance' : 'Friends'} ranking
           </span>
           <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
         </div>
-        {!hasOtherParticipants ? (
+        {!hasRankingParticipants ? (
           <div className="flex h-[250px] flex-col items-center justify-center gap-3 text-xs text-muted-foreground">
-            <span>{scope === 'pool' ? 'Add Pool members to compare usage' : 'Add friends to compare usage'}</span>
-            <Button asChild size="sm" variant="outline"><Link to={scope === 'pool' ? '/friends/pool' : '/friends'}>{scope === 'pool' ? 'Manage Pool' : 'Find friends'}</Link></Button>
+            <span>{instanceMode ? 'No settled usage in this period' : scope === 'pool' ? 'Add Pool members to compare usage' : 'Add friends to compare usage'}</span>
+            {!instanceMode && <Button asChild size="sm" variant="outline"><Link to={scope === 'pool' ? '/friends/pool' : '/friends'}>{scope === 'pool' ? 'Manage Pool' : 'Find friends'}</Link></Button>}
           </div>
         ) : (
           <div className="h-[250px]">

@@ -28,12 +28,12 @@ function validTimeZone(value: string): boolean {
   }
 }
 
-const usageQuerySchema = z.object({
+export const usageQuerySchema = z.object({
   range: usageRangeSchema.default('30d'),
   timeZone: z.string().trim().min(1).max(100).refine(validTimeZone, 'Invalid time zone').default('UTC'),
 })
 
-const usageRecordsQuerySchema = usageQuerySchema.extend({
+export const usageRecordsQuerySchema = usageQuerySchema.extend({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 })
@@ -50,7 +50,7 @@ async function usageCircleUserIds(userId: string, scope: z.infer<typeof usageCir
   })
 }
 
-function usageSince(range: UsageRange): Date | null {
+export function usageSince(range: UsageRange): Date | null {
   const durations: Record<Exclude<UsageRange, 'all'>, number> = {
     '24h': 86_400_000,
     '7d': 7 * 86_400_000,
@@ -65,11 +65,15 @@ function sinceFromQuery(query: unknown): Date {
   return new Date(Date.now() - days * 86_400_000)
 }
 
-function eligibleUsageFilters(since: Date | null, userIds: string[]): SQL[] {
-  return [eq(users.blocked, false), inArray(users.id, userIds), ...(since ? [gte(usageEvents.createdAt, since)] : [])]
+export function eligibleUsageFilters(since: Date | null, userIds: string[] | null): SQL[] {
+  return [
+    eq(users.blocked, false),
+    ...(userIds ? [inArray(users.id, userIds)] : []),
+    ...(since ? [gte(usageEvents.createdAt, since)] : []),
+  ]
 }
 
-async function loadUsageModelAliases(): Promise<Map<string, UsageModelIdentity>> {
+export async function loadUsageModelAliases(): Promise<Map<string, UsageModelIdentity>> {
   const [catalog, redirects] = await Promise.all([
     db.select({
       modelId: models.id,
@@ -99,8 +103,8 @@ async function loadUsageModelAliases(): Promise<Map<string, UsageModelIdentity>>
   return aliases
 }
 
-async function loadUsageActivity(input: {
-  userIds: string[]
+export async function loadUsageActivity(input: {
+  userIds: string[] | null
   since: Date | null
   timeZone: string
   hidePrivateModels: boolean
