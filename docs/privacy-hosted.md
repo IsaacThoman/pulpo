@@ -1,0 +1,112 @@
+# Pulpo hosted service privacy policy
+
+**Effective August 20, 2026**
+
+This policy describes how Isaac Thoman (**“Pulpo,” “we,” “us,”** or **“our”**) handles information when you use the Pulpo service hosted at [pulpo.baby](https://pulpo.baby) (the **“hosted service”**), whether through the website, the Pulpo mobile app, or another compatible client.
+
+For the mobile app and Pulpo software generally, including use with a self-hosted server, see the [Pulpo software privacy policy](./privacy).
+
+## Information we handle
+
+### Account and authentication information
+
+We store information you provide when creating or managing an account, such as your name, username, email address, profile settings, and account identifier.
+
+Passwords are stored as one-way hashes rather than in readable form. If you enable two-factor authentication, authenticator secrets are encrypted and recovery codes are stored as one-way hashes. If you add a passkey, we store the passkey’s name, public key, credential identifier, usage counter, device and backup metadata, supported transports, and created and last-used dates. Your private passkey remains with your device or passkey provider and is not sent to Pulpo.
+
+### Content and files
+
+We store content you choose to create, submit, or upload, including conversations, prompts, generated responses, files, photos, folder organization, model preferences, tool activity, and public-sharing settings. Depending on the features you use, temporary agent workspaces may also process files and instructions needed to complete your request.
+
+### Connection, security, and usage records
+
+We handle technical information needed to operate and secure the hosted service, such as IP address, user agent, device label, session and authentication dates, model selection, token usage, request timing, error information, and security or administrative audit events.
+
+We do not use advertising SDKs, cross-service tracking, or product analytics, and we do not sell personal information. Operational records are used to provide, secure, bill for, maintain, and troubleshoot the hosted service.
+
+### Billing information
+
+If you purchase a subscription or credits, we and our payment processor handle information about the checkout, customer, subscription, order, amount, status, and refund. Payment-card details are collected and processed by the payment processor rather than stored in full by Pulpo.
+
+### Communications
+
+We handle your email address and the contents of messages you send us when providing account emails, password-reset messages, service notices, or support.
+
+## How we use information
+
+We use information to:
+
+- create and administer accounts;
+- authenticate users and protect accounts;
+- provide conversations, file handling, sharing, tools, and other requested features;
+- route requests to the AI models and services you choose;
+- calculate usage, maintain balances, and process purchases;
+- operate, secure, diagnose, and improve the reliability of the hosted service;
+- respond to support and privacy requests; and
+- comply with legal obligations and enforce applicable terms.
+
+## When information is shared
+
+We disclose information only as needed for the hosted service or as required by law. Recipients may include:
+
+- **AI model and tool providers.** Prompts, conversation context, attachments, tool inputs, and related instructions may be sent to providers selected for your request. Those providers process the information under their own terms and privacy policies.
+- **Infrastructure providers.** Hosting, database, object-storage, email-delivery, security, and similar vendors may process information while providing infrastructure to us.
+- **Payment processing.** Polar processes hosted-service checkouts, subscriptions, payments, and refunds. Its handling of payment information is governed by its own privacy policy.
+- **People you choose to share with.** If you create a public sharing link or use a collaborative feature, the information you select may be accessible to the recipients or, for a public link, anyone who obtains that link.
+- **Legal and safety disclosures.** We may preserve or disclose information when reasonably necessary to comply with law, legal process, or valid governmental requests; protect users, Pulpo, or the public; or investigate fraud, abuse, or security incidents.
+
+We do not sell personal information or user content. We do not share personal information with third parties for their independent advertising.
+
+## AI and tool provider privacy
+
+When you use an AI model, dictation, web search, or page extraction, Pulpo sends the information needed to complete that request to the applicable provider. This may include prompts, relevant conversation context, attachments, audio recordings, search queries, URLs, and tool inputs.
+
+**User data is never used by Pulpo or its configured AI providers to train AI models.**
+
+The following table describes the providers currently configured for `pulpo.baby` and their treatment of request content as of this policy’s effective date:
+
+| Provider | Used for | Request-content retention | Provider information |
+| --- | --- | --- | --- |
+| Fireworks AI | AI model inference | **Zero data retention.** Pulpo sends requests with storage disabled; prompt and generation content is not written to persistent storage. | [Fireworks data handling](https://docs.fireworks.ai/guides/security_compliance/data_handling) |
+| OpenAI | AI model inference | **Up to 30 days.** Pulpo sends requests with storage disabled, but OpenAI may retain API content in abuse-monitoring logs for up to 30 days unless legally required to retain it longer. API content is not used to train OpenAI models unless the customer opts in. | [OpenAI API data controls](https://platform.openai.com/docs/models/default-usage-policies-by-endpoint) |
+| xAI (Grok) | AI model inference | **Zero data retention.** Pulpo uses xAI with team-level ZDR enabled, so request inputs and outputs are not persisted. | [xAI API security and ZDR](https://docs.x.ai/developers/faq/security) |
+| Groq | Audio transcription | **Zero data retention.** Pulpo uses Groq with ZDR enabled for dictation, so audio and transcript content are not retained for reliability or abuse monitoring. | [Groq data controls](https://console.groq.com/docs/your-data) |
+| OpenRouter and Google Vertex | Google model inference | **Zero data retention.** Pulpo routes Google requests through OpenRouter with ZDR enabled and uses Google Vertex endpoints that OpenRouter identifies as zero-retention. OpenRouter does not retain prompts or completions unless prompt logging is explicitly enabled. | [OpenRouter ZDR](https://openrouter.ai/docs/guides/features/zdr) and [provider policies](https://openrouter.ai/providers) |
+
+“Zero data retention” applies to request content such as prompts and responses. A provider may still retain limited account, billing, security, or aggregate usage metadata that does not contain that content. Provider practices can change; the linked provider documentation controls if it differs from this summary.
+
+### Search and page extraction
+
+Pulpo may use Kagi or Firecrawl to search the web or retrieve a page when you invoke a tool that needs those capabilities. The provider receives the search query or URL and the parameters necessary to perform the request. You can review the [Kagi privacy policy](https://kagi.com/privacy) and [Firecrawl privacy policy](https://www.firecrawl.dev/privacy-policy) for details about their data practices.
+
+## Retention and deletion
+
+We retain account information and user content while needed to provide the hosted service. You can delete individual conversations and configure available expiration or trash-retention controls. Deleted information is removed from active systems according to those controls, although limited copies may remain temporarily in backups, security records, transaction records, or legal holds.
+
+Some records may be retained longer when needed for security, fraud prevention, billing and accounting, dispute resolution, enforcement, or legal compliance. Data sent to an AI model, tool, payment, or other service provider may be retained by that provider under its agreement and privacy policy.
+
+To request deletion of your hosted account, a copy of your information, or help exercising an applicable privacy right, contact [support@pulpo.baby](mailto:support@pulpo.baby). We may need to verify your identity before completing a request.
+
+## Security
+
+We use administrative and technical safeguards designed to protect information, including HTTPS for the production service, one-way password hashing, encryption of configured authentication secrets, revocable sessions, and access controls. No security measure can guarantee absolute protection.
+
+## International processing
+
+Pulpo and its service providers may process information in countries other than the one where you live. Those countries may have different data-protection laws.
+
+## Children
+
+The hosted service is not directed to children under 13, and we do not knowingly collect personal information from children under 13. If you believe a child has provided personal information to the hosted service, contact us so we can review and delete it as appropriate.
+
+## Changes to this policy
+
+We may update this policy as the hosted service changes. Material revisions will be posted on this page with a new effective date. When appropriate, we may also provide notice through the hosted service or by email.
+
+## Contact
+
+For privacy questions or requests concerning `pulpo.baby`, contact:
+
+**Isaac Thoman**
+
+[support@pulpo.baby](mailto:support@pulpo.baby)
