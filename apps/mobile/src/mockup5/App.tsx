@@ -310,6 +310,7 @@ const COLORS = {
 };
 
 const DRAWER_ACTION_HEIGHT = 46;
+const COMPACT_DRAWER_HEIGHT = 700;
 
 let hapticsEnabled = true;
 
@@ -1424,10 +1425,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const queryClient = useQueryClient();
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionUserId = useSessionStore((state) => state.user?.id);
-  const { width } = useWindowDimensions();
+  const { height, width } = useWindowDimensions();
   const isDark = useColorScheme() === 'dark';
   const { reduceMotion } = useAccessibilityPreferences();
   const persistentSidebar = usesPersistentSidebar(width);
+  const compactDrawerCorners = height <= COMPACT_DRAWER_HEIGHT;
   const drawerWidth = Math.min(Math.max(width - DRAWER_TRAILING_PEEK, 0), DRAWER_MAX_WIDTH);
   const openOffset = drawerWidth;
 
@@ -1628,13 +1630,18 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       return { transform: [{ translateX: 0 }, { scale: 1 }] };
     }
     const progress = openOffset > 0 ? slideX.value / openOffset : 0;
+    const drawerCornerRadius = compactDrawerCorners
+      ? interpolate(progress, [0, 1], [0, 38])
+      : 38;
     return {
+      borderTopLeftRadius: drawerCornerRadius,
+      borderBottomLeftRadius: drawerCornerRadius,
       transform: [
         { translateX: slideX.value },
         { scale: reduceMotion ? 1 : interpolate(progress, [0, 1], [1, 0.965]) },
       ],
     };
-  }, [openOffset, persistentSidebar, reduceMotion]);
+  }, [compactDrawerCorners, openOffset, persistentSidebar, reduceMotion]);
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, persistentSidebar, reduceMotion]);
@@ -4869,8 +4876,6 @@ const styles = StyleSheet.create({
   // Main chat view
   mainView: {
     ...StyleSheet.absoluteFill as object,
-    borderTopLeftRadius: 38,
-    borderBottomLeftRadius: 38,
     overflow: 'hidden',
     shadowColor: COLORS.text,
     shadowOpacity: 0.5,
