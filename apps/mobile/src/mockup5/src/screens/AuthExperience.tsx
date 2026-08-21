@@ -1,6 +1,6 @@
 import type { ComponentProps, PropsWithChildren, ReactNode } from 'react';
 import { useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SymbolView } from 'expo-symbols';
 import { useAppTheme } from '../theme';
@@ -30,28 +30,36 @@ type AuthFieldProps = ComponentProps<typeof TextInput> & {
   label: string;
 };
 
+const COMPACT_AUTH_HEIGHT = 700;
+
+function useCompactAuthLayout() {
+  return useWindowDimensions().height <= COMPACT_AUTH_HEIGHT;
+}
+
 function AuthShell({ title, subtitle, children, footer, colors }: PropsWithChildren<{ title: string; subtitle: string; footer?: ReactNode; colors: AuthColors }>) {
   const insets = useSafeAreaInsets();
+  const compact = useCompactAuthLayout();
   return <View style={[styles.root, { backgroundColor: colors.background }]}>
-    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, { paddingTop: insets.top + 42, paddingBottom: insets.bottom + 24 }]}>
-      <View style={styles.brand}>
-        <Image source={require('../../assets/pulpo-smiley.png')} style={styles.logo} />
-        <Text style={[styles.brandName, { color: colors.text }]}>Pulpo</Text>
+    <ScrollView alwaysBounceVertical={false} automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, compact && styles.compactContent, { paddingTop: insets.top + (compact ? 14 : 42), paddingBottom: insets.bottom + (compact ? 8 : 24) }]}>
+      <View style={[styles.brand, compact && styles.compactBrand]}>
+        <Image source={require('../../assets/pulpo-smiley.png')} style={[styles.logo, compact && styles.compactLogo]} />
+        <Text style={[styles.brandName, compact && styles.compactBrandName, { color: colors.text }]}>Pulpo</Text>
       </View>
-      <View style={styles.heading}>
-        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{title}</Text>
-        <Text style={[styles.subtitle, { color: colors.textMuted }]}>{subtitle}</Text>
+      <View style={[styles.heading, compact && styles.compactHeading]}>
+        <Text accessibilityRole="header" style={[styles.title, compact && styles.compactTitle, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.subtitle, compact && styles.compactSubtitle, { color: colors.textMuted }]}>{subtitle}</Text>
       </View>
-      <View style={styles.form}>{children}</View>
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      <View style={[styles.form, compact && styles.compactForm]}>{children}</View>
+      {footer ? <View style={[styles.footer, compact && styles.compactFooter]}>{footer}</View> : null}
     </ScrollView>
   </View>;
 }
 
 function AuthField({ colors, icon, invalid = false, label, ...props }: AuthFieldProps) {
-  return <View style={[styles.field, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
+  const compact = useCompactAuthLayout();
+  return <View style={[styles.field, compact && styles.compactField, { backgroundColor: colors.surface, borderColor: invalid ? colors.destructive : colors.border }]}>
     <SymbolView name={icon} tintColor={colors.textFaint} size={18} />
-    <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, { color: colors.text }]} {...props} />
+    <TextInput accessibilityLabel={label} placeholder={label} placeholderTextColor={colors.textFaint} autoCapitalize="none" style={[styles.input, compact && styles.compactInput, { color: colors.text }]} {...props} />
   </View>;
 }
 
@@ -63,10 +71,11 @@ function PrimaryAuthButton({ label, colors, loading = false, disabled = false, i
   icon?: Parameters<typeof SymbolView>[0]['name'];
   onPress: () => void;
 }) {
+  const compact = useCompactAuthLayout();
   const inactive = disabled || loading;
   const backgroundColor = inactive ? colors.border : colors.accent;
   const foregroundColor = inactive ? colors.textMuted : colors.accentText;
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.primaryButton, { backgroundColor }]}>
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={inactive} onPress={onPress} style={[styles.primaryButton, compact && styles.compactPrimaryButton, { backgroundColor }]}>
     {loading ? <ActivityIndicator color={foregroundColor} /> : <><Text style={[styles.primaryButtonText, { color: foregroundColor }]}>{label}</Text>{icon ? <SymbolView name={icon} tintColor={foregroundColor} size={16} weight="semibold" /> : null}</>}
   </Pressable>;
 }
@@ -296,19 +305,31 @@ export function AuthExperience() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   content: { flexGrow: 1, width: '100%', maxWidth: FORM_CONTENT_MAX, alignSelf: 'center', paddingHorizontal: 22 },
+  compactContent: { paddingHorizontal: 20 },
   brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  compactBrand: { gap: 9 },
   logo: { width: 42, height: 42, borderRadius: 13 },
+  compactLogo: { width: 36, height: 36, borderRadius: 11 },
   brandName: { fontSize: 24, fontWeight: '700', letterSpacing: -0.7 },
+  compactBrandName: { fontSize: 22 },
   heading: { marginTop: 72 },
+  compactHeading: { marginTop: 28 },
   title: { fontSize: 34, lineHeight: 40, fontWeight: '700', letterSpacing: -1.1 },
+  compactTitle: { fontSize: 30, lineHeight: 35, letterSpacing: -0.9 },
   subtitle: { marginTop: 9, fontSize: 17, lineHeight: 24 },
+  compactSubtitle: { marginTop: 6, fontSize: 15.5, lineHeight: 21 },
   form: { marginTop: 32, gap: 14 },
+  compactForm: { marginTop: 20, gap: 10 },
   footer: { marginTop: 'auto', paddingTop: 32 },
+  compactFooter: { paddingTop: 8 },
   field: { minHeight: 56, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  compactField: { minHeight: 50, borderRadius: 15 },
   input: { flex: 1, fontSize: 17, paddingVertical: 14 },
+  compactInput: { fontSize: 16, paddingVertical: 11 },
   hint: { fontSize: 12.5, marginTop: -6, marginLeft: 8 },
   error: { fontSize: 13.5, lineHeight: 19 },
   primaryButton: { minHeight: 52, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  compactPrimaryButton: { minHeight: 48, borderRadius: 15 },
   primaryButtonText: { fontSize: 16, fontWeight: '600' },
   secondaryButton: { minHeight: 50, borderRadius: 16, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
   secondaryButtonText: { fontSize: 16, fontWeight: '600' },
