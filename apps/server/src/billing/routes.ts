@@ -36,6 +36,14 @@ const subscriptionCheckoutSchema = z.object({
   plan: z.enum(['eight', 'fat']),
 })
 
+export function resolvedCheckoutStatus(
+  checkoutStatus: string | null | undefined,
+  orderStatus: string | null | undefined,
+): string | null {
+  if (orderStatus === 'paid') return 'succeeded'
+  return checkoutStatus ?? null
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -131,10 +139,19 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/billing/checkouts/:id', async (request) => {
     const user = requireUser(request)
     const { id } = z.object({ id: z.string().min(1).max(200) }).parse(request.params)
-    const [checkout] = await db.select({ status: billingCheckouts.status, userId: billingCheckouts.userId })
-      .from(billingCheckouts).where(eq(billingCheckouts.stripeCheckoutSessionId, id)).limit(1)
-    if (!checkout || checkout.userId !== user.id) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
-    return { status: checkout.status }
+    const [[checkout], [order]] = await Promise.all([
+      db.select({ status: billingCheckouts.status, userId: billingCheckouts.userId })
+        .from(billingCheckouts).where(eq(billingCheckouts.stripeCheckoutSessionId, id)).limit(1),
+      db.select({ status: billingOrders.status, userId: billingOrders.userId })
+        .from(billingOrders).where(eq(billingOrders.stripeCheckoutSessionId, id)).limit(1),
+    ])
+    if (checkout && order && checkout.userId !== order.userId) {
+      throw new AppError(409, 'checkout_identity_mismatch', 'Checkout ownership does not match its payment')
+    }
+    const ownerId = checkout?.userId ?? order?.userId
+    const status = resolvedCheckoutStatus(checkout?.status, order?.status)
+    if (!ownerId || ownerId !== user.id || !status) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
+    return { status }
   })
 
   app.post('/api/billing/webhooks/stripe', async (request, reply) => {
