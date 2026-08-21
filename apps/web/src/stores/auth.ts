@@ -34,6 +34,7 @@ interface PublicAuthSettings {
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
+  dictationEnabled: boolean
 }
 type AuthResult = { ok: true } | { ok: false; error: string }
 export type LoginResult = AuthResult | { ok: false; twoFactorRequired: true }
@@ -50,6 +51,7 @@ interface AuthState {
   maxAttachmentBytes: number
   billingEnabled: boolean
   inviteCodesEnabled: boolean
+  dictationEnabled: boolean
   bootstrap: () => Promise<void>
   login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult>
   passkeyLogin: (useBrowserAutofill?: boolean) => Promise<AuthResult>
@@ -102,6 +104,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
   maxAttachmentBytes: DEFAULT_MAX_ATTACHMENT_BYTES,
   billingEnabled: false,
   inviteCodesEnabled: false,
+  dictationEnabled: false,
 
   bootstrap: async () => {
     if (!get().checkingSession) return
@@ -118,6 +121,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       maxAttachmentBytes: get().maxAttachmentBytes,
       billingEnabled: get().billingEnabled,
       inviteCodesEnabled: get().inviteCodesEnabled,
+      dictationEnabled: get().dictationEnabled,
     }
     try {
       const response = await apiRequest<AuthResponse>('/api/me')

@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, dictationSettingsSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -10,7 +10,7 @@ import { maintenanceQueue } from '../jobs.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
-import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBillingSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicWebToolsSettings, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
+import { authSettingsSchema, interfaceSettingsSchema, loggingSettingsSchema, ocrSettingsSchema, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings, storedDictationSettingsSchema, storedWebToolsSettingsSchema } from '../settings/application-settings.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { workspaceControllerRequest } from '../agent/controller-http.js'
@@ -48,7 +48,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.get('/api/admin/settings', async (request) => {
     requireAdmin(request)
     const rows = await db.select().from(applicationSettings)
-    return { values: Object.fromEntries(rows.filter((row) => row.key !== 'ocr' && row.key !== 'webTools').map((row) => [row.key, row.value])) }
+    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation'].includes(row.key)).map((row) => [row.key, row.value])) }
   })
 
   app.patch('/api/admin/settings', async (request) => {
@@ -84,6 +84,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     // OCR settings use the dedicated endpoint and never pass through this generic settings API.
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
+    if (values.dictation !== undefined) throw new AppError(400, 'dedicated_dictation_endpoint', 'Use /api/admin/settings/dictation for dictation settings')
     const changes = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       let storageRevisions: Array<{ userId: string; revision: number }> = []
@@ -135,6 +136,43 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1)
     const value = parseWebToolsSettings(row?.value)
     return publicWebToolsSettings(value)
+  })
+
+  app.get('/api/admin/settings/dictation', async (request) => {
+    requireAdmin(request)
+    const [row] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'dictation')).limit(1)
+    return publicDictationSettings(parseDictationSettings(row?.value))
+  })
+
+  app.patch('/api/admin/settings/dictation', async (request) => {
+    const admin = requireAdmin(request)
+    const input = dictationSettingsSchema.extend({
+      groqApiKey: z.string().trim().min(1).optional(),
+    }).parse(request.body)
+    const value = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      const [existing] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'dictation')).limit(1)
+      const old = parseDictationSettings(existing?.value)
+      const next = storedDictationSettingsSchema.parse({
+        enabled: input.enabled,
+        billUsers: input.billUsers,
+        pricePerMinuteMicros: input.pricePerMinuteMicros,
+        encryptedGroqApiKey: input.groqApiKey
+          ? encryptSecret(input.groqApiKey, getConfig().ENCRYPTION_KEY)
+          : old.encryptedGroqApiKey,
+      })
+      if (next.enabled && !next.encryptedGroqApiKey) {
+        throw new AppError(400, 'dictation_api_key_required', 'Configure a Groq API key before enabling dictation')
+      }
+      await tx.insert(applicationSettings).values({ key: 'dictation', value: next, updatedBy: admin.id })
+        .onConflictDoUpdate({ target: applicationSettings.key, set: { value: next, updatedBy: admin.id, updatedAt: new Date() } })
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'settings.dictation.update', targetType: 'application',
+        metadata: { enabled: next.enabled, billUsers: next.billUsers, pricePerMinuteMicros: next.pricePerMinuteMicros, hasApiKey: Boolean(next.encryptedGroqApiKey) },
+      })
+      return next
+    })
+    return publicDictationSettings(value)
   })
 
   app.post('/api/admin/settings/web-tools/:provider/api-key/reveal', {
