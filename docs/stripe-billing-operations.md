@@ -4,11 +4,12 @@ Pulpo uses Stripe Checkout, Billing, Tax, and the Billing Portal. Stripe is a pa
 
 ## Stripe products and prices
 
-Create these resources in both test mode and live mode. Set every product's Stripe product tax code to **Software as a service (SaaS) – personal use** (`txcd_10103000`) and set prices to **tax exclusive**.
+Create these resources in both test mode and live mode. Set both products' Stripe product tax code to **Software as a service (SaaS) – personal use** (`txcd_10103000`) and set prices to **tax exclusive**.
 
 1. **Pulpo Credits** — one product without a catalog price. Pulpo supplies the USD amount dynamically at Checkout. Save its `prod_…` ID as `STRIPE_CREDIT_PRODUCT_ID`.
-2. **Pulpo Eight** — one recurring USD price for **$8.00 monthly**. Save its `price_…` ID as `STRIPE_EIGHT_PRICE_ID`.
-3. **Le Pulpo Fat** — one recurring USD price for **$24.00 monthly**. Save its `price_…` ID as `STRIPE_FAT_PRICE_ID`.
+2. **Pulpo Subscription** — one product with two recurring, tax-exclusive USD prices:
+   - **$8.00 monthly** for Eight. Save its `price_…` ID as `STRIPE_EIGHT_PRICE_ID`.
+   - **$24.00 monthly** for Fat. Save its `price_…` ID as `STRIPE_FAT_PRICE_ID`.
 
 Do not reuse test resource IDs in live mode.
 
@@ -16,7 +17,7 @@ Do not reuse test resource IDs in live mode.
 
 1. Activate Stripe Tax and confirm the head-office address is the Georgia business address.
 2. Confirm the default price behavior is tax exclusive.
-3. Review the three product tax codes above.
+3. Review both product tax codes above.
 4. Add a tax registration in Stripe only after Pulpo is legally registered in that jurisdiction. Enabling automatic tax in the application does not register the business or file returns.
 5. Review Stripe's threshold monitoring regularly. Obtain professional advice before activating Georgia or another state's registration; this repository intentionally contains no legal conclusion about Pulpo's taxability.
 

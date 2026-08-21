@@ -60,16 +60,41 @@ async function checkoutUser(userId: string) {
   return user
 }
 
+export function isMissingStripeResource(error: unknown): boolean {
+  return error instanceof Stripe.errors.StripeInvalidRequestError && error.code === 'resource_missing'
+}
+
+export async function reusableStripeCustomerId(customerId: string, stripe: Stripe): Promise<string | null> {
+  try {
+    const customer = await stripe.customers.retrieve(customerId)
+    return 'deleted' in customer && customer.deleted ? null : customer.id
+  } catch (error) {
+    if (isMissingStripeResource(error)) return null
+    throw error
+  }
+}
+
 async function ensureCustomer(userId: string): Promise<string> {
   const [account] = await db.select({ stripeCustomerId: billingAccounts.stripeCustomerId })
     .from(billingAccounts).where(eq(billingAccounts.userId, userId)).limit(1)
-  if (account?.stripeCustomerId) return account.stripeCustomerId
+  const stripe = getStripeClient()
+  const storedCustomerId = account?.stripeCustomerId
+  if (storedCustomerId && await reusableStripeCustomerId(storedCustomerId, stripe)) return storedCustomerId
   const user = await checkoutUser(userId)
-  const customer = await getStripeClient().customers.create({
+  const matches = await stripe.customers.search({
+    query: `metadata['pulpo_user_id']:'${user.id}'`,
+    limit: 1,
+  })
+  const existingCustomer = matches.data[0]
+  const customer = existingCustomer ?? await stripe.customers.create({
     email: user.email,
     name: user.name,
     metadata: { pulpo_user_id: user.id },
-  }, { idempotencyKey: `pulpo-customer-${user.id}` })
+  }, {
+    idempotencyKey: storedCustomerId
+      ? `pulpo-customer-${stripeMode()}-${user.id}-replace-${storedCustomerId}`
+      : `pulpo-customer-${stripeMode()}-${user.id}`,
+  })
   await db.insert(billingAccounts).values({ userId, stripeCustomerId: customer.id })
     .onConflictDoUpdate({
       target: billingAccounts.userId,
