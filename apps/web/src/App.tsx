@@ -95,7 +95,8 @@ export default function App() {
                 <Route path="icons" element={<AdminIconsPage />} />
                 <Route path="models" element={<AdminModelsPage />} />
                 <Route path="usage" element={<AdminUsageLayout />}>
-                  <Route index element={<AdminUsagePage />} />
+                  <Route index element={<LeaderboardPage scope="instance" />} />
+                  <Route path="requests" element={<AdminUsagePage />} />
                   <Route path="workspaces" element={<AdminWorkspacesPage />} />
                 </Route>
                 <Route path="billing" element={<RequireBilling><AdminBillingPage /></RequireBilling>} />

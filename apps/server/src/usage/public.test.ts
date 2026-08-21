@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias } from './public.js'
+import { usageQuerySchema, usageRecordsQuerySchema } from './routes.js'
 
 describe('friends leaderboard usage', () => {
   it('round trips stable timestamp and id cursors', () => {
@@ -9,6 +10,14 @@ describe('friends leaderboard usage', () => {
 
   it('rejects malformed cursors', () => {
     expect(() => decodeUsageCursor('not-a-cursor')).toThrow('usage cursor is invalid')
+  })
+
+  it('validates leaderboard ranges, time zones, and record limits', () => {
+    expect(usageQuerySchema.parse({})).toEqual({ range: '30d', timeZone: 'UTC' })
+    expect(usageRecordsQuerySchema.parse({ range: '7d', timeZone: 'America/New_York', limit: '100' }).limit).toBe(100)
+    expect(() => usageQuerySchema.parse({ range: 'year' })).toThrow()
+    expect(() => usageQuerySchema.parse({ timeZone: 'Mars/Olympus_Mons' })).toThrow('Invalid time zone')
+    expect(() => usageRecordsQuerySchema.parse({ limit: '101' })).toThrow()
   })
 
   it('hides private model metadata', () => {
