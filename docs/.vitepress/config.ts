@@ -5,6 +5,13 @@ const sidebar = [
     text: 'Pulpo Docs',
     items: [{ text: 'Welcome', link: '/' }],
   },
+  {
+    text: 'Legal',
+    items: [
+      { text: 'Software privacy policy', link: '/privacy' },
+      { text: 'Hosted service privacy policy', link: '/privacy-hosted' },
+    ],
+  },
 ]
 
 export default defineConfig({
