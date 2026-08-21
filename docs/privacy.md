@@ -20,13 +20,9 @@ The mobile app does send information needed to provide its features to the Pulpo
 
 ## Information stored locally
 
-The mobile app stores its session credential in the iOS Keychain. It may also keep local copies of preferences, drafts, recent conversations, search data, response cursors, queued changes, attachment cache information, the selected server address, and internal account namespace identifiers in its application storage. Downloaded attachments may remain in the application cache.
+Pulpo stores information on your device or in your browser so the software can work. This may include your login session, server address, preferences, drafts, recent or cached content, and downloaded attachments. Login credentials are stored using the operating system’s secure credential storage when available.
 
-Signing out or switching Pulpo instances removes the session credential and the active account’s cached content, including tracked attachment cache files. Global app preferences, server-selection information, and internal namespace history may remain on the device. Some information may also remain in device backups controlled by you, Apple, or your device administrator until those backups expire or are deleted.
-
-The web client uses an HTTP-only cookie for its server session. It may also store a cached profile, interface and model preferences, folder display state, a per-tab identifier, recent query and conversation data, drafts, queued changes, and cached attachment files in browser storage. Signing out clears the cached profile and account-specific query, draft, queued-change, and attachment data. General interface and catalog preferences may remain until you clear the site’s browser data.
-
-The command-line client stores configured context names, server addresses, and an optional login email in its platform configuration directory. It stores login session tokens in the operating system’s credential store when available. If secure credential storage is unavailable, it warns the user and uses a local credentials file restricted to the current operating-system user. Logging out removes the saved credential for that context; removing a context also removes its saved configuration.
+Signing out removes the login credential and account-specific cached data. Some general preferences and server details may remain until you clear the app or browser data. Information may also remain in backups according to your device or backup provider’s settings.
 
 ## Information handled by a Pulpo server
 
