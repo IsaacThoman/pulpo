@@ -293,7 +293,7 @@ export function AdminBillingPage() {
       <Panel icon={<CreditCard className="size-3" />} title="Recent payments" extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString()}</span>}>
         {data?.recentOrders.length ? (
           <div className="max-h-96 overflow-auto">
-            <table className="w-full min-w-max text-xs">
+            <table className="data-table min-w-max">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="px-3 py-2 font-normal">User</th>
@@ -334,7 +334,7 @@ export function AdminBillingPage() {
       <Panel icon={<Repeat2 className="size-3" />} title="Recent subscriptions" extra={<span className="text-xs text-muted-foreground">{(data?.recentSubscriptions.length ?? 0).toLocaleString()}</span>}>
         {data?.recentSubscriptions.length ? (
           <div className="max-h-96 overflow-auto">
-            <table className="w-full min-w-max text-xs">
+            <table className="data-table min-w-max">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
                   <th className="px-3 py-2 font-normal">User</th>

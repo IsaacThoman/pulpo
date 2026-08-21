@@ -99,7 +99,7 @@ The following are not permitted purposes under these terms:
 If you want to use the software internally at a company, offer it to
 others commercially, or otherwise profit from the software, you must
 obtain a separate written commercial license from Isaac Thoman.  Contact
-the licensor through isaac@pulpo.baby or https://github.com/isaacthoman/pulpo.
+the licensor through support@pulpo.baby or https://github.com/isaacthoman/pulpo.
 
 No implied commercial license is granted.  Only Isaac Thoman can grant
 commercial rights in the software.  These terms do not allow you to

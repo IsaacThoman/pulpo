@@ -68,7 +68,7 @@ export function RecentUsagePanel({
       ) : (
         <>
           <div className="usage-records-head border-b">
-            <table className="w-full table-fixed text-xs">
+            <table className="data-table table-fixed">
               <colgroup>
                 <col className="w-[22%]" />
                 <col />
@@ -92,7 +92,7 @@ export function RecentUsagePanel({
             </table>
           </div>
           <div ref={scrollRef} className="max-h-96 overflow-y-scroll" onScroll={onScroll}>
-            <table className="w-full table-fixed text-xs">
+            <table className="data-table table-fixed">
               <colgroup>
                 <col className="w-[22%]" />
                 <col />

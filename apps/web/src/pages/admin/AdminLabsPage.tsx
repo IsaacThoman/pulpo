@@ -125,32 +125,32 @@ export function AdminLabsPage() {
         Company marks shown in the model picker. Use the arrows to set the order of models within each lab.
       </p>
 
-      <Card className="shadow-none">
-        <CardContent className="px-0 py-0">
-          <table className="w-full text-sm">
+      <Card className="gap-0 rounded-lg py-0 shadow-none">
+        <CardContent className="overflow-x-auto px-0 py-0">
+          <table className="data-table">
             <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="px-5 py-2.5 font-medium">Lab</th>
-                <th className="px-4 py-2.5 font-medium">Logo</th>
-                <th className="px-4 py-2.5 font-medium">Models</th>
-                <th className="px-5 py-2.5 text-right font-medium">Actions</th>
+              <tr className="border-b">
+                <th className="px-3 py-2">Lab</th>
+                <th className="px-3 py-2">Logo</th>
+                <th className="px-3 py-2">Models</th>
+                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {labs.map((lab) => (
-                <tr key={lab.id} className="border-b last:border-0">
-                  <td className="px-5 py-3">
+                <tr key={lab.id}>
+                  <td className="px-3 py-2">
                     <div className="flex items-center gap-3">
                       <AiLogo icon={lab.logo} customIcon={findCustomIcon(customIcons, lab.customIconId)} className="size-5" />
                       <span className="font-medium">{lab.name}</span>
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
                       {lab.logo}
                     </code>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-2">
                     {lab.models.length ? (
                       <div className="min-w-64 space-y-1">
                         {lab.models.map((model, index) => (
@@ -193,7 +193,7 @@ export function AdminLabsPage() {
                       <span className="text-muted-foreground">No linked models</span>
                     )}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-2">
                     {lab.builtin ? <div className="flex justify-end"><Badge variant="outline">Built-in</Badge></div> : <div className="flex justify-end gap-1">
                       <Button
                         size="icon-sm"
@@ -218,7 +218,7 @@ export function AdminLabsPage() {
               ))}
               {!labs.length && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-muted-foreground">
+                  <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
                     No labs yet. Add one to associate with models.
                   </td>
                 </tr>
