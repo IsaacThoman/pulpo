@@ -1629,6 +1629,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     }
     const progress = openOffset > 0 ? slideX.value / openOffset : 0;
     return {
+      borderTopLeftRadius: interpolate(progress, [0, 1], [0, 38]),
+      borderBottomLeftRadius: interpolate(progress, [0, 1], [0, 38]),
       transform: [
         { translateX: slideX.value },
         { scale: reduceMotion ? 1 : interpolate(progress, [0, 1], [1, 0.965]) },
@@ -4869,8 +4871,6 @@ const styles = StyleSheet.create({
   // Main chat view
   mainView: {
     ...StyleSheet.absoluteFill as object,
-    borderTopLeftRadius: 38,
-    borderBottomLeftRadius: 38,
     overflow: 'hidden',
     shadowColor: COLORS.text,
     shadowOpacity: 0.5,
