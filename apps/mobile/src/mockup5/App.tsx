@@ -1669,13 +1669,21 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, persistentSidebar, reduceMotion]);
-  const wideSidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
-    width: interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH]),
-    borderRightWidth: interpolate(wideSidebarProgress.value, [0, 1], [0, StyleSheet.hairlineWidth]),
-  }), [wideSidebarProgress]);
-  const wideSidebarContentAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: interpolate(wideSidebarProgress.value, [0, 1], [-SIDEBAR_WIDTH, 0]) }],
-  }), [wideSidebarProgress]);
+  const sidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
+    width: persistentSidebar
+      ? interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH])
+      : drawerWidth,
+    borderRightWidth: persistentSidebar
+      ? interpolate(wideSidebarProgress.value, [0, 1], [0, StyleSheet.hairlineWidth])
+      : 0,
+  }), [drawerWidth, persistentSidebar, wideSidebarProgress]);
+  const sidebarContentAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{
+      translateX: persistentSidebar
+        ? interpolate(wideSidebarProgress.value, [0, 1], [-SIDEBAR_WIDTH, 0])
+        : 0,
+    }],
+  }), [persistentSidebar, wideSidebarProgress]);
   const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
   const historyChats = useMemo(() => {
     const now = Date.now();
@@ -2177,11 +2185,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           accessibilityElementsHidden={!historyVisible}
           importantForAccessibility={!historyVisible ? 'no-hide-descendants' : 'auto'}
           pointerEvents={historyVisible ? 'auto' : 'none'}
-          style={persistentSidebar
-            ? [styles.persistentPanel, wideSidebarFrameAnimatedStyle]
-            : [styles.drawerPanel, { width: drawerWidth }, panelAnimatedStyle]}
+          style={[
+            persistentSidebar ? styles.persistentPanel : styles.drawerPanel,
+            sidebarFrameAnimatedStyle,
+            panelAnimatedStyle,
+          ]}
         >
-          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && styles.persistentPanelContent, persistentSidebar && wideSidebarContentAnimatedStyle]}>
+          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && styles.persistentPanelContent, sidebarContentAnimatedStyle]}>
             <HistoryPanel
               chats={historyChats}
               activeChatId={activeChatId}
