@@ -16,6 +16,7 @@ import { useSessionStore } from '../../../store/session'
 import type { ServerChat, ServerFolder } from '../../../types'
 import type { ActivityStep, PrototypeAttachment, PrototypeChat, PrototypeMessage } from '../domain'
 import { mapModel } from '../modelIdentity'
+import { warmModelCatalogIcons } from './AiIconAssets'
 import { usePrototypeStore } from '../store/prototypeStore'
 import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
@@ -110,6 +111,7 @@ function clearProductionScopeState(): void {
   usePrototypeStore.setState({
     productionNamespace: null,
     productionScopeReady: false,
+    modelPickerScopeReady: false,
     modelCatalogReady: false,
     chats: [],
     folders: [],
@@ -139,43 +141,56 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
     }
     return usePreferencesStore.getState()
   })().catch(() => usePreferencesStore.getState())
-  const [localChats, localFolders, catalog, preferences] = await Promise.all([
-    cachedChats(namespace).catch(() => []),
-    getValue<ServerFolder[]>(namespace, 'folders').catch(() => null),
+  const pickerHydration = Promise.all([
     getValue<ModelCatalog>(namespace, 'model-catalog').catch(() => null),
     preferenceHydration,
-  ])
-  if (token !== scopeHydrationToken) return
-  const favorites = preferences.favoriteModelIds
-  const liveSnapshots = useRealtimeStore.getState().snapshots
-  usePrototypeStore.setState((state) => ({
-    productionNamespace: namespace,
-    productionScopeReady: true,
-    modelCatalogReady: catalog !== null,
-    chats: localChats.filter((chat) => !chat.temporary).map((chat) => mapChat(
-      chat,
-      chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : [],
-      Boolean(chat.responses),
-    )),
-    folders: (localFolders ?? []).map((folder) => ({ id: folder.id, name: folder.name, expanded: true })),
-    models: (catalog?.data ?? []).map((model) => mapModel(model, favorites)),
-    defaultModelId: preferences.defaultModelId ?? catalog?.data[0]?.id ?? '',
-    agentAvailable: catalog?.agentAvailable ?? false,
-    preferences: {
-      ...state.preferences,
-      theme: preferences.theme,
-      textSize: preferences.textSize,
-      streamResponses: preferences.streamResponses,
-      showReasoning: preferences.showReasoning,
-      haptics: preferences.haptics,
-      sendWithEnter: preferences.sendWithEnter,
-      attachmentCacheMb: preferences.attachmentCacheMb,
-      localChatLimit: preferences.localChatLimit,
-      trashRetention: preferences.trashRetention,
-      automaticChatExpiration: preferences.automaticChatExpiration,
-      newChatAutoExpire: preferences.newChatAutoExpire,
-    },
-  }))
+  ]).then(([catalog, preferences]) => {
+    if (token !== scopeHydrationToken) return
+    usePrototypeStore.setState((state) => {
+      if (state.productionNamespace !== namespace) return state
+      return {
+        modelPickerScopeReady: true,
+        modelCatalogReady: catalog !== null,
+        models: (catalog?.data ?? []).map((model) => mapModel(model, preferences.favoriteModelIds)),
+        defaultModelId: preferences.defaultModelId ?? catalog?.data[0]?.id ?? '',
+        agentAvailable: catalog?.agentAvailable ?? false,
+        preferences: {
+          ...state.preferences,
+          theme: preferences.theme,
+          textSize: preferences.textSize,
+          streamResponses: preferences.streamResponses,
+          showReasoning: preferences.showReasoning,
+          haptics: preferences.haptics,
+          sendWithEnter: preferences.sendWithEnter,
+          attachmentCacheMb: preferences.attachmentCacheMb,
+          localChatLimit: preferences.localChatLimit,
+          trashRetention: preferences.trashRetention,
+          automaticChatExpiration: preferences.automaticChatExpiration,
+          newChatAutoExpire: preferences.newChatAutoExpire,
+        },
+      }
+    })
+    if (catalog) void warmModelCatalogIcons(catalog.data)
+  })
+
+  const chatHydration = Promise.all([
+    cachedChats(namespace).catch(() => []),
+    getValue<ServerFolder[]>(namespace, 'folders').catch(() => null),
+  ]).then(([localChats, localFolders]) => {
+    if (token !== scopeHydrationToken) return
+    const liveSnapshots = useRealtimeStore.getState().snapshots
+    usePrototypeStore.setState((state) => state.productionNamespace === namespace ? {
+      productionScopeReady: true,
+      chats: localChats.filter((chat) => !chat.temporary).map((chat) => mapChat(
+        chat,
+        chat.responses ? projectChat(chat, liveSnapshots).map(mapMessage) : [],
+        Boolean(chat.responses),
+      )),
+      folders: (localFolders ?? []).map((folder) => ({ id: folder.id, name: folder.name, expanded: true })),
+    } : state)
+  })
+
+  await Promise.all([pickerHydration, chatHydration])
 }
 
 /** Fetch one uncached transcript for a context-menu preview without selecting the chat. */
@@ -251,17 +266,20 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const namespace = useMemo(() => userId ? cacheNamespace(instanceUrl, userId) : 'anonymous', [instanceUrl, userId])
   const productionNamespace = usePrototypeStore((state) => state.productionNamespace)
   const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady)
-  const enabled = status === 'authenticated'
+  const modelPickerScopeReady = usePrototypeStore((state) => state.modelPickerScopeReady)
+  const scopeOwned = status === 'authenticated'
     && Boolean(userId)
     && productionNamespace === namespace
+  const enabled = scopeOwned
     && productionScopeReady
+  const pickerEnabled = scopeOwned && modelPickerScopeReady
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
   const serverHydrated = useRef(false)
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
-  const models = useQuery({ ...modelsQuery(namespace), enabled })
-  const settings = useQuery({ queryKey: queryKeys.settings(namespace), queryFn: mobileApi.settings, enabled })
+  const models = useQuery({ ...modelsQuery(namespace), enabled: pickerEnabled })
+  const settings = useQuery({ queryKey: queryKeys.settings(namespace), queryFn: mobileApi.settings, enabled: pickerEnabled })
   const detail = useQuery({
     ...chatQuery(namespace, activeChatId ?? '', preferences.localChatLimit),
     enabled: enabled && activeChatIsServerAddressable,
@@ -352,6 +370,10 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     const patch = preferencesFromServer(settings.data.values)
     void usePreferencesStore.getState().applyServerPreferences(patch)
   }, [namespace, settings.data])
+
+  useEffect(() => {
+    if (models.data) void warmModelCatalogIcons(models.data.data)
+  }, [models.data])
 
   useEffect(() => {
     if (!enabled || !activeChatId || !activeChatIsServerAddressable) return

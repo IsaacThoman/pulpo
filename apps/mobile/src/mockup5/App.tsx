@@ -172,7 +172,7 @@ import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { startComposerAutoFocus } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
-import { aiIconSource } from './src/production/AiIconAssets';
+import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { timeAgo } from '../features/chat/format';
@@ -1452,7 +1452,12 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const updateStoredMessage = usePrototypeStore((state) => state.updateMessage);
   const prototypeModels = usePrototypeStore((state) => state.models);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
-  const availableModels = useMemo(() => prototypeModels.map((model) => prototypeModelToLegacy(model, isDark)), [isDark, prototypeModels]);
+  const iconCacheRevision = useCatalogIconCacheRevision();
+  const availableModels = useMemo(() => {
+    // Re-resolve local file URIs whenever a background icon download completes.
+    void iconCacheRevision;
+    return prototypeModels.map((model) => prototypeModelToLegacy(model, isDark));
+  }, [iconCacheRevision, isDark, prototypeModels]);
   const [selectedModelId, setSelectedModelId] = useState(() => defaultModelId || prototypeModels[0]?.id || '');
   const composerFollowsDefaultModel = useRef(true);
   const selectedPrototypeModel = useMemo(
@@ -3030,18 +3035,28 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
   const [labsMenuRevision, setLabsMenuRevision] = useState(0);
   const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
   const providerOrder = usePreferencesStore((state) => state.providerOrder);
-  const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
-  const modelSections = [
-    { id: favoritesSection, label: 'Favorites' },
-    ...resolveVisibleOrder(providerOrder, availableProviderIds).map((id) => ({
-      id,
-      label: models.find((candidate) => candidate.providerGroupId === id)?.lab ?? 'Internal',
-    })),
-  ];
-  const sectionLabel = modelSections.find((candidate) => candidate.id === section)?.label ?? 'Favorites';
-  const visibleModels = section === favoritesSection
+  const modelSections = useMemo(() => {
+    const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
+    return [
+      { id: favoritesSection, label: 'Favorites' },
+      ...resolveVisibleOrder(providerOrder, availableProviderIds).map((id) => ({
+        id,
+        label: models.find((candidate) => candidate.providerGroupId === id)?.lab ?? 'Internal',
+      })),
+    ];
+  }, [models, providerOrder]);
+  const sectionLabel = useMemo(
+    () => modelSections.find((candidate) => candidate.id === section)?.label ?? 'Favorites',
+    [modelSections, section],
+  );
+  const visibleModels = useMemo(() => section === favoritesSection
     ? orderedModelsById(models, favoriteModelIds)
-    : models.filter((candidate) => candidate.providerGroupId === section);
+    : models.filter((candidate) => candidate.providerGroupId === section),
+  [favoriteModelIds, models, section]);
+
+  useEffect(() => {
+    if (!modelSections.some((candidate) => candidate.id === section)) setSection(favoritesSection);
+  }, [modelSections, section]);
 
   return (
     <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
