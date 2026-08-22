@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ServerChat, ServerFolder } from '../../../types'
+import type { MobileModel, ServerChat, ServerFolder } from '../../../types'
 
 const mocks = vi.hoisted(() => ({
   cachedChats: vi.fn(),
@@ -44,6 +44,7 @@ vi.mock('../../../store/preferences', () => {
   return { preferencePatchForServer: vi.fn(), preferencesFromServer: vi.fn(), usePreferencesStore: store }
 })
 vi.mock('../../../store/session', () => ({ useSessionStore: vi.fn() }))
+vi.mock('./AiIconAssets', () => ({ warmModelCatalogIcons: vi.fn(async () => undefined) }))
 vi.mock('./optimisticResponses', () => ({
   acknowledgeOptimisticChatList: vi.fn(), clearPendingOptimisticResponses: vi.fn(),
   pendingOptimisticChatIds: vi.fn(() => new Set()), pendingOptimisticResponseIds: vi.fn(() => []),
@@ -75,6 +76,15 @@ function chat(id: string, title: string): ServerChat {
   }
 }
 
+function model(id: string): MobileModel {
+  return {
+    id, name: `Model ${id}`, description: 'Cached model', executionMode: 'stream',
+    maxOutputTokens: 8_000, agentEnabled: true, tags: [], logo: 'openai',
+    iconLight: null, iconDark: null, provider: { id: 'provider-1', name: 'Provider' },
+    lab: { id: 'lab-1', name: 'Lab', logo: 'openai' }, presets: [],
+  }
+}
+
 beforeEach(() => {
   mocks.cachedChats.mockReset().mockResolvedValue([])
   mocks.getValue.mockReset().mockResolvedValue(null)
@@ -84,12 +94,13 @@ beforeEach(() => {
   mocks.preferences.resetSynchronizedPreferences.mockClear()
   usePrototypeStore.setState({
     ...createInitialState(),
-    productionNamespace: null, productionScopeReady: false, modelCatalogReady: false, agentAvailable: false,
+    productionNamespace: null, productionScopeReady: false, modelPickerScopeReady: false,
+    modelCatalogReady: false, agentAvailable: false,
   })
 })
 
 describe('production scope hydration', () => {
-  it('claims and clears the namespace synchronously, then publishes cached data atomically', async () => {
+  it('publishes the cached picker before unrelated chat hydration completes', async () => {
     const pendingChats = deferred<ServerChat[]>()
     const cachedFolder: ServerFolder = {
       id: 'folder-1', name: 'Work', pinned: false, sortOrder: 0,
@@ -98,7 +109,7 @@ describe('production scope hydration', () => {
     mocks.cachedChats.mockReturnValue(pendingChats.promise)
     mocks.getValue.mockImplementation(async (_namespace: string, key: string) => {
       if (key === 'folders') return [cachedFolder]
-      if (key === 'model-catalog') return { agentAvailable: true, data: [] }
+      if (key === 'model-catalog') return { agentAvailable: true, data: [model('cached')] }
       return null
     })
 
@@ -109,11 +120,17 @@ describe('production scope hydration', () => {
       chats: [], folders: [], models: [],
     })
 
+    await vi.waitFor(() => expect(usePrototypeStore.getState()).toMatchObject({
+      productionNamespace: 'instance|user-a', productionScopeReady: false,
+      modelPickerScopeReady: true, modelCatalogReady: true,
+    }))
+    expect(usePrototypeStore.getState().models.map((item) => item.id)).toEqual(['cached'])
+
     pendingChats.resolve([chat('chat-a', 'Cached chat')])
     await hydration
     expect(usePrototypeStore.getState()).toMatchObject({
       productionNamespace: 'instance|user-a', productionScopeReady: true,
-      modelCatalogReady: true, agentAvailable: true,
+      modelPickerScopeReady: true, modelCatalogReady: true, agentAvailable: true,
     })
     expect(usePrototypeStore.getState().chats.map((item) => item.title)).toEqual(['Cached chat'])
     expect(usePrototypeStore.getState().folders.map((item) => item.name)).toEqual(['Work'])
@@ -121,17 +138,25 @@ describe('production scope hydration', () => {
 
   it('ignores a stale account hydration after a newer namespace takes ownership', async () => {
     const firstChats = deferred<ServerChat[]>()
+    const firstCatalog = deferred<{ agentAvailable: boolean; data: MobileModel[] }>()
     mocks.cachedChats
       .mockReturnValueOnce(firstChats.promise)
       .mockResolvedValueOnce([chat('chat-b', 'Current account')])
+    mocks.getValue.mockImplementation(async (namespace: string, key: string) => {
+      if (key !== 'model-catalog') return null
+      if (namespace === 'instance|user-a') return firstCatalog.promise
+      return { agentAvailable: true, data: [model('model-b')] }
+    })
 
     const firstHydration = hydrateProductionScope('instance|user-a')
     await hydrateProductionScope('instance|user-b')
     firstChats.resolve([chat('chat-a', 'Wrong account')])
+    firstCatalog.resolve({ agentAvailable: true, data: [model('model-a')] })
     await firstHydration
 
     expect(usePrototypeStore.getState().productionNamespace).toBe('instance|user-b')
     expect(usePrototypeStore.getState().chats.map((item) => item.title)).toEqual(['Current account'])
+    expect(usePrototypeStore.getState().models.map((item) => item.id)).toEqual(['model-b'])
   })
 
   it('marks an empty scope ready after local database failures so networking can continue', async () => {
@@ -142,7 +167,7 @@ describe('production scope hydration', () => {
 
     expect(usePrototypeStore.getState()).toMatchObject({
       productionNamespace: 'instance|user-a', productionScopeReady: true,
-      modelCatalogReady: false, chats: [], folders: [], models: [],
+      modelPickerScopeReady: true, modelCatalogReady: false, chats: [], folders: [], models: [],
     })
   })
 
