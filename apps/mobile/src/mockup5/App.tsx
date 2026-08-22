@@ -1194,8 +1194,8 @@ function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
     : <FallbackTemporaryChatHeaderControl {...props} />;
 }
 
-function AppHeader({ children }: { children: ReactNode }) {
-  return <View pointerEvents="box-none" style={styles.appHeader}>{children}</View>;
+function AppHeader({ children, edgeAligned = false }: { children: ReactNode; edgeAligned?: boolean }) {
+  return <View pointerEvents="box-none" style={[styles.appHeader, edgeAligned && styles.appHeaderEdgeAligned]}>{children}</View>;
 }
 
 function NativeObjectContextMenu({
@@ -1435,7 +1435,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   const slideX = useSharedValue(0);
   const gestureStartX = useSharedValue(0);
+  const wideSidebarProgress = useSharedValue(1);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
@@ -1497,6 +1499,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [persistentSidebar, slideX]);
 
   useEffect(() => {
+    const target = wideSidebarVisible ? 1 : 0;
+    wideSidebarProgress.value = reduceMotion
+      ? target
+      : withTiming(target, { duration: 280 });
+  }, [reduceMotion, wideSidebarProgress, wideSidebarVisible]);
+
+  useEffect(() => {
     const nextModelId = reconcileComposerModelId(
       prototypeModels,
       selectedModelId,
@@ -1552,6 +1561,15 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       overshootClamping: true,
     });
   }, [openOffset, persistentSidebar, reduceMotion, slideX]);
+
+  const togglePanel = useCallback(() => {
+    if (persistentSidebar) {
+      setWideSidebarVisible((visible) => !visible);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      return;
+    }
+    animatePanel(true);
+  }, [animatePanel, persistentSidebar]);
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
@@ -1627,7 +1645,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   const mainAnimatedStyle = useAnimatedStyle(() => {
     if (persistentSidebar) {
-      return { transform: [{ translateX: 0 }, { scale: 1 }] };
+      return {
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        transform: [{ translateX: 0 }, { scale: 1 }],
+      };
     }
     const progress = openOffset > 0 ? slideX.value / openOffset : 0;
     const drawerCornerRadius = compactDrawerCorners
@@ -1645,6 +1669,14 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const panelAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: persistentSidebar || reduceMotion ? 0 : interpolate(slideX.value, [0, openOffset], [-36, 0]) }],
   }), [openOffset, persistentSidebar, reduceMotion]);
+  const wideSidebarFrameAnimatedStyle = useAnimatedStyle(() => ({
+    width: interpolate(wideSidebarProgress.value, [0, 1], [0, SIDEBAR_WIDTH]),
+    borderRightWidth: interpolate(wideSidebarProgress.value, [0, 1], [0, StyleSheet.hairlineWidth]),
+  }), [wideSidebarProgress]);
+  const wideSidebarContentAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: interpolate(wideSidebarProgress.value, [0, 1], [-SIDEBAR_WIDTH, 0]) }],
+  }), [wideSidebarProgress]);
+  const historyVisible = persistentSidebar ? wideSidebarVisible : panelOpen;
   const historyChats = useMemo(() => {
     const now = Date.now();
     const projected = visibleHistoryChats(storedChats).map((chat) => historyChatSummary(chat, now));
@@ -2142,23 +2174,25 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
         {/* History page, revealed underneath as the chat view slides right */}
         <Reanimated.View
-          accessibilityElementsHidden={!persistentSidebar && !panelOpen}
-          importantForAccessibility={!persistentSidebar && !panelOpen ? 'no-hide-descendants' : 'auto'}
+          accessibilityElementsHidden={!historyVisible}
+          importantForAccessibility={!historyVisible ? 'no-hide-descendants' : 'auto'}
+          pointerEvents={historyVisible ? 'auto' : 'none'}
           style={persistentSidebar
-            ? [styles.persistentPanel, panelAnimatedStyle]
+            ? [styles.persistentPanel, wideSidebarFrameAnimatedStyle]
             : [styles.drawerPanel, { width: drawerWidth }, panelAnimatedStyle]}
         >
-          <HistoryPanel
-            chats={historyChats}
-            activeChatId={activeChatId}
-            drawerOpen={panelOpen}
-            loading={!productionScopeReady}
-            persistent={persistentSidebar}
-            onSelectChat={selectChat}
-            onNewChat={newChatFromHistory}
-            onOpenSettings={openSettingsFromHistory}
-            onPreviewRequest={loadHistoryPreview}
-          />
+          <Reanimated.View style={[styles.historyPanelContent, persistentSidebar && styles.persistentPanelContent, persistentSidebar && wideSidebarContentAnimatedStyle]}>
+            <HistoryPanel
+              chats={historyChats}
+              activeChatId={activeChatId}
+              drawerOpen={historyVisible}
+              loading={!productionScopeReady}
+              onSelectChat={selectChat}
+              onNewChat={newChatFromHistory}
+              onOpenSettings={openSettingsFromHistory}
+              onPreviewRequest={loadHistoryPreview}
+            />
+          </Reanimated.View>
         </Reanimated.View>
 
         {/* Main chat view sliding over to the right */}
@@ -2185,8 +2219,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onRegenerate={regenerateMessage}
             onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
-            onOpenPanel={() => animatePanel(true)}
+            onTogglePanel={togglePanel}
             persistentSidebar={persistentSidebar}
+            sidebarVisible={historyVisible}
             onOpenModelPicker={() => { Haptics.selectionAsync(); setModelSheet(true); }}
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
@@ -3092,7 +3127,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 function ChatView({
   messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onStop, onOpenPanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, temporary, autoExpire, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -3110,8 +3145,9 @@ function ChatView({
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
   onStop: () => void;
-  onOpenPanel: () => void;
+  onTogglePanel: () => void;
   persistentSidebar: boolean;
+  sidebarVisible: boolean;
   onOpenModelPicker: () => void;
   onSelectModel: (model: Model) => void;
   onSelectPreset: (presetId: string, choiceId: string) => void;
@@ -4025,11 +4061,16 @@ function ChatView({
         style={[styles.chatHeaderOverlay, { paddingTop: insets.top }]}
       >
         {/* Header */}
-        <AppHeader>
-          {persistentSidebar
-            ? <View accessibilityElementsHidden importantForAccessibility="no" style={styles.headerButtonPlaceholder} />
-            : <RoundButton icon="line.3.horizontal" accessibilityLabel="Open chats" onPress={onOpenPanel} tinted={temporary} />}
-          <Reanimated.View style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
+        <AppHeader edgeAligned>
+          <RoundButton
+            icon="line.3.horizontal"
+            accessibilityLabel={persistentSidebar
+              ? sidebarVisible ? 'Hide chats sidebar' : 'Show chats sidebar'
+              : 'Open chats'}
+            onPress={onTogglePanel}
+            tinted={temporary}
+          />
+          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
             ) : (
@@ -4546,12 +4587,11 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   );
 });
 
-const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, persistent, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
+const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpen, loading, onSelectChat, onNewChat, onOpenSettings, onPreviewRequest }: {
   chats: HistoryChatSummary[];
   activeChatId: string | null;
   drawerOpen: boolean;
   loading: boolean;
-  persistent: boolean;
   onSelectChat: (chat: HistoryChatSummary) => void;
   onNewChat: () => void;
   onOpenSettings: () => void;
@@ -4589,8 +4629,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     void nativeSearchRef.current?.blur();
   }, []);
   useEffect(() => {
-    if (!drawerOpen && !persistent) dismissSearch();
-  }, [dismissSearch, drawerOpen, persistent]);
+    if (!drawerOpen) dismissSearch();
+  }, [dismissSearch, drawerOpen]);
   useEffect(() => {
     searchQueryProgress.value = withTiming(search.length > 0 ? 1 : 0, { duration: 180 });
   }, [search, searchQueryProgress]);
@@ -4870,7 +4910,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, flexDirection: 'row', backgroundColor: COLORS.panel },
   drawerPanel: { position: 'absolute', top: 0, bottom: 0, left: 0 },
-  persistentPanel: { width: SIDEBAR_WIDTH, borderRightWidth: StyleSheet.hairlineWidth, borderRightColor: COLORS.lineSoft },
+  persistentPanel: { borderRightColor: COLORS.lineSoft, overflow: 'hidden' },
+  historyPanelContent: { flex: 1 },
+  persistentPanelContent: { width: SIDEBAR_WIDTH },
   historyLoading: { alignItems: 'center', gap: 8, paddingVertical: 20 },
 
   // Main chat view
@@ -4887,7 +4929,7 @@ const styles = StyleSheet.create({
   chatRoot: { flex: 1, backgroundColor: COLORS.background },
   chatHeaderOverlay: { position: 'absolute', zIndex: 2, top: 0, left: 0, right: 0 },
   appHeader: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center', height: 64, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
-  headerButtonPlaceholder: { width: 44, height: 44 },
+  appHeaderEdgeAligned: { maxWidth: '100%' },
   headerActionExpanded: { width: 88, height: 44, alignItems: 'flex-end' },
   roundButton: { alignItems: 'center', justifyContent: 'center' },
   roundButtonCustomIcon: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
@@ -4901,7 +4943,7 @@ const styles = StyleSheet.create({
   temporaryHeaderIconLayer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   glassFallback: { backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
   pressed: { opacity: 0.75 },
-  modelTriggerWrap: { flex: 1, alignItems: 'center' },
+  modelTriggerWrap: { position: 'absolute', top: 10, left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
   modelMenuHost: { minHeight: 44, maxWidth: 230, justifyContent: 'center' },
   modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
