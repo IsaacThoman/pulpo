@@ -7,7 +7,6 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import {
   chargeCentsForCredits,
-  isPaidPlan,
   resolveSubscriptionChange,
   type BillingPlan,
   type PaidBillingPlan,
@@ -274,67 +273,110 @@ function rethrowStripe(error: unknown): never {
   throw error
 }
 
+export function subscriptionSwitchParams(
+  itemId: string,
+  priceId: string,
+): Stripe.SubscriptionUpdateParams {
+  return {
+    cancel_at_period_end: false,
+    items: [{ id: itemId, price: priceId }],
+    proration_behavior: 'always_invoice',
+    payment_behavior: 'error_if_incomplete',
+  }
+}
+
+function subscriptionResult(subscription: Stripe.Subscription) {
+  const priceId = subscription.items.data[0]?.price.id
+  const plan = planForPriceId(priceId)
+  if (!priceId || !plan) throw new AppError(500, 'billing_unknown_price', 'Stripe returned an unknown price')
+  const periodStart = subscription.items.data[0]?.current_period_start
+  const periodEnd = subscription.items.data[0]?.current_period_end
+  return { priceId, plan, periodStart, periodEnd }
+}
+
+async function saveSubscription(subscription: Stripe.Subscription): Promise<ReturnType<typeof subscriptionResult>> {
+  const result = subscriptionResult(subscription)
+  await db.update(billingSubscriptions).set({
+    stripePriceId: result.priceId,
+    plan: result.plan,
+    status: subscription.status,
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    currentPeriodStart: result.periodStart ? new Date(result.periodStart * 1_000) : null,
+    currentPeriodEnd: result.periodEnd ? new Date(result.periodEnd * 1_000) : null,
+    providerModifiedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(billingSubscriptions.stripeSubscriptionId, subscription.id))
+  return result
+}
+
 export async function changeSubscription(input: {
   userId: string
   plan: BillingPlan
 }): Promise<{ plan: BillingPlan; status: string; cancelAtPeriodEnd: boolean; currentPeriodEnd: string | null }> {
   const current = await currentPaidSubscription(input.userId)
+  if (!current) throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
+
+  const stripe = getStripeClient()
+  let subscription: Stripe.Subscription
+  try {
+    subscription = await stripe.subscriptions.retrieve(current.stripeSubscriptionId)
+  } catch (error) {
+    if (isMissingStripeResource(error)) {
+      await db.update(billingSubscriptions).set({ status: 'canceled', updatedAt: new Date() })
+        .where(eq(billingSubscriptions.stripeSubscriptionId, current.stripeSubscriptionId))
+      throw new AppError(409, 'subscription_missing', 'This subscription no longer exists. Refresh Billing to start a new one.')
+    }
+    rethrowStripe(error)
+  }
+
+  if (subscription.status !== 'active' && subscription.status !== 'past_due') {
+    await saveSubscription(subscription)
+    throw new AppError(409, 'subscription_inactive', 'This subscription is no longer active. Refresh Billing to start a new one.')
+  }
+  const live = await saveSubscription(subscription)
   const change = resolveSubscriptionChange(
-    current && isPaidPlan(current.plan) ? { plan: current.plan, cancelAtPeriodEnd: current.cancelAtPeriodEnd } : null,
+    { plan: live.plan, cancelAtPeriodEnd: subscription.cancel_at_period_end },
     input.plan,
   )
-  if (change === 'missing') throw new AppError(409, 'subscription_missing', 'Subscribe to a paid plan first')
   if (change === 'unsupported') throw new AppError(409, 'subscription_change_unsupported', 'That plan change is not available')
-  if (!current || change === 'noop') {
+  if (change === 'noop') {
     return {
-      plan: current?.plan === 'fat' ? 'fat' : current?.plan === 'eight' ? 'eight' : 'baby',
-      status: current?.status ?? 'none',
-      cancelAtPeriodEnd: current?.cancelAtPeriodEnd ?? false,
-      currentPeriodEnd: current?.currentPeriodEnd?.toISOString() ?? null,
+      plan: live.plan,
+      status: subscription.status,
+      cancelAtPeriodEnd: subscription.cancel_at_period_end,
+      currentPeriodEnd: live.periodEnd ? new Date(live.periodEnd * 1_000).toISOString() : null,
     }
   }
 
   try {
     let updated: Stripe.Subscription
     if (change === 'cancel' || change === 'renew') {
-      updated = await getStripeClient().subscriptions.update(current.stripeSubscriptionId, {
+      updated = await stripe.subscriptions.update(current.stripeSubscriptionId, {
         cancel_at_period_end: change === 'cancel',
       })
     } else {
-      const stripe = getStripeClient()
-      const subscription = await stripe.subscriptions.retrieve(current.stripeSubscriptionId)
       const item = subscription.items.data[0]
       if (!item) throw new AppError(409, 'subscription_item_missing', 'The subscription has no billable item')
-      updated = await stripe.subscriptions.update(current.stripeSubscriptionId, {
-        cancel_at_period_end: false,
-        items: [{ id: item.id, price: priceIdForPlan(change === 'upgrade_fat' ? 'fat' : 'eight') }],
-        proration_behavior: 'always_invoice',
-        payment_behavior: 'pending_if_incomplete',
-      })
+      if (subscription.pending_update) {
+        throw new AppError(409, 'subscription_update_pending', 'A previous plan change is awaiting payment. Update your payment method in the Billing Portal, then try again.')
+      }
+      updated = await stripe.subscriptions.update(
+        current.stripeSubscriptionId,
+        subscriptionSwitchParams(item.id, priceIdForPlan(change === 'upgrade_fat' ? 'fat' : 'eight')),
+      )
     }
-    const priceId = updated.items.data[0]?.price.id
-    const plan = planForPriceId(priceId)
-    if (!plan) throw new AppError(500, 'billing_unknown_price', 'Stripe returned an unknown price')
-    const periodStart = updated.items.data[0]?.current_period_start
-    const periodEnd = updated.items.data[0]?.current_period_end
-    await db.update(billingSubscriptions).set({
-      stripePriceId: priceId!,
-      plan,
-      status: updated.status,
-      cancelAtPeriodEnd: updated.cancel_at_period_end,
-      currentPeriodStart: periodStart ? new Date(periodStart * 1_000) : null,
-      currentPeriodEnd: periodEnd ? new Date(periodEnd * 1_000) : null,
-      providerModifiedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(eq(billingSubscriptions.stripeSubscriptionId, current.stripeSubscriptionId))
+    const result = await saveSubscription(updated)
     return {
-      plan,
+      plan: result.plan,
       status: updated.status,
       cancelAtPeriodEnd: updated.cancel_at_period_end,
-      currentPeriodEnd: periodEnd ? new Date(periodEnd * 1_000).toISOString() : null,
+      currentPeriodEnd: result.periodEnd ? new Date(result.periodEnd * 1_000).toISOString() : null,
     }
   } catch (error) {
     if (error instanceof AppError) throw error
+    if (error instanceof Stripe.errors.StripeError && error.statusCode === 402) {
+      throw new AppError(402, 'subscription_payment_failed', 'Stripe could not collect the prorated amount. Update your payment method in the Billing Portal, then try again.')
+    }
     rethrowStripe(error)
   }
 }
