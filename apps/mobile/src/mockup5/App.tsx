@@ -1436,6 +1436,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const slideX = useSharedValue(0);
   const gestureStartX = useSharedValue(0);
   const wideSidebarProgress = useSharedValue(1);
+  const wideSidebarGestureStart = useSharedValue(1);
   const [panelOpen, setPanelOpen] = useState(false);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
@@ -1499,13 +1500,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   }, [persistentSidebar, slideX]);
 
   useEffect(() => {
-    const target = wideSidebarVisible ? 1 : 0;
-    wideSidebarProgress.value = reduceMotion
-      ? target
-      : withTiming(target, { duration: 280 });
-  }, [reduceMotion, wideSidebarProgress, wideSidebarVisible]);
-
-  useEffect(() => {
     const nextModelId = reconcileComposerModelId(
       prototypeModels,
       selectedModelId,
@@ -1562,14 +1556,27 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     });
   }, [openOffset, persistentSidebar, reduceMotion, slideX]);
 
+  const animateWideSidebar = useCallback((visible: boolean, velocity = 0) => {
+    setWideSidebarVisible(visible);
+    if (!visible) Keyboard.dismiss();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const target = visible ? 1 : 0;
+    wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
+      velocity: velocity / SIDEBAR_WIDTH,
+      damping: 26,
+      stiffness: 240,
+      mass: 0.9,
+      overshootClamping: true,
+    });
+  }, [reduceMotion, wideSidebarProgress]);
+
   const togglePanel = useCallback(() => {
     if (persistentSidebar) {
-      setWideSidebarVisible((visible) => !visible);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      animateWideSidebar(!wideSidebarVisible);
       return;
     }
     animatePanel(true);
-  }, [animatePanel, persistentSidebar]);
+  }, [animatePanel, animateWideSidebar, persistentSidebar, wideSidebarVisible]);
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
@@ -1638,9 +1645,55 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       slideX,
     ]);
 
+  const finishWideSidebarGesture = useCallback((visible: boolean) => {
+    setWideSidebarVisible(visible);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  const settleWideSidebarGesture = useCallback((velocityX: number) => {
+    'worklet';
+    const visible = velocityX > 500
+      ? true
+      : velocityX < -500
+        ? false
+        : wideSidebarProgress.value > 0.45;
+    const target = visible ? 1 : 0;
+    wideSidebarProgress.value = reduceMotion ? target : withSpring(target, {
+      velocity: velocityX / SIDEBAR_WIDTH,
+      damping: 26,
+      stiffness: 240,
+      mass: 0.9,
+      overshootClamping: true,
+    });
+    runOnJS(finishWideSidebarGesture)(visible);
+  }, [finishWideSidebarGesture, reduceMotion, wideSidebarProgress]);
+
+  const wideSidebarGesture = useMemo(() => Gesture.Pan()
+    .enabled(persistentSidebar)
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-12, 12])
+    .onStart(() => {
+      cancelAnimation(wideSidebarProgress);
+      wideSidebarGestureStart.value = wideSidebarProgress.value;
+      runOnJS(dismissKeyboard)();
+    })
+    .onUpdate((event) => {
+      wideSidebarProgress.value = Math.max(
+        0,
+        Math.min(1, wideSidebarGestureStart.value + event.translationX / SIDEBAR_WIDTH),
+      );
+    })
+    .onEnd((event) => settleWideSidebarGesture(event.velocityX)), [
+      dismissKeyboard,
+      persistentSidebar,
+      settleWideSidebarGesture,
+      wideSidebarGestureStart,
+      wideSidebarProgress,
+    ]);
+
   const panelGesture = useMemo(
-    () => Gesture.Simultaneous(openPanelGesture, closePanelGesture),
-    [closePanelGesture, openPanelGesture],
+    () => Gesture.Simultaneous(openPanelGesture, closePanelGesture, wideSidebarGesture),
+    [closePanelGesture, openPanelGesture, wideSidebarGesture],
   );
 
   const mainAnimatedStyle = useAnimatedStyle(() => {
