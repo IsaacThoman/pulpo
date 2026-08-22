@@ -24,7 +24,6 @@ import {
   FlatList,
   Image,
   Keyboard,
-  type LayoutChangeEvent,
   Linking,
   Modal,
   type NativeScrollEvent,
@@ -2841,7 +2840,6 @@ function BranchControls({ branches, activeIndex, onActivate, disabled = false }:
 
 const MessageRow = memo(function MessageRow({
   message,
-  markdownLayoutWidth,
   model,
   onEdit,
   onPreviewFile,
@@ -2851,7 +2849,6 @@ const MessageRow = memo(function MessageRow({
   editingLocked = false,
 }: {
   message: Message;
-  markdownLayoutWidth: number;
   model: Model;
   onEdit: (message: Message, content: string) => void;
   onPreviewFile: (attachment: Attachment) => void;
@@ -2936,7 +2933,7 @@ const MessageRow = memo(function MessageRow({
             <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
                 <View style={styles.userBubble}>
-                  <SafeMarkdown containerStyle={styles.userMessageMarkdown} key={`user:${markdownLayoutWidth}`}>{message.text}</SafeMarkdown>
+                  <SafeMarkdown containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
                 </View>
               </View>
             </MessageContextMenu>
@@ -2968,7 +2965,7 @@ const MessageRow = memo(function MessageRow({
                       steps={segment.steps}
                     />;
                   }
-                  return <SafeMarkdown containerStyle={styles.assistantMarkdown} key={`text:${index}:${markdownLayoutWidth}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
+                  return <SafeMarkdown containerStyle={styles.assistantMarkdown} key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
                 })}
               </View>
             </MessageContextMenu>
@@ -3232,22 +3229,6 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
-  const [transcriptWidth, setTranscriptWidth] = useState(windowWidth);
-  const transcriptWidthRef = useRef(Math.round(windowWidth));
-  const transcriptResizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleTranscriptLayout = useCallback((event: LayoutChangeEvent) => {
-    const nextWidth = Math.round(event.nativeEvent.layout.width);
-    if (nextWidth === transcriptWidthRef.current) return;
-    if (transcriptResizeTimer.current) clearTimeout(transcriptResizeTimer.current);
-    transcriptResizeTimer.current = setTimeout(() => {
-      transcriptWidthRef.current = nextWidth;
-      setTranscriptWidth(nextWidth);
-      transcriptResizeTimer.current = null;
-    }, 100);
-  }, []);
-  const transcriptHorizontalPadding = responsiveHorizontalPadding(transcriptWidth)
-    + Math.max(0, (transcriptWidth - CHAT_CONTENT_MAX) / 2);
-  const markdownLayoutWidth = Math.round(transcriptWidth);
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -3263,9 +3244,6 @@ function ChatView({
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
 
-  useEffect(() => () => {
-    if (transcriptResizeTimer.current) clearTimeout(transcriptResizeTimer.current);
-  }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
@@ -4055,20 +4033,21 @@ function ChatView({
   }, [cancelPendingFollow, cancelTailSettle]);
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <MessageRow
-      message={item}
-      markdownLayoutWidth={markdownLayoutWidth}
-      model={responseModel(item, models, model)}
-      onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
-      onPreviewFile={openFilePreview}
-      onPreviewImages={openImageViewer}
-      onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
-      onActivateBranch={expired
-        ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
-        : onActivateBranch}
-      editingLocked={Boolean(messageEdit)}
-    />
-  ), [expired, handleMessageEditAction, markdownLayoutWidth, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
+    <View style={styles.transcriptItem}>
+      <MessageRow
+        message={item}
+        model={responseModel(item, models, model)}
+        onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
+        onPreviewFile={openFilePreview}
+        onPreviewImages={openImageViewer}
+        onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
+        onActivateBranch={expired
+          ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
+          : onActivateBranch}
+        editingLocked={Boolean(messageEdit)}
+      />
+    </View>
+  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4251,17 +4230,16 @@ function ChatView({
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, { paddingHorizontal: transcriptHorizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
-          extraData={markdownLayoutWidth}
           initialNumToRender={10}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          key={`${chatId ?? 'unsaved-chat'}:${markdownLayoutWidth}`}
+          key={chatId ?? 'unsaved-chat'}
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
-            <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
+            <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptItem]}>
               <View style={styles.assistantHeader}>
                 <ModelMark model={model} size={26} />
                 <Text style={styles.assistantName}>{model.name}</Text>
@@ -4273,7 +4251,6 @@ function ChatView({
           onContentSizeChange={handleContentSizeChange}
           onMomentumScrollBegin={beginReaderInteraction}
           onMomentumScrollEnd={endReaderInteraction}
-          onLayout={handleTranscriptLayout}
           onScroll={updateBottomProximity}
           onScrollBeginDrag={beginReaderInteraction}
           onScrollEndDrag={endReaderInteraction}
@@ -5042,6 +5019,7 @@ const styles = StyleSheet.create({
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   conversation: { paddingBottom: 156 },
+  transcriptItem: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
   emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
   emptyState: { width: '100%', maxWidth: 720, alignSelf: 'center', alignItems: 'center' },
