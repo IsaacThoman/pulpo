@@ -24,3 +24,8 @@ export function responsiveHorizontalPadding(width: number): number {
   if (width < PERSISTENT_SIDEBAR_MIN) return 24
   return 28
 }
+
+/** Live column width for transcript rows. Avoids locking FlatList content to a measured size. */
+export function transcriptColumnWidth(paneWidth: number, padding = responsiveHorizontalPadding(paneWidth)): number {
+  return Math.max(0, Math.min(CHAT_CONTENT_MAX, paneWidth - padding * 2))
+}
