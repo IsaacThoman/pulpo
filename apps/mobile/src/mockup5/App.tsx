@@ -24,6 +24,7 @@ import {
   FlatList,
   Image,
   Keyboard,
+  type LayoutChangeEvent,
   Linking,
   Modal,
   type NativeScrollEvent,
@@ -3231,7 +3232,22 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
-  const markdownLayoutWidth = Math.round(windowWidth);
+  const [transcriptWidth, setTranscriptWidth] = useState(windowWidth);
+  const transcriptWidthRef = useRef(Math.round(windowWidth));
+  const transcriptResizeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleTranscriptLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = Math.round(event.nativeEvent.layout.width);
+    if (nextWidth === transcriptWidthRef.current) return;
+    if (transcriptResizeTimer.current) clearTimeout(transcriptResizeTimer.current);
+    transcriptResizeTimer.current = setTimeout(() => {
+      transcriptWidthRef.current = nextWidth;
+      setTranscriptWidth(nextWidth);
+      transcriptResizeTimer.current = null;
+    }, 100);
+  }, []);
+  const transcriptHorizontalPadding = responsiveHorizontalPadding(transcriptWidth)
+    + Math.max(0, (transcriptWidth - CHAT_CONTENT_MAX) / 2);
+  const markdownLayoutWidth = Math.round(transcriptWidth);
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -3246,6 +3262,10 @@ function ChatView({
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
+
+  useEffect(() => () => {
+    if (transcriptResizeTimer.current) clearTimeout(transcriptResizeTimer.current);
+  }, []);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
@@ -4231,14 +4251,14 @@ function ChatView({
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, { paddingHorizontal: transcriptHorizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
           extraData={markdownLayoutWidth}
           initialNumToRender={10}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          key={chatId ?? 'unsaved-chat'}
+          key={`${chatId ?? 'unsaved-chat'}:${markdownLayoutWidth}`}
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
             <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
@@ -4253,6 +4273,7 @@ function ChatView({
           onContentSizeChange={handleContentSizeChange}
           onMomentumScrollBegin={beginReaderInteraction}
           onMomentumScrollEnd={endReaderInteraction}
+          onLayout={handleTranscriptLayout}
           onScroll={updateBottomProximity}
           onScrollBeginDrag={beginReaderInteraction}
           onScrollEndDrag={endReaderInteraction}
