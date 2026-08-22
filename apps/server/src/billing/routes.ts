@@ -44,6 +44,16 @@ export function resolvedCheckoutStatus(
   return checkoutStatus ?? null
 }
 
+export function selectSummarySubscription<T extends { plan: string; status: string }>(
+  subscriptions: T[],
+  entitlementPlan: string,
+): T | null {
+  const actionable = subscriptions.filter((item) => item.status === 'active' || item.status === 'past_due')
+  return actionable.find((item) => item.plan === entitlementPlan)
+    ?? actionable[0]
+    ?? null
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -61,7 +71,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         return membership ? poolBalanceMicros(tx, membership.pool.id) : null
       }),
     ])
-    const subscription = subscriptions.find((item) => item.plan === entitlements.plan) ?? null
+    const subscription = selectSummarySubscription(subscriptions, entitlements.plan)
     return {
       plan: entitlements.plan,
       balanceMicros: user.balanceMicros,
@@ -72,6 +82,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       },
       onHold: entitlements.onHold,
       subscription: subscription ? {
+        plan: subscription.plan === 'fat' ? 'fat' : 'eight',
         status: subscription.status,
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,

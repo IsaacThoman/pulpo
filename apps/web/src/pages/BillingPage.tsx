@@ -159,8 +159,10 @@ export function BillingPage() {
   }
 
   const changePlan = async (plan: BillingPlan) => {
-    if (!summary || (plan === summary.plan && !summary.subscription?.cancelAtPeriodEnd)) return
-    if (summary.plan === 'baby') {
+    if (!summary) return
+    const managedPlan = summary.subscription?.plan ?? summary.plan
+    if (plan === managedPlan && !summary.subscription?.cancelAtPeriodEnd) return
+    if (!summary.subscription && summary.plan === 'baby') {
       if (plan === 'baby') return
       return startSubscription(plan)
     }
@@ -179,13 +181,16 @@ export function BillingPage() {
     }
   }
 
-  const planSubtitle = !summary || summary.plan === 'baby'
+  const managedPlan = summary?.subscription?.plan ?? summary?.plan ?? 'baby'
+  const planSubtitle = !summary
     ? 'Free · Pay as you go'
     : summary.subscription?.status === 'past_due'
       ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · access through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+      : summary.plan === 'baby'
+        ? 'Free · Pay as you go'
       : summary.subscription?.cancelAtPeriodEnd
-        ? `$${summary.plan === 'fat' ? 24 : 8} monthly${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-        : `$${summary.plan === 'fat' ? 24 : 8} monthly${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        ? `$${managedPlan === 'fat' ? 24 : 8} monthly${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        : `$${managedPlan === 'fat' ? 24 : 8} monthly${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
 
   return (
     <div className="flex h-full flex-col">
@@ -242,14 +247,14 @@ export function BillingPage() {
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.weekly.remainingPercentage}%` }} /></div>
                 <div className="mt-1.5 text-xs text-muted-foreground">Resets {new Date(summary.weekly.resetsAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
-              <Button className="mt-4" variant={summary?.plan === 'baby' ? 'default' : 'outline'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
-                {summary?.plan === 'baby' ? 'Compare plans' : 'Manage plan'}
+              <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                {summary?.subscription ? 'Manage plan' : 'Compare plans'}
               </Button>
             </div>
           </div>
 
           <section className="space-y-3">
-            <div className="flex items-end justify-between gap-3"><SectionHeading title="Payment history" description="Credit purchases and subscription invoices." />{summary && summary.plan !== 'baby' && <Button size="sm" variant="outline" onClick={() => void openPortal()} disabled={submitting}><CreditCard />Billing portal</Button>}</div>
+            <div className="flex items-end justify-between gap-3"><SectionHeading title="Payment history" description="Credit purchases and subscription invoices." />{summary?.subscription && <Button size="sm" variant="outline" onClick={() => void openPortal()} disabled={submitting}><CreditCard />Billing portal</Button>}</div>
             <div className="overflow-hidden rounded-xl border">
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>Description</div><div>Date</div><div className="text-right">Amount</div><div className="text-right">Status</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
@@ -293,9 +298,9 @@ export function BillingPage() {
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader><DialogTitle>Compare plans</DialogTitle></DialogHeader>
           <div className="grid gap-6 py-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
-            <PlanColumn plan="baby" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Share platform credits with your pool', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
-            <PlanColumn plan="eight" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', 'Higher workspace and file limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
-            <PlanColumn plan="fat" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', 'Highest workspace and file limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
+            <PlanColumn plan="baby" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Share platform credits with your pool', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
+            <PlanColumn plan="eight" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', 'Higher workspace and file limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
+            <PlanColumn plan="fat" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', 'Highest workspace and file limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
           </div>
           {planError && <p className="text-center text-sm text-destructive">{planError}</p>}
         </DialogContent>

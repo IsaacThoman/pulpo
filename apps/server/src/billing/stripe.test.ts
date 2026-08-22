@@ -1,6 +1,11 @@
 import Stripe from 'stripe'
 import { describe, expect, it } from 'vitest'
-import { isMissingStripeResource, reusableStripeCustomerId, verifyStripeWebhookSignature } from './stripe.js'
+import {
+  isMissingStripeResource,
+  reusableStripeCustomerId,
+  subscriptionSwitchParams,
+  verifyStripeWebhookSignature,
+} from './stripe.js'
 
 const secret = 'whsec_test_signature_secret'
 const stripe = new Stripe('sk_test_signature_fixture', { apiVersion: '2026-07-29.dahlia' })
@@ -64,5 +69,16 @@ describe('Stripe customer reuse', () => {
     } as unknown as Stripe
 
     await expect(reusableStripeCustomerId('cus_existing', client)).rejects.toBe(error)
+  })
+})
+
+describe('Stripe subscription changes', () => {
+  it('atomically renews and switches only when immediate proration payment succeeds', () => {
+    expect(subscriptionSwitchParams('si_current', 'price_fat')).toEqual({
+      cancel_at_period_end: false,
+      items: [{ id: 'si_current', price: 'price_fat' }],
+      proration_behavior: 'always_invoice',
+      payment_behavior: 'error_if_incomplete',
+    })
   })
 })
