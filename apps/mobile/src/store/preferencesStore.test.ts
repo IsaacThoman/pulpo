@@ -25,6 +25,49 @@ beforeEach(() => {
   })
 })
 
+describe('synchronized model picker preferences', () => {
+  it('keeps dirty local favorites and provider order until the server matches them', async () => {
+    const localFavorites = ['model-b', 'missing-model']
+    const localOrder = ['lab-b', 'lab-a']
+    await usePreferencesStore.getState().setPreference('favoriteModelIds', localFavorites)
+    await usePreferencesStore.getState().setPreference('providerOrder', localOrder)
+
+    await usePreferencesStore.getState().applyServerPreferences({
+      favoriteModelIds: ['model-a'],
+      providerOrder: ['lab-a', 'lab-b'],
+    })
+    expect(usePreferencesStore.getState()).toMatchObject({
+      favoriteModelIds: localFavorites,
+      providerOrder: localOrder,
+      modelPreferencesDirty: true,
+    })
+
+    await usePreferencesStore.getState().applyServerPreferences({
+      favoriteModelIds: localFavorites,
+      providerOrder: localOrder,
+    })
+    expect(usePreferencesStore.getState().modelPreferencesDirty).toBe(false)
+  })
+
+  it('clears favorites and provider order when another account takes ownership', async () => {
+    usePreferencesStore.setState({
+      synchronizedOwnerNamespace: 'instance|user-a',
+      favoriteModelIds: ['model-a'],
+      providerOrder: ['lab-a'],
+      modelPreferencesDirty: true,
+    })
+
+    await usePreferencesStore.getState().resetSynchronizedPreferences('instance|user-b')
+
+    expect(usePreferencesStore.getState()).toMatchObject({
+      synchronizedOwnerNamespace: 'instance|user-b',
+      favoriteModelIds: [],
+      providerOrder: [],
+      modelPreferencesDirty: false,
+    })
+  })
+})
+
 describe('synchronized Agent mode preferences', () => {
   const local = { 'model-a': false, 'model-b': true }
   const account = { 'model-a': true, 'model-b': false }
