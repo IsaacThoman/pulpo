@@ -2840,6 +2840,7 @@ function BranchControls({ branches, activeIndex, onActivate, disabled = false }:
 
 const MessageRow = memo(function MessageRow({
   message,
+  markdownLayoutWidth,
   model,
   onEdit,
   onPreviewFile,
@@ -2849,6 +2850,7 @@ const MessageRow = memo(function MessageRow({
   editingLocked = false,
 }: {
   message: Message;
+  markdownLayoutWidth: number;
   model: Model;
   onEdit: (message: Message, content: string) => void;
   onPreviewFile: (attachment: Attachment) => void;
@@ -2933,14 +2935,14 @@ const MessageRow = memo(function MessageRow({
             <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
               <View style={styles.userMessageContextContent}>
                 <View style={styles.userBubble}>
-                  <SafeMarkdown containerStyle={styles.userMessageMarkdown}>{message.text}</SafeMarkdown>
+                  <SafeMarkdown containerStyle={styles.userMessageMarkdown} key={`user:${markdownLayoutWidth}`}>{message.text}</SafeMarkdown>
                 </View>
               </View>
             </MessageContextMenu>
           )}
         </View>
       ) : (
-        <View>
+        <View style={styles.assistantMessageContent}>
           <View style={styles.assistantHeader}>
             <ModelMark model={model} size={26} />
             <Text style={styles.assistantName}>{model.name}</Text>
@@ -2965,7 +2967,7 @@ const MessageRow = memo(function MessageRow({
                       steps={segment.steps}
                     />;
                   }
-                  return <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
+                  return <SafeMarkdown containerStyle={styles.assistantMarkdown} key={`text:${index}:${markdownLayoutWidth}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
                 })}
               </View>
             </MessageContextMenu>
@@ -3229,6 +3231,7 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
+  const markdownLayoutWidth = Math.round(windowWidth);
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -4034,6 +4037,7 @@ function ChatView({
   const renderMessage = useCallback(({ item }: { item: Message }) => (
     <MessageRow
       message={item}
+      markdownLayoutWidth={markdownLayoutWidth}
       model={responseModel(item, models, model)}
       onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
       onPreviewFile={openFilePreview}
@@ -4044,7 +4048,7 @@ function ChatView({
         : onActivateBranch}
       editingLocked={Boolean(messageEdit)}
     />
-  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
+  ), [expired, handleMessageEditAction, markdownLayoutWidth, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4230,6 +4234,7 @@ function ChatView({
           contentContainerStyle={[styles.conversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
+          extraData={markdownLayoutWidth}
           initialNumToRender={10}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
@@ -5062,11 +5067,13 @@ const styles = StyleSheet.create({
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-  assistantRow: { marginBottom: 32 },
+  assistantRow: { width: '100%', minWidth: 0, marginBottom: 32 },
+  assistantMessageContent: { width: '100%', minWidth: 0 },
   assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 11 },
   assistantName: { color: COLORS.textSoft, fontSize: 13.5, fontWeight: '600' },
   messageTime: { color: COLORS.muted, fontSize: 11.5 },
-  assistantContent: { width: '100%', gap: 4 },
+  assistantContent: { width: '100%', minWidth: 0, gap: 4 },
+  assistantMarkdown: { width: '100%', maxWidth: '100%', minWidth: 0 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
   responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },
