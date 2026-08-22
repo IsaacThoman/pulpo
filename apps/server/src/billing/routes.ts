@@ -1,4 +1,3 @@
-import { validateEvent, WebhookVerificationError } from '@polar-sh/sdk/webhooks'
 import { desc, eq } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -22,8 +21,9 @@ import {
   createCreditCheckout,
   createCustomerPortalUrl,
   createSubscriptionCheckout,
-} from './polar.js'
-import { processPolarWebhookEvent } from './webhooks.js'
+  verifyStripeWebhookSignature,
+} from './stripe.js'
+import { processStripeWebhookEvent } from './webhooks.js'
 import { activePoolMembership, poolBalanceMicros } from '../pools/service.js'
 
 const creditAmountSchema = z.number().int().min(MIN_TOP_UP_CENTS).max(MAX_TOP_UP_CENTS)
@@ -36,12 +36,22 @@ const subscriptionCheckoutSchema = z.object({
   plan: z.enum(['eight', 'fat']),
 })
 
-function normalizedWebhookHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string> {
-  return Object.fromEntries(Object.entries(headers).flatMap(([key, value]) => {
-    if (typeof value === 'string') return [[key, value]]
-    if (Array.isArray(value)) return [[key, value.join(',')]]
-    return []
-  }))
+export function resolvedCheckoutStatus(
+  checkoutStatus: string | null | undefined,
+  orderStatus: string | null | undefined,
+): string | null {
+  if (orderStatus === 'paid') return 'succeeded'
+  return checkoutStatus ?? null
+}
+
+export function selectSummarySubscription<T extends { plan: string; status: string }>(
+  subscriptions: T[],
+  entitlementPlan: string,
+): T | null {
+  const actionable = subscriptions.filter((item) => item.status === 'active' || item.status === 'past_due')
+  return actionable.find((item) => item.plan === entitlementPlan)
+    ?? actionable[0]
+    ?? null
 }
 
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
@@ -61,7 +71,7 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         return membership ? poolBalanceMicros(tx, membership.pool.id) : null
       }),
     ])
-    const subscription = subscriptions.find((item) => item.plan === entitlements.plan) ?? null
+    const subscription = selectSummarySubscription(subscriptions, entitlements.plan)
     return {
       plan: entitlements.plan,
       balanceMicros: user.balanceMicros,
@@ -72,16 +82,17 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       },
       onHold: entitlements.onHold,
       subscription: subscription ? {
+        plan: subscription.plan === 'fat' ? 'fat' : 'eight',
         status: subscription.status,
         cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
         currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null,
       } : null,
       payments: orders.map((order) => ({
-        id: order.polarOrderId,
+        id: order.stripePaymentId,
         kind: order.billingReason === 'purchase' ? 'credits' : 'subscription',
-        plan: order.polarProductId === config.POLAR_FAT_PRODUCT_ID
+        plan: order.stripePriceId === config.STRIPE_FAT_PRICE_ID
           ? 'fat'
-          : order.polarProductId === config.POLAR_EIGHT_PRODUCT_ID
+          : order.stripePriceId === config.STRIPE_EIGHT_PRICE_ID
             ? 'eight'
             : null,
         requestedCreditCents: order.requestedCreditCents,
@@ -139,21 +150,32 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/billing/checkouts/:id', async (request) => {
     const user = requireUser(request)
     const { id } = z.object({ id: z.string().min(1).max(200) }).parse(request.params)
-    const [checkout] = await db.select({ status: billingCheckouts.status, userId: billingCheckouts.userId })
-      .from(billingCheckouts).where(eq(billingCheckouts.polarCheckoutId, id)).limit(1)
-    if (!checkout || checkout.userId !== user.id) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
-    return { status: checkout.status }
+    const [[checkout], [order]] = await Promise.all([
+      db.select({ status: billingCheckouts.status, userId: billingCheckouts.userId })
+        .from(billingCheckouts).where(eq(billingCheckouts.stripeCheckoutSessionId, id)).limit(1),
+      db.select({ status: billingOrders.status, userId: billingOrders.userId })
+        .from(billingOrders).where(eq(billingOrders.stripeCheckoutSessionId, id)).limit(1),
+    ])
+    if (checkout && order && checkout.userId !== order.userId) {
+      throw new AppError(409, 'checkout_identity_mismatch', 'Checkout ownership does not match its payment')
+    }
+    const ownerId = checkout?.userId ?? order?.userId
+    const status = resolvedCheckoutStatus(checkout?.status, order?.status)
+    if (!ownerId || ownerId !== user.id || !status) throw new AppError(404, 'checkout_not_found', 'Checkout not found')
+    return { status }
   })
 
-  app.post('/api/billing/webhooks/polar', async (request, reply) => {
+  app.post('/api/billing/webhooks/stripe', async (request, reply) => {
     const rawBody = request.rawBody
-    const eventId = request.headers['webhook-id']
-    if (!rawBody || typeof eventId !== 'string') throw new AppError(400, 'invalid_webhook', 'Invalid webhook request')
+    const signature = request.headers['stripe-signature']
+    if (!rawBody || typeof signature !== 'string') throw new AppError(400, 'invalid_webhook', 'Invalid webhook request')
     try {
-      const event = validateEvent(rawBody, normalizedWebhookHeaders(request.headers), config.POLAR_WEBHOOK_SECRET!)
-      await processPolarWebhookEvent(eventId, event)
+      const event = verifyStripeWebhookSignature(rawBody, signature, config.STRIPE_WEBHOOK_SECRET!)
+      await processStripeWebhookEvent(event)
     } catch (error) {
-      if (error instanceof WebhookVerificationError) throw new AppError(400, 'invalid_webhook_signature', 'Invalid webhook signature')
+      if (error instanceof Error && error.name === 'StripeSignatureVerificationError') {
+        throw new AppError(400, 'invalid_webhook_signature', 'Invalid webhook signature')
+      }
       throw error
     }
     reply.code(204)

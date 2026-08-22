@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { grantMicrosForPaidOrder, isStaleProviderUpdate } from './webhooks.js'
+import {
+  grantMicrosForPaidOrder,
+  invoicePaymentListParams,
+  isStaleProviderUpdate,
+  matchingStripeOwner,
+  stripeCheckoutStatus,
+  validateCreditCheckoutPayment,
+} from './webhooks.js'
 
 describe('billing webhook lifecycle rules', () => {
+  it('retrieves invoice payments without exceeding Stripe expansion depth', () => {
+    expect(invoicePaymentListParams('in_paid')).toEqual({
+      invoice: 'in_paid',
+      status: 'paid',
+      limit: 10,
+    })
+  })
+
   it('grants purchased credit exactly once', () => {
     expect(grantMicrosForPaidOrder({
       isCreditPurchase: true,
@@ -49,6 +64,60 @@ describe('billing webhook lifecycle rules', () => {
       billingReason: 'subscription_cycle',
       alreadyGrantedMicros: 16_000_000,
     })).toBe(0)
+  })
+
+  it('does not re-grant credits when reconciliation later fills processing fees', () => {
+    expect(grantMicrosForPaidOrder({
+      isCreditPurchase: true,
+      requestedCreditCents: 1_000,
+      plan: null,
+      billingReason: 'purchase',
+      alreadyGrantedMicros: 10_000_000,
+    })).toBe(0)
+  })
+
+  it('keeps subscription checkout processing until its paid invoice arrives', () => {
+    expect(stripeCheckoutStatus({ mode: 'subscription', status: 'complete', paymentStatus: 'paid' })).toBe('processing')
+    expect(stripeCheckoutStatus({ mode: 'payment', status: 'complete', paymentStatus: 'paid' })).toBe('succeeded')
+    expect(stripeCheckoutStatus({ mode: 'payment', status: 'expired', paymentStatus: 'unpaid' })).toBe('expired')
+  })
+
+  it('validates tax-exclusive credit checkout amounts and configured product', () => {
+    expect(() => validateCreditCheckoutPayment({
+      requestedCreditCents: 1_000,
+      metadataCreditCents: '1000',
+      storedChargeCents: 1_106,
+      subtotalCents: 1_106,
+      currency: 'usd',
+      productId: 'prod_credits',
+      expectedProductId: 'prod_credits',
+      checkoutId: 'cs_test_ok',
+    })).not.toThrow()
+    expect(() => validateCreditCheckoutPayment({
+      requestedCreditCents: 1_000,
+      metadataCreditCents: '1000',
+      storedChargeCents: 1_106,
+      subtotalCents: 1_195,
+      currency: 'usd',
+      productId: 'prod_credits',
+      expectedProductId: 'prod_credits',
+      checkoutId: 'cs_test_amount',
+    })).toThrow(/amount did not match/)
+    expect(() => validateCreditCheckoutPayment({
+      requestedCreditCents: 1_000,
+      metadataCreditCents: '1000',
+      storedChargeCents: 1_106,
+      subtotalCents: 1_106,
+      currency: 'usd',
+      productId: 'prod_unknown',
+      expectedProductId: 'prod_credits',
+      checkoutId: 'cs_test_product',
+    })).toThrow(/Unexpected product/)
+  })
+
+  it('rejects mismatched Stripe ownership signals', () => {
+    expect(matchingStripeOwner(['user_1', 'user_1', null], 'in_1')).toBe('user_1')
+    expect(() => matchingStripeOwner(['user_1', 'user_2'], 'in_1')).toThrow(/identity did not match/)
   })
 
   it('rejects stale subscription state while accepting equal-time retries', () => {

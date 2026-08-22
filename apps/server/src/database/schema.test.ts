@@ -85,6 +85,31 @@ describe('user-owned operational records', () => {
     expect(config.checks.map((constraint) => constraint.name)).toContain('billing_accounts_storage_override_check')
   })
 
+  it('uses Stripe billing identifiers and keeps platform and processing fees separate', () => {
+    const accountConfig = getTableConfig(billingAccounts)
+    const checkoutConfig = getTableConfig(billingCheckouts)
+    const orderConfig = getTableConfig(billingOrders)
+    const subscriptionConfig = getTableConfig(billingSubscriptions)
+    const allNames = [accountConfig, checkoutConfig, orderConfig, subscriptionConfig]
+      .flatMap((config) => [
+        ...config.columns.map((column) => column.name),
+        ...config.indexes.map((index) => index.config.name),
+      ])
+
+    expect(allNames).toEqual(expect.arrayContaining([
+      'stripe_customer_id',
+      'stripe_checkout_session_id',
+      'stripe_payment_id',
+      'stripe_payment_intent_id',
+      'stripe_charge_id',
+      'stripe_price_id',
+      'stripe_subscription_id',
+      'platform_fee_amount_cents',
+      'processing_fee_amount_cents',
+    ]))
+    expect(allNames.some((name) => name?.toLowerCase().includes(['po', 'lar'].join('')))).toBe(false)
+  })
+
   it('enforces one active Pool membership and one pending invitation per Pool friend', () => {
     const memberConfig = getTableConfig(poolMembers)
     const inviteConfig = getTableConfig(poolInvitations)

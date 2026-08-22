@@ -795,7 +795,7 @@ export const usageEvents = pgTable('usage_events', {
 
 export const billingAccounts = pgTable('billing_accounts', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
-  polarCustomerId: text('polar_customer_id'),
+  stripeCustomerId: text('stripe_customer_id'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
   storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
   holdAt: timestamp('hold_at', { withTimezone: true }),
@@ -805,15 +805,15 @@ export const billingAccounts = pgTable('billing_accounts', {
   holdClearedBy: uuid('hold_cleared_by').references(() => users.id, { onDelete: 'set null' }),
   ...timestamps,
 }, (table) => [
-  uniqueIndex('billing_accounts_polar_customer_unique').on(table.polarCustomerId),
+  uniqueIndex('billing_accounts_stripe_customer_unique').on(table.stripeCustomerId),
   check('billing_accounts_weekly_override_check', sql`${table.weeklyLimitOverrideMicros} is null or ${table.weeklyLimitOverrideMicros} >= 0`),
   check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),
 ])
 
 export const billingSubscriptions = pgTable('billing_subscriptions', {
-  polarSubscriptionId: text('polar_subscription_id').primaryKey(),
+  stripeSubscriptionId: text('stripe_subscription_id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  polarProductId: text('polar_product_id').notNull(),
+  stripePriceId: text('stripe_price_id').notNull(),
   plan: text('plan').notNull(),
   status: text('status').notNull(),
   cancelAtPeriodEnd: boolean('cancel_at_period_end').notNull().default(false),
@@ -832,7 +832,7 @@ export const billingCheckouts = pgTable('billing_checkouts', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   idempotencyKey: text('idempotency_key').notNull(),
-  polarCheckoutId: text('polar_checkout_id'),
+  stripeCheckoutSessionId: text('stripe_checkout_session_id'),
   kind: text('kind').notNull(),
   plan: text('plan'),
   requestedCreditCents: integer('requested_credit_cents'),
@@ -843,17 +843,19 @@ export const billingCheckouts = pgTable('billing_checkouts', {
   ...timestamps,
 }, (table) => [
   uniqueIndex('billing_checkouts_user_idempotency_unique').on(table.userId, table.idempotencyKey),
-  uniqueIndex('billing_checkouts_polar_unique').on(table.polarCheckoutId),
+  uniqueIndex('billing_checkouts_stripe_unique').on(table.stripeCheckoutSessionId),
   index('billing_checkouts_user_created_idx').on(table.userId, table.createdAt),
   check('billing_checkouts_kind_check', sql`${table.kind} in ('credits', 'subscription')`),
 ])
 
 export const billingOrders = pgTable('billing_orders', {
-  polarOrderId: text('polar_order_id').primaryKey(),
+  stripePaymentId: text('stripe_payment_id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  polarCheckoutId: text('polar_checkout_id'),
-  polarSubscriptionId: text('polar_subscription_id'),
-  polarProductId: text('polar_product_id').notNull(),
+  stripeCheckoutSessionId: text('stripe_checkout_session_id'),
+  stripeSubscriptionId: text('stripe_subscription_id'),
+  stripePaymentIntentId: text('stripe_payment_intent_id'),
+  stripeChargeId: text('stripe_charge_id'),
+  stripePriceId: text('stripe_price_id').notNull(),
   billingReason: text('billing_reason').notNull(),
   status: text('status').notNull(),
   currency: text('currency').notNull(),
@@ -863,6 +865,7 @@ export const billingOrders = pgTable('billing_orders', {
   taxAmountCents: integer('tax_amount_cents').notNull().default(0),
   totalAmountCents: integer('total_amount_cents').notNull().default(0),
   platformFeeAmountCents: integer('platform_fee_amount_cents').notNull().default(0),
+  processingFeeAmountCents: integer('processing_fee_amount_cents').notNull().default(0),
   refundedAmountCents: integer('refunded_amount_cents').notNull().default(0),
   requestedCreditCents: integer('requested_credit_cents'),
   grantedCreditMicros: bigint('granted_credit_micros', { mode: 'number' }).notNull().default(0),
@@ -871,7 +874,9 @@ export const billingOrders = pgTable('billing_orders', {
   ...timestamps,
 }, (table) => [
   index('billing_orders_user_created_idx').on(table.userId, table.createdAt),
-  index('billing_orders_subscription_idx').on(table.polarSubscriptionId),
+  index('billing_orders_subscription_idx').on(table.stripeSubscriptionId),
+  index('billing_orders_payment_intent_idx').on(table.stripePaymentIntentId),
+  index('billing_orders_charge_idx').on(table.stripeChargeId),
   index('billing_orders_paid_idx').on(table.paidAt),
 ])
 

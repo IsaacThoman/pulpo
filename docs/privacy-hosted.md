@@ -51,7 +51,7 @@ We disclose information only as needed for the hosted service or as required by 
 
 - **AI model and tool providers.** Prompts, conversation context, attachments, tool inputs, and related instructions may be sent to providers selected for your request. Those providers process the information under their own terms and privacy policies.
 - **Infrastructure providers.** Hosting, database, object-storage, email-delivery, security, and similar vendors may process information while providing infrastructure to us.
-- **Payment processing.** Polar processes hosted-service checkouts, subscriptions, payments, and refunds. Its handling of payment information is governed by its own privacy policy.
+- **Payment processing.** Stripe processes hosted-service checkouts, subscriptions, payments, and refunds. Its handling of payment information is governed by its own privacy policy.
 - **People you choose to share with.** If you create a public sharing link or use a collaborative feature, the information you select may be accessible to the recipients or, for a public link, anyone who obtains that link.
 - **Legal and safety disclosures.** We may preserve or disclose information when reasonably necessary to comply with law, legal process, or valid governmental requests; protect users, Pulpo, or the public; or investigate fraud, abuse, or security incidents.
 

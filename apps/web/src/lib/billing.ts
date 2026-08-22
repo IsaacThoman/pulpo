@@ -9,6 +9,7 @@ export interface BillingSummary {
   weekly: { remainingPercentage: number; resetsAt: string } | null
   onHold: boolean
   subscription: {
+    plan: 'eight' | 'fat'
     status: string
     cancelAtPeriodEnd: boolean
     currentPeriodEnd: string | null

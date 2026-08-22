@@ -62,7 +62,8 @@ export function BillingPage() {
     queryKey: ['billing-checkout', checkoutId],
     queryFn: () => apiRequest<{ status: string }>(`/api/billing/checkouts/${encodeURIComponent(checkoutId!)}`),
     enabled: Boolean(checkoutReturned && checkoutId),
-    refetchInterval: (query) => ['succeeded', 'failed', 'expired'].includes(query.state.data?.status ?? '') ? false : 1_500,
+    refetchInterval: (query) => query.state.status === 'error'
+      || ['succeeded', 'failed', 'expired'].includes(query.state.data?.status ?? '') ? false : 1_500,
   })
 
   const [topUpOpen, setTopUpOpen] = useState(false)
@@ -158,8 +159,10 @@ export function BillingPage() {
   }
 
   const changePlan = async (plan: BillingPlan) => {
-    if (!summary || (plan === summary.plan && !summary.subscription?.cancelAtPeriodEnd)) return
-    if (summary.plan === 'baby') {
+    if (!summary) return
+    const managedPlan = summary.subscription?.plan ?? summary.plan
+    if (plan === managedPlan && !summary.subscription?.cancelAtPeriodEnd) return
+    if (!summary.subscription && summary.plan === 'baby') {
       if (plan === 'baby') return
       return startSubscription(plan)
     }
@@ -178,13 +181,16 @@ export function BillingPage() {
     }
   }
 
-  const planSubtitle = !summary || summary.plan === 'baby'
+  const managedPlan = summary?.subscription?.plan ?? summary?.plan ?? 'baby'
+  const planSubtitle = !summary
     ? 'Free · Pay as you go'
     : summary.subscription?.status === 'past_due'
       ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · access through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+      : summary.plan === 'baby'
+        ? 'Free · Pay as you go'
       : summary.subscription?.cancelAtPeriodEnd
-        ? `$${summary.plan === 'fat' ? 24 : 8} monthly${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-        : `$${summary.plan === 'fat' ? 24 : 8} monthly${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        ? `$${managedPlan === 'fat' ? 24 : 8} monthly${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        : `$${managedPlan === 'fat' ? 24 : 8} monthly${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
 
   return (
     <div className="flex h-full flex-col">
@@ -199,12 +205,14 @@ export function BillingPage() {
           {checkoutReturned && (
             <div className={cn(
               'flex items-center gap-3 rounded-lg border px-4 py-3 text-sm',
-              checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
+              checkoutQuery.isError || checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
                 ? 'border-destructive/30 bg-destructive/5 text-destructive'
                 : 'bg-muted/30',
             )}>
-              {!['succeeded', 'failed', 'expired'].includes(checkoutQuery.data?.status ?? '') && <Loader2 className="size-4 animate-spin" />}
-              <span>{checkoutQuery.data?.status === 'succeeded'
+              {!checkoutQuery.isError && !['succeeded', 'failed', 'expired'].includes(checkoutQuery.data?.status ?? '') && <Loader2 className="size-4 animate-spin" />}
+              <span>{checkoutQuery.isError
+                ? 'Could not confirm this checkout. Your balance and payment history may already be updated.'
+                : checkoutQuery.data?.status === 'succeeded'
                 ? 'Payment confirmed. Your billing balance is up to date.'
                 : checkoutQuery.data?.status === 'failed' || checkoutQuery.data?.status === 'expired'
                   ? 'Checkout was not completed.'
@@ -239,14 +247,14 @@ export function BillingPage() {
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.weekly.remainingPercentage}%` }} /></div>
                 <div className="mt-1.5 text-xs text-muted-foreground">Resets {new Date(summary.weekly.resetsAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
-              <Button className="mt-4" variant={summary?.plan === 'baby' ? 'default' : 'outline'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
-                {summary?.plan === 'baby' ? 'Compare plans' : 'Manage plan'}
+              <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
+                {summary?.subscription ? 'Manage plan' : 'Compare plans'}
               </Button>
             </div>
           </div>
 
           <section className="space-y-3">
-            <div className="flex items-end justify-between gap-3"><SectionHeading title="Payment history" description="Credit purchases and subscription invoices." />{summary && summary.plan !== 'baby' && <Button size="sm" variant="outline" onClick={() => void openPortal()} disabled={submitting}><CreditCard />Billing portal</Button>}</div>
+            <div className="flex items-end justify-between gap-3"><SectionHeading title="Payment history" description="Credit purchases and subscription invoices." />{summary?.subscription && <Button size="sm" variant="outline" onClick={() => void openPortal()} disabled={submitting}><CreditCard />Billing portal</Button>}</div>
             <div className="overflow-hidden rounded-xl border">
               <div className="hidden grid-cols-[minmax(0,1fr)_140px_100px_90px] border-b px-4 py-2.5 text-xs text-muted-foreground sm:grid"><div>Description</div><div>Date</div><div className="text-right">Amount</div><div className="text-right">Status</div></div>
               {summary?.payments.length ? <div className="divide-y">{summary.payments.map((payment) => (
@@ -275,12 +283,12 @@ export function BillingPage() {
               {validPurchase && quoteQuery.isPending && <div className="flex items-center gap-2 rounded-lg bg-muted/50 p-4 text-xs text-muted-foreground"><Loader2 className="size-3.5 animate-spin" />Calculating total before tax…</div>}
               {quote && <Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} />}
               {quoteQuery.isError && <p className="text-xs text-destructive">Could not calculate this purchase. Try again.</p>}
-              <p className="text-xs text-muted-foreground">Estimate includes a 5% + $0.50 transaction fee. Applicable sales tax or VAT is calculated and added at checkout.</p>
+              <p className="text-xs text-muted-foreground">Estimate includes Pulpo's 5% + $0.50 platform fee. Sales tax is calculated where Pulpo is registered and the purchase is taxable.</p>
             </div>
             <DialogFooter><Button variant="outline" onClick={() => closeTopUp(false)}>Cancel</Button><Button disabled={!quote} onClick={() => setTopUpStep('review')}>Continue</Button></DialogFooter>
           </> : <>
             <DialogHeader><DialogTitle>Review purchase</DialogTitle><DialogDescription>You’ll finish payment in a secure checkout.</DialogDescription></DialogHeader>
-            <div className="space-y-4 py-2"><Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} /><div className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" />Applicable sales tax or VAT is calculated and added at checkout.</div>{topUpError && <p className="text-sm text-destructive">{topUpError}</p>}</div>
+            <div className="space-y-4 py-2"><Quote credits={purchaseAmount} fee={feeCoverageAmount} charge={chargeAmount} /><div className="flex items-start gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-3.5 shrink-0" />Sales tax is calculated where Pulpo is registered and the purchase is taxable.</div>{topUpError && <p className="text-sm text-destructive">{topUpError}</p>}</div>
             <DialogFooter><Button variant="outline" disabled={submitting} onClick={() => setTopUpStep('amount')}><ArrowLeft />Back</Button><Button disabled={submitting} onClick={() => void startCreditCheckout()}>{submitting && <Loader2 className="animate-spin" />}Continue to checkout</Button></DialogFooter>
           </>}
         </DialogContent>
@@ -290,9 +298,9 @@ export function BillingPage() {
         <DialogContent className="sm:max-w-5xl">
           <DialogHeader><DialogTitle>Compare plans</DialogTitle></DialogHeader>
           <div className="grid gap-6 py-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
-            <PlanColumn plan="baby" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Share platform credits with your pool', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
-            <PlanColumn plan="eight" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', 'Higher workspace and file limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
-            <PlanColumn plan="fat" current={summary?.plan ?? 'baby'} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', 'Highest workspace and file limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
+            <PlanColumn plan="baby" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Pay as you go', 'Share platform credits with your pool', 'Free and source-available']} onChoose={() => void changePlan('baby')} disabled={submitting} />
+            <PlanColumn plan="eight" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Baby', 'High usage limits', 'Higher workspace and file limits', '$2 accumulating platform credits added each month', 'Cancel any time']} onChoose={() => void changePlan('eight')} disabled={submitting} />
+            <PlanColumn plan="fat" current={managedPlan} cancelAtPeriodEnd={summary?.subscription?.cancelAtPeriodEnd ?? false} benefits={['Everything in Pulpo Eight', 'Highest usage limits', 'Highest workspace and file limits', '$16 accumulating platform credits added each month']} onChoose={() => void changePlan('fat')} disabled={submitting} />
           </div>
           {planError && <p className="text-center text-sm text-destructive">{planError}</p>}
         </DialogContent>
@@ -302,7 +310,7 @@ export function BillingPage() {
 }
 
 function Quote({ credits, fee, charge }: { credits: number; fee: number; charge: number }) {
-  return <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">Credits added</span><span className="tabular-nums">{formatBalance(credits)}</span></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">Transaction fee coverage</span><span className="tabular-nums">{formatBalance(fee)}</span></div><Separator className="my-2" /><div className="flex justify-between gap-4 font-medium"><span>Total before tax</span><span className="tabular-nums">{formatBalance(charge)}</span></div></div>
+  return <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">Credits added</span><span className="tabular-nums">{formatBalance(credits)}</span></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">Pulpo platform fee</span><span className="tabular-nums">{formatBalance(fee)}</span></div><Separator className="my-2" /><div className="flex justify-between gap-4 font-medium"><span>Total before tax</span><span className="tabular-nums">{formatBalance(charge)}</span></div></div>
 }
 
 function PlanBadge({ plan }: { plan: BillingPlan }) {
