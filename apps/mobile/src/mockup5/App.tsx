@@ -2853,22 +2853,20 @@ function AssistantFrame({ children, model, sideRail, time }: {
   sideRail: boolean;
   time: string;
 }) {
-  const header = (
-    <>
+  return (
+    <View style={styles.assistantFrame}>
       <View style={[styles.assistantMark, !sideRail && styles.assistantMarkCompact]}>
         <ModelMark model={model} size={28} />
       </View>
-      <View style={styles.assistantBody}>
-        <View style={styles.assistantHeader}>
+      <View style={[styles.assistantBody, sideRail && styles.assistantBodySideRail]}>
+        <View style={[styles.assistantHeader, !sideRail && styles.assistantHeaderCompact]}>
           <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
           <Text style={styles.messageTime}>{time}</Text>
         </View>
-        {sideRail ? children : null}
+        {children}
       </View>
-    </>
+    </View>
   );
-  if (sideRail) return <View style={styles.assistantLayout}>{header}</View>;
-  return <View><View style={[styles.assistantLayout, styles.assistantLayoutCompact]}>{header}</View>{children}</View>;
 }
 
 const MessageRow = memo(function MessageRow({
@@ -5114,12 +5112,13 @@ const styles = StyleSheet.create({
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
   assistantRow: { width: '100%', minWidth: 0, marginBottom: 32 },
-  assistantLayout: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  assistantLayoutCompact: { alignItems: 'center', gap: 8 },
-  assistantMark: { width: 28, paddingTop: 4 },
-  assistantMarkCompact: { paddingTop: 0 },
-  assistantBody: { minWidth: 0, flex: 1 },
+  assistantFrame: { position: 'relative', width: '100%', minWidth: 0 },
+  assistantMark: { position: 'absolute', zIndex: 1, left: 0, top: 4, width: 28 },
+  assistantMarkCompact: { top: 0 },
+  assistantBody: { width: '100%', minWidth: 0 },
+  assistantBodySideRail: { paddingLeft: 40 },
   assistantHeader: { minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  assistantHeaderCompact: { minHeight: 28, alignItems: 'center', paddingLeft: 36 },
   assistantName: { minWidth: 0, flexShrink: 1, color: COLORS.textSoft, fontSize: 14, fontWeight: '600' },
   messageTime: { flexShrink: 0, color: COLORS.muted, fontSize: 11.5 },
   assistantContent: { width: '100%', minWidth: 0, gap: 6, marginTop: 4 },
