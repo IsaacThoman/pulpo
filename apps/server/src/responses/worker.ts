@@ -136,7 +136,7 @@ async function persistItems(responseId: string, output: unknown[]): Promise<void
   })
 }
 
-async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor): Promise<unknown[]> {
+async function prepareInputFiles(client: OpenAI, userId: string, input: unknown[], model: typeof models.$inferSelect, interceptor: ModelImageInterceptor): Promise<unknown[]> {
   const prepared: unknown[] = []
   const normalizedInput = await interceptOpenAIInputImages(input, model, interceptor)
   for (const item of normalizedInput) {
@@ -152,7 +152,10 @@ async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof
         content.push(part)
         continue
       }
-      const [attachment] = await db.select().from(attachments).where(eq(attachments.id, filePart.attachment_id)).limit(1)
+      const [attachment] = await db.select().from(attachments).where(and(
+        eq(attachments.id, filePart.attachment_id),
+        eq(attachments.userId, userId),
+      )).limit(1)
       if (!attachment || attachment.status !== 'ready') throw new Error('Attachment is unavailable')
       const bytes = await getBlobStore().get(attachment.objectKey)
       if (attachment.mimeType.startsWith('image/')) {
@@ -169,7 +172,10 @@ async function prepareInputFiles(client: OpenAI, input: unknown[], model: typeof
           purpose: 'user_data',
         })
         fileId = uploaded.id
-        await db.update(attachments).set({ openaiFileId: fileId, updatedAt: new Date() }).where(eq(attachments.id, attachment.id))
+        await db.update(attachments).set({ openaiFileId: fileId, updatedAt: new Date() }).where(and(
+          eq(attachments.id, attachment.id),
+          eq(attachments.userId, userId),
+        ))
       }
       content.push({ type: 'input_file', file_id: fileId })
     }
@@ -398,7 +404,7 @@ async function processGenerationAttempt(
     const [updated] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   }, (costMicros) => { sidecarCostMicros += costMicros })
-  const input = await prepareInputFiles(client, contextual.input, record.model, imageInterceptor)
+  const input = await prepareInputFiles(client, record.response.userId, contextual.input, record.model, imageInterceptor)
   let output: unknown[] = [...contextual.compactionItems]
   let outputStarted = generationOutputHasStarted(output)
   let usage: ResponseUsage | null = null
