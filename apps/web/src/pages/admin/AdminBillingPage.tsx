@@ -104,7 +104,7 @@ export function AdminBillingPage() {
   const [syncing, setSyncing] = useState(false)
   const [message, setMessage] = useState('')
   const dashboardQuery = useQuery({
-    queryKey: ['admin-billing', range],
+    queryKey: ['admin-billing-v2', range],
     queryFn: () => apiRequest<Dashboard>(`/api/admin/billing/dashboard?range=${range}`),
     refetchInterval: 30_000,
   })
@@ -173,7 +173,7 @@ export function AdminBillingPage() {
 
   const data = dashboardQuery.data
   const totals = data?.totals
-  const stripeMode = data?.stripe.mode
+  const stripeMode = data?.stripe?.mode
   const chart = data?.trend.map((row) => ({ day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
   const limitsAreValid = [eightLimit, fatLimit, babyStorage, eightStorage, fatStorage]
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
