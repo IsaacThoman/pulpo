@@ -2,7 +2,12 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { withDangerousMod } = require('@expo/config-plugins')
 
-const ICON_SETS = ['LucideFlaskConical.imageset', 'LucideFlaskConicalWhite.imageset']
+const ICON_SETS = [
+  'FavoriteStar.imageset',
+  'FavoriteStarWhite.imageset',
+  'LucideFlaskConical.imageset',
+  'LucideFlaskConicalWhite.imageset',
+]
 
 module.exports = function withPulpoIcons(config) {
   return withDangerousMod(config, [
