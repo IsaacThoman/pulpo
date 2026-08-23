@@ -34,7 +34,6 @@ jobs:
           cache: npm
 
       - name: Report high and critical vulnerabilities
-        continue-on-error: true
         run: npm audit --audit-level=high
 
   checks:
