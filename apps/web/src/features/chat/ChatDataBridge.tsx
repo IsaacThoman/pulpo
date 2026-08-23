@@ -18,6 +18,7 @@ import { useAuth } from '@/stores/auth'
 import { mergeServerChatDetails, useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
+import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -100,7 +101,11 @@ export function ChatDataBridge() {
 
   useEffect(() => {
     if (!userId || userRole === 'pending') return
-    const socket: PulpoSocket = io({ path: '/socket.io', withCredentials: true })
+    const socket: PulpoSocket = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
+      path: '/socket.io',
+      withCredentials: !isDesktopRuntime(),
+      auth: isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : undefined,
+    })
     socketRef.current = socket
     const subscribedResponseIds = subscribedResponseIdsRef.current
 

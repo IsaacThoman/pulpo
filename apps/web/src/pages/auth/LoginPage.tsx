@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 export function LoginPage() {
   const user = useAuth((s) => s.user)
@@ -23,11 +24,11 @@ export function LoginPage() {
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const passkeySupported = browserSupportsWebAuthn()
+  const passkeySupported = isDesktopRuntime() || browserSupportsWebAuthn()
 
   useEffect(() => {
     let active = true
-    if (!passkeySupported || user || setupRequired !== false) return
+    if (isDesktopRuntime() || !passkeySupported || user || setupRequired !== false) return
     void browserSupportsWebAuthnAutofill().then(async (supported) => {
       if (!active || !supported) return
       const result = await passkeyLogin(true)

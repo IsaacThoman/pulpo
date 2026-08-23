@@ -1,4 +1,7 @@
 @import 'tailwindcss';
+/* The Electron renderer imports this stylesheet from outside apps/web, so its
+   Vite root cannot infer the web component sources on its own. */
+@source './**/*.{ts,tsx}';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -260,4 +263,21 @@ body {
 }
 .katex-error {
   color: var(--muted-foreground) !important;
+}
+html[data-desktop="true"] .desktop-shell {
+  box-sizing: border-box;
+  height: 100%;
+  padding-top: 38px;
+}
+
+html[data-desktop="true"] .desktop-titlebar {
+  -webkit-app-region: drag;
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+}
+
+html[data-desktop="true"] .desktop-no-drag,
+html[data-desktop="true"] button,
+html[data-desktop="true"] input,
+html[data-desktop="true"] a {
+  -webkit-app-region: no-drag;
 }

@@ -5,6 +5,9 @@ import { RequireAuth } from '@/components/auth/RequireAuth'
 import { RequireAdmin } from '@/components/auth/RequireAdmin'
 import { AuthLayout } from '@/pages/auth/AuthLayout'
 import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
+import { DesktopInstancePage } from '@/components/desktop/DesktopInstancePage'
+import { DesktopTitleBar } from '@/components/desktop/DesktopTitleBar'
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
@@ -51,11 +54,19 @@ function RequireBilling({ children }: { children: ReactNode }) {
 
 export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
+  const checkingSession = useAuth((state) => state.checkingSession)
+  const instanceReady = useAuth((state) => state.instanceReady)
   useEffect(() => { void bootstrap() }, [bootstrap])
 
   return (
     <BrowserRouter>
-      <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">Loading Pulpo…</div>}>
+      <div className="desktop-shell h-full">
+      <DesktopTitleBar />
+      {isDesktopRuntime() && (checkingSession || !instanceReady) ? (
+        checkingSession
+          ? <div className="grid h-full place-items-center text-sm text-muted-foreground">Connecting to Pulpo…</div>
+          : <DesktopInstancePage />
+      ) : <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">Loading Pulpo…</div>}>
         <Routes>
         <Route element={<AuthLayout />}>
           <Route path="setup" element={<SetupPage />} />
@@ -107,7 +118,8 @@ export default function App() {
           </Route>
         </Route>
         </Routes>
-      </Suspense>
+      </Suspense>}
+      </div>
     </BrowserRouter>
   )
 }

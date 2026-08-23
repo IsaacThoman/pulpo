@@ -1,9 +1,16 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 import { retainedChatQueryHashes } from './chat-cache-policy'
+import { runtimeAccountKey, runtimeInstanceUrl, isDesktopRuntime } from '../runtime'
 
 const DEFAULT_MAX_LOCAL_CHATS = 50
-const QUERY_CACHE_KEY = 'query-cache-v1'
+function queryCacheKey(): string {
+  return isDesktopRuntime() ? `query-cache-v1:${runtimeInstanceUrl()}` : 'query-cache-v1'
+}
+
+export function localAccountKey(userId: string): string {
+  return userId.includes('|') ? userId : runtimeAccountKey(userId)
+}
 
 interface KeyValueRow {
   key: string
@@ -78,6 +85,15 @@ class PulpoLocalDatabase extends Dexie {
       drafts: '&id, userId, [userId+chatId], updatedAt',
       attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
     })
+    // Desktop stores the instance-qualified account key in the userId field.
+    // Existing browser rows intentionally keep their user ID as the account key.
+    this.version(4).stores({
+      kv: '&key, updatedAt',
+      outbox: '&id, userId, [userId+nextAttemptAt], createdAt',
+      responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
+      drafts: '&id, userId, [userId+chatId], updatedAt',
+      attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
+    })
   }
 }
 
@@ -114,22 +130,23 @@ function trimChatQueries(client: PersistedClient): PersistedClient {
 
 export const indexedDbPersister: Persister = {
   persistClient: async (client) => {
-    await localDb.kv.put({ key: QUERY_CACHE_KEY, value: trimChatQueries(client), updatedAt: Date.now() })
+    await localDb.kv.put({ key: queryCacheKey(), value: trimChatQueries(client), updatedAt: Date.now() })
   },
   restoreClient: async () => {
-    const row = await localDb.kv.get(QUERY_CACHE_KEY)
+    const row = await localDb.kv.get(queryCacheKey())
     return row?.value as PersistedClient | undefined
   },
   removeClient: async () => {
-    await localDb.kv.delete(QUERY_CACHE_KEY)
+    await localDb.kv.delete(queryCacheKey())
   },
 }
 
 export async function clearLocalUserData(userId: string): Promise<void> {
+  const accountKey = localAccountKey(userId)
   await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, async () => {
-    await localDb.outbox.where('userId').equals(userId).delete()
-    await localDb.drafts.where('userId').equals(userId).delete()
-    await localDb.attachmentBlobs.where('userId').equals(userId).delete()
+    await localDb.outbox.where('userId').equals(accountKey).delete()
+    await localDb.drafts.where('userId').equals(accountKey).delete()
+    await localDb.attachmentBlobs.where('userId').equals(accountKey).delete()
   })
   await indexedDbPersister.removeClient()
 }

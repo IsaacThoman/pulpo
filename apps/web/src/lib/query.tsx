@@ -3,6 +3,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { indexedDbPersister } from './local-first/database'
 import { queryClient } from './query-client'
 import { shouldPersistQuery } from './query-persistence'
+import { isDesktopRuntime, runtimeInstanceUrl } from './runtime'
 
 export function QueryProvider({ children }: PropsWithChildren) {
   useEffect(() => {
@@ -17,7 +18,7 @@ export function QueryProvider({ children }: PropsWithChildren) {
       persistOptions={{
         persister: indexedDbPersister,
         maxAge: 7 * 24 * 60 * 60 * 1_000,
-        buster: 'pulpo-web-v3',
+        buster: isDesktopRuntime() ? `pulpo-desktop-v1:${runtimeInstanceUrl()}` : 'pulpo-web-v3',
         dehydrateOptions: {
           shouldDehydrateQuery: shouldPersistQuery,
         },

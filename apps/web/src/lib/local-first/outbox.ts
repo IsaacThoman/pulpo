@@ -1,5 +1,5 @@
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
-import { localDb, type OutboxMutation } from './database'
+import { localAccountKey, localDb, type OutboxMutation } from './database'
 
 let flushing: Promise<void> | null = null
 
@@ -11,6 +11,7 @@ export async function enqueueMutation(
 ): Promise<OutboxMutation> {
   const record: OutboxMutation = {
     ...mutation,
+    userId: localAccountKey(mutation.userId),
     id: mutation.id ?? crypto.randomUUID(),
     idempotencyKey: mutation.idempotencyKey ?? crypto.randomUUID(),
     createdAt: Date.now(),
@@ -23,9 +24,10 @@ export async function enqueueMutation(
 
 async function runOutbox(userId: string): Promise<void> {
   if (!navigator.onLine) return
+  const accountKey = localAccountKey(userId)
   const due = await localDb.outbox
     .where('[userId+nextAttemptAt]')
-    .between([userId, DexieMinKey], [userId, Date.now()])
+    .between([accountKey, DexieMinKey], [accountKey, Date.now()])
     .sortBy('createdAt')
   for (const mutation of due) {
     try {

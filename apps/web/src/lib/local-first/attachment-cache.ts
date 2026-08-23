@@ -1,5 +1,5 @@
-import { apiRequest } from '@/lib/api'
-import { localDb, type CachedAttachmentRow } from './database'
+import { apiRequest, authenticatedFetch } from '@/lib/api'
+import { localAccountKey, localDb, type CachedAttachmentRow } from './database'
 
 export interface AttachmentMetadata {
   id: string
@@ -16,7 +16,7 @@ export function attachmentQuotaBytes(quotaMb: number): number {
 }
 
 async function pruneAttachmentCache(userId: string, quotaBytes: number): Promise<void> {
-  const rows = await localDb.attachmentBlobs.where('userId').equals(userId).sortBy('lastAccessed')
+  const rows = await localDb.attachmentBlobs.where('userId').equals(localAccountKey(userId)).sortBy('lastAccessed')
   let total = rows.reduce((sum, row) => sum + row.sizeBytes, 0)
   const remove: string[] = []
   for (const row of rows) {
@@ -37,7 +37,7 @@ export async function cacheAttachmentBlob(
   if (quotaBytes === 0 || blob.size > quotaBytes) return false
   const row: CachedAttachmentRow = {
     ...metadata,
-    userId,
+    userId: localAccountKey(userId),
     sizeBytes: blob.size,
     blob,
     lastAccessed: Date.now(),
@@ -51,7 +51,7 @@ export async function cacheAttachmentBlob(
 
 export async function getCachedAttachment(userId: string, id: string): Promise<CachedAttachmentRow | undefined> {
   const row = await localDb.attachmentBlobs.get(id)
-  if (!row || row.userId !== userId) return undefined
+  if (!row || row.userId !== localAccountKey(userId)) return undefined
   await localDb.attachmentBlobs.update(id, { lastAccessed: Date.now() })
   return row
 }
@@ -68,7 +68,7 @@ async function cacheRemoteAttachment(
   if (await getCachedAttachment(userId, metadata.id)) return true
   if (metadata.sizeBytes > attachmentQuotaBytes(quotaMb)) return false
   const { url } = await apiRequest<{ url: string }>(`/api/attachments/${metadata.id}/download`)
-  const response = await fetch(url, { credentials: url.startsWith('/api/') ? 'include' : 'omit' })
+  const response = await authenticatedFetch(url)
   if (!response.ok) throw new Error(`Attachment download failed (${response.status})`)
   const blob = await response.blob()
   return cacheAttachmentBlob(userId, metadata, blob, quotaMb)

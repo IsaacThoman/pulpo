@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import type { Attachment } from '@/lib/types'
-import { apiRequest } from '@/lib/api'
+import { apiRequest, authenticatedFetch } from '@/lib/api'
 import { getCachedAttachment } from '@/lib/local-first/attachment-cache'
 import { useAuth } from '@/stores/auth'
 import { formatBytes } from '@/lib/attachments'
@@ -78,7 +78,7 @@ function usePreviewContent(
             blob = cached.blob
           } else {
             const { url } = await apiRequest<{ url: string }>(`/api/attachments/${attachment.id}/download`)
-            const response = await fetch(url, { credentials: url.startsWith('/api/') ? 'include' : 'omit' })
+            const response = await authenticatedFetch(url)
             if (!response.ok) throw new Error(`Preview failed (${response.status})`)
             blob = await response.blob()
           }

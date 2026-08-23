@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { Field, Section } from '@/components/admin/kit'
 import { Button } from '@/components/ui/button'
-import { apiRequest } from '@/lib/api'
+import { apiRequest, authenticatedFetch, downloadApiFile } from '@/lib/api'
 
 async function requestExport(type: 'config' | 'chats' | 'users' | 'usage'): Promise<void> {
   const job = await apiRequest<{ id: string }>('/api/admin/exports', { method: 'POST', body: { type } })
@@ -11,7 +11,7 @@ async function requestExport(type: 'config' | 'chats' | 'users' | 'usage'): Prom
     const result = await apiRequest<{ data: Array<{ id: string; status: string; error?: string }> }>('/api/admin/exports')
     const current = result.data.find((candidate) => candidate.id === job.id)
     if (current?.status === 'completed') {
-      location.assign(`/api/admin/exports/${job.id}/download`)
+      await downloadApiFile(`/api/admin/exports/${job.id}/download`)
       return
     }
     if (current?.status === 'failed') throw new Error(current.error ?? 'Export failed')
@@ -23,8 +23,8 @@ export function DatabaseSection() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
   const [confirmation, setConfirmation] = useState('')
   const [status, setStatus] = useState('')
-  const createBackup = async () => { const job = await apiRequest<{ id: string }>('/api/admin/backups', { method: 'POST' }); setStatus('Building backup…'); for (let i = 0; i < 600; i += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const result = await apiRequest<{ data: Array<{ id: string; status: string; progress: number; error?: string }> }>('/api/admin/backups'); const current = result.data.find((x) => x.id === job.id); if (current) setStatus(`Backup ${current.progress}%`); if (current?.status === 'completed') { location.assign(`/api/admin/backups/${job.id}/download`); setStatus('Backup ready'); return } if (current?.status === 'failed') { setStatus(current.error ?? 'Backup failed'); return } } }
-  const restore = async () => { if (!restoreFile || confirmation !== 'RESTORE') return; const form = new FormData(); form.append('confirmation', confirmation); form.append('file', restoreFile); setStatus('Uploading and validating restore…'); const response = await fetch('/api/admin/restore', { method: 'POST', credentials: 'include', body: form }); const result = await response.json(); if (!response.ok) { setStatus(result?.error?.message ?? 'Restore failed'); return } for (let i = 0; i < 3600; i += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const jobs = await apiRequest<{ data: Array<{ id: string; status: string; progress: number; error?: string }> }>('/api/admin/backups').catch(() => null); const current = jobs?.data.find((x) => x.id === result.id); if (!current) { location.assign('/login'); return } setStatus(`Restore ${current.progress}%`); if (current.status === 'completed') { location.assign('/login'); return } if (current.status === 'failed') { setStatus(current.error ?? 'Restore failed'); return } } }
+  const createBackup = async () => { const job = await apiRequest<{ id: string }>('/api/admin/backups', { method: 'POST' }); setStatus('Building backup…'); for (let i = 0; i < 600; i += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const result = await apiRequest<{ data: Array<{ id: string; status: string; progress: number; error?: string }> }>('/api/admin/backups'); const current = result.data.find((x) => x.id === job.id); if (current) setStatus(`Backup ${current.progress}%`); if (current?.status === 'completed') { await downloadApiFile(`/api/admin/backups/${job.id}/download`); setStatus('Backup ready'); return } if (current?.status === 'failed') { setStatus(current.error ?? 'Backup failed'); return } } }
+  const restore = async () => { if (!restoreFile || confirmation !== 'RESTORE') return; const form = new FormData(); form.append('confirmation', confirmation); form.append('file', restoreFile); setStatus('Uploading and validating restore…'); const response = await authenticatedFetch('/api/admin/restore', { method: 'POST', body: form }); const result = await response.json(); if (!response.ok) { setStatus(result?.error?.message ?? 'Restore failed'); return } for (let i = 0; i < 3600; i += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); const jobs = await apiRequest<{ data: Array<{ id: string; status: string; progress: number; error?: string }> }>('/api/admin/backups').catch(() => null); const current = jobs?.data.find((x) => x.id === result.id); if (!current) { location.assign('/login'); return } setStatus(`Restore ${current.progress}%`); if (current.status === 'completed') { location.assign('/login'); return } if (current.status === 'failed') { setStatus(current.error ?? 'Restore failed'); return } } }
   return (
     <div>
       <Section title="Config">

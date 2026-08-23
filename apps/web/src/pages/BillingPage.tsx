@@ -17,6 +17,7 @@ import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
+import { openExternalUrl } from '@/lib/runtime'
 import { billingPlanName, fetchBillingSummary, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
@@ -125,7 +126,7 @@ export function BillingPage() {
       const result = await apiRequest<{ url: string }>('/api/billing/checkouts/credits', {
         method: 'POST', body: { creditCents, idempotencyKey: topUpKey },
       })
-      window.location.assign(result.url)
+      await openExternalUrl(result.url)
     } catch (error) {
       setTopUpError(error instanceof Error ? error.message : 'Could not start checkout.')
       setTopUpKey(newCheckoutKey())
@@ -138,7 +139,7 @@ export function BillingPage() {
     setPlanError('')
     try {
       const result = await apiRequest<{ url: string }>('/api/billing/portal', { method: 'POST' })
-      window.location.assign(result.url)
+      await openExternalUrl(result.url)
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not open billing management.')
       setSubmitting(false)
@@ -152,7 +153,7 @@ export function BillingPage() {
       const result = await apiRequest<{ url: string }>('/api/billing/checkouts/subscription', {
         method: 'POST', body: { plan, idempotencyKey: newCheckoutKey() },
       })
-      window.location.assign(result.url)
+      await openExternalUrl(result.url)
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not start subscription checkout.')
       setSubmitting(false)

@@ -27,6 +27,7 @@ import {
   modelPreferencesSchema,
   personalizationSettingsSchema,
   nativeLoginInputSchema,
+  nativeSetupInputSchema,
   passkeyAuthenticationResponseSchema,
   passkeyListSchema,
   passkeyRegistrationResponseSchema,
@@ -297,6 +298,9 @@ describe('shared contracts', () => {
     expect(nativeLoginInputSchema.parse({
       email: 'member@example.com', password: 'password', deviceLabel: 'Isaac’s iPhone',
     }).deviceLabel).toBe('Isaac’s iPhone')
+    expect(nativeSetupInputSchema.parse({
+      name: 'Admin', username: 'admin', email: 'admin@example.com', password: 'password', deviceLabel: 'Pulpo for Mac',
+    }).deviceLabel).toBe('Pulpo for Mac')
     expect(mobileConfigSchema.safeParse({
       mobileApiVersion: 1,
       instance: { name: 'Pulpo', version: '1.0.0', publicUrl: 'https://pulpo.baby' },
