@@ -89,6 +89,7 @@ export function BillingPage() {
 
   const summary = summaryQuery.data
   const accountBalanceMicros = summary?.balanceMicros ?? authBalanceMicros
+  const availableAccountBalanceMicros = summary?.availableBalanceMicros ?? accountBalanceMicros
   const creditCents = creditCentsFromInput(creditAmountInput)
   const validPurchase = creditCents !== null && creditCents >= 500 && creditCents <= 50_000
   const quoteQuery = useQuery({
@@ -230,12 +231,16 @@ export function BillingPage() {
 
           <div className="grid gap-6 lg:grid-cols-5 lg:gap-0 lg:divide-x">
             <div className="py-1 lg:col-span-3 lg:pr-6">
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />Account balance</div>
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />Available account balance</div>
               <div className="mt-3 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                {accountBalanceMicros === undefined ? '—' : formatBalance(accountBalanceMicros / 1_000_000)}
+                {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
               </div>
-              <p className="mt-2 max-w-md text-xs text-muted-foreground">Credits are used for chats, API calls, and other metered model usage.</p>
-              {summary?.poolBalanceMicros !== null && summary?.poolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />Pool balance</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.poolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">The combined account balances available to your Pool.</p></div>}
+              <p className="mt-2 max-w-md text-xs text-muted-foreground">{summary?.balancePendingMicros
+                ? `${formatBalance(summary.balancePendingMicros / 1_000_000)} reserved for work in progress. Unused credits return when it finishes.`
+                : 'Credits are used for chats, API calls, and other metered model usage.'}</p>
+              {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />Available Pool balance</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">{summary.poolBalancePendingMicros
+                ? `${formatBalance(summary.poolBalancePendingMicros / 1_000_000)} reserved for Pool work in progress. Unused credits return when it finishes.`
+                : 'The combined account balances available to your Pool.'}</p></div>}
             </div>
             <div className="py-1 lg:col-span-2 lg:pl-6">
               <div className="flex items-start justify-between gap-3">
@@ -245,6 +250,7 @@ export function BillingPage() {
               {summary?.weekly && <div className="mt-4">
                 <div className="flex justify-between text-xs text-muted-foreground"><span>Weekly usage</span><span>{summary.weekly.remainingPercentage}% left</span></div>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.weekly.remainingPercentage}%` }} /></div>
+                {summary.weekly.pendingMicros > 0 && <div className="mt-1.5 text-xs text-muted-foreground">Includes {formatBalance(summary.weekly.pendingMicros / 1_000_000)} reserved for work in progress.</div>}
                 <div className="mt-1.5 text-xs text-muted-foreground">Resets {new Date(summary.weekly.resetsAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
               <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
