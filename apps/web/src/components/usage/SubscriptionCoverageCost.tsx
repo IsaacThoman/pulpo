@@ -24,7 +24,7 @@ export function SubscriptionCoverageCost({
           tabIndex={0}
           aria-label={`${formattedCost} · ${label}`}
           data-subscription-coverage={details.status}
-          className="cursor-help rounded-sm text-violet-700 underline decoration-violet-500/70 decoration-dotted underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:text-violet-300 dark:decoration-violet-400/70"
+          className="cursor-help rounded-sm text-violet-700 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:text-violet-300"
         >
           {formattedCost}
         </span>
