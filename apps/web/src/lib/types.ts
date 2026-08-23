@@ -132,6 +132,7 @@ export interface UsageRecord {
   tokensIn: number
   tokensOut: number
   cost: number
+  subscriptionCoveredCost: number
   balanceAfter: number | null
   latencyMs: number
 }
