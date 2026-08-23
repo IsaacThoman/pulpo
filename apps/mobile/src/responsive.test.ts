@@ -25,11 +25,11 @@ describe('responsive window sizing', () => {
     expect(usesPersistentSidebar(800)).toBe(true)
   })
 
-  it('reserves an assistant logo rail only when the chat has tablet-class width', () => {
+  it('reserves an assistant logo rail only while the transcript remains at full width', () => {
     expect(usesAssistantSideRail(390)).toBe(false)
-    expect(usesAssistantSideRail(699)).toBe(false)
-    expect(usesAssistantSideRail(700)).toBe(true)
-    expect(usesAssistantSideRail(744)).toBe(true)
+    expect(usesAssistantSideRail(CHAT_CONTENT_MAX - 1)).toBe(false)
+    expect(usesAssistantSideRail(CHAT_CONTENT_MAX)).toBe(true)
+    expect(usesAssistantSideRail(CHAT_CONTENT_MAX + 1)).toBe(true)
   })
 
   it('increases gutters without scaling them with the whole display', () => {

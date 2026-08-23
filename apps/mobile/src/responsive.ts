@@ -19,8 +19,8 @@ export function usesPersistentSidebar(width: number): boolean {
   return windowSizeClass(width) === 'wide'
 }
 
-export function usesAssistantSideRail(availableWidth: number): boolean {
-  return windowSizeClass(availableWidth) !== 'compact'
+export function usesAssistantSideRail(transcriptWidth: number): boolean {
+  return transcriptWidth >= CHAT_CONTENT_MAX
 }
 
 export function responsiveHorizontalPadding(width: number): number {
