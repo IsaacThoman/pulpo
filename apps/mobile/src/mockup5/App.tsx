@@ -243,7 +243,6 @@ import {
   DRAWER_TRAILING_PEEK,
   responsiveHorizontalPadding,
   SIDEBAR_WIDTH,
-  transcriptColumnWidth,
   usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
@@ -3275,7 +3274,7 @@ function ChatView({
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
   const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
-  const assistantSideRail = usesAssistantSideRail(transcriptColumnWidth(availableChatWidth, horizontalPadding));
+  const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
