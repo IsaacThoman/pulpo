@@ -10,7 +10,13 @@ export interface BillingSummary {
   poolBalanceMicros: number | null
   poolBalancePendingMicros: number | null
   availablePoolBalanceMicros: number | null
-  weekly: { remainingPercentage: number; pendingMicros: number; resetsAt: string } | null
+  weekly: {
+    remainingPercentage: number
+    availableBarPercentage: number
+    pendingMicros: number
+    pendingBarPercentage: number
+    resetsAt: string
+  } | null
   onHold: boolean
   subscription: {
     plan: 'eight' | 'fat'
