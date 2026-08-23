@@ -3154,6 +3154,7 @@ function NativeModelMenuRow({ label, model, selected = false }: { label: string;
 }
 
 function NativeModelSectionRow({ label, section, models, selected = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean }) {
+  const colorScheme = useColorScheme();
   const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
@@ -3161,7 +3162,10 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
         title={label}
         icon={labModel
           ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
-          : <SwiftUIImage systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />}
+          : <SwiftUIImage
+              assetName={colorScheme === 'dark' ? 'FavoriteStarWhite' : 'FavoriteStar'}
+              modifiers={[resizable(), frame({ width: 20, height: 20 })]}
+            />}
       />
       <SwiftUISpacer />
       {selected && <SwiftUIImage systemName="checkmark" size={15} />}

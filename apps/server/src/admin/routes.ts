@@ -21,6 +21,7 @@ import {
   publishScopedStateChanges,
 } from '../friends/sync.js'
 import { poolPeerIds } from '../pools/service.js'
+import { apiKeyOwnerCanSpend } from '../api-keys/access.js'
 
 const patchUserSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
@@ -133,8 +134,10 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
       }
       if (updated!.blocked) {
         await tx.delete(sessions).where(eq(sessions.userId, id))
-        await tx.update(apiKeys).set({ status: 'revoked', revokedAt: new Date() }).where(and(eq(apiKeys.userId, id), ne(apiKeys.status, 'revoked')))
         await tx.update(managementTokens).set({ revokedAt: new Date() }).where(and(eq(managementTokens.userId, id), isNull(managementTokens.revokedAt)))
+      }
+      if (!apiKeyOwnerCanSpend(updated!)) {
+        await tx.update(apiKeys).set({ status: 'revoked', revokedAt: new Date() }).where(and(eq(apiKeys.userId, id), ne(apiKeys.status, 'revoked')))
       }
       if (password) {
         const passwordHash = await createPasswordHash(password)

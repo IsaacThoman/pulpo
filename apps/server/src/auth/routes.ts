@@ -309,6 +309,7 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       passwordHash: await createPasswordHash(input.newPassword),
       changedAt: new Date(),
     }).where(eq(passwordCredentials.userId, user.id))
+    await revokeOtherSessions(request, user.id)
     reply.code(204).send()
   })
 
