@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -9,6 +9,8 @@ const { authState } = vi.hoisted(() => ({
     passkeyLogin: vi.fn(),
     signupEnabled: true,
     setupRequired: false,
+    instanceUrl: 'https://pulpo.baby',
+    chooseInstance: vi.fn(),
   },
 }))
 
@@ -27,6 +29,10 @@ vi.mock('@/lib/passkeys', () => ({
 import { LoginPage } from './LoginPage'
 import { LoginOptionsPage } from './LoginOptionsPage'
 
+afterEach(() => {
+  Reflect.deleteProperty(globalThis, 'window')
+})
+
 describe('login pages', () => {
   it('keeps the password-first login design with a small options link', () => {
     const markup = renderToStaticMarkup(<MemoryRouter><LoginPage /></MemoryRouter>)
@@ -36,6 +42,23 @@ describe('login pages', () => {
     expect(markup).toContain('href="/login/options"')
     expect(markup).toContain('autoComplete="username webauthn"')
     expect(markup).not.toContain('Sign in with a passkey')
+    expect(markup).not.toContain('Change server, currently')
+  })
+
+  it('shows the selected instance below the desktop login card', () => {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        pulpoDesktop: { platform: 'desktop' },
+        location: { origin: 'https://desktop.pulpo.invalid' },
+      },
+    })
+
+    const markup = renderToStaticMarkup(<MemoryRouter><LoginPage /></MemoryRouter>)
+
+    expect(markup).toContain('https://pulpo.baby')
+    expect(markup).toContain('Change server, currently https://pulpo.baby')
+    expect(markup).toContain('Change</span>')
   })
 
   it('puts passkey sign-in and back navigation on the options page', () => {
