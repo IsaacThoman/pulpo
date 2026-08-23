@@ -1,4 +1,3 @@
-import { Info } from 'lucide-react'
 import { formatUsd } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { subscriptionCoverageDetails, subscriptionCoverageLabel } from './subscription-coverage'
@@ -14,26 +13,23 @@ export function SubscriptionCoverageCost({
 }) {
   const details = subscriptionCoverageDetails(costUsd, subscriptionCoveredUsd)
   const label = subscriptionCoverageLabel(details, personal)
+  const formattedCost = formatUsd(costUsd)
+
+  if (!label) return <span>{formattedCost}</span>
 
   return (
-    <span className={`inline-flex items-center justify-end gap-1 ${label ? 'text-violet-700 dark:text-violet-300' : ''}`}>
-      <span>{formatUsd(costUsd)}</span>
-      {label && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              role="img"
-              tabIndex={0}
-              aria-label={label}
-              data-subscription-coverage={details.status}
-              className="inline-flex shrink-0 cursor-help rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-            >
-              <Info aria-hidden="true" className="size-3.5" />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{label}</TooltipContent>
-        </Tooltip>
-      )}
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          aria-label={`${formattedCost} · ${label}`}
+          data-subscription-coverage={details.status}
+          className="cursor-help rounded-sm text-violet-700 underline decoration-violet-500/70 decoration-dotted underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 dark:text-violet-300 dark:decoration-violet-400/70"
+        >
+          {formattedCost}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   )
 }
