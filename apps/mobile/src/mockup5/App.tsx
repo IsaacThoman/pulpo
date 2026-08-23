@@ -3154,6 +3154,7 @@ function NativeModelMenuRow({ label, model, selected = false }: { label: string;
 }
 
 function NativeModelSectionRow({ label, section, models, selected = false }: { label: string; section: ModelSection; models: Model[]; selected?: boolean }) {
+  const colorScheme = useColorScheme();
   const labModel = section === '__favorites__' ? null : models.find((model) => model.providerGroupId === section);
   return (
     <SwiftUIHStack modifiers={[frame({ width: 220 })]} spacing={10}>
@@ -3161,7 +3162,10 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
         title={label}
         icon={labModel
           ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
-          : <SwiftUIImage systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />}
+          : <SwiftUIImage
+              assetName={colorScheme === 'dark' ? 'FavoriteStarWhite' : 'FavoriteStar'}
+              modifiers={[resizable(), frame({ width: 20, height: 20 })]}
+            />}
       />
       <SwiftUISpacer />
       {selected && <SwiftUIImage systemName="checkmark" size={15} />}
@@ -5026,8 +5030,12 @@ const styles = StyleSheet.create({
   temporaryHeaderIconLayer: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   glassFallback: { backgroundColor: COLORS.elevated, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line },
   pressed: { opacity: 0.75 },
-  modelTriggerWrap: { position: 'absolute', top: 10, left: 0, right: 0, height: 44, alignItems: 'center', justifyContent: 'center' },
-  modelMenuHost: { minHeight: 44, maxWidth: 230, justifyContent: 'center' },
+  // Keep the full-width parent required for reliable SwiftUI Menu hit testing,
+  // but base its center in the gap between the 44-point leading button and
+  // 88-point trailing control. The 22-point transition above then reaches the
+  // screen center when temporary mode collapses the trailing control.
+  modelTriggerWrap: { position: 'absolute', top: 10, left: -22, right: 22, height: 44, alignItems: 'center', justifyContent: 'center' },
+  modelMenuHost: { width: 230, height: 44, justifyContent: 'center' },
   modelTrigger: { minHeight: 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },
   connectionBanner: { alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 12, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 3 },
