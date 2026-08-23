@@ -18,6 +18,7 @@ import {
   temporaryChatIsExpired,
 } from '../chats/temporary.js'
 import { sanitizeOutputForClient } from './public-output.js'
+import { responseAttachmentIds } from '../messages/input.js'
 
 export interface CreateResponseOptions {
   userId: string
@@ -139,19 +140,24 @@ export async function createResponse(options: CreateResponseOptions) {
   const parentResponseId = options.parentResponseId === undefined ? previous?.id ?? null : options.parentResponseId
   const previousActiveResponseId = previous?.id ?? null
   const executionMode = options.input.executionMode ?? model.executionMode
-  if (options.input.attachmentIds.length) {
+  const attachmentIds = [...new Set([
+    ...options.input.attachmentIds,
+    ...responseAttachmentIds(options.rawInput),
+  ])]
+  if (attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
       eq(attachments.userId, options.userId),
       eq(attachments.status, 'ready'),
-      inArray(attachments.id, options.input.attachmentIds),
+      inArray(attachments.id, attachmentIds),
       or(isNull(attachments.chatId), eq(attachments.chatId, chat.id)),
     ))
-    if (ownedAttachments.length !== options.input.attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
+    if (ownedAttachments.length !== attachmentIds.length) throw new AppError(400, 'attachment_not_ready', 'One or more attachments are unavailable')
     if (!options.input.agentMode && attachmentsRequireAgentMode(ownedAttachments)) {
       throw new AppError(400, 'attachment_requires_agent', 'Non-image attachments require Agent mode')
     }
     await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(and(
-      inArray(attachments.id, options.input.attachmentIds),
+      eq(attachments.userId, options.userId),
+      inArray(attachments.id, attachmentIds),
       isNull(attachments.chatId),
     ))
   }
