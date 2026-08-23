@@ -1203,15 +1203,17 @@ function NativeObjectContextMenu({
   items,
   preview,
   style,
+  fillWidth = false,
 }: {
   children: ReactNode;
   items: ReactNode;
   preview?: ReactNode;
   style?: ComponentProps<typeof View>['style'];
+  fillWidth?: boolean;
 }) {
   if (Platform.OS !== 'ios') return <View style={style}>{children}</View>;
   return (
-    <SwiftUIHost ignoreSafeArea="all" matchContents style={style}>
+    <SwiftUIHost ignoreSafeArea="all" matchContents={fillWidth ? { vertical: true } : true} style={style}>
       <SwiftUIContextMenu>
         <SwiftUIContextMenu.Trigger>
           <SwiftUIRNHostView matchContents><>{children}</></SwiftUIRNHostView>
@@ -2430,6 +2432,7 @@ function MessageContextMenu({
 
   return (
     <NativeObjectContextMenu
+      fillWidth={message.role === 'assistant'}
       style={message.role === 'user' ? styles.userMessageContextHost : styles.assistantMessageContextHost}
       preview={(
         <View style={[styles.messageContextPreview, message.role === 'user' && styles.messageContextPreviewUser]}>
@@ -2945,7 +2948,7 @@ const MessageRow = memo(function MessageRow({
           )}
         </View>
       ) : (
-        <View>
+        <View style={styles.assistantMessageContent}>
           <View style={styles.assistantHeader}>
             <ModelMark model={model} size={26} />
             <Text style={styles.assistantName}>{model.name}</Text>
@@ -2970,7 +2973,7 @@ const MessageRow = memo(function MessageRow({
                       steps={segment.steps}
                     />;
                   }
-                  return <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
+                  return <SafeMarkdown containerStyle={styles.assistantMarkdown} key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
                 })}
               </View>
             </MessageContextMenu>
@@ -4047,18 +4050,20 @@ function ChatView({
   }, [cancelPendingFollow, cancelTailSettle]);
 
   const renderMessage = useCallback(({ item }: { item: Message }) => (
-    <MessageRow
-      message={item}
-      model={responseModel(item, models, model)}
-      onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
-      onPreviewFile={openFilePreview}
-      onPreviewImages={openImageViewer}
-      onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
-      onActivateBranch={expired
-        ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
-        : onActivateBranch}
-      editingLocked={Boolean(messageEdit)}
-    />
+    <View style={styles.transcriptColumn}>
+      <MessageRow
+        message={item}
+        model={responseModel(item, models, model)}
+        onEdit={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : handleMessageEditAction}
+        onPreviewFile={openFilePreview}
+        onPreviewImages={openImageViewer}
+        onRegenerate={expired ? () => Alert.alert('Temporary chat expired', 'This conversation is read-only.') : onRegenerate}
+        onActivateBranch={expired
+          ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
+          : onActivateBranch}
+        editingLocked={Boolean(messageEdit)}
+      />
+    </View>
   ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
@@ -4242,7 +4247,7 @@ function ChatView({
         <FlatList
           alwaysBounceVertical
           bounces
-          contentContainerStyle={[styles.conversation, styles.chatContent, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
+          contentContainerStyle={[styles.conversation, { paddingHorizontal: horizontalPadding, paddingTop: headerOverlayHeight + 16 }]}
           contentInsetAdjustmentBehavior="never"
           data={messages}
           initialNumToRender={10}
@@ -4251,7 +4256,7 @@ function ChatView({
           key={chatId ?? 'unsaved-chat'}
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
-            <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
+            <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
               <View style={styles.assistantHeader}>
                 <ModelMark model={model} size={26} />
                 <Text style={styles.assistantName}>{model.name}</Text>
@@ -5030,7 +5035,8 @@ const styles = StyleSheet.create({
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
-  conversation: { paddingBottom: 156 },
+  conversation: { width: '100%', minWidth: 0, flexGrow: 1, paddingBottom: 156 },
+  transcriptColumn: { width: '100%', minWidth: 0, maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
   emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
   emptyState: { width: '100%', maxWidth: 720, alignSelf: 'center', alignItems: 'center' },
@@ -5044,12 +5050,12 @@ const styles = StyleSheet.create({
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
   emptyTitle: { color: COLORS.text, fontSize: 26, fontWeight: '600', letterSpacing: -0.8, textAlign: 'center' },
   emptyProvider: { color: COLORS.muted, fontSize: 13.5, marginTop: 7 },
-  userRow: { alignItems: 'flex-end', marginBottom: 30 },
-  userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', gap: 7 },
-  userMessageContextHost: { maxWidth: '85%', alignSelf: 'flex-end' },
-  userMessageContextContent: { width: '100%', alignItems: 'flex-end' },
-  assistantMessageContextHost: { width: '100%' },
-  userBubble: { maxWidth: '100%', backgroundColor: COLORS.secondary, borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 },
+  userRow: { width: '100%', minWidth: 0, alignItems: 'flex-end', marginBottom: 30 },
+  userMessageContent: { alignItems: 'flex-end', maxWidth: '88%', minWidth: 0, gap: 7 },
+  userMessageContextHost: { maxWidth: '85%', minWidth: 0, alignSelf: 'flex-end' },
+  userMessageContextContent: { width: '100%', minWidth: 0, alignItems: 'flex-end' },
+  assistantMessageContextHost: { width: '100%', minWidth: 0 },
+  userBubble: { maxWidth: '100%', minWidth: 0, backgroundColor: COLORS.secondary, borderRadius: 20, borderBottomRightRadius: 7, paddingHorizontal: 15, paddingVertical: 11 },
   userMessageMarkdown: { alignSelf: 'flex-start' },
   sentAttachments: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'flex-end', gap: 6 },
   assistantAttachments: { justifyContent: 'flex-start', marginTop: 8 },
@@ -5077,11 +5083,13 @@ const styles = StyleSheet.create({
   attachmentContextFilePreview: { width: 300, minHeight: 180, borderRadius: 28, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, backgroundColor: COLORS.elevated, padding: 24, alignItems: 'center', justifyContent: 'center' },
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
-  assistantRow: { marginBottom: 32 },
+  assistantRow: { width: '100%', minWidth: 0, marginBottom: 32 },
+  assistantMessageContent: { width: '100%', minWidth: 0 },
   assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 11 },
   assistantName: { color: COLORS.textSoft, fontSize: 13.5, fontWeight: '600' },
   messageTime: { color: COLORS.muted, fontSize: 11.5 },
-  assistantContent: { width: '100%', gap: 4 },
+  assistantContent: { width: '100%', minWidth: 0, gap: 4 },
+  assistantMarkdown: { width: '100%', maxWidth: '100%', minWidth: 0 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
   responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },

@@ -20,4 +20,15 @@ describe('query persistence', () => {
     })).toBe(true)
     expect(shouldPersistQuery({ queryKey: ['models'], state: { status: 'pending' } })).toBe(false)
   })
+
+  it('does not persist admin billing data', () => {
+    expect(shouldPersistQuery({
+      queryKey: ['admin-billing-v2', '30d'],
+      state: { status: 'success', data: { stripe: { mode: 'live' } } },
+    })).toBe(false)
+    expect(shouldPersistQuery({
+      queryKey: ['admin-billing-settings'],
+      state: { status: 'success', data: { eightWeeklyLimitMicros: 3_000_000 } },
+    })).toBe(false)
+  })
 })
