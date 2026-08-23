@@ -243,6 +243,7 @@ import {
   DRAWER_TRAILING_PEEK,
   responsiveHorizontalPadding,
   SIDEBAR_WIDTH,
+  usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
 
@@ -2851,6 +2852,7 @@ const MessageRow = memo(function MessageRow({
   onPreviewImages,
   onRegenerate,
   onActivateBranch,
+  sideRail = false,
   editingLocked = false,
 }: {
   message: Message;
@@ -2860,6 +2862,7 @@ const MessageRow = memo(function MessageRow({
   onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
+  sideRail?: boolean;
   editingLocked?: boolean;
 }) {
   const { showReasoning } = useAppPreferences();
@@ -2945,15 +2948,19 @@ const MessageRow = memo(function MessageRow({
           )}
         </View>
       ) : (
-        <View style={styles.assistantLayout}>
-          <View style={styles.assistantMark}>
-            <ModelMark model={model} size={28} />
-          </View>
-          <View style={styles.assistantBody}>
-            <View style={styles.assistantHeader}>
-              <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
-              <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
+        <View>
+          <View style={styles.assistantLayout}>
+            <View style={styles.assistantMark}>
+              <ModelMark model={model} size={28} />
             </View>
+            <View style={styles.assistantBody}>
+              <View style={styles.assistantHeader}>
+                <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
+                <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={[styles.assistantResponse, sideRail && styles.assistantResponseSideRail]}>
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
@@ -3248,6 +3255,8 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
+  const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
+  const assistantSideRail = usesAssistantSideRail(availableChatWidth);
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -4061,9 +4070,10 @@ function ChatView({
       onActivateBranch={expired
         ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
         : onActivateBranch}
+      sideRail={assistantSideRail}
       editingLocked={Boolean(messageEdit)}
     />
-  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
+  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4265,8 +4275,10 @@ function ChatView({
                     <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
                     <Text style={styles.messageTime}>now</Text>
                   </View>
-                  <ResponsePendingIndicator />
                 </View>
+              </View>
+              <View style={[styles.assistantResponse, assistantSideRail && styles.assistantResponseSideRail]}>
+                <ResponsePendingIndicator />
               </View>
             </View>
           ) : null}
@@ -5094,6 +5106,8 @@ const styles = StyleSheet.create({
   assistantHeader: { minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   assistantName: { minWidth: 0, flexShrink: 1, color: COLORS.textSoft, fontSize: 14, fontWeight: '600' },
   messageTime: { flexShrink: 0, color: COLORS.muted, fontSize: 11.5 },
+  assistantResponse: { width: '100%' },
+  assistantResponseSideRail: { paddingLeft: 40 },
   assistantContent: { width: '100%', gap: 6, marginTop: 4 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },

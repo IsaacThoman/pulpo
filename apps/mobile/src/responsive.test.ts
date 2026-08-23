@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   responsiveHorizontalPadding,
+  usesAssistantSideRail,
   usesPersistentSidebar,
   windowSizeClass,
 } from './responsive'
@@ -20,6 +21,13 @@ describe('responsive window sizing', () => {
   it('uses persistent navigation only when the navigation and chat can both fit', () => {
     expect(usesPersistentSidebar(744)).toBe(false)
     expect(usesPersistentSidebar(800)).toBe(true)
+  })
+
+  it('reserves an assistant logo rail only when the chat has tablet-class width', () => {
+    expect(usesAssistantSideRail(390)).toBe(false)
+    expect(usesAssistantSideRail(699)).toBe(false)
+    expect(usesAssistantSideRail(700)).toBe(true)
+    expect(usesAssistantSideRail(744)).toBe(true)
   })
 
   it('increases gutters without scaling them with the whole display', () => {

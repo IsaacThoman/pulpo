@@ -19,6 +19,10 @@ export function usesPersistentSidebar(width: number): boolean {
   return windowSizeClass(width) === 'wide'
 }
 
+export function usesAssistantSideRail(availableWidth: number): boolean {
+  return windowSizeClass(availableWidth) !== 'compact'
+}
+
 export function responsiveHorizontalPadding(width: number): number {
   if (width <= COMPACT_WINDOW_MAX) return 18
   if (width < PERSISTENT_SIDEBAR_MIN) return 24
