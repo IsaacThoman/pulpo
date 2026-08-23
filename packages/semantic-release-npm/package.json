@@ -1,0 +1,17 @@
+{
+  "name": "@semantic-release/npm",
+  "version": "13.1.6",
+  "description": "Pulpo's minimal semantic-release npm publisher using the runner-provided npm CLI",
+  "private": true,
+  "type": "module",
+  "exports": "./index.js",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "peerDependencies": {
+    "semantic-release": ">=24.1.0"
+  }
+}
