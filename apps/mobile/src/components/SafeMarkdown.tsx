@@ -2,17 +2,19 @@ import { memo, useMemo } from 'react'
 import { Linking, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { useAppTheme } from '../theme'
-import { normalizeMathDelimiters } from './markdown'
+import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
 
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
   compact = false,
   containerStyle,
+  tightenLeadingHeading = false,
 }: {
   children: string
   streaming?: boolean
   compact?: boolean
   containerStyle?: ViewStyle | TextStyle
+  tightenLeadingHeading?: boolean
 }) {
   const theme = useAppTheme()
   const markdown = useMemo(() => normalizeMathDelimiters(children), [children])
@@ -46,7 +48,11 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   return <EnrichedMarkdownText
     accessibilityRole="text"
     allowTrailingMargin={false}
-    containerStyle={StyleSheet.flatten([styles.fill, containerStyle])}
+    containerStyle={StyleSheet.flatten([
+      styles.fill,
+      containerStyle,
+      tightenLeadingHeading && beginsWithMarkdownHeading(markdown) && styles.tightLeadingHeading,
+    ])}
     flavor="github"
     markdown={markdown}
     markdownStyle={markdownStyle}
@@ -66,4 +72,5 @@ export const SafeMarkdown = memo(function SafeMarkdown({
 
 const styles = StyleSheet.create({
   fill: { width: '100%', maxWidth: '100%', minWidth: 0 },
+  tightLeadingHeading: { marginTop: -8 },
 })

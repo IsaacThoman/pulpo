@@ -2921,6 +2921,7 @@ const MessageRow = memo(function MessageRow({
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
   const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
+  const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
     -1,
@@ -2993,7 +2994,12 @@ const MessageRow = memo(function MessageRow({
                         steps={segment.steps}
                       />;
                     }
-                    return <SafeMarkdown containerStyle={styles.assistantMarkdown} key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
+                    return <SafeMarkdown
+                      containerStyle={styles.assistantMarkdown}
+                      key={`text:${index}`}
+                      streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}
+                      tightenLeadingHeading={index === firstTextTimelineIndex}
+                    >{segment.text}</SafeMarkdown>;
                   })}
                 </View>
               </MessageContextMenu>
