@@ -13,6 +13,7 @@ import { createRedis } from '../redis.js'
 import { getConfig } from '../config.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { modelPermissionAllows } from './model-permissions.js'
+import { apiKeyOwnerCanSpend } from './access.js'
 
 async function assertApiKeysEnabled(): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
@@ -31,7 +32,7 @@ export async function authenticateApiKey(request: FastifyRequest, requiredScope:
     .innerJoin(users, eq(apiKeys.userId, users.id))
     .where(and(eq(apiKeys.prefix, prefix!), eq(apiKeys.status, 'active')))
     .limit(1)
-  if (!row || row.user.blocked || !(await argon2.verify(row.key.secretHash, secret))) throw unauthorized('Invalid API key')
+  if (!row || !apiKeyOwnerCanSpend(row.user) || !(await argon2.verify(row.key.secretHash, secret))) throw unauthorized('Invalid API key')
   const scopes = row.key.scopes as string[]
   if (!scopes.includes(requiredScope)) throw new AppError(403, 'scope_missing', `API key lacks the ${requiredScope} scope`, 'permission_error')
   await db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, row.key.id))
