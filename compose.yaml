@@ -20,14 +20,14 @@ x-server: &server
   environment:
     POSTGRES_HOST: ${SERVICE_NAME_POSTGRES:-postgres}
     POSTGRES_PORT: 5432
-    POSTGRES_USER: ${SERVICE_USER_POSTGRES}
-    POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+    POSTGRES_USER: ${SERVICE_USER_POSTGRES:-pulpo}
+    POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES:-pulpo}
     POSTGRES_DATABASE: pulpo
     REDIS_URL: redis://${SERVICE_NAME_REDIS:-redis}:6379
     STORAGE_LOCAL_PATH: /app/data/objects
     S3_ENDPOINT: http://${SERVICE_NAME_SEAWEED_S3:-seaweed-s3}:8333
-    S3_ACCESS_KEY_ID: ${SERVICE_USER_S3}
-    S3_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_64_S3}
+    S3_ACCESS_KEY_ID: ${SERVICE_USER_S3:-pulpo}
+    S3_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_64_S3:-pulpo-development-storage-secret}
   volumes:
     - object_data:/app/data/objects
 
@@ -46,10 +46,12 @@ services:
       context: .
       dockerfile: Dockerfile.web
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     environment:
       API_HOST: ${SERVICE_NAME_API:-api}
-      NGINX_ENVSUBST_FILTER: ^API_HOST$
+      CLIENT_MAX_BODY_SIZE: ${PULPO_CLIENT_MAX_BODY_SIZE:-25m}
+      NGINX_ENVSUBST_FILTER: ^(API_HOST|CLIENT_MAX_BODY_SIZE)$
     expose:
       - "80"
     healthcheck:
@@ -60,15 +62,44 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  migrate:
+    <<: *server
+    command: ["node", "apps/server/dist/database/migrate.js"]
+    restart: "no"
+
   api:
     <<: *server
-    command: ["sh", "-c", "node apps/server/dist/database/migrate.js && npm run start:api -w @pulpo/server"]
+    command: ["npm", "run", "start:api", "-w", "@pulpo/server"]
+    depends_on:
+      object-storage-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     expose:
       - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
 
   worker:
     <<: *server
     command: ["npm", "run", "start:worker", "-w", "@pulpo/server"]
+    depends_on:
+      object-storage-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   postgres:
     image: postgres:17-alpine
@@ -76,8 +107,8 @@ services:
     # API and worker through the shared server environment above.
     environment:
       POSTGRES_DB: pulpo
-      POSTGRES_USER: ${SERVICE_USER_POSTGRES}
-      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES}
+      POSTGRES_USER: ${SERVICE_USER_POSTGRES:-pulpo}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_64_POSTGRES:-pulpo}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     expose:
@@ -143,8 +174,8 @@ services:
     command:
       - 'exec /entrypoint.sh s3 -filer="$${SERVICE_NAME_SEAWEED_FILER:-seaweed-filer}:8888" -ip.bind=0.0.0.0'
     environment:
-      AWS_ACCESS_KEY_ID: ${SERVICE_USER_S3}
-      AWS_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_64_S3}
+      AWS_ACCESS_KEY_ID: ${SERVICE_USER_S3:-pulpo}
+      AWS_SECRET_ACCESS_KEY: ${SERVICE_PASSWORD_64_S3:-pulpo-development-storage-secret}
       SERVICE_URL_S3_8333:
     expose:
       - "8333"

@@ -1,0 +1,119 @@
+name: pulpo
+
+x-server: &server
+  image: pulpo-server:${PULPO_IMAGE_TAG:-source}
+  env_file: ${PULPO_SELFHOST_ENV_FILE:-.env.selfhost}
+  environment:
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    REDIS_URL: redis://redis:6379
+    STORAGE_LOCAL_PATH: /app/data/objects
+  volumes:
+    - object_data:/app/data/objects
+
+services:
+  object-storage-init:
+    image: alpine:3.22
+    command: ["chown", "-R", "1000:1000", "/data"]
+    volumes:
+      - object_data:/data
+    restart: "no"
+
+  migrate:
+    <<: *server
+    command: ["node", "apps/server/dist/database/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *server
+    # Build the shared server image once. Migrate and worker use this same tag.
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    command: ["npm", "run", "start:api", "-w", "@pulpo/server"]
+    depends_on:
+      object-storage-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  worker:
+    <<: *server
+    command: ["npm", "run", "start:worker", "-w", "@pulpo/server"]
+    depends_on:
+      object-storage-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: pulpo-web:${PULPO_IMAGE_TAG:-source}
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_HOST: api
+      CLIENT_MAX_BODY_SIZE: ${PULPO_CLIENT_MAX_BODY_SIZE:-25m}
+      NGINX_ENVSUBST_FILTER: ^(API_HOST|CLIENT_MAX_BODY_SIZE)$
+    ports:
+      - "${PULPO_BIND_ADDRESS:-127.0.0.1}:${PULPO_HTTP_PORT:-8080}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    env_file: ${PULPO_SELFHOST_ENV_FILE:-.env.selfhost}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DATABASE}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  object_data:

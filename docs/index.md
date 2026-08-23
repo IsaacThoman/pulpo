@@ -2,4 +2,8 @@
 
 Pulpo is a configurable, self-hostable AI platform for the web and iOS.
 
-This documentation is just getting started. More guides will be added as Pulpo develops.
+Start with the [self-hosting guide](./self-hosting) for a Docker Compose
+installation, production HTTPS setup, upgrades, backups, and troubleshooting.
+
+Pulpo is source-available under a noncommercial license and does not send
+developer analytics or usage telemetry.

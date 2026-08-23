@@ -72,6 +72,10 @@ jobs:
         if: matrix.name == 'Build'
         run: bash .github/scripts/validate-compose-runtime-env.sh
 
+      - name: Validate self-host installation configuration
+        if: matrix.name == 'Build'
+        run: bash .github/scripts/validate-self-host-compose.sh
+
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
     if: >-

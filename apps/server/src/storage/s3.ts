@@ -39,19 +39,27 @@ export class S3BlobStore implements BlobStore {
   }
 
   private ensureReady(): Promise<void> {
-    this.ready ??= this.client.send(new HeadBucketCommand({ Bucket: this.options.bucket }))
-      .then(() => undefined)
-      .catch(async () => { await this.client.send(new CreateBucketCommand({ Bucket: this.options.bucket })) })
-      .then(async () => {
-        if (!this.options.corsOrigins) return
-        await this.client.send(new PutBucketCorsCommand({
-          Bucket: this.options.bucket,
-          CORSConfiguration: { CORSRules: [{
-            AllowedOrigins: this.options.corsOrigins, AllowedMethods: ['GET', 'PUT', 'HEAD'],
-            AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3_600,
-          }] },
-        }))
-      })
+    if (!this.ready) {
+      this.ready = this.client.send(new HeadBucketCommand({ Bucket: this.options.bucket }))
+        .then(() => undefined)
+        .catch(async () => { await this.client.send(new CreateBucketCommand({ Bucket: this.options.bucket })) })
+        .then(async () => {
+          if (!this.options.corsOrigins) return
+          await this.client.send(new PutBucketCorsCommand({
+            Bucket: this.options.bucket,
+            CORSConfiguration: { CORSRules: [{
+              AllowedOrigins: this.options.corsOrigins, AllowedMethods: ['GET', 'PUT', 'HEAD'],
+              AllowedHeaders: ['*'], ExposeHeaders: ['ETag'], MaxAgeSeconds: 3_600,
+            }] },
+          }))
+        })
+        .catch((error: unknown) => {
+          // A transient object-store outage must not poison the process until
+          // restart. The next storage operation should retry initialization.
+          this.ready = undefined
+          throw error
+        })
+    }
     return this.ready
   }
 

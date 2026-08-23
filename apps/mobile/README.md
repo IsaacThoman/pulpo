@@ -11,12 +11,13 @@ plugins.
 
 ## Local development
 
-From the repository root, install dependencies and start the supported local
-stack:
+From the repository root, initialize and start the supported local stack, then
+install JavaScript dependencies for Expo:
 
 ```bash
+./scripts/self-host-init.sh
+docker compose -f compose.selfhost.yaml --env-file .env.selfhost up --build -d
 npm install
-docker compose up --build -d
 EXPO_PUBLIC_DEFAULT_INSTANCE_URL=http://localhost:8080 npm run dev:mobile
 ```
 
