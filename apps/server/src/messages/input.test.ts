@@ -21,6 +21,15 @@ describe('stored message input', () => {
     expect(responseAttachmentIds(storedInput)).toEqual(['00000000-0000-4000-8000-000000000001'])
   })
 
+  it('extracts attachment ids from structured public API input', () => {
+    expect(responseAttachmentIds([
+      { role: 'user', content: [
+        { type: 'input_file', attachment_id: 'owned-file' },
+        { type: 'input_file', file_id: 'upstream-file' },
+      ] },
+    ])).toEqual(['owned-file'])
+  })
+
   it('replaces user text without discarding attachments or other input', () => {
     const edited = replaceResponseInputText(storedInput, 'edited')
 
