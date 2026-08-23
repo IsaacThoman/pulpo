@@ -243,6 +243,7 @@ import {
   DRAWER_TRAILING_PEEK,
   responsiveHorizontalPadding,
   SIDEBAR_WIDTH,
+  usesAssistantSideRail,
   usesPersistentSidebar,
 } from '../responsive';
 
@@ -2759,12 +2760,16 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
   );
 }
 
-function WorkBlock({ steps, active, durationMs }: { steps: TimelineStep[]; active: boolean; durationMs?: number }) {
+function WorkBlock({ steps, active, durationMs }: {
+  steps: TimelineStep[];
+  active: boolean;
+  durationMs?: number;
+}) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
   const label = workLabel(steps, active, durationMs);
   return (
-    <View style={styles.workBlock}>
+    <View style={[styles.workBlock, !open && styles.workBlockCollapsed]}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -2846,6 +2851,28 @@ function BranchControls({ branches, activeIndex, onActivate, disabled = false }:
   );
 }
 
+function AssistantFrame({ children, model, sideRail, time }: {
+  children: ReactNode;
+  model: Model;
+  sideRail: boolean;
+  time: string;
+}) {
+  return (
+    <View style={styles.assistantFrame}>
+      <View style={[styles.assistantMark, !sideRail && styles.assistantMarkCompact]}>
+        <ModelMark model={model} size={28} />
+      </View>
+      <View style={[styles.assistantBody, sideRail && styles.assistantBodySideRail]}>
+        <View style={[styles.assistantHeader, !sideRail && styles.assistantHeaderCompact]}>
+          <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
+          <Text style={styles.messageTime}>{time}</Text>
+        </View>
+        {children}
+      </View>
+    </View>
+  );
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   model,
@@ -2854,6 +2881,7 @@ const MessageRow = memo(function MessageRow({
   onPreviewImages,
   onRegenerate,
   onActivateBranch,
+  sideRail = false,
   editingLocked = false,
 }: {
   message: Message;
@@ -2863,6 +2891,7 @@ const MessageRow = memo(function MessageRow({
   onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
+  sideRail?: boolean;
   editingLocked?: boolean;
 }) {
   const { showReasoning } = useAppPreferences();
@@ -2896,6 +2925,7 @@ const MessageRow = memo(function MessageRow({
   }, [message.outputItems, message.reasoning, message.role, message.text, message.thinkSeconds, showReasoning, streaming]);
   const elapsedMs = useElapsedMs(responseStartedAt, streaming && message.role === 'assistant', message.latencyMs);
   const activitySegments = timeline.filter((segment) => segment.kind === 'activity');
+  const firstTextTimelineIndex = timeline.findIndex((segment) => segment.kind === 'text');
   const lastActivityTimelineIndex = timeline.reduce(
     (lastIndex, segment, index) => segment.kind === 'activity' ? index : lastIndex,
     -1,
@@ -2948,80 +2978,80 @@ const MessageRow = memo(function MessageRow({
           )}
         </View>
       ) : (
-        <View style={styles.assistantMessageContent}>
-          <View style={styles.assistantHeader}>
-            <ModelMark model={model} size={26} />
-            <Text style={styles.assistantName}>{model.name}</Text>
-            <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
-          </View>
-          {timeline.length ? (
-            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
-              <View style={styles.assistantContent}>
-                {timeline.map((segment, index) => {
-                  if (segment.kind === 'activity') {
-                    const active = timelineActivityIsActive(timeline, index, streaming);
-                    const segmentDurationMs = activityDurationMs(segment.steps);
-                    const useResponseDurationFallback = activitySegments.length === 1
-                      && index === lastActivityTimelineIndex
-                      && (!streaming || activityFinishedDuringStream);
-                    return <WorkBlock
-                      active={active}
-                      durationMs={segmentDurationMs ?? (useResponseDurationFallback
-                        ? streamingFallbackDurationMs ?? elapsedMs
-                        : undefined)}
-                      key={`activity:${index}`}
-                      steps={segment.steps}
-                    />;
-                  }
-                  return <SafeMarkdown containerStyle={styles.assistantMarkdown} key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
-                })}
+        <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
+            {timeline.length ? (
+              <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <View style={styles.assistantContent}>
+                  {timeline.map((segment, index) => {
+                    if (segment.kind === 'activity') {
+                      const active = timelineActivityIsActive(timeline, index, streaming);
+                      const segmentDurationMs = activityDurationMs(segment.steps);
+                      const useResponseDurationFallback = activitySegments.length === 1
+                        && index === lastActivityTimelineIndex
+                        && (!streaming || activityFinishedDuringStream);
+                      return <WorkBlock
+                        active={active}
+                        durationMs={segmentDurationMs ?? (useResponseDurationFallback
+                          ? streamingFallbackDurationMs ?? elapsedMs
+                          : undefined)}
+                        key={`activity:${index}`}
+                        steps={segment.steps}
+                      />;
+                    }
+                    return <SafeMarkdown
+                      containerStyle={styles.assistantMarkdown}
+                      key={`text:${index}`}
+                      streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}
+                      tightenLeadingHeading={index === firstTextTimelineIndex}
+                    >{segment.text}</SafeMarkdown>;
+                  })}
+                </View>
+              </MessageContextMenu>
+            ) : message.error ? (
+              <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
+              </MessageContextMenu>
+            ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
+            {extraOutput.map((item, index) => {
+              const details = JSON.stringify(item, null, 2).slice(0, 4000);
+              return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
+                <View style={styles.workRow}><Icon name="doc.text.magnifyingglass" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{outputItemTitle(item)}</Text></View>
+                <Text selectable style={styles.workDetail}>{details}</Text>
+              </View>;
+            })}
+            {message.attachments && message.attachments.length > 0 && (
+              <View style={[styles.sentAttachments, styles.assistantAttachments]}>
+                {message.attachments.map((attachment) => (
+                  <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                    <SentAttachmentPreview
+                      attachment={attachment}
+                      group={message.attachments ?? []}
+                      onPreviewFile={onPreviewFile}
+                      onPreviewImages={onPreviewImages}
+                    />
+                  </SentAttachmentContextMenu>
+                ))}
               </View>
-            </MessageContextMenu>
-          ) : message.error ? (
-            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
-              <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
-            </MessageContextMenu>
-          ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
-          {extraOutput.map((item, index) => {
-            const details = JSON.stringify(item, null, 2).slice(0, 4000);
-            return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
-              <View style={styles.workRow}><Icon name="doc.text.magnifyingglass" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{outputItemTitle(item)}</Text></View>
-              <Text selectable style={styles.workDetail}>{details}</Text>
-            </View>;
-          })}
-          {message.attachments && message.attachments.length > 0 && (
-            <View style={[styles.sentAttachments, styles.assistantAttachments]}>
-              {message.attachments.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
-                  <SentAttachmentPreview
-                    attachment={attachment}
-                    group={message.attachments ?? []}
-                    onPreviewFile={onPreviewFile}
-                    onPreviewImages={onPreviewImages}
-                  />
-                </SentAttachmentContextMenu>
-              ))}
-            </View>
-          )}
-          {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
-          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
-          {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
-            <Pressable
-              accessibilityRole="button"
-              disabled={capacityPending}
-              onPress={() => {
-                setCapacityPending(true);
-                void continueWithoutAgent(message.id)
-                  .catch((error) => Alert.alert('Couldn’t continue', error instanceof Error ? error.message : undefined))
-                  .finally(() => setCapacityPending(false));
-              }}
-              style={({ pressed }) => [styles.continueButton, pressed && styles.navRowPressed]}
-            >
-              <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
-            </Pressable>
-          )}
-          {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
-        </View>
+            )}
+            {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
+            {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
+            {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={capacityPending}
+                onPress={() => {
+                  setCapacityPending(true);
+                  void continueWithoutAgent(message.id)
+                    .catch((error) => Alert.alert('Couldn’t continue', error instanceof Error ? error.message : undefined))
+                    .finally(() => setCapacityPending(false));
+                }}
+                style={({ pressed }) => [styles.continueButton, pressed && styles.navRowPressed]}
+              >
+                <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
+              </Pressable>
+            )}
+            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+        </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (
         <BranchControls activeIndex={branchIndex} branches={branches} disabled={editingLocked} onActivate={(branchId) => onActivateBranch(message, branchId)} />
@@ -3251,6 +3281,8 @@ function ChatView({
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
   const { fontScale, height: windowHeight, width: windowWidth } = useWindowDimensions();
   const horizontalPadding = responsiveHorizontalPadding(windowWidth);
+  const availableChatWidth = windowWidth - (persistentSidebar && sidebarVisible ? SIDEBAR_WIDTH : 0);
+  const assistantSideRail = usesAssistantSideRail(Math.max(0, availableChatWidth - horizontalPadding * 2));
   const accessibilityLayout = fontScale >= 1.6;
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottom = useRef(true);
@@ -4065,10 +4097,11 @@ function ChatView({
         onActivateBranch={expired
           ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
           : onActivateBranch}
+        sideRail={assistantSideRail}
         editingLocked={Boolean(messageEdit)}
       />
     </View>
-  ), [expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
+  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4261,12 +4294,9 @@ function ChatView({
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
             <View accessibilityLiveRegion="polite" style={[styles.assistantRow, styles.transcriptColumn]}>
-              <View style={styles.assistantHeader}>
-                <ModelMark model={model} size={26} />
-                <Text style={styles.assistantName}>{model.name}</Text>
-                <Text style={styles.messageTime}>now</Text>
-              </View>
-              <ResponsePendingIndicator />
+              <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
+                <ResponsePendingIndicator />
+              </AssistantFrame>
             </View>
           ) : null}
           onContentSizeChange={handleContentSizeChange}
@@ -5092,20 +5122,26 @@ const styles = StyleSheet.create({
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
   assistantRow: { width: '100%', minWidth: 0, marginBottom: 32 },
-  assistantMessageContent: { width: '100%', minWidth: 0 },
-  assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 11 },
-  assistantName: { color: COLORS.textSoft, fontSize: 13.5, fontWeight: '600' },
-  messageTime: { color: COLORS.muted, fontSize: 11.5 },
-  assistantContent: { width: '100%', minWidth: 0, gap: 4 },
+  assistantFrame: { position: 'relative', width: '100%', minWidth: 0 },
+  assistantMark: { position: 'absolute', zIndex: 1, left: 0, top: 4, width: 28 },
+  assistantMarkCompact: { top: 0 },
+  assistantBody: { width: '100%', minWidth: 0 },
+  assistantBodySideRail: { paddingLeft: 40 },
+  assistantHeader: { minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  assistantHeaderCompact: { minHeight: 28, alignItems: 'center', paddingLeft: 36 },
+  assistantName: { minWidth: 0, flexShrink: 1, color: COLORS.textSoft, fontSize: 14, fontWeight: '600' },
+  messageTime: { flexShrink: 0, color: COLORS.muted, fontSize: 11.5 },
+  assistantContent: { width: '100%', minWidth: 0, gap: 6, marginTop: 4 },
   assistantMarkdown: { width: '100%', maxWidth: '100%', minWidth: 0 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
   responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },
-  reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingVertical: 4 },
+  reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   reasoningContextHost: { width: '100%' },
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
   reasoningBody: { borderLeftWidth: 2, borderLeftColor: COLORS.line, paddingLeft: 12, marginBottom: 16, marginLeft: 2, gap: 8 },
   workBlock: { width: '100%' },
+  workBlockCollapsed: { marginBottom: -4 },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 22 },
   workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },

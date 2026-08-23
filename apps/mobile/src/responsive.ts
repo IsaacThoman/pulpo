@@ -4,6 +4,7 @@ export const SIDEBAR_WIDTH = 300
 export const DRAWER_MAX_WIDTH = 360
 export const DRAWER_TRAILING_PEEK = 52
 export const CHAT_CONTENT_MAX = 840
+export const ASSISTANT_SIDE_RAIL_EXTRA_WIDTH = 48
 export const FORM_CONTENT_MAX = 620
 export const SETTINGS_CONTENT_MAX = 760
 
@@ -17,6 +18,10 @@ export function windowSizeClass(width: number): WindowSizeClass {
 
 export function usesPersistentSidebar(width: number): boolean {
   return windowSizeClass(width) === 'wide'
+}
+
+export function usesAssistantSideRail(availableTranscriptWidth: number): boolean {
+  return availableTranscriptWidth >= CHAT_CONTENT_MAX + ASSISTANT_SIDE_RAIL_EXTRA_WIDTH
 }
 
 export function responsiveHorizontalPadding(width: number): number {

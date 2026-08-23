@@ -2,17 +2,19 @@ import { memo, useMemo } from 'react'
 import { Linking, StyleSheet, type TextStyle, type ViewStyle } from 'react-native'
 import { EnrichedMarkdownText, type MarkdownStyle } from 'react-native-enriched-markdown'
 import { useAppTheme } from '../theme'
-import { normalizeMathDelimiters } from './markdown'
+import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
 
 export const SafeMarkdown = memo(function SafeMarkdown({
   children,
   compact = false,
   containerStyle,
+  tightenLeadingHeading = false,
 }: {
   children: string
   streaming?: boolean
   compact?: boolean
   containerStyle?: ViewStyle | TextStyle
+  tightenLeadingHeading?: boolean
 }) {
   const theme = useAppTheme()
   const markdown = useMemo(() => normalizeMathDelimiters(children), [children])
@@ -21,10 +23,10 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     const lineHeight = compact ? 19 : 24
     return {
       paragraph: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, marginBottom: compact ? 6 : 10 },
-      h1: { color: theme.text, fontSize: compact ? 18 : 24, lineHeight: compact ? 23 : 30, marginTop: 14, marginBottom: 8 },
-      h2: { color: theme.text, fontSize: compact ? 16 : 21, lineHeight: compact ? 22 : 27, marginTop: 13, marginBottom: 7 },
-      h3: { color: theme.text, fontSize: compact ? 14 : 18, lineHeight: compact ? 20 : 24, marginTop: 11, marginBottom: 6 },
-      h4: { color: theme.text, fontSize, lineHeight, marginTop: 10, marginBottom: 5 },
+      h1: { color: theme.text, fontSize: compact ? 18 : 24, lineHeight: compact ? 23 : 30, marginTop: 11, marginBottom: 8 },
+      h2: { color: theme.text, fontSize: compact ? 16 : 21, lineHeight: compact ? 22 : 27, marginTop: 11, marginBottom: 7 },
+      h3: { color: theme.text, fontSize: compact ? 14 : 18, lineHeight: compact ? 20 : 24, marginTop: 10, marginBottom: 6 },
+      h4: { color: theme.text, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
       h5: { color: theme.text, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
       h6: { color: theme.secondary, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
       list: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, markerColor: theme.secondary, bulletColor: theme.secondary, gapWidth: 8, marginLeft: 18, marginBottom: 8 },
@@ -46,7 +48,11 @@ export const SafeMarkdown = memo(function SafeMarkdown({
   return <EnrichedMarkdownText
     accessibilityRole="text"
     allowTrailingMargin={false}
-    containerStyle={StyleSheet.flatten([styles.fill, containerStyle])}
+    containerStyle={StyleSheet.flatten([
+      styles.fill,
+      containerStyle,
+      tightenLeadingHeading && beginsWithMarkdownHeading(markdown) && styles.tightLeadingHeading,
+    ])}
     flavor="github"
     markdown={markdown}
     markdownStyle={markdownStyle}
@@ -66,4 +72,5 @@ export const SafeMarkdown = memo(function SafeMarkdown({
 
 const styles = StyleSheet.create({
   fill: { width: '100%', maxWidth: '100%', minWidth: 0 },
+  tightLeadingHeading: { marginTop: -8 },
 })

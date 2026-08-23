@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ASSISTANT_SIDE_RAIL_EXTRA_WIDTH,
   CHAT_CONTENT_MAX,
   responsiveHorizontalPadding,
   transcriptColumnWidth,
+  usesAssistantSideRail,
   usesPersistentSidebar,
   windowSizeClass,
 } from './responsive'
@@ -22,6 +24,13 @@ describe('responsive window sizing', () => {
   it('uses persistent navigation only when the navigation and chat can both fit', () => {
     expect(usesPersistentSidebar(744)).toBe(false)
     expect(usesPersistentSidebar(800)).toBe(true)
+  })
+
+  it('reserves an assistant logo rail only after spare width opens beyond the transcript cap', () => {
+    expect(usesAssistantSideRail(390)).toBe(false)
+    expect(usesAssistantSideRail(CHAT_CONTENT_MAX)).toBe(false)
+    expect(usesAssistantSideRail(CHAT_CONTENT_MAX + ASSISTANT_SIDE_RAIL_EXTRA_WIDTH - 1)).toBe(false)
+    expect(usesAssistantSideRail(CHAT_CONTENT_MAX + ASSISTANT_SIDE_RAIL_EXTRA_WIDTH)).toBe(true)
   })
 
   it('increases gutters without scaling them with the whole display', () => {
