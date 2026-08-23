@@ -5,8 +5,12 @@ export type BillingPlan = 'baby' | 'eight' | 'fat'
 export interface BillingSummary {
   plan: BillingPlan
   balanceMicros: number
+  balancePendingMicros: number
+  availableBalanceMicros: number
   poolBalanceMicros: number | null
-  weekly: { remainingPercentage: number; resetsAt: string } | null
+  poolBalancePendingMicros: number | null
+  availablePoolBalanceMicros: number | null
+  weekly: { remainingPercentage: number; pendingMicros: number; resetsAt: string } | null
   onHold: boolean
   subscription: {
     plan: 'eight' | 'fat'

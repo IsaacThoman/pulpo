@@ -1,7 +1,12 @@
 import Fastify from 'fastify'
 import { afterEach, describe, expect, it } from 'vitest'
 import { registerAdminBillingRoutes } from './admin-routes.js'
-import { registerBillingRoutes, resolvedCheckoutStatus, selectSummarySubscription } from './routes.js'
+import {
+  availableBillingBalanceMicros,
+  registerBillingRoutes,
+  resolvedCheckoutStatus,
+  selectSummarySubscription,
+} from './routes.js'
 
 const apps: ReturnType<typeof Fastify>[] = []
 
@@ -57,5 +62,15 @@ describe('billing summary subscription recovery', () => {
 
   it('does not surface terminal subscriptions as manageable fallbacks', () => {
     expect(selectSummarySubscription([{ plan: 'fat', status: 'canceled' }], 'baby')).toBeNull()
+  })
+})
+
+describe('billing summary reservation balances', () => {
+  it('reports only the balance that remains available after pending reservations', () => {
+    expect(availableBillingBalanceMicros(5_000_000, 1_250_000)).toBe(3_750_000)
+  })
+
+  it('never reports a negative available balance', () => {
+    expect(availableBillingBalanceMicros(1_000_000, 1_500_000)).toBe(0)
   })
 })
