@@ -72,9 +72,19 @@ export function runtimeApiUrl(path: string): string {
   return new URL(path, `${instanceUrl}/`).toString()
 }
 
+export function runtimeResourceUrl(url: string): string {
+  if (!isDesktopRuntime()) return url
+  return new URL(url, `${instanceUrl}/`).toString()
+}
+
+export function runtimeUrlTargetsInstance(url: string): boolean {
+  if (!isDesktopRuntime()) return false
+  return new URL(runtimeApiUrl(url)).origin === new URL(instanceUrl).origin
+}
+
 export function runtimeAuthorizationHeaders(url: string): Record<string, string> {
   if (!isDesktopRuntime() || !sessionToken) return {}
-  return new URL(runtimeApiUrl(url)).origin === new URL(instanceUrl).origin
+  return runtimeUrlTargetsInstance(url)
     ? { authorization: `Bearer ${sessionToken}` }
     : {}
 }

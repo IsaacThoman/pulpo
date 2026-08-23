@@ -1,6 +1,7 @@
 import { aiIconPath, getAiIcon, providerIcon } from '@/lib/ai-icons'
 import { cn } from '@/lib/utils'
 import type { CatalogIconReference } from '@/lib/catalog-icons'
+import { runtimeResourceUrl } from '@/lib/runtime'
 
 export function AiLogo({
   icon,
@@ -16,8 +17,8 @@ export function AiLogo({
   if (customIcon) {
     return (
       <span className={cn('relative inline-block shrink-0', muted && 'opacity-60', className)} aria-hidden>
-        <img src={customIcon.lightUrl} className="size-full object-contain dark:hidden" alt="" />
-        <img src={customIcon.darkUrl} className="hidden size-full object-contain dark:block" alt="" />
+        <img src={runtimeResourceUrl(customIcon.lightUrl)} className="size-full object-contain dark:hidden" alt="" />
+        <img src={runtimeResourceUrl(customIcon.darkUrl)} className="hidden size-full object-contain dark:block" alt="" />
       </span>
     )
   }

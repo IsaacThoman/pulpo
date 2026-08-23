@@ -4,6 +4,8 @@ import {
   runtimeAccountKey,
   runtimeApiUrl,
   runtimeAuthorizationHeaders,
+  runtimeResourceUrl,
+  runtimeUrlTargetsInstance,
 } from './runtime'
 
 function installDesktopWindow(): void {
@@ -31,8 +33,16 @@ describe('desktop runtime transport', () => {
     configureDesktopRuntime({ instanceUrl: 'https://one.example/path', token: 's'.repeat(43) })
 
     expect(runtimeApiUrl('/api/me')).toBe('https://one.example/api/me')
+    expect(runtimeResourceUrl('/api/catalog-icons/icon/light.png')).toBe('https://one.example/api/catalog-icons/icon/light.png')
+    expect(runtimeResourceUrl('https://storage.example/object')).toBe('https://storage.example/object')
+    expect(runtimeUrlTargetsInstance('/api/me')).toBe(true)
+    expect(runtimeUrlTargetsInstance('https://storage.example/object')).toBe(false)
     expect(runtimeAuthorizationHeaders('/api/me')).toEqual({ authorization: `Bearer ${'s'.repeat(43)}` })
     expect(runtimeAuthorizationHeaders('https://storage.example/object')).toEqual({})
+  })
+
+  it('keeps browser resource URLs relative', () => {
+    expect(runtimeResourceUrl('/api/catalog-icons/icon/light.png')).toBe('/api/catalog-icons/icon/light.png')
   })
 
   it('qualifies local account data with the instance origin', () => {

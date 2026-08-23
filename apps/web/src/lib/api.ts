@@ -67,6 +67,22 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   return body as T
 }
 
+export async function fetchApiBlob(input: string, init: RequestInit = {}): Promise<Blob> {
+  const targetsInstance = runtimeUrlTargetsInstance(input)
+  const response = await authenticatedFetch(input, init)
+  if (response.status === 401 && isDesktopRuntime() && targetsInstance) desktopUnauthorized()
+  if (!response.ok) {
+    const body = await response.clone().json().catch(() => undefined) as ApiErrorBody | undefined
+    throw new ApiError(
+      response.status,
+      body?.error?.code ?? 'resource_request_failed',
+      body?.error?.message ?? `Resource request failed (${response.status})`,
+      body,
+    )
+  }
+  return response.blob()
+}
+
 export function apiDownloadUrl(path: string): string {
   return runtimeApiUrl(path)
 }
@@ -90,4 +106,5 @@ import {
   isDesktopRuntime,
   runtimeApiUrl,
   runtimeAuthorizationHeaders,
+  runtimeUrlTargetsInstance,
 } from './runtime'

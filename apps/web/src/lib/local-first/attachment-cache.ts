@@ -1,4 +1,4 @@
-import { apiRequest, authenticatedFetch } from '@/lib/api'
+import { apiRequest, fetchApiBlob } from '@/lib/api'
 import { localAccountKey, localDb, type CachedAttachmentRow } from './database'
 
 export interface AttachmentMetadata {
@@ -68,9 +68,7 @@ async function cacheRemoteAttachment(
   if (await getCachedAttachment(userId, metadata.id)) return true
   if (metadata.sizeBytes > attachmentQuotaBytes(quotaMb)) return false
   const { url } = await apiRequest<{ url: string }>(`/api/attachments/${metadata.id}/download`)
-  const response = await authenticatedFetch(url)
-  if (!response.ok) throw new Error(`Attachment download failed (${response.status})`)
-  const blob = await response.blob()
+  const blob = await fetchApiBlob(url)
   return cacheAttachmentBlob(userId, metadata, blob, quotaMb)
 }
 
