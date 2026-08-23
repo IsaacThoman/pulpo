@@ -2856,7 +2856,7 @@ function AssistantFrame({ children, model, sideRail, time }: {
 }) {
   const header = (
     <>
-      <View style={styles.assistantMark}>
+      <View style={[styles.assistantMark, !sideRail && styles.assistantMarkCompact]}>
         <ModelMark model={model} size={28} />
       </View>
       <View style={styles.assistantBody}>
@@ -2869,7 +2869,7 @@ function AssistantFrame({ children, model, sideRail, time }: {
     </>
   );
   if (sideRail) return <View style={styles.assistantLayout}>{header}</View>;
-  return <View><View style={styles.assistantLayout}>{header}</View>{children}</View>;
+  return <View><View style={[styles.assistantLayout, styles.assistantLayoutCompact]}>{header}</View>{children}</View>;
 }
 
 const MessageRow = memo(function MessageRow({
@@ -5108,7 +5108,9 @@ const styles = StyleSheet.create({
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
   assistantRow: { width: '100%', minWidth: 0, marginBottom: 32 },
   assistantLayout: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  assistantLayoutCompact: { alignItems: 'center', gap: 8 },
   assistantMark: { width: 28, paddingTop: 4 },
+  assistantMarkCompact: { paddingTop: 0 },
   assistantBody: { minWidth: 0, flex: 1 },
   assistantHeader: { minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   assistantName: { minWidth: 0, flexShrink: 1, color: COLORS.textSoft, fontSize: 14, fontWeight: '600' },
