@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { registerAdminBillingRoutes } from './admin-routes.js'
 import {
   availableBillingBalanceMicros,
+  billingLimitPercentage,
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
@@ -72,5 +73,11 @@ describe('billing summary reservation balances', () => {
 
   it('never reports a negative available balance', () => {
     expect(availableBillingBalanceMicros(1_000_000, 1_500_000)).toBe(0)
+  })
+
+  it('calculates exact bounded bar segments for reserved subscription usage', () => {
+    expect(billingLimitPercentage(250_000, 2_000_000)).toBe(12.5)
+    expect(billingLimitPercentage(3_000_000, 2_000_000)).toBe(100)
+    expect(billingLimitPercentage(1, 0)).toBe(0)
   })
 })

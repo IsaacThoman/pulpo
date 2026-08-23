@@ -58,6 +58,11 @@ export function availableBillingBalanceMicros(balanceMicros: number, pendingMicr
   return Math.max(0, balanceMicros - pendingMicros)
 }
 
+export function billingLimitPercentage(amountMicros: number, limitMicros: number): number {
+  if (limitMicros <= 0) return 0
+  return Math.max(0, Math.min(100, (amountMicros / limitMicros) * 100))
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -95,7 +100,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       availablePoolBalanceMicros: poolBalance?.availableMicros ?? null,
       weekly: entitlements.weeklyRemainingPercentage === null ? null : {
         remainingPercentage: entitlements.weeklyRemainingPercentage,
+        availableBarPercentage: billingLimitPercentage(entitlements.weeklyRemainingMicros, entitlements.weeklyLimitMicros),
         pendingMicros: entitlements.weeklyPendingMicros,
+        pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
         resetsAt: entitlements.weeklyResetAt.toISOString(),
       },
       onHold: entitlements.onHold,
