@@ -53,6 +53,7 @@
     "vitepress": "1.6.4"
   },
   "overrides": {
+    "expo-modules-core": "57.0.9",
     "linkify-it": "6.1.0",
     "markdown-it": "15.0.0",
     "metro": "0.84.5",
