@@ -177,12 +177,12 @@ export function LoginPage() {
         <button
           type="button"
           aria-label={`Change server, currently ${instanceUrl}`}
-          className="group mx-auto mt-4 flex min-h-11 max-w-full cursor-pointer items-center justify-center gap-2 px-3 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="mx-auto mt-4 flex min-h-11 max-w-full cursor-pointer items-center justify-center gap-2 px-3 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           onClick={() => { void chooseInstance() }}
         >
           <Server className="size-3.5 shrink-0" aria-hidden="true" />
           <span className="max-w-56 truncate">{instanceUrl}</span>
-          <span className="font-medium text-foreground underline-offset-4 group-hover:underline group-focus-visible:underline">Change</span>
+          <span className="font-medium text-foreground">Change</span>
         </button>
       )}
     </>
