@@ -43,24 +43,26 @@ describe('subscription coverage cost', () => {
     expect(subscriptionCoverageLabel(partial, true)).toBe('$0.0001 covered by your subscription · $0.0001 charged to balance')
   })
 
-  it('renders the original cost and an accessible full-coverage indicator', () => {
+  it('renders the original cost as an accessible full-coverage tooltip trigger', () => {
     const markup = renderCost({ costUsd: 0.0002, subscriptionCoveredUsd: 0.0002, personal: true })
     expect(markup).toContain('$0.0002')
-    expect(markup).toContain('text-violet-700 dark:text-violet-300')
-    expect(markup).toContain('lucide-info')
+    expect(markup).toContain('text-violet-700')
+    expect(markup).toContain('decoration-dotted')
+    expect(markup).toContain('underline-offset-4')
     expect(markup).toContain('data-subscription-coverage="full"')
-    expect(markup).toContain('aria-label="Covered by your subscription · $0.0000 charged to balance"')
+    expect(markup).toContain('aria-label="$0.0002 · Covered by your subscription · $0.0000 charged to balance"')
+    expect(markup).not.toContain('lucide-info')
   })
 
-  it('uses the same info indicator for partial coverage and no treatment for uncovered cost', () => {
+  it('underlines partial coverage and leaves uncovered cost unstyled', () => {
     const partial = renderCost({ costUsd: 0.0002, subscriptionCoveredUsd: 0.0001 })
     const uncovered = renderCost({ costUsd: 0.0002, subscriptionCoveredUsd: 0 })
     expect(partial).toContain('data-subscription-coverage="partial"')
-    expect(partial).toContain('text-violet-700 dark:text-violet-300')
-    expect(partial).toContain('lucide-info')
+    expect(partial).toContain('text-violet-700')
+    expect(partial).toContain('decoration-dotted')
     expect(uncovered).toContain('$0.0002')
     expect(uncovered).not.toContain('data-subscription-coverage')
     expect(uncovered).not.toContain('text-violet-700')
-    expect(uncovered).not.toContain('lucide-info')
+    expect(uncovered).not.toContain('decoration-dotted')
   })
 })
