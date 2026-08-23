@@ -46,15 +46,21 @@ describe('subscription coverage cost', () => {
   it('renders the original cost and an accessible full-coverage indicator', () => {
     const markup = renderCost({ costUsd: 0.0002, subscriptionCoveredUsd: 0.0002, personal: true })
     expect(markup).toContain('$0.0002')
+    expect(markup).toContain('text-violet-700 dark:text-violet-300')
+    expect(markup).toContain('lucide-info')
     expect(markup).toContain('data-subscription-coverage="full"')
     expect(markup).toContain('aria-label="Covered by your subscription · $0.0000 charged to balance"')
   })
 
-  it('renders partial coverage and omits an indicator for uncovered cost', () => {
+  it('uses the same info indicator for partial coverage and no treatment for uncovered cost', () => {
     const partial = renderCost({ costUsd: 0.0002, subscriptionCoveredUsd: 0.0001 })
     const uncovered = renderCost({ costUsd: 0.0002, subscriptionCoveredUsd: 0 })
     expect(partial).toContain('data-subscription-coverage="partial"')
+    expect(partial).toContain('text-violet-700 dark:text-violet-300')
+    expect(partial).toContain('lucide-info')
     expect(uncovered).toContain('$0.0002')
     expect(uncovered).not.toContain('data-subscription-coverage')
+    expect(uncovered).not.toContain('text-violet-700')
+    expect(uncovered).not.toContain('lucide-info')
   })
 })
