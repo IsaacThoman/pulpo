@@ -189,8 +189,8 @@ export function BillingPage() {
       : summary.plan === 'baby'
         ? 'Free · Pay as you go'
       : summary.subscription?.cancelAtPeriodEnd
-        ? `$${managedPlan === 'fat' ? 24 : 8} monthly${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-        : `$${managedPlan === 'fat' ? 24 : 8} monthly${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+        : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
 
   return (
     <div className="flex h-full flex-col">
