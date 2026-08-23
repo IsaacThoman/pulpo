@@ -45,6 +45,7 @@ interface PersonalRecordRow {
   inputTokens: number
   outputTokens: number
   costMicros: number
+  subscriptionCoveredMicros: number
   latencyMs: number
   balanceAfterMicros: number | null
 }
@@ -103,6 +104,7 @@ export function PersonalPage() {
     tokensIn: row.inputTokens,
     tokensOut: row.outputTokens,
     cost: row.costMicros / 1_000_000,
+    subscriptionCoveredCost: row.subscriptionCoveredMicros / 1_000_000,
     balanceAfter: row.balanceAfterMicros === null ? null : row.balanceAfterMicros / 1_000_000,
     latencyMs: row.latencyMs,
   })), [recordsQuery.data])

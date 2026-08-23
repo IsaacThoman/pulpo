@@ -470,6 +470,7 @@ export function makeUsageRecords(): UsageRecord[] {
       tokensIn,
       tokensOut,
       cost,
+      subscriptionCoveredCost: 0,
       balanceAfter: user.id === CURRENT_USER_ID ? balance : 0,
       latencyMs: 800 + Math.floor(rand() * 9000),
     })
