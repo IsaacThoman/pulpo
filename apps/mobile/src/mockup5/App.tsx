@@ -3161,7 +3161,7 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
         title={label}
         icon={labModel
           ? <SwiftUIImage uiImage={Image.resolveAssetSource(labModel.labIcon ?? labModel.icon).uri} modifiers={[resizable(), frame({ width: 20, height: 20 })]} />
-          : <SwiftUIImage systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 })]} />}
+          : <SwiftUIImage systemName="star.fill" size={20} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />}
       />
       <SwiftUISpacer />
       {selected && <SwiftUIImage systemName="checkmark" size={15} />}
