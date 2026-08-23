@@ -23,10 +23,10 @@ export const SafeMarkdown = memo(function SafeMarkdown({
     const lineHeight = compact ? 19 : 24
     return {
       paragraph: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, marginBottom: compact ? 6 : 10 },
-      h1: { color: theme.text, fontSize: compact ? 18 : 24, lineHeight: compact ? 23 : 30, marginTop: 14, marginBottom: 8 },
-      h2: { color: theme.text, fontSize: compact ? 16 : 21, lineHeight: compact ? 22 : 27, marginTop: 13, marginBottom: 7 },
-      h3: { color: theme.text, fontSize: compact ? 14 : 18, lineHeight: compact ? 20 : 24, marginTop: 11, marginBottom: 6 },
-      h4: { color: theme.text, fontSize, lineHeight, marginTop: 10, marginBottom: 5 },
+      h1: { color: theme.text, fontSize: compact ? 18 : 24, lineHeight: compact ? 23 : 30, marginTop: 11, marginBottom: 8 },
+      h2: { color: theme.text, fontSize: compact ? 16 : 21, lineHeight: compact ? 22 : 27, marginTop: 11, marginBottom: 7 },
+      h3: { color: theme.text, fontSize: compact ? 14 : 18, lineHeight: compact ? 20 : 24, marginTop: 10, marginBottom: 6 },
+      h4: { color: theme.text, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
       h5: { color: theme.text, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
       h6: { color: theme.secondary, fontSize, lineHeight, marginTop: 9, marginBottom: 5 },
       list: { color: compact ? theme.secondary : theme.text, fontSize, lineHeight, markerColor: theme.secondary, bulletColor: theme.secondary, gapWidth: 8, marginLeft: 18, marginBottom: 8 },
