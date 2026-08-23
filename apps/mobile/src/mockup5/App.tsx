@@ -2945,79 +2945,83 @@ const MessageRow = memo(function MessageRow({
           )}
         </View>
       ) : (
-        <View>
-          <View style={styles.assistantHeader}>
-            <ModelMark model={model} size={26} />
-            <Text style={styles.assistantName}>{model.name}</Text>
-            <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
+        <View style={styles.assistantLayout}>
+          <View style={styles.assistantMark}>
+            <ModelMark model={model} size={28} />
           </View>
-          {timeline.length ? (
-            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
-              <View style={styles.assistantContent}>
-                {timeline.map((segment, index) => {
-                  if (segment.kind === 'activity') {
-                    const active = timelineActivityIsActive(timeline, index, streaming);
-                    const segmentDurationMs = activityDurationMs(segment.steps);
-                    const useResponseDurationFallback = activitySegments.length === 1
-                      && index === lastActivityTimelineIndex
-                      && (!streaming || activityFinishedDuringStream);
-                    return <WorkBlock
-                      active={active}
-                      durationMs={segmentDurationMs ?? (useResponseDurationFallback
-                        ? streamingFallbackDurationMs ?? elapsedMs
-                        : undefined)}
-                      key={`activity:${index}`}
-                      steps={segment.steps}
-                    />;
-                  }
-                  return <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
-                })}
-              </View>
-            </MessageContextMenu>
-          ) : message.error ? (
-            <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
-              <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
-            </MessageContextMenu>
-          ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
-          {extraOutput.map((item, index) => {
-            const details = JSON.stringify(item, null, 2).slice(0, 4000);
-            return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
-              <View style={styles.workRow}><Icon name="doc.text.magnifyingglass" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{outputItemTitle(item)}</Text></View>
-              <Text selectable style={styles.workDetail}>{details}</Text>
-            </View>;
-          })}
-          {message.attachments && message.attachments.length > 0 && (
-            <View style={[styles.sentAttachments, styles.assistantAttachments]}>
-              {message.attachments.map((attachment) => (
-                <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
-                  <SentAttachmentPreview
-                    attachment={attachment}
-                    group={message.attachments ?? []}
-                    onPreviewFile={onPreviewFile}
-                    onPreviewImages={onPreviewImages}
-                  />
-                </SentAttachmentContextMenu>
-              ))}
+          <View style={styles.assistantBody}>
+            <View style={styles.assistantHeader}>
+              <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
+              <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
             </View>
-          )}
-          {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
-          {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
-          {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
-            <Pressable
-              accessibilityRole="button"
-              disabled={capacityPending}
-              onPress={() => {
-                setCapacityPending(true);
-                void continueWithoutAgent(message.id)
-                  .catch((error) => Alert.alert('Couldn’t continue', error instanceof Error ? error.message : undefined))
-                  .finally(() => setCapacityPending(false));
-              }}
-              style={({ pressed }) => [styles.continueButton, pressed && styles.navRowPressed]}
-            >
-              <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
-            </Pressable>
-          )}
-          {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+            {timeline.length ? (
+              <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <View style={styles.assistantContent}>
+                  {timeline.map((segment, index) => {
+                    if (segment.kind === 'activity') {
+                      const active = timelineActivityIsActive(timeline, index, streaming);
+                      const segmentDurationMs = activityDurationMs(segment.steps);
+                      const useResponseDurationFallback = activitySegments.length === 1
+                        && index === lastActivityTimelineIndex
+                        && (!streaming || activityFinishedDuringStream);
+                      return <WorkBlock
+                        active={active}
+                        durationMs={segmentDurationMs ?? (useResponseDurationFallback
+                          ? streamingFallbackDurationMs ?? elapsedMs
+                          : undefined)}
+                        key={`activity:${index}`}
+                        steps={segment.steps}
+                      />;
+                    }
+                    return <SafeMarkdown key={`text:${index}`} streaming={streaming && !timeline.slice(index + 1).some((item) => item.kind === 'text')}>{segment.text}</SafeMarkdown>;
+                  })}
+                </View>
+              </MessageContextMenu>
+            ) : message.error ? (
+              <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
+                <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>
+              </MessageContextMenu>
+            ) : message.status === 'streaming' ? <ResponsePendingIndicator /> : null}
+            {extraOutput.map((item, index) => {
+              const details = JSON.stringify(item, null, 2).slice(0, 4000);
+              return <View key={`${String(item.type)}:${index}`} style={styles.otherOutput}>
+                <View style={styles.workRow}><Icon name="doc.text.magnifyingglass" size={13} color={COLORS.muted} /><Text style={styles.workRowTitle}>{outputItemTitle(item)}</Text></View>
+                <Text selectable style={styles.workDetail}>{details}</Text>
+              </View>;
+            })}
+            {message.attachments && message.attachments.length > 0 && (
+              <View style={[styles.sentAttachments, styles.assistantAttachments]}>
+                {message.attachments.map((attachment) => (
+                  <SentAttachmentContextMenu attachment={attachment} key={attachment.id} message={message} onEdit={onEdit} onRegenerate={onRegenerate}>
+                    <SentAttachmentPreview
+                      attachment={attachment}
+                      group={message.attachments ?? []}
+                      onPreviewFile={onPreviewFile}
+                      onPreviewImages={onPreviewImages}
+                    />
+                  </SentAttachmentContextMenu>
+                ))}
+              </View>
+            )}
+            {message.error && timeline.length > 0 && <View style={styles.responseError}><Icon name="exclamationmark.triangle" size={15} color={COLORS.critical} /><Text style={styles.responseErrorText}>{message.error}</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View>}
+            {!message.error && message.status === 'stopped' && <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}><View style={styles.responseError}><Icon name="stop.circle" size={15} color={COLORS.muted} /><Text style={styles.responseErrorText}>Response stopped before completion.</Text><Pressable accessibilityRole="button" onPress={() => onRegenerate(message)}><Text style={styles.tryAgainText}>Try again</Text></Pressable></View></MessageContextMenu>}
+            {message.agentMode && streaming && capacityWorkspace?.state === 'waiting' && canContinueWithoutAgent && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={capacityPending}
+                onPress={() => {
+                  setCapacityPending(true);
+                  void continueWithoutAgent(message.id)
+                    .catch((error) => Alert.alert('Couldn’t continue', error instanceof Error ? error.message : undefined))
+                    .finally(() => setCapacityPending(false));
+                }}
+                style={({ pressed }) => [styles.continueButton, pressed && styles.navRowPressed]}
+              >
+                <Text style={styles.continueButtonText}>{capacityPending ? 'Continuing…' : 'Continue without agent tools'}</Text>
+              </Pressable>
+            )}
+            {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
+          </View>
         </View>
       )}
       {branches.length > 1 && message.chatId ? (
@@ -4252,12 +4256,18 @@ function ChatView({
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
             <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
-              <View style={styles.assistantHeader}>
-                <ModelMark model={model} size={26} />
-                <Text style={styles.assistantName}>{model.name}</Text>
-                <Text style={styles.messageTime}>now</Text>
+              <View style={styles.assistantLayout}>
+                <View style={styles.assistantMark}>
+                  <ModelMark model={model} size={28} />
+                </View>
+                <View style={styles.assistantBody}>
+                  <View style={styles.assistantHeader}>
+                    <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
+                    <Text style={styles.messageTime}>now</Text>
+                  </View>
+                  <ResponsePendingIndicator />
+                </View>
               </View>
-              <ResponsePendingIndicator />
             </View>
           ) : null}
           onContentSizeChange={handleContentSizeChange}
@@ -5078,14 +5088,17 @@ const styles = StyleSheet.create({
   attachmentContextFileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', textAlign: 'center', marginTop: 14 },
   attachmentContextFileMeta: { color: COLORS.muted, fontSize: 12, marginTop: 6 },
   assistantRow: { marginBottom: 32 },
-  assistantHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 11 },
-  assistantName: { color: COLORS.textSoft, fontSize: 13.5, fontWeight: '600' },
-  messageTime: { color: COLORS.muted, fontSize: 11.5 },
-  assistantContent: { width: '100%', gap: 4 },
+  assistantLayout: { width: '100%', flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  assistantMark: { width: 28, paddingTop: 4 },
+  assistantBody: { minWidth: 0, flex: 1 },
+  assistantHeader: { minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  assistantName: { minWidth: 0, flexShrink: 1, color: COLORS.textSoft, fontSize: 14, fontWeight: '600' },
+  messageTime: { flexShrink: 0, color: COLORS.muted, fontSize: 11.5 },
+  assistantContent: { width: '100%', gap: 6, marginTop: 4 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
   responsePendingDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.muted },
-  reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12, paddingVertical: 4 },
+  reasoningTrigger: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   reasoningContextHost: { width: '100%' },
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
   reasoningBody: { borderLeftWidth: 2, borderLeftColor: COLORS.line, paddingLeft: 12, marginBottom: 16, marginLeft: 2, gap: 8 },
