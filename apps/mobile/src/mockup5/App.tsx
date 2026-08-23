@@ -2844,6 +2844,30 @@ function BranchControls({ branches, activeIndex, onActivate, disabled = false }:
   );
 }
 
+function AssistantFrame({ children, model, sideRail, time }: {
+  children: ReactNode;
+  model: Model;
+  sideRail: boolean;
+  time: string;
+}) {
+  const header = (
+    <>
+      <View style={styles.assistantMark}>
+        <ModelMark model={model} size={28} />
+      </View>
+      <View style={styles.assistantBody}>
+        <View style={styles.assistantHeader}>
+          <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
+          <Text style={styles.messageTime}>{time}</Text>
+        </View>
+        {sideRail ? children : null}
+      </View>
+    </>
+  );
+  if (sideRail) return <View style={styles.assistantLayout}>{header}</View>;
+  return <View><View style={styles.assistantLayout}>{header}</View>{children}</View>;
+}
+
 const MessageRow = memo(function MessageRow({
   message,
   model,
@@ -2948,19 +2972,7 @@ const MessageRow = memo(function MessageRow({
           )}
         </View>
       ) : (
-        <View>
-          <View style={styles.assistantLayout}>
-            <View style={styles.assistantMark}>
-              <ModelMark model={model} size={28} />
-            </View>
-            <View style={styles.assistantBody}>
-              <View style={styles.assistantHeader}>
-                <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
-                <Text style={styles.messageTime}>{timeAgo(message.createdAt ?? Date.now())}</Text>
-              </View>
-            </View>
-          </View>
-          <View style={[styles.assistantResponse, sideRail && styles.assistantResponseSideRail]}>
+        <AssistantFrame model={model} sideRail={sideRail} time={timeAgo(message.createdAt ?? Date.now())}>
             {timeline.length ? (
               <MessageContextMenu message={message} model={model} onEdit={onEdit} onRegenerate={onRegenerate}>
                 <View style={styles.assistantContent}>
@@ -3028,8 +3040,7 @@ const MessageRow = memo(function MessageRow({
               </Pressable>
             )}
             {message.text && message.meta && <Text style={styles.messageMeta}>{message.meta}</Text>}
-          </View>
-        </View>
+        </AssistantFrame>
       )}
       {branches.length > 1 && message.chatId ? (
         <BranchControls activeIndex={branchIndex} branches={branches} disabled={editingLocked} onActivate={(branchId) => onActivateBranch(message, branchId)} />
@@ -4266,20 +4277,9 @@ function ChatView({
           keyExtractor={(message) => message.id}
           ListFooterComponent={assistantStatus === 'thinking' && !hasPendingAssistant ? (
             <View accessibilityLiveRegion="polite" style={styles.assistantRow}>
-              <View style={styles.assistantLayout}>
-                <View style={styles.assistantMark}>
-                  <ModelMark model={model} size={28} />
-                </View>
-                <View style={styles.assistantBody}>
-                  <View style={styles.assistantHeader}>
-                    <Text numberOfLines={1} style={styles.assistantName}>{model.name}</Text>
-                    <Text style={styles.messageTime}>now</Text>
-                  </View>
-                </View>
-              </View>
-              <View style={[styles.assistantResponse, assistantSideRail && styles.assistantResponseSideRail]}>
+              <AssistantFrame model={model} sideRail={assistantSideRail} time="now">
                 <ResponsePendingIndicator />
-              </View>
+              </AssistantFrame>
             </View>
           ) : null}
           onContentSizeChange={handleContentSizeChange}
@@ -5106,8 +5106,6 @@ const styles = StyleSheet.create({
   assistantHeader: { minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 8 },
   assistantName: { minWidth: 0, flexShrink: 1, color: COLORS.textSoft, fontSize: 14, fontWeight: '600' },
   messageTime: { flexShrink: 0, color: COLORS.muted, fontSize: 11.5 },
-  assistantResponse: { width: '100%' },
-  assistantResponseSideRail: { paddingLeft: 40 },
   assistantContent: { width: '100%', gap: 6, marginTop: 4 },
   assistantText: { color: COLORS.textSoft, fontSize: 15.5, lineHeight: 25.5, letterSpacing: -0.1 },
   responsePending: { alignItems: 'center', flexDirection: 'row', gap: 4, minHeight: 28, paddingVertical: 4 },
