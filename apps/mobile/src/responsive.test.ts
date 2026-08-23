@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHAT_CONTENT_MAX,
   responsiveHorizontalPadding,
+  transcriptColumnWidth,
   usesAssistantSideRail,
   usesPersistentSidebar,
   windowSizeClass,
@@ -34,5 +36,11 @@ describe('responsive window sizing', () => {
     expect(responsiveHorizontalPadding(390)).toBe(18)
     expect(responsiveHorizontalPadding(744)).toBe(24)
     expect(responsiveHorizontalPadding(1024)).toBe(28)
+  })
+
+  it('caps the transcript column and shrinks it with the live pane', () => {
+    expect(transcriptColumnWidth(1200)).toBe(CHAT_CONTENT_MAX)
+    expect(transcriptColumnWidth(500)).toBe(500 - 18 * 2)
+    expect(transcriptColumnWidth(724, 28)).toBe(724 - 56)
   })
 })
