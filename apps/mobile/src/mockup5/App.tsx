@@ -174,7 +174,6 @@ import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
-import { beginsWithMarkdownHeading } from '../components/markdown';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
 import { timeAgo } from '../features/chat/format';
 import {
@@ -2761,17 +2760,16 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
   );
 }
 
-function WorkBlock({ steps, active, durationMs, tightenFollowingHeading = false }: {
+function WorkBlock({ steps, active, durationMs }: {
   steps: TimelineStep[];
   active: boolean;
   durationMs?: number;
-  tightenFollowingHeading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
   const label = workLabel(steps, active, durationMs);
   return (
-    <View style={[styles.workBlock, !open && tightenFollowingHeading && styles.workBlockBeforeHeading]}>
+    <View style={[styles.workBlock, !open && styles.workBlockCollapsed]}>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
@@ -2988,7 +2986,6 @@ const MessageRow = memo(function MessageRow({
                     if (segment.kind === 'activity') {
                       const active = timelineActivityIsActive(timeline, index, streaming);
                       const segmentDurationMs = activityDurationMs(segment.steps);
-                      const nextSegment = timeline[index + 1];
                       const useResponseDurationFallback = activitySegments.length === 1
                         && index === lastActivityTimelineIndex
                         && (!streaming || activityFinishedDuringStream);
@@ -2999,7 +2996,6 @@ const MessageRow = memo(function MessageRow({
                           : undefined)}
                         key={`activity:${index}`}
                         steps={segment.steps}
-                        tightenFollowingHeading={nextSegment?.kind === 'text' && beginsWithMarkdownHeading(nextSegment.text)}
                       />;
                     }
                     return <SafeMarkdown
@@ -5145,7 +5141,7 @@ const styles = StyleSheet.create({
   reasoningLabel: { color: COLORS.muted, fontSize: 12.5, fontWeight: '500' },
   reasoningBody: { borderLeftWidth: 2, borderLeftColor: COLORS.line, paddingLeft: 12, marginBottom: 16, marginLeft: 2, gap: 8 },
   workBlock: { width: '100%' },
-  workBlockBeforeHeading: { marginBottom: -4 },
+  workBlockCollapsed: { marginBottom: -4 },
   workRow: { flexDirection: 'row', alignItems: 'center', gap: 7, minHeight: 22 },
   workRowText: { color: COLORS.muted, fontSize: 12.5, lineHeight: 18, flex: 1, textTransform: 'capitalize' },
   workRowTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 18, fontWeight: '600', flex: 1 },
