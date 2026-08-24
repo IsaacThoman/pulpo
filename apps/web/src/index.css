@@ -290,7 +290,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
 html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
   position: absolute;
   top: 100%;
-  left: 52px;
+  left: 51px;
   width: 16px;
   height: 16px;
   background: radial-gradient(
@@ -308,7 +308,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
   position: absolute;
   top: 100%;
   right: 0;
-  left: 68px;
+  left: 67px;
   border-top: 1px solid var(--sidebar-border);
   content: '';
   pointer-events: none;
