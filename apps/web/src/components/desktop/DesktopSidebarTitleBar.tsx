@@ -15,9 +15,9 @@ export function DesktopSidebarTitleBar({
     <div
       aria-hidden="true"
       className={cn(
-        'desktop-sidebar-titlebar fixed left-0 top-0 z-40 h-[38px] border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
+        'desktop-sidebar-titlebar fixed left-0 top-0 z-40 h-[38px] motion-reduce:transition-none',
         transitions && 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-        collapsed ? 'w-[52px]' : 'w-[264px]',
+        collapsed ? 'w-0' : 'w-[264px] border-r border-sidebar-border bg-sidebar',
       )}
     />
   )
