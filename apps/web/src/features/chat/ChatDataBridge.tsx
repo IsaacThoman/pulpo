@@ -48,6 +48,7 @@ function tabId(): string {
 
 export function ChatDataBridge() {
   const user = useAuth((state) => state.user)
+  const instanceReady = useAuth((state) => state.instanceReady)
   const userId = user?.id
   const userRole = user?.role
   const location = useLocation()
@@ -65,18 +66,19 @@ export function ChatDataBridge() {
   const loadCatalog = useCatalog((state) => state.load)
   const revisionRef = useRef(user?.stateRevision ?? 0)
   const currentTabId = useMemo(tabId, [])
+  const networkReady = !isDesktopRuntime() || instanceReady
   const activeChatIdRef = useRef(chatId)
   activeChatIdRef.current = chatId
 
   const chatsQuery = useQuery({
     queryKey: ['chats', userId],
     queryFn: () => apiRequest<{ data: ServerChat[] }>('/api/chats').then((response) => response.data),
-    enabled: Boolean(userId && userRole !== 'pending'),
+    enabled: Boolean(networkReady && userId && userRole !== 'pending'),
   })
   const foldersQuery = useQuery({
     queryKey: ['folders', userId],
     queryFn: () => apiRequest<{ data: ServerFolder[] }>('/api/folders').then((response) => response.data),
-    enabled: Boolean(userId && userRole !== 'pending'),
+    enabled: Boolean(networkReady && userId && userRole !== 'pending'),
   })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
@@ -84,7 +86,7 @@ export function ChatDataBridge() {
       const incoming = await apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`)
       return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
     },
-    enabled: Boolean(userId && chatId),
+    enabled: Boolean(networkReady && userId && chatId),
     retry: false,
     refetchOnWindowFocus: false,
   })
@@ -97,10 +99,10 @@ export function ChatDataBridge() {
       useChat.getState().markTemporaryExpired(chatId)
     }
   }, [activeTemporaryChatId, chatId, chatQuery.error])
-  useEffect(() => { if (userId) void loadCatalog() }, [userId, loadCatalog])
+  useEffect(() => { if (networkReady && userId) void loadCatalog() }, [networkReady, userId, loadCatalog])
 
   useEffect(() => {
-    if (!userId || userRole === 'pending') return
+    if (!networkReady || !userId || userRole === 'pending') return
     const socket: PulpoSocket = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
       path: '/socket.io',
       withCredentials: !isDesktopRuntime(),
@@ -276,7 +278,7 @@ export function ChatDataBridge() {
       socketRef.current = null
       subscribedResponseIds.clear()
     }
-  }, [userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
+  }, [networkReady, userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
 
   useEffect(() => {
     const socket = socketRef.current

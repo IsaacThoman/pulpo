@@ -8,6 +8,7 @@ import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { DesktopInstancePage } from '@/components/desktop/DesktopInstancePage'
 import { DesktopTitleBar } from '@/components/desktop/DesktopTitleBar'
+import { desktopStartupSurface } from '@/lib/desktop-startup'
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
@@ -56,14 +57,22 @@ export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
   const checkingSession = useAuth((state) => state.checkingSession)
   const instanceReady = useAuth((state) => state.instanceReady)
+  const user = useAuth((state) => state.user)
   useEffect(() => { void bootstrap() }, [bootstrap])
+
+  const startupSurface = desktopStartupSurface({
+    desktop: isDesktopRuntime(),
+    hasCachedUser: Boolean(user),
+    checkingSession,
+    instanceReady,
+  })
 
   return (
     <BrowserRouter>
       <div className="desktop-shell h-full">
       <DesktopTitleBar />
-      {isDesktopRuntime() && (checkingSession || !instanceReady) ? (
-        checkingSession
+      {startupSurface !== 'app' ? (
+        startupSurface === 'connecting'
           ? <div className="grid h-full place-items-center text-sm text-muted-foreground">Connecting to Pulpo…</div>
           : <DesktopInstancePage />
       ) : <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">Loading Pulpo…</div>}>

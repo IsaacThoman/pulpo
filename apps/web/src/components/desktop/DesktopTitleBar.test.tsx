@@ -15,4 +15,20 @@ describe('desktop title bar', () => {
 
     expect(markup).not.toContain('data-temporary-chat')
   })
+
+  it('shows non-blocking desktop connection states', () => {
+    const connecting = renderToStaticMarkup(
+      <DesktopTitleBarSurface temporaryChat={false} connectionStatus="connecting" />,
+    )
+    const offline = renderToStaticMarkup(
+      <DesktopTitleBarSurface temporaryChat={false} connectionStatus="offline" />,
+    )
+
+    expect(connecting).toContain('Connecting…')
+    expect(connecting).toContain('role="status"')
+    expect(connecting).toContain('left-[84px]')
+    expect(connecting).not.toContain('right-3')
+    expect(offline).toContain('Offline · Retry')
+    expect(offline).toContain('<button')
+  })
 })

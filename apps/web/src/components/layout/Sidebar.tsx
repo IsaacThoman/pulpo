@@ -61,6 +61,7 @@ import { apiRequest } from '@/lib/api'
 import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -661,17 +662,19 @@ export function Sidebar({
   const moveToFolder = useChat((s) => s.moveToFolder)
   const toggleFolder = useChat((s) => s.toggleFolder)
   const user = useAuth((s) => s.user)
+  const instanceReady = useAuth((s) => s.instanceReady)
+  const networkReady = !isDesktopRuntime() || instanceReady
   const pendingFriendsQuery = useQuery({
     queryKey: ['friends-pending-count', user?.id],
     queryFn: () => apiRequest<{ count: number }>('/api/friends/pending-count'),
-    enabled: Boolean(user?.id && user.role !== 'pending'),
+    enabled: Boolean(networkReady && user?.id && user.role !== 'pending'),
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
   const pendingPoolsQuery = useQuery({
     queryKey: ['pool-pending-count', user?.id],
     queryFn: () => apiRequest<{ count: number }>('/api/pools/pending-count'),
-    enabled: Boolean(user?.id && user.role !== 'pending'),
+    enabled: Boolean(networkReady && user?.id && user.role !== 'pending'),
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
@@ -681,7 +684,7 @@ export function Sidebar({
   const billingQuery = useQuery({
     queryKey: ['billing', user?.id],
     queryFn: fetchBillingSummary,
-    enabled: Boolean(billingEnabled && user?.id && user.role !== 'pending'),
+    enabled: Boolean(networkReady && billingEnabled && user?.id && user.role !== 'pending'),
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
