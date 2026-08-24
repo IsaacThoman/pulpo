@@ -446,6 +446,18 @@ export const responses = pgTable('responses', {
   uniqueIndex('responses_user_idempotency_unique').on(table.userId, table.idempotencyKey),
 ])
 
+export const chatSearchDocuments = pgTable('chat_search_documents', {
+  chatId: uuid('chat_id').primaryKey().references(() => chats.id, { onDelete: 'cascade' }),
+  title: text('title').notNull(),
+  body: text('body').notNull().default(''),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('chat_search_documents_fts_idx').using('gin', sql`(
+    setweight(to_tsvector('simple', coalesce(${table.title}, '')), 'A') ||
+    setweight(to_tsvector('simple', coalesce(${table.body}, '')), 'B')
+  )`),
+])
+
 export const queuedMessages = pgTable('queued_messages', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),

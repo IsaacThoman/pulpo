@@ -1299,6 +1299,22 @@ export const chatSummarySchema = z.object({
 })
 export type ChatSummary = z.infer<typeof chatSummarySchema>
 
+export const chatSearchResultSchema = z.object({
+  chatId: idSchema,
+  title: z.string(),
+  modelId: z.string(),
+  updatedAt: isoDateSchema,
+  matchedOn: z.enum(['title', 'message']),
+  snippet: z.string().nullable(),
+  score: z.number(),
+})
+export type ChatSearchResult = z.infer<typeof chatSearchResultSchema>
+
+export const chatSearchResponseSchema = z.object({
+  data: z.array(chatSearchResultSchema).max(50),
+})
+export type ChatSearchResponse = z.infer<typeof chatSearchResponseSchema>
+
 export const persistChatResponseSchema = chatSummarySchema.extend({
   temporary: z.literal(false),
   expiresAt: z.null(),

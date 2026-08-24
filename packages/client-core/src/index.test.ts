@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   attachmentValidationError,
+  chatSearchDocument,
+  chatSearchHighlight,
+  chatSearchTerms,
   hydrateEmbeddedResponseSnapshot,
   lineageFromLeaf,
   mergeCachedResponseDetails,
@@ -14,6 +17,21 @@ import {
 } from './index.js'
 
 describe('client core', () => {
+  it('extracts and highlights only user-visible chat search text', () => {
+    expect(chatSearchDocument(
+      [{ role: 'system', content: 'hidden' }, { role: 'user', content: [{ type: 'input_text', text: 'Find the octopus' }] }],
+      [{ type: 'reasoning', summary: [{ text: 'private' }] }, { type: 'message', content: [{ type: 'output_text', text: 'A blue octopus' }] }, { type: 'pulpo_tool', output: 'tool metadata' }],
+    )).toBe('Find the octopus\n\nA blue octopus')
+    expect(chatSearchTerms('  Blue, OCTO!  ')).toEqual(['blue', 'octo'])
+    expect(chatSearchHighlight('A Blue octopus', 'blue octo')).toEqual([
+      { text: 'A ', match: false },
+      { text: 'Blue', match: true },
+      { text: ' ', match: false },
+      { text: 'octo', match: true },
+      { text: 'pus', match: false },
+    ])
+  })
+
   it('hydrates compact embedded snapshots from the canonical response output', () => {
     const marker = {
       responseId: '00000000-0000-4000-8000-000000000001', status: 'completed' as const,

@@ -1,4 +1,4 @@
-import type { MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
+import type { ChatSearchResponse, MobileConfig, NativeAuthResponse, PasskeyAuthenticationResponse, PasskeyCeremony, PasskeyList, PasskeyRegistrationResponse, PasskeySummary, TwoFactorEnrollment, TwoFactorRecoveryCodes, TwoFactorStatus, User } from '@pulpo/contracts'
 import type { MobileModel, ServerChat, ServerDeletedChat, ServerFolder } from '../types'
 
 export class ApiError extends Error {
@@ -152,6 +152,7 @@ export const mobileApi = {
     method: 'POST', auth: false, body: { email },
   }),
   chats: () => apiRequest<{ data: ServerChat[] }>('/api/chats'),
+  searchChats: (query: string, signal?: AbortSignal) => apiRequest<ChatSearchResponse>(`/api/chats/search?q=${encodeURIComponent(query)}`, { signal }),
   trashAllChats: () => apiRequest<void>('/api/chats', { method: 'DELETE' }),
   deletedChats: () => apiRequest<{ data: ServerDeletedChat[] }>('/api/chats/deleted'),
   emptyTrash: () => apiRequest<void>('/api/chats/deleted', { method: 'DELETE' }),

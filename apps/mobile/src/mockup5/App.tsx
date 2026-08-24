@@ -97,7 +97,8 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQueryClient } from '@tanstack/react-query';
-import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
+import { workspaceContinueWithoutAgentAvailableAtMs, type ChatSearchResult } from '@pulpo/contracts';
+import { chatSearchHighlight } from '@pulpo/client-core';
 import {
   Bot,
   Brain,
@@ -158,12 +159,12 @@ import { chatRemovalBehavior } from './src/chatRemoval';
 import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
 import { useSessionStore } from '../store/session';
 import type { ServerChat } from '../types';
-import { apiRequest, ApiError } from '../api/client';
+import { apiRequest, ApiError, isNetworkError, mobileApi } from '../api/client';
 import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionScope, ProductionBridge } from './src/production/ProductionBridge';
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
-import { cacheNamespace, cacheOpenedChat, deleteResponseCursor } from '../data/database';
+import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, searchCachedChats } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
@@ -4550,11 +4551,11 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
           onFocusChange(true);
           requestAnimationFrame(() => { void fieldRef.current?.focus(); });
         }}
-        modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('Search chats')]}
+        modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('Search chats and messages')]}
       >
         <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: DRAWER_ACTION_HEIGHT }), contentShape(shapes.rectangle())]}>
           <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />
-          <SwiftUIText modifiers={[font({ textStyle: 'body' }), foregroundStyle('primary')]}>Search chats</SwiftUIText>
+          <SwiftUIText modifiers={[font({ textStyle: 'body' }), foregroundStyle('primary')]}>Search chats and messages</SwiftUIText>
           <SwiftUISpacer />
         </SwiftUIHStack>
       </SwiftUIButton>
@@ -4564,7 +4565,7 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   return <SwiftUIHost style={styles.nativeDrawerSearchHost}>
     <SwiftUIHStack spacing={12}>
       <SwiftUIImage systemName="magnifyingglass" size={17} modifiers={[frame({ width: 20, height: 20 }), foregroundStyle('primary')]} />
-      <SwiftUITextField ref={fieldRef} placeholder="Search chats" text={nativeValue} onFocusChange={onFocusChange} onTextChange={onChange} modifiers={[textFieldStyle('plain'), font({ textStyle: 'body' }), frame({ maxWidth: Infinity, minHeight: 44 }), swiftUIAccessibilityLabel('Search chats')]} />
+      <SwiftUITextField ref={fieldRef} placeholder="Search chats and messages" text={nativeValue} onFocusChange={onFocusChange} onTextChange={onChange} modifiers={[textFieldStyle('plain'), font({ textStyle: 'body' }), frame({ maxWidth: Infinity, minHeight: 44 }), swiftUIAccessibilityLabel('Search chats and messages')]} />
       {value.length > 0 ? <SwiftUIButton label="Clear search" systemImage="xmark.circle.fill" onPress={() => { nativeValue.set(''); onChange(''); }} modifiers={[buttonStyle('plain'), labelStyle('iconOnly'), frame({ width: 44, height: 44 }), swiftUIAccessibilityLabel('Clear search')]} /> : null}
     </SwiftUIHStack>
   </SwiftUIHost>;
@@ -4729,8 +4730,13 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const moveChat = usePrototypeStore((state) => state.moveChat);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const addFolder = usePrototypeStore((state) => state.addFolder);
+  const instanceUrl = useSessionStore((state) => state.instanceUrl);
+  const userId = useSessionStore((state) => state.user?.id);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [searchResults, setSearchResults] = useState<ChatSearchResult[]>([]);
+  const [searchState, setSearchState] = useState<'idle' | 'loading' | 'success' | 'offline' | 'error'>('idle');
+  const [searchRetry, setSearchRetry] = useState(0);
   const folderItems = useMemo(() => {
     return folders.map((folder) => ({
       id: folder.id,
@@ -4746,8 +4752,46 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     void nativeSearchRef.current?.blur();
   }, []);
   useEffect(() => {
-    if (!drawerOpen) dismissSearch();
+    if (!drawerOpen) {
+      dismissSearch();
+      setSearch('');
+    }
   }, [dismissSearch, drawerOpen]);
+  useEffect(() => {
+    const query = search.trim();
+    if (!query || !userId) {
+      setSearchResults([]);
+      setSearchState('idle');
+      return;
+    }
+    const controller = new AbortController();
+    let cancelled = false;
+    setSearchResults([]);
+    setSearchState('loading');
+    const timer = setTimeout(() => {
+      void mobileApi.searchChats(query, controller.signal).then((result) => {
+        if (cancelled) return;
+        setSearchResults(result.data);
+        setSearchState('success');
+      }).catch(async (error) => {
+        if (cancelled) return;
+        if (!isNetworkError(error)) {
+          setSearchState('error');
+          return;
+        }
+        const namespace = cacheNamespace(instanceUrl, userId);
+        const results = await searchCachedChats(namespace, query).catch(() => []);
+        if (cancelled) return;
+        setSearchResults(results);
+        setSearchState('offline');
+      });
+    }, 180);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [instanceUrl, search, searchRetry, userId]);
   useEffect(() => {
     searchQueryProgress.value = withTiming(search.length > 0 ? 1 : 0, { duration: 180 });
   }, [search, searchQueryProgress]);
@@ -4760,13 +4804,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
     };
   });
-  const filtered = useMemo(
-    () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
-    [chats, search],
-  );
   const sections = useMemo(() => {
-    return historyChatSections(filtered);
-  }, [filtered]);
+    return historyChatSections(chats);
+  }, [chats]);
   const { label: removeChatLabel, requiresConfirmation } = chatRemovalBehavior(trashRetention);
 
   const runChatAction = useCallback((chat: HistoryChatSummary, action: HistoryChatAction) => {
@@ -4864,6 +4904,44 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
     />;
   }, [activeChatId, automaticChatExpiration, isDark, models, onPreviewRequest, previewChats, removeChatLabel, runChatAction, selectHistoryChat, showChatActions]);
 
+  const selectSearchResult = useCallback((result: ChatSearchResult) => {
+    const existing = chats.find((chat) => chat.id === result.chatId);
+    selectHistoryChat(existing ?? {
+      id: result.chatId,
+      title: result.title,
+      modelId: result.modelId,
+      time: new Date(result.updatedAt).toLocaleDateString([], { month: 'short', day: 'numeric' }),
+      section: 'Results',
+      pinned: false,
+      folderId: null,
+      expiresAt: null,
+    });
+  }, [chats, selectHistoryChat]);
+
+  const renderSearchResult = useCallback(({ item }: { item: ChatSearchResult }) => {
+    const model = models.find((candidate) => candidate.id === item.modelId || candidate.redirectTargetModelIds?.includes(item.modelId));
+    return <Pressable
+      accessibilityLabel={`${item.title}, matched in ${item.matchedOn}`}
+      accessibilityRole="button"
+      onPress={() => selectSearchResult(item)}
+      style={({ pressed }) => [styles.searchResultRow, pressed && styles.navRowPressed]}
+    >
+      <Image source={aiIconSource(model?.modelLogo ?? model?.labLogo, isDark, model?.modelCustomIcon)} style={styles.searchResultModelIcon} />
+      <View style={styles.flex}>
+        <View style={styles.searchResultTitleLine}>
+          <Text numberOfLines={1} style={styles.searchResultTitle}>{chatSearchHighlight(item.title, search).map((part, index) => (
+            <Text key={index} style={part.match ? styles.searchHighlight : undefined}>{part.text}</Text>
+          ))}</Text>
+          <Text style={styles.searchMatchBadge}>{item.matchedOn}</Text>
+        </View>
+        {item.snippet ? <Text numberOfLines={2} style={styles.searchResultSnippet}>{chatSearchHighlight(item.snippet, search).map((part, index) => (
+          <Text key={index} style={part.match ? styles.searchHighlight : undefined}>{part.text}</Text>
+        ))}</Text> : null}
+      </View>
+      <Text style={styles.chatTime}>{timeAgo(Date.parse(item.updatedAt))}</Text>
+    </Pressable>;
+  }, [isDark, models, search, selectSearchResult]);
+
   return (
     <View style={styles.panelRoot}>
       <SafeAreaView style={styles.flex} edges={['top']}>
@@ -4878,12 +4956,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         {Platform.OS === 'ios' ? <NativeDrawerSearch fieldRef={nativeSearchRef} focused={searchFocused} value={search} onChange={setSearch} onFocusChange={setSearchFocused} /> : <View style={styles.searchBox}>
           <Icon name="magnifyingglass" size={17} color="#FFFFFF" />
           <TextInput
-            accessibilityLabel="Search chats"
+            accessibilityLabel="Search chats and messages"
             value={search}
             onChangeText={setSearch}
             onBlur={() => setSearchFocused(false)}
             onFocus={() => setSearchFocused(true)}
-            placeholder="Search chats"
+            placeholder="Search chats and messages"
             placeholderTextColor={searchFocused ? COLORS.muted : COLORS.textSoft}
             style={styles.searchInput}
           />
@@ -4932,7 +5010,28 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           </NativeObjectContextMenu>}
         </Reanimated.View>
 
-        <SectionList
+        {search.trim() ? <FlatList
+          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 16 }]}
+          data={searchResults}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          keyExtractor={(result) => result.chatId}
+          ListHeaderComponent={searchState === 'offline' ? <Text style={styles.offlineSearchLabel}>Offline results · Recent chats on this device</Text> : null}
+          ListEmptyComponent={searchState === 'loading' ? (
+            <View accessibilityLabel="Searching chats" accessibilityRole="progressbar" style={styles.historyLoading}>
+              <ActivityIndicator color={COLORS.muted} size="small" />
+              <Text style={styles.noResults}>Searching chats and messages…</Text>
+            </View>
+          ) : searchState === 'error' ? (
+            <View style={styles.historyLoading}>
+              <Text style={styles.noResults}>Couldn’t search conversations.</Text>
+              <Pressable accessibilityRole="button" onPress={() => setSearchRetry((value) => value + 1)} style={styles.searchRetryButton}><Text style={styles.searchRetryText}>Retry</Text></Pressable>
+            </View>
+          ) : <Text style={styles.noResults}>No results for “{search.trim()}”</Text>}
+          renderItem={renderSearchResult}
+          showsVerticalScrollIndicator={false}
+          style={styles.flex}
+        /> : <SectionList
           contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 16 }]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
@@ -4942,7 +5041,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
               <ActivityIndicator color={COLORS.muted} size="small" />
               <Text style={styles.noResults}>Loading chats…</Text>
             </View>
-          ) : <Text style={styles.noResults}>{search ? `No chats match “${search}”` : 'No chats yet'}</Text>}
+          ) : <Text style={styles.noResults}>No chats yet</Text>}
           renderItem={renderHistoryChat}
           renderSectionHeader={({ section }) => <Text style={styles.sectionLabel}>{section.title}</Text>}
           sections={sections}
@@ -4950,7 +5049,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           stickySectionHeadersEnabled={false}
           style={styles.flex}
           onTouchStart={dismissSearch}
-        />
+        />}
       </SafeAreaView>
     </View>
   );
@@ -5262,6 +5361,16 @@ const styles = StyleSheet.create({
   chatRowActive: { backgroundColor: COLORS.secondary },
   chatTitle: { color: COLORS.textSoft, fontSize: 15 },
   chatTime: { color: COLORS.muted, fontSize: 12 },
+  searchResultRow: { minHeight: 64, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 9, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  searchResultModelIcon: { width: 18, height: 18, borderRadius: 4, marginTop: 2 },
+  searchResultTitleLine: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  searchResultTitle: { flex: 1, color: COLORS.textSoft, fontSize: 15, fontWeight: '600' },
+  searchResultSnippet: { color: COLORS.muted, fontSize: 12.5, lineHeight: 17, marginTop: 3 },
+  searchHighlight: { color: COLORS.text, backgroundColor: readableColor('#FFE58A', '#755B00', '?attr/colorControlHighlight') },
+  searchMatchBadge: { color: COLORS.muted, backgroundColor: COLORS.fill, borderRadius: 5, paddingHorizontal: 5, paddingVertical: 2, fontSize: 9.5, fontWeight: '700', textTransform: 'uppercase' },
+  offlineSearchLabel: { color: COLORS.warning, fontSize: 11.5, fontWeight: '600', marginHorizontal: 12, marginTop: 12, marginBottom: 5 },
+  searchRetryButton: { alignSelf: 'center', marginTop: 12, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.line, paddingHorizontal: 14, paddingVertical: 8 },
+  searchRetryText: { color: COLORS.text, fontSize: 13, fontWeight: '600' },
   noResults: { color: COLORS.muted, fontSize: 13.5, textAlign: 'center', marginTop: 30 },
   // Model sheet
   nativeModalAnchorHost: { position: 'absolute', width: 1, height: 1, right: 0, top: 0 },

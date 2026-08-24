@@ -9,6 +9,8 @@ import {
   type AttachmentCacheRecord,
   type OutboxRecord,
 } from './schema'
+import { chatSearchDocument, chatSearchTerms } from '@pulpo/client-core'
+import type { ChatSearchResult } from '@pulpo/contracts'
 import type { ServerChat } from '../types'
 import {
   MAX_CACHED_CHAT_DETAIL_BYTES,
@@ -199,8 +201,8 @@ export async function loadDraft<T>(namespace: string, chatId: string): Promise<{
 }
 
 function searchableText(chat: ServerChat): string {
-  return (chat.responses ?? []).flatMap((response) => [response.input, response.output])
-    .map((value) => JSON.stringify(value)).join(' ')
+  return (chat.responses ?? []).map((response) => chatSearchDocument(response.input, response.output))
+    .filter(Boolean).join('\n\n')
 }
 
 async function cacheChatsInDatabase(database: SQLite.SQLiteDatabase, namespace: string, chats: ServerChat[]): Promise<void> {
@@ -388,13 +390,43 @@ export async function cachedChats(namespace: string): Promise<ServerChat[]> {
   })
 }
 
-export async function searchCachedChats(namespace: string, query: string): Promise<string[]> {
+export async function searchCachedChats(namespace: string, query: string): Promise<ChatSearchResult[]> {
   return withDatabase(async (database) => {
-    const rows = await database.getAllAsync<{ chat_id: string }>(
-      `SELECT chat_id FROM chat_fts WHERE namespace = ? AND chat_fts MATCH ? ORDER BY rank LIMIT 50`,
-      namespace, query.replace(/["']/g, ' ').trim().split(/\s+/).map((term) => `"${term}"*`).join(' '),
+    const expression = chatSearchTerms(query).map((term) => `"${term.replace(/"/g, '""')}"*`).join(' ')
+    if (!expression) return []
+    const titleRows = await database.getAllAsync<{ chat_id: string; snippet: string; rank: number }>(
+      `SELECT chat_id, snippet(chat_fts, 2, '', '', '…', 24) AS snippet, rank
+       FROM chat_fts WHERE namespace = ? AND chat_fts MATCH ? ORDER BY rank LIMIT 50`,
+      namespace, `{title} : (${expression})`,
     )
-    return rows.map((row) => row.chat_id)
+    const bodyRows = await database.getAllAsync<{ chat_id: string; snippet: string; rank: number }>(
+      `SELECT chat_id, snippet(chat_fts, 3, '', '', '…', 24) AS snippet, rank
+       FROM chat_fts WHERE namespace = ? AND chat_fts MATCH ? ORDER BY rank LIMIT 50`,
+      namespace, `{body} : (${expression})`,
+    )
+    const cached = await database.getAllAsync<{ chat_id: string; payload: string }>(
+      'SELECT chat_id, payload FROM chat_cache WHERE namespace = ?', namespace,
+    )
+    const chats = new Map(cached.map((row) => [row.chat_id, JSON.parse(row.payload) as ServerChat]))
+    const best = new Map<string, { matchedOn: 'title' | 'message'; snippet: string | null; score: number }>()
+    for (const row of [...titleRows.map((value) => ({ ...value, matchedOn: 'title' as const })), ...bodyRows.map((value) => ({ ...value, matchedOn: 'message' as const }))]) {
+      const score = -row.rank + (row.matchedOn === 'title' ? 1 : 0)
+      if ((best.get(row.chat_id)?.score ?? Number.NEGATIVE_INFINITY) >= score) continue
+      best.set(row.chat_id, { matchedOn: row.matchedOn, snippet: row.matchedOn === 'message' ? row.snippet : null, score })
+    }
+    return [...best].flatMap(([chatId, match]): ChatSearchResult[] => {
+      const chat = chats.get(chatId)
+      if (!chat || chat.temporary || chat.deletedAt) return []
+      return [{
+        chatId,
+        title: chat.title,
+        modelId: chat.modelId,
+        updatedAt: chat.updatedAt,
+        matchedOn: match.matchedOn,
+        snippet: match.snippet,
+        score: match.score,
+      }]
+    }).sort((left, right) => right.score - left.score || Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, 50)
   })
 }
 

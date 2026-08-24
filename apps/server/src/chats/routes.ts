@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type ChatSearchResult } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { requireUser } from '../auth/service.js'
@@ -24,6 +24,7 @@ import {
 import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, reorderQueuedMessage, updateQueuedMessage } from './message-queue.js'
 import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
 import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
+import { chatSearchTextSnippet, chatSearchTsQuery } from './search.js'
 
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
   if (!enabled) return null
@@ -100,17 +101,49 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/chats/search', async (request) => {
     const user = requireUser(request)
     const query = String((request.query as { q?: string }).q ?? '').trim().slice(0, 200)
-    if (!query) return { data: [] }
-    const result = await db.execute<typeof chats.$inferSelect>(sql`
-      select distinct c.* from chats c
-      left join responses r on r.chat_id = c.id
+    const searchQuery = chatSearchTsQuery(query)
+    if (!searchQuery) return { data: [] }
+    const result = await db.execute<{
+      chatId: string
+      title: string
+      modelId: string
+      updatedAt: Date | string
+      matchedOn: 'title' | 'message'
+      score: number
+      body: string
+    }>(sql`
+      with search_query as (
+        select to_tsquery('simple', ${searchQuery}) as value
+      )
+      select c.id as "chatId", c.title, c.model_id as "modelId", c.updated_at as "updatedAt",
+        case when to_tsvector('simple', coalesce(d.title, '')) @@ q.value then 'title' else 'message' end as "matchedOn",
+        ts_rank_cd(
+          setweight(to_tsvector('simple', coalesce(d.title, '')), 'A') ||
+          setweight(to_tsvector('simple', coalesce(d.body, '')), 'B'),
+          q.value
+        ) as score,
+        d.body
+      from chat_search_documents d
+      join chats c on c.id = d.chat_id
+      cross join search_query q
       where c.user_id = ${user.id} and c.deleted_at is null and c.temporary = false
         and (c.expires_at is null or c.expires_at > now())
-        and to_tsvector('simple', coalesce(c.title, '') || ' ' || coalesce(r.input::text, '') || ' ' || coalesce(r.output::text, ''))
-          @@ plainto_tsquery('simple', ${query})
-      order by c.updated_at desc limit 50
+        and (
+          setweight(to_tsvector('simple', coalesce(d.title, '')), 'A') ||
+          setweight(to_tsvector('simple', coalesce(d.body, '')), 'B')
+        ) @@ q.value
+      order by score desc, c.updated_at desc
+      limit 50
     `)
-    return { data: [...result] }
+    return { data: [...result].map((row): ChatSearchResult => ({
+      chatId: row.chatId,
+      title: row.title,
+      modelId: row.modelId,
+      updatedAt: (row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt)).toISOString(),
+      matchedOn: row.matchedOn,
+      snippet: row.matchedOn === 'message' ? chatSearchTextSnippet(row.body, query) : null,
+      score: Number(row.score),
+    })) }
   })
 
   app.get('/api/chats/export', async (request, reply) => {

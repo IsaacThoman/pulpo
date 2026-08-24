@@ -7,6 +7,7 @@ import {
   billingOrders,
   billingSubscriptions,
   budgetReservations,
+  chatSearchDocuments,
   creditLedger,
   dailyUsageRollups,
   exportJobs,
@@ -27,6 +28,13 @@ import {
 } from './schema.js'
 
 describe('user-owned operational records', () => {
+  it('defines one indexed full-text search document per chat', () => {
+    const config = getTableConfig(chatSearchDocuments)
+    expect(config.columns.find((column) => column.name === 'chat_id')?.primary).toBe(true)
+    expect(config.foreignKeys[0]?.onDelete).toBe('cascade')
+    expect(config.indexes.map((item) => item.config.name)).toContain('chat_search_documents_fts_idx')
+  })
+
   it.each([
     ['backup jobs', backupJobs],
     ['budget reservations', budgetReservations],

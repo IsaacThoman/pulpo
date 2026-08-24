@@ -52,6 +52,51 @@ export interface RevisionInvalidationBatch {
   accountOnlyRevisions: number[]
 }
 
+function textFromSearchContent(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map((part) => {
+    if (typeof part === 'string') return part
+    if (!part || typeof part !== 'object') return ''
+    const value = part as { text?: unknown; content?: unknown; refusal?: unknown }
+    if (typeof value.text === 'string') return value.text
+    if (typeof value.refusal === 'string') return value.refusal
+    return textFromSearchContent(value.content)
+  }).filter(Boolean).join(' ')
+}
+
+/** Extract only user-visible input and assistant message text for chat search. */
+export function chatSearchDocument(input: unknown, output: unknown): string {
+  const userText = Array.isArray(input) ? input.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const value = item as { role?: unknown; content?: unknown }
+    return value.role === 'user' ? [textFromSearchContent(value.content)] : []
+  }) : []
+  const assistantText = Array.isArray(output) ? output.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const value = item as { type?: unknown; content?: unknown }
+    return value.type === 'message' ? [textFromSearchContent(value.content)] : []
+  }) : []
+  return [...userText, ...assistantText].filter(Boolean).join('\n\n')
+}
+
+export function chatSearchTerms(query: string): string[] {
+  return query.normalize('NFKC').toLocaleLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? []
+}
+
+export type ChatSearchHighlightPart = { text: string; match: boolean }
+
+export function chatSearchHighlight(value: string, query: string): ChatSearchHighlightPart[] {
+  const terms = [...new Set(chatSearchTerms(query))].sort((left, right) => right.length - left.length)
+  if (!terms.length) return [{ text: value, match: false }]
+  const escaped = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  const matcher = new RegExp(`(${escaped.join('|')})`, 'giu')
+  return value.split(matcher).filter(Boolean).map((text) => ({
+    text,
+    match: terms.includes(text.normalize('NFKC').toLocaleLowerCase()),
+  }))
+}
+
 /** Merge the paired account/chat events emitted for one server revision. */
 export function mergeRevisionInvalidation(
   current: RevisionInvalidationBatch | undefined,

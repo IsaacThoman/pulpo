@@ -21,6 +21,12 @@ describe('mobile SQLite schema', () => {
     const rows = database.prepare('SELECT chat_id FROM chat_fts WHERE namespace = ? AND chat_fts MATCH ?')
       .all('one|user', 'Liquid*') as Array<{ chat_id: string }>
     expect(rows.map((row) => row.chat_id)).toEqual(['chat-1'])
+    const bodyRows = database.prepare('SELECT chat_id FROM chat_fts WHERE namespace = ? AND chat_fts MATCH ?')
+      .all('one|user', '{body} : ("Liqu"* "Glass"*)') as Array<{ chat_id: string }>
+    expect(bodyRows.map((row) => row.chat_id)).toEqual(['chat-1'])
+    const titleRows = database.prepare('SELECT chat_id FROM chat_fts WHERE namespace = ? AND chat_fts MATCH ?')
+      .all('one|user', '{title} : ("Liqu"*)') as Array<{ chat_id: string }>
+    expect(titleRows).toEqual([])
   })
 
   it('isolates cache namespaces by origin and user', () => {
