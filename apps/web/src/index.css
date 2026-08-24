@@ -287,7 +287,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
   -webkit-app-region: drag;
 }
 
-html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::before {
+html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
   position: absolute;
   top: calc(100% - 1px);
   left: 50px;
@@ -304,7 +304,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::befo
   pointer-events: none;
 }
 
-html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::after {
+html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
   position: absolute;
   top: calc(100% - 1px);
   right: 0;
