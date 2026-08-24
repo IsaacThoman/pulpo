@@ -939,7 +939,7 @@ export function Sidebar({
           : cn(
               'relative will-change-[width]',
               transitions &&
-                'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]'
+                'transition-[width] duration-[6000ms] ease-[cubic-bezier(0.4,0,0.2,1)]'
             ),
         mobile && !mobileOpen && '-translate-x-full',
         !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
