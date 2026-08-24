@@ -26,6 +26,8 @@ describe('desktop title bar', () => {
 
     expect(connecting).toContain('Connecting…')
     expect(connecting).toContain('role="status"')
+    expect(connecting).toContain('left-[84px]')
+    expect(connecting).not.toContain('right-3')
     expect(offline).toContain('Offline · Retry')
     expect(offline).toContain('<button')
   })

@@ -23,7 +23,7 @@ export function DesktopTitleBarSurface({
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
       {connectionStatus === 'connecting' && (
-        <div className="desktop-connection-status fixed right-3 top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
+        <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
           <Loader2 className="size-3 animate-spin" />Connecting…
         </div>
       )}
