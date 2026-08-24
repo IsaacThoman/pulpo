@@ -25,10 +25,11 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('bg-sidebar')
     expect(markup).toContain('border-sidebar-border')
     expect(markup).toContain('w-[264px]')
+    expect(markup).toContain('opacity-100')
     expect(markup).toContain('z-40')
     expect(markup).toContain('-translate-y-[54px]')
     expect(markup).toContain('transition-transform')
-    expect(markup).not.toContain('transition-[width]')
+    expect(markup).toContain('transition-[width,opacity]')
   })
 
   it('makes the collapsed title bar a full-width sidebar surface with a curved boundary', () => {
@@ -42,6 +43,8 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('w-full')
     expect(markup).toContain('bg-sidebar')
     expect(markup).toContain('translate-y-0')
+    expect(markup).toContain('w-[52px]')
+    expect(markup).toContain('opacity-0')
   })
 
   it('stays out of mobile layouts', () => {

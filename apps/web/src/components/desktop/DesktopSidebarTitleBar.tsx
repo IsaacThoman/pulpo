@@ -17,7 +17,13 @@ export function DesktopSidebarTitleBar({
       data-collapsed={collapsed ? 'true' : undefined}
       className="desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 z-40 h-[38px]"
     >
-      <div className="desktop-sidebar-titlebar-expanded absolute inset-y-0 left-0 w-[264px] border-r border-sidebar-border bg-sidebar" />
+      <div
+        className={cn(
+          'desktop-sidebar-titlebar-expanded absolute inset-y-0 left-0 border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
+          transitions && 'transition-[width,opacity] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+          collapsed ? 'w-[52px] opacity-0' : 'w-[264px] opacity-100',
+        )}
+      />
       <div
         className={cn(
           'desktop-sidebar-titlebar-collapsed absolute inset-0 w-full bg-sidebar motion-reduce:transition-none',
