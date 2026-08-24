@@ -320,7 +320,8 @@ html[data-desktop="true"] .desktop-collapsed-sidebar {
 
 html[data-desktop="true"] .desktop-collapsed-sidebar::after {
   position: absolute;
-  top: 16px;
+  /* Overlap the antialiased curve endpoint to avoid a one-pixel seam. */
+  top: 15px;
   right: 0;
   bottom: 0;
   border-right: 1px solid var(--sidebar-border);
