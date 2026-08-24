@@ -275,6 +275,30 @@ html[data-desktop="true"] .desktop-titlebar {
   background: var(--background);
 }
 
+html[data-desktop="true"] .app-layout-frame {
+  overflow: visible;
+}
+
+html[data-desktop="true"] .app-main {
+  position: relative;
+  z-index: 41;
+  transition: margin-top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
+  margin-top: -38px;
+}
+
+html[data-desktop="true"] .desktop-main-titlebar-active .app-main > div > header {
+  -webkit-app-region: drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-desktop="true"] .app-main {
+    transition: none;
+  }
+}
+
 html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
   background: color-mix(in oklab, var(--color-violet-100) 50%, transparent);
 }

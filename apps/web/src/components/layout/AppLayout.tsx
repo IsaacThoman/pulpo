@@ -11,6 +11,7 @@ import { SettingsBridge } from '@/features/settings/SettingsBridge'
 import { BannerBar } from './BannerBar'
 import { useChat } from '@/stores/chat'
 import { DesktopSidebarTitleBar } from '@/components/desktop/DesktopSidebarTitleBar'
+import { cn } from '@/lib/utils'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -22,6 +23,8 @@ export function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
   const location = useLocation()
+  const sidebarCollapsed = collapsed || searchHasQuery
+  const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
   const previousPathRef = useRef(location.pathname)
   const openSettings = useCallback((section: SettingsSectionId = 'general') => {
     setSettingsSection(section)
@@ -100,11 +103,16 @@ export function AppLayout() {
         <ChatDataBridge />
         <SettingsBridge />
         <DesktopSidebarTitleBar
-          collapsed={collapsed || searchHasQuery}
+          collapsed={sidebarCollapsed}
           transitions={sidebarTransitions}
           visible={!mobile}
         />
-        <div className="relative flex h-full overflow-hidden">
+        <div
+          className={cn(
+            'app-layout-frame relative flex h-full overflow-hidden',
+            mainUsesDesktopTitleBar && 'desktop-main-titlebar-active',
+          )}
+        >
           <BannerBar />
           <button
             className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
@@ -126,7 +134,7 @@ export function AppLayout() {
             />
           )}
           <Sidebar
-            collapsed={mobile ? false : collapsed || searchHasQuery}
+            collapsed={mobile ? false : sidebarCollapsed}
             mobile={mobile}
             mobileOpen={mobileOpen}
             transitions={sidebarTransitions}
