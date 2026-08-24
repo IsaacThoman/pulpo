@@ -285,6 +285,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         // Presentation follows the user's selected model; cost and pricing fields
         // remain those of the actual responder recorded on the usage event.
         modelId: canonical.get(displayModels[index]!.modelId)?.modelId ?? displayModels[index]!.modelId,
+        subscriptionCoveredMicros: Number(usage.weeklyCostMicros),
         balanceAfterMicros,
       })),
       nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
@@ -401,6 +402,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         cacheWriteTokens: row.usage.cacheWriteTokens,
         outputTokens: row.usage.outputTokens,
         costMicros: Number(row.usage.costMicros),
+        subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros),
       }}),
       nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,
     }

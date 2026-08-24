@@ -1,0 +1,40 @@
+export const DESKTOP_ORIGIN = 'https://desktop.pulpo.invalid'
+
+export function isTrustedRendererUrl(value: string, developmentOrigin?: string): boolean {
+  try {
+    const origin = new URL(value).origin
+    return origin === DESKTOP_ORIGIN || Boolean(developmentOrigin && origin === new URL(developmentOrigin).origin)
+  } catch {
+    return false
+  }
+}
+
+export function validatedExternalUrl(value: string, allowLocalhost: boolean): string {
+  const url = new URL(value)
+  const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+  if (url.username || url.password || (url.protocol !== 'https:' && !(allowLocalhost && localhost && url.protocol === 'http:'))) {
+    throw new Error('Pulpo can only open secure web addresses.')
+  }
+  return url.toString()
+}
+
+export function validatedProtocolUrl(value: string): string {
+  const url = new URL(value)
+  const pathAllowed = url.pathname === '/passkey' || url.pathname === '/passkey-enrollment'
+  if (url.protocol !== 'pulpo:' || url.host !== 'auth' || !pathAllowed) {
+    throw new Error('Invalid Pulpo callback URL.')
+  }
+  return url.toString()
+}
+
+export function rendererAssetPath(pathname: string): string | null {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(pathname)
+  } catch {
+    return null
+  }
+  const segments = decoded.split('/').filter(Boolean)
+  if (segments.some((part) => part === '.' || part === '..' || part.includes('\\') || part.includes('\0'))) return null
+  return segments.join('/')
+}

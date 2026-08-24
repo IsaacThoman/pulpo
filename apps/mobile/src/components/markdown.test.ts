@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeMathDelimiters } from './markdown'
+import { beginsWithMarkdownHeading, normalizeMathDelimiters } from './markdown'
+
+describe('beginsWithMarkdownHeading', () => {
+  it('recognizes a leading heading after blank lines', () => {
+    expect(beginsWithMarkdownHeading('# Heading')).toBe(true)
+    expect(beginsWithMarkdownHeading('\n\n  ## Heading')).toBe(true)
+  })
+
+  it('does not tighten paragraphs or later headings', () => {
+    expect(beginsWithMarkdownHeading('Paragraph\n\n# Heading')).toBe(false)
+    expect(beginsWithMarkdownHeading('    # Code')).toBe(false)
+  })
+})
 
 describe('normalizeMathDelimiters', () => {
   it('normalizes common inline and block LLM math delimiters', () => {

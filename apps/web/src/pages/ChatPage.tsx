@@ -16,6 +16,7 @@ import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
 import type { Message } from '@/lib/types'
+import { useDesktopChrome } from '@/stores/desktopChrome'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
@@ -111,6 +112,7 @@ export function ChatPage() {
   const [temporary, setTemporary] = useState(false)
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
+  const setDesktopTemporaryChat = useDesktopChrome((state) => state.setTemporaryChat)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
   const [composerEditActive, setComposerEditActive] = useState(false)
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
@@ -268,6 +270,10 @@ export function ChatPage() {
   }
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
+  useEffect(() => {
+    setDesktopTemporaryChat(temporaryMode)
+    return () => setDesktopTemporaryChat(false)
+  }, [setDesktopTemporaryChat, temporaryMode])
   const showTemporaryControl = !routeChatId && (!chat || chat.temporary)
   const expirationEnabled = chat ? chat.expiresAt !== null : effectiveNewChatAutoExpire
   const showExpirationControl = !temporaryMode && (chat
@@ -291,7 +297,7 @@ export function ChatPage() {
     <div className={cn(
       'flex h-full min-w-0 flex-col transition-colors duration-200',
       temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
-    )}>
+    )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
       {/* header */}
       <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         <ModelSelector value={modelId} onChange={selectModel} />

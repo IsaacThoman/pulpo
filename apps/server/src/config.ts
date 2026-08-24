@@ -122,10 +122,15 @@ export function getWorkspaceInstanceId(config = getConfig(), environment: NodeJS
 }
 
 export function getAllowedOrigins(config = getConfig()): Set<string> {
-  const origins = new Set([new URL(config.PUBLIC_URL).origin])
+  const origins = new Set([
+    new URL(config.PUBLIC_URL).origin,
+    'https://desktop.pulpo.invalid',
+  ])
   if (config.NODE_ENV === 'development') {
     origins.add('http://localhost:5173')
     origins.add('http://127.0.0.1:5173')
+    origins.add('http://localhost:5174')
+    origins.add('http://127.0.0.1:5174')
   }
   return origins
 }
@@ -147,7 +152,10 @@ export function isAllowedOrigin(origin: string, config = getConfig()): boolean {
 }
 
 export function getStorageCorsOrigins(config = getConfig()): string[] {
-  const origins = [new URL(config.PUBLIC_URL).origin]
+  const origins = [new URL(config.PUBLIC_URL).origin, 'https://desktop.pulpo.invalid']
+  if (config.NODE_ENV === 'development') {
+    origins.push('http://localhost:5174', 'http://127.0.0.1:5174')
+  }
   if (config.NODE_ENV === 'development' && config.ALLOW_ANY_LOCALHOST_PORT) {
     origins.push(
       'http://localhost:*',

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Activity, AlertTriangle, ChevronDown, ChevronRight, CircleCheck, Clock3, Coins, RefreshCw, Zap } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
+import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import type { AdminUsageEvent, ClientToServerEvents, ServerToClientEvents } from '@pulpo/contracts'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { apiRequest } from '@/lib/api'
@@ -32,7 +33,11 @@ export function AdminUsagePage() {
   useEffect(() => { void load() }, [load])
   useEffect(() => { const timer = window.setInterval(() => void load(), 2_000); return () => clearInterval(timer) }, [load])
   useEffect(() => {
-    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io({ path: '/socket.io', withCredentials: true })
+    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
+      path: '/socket.io',
+      withCredentials: !isDesktopRuntime(),
+      auth: isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : undefined,
+    })
     const subscribe = () => { socket.emit('admin.usage.subscribe'); void load() }
     socket.on('connect', subscribe)
     socket.on('admin.usage.upsert', (_event: AdminUsageEvent) => { void load() })

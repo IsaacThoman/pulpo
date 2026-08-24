@@ -31,6 +31,8 @@ import {
   type AttachmentKind,
 } from '@/lib/attachments'
 import { attachmentPreviewKind } from '@/lib/attachment-previews'
+import { runtimeAccountKey } from '@/lib/runtime'
+import { useRuntimeImageUrl } from '@/lib/runtime-resource'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 
@@ -59,50 +61,55 @@ function useAttachmentPreviewUrl(
   loading: boolean
 } {
   const userId = useAuth((s) => s.user?.id)
-  const [url, setUrl] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+  const requestKey = enabled && attachmentId && userId
+    ? `${runtimeAccountKey(userId)}:${attachmentId}:${variant}`
+    : null
+  const [resolved, setResolved] = useState<{
+    key: string
+    source: string | Blob | null
+    loading: boolean
+  } | null>(null)
 
   useEffect(() => {
-    if (!enabled || !attachmentId || !userId) {
-      setUrl(null)
-      setLoading(false)
-      return
-    }
+    if (!requestKey || !attachmentId || !userId) return
     let cancelled = false
-    let objectUrl: string | null = null
-    setLoading(true)
-    setUrl(null)
+    setResolved({ key: requestKey, source: null, loading: true })
 
     void (async () => {
       try {
         const cached = await getCachedAttachment(userId, attachmentId)
         if (cancelled) return
         if (cached) {
-          objectUrl = URL.createObjectURL(cached.blob)
-          setUrl(objectUrl)
+          setResolved({ key: requestKey, source: cached.blob, loading: false })
           return
         }
         if (variant === 'thumbnail') {
-          setUrl(`/api/attachments/${attachmentId}/thumbnail`)
+          setResolved({
+            key: requestKey,
+            source: `/api/attachments/${attachmentId}/thumbnail`,
+            loading: false,
+          })
           return
         }
         const { url: remote } = await apiRequest<{ url: string }>(`/api/attachments/${attachmentId}/download`)
         if (cancelled) return
-        setUrl(remote)
+        setResolved({ key: requestKey, source: remote, loading: false })
       } catch {
-        if (!cancelled) setUrl(null)
-      } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setResolved({ key: requestKey, source: null, loading: false })
       }
     })()
 
     return () => {
       cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [attachmentId, enabled, userId, variant])
+  }, [attachmentId, requestKey, userId, variant])
 
-  return { url, loading }
+  const current = resolved?.key === requestKey ? resolved : null
+  const image = useRuntimeImageUrl(current?.source, { authenticated: true })
+  return {
+    url: image.url,
+    loading: Boolean(requestKey && (!current || current.loading || image.loading)),
+  }
 }
 
 function attachmentMeta(name: string, mimeType: string, size: number): string {

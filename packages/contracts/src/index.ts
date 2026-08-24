@@ -65,6 +65,7 @@ export const nativeDeviceSchema = z.object({
 
 export const nativeLoginInputSchema = loginInputSchema.and(nativeDeviceSchema)
 export const nativeSignupInputSchema = signupInputSchema.and(nativeDeviceSchema)
+export const nativeSetupInputSchema = setupInputSchema.and(nativeDeviceSchema)
 
 export const nativeSessionSchema = z.object({
   token: z.string().min(32),

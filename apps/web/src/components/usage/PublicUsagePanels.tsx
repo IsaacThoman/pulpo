@@ -4,6 +4,7 @@ import { getCatalogModel } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { formatUsd } from '@/lib/format'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
+import { SubscriptionCoverageCost } from './SubscriptionCoverageCost'
 
 export interface PublicUsageRecord {
   id: string
@@ -13,6 +14,7 @@ export interface PublicUsageRecord {
   inputTokens: number
   outputTokens: number
   costMicros: number
+  subscriptionCoveredMicros: number
 }
 
 export interface PublicTopModel {
@@ -100,7 +102,12 @@ export function PublicRecentUsagePanel({
             <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
             <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString()}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{formatUsd(record.costMicros / 1_000_000)}</td>
+            <td className="px-3 py-2 text-right tabular-nums">
+              <SubscriptionCoverageCost
+                costUsd={record.costMicros / 1_000_000}
+                subscriptionCoveredUsd={record.subscriptionCoveredMicros / 1_000_000}
+              />
+            </td>
           </tr>)}</tbody>
         </table>
         {(loadingMore || error) && <div className="border-t p-2 text-center text-xs text-muted-foreground">

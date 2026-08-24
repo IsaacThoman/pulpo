@@ -1,4 +1,7 @@
 @import 'tailwindcss';
+/* The Electron renderer imports this stylesheet from outside apps/web, so its
+   Vite root cannot infer the web component sources on its own. */
+@source './**/*.{ts,tsx}';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -260,4 +263,114 @@ body {
 }
 .katex-error {
   color: var(--muted-foreground) !important;
+}
+html[data-desktop="true"] .desktop-shell {
+  box-sizing: border-box;
+  height: 100%;
+  padding-top: 38px;
+}
+
+html[data-desktop="true"] .desktop-titlebar {
+  -webkit-app-region: drag;
+  background: var(--background);
+}
+
+html[data-desktop="true"] {
+  --desktop-temporary-chat-background: color-mix(
+    in oklab,
+    var(--color-violet-100) 50%,
+    var(--background)
+  );
+}
+
+html.dark[data-desktop="true"] {
+  --desktop-temporary-chat-background: color-mix(
+    in oklab,
+    var(--color-violet-950) 15%,
+    var(--background)
+  );
+}
+
+html[data-desktop="true"] .app-layout-frame {
+  overflow: visible;
+}
+
+html[data-desktop="true"] .app-main {
+  position: relative;
+  z-index: 41;
+  transition: margin-top 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
+  margin-top: -38px;
+}
+
+html[data-desktop="true"] .desktop-main-titlebar-active .app-main > div > header {
+  -webkit-app-region: drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-desktop="true"] .app-main {
+    transition: none;
+  }
+}
+
+html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
+  background: var(--desktop-temporary-chat-background);
+}
+
+html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
+  background: var(--desktop-temporary-chat-background);
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar {
+  -webkit-app-region: drag;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
+  position: absolute;
+  top: 100%;
+  left: 51px;
+  width: 16px;
+  height: 16px;
+  background: radial-gradient(
+    circle at 100% 100%,
+    transparent calc(1rem - 1px),
+    var(--sidebar-border) calc(1rem - 1px),
+    var(--sidebar-border) 1rem,
+    var(--sidebar) 1rem
+  );
+  content: '';
+  pointer-events: none;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 67px;
+  border-top: 1px solid var(--sidebar-border);
+  content: '';
+  pointer-events: none;
+}
+
+html[data-desktop="true"] .desktop-sidebar {
+  border-right-width: 0;
+}
+
+html[data-desktop="true"] .desktop-sidebar::after {
+  position: absolute;
+  top: 16px;
+  right: 0;
+  bottom: 0;
+  border-right: 1px solid var(--sidebar-border);
+  content: '';
+  pointer-events: none;
+}
+
+html[data-desktop="true"] .desktop-no-drag,
+html[data-desktop="true"] button,
+html[data-desktop="true"] input,
+html[data-desktop="true"] a {
+  -webkit-app-region: no-drag;
 }

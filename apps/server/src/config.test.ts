@@ -93,6 +93,8 @@ describe('server configuration', () => {
     expect(config.ALLOW_ANY_LOCALHOST_PORT).toBe(false)
     expect(isAllowedOrigin('http://localhost:5173', config)).toBe(true)
     expect(isAllowedOrigin('http://127.0.0.1:5173', config)).toBe(true)
+    expect(isAllowedOrigin('http://localhost:5174', config)).toBe(true)
+    expect(isAllowedOrigin('https://desktop.pulpo.invalid', config)).toBe(true)
     expect(isAllowedOrigin('http://localhost:4173', config)).toBe(false)
   })
 
@@ -121,7 +123,10 @@ describe('server configuration', () => {
 
     expect(isAllowedOrigin('https://pulpo.example.com', config)).toBe(true)
     expect(isAllowedOrigin('http://localhost:4173', config)).toBe(false)
-    expect(getStorageCorsOrigins(config)).toEqual(['https://pulpo.example.com'])
+    expect(getStorageCorsOrigins(config)).toEqual([
+      'https://pulpo.example.com',
+      'https://desktop.pulpo.invalid',
+    ])
   })
 
   it('adds loopback wildcard origins to development object-storage CORS', () => {
@@ -133,6 +138,9 @@ describe('server configuration', () => {
 
     expect(getStorageCorsOrigins(config)).toEqual([
       'http://localhost:8080',
+      'https://desktop.pulpo.invalid',
+      'http://localhost:5174',
+      'http://127.0.0.1:5174',
       'http://localhost:*',
       'https://localhost:*',
       'http://127.0.0.1:*',

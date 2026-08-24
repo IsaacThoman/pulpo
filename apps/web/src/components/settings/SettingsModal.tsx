@@ -36,7 +36,7 @@ import { ModelIcon } from '@/components/ModelIcon'
 import { useSettings, type AutomaticChatExpiration, type Theme, type TrashRetention } from '@/stores/settings'
 import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
-import { apiRequest } from '@/lib/api'
+import { apiRequest, downloadApiFile } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
@@ -818,7 +818,7 @@ export function SettingsModal({
                     <p className="mt-1.5 text-xs text-muted-foreground">Uploaded files and files created by models count toward this allowance.</p>
                   </div>
                   <Row label="Export chats" hint="Download all conversations as JSON.">
-                    <Button variant="outline" size="sm" onClick={() => location.assign('/api/chats/export')}>
+                    <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}>
                       Export
                     </Button>
                   </Row>

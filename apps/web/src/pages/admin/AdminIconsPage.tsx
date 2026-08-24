@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ImagePlus, Pencil, Trash2, Upload } from 'lucide-react'
 import type { AdminCatalogIcon, CatalogIconMode } from '@/lib/catalog-icons'
 import { apiRequest } from '@/lib/api'
+import { runtimeResourceUrl } from '@/lib/runtime'
 import { useCatalogIcons } from '@/stores/catalogIcons'
 import { useCatalog } from '@/stores/catalog'
 import { Button } from '@/components/ui/button'
@@ -132,8 +133,8 @@ export function AdminIconsPage() {
 function IconCard({ icon, onEdit, onDelete }: { icon: AdminCatalogIcon; onEdit: () => void; onDelete: () => void }) {
   return <Card className="overflow-hidden shadow-none">
     <div className="grid grid-cols-2 border-b">
-      <div className="grid h-28 place-items-center bg-white"><img src={icon.lightUrl} alt="" className="size-16 object-contain" /></div>
-      <div className="grid h-28 place-items-center bg-zinc-950"><img src={icon.darkUrl} alt="" className="size-16 object-contain" /></div>
+      <div className="grid h-28 place-items-center bg-white"><img src={runtimeResourceUrl(icon.lightUrl)} alt="" className="size-16 object-contain" /></div>
+      <div className="grid h-28 place-items-center bg-zinc-950"><img src={runtimeResourceUrl(icon.darkUrl)} alt="" className="size-16 object-contain" /></div>
     </div>
     <CardContent className="p-3">
       <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{icon.name}</div><div className="mt-1 flex gap-1"><Badge variant="outline" className="font-normal">{icon.mode}</Badge><Badge variant="secondary" className="font-normal">{icon.usage.total} uses</Badge></div></div>

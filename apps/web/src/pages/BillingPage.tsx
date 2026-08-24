@@ -17,6 +17,7 @@ import { useAuth } from '@/stores/auth'
 import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
+import { openExternalUrl } from '@/lib/runtime'
 import { billingPlanName, fetchBillingSummary, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
@@ -89,6 +90,7 @@ export function BillingPage() {
 
   const summary = summaryQuery.data
   const accountBalanceMicros = summary?.balanceMicros ?? authBalanceMicros
+  const availableAccountBalanceMicros = summary?.availableBalanceMicros ?? accountBalanceMicros
   const creditCents = creditCentsFromInput(creditAmountInput)
   const validPurchase = creditCents !== null && creditCents >= 500 && creditCents <= 50_000
   const quoteQuery = useQuery({
@@ -124,7 +126,7 @@ export function BillingPage() {
       const result = await apiRequest<{ url: string }>('/api/billing/checkouts/credits', {
         method: 'POST', body: { creditCents, idempotencyKey: topUpKey },
       })
-      window.location.assign(result.url)
+      await openExternalUrl(result.url)
     } catch (error) {
       setTopUpError(error instanceof Error ? error.message : 'Could not start checkout.')
       setTopUpKey(newCheckoutKey())
@@ -137,7 +139,7 @@ export function BillingPage() {
     setPlanError('')
     try {
       const result = await apiRequest<{ url: string }>('/api/billing/portal', { method: 'POST' })
-      window.location.assign(result.url)
+      await openExternalUrl(result.url)
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not open billing management.')
       setSubmitting(false)
@@ -151,7 +153,7 @@ export function BillingPage() {
       const result = await apiRequest<{ url: string }>('/api/billing/checkouts/subscription', {
         method: 'POST', body: { plan, idempotencyKey: newCheckoutKey() },
       })
-      window.location.assign(result.url)
+      await openExternalUrl(result.url)
     } catch (error) {
       setPlanError(error instanceof Error ? error.message : 'Could not start subscription checkout.')
       setSubmitting(false)
@@ -194,7 +196,6 @@ export function BillingPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex h-12 shrink-0 items-center border-b px-5"><h1 className="text-sm font-semibold">Billing</h1></header>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl space-y-8 px-5 py-6 sm:px-6 sm:py-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -232,10 +233,11 @@ export function BillingPage() {
             <div className="py-1 lg:col-span-3 lg:pr-6">
               <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><WalletCards className="size-4" />Account balance</div>
               <div className="mt-3 text-3xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">
-                {accountBalanceMicros === undefined ? '—' : formatBalance(accountBalanceMicros / 1_000_000)}
+                {availableAccountBalanceMicros === undefined ? '—' : formatBalance(availableAccountBalanceMicros / 1_000_000)}
               </div>
               <p className="mt-2 max-w-md text-xs text-muted-foreground">Credits are used for chats, API calls, and other metered model usage.</p>
-              {summary?.poolBalanceMicros !== null && summary?.poolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />Pool balance</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.poolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">The combined account balances available to your Pool.</p></div>}
+              {summary && summary.balancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.balancePendingMicros / 1_000_000)} reserved</p>}
+              {summary?.availablePoolBalanceMicros !== null && summary?.availablePoolBalanceMicros !== undefined && <div className="mt-6 border-t pt-5"><div className="flex items-center gap-2 text-xs font-medium text-muted-foreground"><UsersRound className="size-4" />Pool balance</div><div className="mt-2 text-2xl font-semibold tracking-tight text-emerald-600 dark:text-emerald-400">{formatBalance(summary.availablePoolBalanceMicros / 1_000_000)}</div><p className="mt-1 text-xs text-muted-foreground">The combined account balances available to your Pool.</p>{summary.poolBalancePendingMicros !== null && summary.poolBalancePendingMicros > 0 && <p className="mt-1 text-xs text-muted-foreground">{formatBalance(summary.poolBalancePendingMicros / 1_000_000)} reserved</p>}</div>}
             </div>
             <div className="py-1 lg:col-span-2 lg:pl-6">
               <div className="flex items-start justify-between gap-3">
@@ -244,7 +246,11 @@ export function BillingPage() {
               </div>
               {summary?.weekly && <div className="mt-4">
                 <div className="flex justify-between text-xs text-muted-foreground"><span>Weekly usage</span><span>{summary.weekly.remainingPercentage}% left</span></div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${summary.weekly.remainingPercentage}%` }} /></div>
+                <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-emerald-500" style={{ width: `${summary.weekly.availableBarPercentage}%` }} />
+                  <div className="h-full bg-amber-400 dark:bg-amber-500" style={{ width: `${summary.weekly.pendingBarPercentage}%` }} />
+                </div>
+                {summary.weekly.pendingMicros > 0 && <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-amber-400 dark:bg-amber-500" />{formatBalance(summary.weekly.pendingMicros / 1_000_000)} reserved</div>}
                 <div className="mt-1.5 text-xs text-muted-foreground">Resets {new Date(summary.weekly.resetsAt).toLocaleString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
               <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>

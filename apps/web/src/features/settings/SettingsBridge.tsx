@@ -4,7 +4,7 @@ import { modelPreferencesSchema } from '@pulpo/contracts'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
 import { enqueueMutation } from '@/lib/local-first/outbox'
-import { localDb } from '@/lib/local-first/database'
+import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
 import { useModels } from '@/stores/models'
 import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
@@ -36,7 +36,7 @@ function modelPreferencesSnapshot() {
 }
 
 async function persistModelPreferences(userId: string, body: ReturnType<typeof modelPreferencesSnapshot>): Promise<boolean> {
-  const id = `settings-model-preferences:${userId}`
+  const id = `settings-model-preferences:${localAccountKey(userId)}`
   try {
     await apiRequest('/api/settings', { method: 'PATCH', body })
     await localDb.outbox.delete(id)

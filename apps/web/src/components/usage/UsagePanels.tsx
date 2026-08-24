@@ -4,6 +4,7 @@ import type { MonitorUser, UsageRecord } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatBalance, formatUsd, formatUsageTime } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
+import { SubscriptionCoverageCost } from './SubscriptionCoverageCost'
 
 /** Bordered panel with a scrollable, cursor-paginated records table. */
 export function RecentUsagePanel({
@@ -125,7 +126,13 @@ export function RecentUsagePanel({
                       <td className="px-3 py-2 text-right tabular-nums">
                         {(r.tokensIn + r.tokensOut).toLocaleString()}
                       </td>
-                      <td className="px-3 py-2 text-right tabular-nums">{formatUsd(r.cost)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        <SubscriptionCoverageCost
+                          costUsd={r.cost}
+                          subscriptionCoveredUsd={r.subscriptionCoveredCost}
+                          personal
+                        />
+                      </td>
                       {showBalance && (
                         <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                           {r.balanceAfter === null ? '—' : formatBalance(r.balanceAfter)}

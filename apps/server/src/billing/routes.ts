@@ -24,7 +24,7 @@ import {
   verifyStripeWebhookSignature,
 } from './stripe.js'
 import { processStripeWebhookEvent } from './webhooks.js'
-import { activePoolMembership, poolBalanceMicros } from '../pools/service.js'
+import { activePoolMembers, activePoolMembership, pendingFundingByUser } from '../pools/service.js'
 
 const creditAmountSchema = z.number().int().min(MIN_TOP_UP_CENTS).max(MAX_TOP_UP_CENTS)
 const checkoutInputSchema = z.object({
@@ -54,6 +54,15 @@ export function selectSummarySubscription<T extends { plan: string; status: stri
     ?? null
 }
 
+export function availableBillingBalanceMicros(balanceMicros: number, pendingMicros: number): number {
+  return Math.max(0, balanceMicros - pendingMicros)
+}
+
+export function billingLimitPercentage(amountMicros: number, limitMicros: number): number {
+  if (limitMicros <= 0) return 0
+  return Math.max(0, Math.min(100, (amountMicros / limitMicros) * 100))
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -68,16 +77,32 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         .orderBy(desc(billingOrders.createdAt)).limit(50),
       db.transaction(async (tx) => {
         const membership = await activePoolMembership(tx, user.id)
-        return membership ? poolBalanceMicros(tx, membership.pool.id) : null
+        if (!membership) return null
+        const members = await activePoolMembers(tx, membership.pool.id)
+        const pending = await pendingFundingByUser(tx, members.map((row) => row.user.id))
+        const balanceMicros = members.reduce((sum, row) => sum + row.user.balanceMicros, 0)
+        const pendingMicros = members.reduce((sum, row) => sum + (pending.get(row.user.id) ?? 0), 0)
+        return {
+          balanceMicros,
+          pendingMicros,
+          availableMicros: availableBillingBalanceMicros(balanceMicros, pendingMicros),
+        }
       }),
     ])
     const subscription = selectSummarySubscription(subscriptions, entitlements.plan)
     return {
       plan: entitlements.plan,
       balanceMicros: user.balanceMicros,
-      poolBalanceMicros: poolBalance,
+      balancePendingMicros: entitlements.balancePendingMicros,
+      availableBalanceMicros: availableBillingBalanceMicros(user.balanceMicros, entitlements.balancePendingMicros),
+      poolBalanceMicros: poolBalance?.balanceMicros ?? null,
+      poolBalancePendingMicros: poolBalance?.pendingMicros ?? null,
+      availablePoolBalanceMicros: poolBalance?.availableMicros ?? null,
       weekly: entitlements.weeklyRemainingPercentage === null ? null : {
         remainingPercentage: entitlements.weeklyRemainingPercentage,
+        availableBarPercentage: billingLimitPercentage(entitlements.weeklyRemainingMicros, entitlements.weeklyLimitMicros),
+        pendingMicros: entitlements.weeklyPendingMicros,
+        pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
         resetsAt: entitlements.weeklyResetAt.toISOString(),
       },
       onHold: entitlements.onHold,
