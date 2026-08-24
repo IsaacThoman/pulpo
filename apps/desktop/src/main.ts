@@ -2,6 +2,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   app,
+  autoUpdater,
   BrowserWindow,
   dialog,
   ipcMain,
@@ -11,7 +12,8 @@ import {
   session,
   shell,
 } from 'electron'
-import type { DesktopCommand, DesktopStoredSession } from './globals'
+import { updateElectronApp, UpdateSourceType } from 'update-electron-app'
+import type { DesktopCommand, DesktopStoredSession, DesktopUpdateState } from './globals'
 import { clearStoredSession, loadStoredSession, storeSession } from './session-store'
 import {
   DESKTOP_ORIGIN,
@@ -21,6 +23,7 @@ import {
   validatedProtocolUrl,
 } from './security'
 import { loadWindowState, saveWindowState } from './window-state'
+import { DesktopUpdater } from './updater'
 
 const developmentUrl = typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === 'string'
   ? MAIN_WINDOW_VITE_DEV_SERVER_URL
@@ -29,6 +32,7 @@ const rendererOrigin = developmentUrl ? new URL(developmentUrl).origin : DESKTOP
 const pendingProtocolUrls: string[] = []
 let mainWindow: BrowserWindow | null = null
 let rendererReady = false
+let desktopUpdater: DesktopUpdater | null = null
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) {
@@ -40,6 +44,8 @@ function sendCommand(command: DesktopCommand): void {
 }
 
 function applicationMenu(): Menu {
+  const updateState = desktopUpdater?.getState()
+  const updateReady = updateState?.status === 'ready'
   return Menu.buildFromTemplate([
     {
       label: 'Pulpo',
@@ -47,6 +53,16 @@ function applicationMenu(): Menu {
         { role: 'about' },
         { type: 'separator' },
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => sendCommand('settings') },
+        {
+          label: 'Check for Updates…',
+          visible: app.isPackaged && process.platform === 'darwin',
+          click: () => desktopUpdater?.checkForUpdates(),
+        },
+        {
+          label: updateReady ? `Restart to Update to v${updateState.version}` : 'Restart to Update',
+          visible: updateReady,
+          click: () => desktopUpdater?.restartAndInstall(),
+        },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -82,6 +98,31 @@ function applicationMenu(): Menu {
     },
     { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }] },
   ])
+}
+
+function updateApplicationMenu(): void {
+  Menu.setApplicationMenu(applicationMenu())
+}
+
+function publishUpdateState(state: DesktopUpdateState): void {
+  updateApplicationMenu()
+  if (rendererReady) mainWindow?.webContents.send('desktop:update-state-changed', state)
+}
+
+function initializeDesktopUpdater(): void {
+  desktopUpdater = new DesktopUpdater({
+    enabled: app.isPackaged && process.platform === 'darwin',
+    autoUpdater,
+    startUpdates: () => updateElectronApp({
+      updateSource: {
+        type: UpdateSourceType.ElectronPublicUpdateService,
+        repo: 'IsaacThoman/pulpo',
+      },
+      updateInterval: '1 hour',
+      notifyUser: false,
+    }),
+    onStateChanged: publishUpdateState,
+  })
 }
 
 function assertTrustedSender(event: Electron.IpcMainInvokeEvent): void {
@@ -124,6 +165,14 @@ function registerIpc(): void {
   ipcMain.handle('desktop:app-info', (event) => {
     assertTrustedSender(event)
     return { name: app.getName(), version: app.getVersion(), packaged: app.isPackaged }
+  })
+  ipcMain.handle('desktop:update-state', (event) => {
+    assertTrustedSender(event)
+    return desktopUpdater?.getState() ?? { status: 'idle' }
+  })
+  ipcMain.handle('desktop:update-restart', (event) => {
+    assertTrustedSender(event)
+    desktopUpdater?.restartAndInstall()
   })
 }
 
@@ -268,9 +317,11 @@ if (hasSingleInstanceLock) {
     }
     registerRendererProtocol()
     configureSession()
+    initializeDesktopUpdater()
     registerIpc()
-    Menu.setApplicationMenu(applicationMenu())
+    updateApplicationMenu()
     await createMainWindow()
+    desktopUpdater?.start()
     const initialCallback = process.argv.find((value) => value.startsWith('pulpo://'))
     if (initialCallback) deliverProtocolUrl(initialCallback)
     app.on('activate', () => {

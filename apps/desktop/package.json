@@ -7,11 +7,13 @@
     "dev": "electron-forge start",
     "build": "npm run typecheck",
     "typecheck": "tsc --noEmit",
+    "make": "node scripts/make.mjs",
     "package": "node scripts/package.mjs",
     "test": "vitest run"
   },
   "devDependencies": {
     "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-dmg": "7.11.2",
     "@electron-forge/maker-zip": "7.11.2",
     "@electron-forge/plugin-vite": "7.11.2",
     "@types/node": "^24.13.2",
@@ -20,5 +22,8 @@
     "typescript": "~6.0.2",
     "vite": "^8.1.1",
     "vitest": "^3.2.7"
+  },
+  "dependencies": {
+    "update-electron-app": "3.3.0"
   }
 }

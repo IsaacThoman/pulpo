@@ -6,6 +6,10 @@ export interface DesktopStoredSession {
 
 export type DesktopCommand = 'new-chat' | 'settings'
 
+export type DesktopUpdateState =
+  | { status: 'idle' | 'checking' | 'downloading' | 'error' }
+  | { status: 'ready'; version: string }
+
 export interface PulpoDesktopApi {
   readonly platform: 'desktop'
   session: {
@@ -17,6 +21,11 @@ export interface PulpoDesktopApi {
   onProtocolUrl: (listener: (url: string) => void) => () => void
   onCommand: (listener: (command: DesktopCommand) => void) => () => void
   appInfo: () => Promise<{ name: string; version: string; packaged: boolean }>
+  updates: {
+    getState: () => Promise<DesktopUpdateState>
+    onStateChanged: (listener: (state: DesktopUpdateState) => void) => () => void
+    restartAndInstall: () => Promise<void>
+  }
 }
 
 declare global {

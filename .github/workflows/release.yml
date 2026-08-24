@@ -151,6 +151,178 @@ jobs:
           git pull --ff-only origin main
           npm run release
 
+  desktop-build:
+    name: Desktop / ${{ matrix.arch }}
+    if: >-
+      needs.release.outputs.version != ''
+    needs: release
+    runs-on: ${{ matrix.runner }}
+    environment:
+      name: desktop-release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Validate release credentials
+        env:
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for variable in \
+            APP_STORE_CONNECT_API_ISSUER_ID \
+            APP_STORE_CONNECT_API_KEY_ID \
+            APP_STORE_CONNECT_API_PRIVATE_KEY \
+            MACOS_CERTIFICATE_P12_BASE64 \
+            MACOS_CERTIFICATE_PASSWORD; do
+            if [[ -z "${!variable}" ]]; then
+              echo "The ${variable} desktop-release environment secret is not configured." >&2
+              exit 1
+            fi
+          done
+
+      - name: Import Developer ID identity
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          auth_key_path="${RUNNER_TEMP}/AuthKey_${APP_STORE_CONNECT_API_KEY_ID}.p8"
+          certificate_path="${RUNNER_TEMP}/Pulpo-Developer-ID.p12"
+          keychain_path="${RUNNER_TEMP}/pulpo-desktop-signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+
+          printf '%s' "${APP_STORE_CONNECT_API_PRIVATE_KEY}" > "${auth_key_path}"
+          printf '%s' "${MACOS_CERTIFICATE_P12_BASE64}" | base64 --decode > "${certificate_path}"
+          chmod 600 "${auth_key_path}" "${certificate_path}"
+
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${certificate_path}" \
+            -k "${keychain_path}" \
+            -P "${MACOS_CERTIFICATE_PASSWORD}" \
+            -A \
+            -t cert \
+            -f pkcs12
+
+          if ! security find-identity -v -p codesigning "${keychain_path}" | grep -q 'Developer ID Application'; then
+            echo 'The imported PKCS#12 does not contain a Developer ID Application identity and private key.' >&2
+            exit 1
+          fi
+
+          security set-key-partition-list \
+            -S apple-tool:,apple: \
+            -k "${keychain_password}" \
+            "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security default-keychain -d user -s "${keychain_path}"
+
+          {
+            echo "APPLE_API_KEY_PATH=${auth_key_path}"
+            echo "DESKTOP_KEYCHAIN_PATH=${keychain_path}"
+            echo "DESKTOP_CERTIFICATE_PATH=${certificate_path}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Build signed and notarized desktop artifacts
+        env:
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          PULPO_DESKTOP_RELEASE: 1
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${RELEASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Semantic-release produced an invalid version: ${RELEASE_VERSION}" >&2
+            exit 1
+          fi
+          npm version "${RELEASE_VERSION}" --workspace @pulpo/desktop --no-git-tag-version
+          npm run make -w @pulpo/desktop -- --arch=${{ matrix.arch }}
+
+      - name: Verify signed application
+        run: |
+          set -euo pipefail
+          app_path="$(find apps/desktop/out -type d -name Pulpo.app -print -quit)"
+          if [[ -z "${app_path}" ]]; then
+            echo 'Forge did not produce Pulpo.app.' >&2
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=2 "${app_path}"
+          spctl --assess --type execute --verbose=4 "${app_path}"
+          xcrun stapler validate "${app_path}"
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-${{ matrix.arch }}
+          path: |
+            apps/desktop/out/make/**/*.zip
+            apps/desktop/out/make/**/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Clean up signing credentials
+        if: always()
+        run: |
+          security delete-keychain "${DESKTOP_KEYCHAIN_PATH}" 2>/dev/null || true
+          rm -f "${APPLE_API_KEY_PATH}" "${DESKTOP_CERTIFICATE_PATH}"
+
+  desktop-publish:
+    name: Publish desktop artifacts
+    if: >-
+      needs.release.outputs.version != ''
+    needs: [release, desktop-build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: desktop-*
+          path: desktop-artifacts
+          merge-multiple: true
+
+      - name: Attach artifacts to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -d '' artifacts < <(find desktop-artifacts -type f \( -name '*.zip' -o -name '*.dmg' \) -print0)
+          if (( ${#artifacts[@]} != 4 )); then
+            echo "Expected two ZIP and two DMG artifacts, found ${#artifacts[@]}." >&2
+            exit 1
+          fi
+          gh release upload "v${RELEASE_VERSION}" "${artifacts[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
+
   deploy-preview:
     name: Deploy Coolify preview
     if: >-

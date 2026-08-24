@@ -1,6 +1,15 @@
 import type { ForgeConfig } from '@electron-forge/shared-types'
+import { MakerDMG } from '@electron-forge/maker-dmg'
 import { MakerZIP } from '@electron-forge/maker-zip'
 import { VitePlugin } from '@electron-forge/plugin-vite'
+
+const releaseBuild = process.env.PULPO_DESKTOP_RELEASE === '1'
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]
+  if (!value) throw new Error(`${name} is required for a desktop release build.`)
+  return value
+}
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -18,8 +27,19 @@ const config: ForgeConfig = {
         CFBundleURLSchemes: ['pulpo'],
       }],
     },
+    ...(releaseBuild ? {
+      osxSign: {},
+      osxNotarize: {
+        appleApiKey: requiredEnvironment('APPLE_API_KEY_PATH'),
+        appleApiKeyId: requiredEnvironment('APP_STORE_CONNECT_API_KEY_ID'),
+        appleApiIssuer: requiredEnvironment('APP_STORE_CONNECT_API_ISSUER_ID'),
+      },
+    } : {}),
   },
-  makers: [new MakerZIP({}, ['darwin'])],
+  makers: [
+    new MakerZIP({}, ['darwin']),
+    new MakerDMG({}, ['darwin']),
+  ],
   plugins: [new VitePlugin({
     build: [
       { entry: 'src/main.ts', config: 'vite.main.config.mjs', target: 'main' },
