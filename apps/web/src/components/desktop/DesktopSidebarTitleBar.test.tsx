@@ -27,15 +27,15 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-40')
   })
 
-  it('continues only the sidebar divider through the title bar when collapsed', () => {
+  it('leaves the title bar clear above the rounded collapsed sidebar', () => {
     installDesktopWindow()
     const markup = renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed transitions={false} visible />,
     )
 
-    expect(markup).toContain('w-[52px]')
+    expect(markup).toContain('w-0')
     expect(markup).not.toContain('bg-sidebar')
-    expect(markup).toContain('border-sidebar-border')
+    expect(markup).not.toContain('border-sidebar-border')
   })
 
   it('stays out of mobile layouts', () => {
