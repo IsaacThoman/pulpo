@@ -16,5 +16,5 @@ export function DesktopTitleBar() {
   }, [navigate])
 
   if (!isDesktopRuntime()) return null
-  return <div aria-hidden="true" className="desktop-titlebar fixed inset-x-0 top-0 z-[100] h-[38px]" />
+  return <div aria-hidden="true" className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px]" />
 }

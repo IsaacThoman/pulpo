@@ -10,6 +10,7 @@ import { ChatDataBridge } from '@/features/chat/ChatDataBridge'
 import { SettingsBridge } from '@/features/settings/SettingsBridge'
 import { BannerBar } from './BannerBar'
 import { useChat } from '@/stores/chat'
+import { DesktopSidebarTitleBar } from '@/components/desktop/DesktopSidebarTitleBar'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -98,6 +99,11 @@ export function AppLayout() {
       <TooltipProvider delayDuration={1000}>
         <ChatDataBridge />
         <SettingsBridge />
+        <DesktopSidebarTitleBar
+          collapsed={collapsed || searchHasQuery}
+          transitions={sidebarTransitions}
+          visible={!mobile}
+        />
         <div className="relative flex h-full overflow-hidden">
           <BannerBar />
           <button

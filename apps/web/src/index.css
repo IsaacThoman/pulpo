@@ -272,7 +272,11 @@ html[data-desktop="true"] .desktop-shell {
 
 html[data-desktop="true"] .desktop-titlebar {
   -webkit-app-region: drag;
-  background: color-mix(in srgb, var(--background) 92%, transparent);
+  background: var(--background);
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar {
+  -webkit-app-region: drag;
 }
 
 html[data-desktop="true"] .desktop-no-drag,
