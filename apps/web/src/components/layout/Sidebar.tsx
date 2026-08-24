@@ -937,7 +937,7 @@ export function Sidebar({
               transitions && 'transition-transform duration-200 ease-out'
             )
           : cn(
-              'relative will-change-[width]',
+              'relative z-[41] will-change-[width]',
               transitions &&
                 'transition-[width] duration-[6000ms] ease-[cubic-bezier(0.4,0,0.2,1)]'
             ),
