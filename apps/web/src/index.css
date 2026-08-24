@@ -314,11 +314,11 @@ html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
   pointer-events: none;
 }
 
-html[data-desktop="true"] .desktop-collapsed-sidebar {
+html[data-desktop="true"] .desktop-sidebar {
   border-right-width: 0;
 }
 
-html[data-desktop="true"] .desktop-collapsed-sidebar::after {
+html[data-desktop="true"] .desktop-sidebar::after {
   position: absolute;
   top: 16px;
   right: 0;
