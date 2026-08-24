@@ -48,6 +48,7 @@ import type { Attachment } from '@/lib/types'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 export interface ComposerMessageEdit {
   messageId: string
@@ -163,6 +164,8 @@ export function Composer({
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
+  const instanceReady = useAuth((s) => s.instanceReady)
+  const desktopCanMutate = !isDesktopRuntime() || instanceReady
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
   const selections = resolveSelections(options, generation[modelId])
@@ -183,7 +186,7 @@ export function Composer({
   const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
   const hasDraft = value.trim().length > 0 || attachments.length > 0
   const editingExisting = Boolean(messageEdit || editingQueueId)
-  const canSend = dictationState === 'idle' && canSubmitComposerDraft({
+  const canSend = desktopCanMutate && dictationState === 'idle' && canSubmitComposerDraft({
     modelId,
     hasText: value.trim().length > 0,
     attachmentCount: attachments.length,
@@ -975,7 +978,7 @@ export function Composer({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                disabled={dictationState === 'transcribing'}
+                disabled={!desktopCanMutate || dictationState === 'transcribing'}
                 onClick={() => dictationState === 'recording' ? stopDictation() : void startDictation()}
                 className={cn('flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60', dictationState === 'recording' && 'bg-destructive/10 text-destructive')}
                 aria-label={dictationState === 'recording' ? 'Stop dictation' : dictationState === 'transcribing' ? 'Transcribing dictation' : 'Start dictation'}
@@ -991,6 +994,7 @@ export function Composer({
             <Button
               size="icon-sm"
               className="rounded-full"
+              disabled={!desktopCanMutate}
               onClick={() => streamingResponseId && stopStreaming(streamingResponseId)}
               aria-label="Stop generating"
             >

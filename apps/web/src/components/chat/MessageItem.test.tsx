@@ -30,6 +30,20 @@ function user(overrides: Partial<Message> = {}): Message {
 }
 
 describe('user message actions', () => {
+  it('renders branch navigation after copy, edit, and delete actions', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={user({ branch: { ids: ['response-1', 'response-2'], index: 1 } })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(markup.indexOf('aria-label="Copy"')).toBeLessThan(markup.indexOf('aria-label="Previous branch"'))
+    expect(markup.indexOf('aria-label="Edit"')).toBeLessThan(markup.indexOf('aria-label="Previous branch"'))
+    expect(markup.indexOf('aria-label="Delete message"')).toBeLessThan(markup.indexOf('aria-label="Previous branch"'))
+  })
+
   it('keeps edit enabled while an assistant response is streaming', async () => {
     const { MessageItem } = await import('./MessageItem')
     const markup = renderToStaticMarkup(<MessageItem

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DesktopCommand, DesktopStoredSession, PulpoDesktopApi } from './globals'
+import type { DesktopCommand, DesktopStoredSession, DesktopUpdateState, PulpoDesktopApi } from './globals'
 
 const api: PulpoDesktopApi = {
   platform: 'desktop',
@@ -20,6 +20,15 @@ const api: PulpoDesktopApi = {
     return () => ipcRenderer.removeListener('desktop:command', handler)
   },
   appInfo: () => ipcRenderer.invoke('desktop:app-info') as Promise<{ name: string; version: string; packaged: boolean }>,
+  updates: {
+    getState: () => ipcRenderer.invoke('desktop:update-state') as Promise<DesktopUpdateState>,
+    onStateChanged: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: DesktopUpdateState) => listener(state)
+      ipcRenderer.on('desktop:update-state-changed', handler)
+      return () => ipcRenderer.removeListener('desktop:update-state-changed', handler)
+    },
+    restartAndInstall: () => ipcRenderer.invoke('desktop:update-restart') as Promise<void>,
+  },
 }
 
 contextBridge.exposeInMainWorld('pulpoDesktop', api)

@@ -17,6 +17,8 @@ import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
 import type { Message } from '@/lib/types'
 import { useDesktopChrome } from '@/stores/desktopChrome'
+import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
@@ -105,6 +107,8 @@ export function ChatPage() {
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
   const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
+  const instanceReady = useAuth((s) => s.instanceReady)
+  const networkReady = !isDesktopRuntime() || instanceReady
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
   const navigationState = location.state as NewChatLocationState | null
@@ -177,10 +181,11 @@ export function ChatPage() {
   }
 
   useEffect(() => {
+    if (!networkReady) return
     void apiRequest<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>('/api/interface/suggested-prompts')
       .then(setPromptConfig)
       .catch(() => {})
-  }, [])
+  }, [networkReady])
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)

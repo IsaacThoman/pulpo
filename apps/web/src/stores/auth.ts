@@ -75,6 +75,7 @@ interface AuthState {
   logout: () => Promise<void>
   switchInstance: (url: string) => Promise<void>
   chooseInstance: () => Promise<void>
+  retryDesktopConnection: () => Promise<void>
   handleDesktopUnauthorized: () => Promise<void>
   replaceUser: (user: ServerUser) => void
   setSignupEnabled: (value: boolean) => void
@@ -136,10 +137,25 @@ export const useAuth = create<AuthState>()((set, get) => ({
         token: stored?.token ?? null,
         onUnauthorized: () => { void get().handleDesktopUnauthorized() },
       })
-      let config: MobileConfig
-      try {
-        config = await apiRequest<MobileConfig>('/api/mobile/config')
-      } catch (error) {
+      if (!stored) {
+        cacheProfile(null)
+        set({ user: null })
+      }
+      const [configResult, authSettings, authResult] = await Promise.all([
+        apiRequest<MobileConfig>('/api/mobile/config').then(
+          (value) => ({ ok: true as const, value }),
+          (error: unknown) => ({ ok: false as const, error }),
+        ),
+        apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
+        stored
+          ? apiRequest<AuthResponse>('/api/mobile/me').then(
+            (value) => ({ ok: true as const, value }),
+            (error: unknown) => ({ ok: false as const, error }),
+          )
+          : Promise.resolve(null),
+      ])
+      if (!configResult.ok) {
+        const error = configResult.error
         set({
           checkingSession: false,
           instanceUrl,
@@ -148,7 +164,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         })
         return
       }
-      const authSettings = await apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null)
+      const config = configResult.value
       const publicSettings = authSettings ?? {
         signupEnabled: config.auth.signupEnabled,
         pendingDetails: config.auth.pendingDetails,
@@ -162,7 +178,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       }
       if (!stored) {
         set({
-          user: readCachedProfile(),
+          user: null,
           checkingSession: false,
           setupRequired: config.setupRequired,
           instanceUrl,
@@ -173,8 +189,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
         })
         return
       }
-      try {
-        const response = await apiRequest<AuthResponse>('/api/mobile/me')
+      if (authResult?.ok) {
+        const response = authResult.value
         const user = normalizeUser(response.user)
         cacheProfile(user)
         set({
@@ -187,14 +203,24 @@ export const useAuth = create<AuthState>()((set, get) => ({
           instanceError: '',
           ...publicSettings,
         })
-      } catch (error) {
+      } else {
+        const error = authResult?.error
         if (error instanceof ApiError && error.status === 401) {
           await clearDesktopSession()
           configureDesktopRuntime({ instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
           cacheProfile(null)
           set({ user: null, checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, ...publicSettings })
         } else {
-          set({ user: readCachedProfile(), checkingSession: false, setupRequired: config.setupRequired, instanceUrl, instanceName: config.instance.name, instanceReady: true, ...publicSettings })
+          set({
+            user: readCachedProfile(),
+            checkingSession: false,
+            setupRequired: config.setupRequired,
+            instanceUrl,
+            instanceName: config.instance.name,
+            instanceReady: false,
+            instanceError: error instanceof Error ? error.message : 'Could not validate the saved session.',
+            ...publicSettings,
+          })
         }
       }
       return
@@ -373,6 +399,12 @@ export const useAuth = create<AuthState>()((set, get) => ({
     if (!isDesktopRuntime()) return
     await get().logout()
     set({ instanceReady: false, instanceError: '' })
+  },
+
+  retryDesktopConnection: async () => {
+    if (!isDesktopRuntime() || get().checkingSession || get().instanceReady) return
+    set({ checkingSession: true, instanceError: '' })
+    await get().bootstrap()
   },
 
   handleDesktopUnauthorized: async () => {
