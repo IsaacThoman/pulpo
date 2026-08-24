@@ -1,0 +1,24 @@
+import { describe, expect, it } from 'vitest'
+import { DESKTOP_ORIGIN, isTrustedRendererUrl, rendererAssetPath, validatedExternalUrl, validatedProtocolUrl } from './security'
+
+describe('desktop security helpers', () => {
+  it('accepts only trusted renderer origins', () => {
+    expect(isTrustedRendererUrl(`${DESKTOP_ORIGIN}/c/one`)).toBe(true)
+    expect(isTrustedRendererUrl('http://localhost:5174/', 'http://localhost:5174')).toBe(true)
+    expect(isTrustedRendererUrl('https://pulpo.example/')).toBe(false)
+  })
+
+  it('rejects insecure external destinations and credentials', () => {
+    expect(validatedExternalUrl('https://pulpo.baby/support', false)).toBe('https://pulpo.baby/support')
+    expect(() => validatedExternalUrl('http://pulpo.baby', false)).toThrow()
+    expect(() => validatedExternalUrl('https://user:secret@pulpo.baby', false)).toThrow()
+    expect(validatedExternalUrl('http://localhost:3000', true)).toBe('http://localhost:3000/')
+  })
+
+  it('accepts only passkey callbacks and safe renderer paths', () => {
+    expect(validatedProtocolUrl('pulpo://auth/passkey?state=one')).toContain('/passkey')
+    expect(() => validatedProtocolUrl('pulpo://evil/passkey')).toThrow()
+    expect(rendererAssetPath('/assets/app.js')).toBe('assets/app.js')
+    expect(rendererAssetPath('/%2e%2e/secrets')).toBeNull()
+  })
+})

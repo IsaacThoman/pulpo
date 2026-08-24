@@ -10,6 +10,9 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+apps/desktop/.vite/
+apps/desktop/out/
+apps/desktop/assets/Pulpo.iconset/
 docs/.vitepress/cache/
 *.local
 .env

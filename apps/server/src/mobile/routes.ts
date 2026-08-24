@@ -4,6 +4,7 @@ import {
   mobileConfigSchema,
   mobileBrowserPasskeyOptionsInputSchema,
   nativeLoginInputSchema,
+  nativeSetupInputSchema,
   nativeSignupInputSchema,
   mobilePasskeyCodeExchangeInputSchema,
   mobilePasskeyVerifyInputSchema,
@@ -32,6 +33,7 @@ import {
   finishPasskeyAuthentication,
   issueMobilePasskeyAuthCode,
 } from '../auth/passkeys.js'
+import { createInitialAdmin } from '../auth/initial-admin.js'
 
 export async function registerMobileRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/mobile/config', async () => {
@@ -81,6 +83,14 @@ export async function registerMobileRoutes(app: FastifyInstance): Promise<void> 
     await requireLoginSecondFactor(row.user.id, input.twoFactorCode)
     const session = await createNativeSession(row.user.id, input.deviceLabel, request)
     return { user: serializeUser(row.user), session }
+  })
+
+  app.post('/api/mobile/auth/setup', async (request, reply) => {
+    const input = nativeSetupInputSchema.parse(request.body)
+    const user = await createInitialAdmin(input)
+    const session = await createNativeSession(user.id, input.deviceLabel, request)
+    reply.code(201)
+    return { user, session }
   })
 
   app.post('/api/mobile/auth/passkey/options', {

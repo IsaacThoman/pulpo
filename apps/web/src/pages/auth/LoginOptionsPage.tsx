@@ -4,6 +4,7 @@ import { ArrowLeft, KeyRound, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { browserSupportsWebAuthn } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 export function LoginOptionsPage() {
   const user = useAuth((state) => state.user)
@@ -12,7 +13,7 @@ export function LoginOptionsPage() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const passkeySupported = browserSupportsWebAuthn()
+  const passkeySupported = isDesktopRuntime() || browserSupportsWebAuthn()
 
   if (user?.role === 'pending') return <Navigate to="/pending" replace />
   if (user) return <Navigate to="/" replace />

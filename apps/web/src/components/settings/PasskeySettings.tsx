@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { enrollDesktopPasskey } from '@/lib/desktop-passkeys'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 type SensitiveValues = {
   currentPassword: string
@@ -53,6 +55,16 @@ export function PasskeySettings() {
     setLoading(true)
     setError('')
     try {
+      if (isDesktopRuntime()) {
+        await enrollDesktopPasskey({
+          name,
+          currentPassword: sensitive.currentPassword,
+          verificationCode: data?.requiresSecondFactor ? sensitive.verificationCode : undefined,
+        })
+        resetAction()
+        await refresh()
+        return
+      }
       const ceremony = await apiRequest<PasskeyCeremony>('/api/me/passkeys/registration/options', {
         method: 'POST',
         body: {

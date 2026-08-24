@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { CheckboxRow, Snippet } from '@/components/api/misc'
+import { runtimeInstanceUrl } from '@/lib/runtime'
 import {
   Collapsible,
   CollapsibleContent,
@@ -52,7 +53,7 @@ const ALL_SCOPES = [
   { id: 'models', label: 'List models' },
 ] as const
 
-const API_BASE_URL = `${window.location.origin}/v1`
+const API_BASE_URL = `${runtimeInstanceUrl()}/v1`
 
 const CURL_SNIPPET = `curl ${API_BASE_URL}/responses \\
   -H "Authorization: Bearer $PULPO_API_KEY" \\

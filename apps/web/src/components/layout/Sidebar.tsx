@@ -937,14 +937,24 @@ export function Sidebar({
               transitions && 'transition-transform duration-200 ease-out'
             )
           : cn(
-              'relative will-change-[width]',
+              'desktop-sidebar relative z-[41] will-change-[width]',
               transitions &&
                 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]'
             ),
         mobile && !mobileOpen && '-translate-x-full',
-        !mobile && (collapsed ? 'w-[52px]' : 'w-[264px]')
+        !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
       )}
     >
+      {!mobile && (
+        <div
+          aria-hidden="true"
+          className={cn(
+            'desktop-sidebar-added-border pointer-events-none absolute right-0 top-0 h-4 border-r border-sidebar-border motion-reduce:transition-none',
+            transitions && 'transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+            collapsed ? 'opacity-0' : 'opacity-100',
+          )}
+        />
+      )}
       {/* header */}
       <div className="flex items-center gap-1 p-2">
         <Tooltip

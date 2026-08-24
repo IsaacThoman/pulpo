@@ -1,5 +1,5 @@
 import { queryClient } from '@/lib/query-client'
-import { localDb } from './database'
+import { localAccountKey, localDb } from './database'
 
 interface LocallyCachedChat {
   attachments?: Array<{ id: string }>
@@ -25,7 +25,7 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
   )
 
   await localDb.transaction('rw', localDb.drafts, localDb.attachmentBlobs, localDb.responseCursors, async () => {
-    await localDb.drafts.where('userId').equals(userId).filter((draft) => idSet.has(draft.chatId)).delete()
+    await localDb.drafts.where('userId').equals(localAccountKey(userId)).filter((draft) => idSet.has(draft.chatId)).delete()
     if (attachmentIds.size) await localDb.attachmentBlobs.bulkDelete([...attachmentIds])
     if (responseIds.size) {
       await localDb.responseCursors.filter((cursor) => responseIds.has(cursor.responseId)).delete()

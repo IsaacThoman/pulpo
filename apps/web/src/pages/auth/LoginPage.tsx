@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, Loader2, Server, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 export function LoginPage() {
   const user = useAuth((s) => s.user)
@@ -13,6 +14,8 @@ export function LoginPage() {
   const passkeyLogin = useAuth((s) => s.passkeyLogin)
   const signupEnabled = useAuth((s) => s.signupEnabled)
   const setupRequired = useAuth((s) => s.setupRequired)
+  const instanceUrl = useAuth((s) => s.instanceUrl)
+  const chooseInstance = useAuth((s) => s.chooseInstance)
   const navigate = useNavigate()
 
   const [email, setEmail] = useState('')
@@ -23,11 +26,11 @@ export function LoginPage() {
   const [recoveryMode, setRecoveryMode] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const passkeySupported = browserSupportsWebAuthn()
+  const passkeySupported = isDesktopRuntime() || browserSupportsWebAuthn()
 
   useEffect(() => {
     let active = true
-    if (!passkeySupported || user || setupRequired !== false) return
+    if (isDesktopRuntime() || !passkeySupported || user || setupRequired !== false) return
     void browserSupportsWebAuthnAutofill().then(async (supported) => {
       if (!active || !supported) return
       const result = await passkeyLogin(true)
@@ -62,7 +65,8 @@ export function LoginPage() {
   }
 
   return (
-    <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
+    <>
+      <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
         <h1 className="text-lg font-semibold">{twoFactorStep ? 'Verify your identity' : 'Welcome back'}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -168,6 +172,19 @@ export function LoginPage() {
           </Link>
         </p>
       )}
-    </div>
+      </div>
+      {isDesktopRuntime() && !twoFactorStep && (
+        <button
+          type="button"
+          aria-label={`Change server, currently ${instanceUrl}`}
+          className="mx-auto mt-4 flex min-h-11 max-w-full cursor-pointer items-center justify-center gap-2 px-3 text-xs text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => { void chooseInstance() }}
+        >
+          <Server className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="max-w-56 truncate">{instanceUrl}</span>
+          <span className="font-medium text-foreground">Change</span>
+        </button>
+      )}
+    </>
   )
 }
