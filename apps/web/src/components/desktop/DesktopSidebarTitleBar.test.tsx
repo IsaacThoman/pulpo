@@ -23,6 +23,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('desktop-sidebar-titlebar')
     expect(markup).toContain('desktop-sidebar-titlebar-base')
     expect(markup).toContain('desktop-sidebar-titlebar-expanded')
+    expect(markup).toContain('z-10')
     expect(markup).toContain('bg-sidebar')
     expect(markup).toContain('border-sidebar-border')
     expect(markup).toContain('w-[52px]')
@@ -43,6 +44,7 @@ describe('desktop sidebar title bar', () => {
 
     expect(markup).toContain('data-collapsed="true"')
     expect(markup).toContain('desktop-sidebar-titlebar-collapsed')
+    expect(markup).toContain('z-0')
     expect(markup).toContain('w-full')
     expect(markup).toContain('bg-sidebar')
     expect(markup).toContain('translate-y-0')
