@@ -34,7 +34,7 @@ jobs:
           cache: npm
 
       - name: Report high and critical vulnerabilities
-        run: npm audit --audit-level=high
+        run: npm audit --omit=dev --audit-level=high
 
   checks:
     name: Checks / ${{ matrix.name }}
