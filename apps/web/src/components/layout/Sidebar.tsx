@@ -373,9 +373,9 @@ function ChatRow({
     >
       <DropLines active={canDrag || canDrop} before={showLineBefore} after={showLineAfter} />
       <span className="flex-1 truncate">{chat.title}</span>
-      {shiftHeld ? (
+      {shiftHeld && (
         <button
-          className={cn(actionClassName, 'invisible hover:text-destructive group-hover:visible')}
+          className={cn(actionClassName, 'hidden hover:text-destructive group-hover:block')}
           onClick={(e) => {
             e.stopPropagation()
             deleteChat(chat.id)
@@ -384,54 +384,54 @@ function ChatRow({
         >
           <Trash2 className="size-4" />
         </button>
-      ) : (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className={cn(
-                actionClassName,
-                'group/chat-action',
-                generating || chat.expiresAt !== null ? 'visible' : 'invisible group-hover:visible',
-                'data-[state=open]:visible',
-              )}
-              onClick={(e) => e.stopPropagation()}
-              aria-label={generating ? 'Generation active; chat options' : 'Chat options'}
-            >
-              {generating ? (
-                <>
-                  <span
-                    aria-hidden="true"
-                    className="relative block size-4 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden"
-                  >
-                    <svg className="absolute inset-0 size-4 text-muted-foreground/25" viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
-                    </svg>
-                    <Loader2 className="absolute inset-0 size-4 animate-spin motion-reduce:animate-none" />
-                  </span>
-                  <MoreHorizontal
-                    aria-hidden="true"
-                    className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
-                  />
-                </>
-              ) : chat.expiresAt !== null ? (
-                <>
-                  <Hourglass
-                    aria-hidden="true"
-                    className="size-4 text-teal-500 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden dark:text-teal-400"
-                  />
-                  <MoreHorizontal
-                    aria-hidden="true"
-                    className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
-                  />
-                </>
-              ) : (
-                <MoreHorizontal className="size-4" />
-              )}
-            </button>
-          </DropdownMenuTrigger>
-          <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
-        </DropdownMenu>
       )}
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className={cn(
+              actionClassName,
+              'group/chat-action',
+              generating || chat.expiresAt !== null ? 'visible' : 'invisible group-hover:visible',
+              shiftHeld && 'group-hover:hidden',
+              'data-[state=open]:visible',
+            )}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={generating ? 'Generation active; chat options' : 'Chat options'}
+          >
+            {generating ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  className="relative block size-4 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden"
+                >
+                  <svg className="absolute inset-0 size-4 text-muted-foreground/25" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+                  </svg>
+                  <Loader2 className="absolute inset-0 size-4 animate-spin motion-reduce:animate-none" />
+                </span>
+                <MoreHorizontal
+                  aria-hidden="true"
+                  className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
+                />
+              </>
+            ) : chat.expiresAt !== null ? (
+              <>
+                <Hourglass
+                  aria-hidden="true"
+                  className="size-4 text-teal-500 group-hover/chat-action:hidden group-focus-visible/chat-action:hidden group-data-[state=open]/chat-action:hidden dark:text-teal-400"
+                />
+                <MoreHorizontal
+                  aria-hidden="true"
+                  className="hidden size-4 group-hover/chat-action:block group-focus-visible/chat-action:block group-data-[state=open]/chat-action:block"
+                />
+              </>
+            ) : (
+              <MoreHorizontal className="size-4" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <ChatMenu chat={chat} onRename={() => setRenameOpen(true)} />
+      </DropdownMenu>
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>

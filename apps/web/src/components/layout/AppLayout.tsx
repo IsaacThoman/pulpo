@@ -12,6 +12,7 @@ import { BannerBar } from './BannerBar'
 import { useChat } from '@/stores/chat'
 import { DesktopSidebarTitleBar } from '@/components/desktop/DesktopSidebarTitleBar'
 import { cn } from '@/lib/utils'
+import { handleDoubleShiftKeyDown, type DoubleShiftState } from '@/lib/double-shift'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -26,6 +27,7 @@ export function AppLayout() {
   const sidebarCollapsed = collapsed || searchHasQuery
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
   const previousPathRef = useRef(location.pathname)
+  const doubleShiftRef = useRef<DoubleShiftState>({ lastPressAt: null })
   const openSettings = useCallback((section: SettingsSectionId = 'general') => {
     setSettingsSection(section)
     setSettingsOpen(true)
@@ -70,6 +72,12 @@ export function AppLayout() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (handleDoubleShiftKeyDown(doubleShiftRef.current, e, performance.now())) {
+        e.preventDefault()
+        setMobileOpen(false)
+        setSearchOpen(true)
+        return
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
         setSearchOpen((v) => !v)
@@ -84,8 +92,15 @@ export function AppLayout() {
         openSettings('general')
       }
     }
+    const resetDoubleShift = () => {
+      doubleShiftRef.current.lastPressAt = null
+    }
     window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+    window.addEventListener('blur', resetDoubleShift)
+    return () => {
+      window.removeEventListener('keydown', handler)
+      window.removeEventListener('blur', resetDoubleShift)
+    }
   }, [openSettings])
 
   useEffect(() => {
