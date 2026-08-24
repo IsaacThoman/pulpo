@@ -21,8 +21,8 @@ export function DesktopSidebarTitleBar({
       <div
         className={cn(
           'desktop-sidebar-titlebar-expanded absolute inset-y-0 left-[52px] z-10 border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
-          transitions && 'transition-[width,opacity] duration-[6000ms] ease-[cubic-bezier(0.4,0,0.2,1)]',
-          collapsed ? 'w-0 opacity-0' : 'w-[212px] opacity-100',
+          transitions && 'transition-[width] duration-[6000ms] ease-[cubic-bezier(0.4,0,0.2,1)]',
+          collapsed ? 'w-0' : 'w-[212px]',
         )}
       />
       <div
