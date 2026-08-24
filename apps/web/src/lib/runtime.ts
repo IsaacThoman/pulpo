@@ -6,6 +6,10 @@ export interface DesktopStoredSession {
   expiresAt: string
 }
 
+export type DesktopUpdateState =
+  | { status: 'idle' | 'checking' | 'downloading' | 'error' }
+  | { status: 'ready'; version: string }
+
 interface DesktopApi {
   platform: 'desktop'
   session: {
@@ -17,6 +21,11 @@ interface DesktopApi {
   onProtocolUrl(listener: (url: string) => void): () => void
   onCommand(listener: (command: 'new-chat' | 'settings') => void): () => void
   appInfo(): Promise<{ name: string; version: string; packaged: boolean }>
+  updates: {
+    getState(): Promise<DesktopUpdateState>
+    onStateChanged(listener: (state: DesktopUpdateState) => void): () => void
+    restartAndInstall(): Promise<void>
+  }
 }
 
 declare global {
