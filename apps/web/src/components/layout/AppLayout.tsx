@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -150,7 +150,9 @@ export function AppLayout() {
             }}
           />
           <main className="app-main min-w-0 flex-1 overflow-hidden">
-            <Outlet />
+            <Suspense fallback={<div className="h-full bg-background" aria-label="Loading view" />}>
+              <Outlet />
+            </Suspense>
           </main>
         </div>
         <SearchModal

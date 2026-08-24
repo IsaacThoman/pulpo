@@ -8,6 +8,7 @@ import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
 import { useModels } from '@/stores/models'
 import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 const persistedKeys = [
   'theme', 'language', 'sendWithEnter', 'streamResponses', 'showReasoning',
@@ -56,6 +57,8 @@ async function persistModelPreferences(userId: string, body: ReturnType<typeof m
 
 export function SettingsBridge() {
   const userId = useAuth((state) => state.user?.id)
+  const instanceReady = useAuth((state) => state.instanceReady)
+  const networkReady = !isDesktopRuntime() || instanceReady
   const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
   const hydrated = useRef(false)
   const modelsHydrated = useRef(false)
@@ -67,7 +70,7 @@ export function SettingsBridge() {
       values: Record<string, unknown>
       newAccountFavoriteModelIds?: string[]
     }>('/api/settings'),
-    enabled: Boolean(userId),
+    enabled: Boolean(networkReady && userId),
   })
 
   useEffect(() => {

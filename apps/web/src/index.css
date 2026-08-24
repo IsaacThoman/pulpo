@@ -275,6 +275,10 @@ html[data-desktop="true"] .desktop-titlebar {
   background: var(--background);
 }
 
+html[data-desktop="true"] .desktop-connection-status {
+  -webkit-app-region: no-drag;
+}
+
 html[data-desktop="true"] {
   --desktop-temporary-chat-background: color-mix(
     in oklab,
