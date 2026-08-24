@@ -942,7 +942,7 @@ export function Sidebar({
                 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]'
             ),
         mobile && !mobileOpen && '-translate-x-full',
-        !mobile && (collapsed ? 'w-[52px]' : 'w-[264px]')
+        !mobile && (collapsed ? 'desktop-collapsed-sidebar w-[52px]' : 'w-[264px]')
       )}
     >
       {/* header */}

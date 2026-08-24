@@ -287,6 +287,11 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
   -webkit-app-region: drag;
 }
 
+html[data-desktop="true"] .desktop-collapsed-sidebar {
+  border-top: 1px solid var(--sidebar-border);
+  border-top-right-radius: 0.75rem;
+}
+
 html[data-desktop="true"] .desktop-no-drag,
 html[data-desktop="true"] button,
 html[data-desktop="true"] input,
