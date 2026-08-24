@@ -1,9 +1,21 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { useDesktopChrome } from '@/stores/desktopChrome'
+
+export function DesktopTitleBarSurface({ temporaryChat }: { temporaryChat: boolean }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-temporary-chat={temporaryChat ? 'true' : undefined}
+      className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
+    />
+  )
+}
 
 export function DesktopTitleBar() {
   const navigate = useNavigate()
+  const temporaryChat = useDesktopChrome((state) => state.temporaryChat)
 
   useEffect(() => {
     if (!window.pulpoDesktop) return
@@ -16,5 +28,5 @@ export function DesktopTitleBar() {
   }, [navigate])
 
   if (!isDesktopRuntime()) return null
-  return <div aria-hidden="true" className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px]" />
+  return <DesktopTitleBarSurface temporaryChat={temporaryChat} />
 }
