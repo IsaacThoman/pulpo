@@ -14,11 +14,12 @@ export function DesktopSidebarTitleBar({
   return (
     <div
       aria-hidden="true"
+      data-collapsed={collapsed ? 'true' : undefined}
       className={cn(
         'desktop-sidebar-titlebar fixed left-0 top-0 z-40 h-[38px] motion-reduce:transition-none',
         transitions && 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         collapsed
-          ? 'w-[52px] bg-sidebar'
+          ? 'w-full bg-sidebar'
           : 'w-[264px] border-r border-sidebar-border bg-sidebar',
       )}
     />

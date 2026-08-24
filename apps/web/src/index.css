@@ -287,9 +287,45 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
   -webkit-app-region: drag;
 }
 
-html[data-desktop="true"] .desktop-collapsed-sidebar {
+html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::before {
+  position: absolute;
+  top: 100%;
+  left: 52px;
+  width: 16px;
+  height: 16px;
+  background: radial-gradient(
+    circle at 100% 100%,
+    transparent calc(1rem - 1px),
+    var(--sidebar-border) calc(1rem - 1px),
+    var(--sidebar-border) 1rem,
+    var(--sidebar) 1rem
+  );
+  content: '';
+  pointer-events: none;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::after {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 68px;
   border-top: 1px solid var(--sidebar-border);
-  border-top-right-radius: 1rem;
+  content: '';
+  pointer-events: none;
+}
+
+html[data-desktop="true"] .desktop-collapsed-sidebar {
+  border-right-width: 0;
+}
+
+html[data-desktop="true"] .desktop-collapsed-sidebar::after {
+  position: absolute;
+  top: 16px;
+  right: 0;
+  bottom: 0;
+  border-right: 1px solid var(--sidebar-border);
+  content: '';
+  pointer-events: none;
 }
 
 html[data-desktop="true"] .desktop-no-drag,
