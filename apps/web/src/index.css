@@ -289,8 +289,8 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
 
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::before {
   position: absolute;
-  top: 100%;
-  left: 51px;
+  top: calc(100% - 1px);
+  left: 50px;
   width: 16px;
   height: 16px;
   background: radial-gradient(
@@ -306,9 +306,9 @@ html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::befo
 
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::after {
   position: absolute;
-  top: 100%;
+  top: calc(100% - 1px);
   right: 0;
-  left: 67px;
+  left: 66px;
   border-top: 1px solid var(--sidebar-border);
   content: '';
   pointer-events: none;
