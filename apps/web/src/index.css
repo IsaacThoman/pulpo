@@ -275,6 +275,22 @@ html[data-desktop="true"] .desktop-titlebar {
   background: var(--background);
 }
 
+html[data-desktop="true"] {
+  --desktop-temporary-chat-background: color-mix(
+    in oklab,
+    var(--color-violet-100) 50%,
+    var(--background)
+  );
+}
+
+html.dark[data-desktop="true"] {
+  --desktop-temporary-chat-background: color-mix(
+    in oklab,
+    var(--color-violet-950) 15%,
+    var(--background)
+  );
+}
+
 html[data-desktop="true"] .app-layout-frame {
   overflow: visible;
 }
@@ -300,15 +316,11 @@ html[data-desktop="true"] .desktop-main-titlebar-active .app-main > div > header
 }
 
 html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
-  background: color-mix(in oklab, var(--color-violet-100) 50%, transparent);
+  background: var(--desktop-temporary-chat-background);
 }
 
-html.dark[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
-  background: color-mix(in oklab, var(--color-violet-950) 15%, transparent);
-}
-
-html[data-desktop="true"] .desktop-shell:has(.desktop-main-titlebar-active) .desktop-titlebar[data-temporary-chat="true"] {
-  background: var(--background);
+html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
+  background: var(--desktop-temporary-chat-background);
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar {
