@@ -606,7 +606,6 @@ export const MessageItem = memo(function MessageItem({
           {message.content ? <Markdown content={message.content} /> : null}
         </div>
         <div className="flex items-center gap-1">
-            {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
             <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
               {message.content ? <CopyButton text={message.content} /> : null}
               {!chat.expired && (
@@ -632,6 +631,7 @@ export const MessageItem = memo(function MessageItem({
                 </>
               )}
             </div>
+            {!chat.expired && !pendingDelivery && <BranchControls chatId={chat.id} branch={message.branch} disabled={composerEditActive} />}
           </div>
         </div>
     )
