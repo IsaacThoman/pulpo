@@ -15,7 +15,7 @@ export function DesktopSidebarTitleBar({
     <div
       aria-hidden="true"
       data-collapsed={collapsed ? 'true' : undefined}
-      className="desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 z-[41] h-[38px]"
+      className="desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 z-[42] h-[38px]"
     >
       <div className="desktop-sidebar-titlebar-base absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
       <div
