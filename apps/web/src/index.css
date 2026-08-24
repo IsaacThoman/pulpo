@@ -290,7 +290,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::before {
   position: absolute;
   top: 100%;
-  left: 52px;
+  left: 51px;
   width: 16px;
   height: 16px;
   background: radial-gradient(
@@ -308,7 +308,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar[data-collapsed="true"]::afte
   position: absolute;
   top: 100%;
   right: 0;
-  left: 68px;
+  left: 67px;
   border-top: 1px solid var(--sidebar-border);
   content: '';
   pointer-events: none;
@@ -320,8 +320,7 @@ html[data-desktop="true"] .desktop-collapsed-sidebar {
 
 html[data-desktop="true"] .desktop-collapsed-sidebar::after {
   position: absolute;
-  /* Overlap the antialiased curve endpoint to avoid a one-pixel seam. */
-  top: 15px;
+  top: 16px;
   right: 0;
   bottom: 0;
   border-right: 1px solid var(--sidebar-border);
