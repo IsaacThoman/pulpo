@@ -28,8 +28,10 @@ vi.mock('@/lib/passkeys', () => ({
 
 import { LoginPage } from './LoginPage'
 import { LoginOptionsPage } from './LoginOptionsPage'
+import i18n from '@/i18n'
 
-afterEach(() => {
+afterEach(async () => {
+  await i18n.changeLanguage('en-US')
   Reflect.deleteProperty(globalThis, 'window')
 })
 
@@ -70,5 +72,16 @@ describe('login pages', () => {
     expect(markup).toContain('Sign in with a passkey')
     expect(markup).toContain('href="/login"')
     expect(markup).toContain('Back')
+  })
+
+  it('renders the login surface in Spanish', async () => {
+    await i18n.changeLanguage('es-ES')
+
+    const markup = renderToStaticMarkup(<MemoryRouter><LoginPage /></MemoryRouter>)
+
+    expect(markup).toContain('Te damos la bienvenida')
+    expect(markup).toContain('Inicia sesión en tu cuenta de Pulpo.')
+    expect(markup).toContain('Más opciones de inicio de sesión')
+    expect(markup).toContain('¿Olvidaste tu contraseña?')
   })
 })

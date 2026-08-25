@@ -5,6 +5,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { desktopConnectionStatus } from '@/lib/desktop-startup'
+import { DesktopUpdateLink } from './DesktopUpdateBanner'
 
 export function DesktopTitleBarSurface({
   temporaryChat,
@@ -22,6 +23,7 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
+      <DesktopUpdateLink hidden={connectionStatus === 'connecting'} />
       {connectionStatus === 'connecting' && (
         <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
           <Loader2 className="size-3 animate-spin" />Connecting…

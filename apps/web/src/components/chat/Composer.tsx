@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
@@ -96,6 +97,7 @@ export function Composer({
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
 }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [value, setValue] = useState('')
   const [attachmentIds, setAttachmentIds] = useState<string[]>([])
@@ -643,7 +645,7 @@ export function Composer({
         <div className="pointer-events-none fixed inset-0 z-[100] flex items-center justify-center bg-black/35 backdrop-grayscale" role="status">
           <div className="flex flex-col items-center gap-3 text-center text-white drop-shadow-sm">
             <ImagePlus className="size-8" aria-hidden="true" />
-            <p className="text-base font-medium">Drop files to attach</p>
+            <p className="text-base font-medium">{t('chat.attachFiles')}</p>
           </div>
         </div>
       )}
@@ -882,7 +884,7 @@ export function Composer({
           }}
           onPaste={onPaste}
           rows={1}
-          placeholder={attachments.length ? 'Add a caption…' : temporary ? 'Temporary message…' : 'Message…'}
+          placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
           className="max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
         />
         <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
@@ -899,12 +901,12 @@ export function Composer({
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="Attach files"
+                aria-label={t('chat.attachFiles')}
               >
                 <Plus className="size-4.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">Attach files</TooltipContent>
+            <TooltipContent side="top">{t('chat.attachFiles')}</TooltipContent>
           </Tooltip>
 
           {activePresets.length > 0 && (
@@ -913,7 +915,7 @@ export function Composer({
                 <button
                   type="button"
                   className="flex h-8 min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-full px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  aria-label="Generation options"
+                  aria-label={t('chat.generationOptions')}
                 >
                   {activePresets.map((preset, i) => {
                     const choice = preset.choices.find((c) => c.id === selections[preset.id])
@@ -964,12 +966,12 @@ export function Composer({
               if (messageEdit) setEditAgentMode((value) => !value)
               else setAgentMode(modelId, !agentModeEnabled)
             }}
-            aria-label={activeAgentMode && canUseAgent ? 'Disable agent mode' : 'Enable agent mode'}
+            aria-label={activeAgentMode && canUseAgent ? t('chat.disableAgent') : t('chat.enableAgent')}
             aria-pressed={activeAgentMode && canUseAgent}
             className={cn('flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40', activeAgentMode && canUseAgent ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
           >
             <Bot className="size-4" />
-            <span>Agent</span>
+            <span>{t('chat.agent')}</span>
           </button>
 
           <div className="flex-1" />
@@ -981,13 +983,13 @@ export function Composer({
                 disabled={!desktopCanMutate || dictationState === 'transcribing'}
                 onClick={() => dictationState === 'recording' ? stopDictation() : void startDictation()}
                 className={cn('flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-wait disabled:opacity-60', dictationState === 'recording' && 'bg-destructive/10 text-destructive')}
-                aria-label={dictationState === 'recording' ? 'Stop dictation' : dictationState === 'transcribing' ? 'Transcribing dictation' : 'Start dictation'}
+                aria-label={dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}
                 aria-pressed={dictationState === 'recording'}
               >
                 {dictationState === 'transcribing' ? <Loader2 className="size-4 animate-spin" /> : <Mic className={cn('size-4', dictationState === 'recording' && 'animate-pulse')} />}
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top">{dictationState === 'recording' ? 'Stop recording' : dictationState === 'transcribing' ? 'Transcribing…' : 'Dictate'}</TooltipContent>
+            <TooltipContent side="top">{dictationState === 'recording' ? t('chat.stopDictation') : dictationState === 'transcribing' ? t('chat.transcribing') : t('chat.dictate')}</TooltipContent>
           </Tooltip>}
 
           {composerPrimaryAction(Boolean(streamingResponseId) && !messageEdit, hasDraft || Boolean(editingQueueId) || Boolean(messageEdit)) === 'stop' ? (
@@ -996,7 +998,7 @@ export function Composer({
               className="rounded-full"
               disabled={!desktopCanMutate}
               onClick={() => streamingResponseId && stopStreaming(streamingResponseId)}
-              aria-label="Stop generating"
+              aria-label={t('chat.stopGenerating')}
             >
               <Square className="size-3 fill-current" />
             </Button>
@@ -1006,7 +1008,7 @@ export function Composer({
               className="rounded-full"
               onClick={() => void submit()}
               disabled={!canSend}
-              aria-label={messageEdit ? 'Save and resend message' : 'Send message'}
+              aria-label={messageEdit ? t('chat.saveAndResend') : t('chat.sendMessage')}
             >
               {submitting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
             </Button>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { ChevronDown, Search, Star } from 'lucide-react'
 import {
   DropdownMenu,
@@ -22,6 +23,7 @@ export function ModelSelector({
   value: string
   onChange: (id: string) => void
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [provider, setProvider] = useState<string | null>(null) // null = favorites
@@ -151,7 +153,7 @@ export function ModelSelector({
               setQuery(e.target.value)
               setConfirmReset(false)
             }}
-            placeholder="Search models…"
+            placeholder={t('chat.searchModels')}
             className="h-10 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
         </div>
@@ -173,14 +175,14 @@ export function ModelSelector({
                       ? 'text-foreground'
                       : 'text-muted-foreground hover:text-amber-500'
                   )}
-                  aria-label="Favorites"
+                  aria-label={t('chat.favorites')}
                 >
                   <Star
                     className="size-4 fill-none stroke-current transition-colors duration-150 group-hover/star:stroke-amber-500"
                   />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="right">Favorites</TooltipContent>
+              <TooltipContent side="right">{t('chat.favorites')}</TooltipContent>
             </Tooltip>
 
             <div className="my-1 h-px w-5 shrink-0 bg-border" />
@@ -257,7 +259,7 @@ export function ModelSelector({
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-1.5">
             {rows.length === 0 && (
               <div className="px-3 py-8 text-center text-sm text-muted-foreground">
-                {provider === null && !searching ? 'No favorites yet' : 'No models found'}
+                {provider === null && !searching ? t('chat.noFavorites') : t('chat.noModels')}
               </div>
             )}
             {rows.map((m) => {
@@ -322,7 +324,7 @@ export function ModelSelector({
                       e.stopPropagation()
                       toggleFavorite(m.id)
                     }}
-                    aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                    aria-label={isFav ? t('chat.removeFavorite') : t('chat.addFavorite')}
                   >
                     <Star
                       className={cn(
@@ -339,7 +341,7 @@ export function ModelSelector({
             {favoritesActive && newAccountFavoritesLoaded && !favoritesMatchDefaults && (
               confirmReset ? (
                 <div ref={resetConfirmationRef} className="mx-2 my-1.5 scroll-mb-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs">
-                  <p className="text-foreground">Replace favorites with defaults?</p>
+                  <p className="text-foreground">{t('chat.replaceFavorites')}</p>
                   <div className="mt-1.5 flex items-center gap-3">
                     <button
                       type="button"
@@ -349,14 +351,14 @@ export function ModelSelector({
                         setConfirmReset(false)
                       }}
                     >
-                      Reset
+                      {t('chat.resetFavorites')}
                     </button>
                     <button
                       type="button"
                       className="cursor-pointer text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                       onClick={() => setConfirmReset(false)}
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </button>
                   </div>
                 </div>
@@ -366,7 +368,7 @@ export function ModelSelector({
                   className="mx-2 my-1 block cursor-pointer text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
                   onClick={() => setConfirmReset(true)}
                 >
-                  Reset favorites
+                  {t('chat.resetFavorites')}
                 </button>
               )
             )}

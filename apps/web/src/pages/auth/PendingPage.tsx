@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { LogOut, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,7 @@ function cleanInviteCode(value: string): string[] {
 }
 
 export function PendingPage() {
+  const { t } = useTranslation()
   const user = useAuth((s) => s.user)
   const logout = useAuth((s) => s.logout)
   const replaceUser = useAuth((s) => s.replaceUser)
@@ -87,7 +89,7 @@ export function PendingPage() {
       replaceUser(result.user)
       navigate('/', { replace: true })
     } catch (error) {
-      setRedeemError(error instanceof ApiError ? error.message : 'Unable to redeem this invite code.')
+      setRedeemError(error instanceof ApiError ? error.message : t('auth.redeemFailed'))
     } finally {
       setRedeeming(false)
     }
@@ -101,7 +103,7 @@ export function PendingPage() {
       </div>
 
       <div className="w-full max-w-[440px] rounded-xl border bg-card p-6 shadow-xs sm:p-8">
-        <h1 className="text-lg font-semibold">Account pending approval</h1>
+        <h1 className="text-lg font-semibold">{t('auth.accountPending')}</h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{pendingMessage}</p>
 
         {inviteCodesEnabled && (
@@ -113,8 +115,8 @@ export function PendingPage() {
             }}
           >
             <div className="space-y-3">
-              <label htmlFor="invite-code-0" className="text-sm font-medium">Invite code</label>
-              <div className="grid grid-cols-6 gap-3" role="group" aria-label="Six-character invite code">
+              <label htmlFor="invite-code-0" className="text-sm font-medium">{t('auth.inviteCode')}</label>
+              <div className="grid grid-cols-6 gap-3" role="group" aria-label={t('auth.inviteCodeLabel')}>
                 {codeCharacters.map((character, index) => (
                   <Input
                     key={index}
@@ -135,7 +137,7 @@ export function PendingPage() {
                     spellCheck={false}
                     disabled={redeeming}
                     aria-invalid={Boolean(redeemError)}
-                    aria-label={`Invite code character ${index + 1}`}
+                    aria-label={t('auth.inviteCodeCharacter', { number: index + 1 })}
                     aria-describedby={redeemError ? 'invite-code-error' : undefined}
                   />
                 ))}
@@ -143,7 +145,7 @@ export function PendingPage() {
               {redeemError && <p id="invite-code-error" className="text-sm text-destructive">{redeemError}</p>}
             </div>
             <Button type="submit" className="w-full" disabled={redeeming || code.length !== 6}>
-              {redeeming ? 'Redeeming…' : 'Redeem invite code'}
+              {redeeming ? t('auth.redeeming') : t('auth.redeemInvite')}
             </Button>
           </form>
         )}
@@ -153,9 +155,9 @@ export function PendingPage() {
             <div className="flex items-start gap-2.5 text-sm">
               <Mail className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div>
-                <div className="font-medium">Need help?</div>
+                <div className="font-medium">{t('auth.needHelp')}</div>
                 <p className="mt-0.5 text-muted-foreground">
-                  Contact your admin at{' '}
+                  {t('auth.contactAdmin')}{' '}
                   <a
                     href={`mailto:${adminEmail}`}
                     className="font-medium text-foreground underline-offset-4 hover:underline"
@@ -178,14 +180,14 @@ export function PendingPage() {
             }}
           >
             <LogOut />
-            Sign out
+            {t('auth.signOut')}
           </Button>
           <Button
             className="flex-1"
             variant="secondary"
             onClick={() => window.location.reload()}
           >
-            Refresh status
+            {t('auth.refreshStatus')}
           </Button>
         </div>
       </div>
