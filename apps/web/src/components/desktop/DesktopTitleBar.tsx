@@ -23,17 +23,27 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
-      {connectionStatus === 'connecting' && (
-        <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
-          <Loader2 className="size-3 animate-spin" />{ui("Connecting…")} </div>
-      )}
-      {connectionStatus === 'offline' && (
-        <button
-          type="button"
-          className="desktop-connection-status fixed right-3 top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onRetry}
+      {connectionStatus && (
+        <div
+          className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground"
+          role="status"
         >
-          <WifiOff className="size-3" />{ui("Offline · Retry")} </button>
+          {connectionStatus === 'connecting' ? (
+            <>
+              <Loader2 className="size-3 animate-spin" />
+              {ui('Connecting…')}
+            </>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 hover:text-foreground"
+              onClick={onRetry}
+            >
+              <WifiOff className="size-3" />
+              {ui('Offline · Retry')}
+            </button>
+          )}
+        </div>
       )}
     </>
   )
