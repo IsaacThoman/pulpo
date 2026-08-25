@@ -633,7 +633,7 @@ const esUi: Record<string, string> = {
   "OCR pipeline": "Procesamiento de OCR",
   "of": "de",
   "of 6 members ·": "de 6 miembros ·",
-  "Offline · Retry": "Sin conexión · Reintentar",
+  "Offline": "Sin conexión",
   "Open for": "Tiempo abierta",
   "Open Pulpo": "Abrir Pulpo",
   "Open sidebar": "Abrir barra lateral",

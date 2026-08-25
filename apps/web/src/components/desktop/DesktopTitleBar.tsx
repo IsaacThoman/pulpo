@@ -11,10 +11,8 @@ type DesktopConnectionStatusValue = 'connecting' | 'offline'
 
 function DesktopStatusIndicator({
   status,
-  onRetry,
 }: {
   status?: DesktopConnectionStatusValue
-  onRetry?: () => void
 }) {
   const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
   const [restarting, setRestarting] = useState(false)
@@ -53,14 +51,10 @@ function DesktopStatusIndicator({
 
   if (status === 'offline') {
     return (
-      <button
-        type="button"
-        className={`${className} rounded-full px-2 py-1 hover:bg-accent hover:text-foreground`}
-        onClick={onRetry}
-      >
+      <div className={className} role="status">
         <WifiOff className="size-3" />
-        {ui("Offline · Retry")}
-      </button>
+        {ui("Offline")}
+      </div>
     )
   }
 
@@ -101,6 +95,12 @@ export function DesktopTitleBarSurface({
   connectionStatus?: DesktopConnectionStatusValue
   onRetry?: () => void
 }) {
+  useEffect(() => {
+    if (connectionStatus !== 'offline' || !onRetry) return
+    const interval = window.setInterval(onRetry, 15_000)
+    return () => window.clearInterval(interval)
+  }, [connectionStatus, onRetry])
+
   return (
     <>
       <div
@@ -108,7 +108,7 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
-      <DesktopStatusIndicator status={connectionStatus} onRetry={onRetry} />
+      <DesktopStatusIndicator status={connectionStatus} />
     </>
   )
 }

@@ -32,6 +32,7 @@ function installDesktopApi(initial: DesktopUpdateState) {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   sessionStorage.clear()
   Reflect.deleteProperty(window, 'pulpoDesktop')
 })
@@ -62,10 +63,32 @@ describe('desktop title bar', () => {
     expect(connecting).toContain('role="status"')
     expect(connecting).toContain('left-[84px]')
     expect(connecting).not.toContain('right-3')
-    expect(offline).toContain('Offline · Retry')
-    expect(offline).toContain('<button')
+    expect(offline).toContain('Offline')
+    expect(offline).toContain('role="status"')
+    expect(offline).not.toContain('<button')
     expect(offline).toContain('left-[84px]')
     expect(offline).not.toContain('right-3')
+  })
+
+  it('retries every 15 seconds while offline', () => {
+    vi.useFakeTimers()
+    const onRetry = vi.fn()
+    const view = render(
+      <DesktopTitleBarSurface temporaryChat={false} connectionStatus="offline" onRetry={onRetry} />,
+    )
+
+    act(() => vi.advanceTimersByTime(14_999))
+    expect(onRetry).not.toHaveBeenCalled()
+    act(() => vi.advanceTimersByTime(1))
+    expect(onRetry).toHaveBeenCalledTimes(1)
+    act(() => vi.advanceTimersByTime(15_000))
+    expect(onRetry).toHaveBeenCalledTimes(2)
+
+    view.rerender(
+      <DesktopTitleBarSurface temporaryChat={false} connectionStatus="connecting" onRetry={onRetry} />,
+    )
+    act(() => vi.advanceTimersByTime(15_000))
+    expect(onRetry).toHaveBeenCalledTimes(2)
   })
 
   it('uses the same status slot when a desktop update is ready', async () => {
@@ -99,7 +122,7 @@ describe('desktop title bar', () => {
     render(<DesktopTitleBarSurface temporaryChat={false} connectionStatus="offline" />)
     await act(async () => undefined)
 
-    expect(screen.getByText('Offline · Retry')).toBeTruthy()
+    expect(screen.getByText('Offline')).toBeTruthy()
     expect(screen.queryByText(/Update to/)).toBeNull()
   })
 
