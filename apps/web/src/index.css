@@ -216,6 +216,33 @@ body {
   animation: fade-in-up 0.25s ease-out both;
 }
 
+@keyframes dictation-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.985) translateY(3px);
+  }
+}
+
+@keyframes dictation-wave {
+  0%, 100% { transform: scaleY(0.24); }
+  50% { transform: scaleY(0.78); }
+}
+
+.animate-dictation-enter {
+  animation: dictation-enter 180ms ease-out both;
+}
+
+.animate-dictation-wave {
+  animation: dictation-wave 900ms ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-dictation-enter,
+  .animate-dictation-wave {
+    animation: none;
+  }
+}
+
 .temporary-label-transition {
   opacity: 0;
   transform: translateY(6px) scale(0.98);

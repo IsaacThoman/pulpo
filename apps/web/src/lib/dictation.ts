@@ -14,6 +14,12 @@ export function dictationFilename(mimeType: string): string {
   return 'dictation.webm'
 }
 
+export function formatDictationTime(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1_000))
+  const minutes = Math.floor(totalSeconds / 60)
+  return `${minutes}:${String(totalSeconds % 60).padStart(2, '0')}`
+}
+
 export function insertDictationText(current: string, transcript: string, start: number, end = start): { value: string; cursor: number } {
   const clean = transcript.trim()
   if (!clean) return { value: current, cursor: Math.max(0, Math.min(start, current.length)) }

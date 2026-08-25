@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dictationFilename, insertDictationText } from './dictation'
+import { dictationFilename, formatDictationTime, insertDictationText } from './dictation'
 
 describe('dictation helpers', () => {
   it('inserts a transcript at the cursor without damaging the draft', () => {
@@ -11,5 +11,11 @@ describe('dictation helpers', () => {
     expect(insertDictationText('hello ', ' world ', 6)).toEqual({ value: 'hello world', cursor: 11 })
     expect(dictationFilename('audio/mp4')).toBe('dictation.m4a')
     expect(dictationFilename('audio/webm;codecs=opus')).toBe('dictation.webm')
+  })
+
+  it('formats elapsed recording time without rounding up', () => {
+    expect(formatDictationTime(0)).toBe('0:00')
+    expect(formatDictationTime(5_999)).toBe('0:05')
+    expect(formatDictationTime(65_200)).toBe('1:05')
   })
 })
