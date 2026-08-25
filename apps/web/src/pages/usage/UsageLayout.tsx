@@ -3,9 +3,9 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/i18n/ui'
 
 const TABS = [
-  { to: '/usage', label: ui("Personal"), end: true },
-  { to: '/usage/friends', label: ui("Friends"), end: false },
-  { to: '/usage/pool', label: ui("Pool"), end: false },
+  { to: '/usage', label: "Personal", end: true },
+  { to: '/usage/friends', label: "Friends", end: false },
+  { to: '/usage/pool', label: "Pool", end: false },
 ]
 
 export function UsageLayout() {
@@ -28,7 +28,7 @@ export function UsageLayout() {
                 )
               }
             >
-              {t.label}
+              {ui(t.label)}
             </NavLink>
           ))}
         </nav>

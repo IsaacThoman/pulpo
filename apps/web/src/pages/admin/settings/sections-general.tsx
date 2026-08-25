@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import {
   Field,
@@ -20,10 +20,10 @@ import { DEFAULT_MAX_ATTACHMENT_BYTES, MAX_CONFIGURABLE_ATTACHMENT_BYTES } from 
 import { ui } from '@/i18n/ui'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
-  { id: '1', label: ui("What can you help me build today?"), message: 'What can you help me build today?' },
-  { id: '2', label: ui("Explain how KV caching speeds up decoding"), message: 'Explain how KV caching speeds up decoding' },
-  { id: '3', label: ui("Draft a terse commit message for a sidebar refactor"), message: 'Draft a terse commit message for a sidebar refactor' },
-  { id: '4', label: ui("Compare mixture-of-experts vs dense models"), message: 'Compare mixture-of-experts vs dense models' },
+  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
+  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
 ]
 
 const DEFAULT_TITLE_PROMPT = `### Task:
@@ -197,7 +197,7 @@ export function InterfaceSection() {
   })
   const s = (k: keyof typeof t, v: (typeof t)[typeof k]) => setT((x) => ({ ...x, [k]: v }))
   const prompts = Array.isArray(t.suggestedPrompts) ? t.suggestedPrompts : DEFAULT_SUGGESTED_PROMPTS
-  const taskModelOptions = useMemo(() => {
+  const taskModelOptions = (() => {
     const options = [
       { value: 'current', label: ui("Current model") },
       ...models.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
@@ -206,7 +206,7 @@ export function InterfaceSection() {
       options.push({ value: t.localTask, label: `Unavailable (${t.localTask})` })
     }
     return options
-  }, [models, t.localTask])
+  })()
   const updatePrompt = (index: number, patch: Partial<(typeof DEFAULT_SUGGESTED_PROMPTS)[number]>) =>
     s('suggestedPrompts', prompts.map((item, i) => (i === index ? { ...item, ...patch } : item)))
 

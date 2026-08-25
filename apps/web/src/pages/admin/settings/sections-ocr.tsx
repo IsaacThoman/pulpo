@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   NumField,
   SaveBar,
@@ -40,7 +40,7 @@ export function OcrSection() {
     })
   }, [])
 
-  const modelOptions = useMemo(() => {
+  const modelOptions = (() => {
     const sorted = [...models].sort((a, b) => {
       const aVision = a.tags.includes('vision') ? 0 : 1
       const bVision = b.tags.includes('vision') ? 0 : 1
@@ -57,7 +57,7 @@ export function OcrSection() {
       options.push({ value: modelId, label: `Unavailable (${modelId})` })
     }
     return options
-  }, [modelId, models])
+  })()
 
   return (
     <div>

@@ -24,15 +24,15 @@ import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
 
 const SECTIONS = [
-  { id: 'general', label: ui("General"), icon: SlidersHorizontal, el: <GeneralSection /> },
-  { id: 'auth', label: ui("Authentication"), icon: Lock, el: <AuthenticationSection /> },
-  { id: 'interface', label: ui("Interface"), icon: LayoutGrid, el: <InterfaceSection /> },
-  { id: 'personalization', label: ui("Personalization"), icon: Sparkles, el: <PersonalizationSection /> },
-  { id: 'ocr', label: ui("OCR"), icon: FileSearch, el: <OcrSection /> },
-  { id: 'dictation', label: ui("Dictation"), icon: Mic, el: <DictationSection /> },
-  { id: 'agent', label: ui("Agent"), icon: Bot, el: <AgentSection /> },
-  { id: 'logging', label: ui("Logging"), icon: ScrollText, el: <LoggingSection /> },
-  { id: 'database', label: ui("Database"), icon: Database, el: <DatabaseSection /> },
+  { id: 'general', label: "General", icon: SlidersHorizontal, component: GeneralSection },
+  { id: 'auth', label: "Authentication", icon: Lock, component: AuthenticationSection },
+  { id: 'interface', label: "Interface", icon: LayoutGrid, component: InterfaceSection },
+  { id: 'personalization', label: "Personalization", icon: Sparkles, component: PersonalizationSection },
+  { id: 'ocr', label: "OCR", icon: FileSearch, component: OcrSection },
+  { id: 'dictation', label: "Dictation", icon: Mic, component: DictationSection },
+  { id: 'agent', label: "Agent", icon: Bot, component: AgentSection },
+  { id: 'logging', label: "Logging", icon: ScrollText, component: LoggingSection },
+  { id: 'database', label: "Database", icon: Database, component: DatabaseSection },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id'] | 'invites'
@@ -40,10 +40,11 @@ type SectionId = (typeof SECTIONS)[number]['id'] | 'invites'
 export function AdminSettingsPage() {
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const sections = useMemo(() => billingEnabled
-    ? [...SECTIONS, { id: 'invites' as const, label: ui("Invite Codes"), icon: Ticket, el: <InviteCodesSection /> }]
+    ? [...SECTIONS, { id: 'invites' as const, label: "Invite Codes", icon: Ticket, component: InviteCodesSection }]
     : [...SECTIONS], [billingEnabled])
   const [active, setActive] = useState<SectionId>('general')
   const current = sections.find((s) => s.id === active) ?? sections[0]!
+  const CurrentSection = current.component
 
   return (
     <div className="flex gap-6">
@@ -60,11 +61,11 @@ export function AdminSettingsPage() {
             )}
           >
             <s.icon className="size-4" />
-            {s.label}
+            {ui(s.label)}
           </button>
         ))}
       </nav>
-      <div className="min-w-0 flex-1">{current.el}</div>
+      <div className="min-w-0 flex-1"><CurrentSection /></div>
     </div>
   )
 }

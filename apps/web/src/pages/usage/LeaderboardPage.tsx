@@ -26,17 +26,17 @@ import { ui, uit, activeLocale } from '@/i18n/ui'
 type LBMetric = Metric | 'balance'
 
 const RANGES: { id: TimeRange; label: string }[] = [
-  { id: '24h', label: ui("24h") },
-  { id: '7d', label: ui("7d") },
-  { id: '30d', label: ui("30d") },
-  { id: '90d', label: ui("90d") },
-  { id: 'all', label: ui("All") },
+  { id: '24h', label: "24h" },
+  { id: '7d', label: "7d" },
+  { id: '30d', label: "30d" },
+  { id: '90d', label: "90d" },
+  { id: 'all', label: "All" },
 ]
 const METRICS: { id: LBMetric; label: string }[] = [
-  { id: 'cost', label: ui("USD") },
-  { id: 'tokens', label: ui("Tokens") },
-  { id: 'calls', label: ui("Calls") },
-  { id: 'balance', label: ui("Balance") },
+  { id: 'cost', label: "USD" },
+  { id: 'tokens', label: "Tokens" },
+  { id: 'calls', label: "Calls" },
+  { id: 'balance', label: "Balance" },
 ]
 function metricLabel(m: LBMetric): string {
   switch (m) {
@@ -271,9 +271,9 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
             <span className="flex items-center gap-2 text-xs font-medium">
               <Clock className="size-3" /> {ui("Usage overview")} </span>
             <div className="h-4 w-px bg-border" />
-            <ToggleGroup options={METRICS} value={metric} onChange={setMetric} />
+            <ToggleGroup options={METRICS.map((option) => ({ ...option, label: ui(option.label) }))} value={metric} onChange={setMetric} />
           </div>
-          <ToggleGroup options={RANGES} value={range} onChange={setRange} />
+          <ToggleGroup options={RANGES.map((option) => ({ ...option, label: ui(option.label) }))} value={range} onChange={setRange} />
         </div>
         {!loading && !error && <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />}
       </section>

@@ -29,6 +29,41 @@ function templateKey(template: ts.TemplateLiteral): string {
 }
 
 describe('web localization coverage', () => {
+  it('does not cache translated copy at module initialization or in useMemo', () => {
+    const cachedTranslations: string[] = []
+    for (const path of sourceFiles()) {
+      const source = readFileSync(path, 'utf8')
+      const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, path.endsWith('x') ? ts.ScriptKind.TSX : ts.ScriptKind.TS)
+      const hasTranslation = (node: ts.Node) => {
+        let found = false
+        const find = (child: ts.Node) => {
+          if ((ts.isCallExpression(child) && ts.isIdentifier(child.expression) && child.expression.text === 'ui')
+            || (ts.isTaggedTemplateExpression(child) && ts.isIdentifier(child.tag) && child.tag.text === 'uit')) {
+            found = true
+          }
+          ts.forEachChild(child, find)
+        }
+        find(node)
+        return found
+      }
+      const visit = (node: ts.Node, functionDepth = 0) => {
+        const line = file.getLineAndCharacterOfPosition(node.getStart()).line + 1
+        if (functionDepth === 0 && ((ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'ui')
+          || (ts.isTaggedTemplateExpression(node) && ts.isIdentifier(node.tag) && node.tag.text === 'uit'))) {
+          cachedTranslations.push(`${path}:${line} module initialization`)
+        }
+        if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'useMemo'
+          && node.arguments[0] && hasTranslation(node.arguments[0])) {
+          cachedTranslations.push(`${path}:${line} useMemo`)
+        }
+        const nextDepth = functionDepth + (ts.isFunctionLike(node) ? 1 : 0)
+        ts.forEachChild(node, (child) => visit(child, nextDepth))
+      }
+      visit(file)
+    }
+    expect(cachedTranslations).toEqual([])
+  })
+
   it('has Spanish copy and matching placeholders for every source-keyed translation', () => {
     const keys = new Set<string>()
     for (const path of sourceFiles()) {
