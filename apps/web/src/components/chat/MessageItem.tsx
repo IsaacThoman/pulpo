@@ -1,4 +1,5 @@
 import { memo, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import {
   Brain,
   Check,
@@ -78,10 +79,11 @@ function ActionButton({
 }
 
 function CopyButton({ text }: { text: string }) {
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
   return (
     <ActionButton
-      label="Copy"
+      label={t('common.copy')}
       onClick={() => {
         navigator.clipboard?.writeText(text).catch(() => {})
         setCopied(true)
@@ -102,6 +104,7 @@ function BranchControls({
   branch?: Message['branch']
   disabled?: boolean
 }) {
+  const { t } = useTranslation()
   const activateBranch = useChat((state) => state.activateBranch)
   if (!branch || branch.ids.length < 2) return null
 
@@ -113,7 +116,7 @@ function BranchControls({
   return (
     <div className="flex items-center gap-0.5 text-xs text-muted-foreground">
       <ActionButton
-        label="Previous branch"
+        label={t('chat.previousBranch')}
         onClick={() => activate(branch.index - 1)}
         disabled={disabled || branch.index === 0}
       >
@@ -123,7 +126,7 @@ function BranchControls({
         {branch.index + 1} / {branch.ids.length}
       </span>
       <ActionButton
-        label="Next branch"
+        label={t('chat.nextBranch')}
         onClick={() => activate(branch.index + 1)}
         disabled={disabled || branch.index === branch.ids.length - 1}
       >
@@ -512,6 +515,7 @@ export const MessageItem = memo(function MessageItem({
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
 }) {
+  const { t } = useTranslation()
   const regenerate = useChat((state) => state.regenerate)
   const editAssistantMessage = useChat((state) => state.editAssistantMessage)
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
@@ -611,7 +615,7 @@ export const MessageItem = memo(function MessageItem({
               {!chat.expired && (
                 <>
                   <ActionButton
-                    label={pendingDelivery ? 'Edit pending message' : 'Edit'}
+                    label={pendingDelivery ? t('chat.editPending') : t('chat.edit')}
                     onClick={() => {
                       if (pendingDelivery && message.pendingSubmissionId) {
                         returnSubmissionToComposer(message.pendingSubmissionId)
@@ -624,7 +628,7 @@ export const MessageItem = memo(function MessageItem({
                     <Pencil className="size-3.5" />
                   </ActionButton>
                   {!pendingDelivery && (
-                    <ActionButton label="Delete message" onClick={() => { if (confirm('Delete this user message and every response that follows from it?')) deleteUserMessage(chat.id, message.id) }}>
+                    <ActionButton label={t('chat.deleteMessage')} onClick={() => { if (confirm(t('chat.deleteMessageConfirm'))) deleteUserMessage(chat.id, message.id) }}>
                       <Trash2 className="size-3.5" />
                     </ActionButton>
                   )}
@@ -669,7 +673,7 @@ export const MessageItem = memo(function MessageItem({
               />
               <div className="mt-2 flex justify-end gap-2">
                 <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   size="sm"
@@ -681,7 +685,7 @@ export const MessageItem = memo(function MessageItem({
                     hasAttachments: false,
                   })}
                 >
-                  Save as branch
+                  {t('chat.saveAsBranch')}
                 </Button>
               </div>
             </div>
@@ -771,7 +775,7 @@ export const MessageItem = memo(function MessageItem({
                 {!chat.expired && (
                   <>
                     <ActionButton
-                      label="Edit response"
+                      label={t('chat.editResponse')}
                       onClick={() => {
                         setDraft(message.content)
                         setEditing(true)
@@ -779,7 +783,7 @@ export const MessageItem = memo(function MessageItem({
                     >
                       <Pencil className="size-3.5" />
                     </ActionButton>
-                    <ActionButton label="Regenerate" onClick={() => regenerate(chat.id, message.id, activeModelId)}>
+                    <ActionButton label={t('chat.regenerate')} onClick={() => regenerate(chat.id, message.id, activeModelId)}>
                       <RefreshCw className="size-3.5" />
                     </ActionButton>
                   </>

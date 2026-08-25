@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import type { InstructionPreset } from '@pulpo/contracts'
@@ -61,19 +62,17 @@ import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 
 const SECTION_CONFIG = {
-  general: { label: 'General', icon: SlidersHorizontal },
-  profile: { label: 'Profile', icon: User },
-  security: { label: 'Security', icon: ShieldCheck },
-  personalization: { label: 'Personalization', icon: Sparkles },
-  interface: { label: 'Interface', icon: Monitor },
-  billing: { label: 'Billing', icon: CreditCard },
-  api: { label: 'API keys', icon: KeyRound },
-  data: { label: 'Data controls', icon: Database },
-  trash: { label: 'Trash', icon: Trash2 },
-  about: { label: 'About', icon: Info },
-} as const satisfies Record<SettingsSectionId, { label: string; icon: typeof User }>
-
-const SECTIONS = SETTINGS_SECTION_IDS.map((id) => ({ id, ...SECTION_CONFIG[id] }))
+  general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
+  profile: { labelKey: 'settings.sections.profile', icon: User },
+  security: { labelKey: 'settings.sections.security', icon: ShieldCheck },
+  personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
+  interface: { labelKey: 'settings.sections.interface', icon: Monitor },
+  billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
+  api: { labelKey: 'settings.sections.api', icon: KeyRound },
+  data: { labelKey: 'settings.sections.data', icon: Database },
+  trash: { labelKey: 'settings.sections.trash', icon: Trash2 },
+  about: { labelKey: 'settings.sections.about', icon: Info },
+} as const satisfies Record<SettingsSectionId, { labelKey: `settings.sections.${SettingsSectionId}`; icon: typeof User }>
 
 interface Memory {
   id: string
@@ -132,12 +131,13 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 }
 
 function ThemePicker() {
+  const { t } = useTranslation()
   const theme = useSettings((s) => s.theme)
   const setTheme = useSettings((s) => s.setTheme)
   const opts: { id: Theme; icon: React.ReactNode; label: string }[] = [
-    { id: 'light', icon: <Sun className="size-4" />, label: 'Light' },
-    { id: 'dark', icon: <Moon className="size-4" />, label: 'Dark' },
-    { id: 'system', icon: <Monitor className="size-4" />, label: 'System' },
+    { id: 'light', icon: <Sun className="size-4" />, label: t('settings.general.light') },
+    { id: 'dark', icon: <Moon className="size-4" />, label: t('settings.general.dark') },
+    { id: 'system', icon: <Monitor className="size-4" />, label: t('settings.general.system') },
   ]
   return (
     <div className="flex w-full rounded-lg border p-0.5 sm:w-auto">
@@ -167,6 +167,12 @@ export function SettingsModal({
   initialSection?: SettingsSectionId
   onClose: () => void
 }) {
+  const { t } = useTranslation()
+  const sections = SETTINGS_SECTION_IDS.map((id) => ({
+    id,
+    icon: SECTION_CONFIG[id].icon,
+    label: t(SECTION_CONFIG[id].labelKey),
+  }))
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
   const s = useSettings()
   const user = useAuth((a) => a.user)
@@ -378,13 +384,13 @@ export function SettingsModal({
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="flex h-[min(680px,calc(100dvh-2rem))] max-h-[calc(100dvh-2rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:h-[600px] sm:max-h-[85vh] sm:max-w-[calc(100%-2rem)] lg:max-w-3xl">
-        <DialogTitle className="sr-only">Settings</DialogTitle>
+        <DialogTitle className="sr-only">{t('settings.title')}</DialogTitle>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sm:flex-row">
           {/* nav */}
           <div className="flex w-full shrink-0 flex-col border-b bg-muted/30 p-2 sm:w-52 sm:border-r sm:border-b-0 sm:p-3">
-            <div className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">Settings</div>
+            <div className="px-2 pb-1.5 pr-8 text-sm font-semibold sm:pb-2 sm:pr-2">{t('settings.title')}</div>
             <div className="settings-section-nav flex gap-1 overflow-x-auto pb-0.5 sm:block sm:space-y-0.5 sm:overflow-visible sm:pb-0">
-              {SECTIONS.filter((sec) => (
+              {sections.filter((sec) => (
                 (sec.id !== 'api' || useAuth.getState().apiKeysEnabled)
                 && (sec.id !== 'billing' || billingEnabled)
               )).map((sec) => (
@@ -509,12 +515,12 @@ export function SettingsModal({
 
               {section === 'general' && (
                 <div>
-                  <h2 className="text-base font-semibold">General</h2>
+                  <h2 className="text-base font-semibold">{t('settings.general.title')}</h2>
                   <Separator className="my-3" />
-                  <Row label="Theme" hint="Applies across the whole app.">
+                  <Row label={t('settings.general.theme')} hint={t('settings.general.themeHint')}>
                     <ThemePicker />
                   </Row>
-                  <Row label="Language">
+                  <Row label={t('settings.general.language')}>
                     <Select value={s.language} onValueChange={(value) => s.set('language', normalizeLanguage(value))}>
                       <SelectTrigger className="w-40">
                         <SelectValue />
