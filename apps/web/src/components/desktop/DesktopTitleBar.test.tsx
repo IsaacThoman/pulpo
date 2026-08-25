@@ -82,6 +82,18 @@ describe('desktop title bar', () => {
     expect(desktop.restartAndInstall).toHaveBeenCalledTimes(1)
   })
 
+  it('shows download activity in the unified status slot', async () => {
+    const desktop = installDesktopApi({ status: 'idle' })
+    render(<DesktopTitleBarSurface temporaryChat={false} />)
+
+    await act(async () => desktop.emit({ status: 'downloading' }))
+
+    const downloading = screen.getByRole('status')
+    expect(downloading.textContent).toBe('Downloading update…')
+    expect(downloading.className).toContain('left-[84px]')
+    expect(downloading.innerHTML).toContain('animate-spin')
+  })
+
   it('gives connection state priority over a ready update', async () => {
     installDesktopApi({ status: 'ready', version: '1.2.3' })
     render(<DesktopTitleBarSurface temporaryChat={false} connectionStatus="offline" />)

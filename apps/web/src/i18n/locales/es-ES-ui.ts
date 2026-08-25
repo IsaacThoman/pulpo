@@ -315,6 +315,7 @@ const esUi: Record<string, string> = {
   "Download": "Descargar",
   "Download {{0}}": "Descargar {{0}}",
   "Downloaded attachment cache": "Caché de archivos adjuntos descargados",
+  "Downloading update…": "Descargando actualización...",
   "Draft a terse commit message for a sidebar refactor": "Redacta un mensaje de commit breve para refactorizar una barra lateral",
   "Drag to reposition, then adjust the zoom.": "Arrastre para cambiar la posición y, a continuación, ajuste el zoom.",
   "e.g. Be terse. Prefer code over prose. Never apologize.": "por ejemplo, Sea conciso. Prefiere el código a la prosa. Nunca te disculpes.",

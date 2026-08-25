@@ -16,7 +16,7 @@ function DesktopStatusIndicator({
   status?: DesktopConnectionStatusValue
   onRetry?: () => void
 }) {
-  const [readyUpdate, setReadyUpdate] = useState<Extract<DesktopUpdateState, { status: 'ready' }> | null>(null)
+  const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
   const [restarting, setRestarting] = useState(false)
 
   useEffect(() => {
@@ -25,7 +25,7 @@ function DesktopStatusIndicator({
     let active = true
     let receivedEvent = false
     const applyState = (state: DesktopUpdateState) => {
-      if (active) setReadyUpdate(state.status === 'ready' ? state : null)
+      if (active) setUpdateState(state)
     }
     const unsubscribe = updates.onStateChanged((state) => {
       receivedEvent = true
@@ -64,11 +64,20 @@ function DesktopStatusIndicator({
     )
   }
 
-  if (!readyUpdate) return null
+  if (updateState.status === 'downloading') {
+    return (
+      <div className={className} role="status">
+        <Loader2 className="size-3 animate-spin" />
+        {ui("Downloading update…")}
+      </div>
+    )
+  }
+
+  if (updateState.status !== 'ready') return null
   return (
     <button
       type="button"
-      title={uit`Restart to install Pulpo v${readyUpdate.version}`}
+      title={uit`Restart to install Pulpo v${updateState.version}`}
       className={`${className} font-medium text-primary underline underline-offset-2 hover:text-primary/80 disabled:opacity-60`}
       disabled={restarting}
       onClick={() => {
@@ -78,7 +87,7 @@ function DesktopStatusIndicator({
         void restartAndInstall().catch(() => setRestarting(false))
       }}
     >
-      {restarting ? ui("Restarting…") : uit`Update to v${readyUpdate.version}`}
+      {restarting ? ui("Restarting…") : uit`Update to v${updateState.version}`}
     </button>
   )
 }
