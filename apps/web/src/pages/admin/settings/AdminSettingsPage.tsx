@@ -21,17 +21,18 @@ import { InviteCodesSection } from './sections-invites'
 import { DictationSection } from './sections-dictation'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 const SECTIONS = [
-  { id: 'general', label: 'General', icon: SlidersHorizontal, el: <GeneralSection /> },
-  { id: 'auth', label: 'Authentication', icon: Lock, el: <AuthenticationSection /> },
-  { id: 'interface', label: 'Interface', icon: LayoutGrid, el: <InterfaceSection /> },
-  { id: 'personalization', label: 'Personalization', icon: Sparkles, el: <PersonalizationSection /> },
-  { id: 'ocr', label: 'OCR', icon: FileSearch, el: <OcrSection /> },
-  { id: 'dictation', label: 'Dictation', icon: Mic, el: <DictationSection /> },
-  { id: 'agent', label: 'Agent', icon: Bot, el: <AgentSection /> },
-  { id: 'logging', label: 'Logging', icon: ScrollText, el: <LoggingSection /> },
-  { id: 'database', label: 'Database', icon: Database, el: <DatabaseSection /> },
+  { id: 'general', label: ui("General"), icon: SlidersHorizontal, el: <GeneralSection /> },
+  { id: 'auth', label: ui("Authentication"), icon: Lock, el: <AuthenticationSection /> },
+  { id: 'interface', label: ui("Interface"), icon: LayoutGrid, el: <InterfaceSection /> },
+  { id: 'personalization', label: ui("Personalization"), icon: Sparkles, el: <PersonalizationSection /> },
+  { id: 'ocr', label: ui("OCR"), icon: FileSearch, el: <OcrSection /> },
+  { id: 'dictation', label: ui("Dictation"), icon: Mic, el: <DictationSection /> },
+  { id: 'agent', label: ui("Agent"), icon: Bot, el: <AgentSection /> },
+  { id: 'logging', label: ui("Logging"), icon: ScrollText, el: <LoggingSection /> },
+  { id: 'database', label: ui("Database"), icon: Database, el: <DatabaseSection /> },
 ] as const
 
 type SectionId = (typeof SECTIONS)[number]['id'] | 'invites'
@@ -39,7 +40,7 @@ type SectionId = (typeof SECTIONS)[number]['id'] | 'invites'
 export function AdminSettingsPage() {
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const sections = useMemo(() => billingEnabled
-    ? [...SECTIONS, { id: 'invites' as const, label: 'Invite Codes', icon: Ticket, el: <InviteCodesSection /> }]
+    ? [...SECTIONS, { id: 'invites' as const, label: ui("Invite Codes"), icon: Ticket, el: <InviteCodesSection /> }]
     : [...SECTIONS], [billingEnabled])
   const [active, setActive] = useState<SectionId>('general')
   const current = sections.find((s) => s.id === active) ?? sections[0]!

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
 import { useChat } from '@/stores/chat'
@@ -19,15 +20,21 @@ import type { Message } from '@/lib/types'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { ui, uit } from '@/i18n/ui'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
-  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
-  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
-  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
-  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
-]
+  { id: '1', translationKey: 'chat.suggestedPrompts.build' },
+  { id: '2', translationKey: 'chat.suggestedPrompts.cache' },
+  { id: '3', translationKey: 'chat.suggestedPrompts.commit' },
+  { id: '4', translationKey: 'chat.suggestedPrompts.models' },
+] as const
 
-type SuggestedPrompt = { id: string; label: string; message: string }
+type SuggestedPrompt = {
+  id: string
+  label?: string
+  message?: string
+  translationKey?: (typeof DEFAULT_SUGGESTED_PROMPTS)[number]['translationKey']
+}
 
 function pickSuggestedPrompts(items: SuggestedPrompt[], count: number): SuggestedPrompt[] {
   if (count <= 0 || items.length === 0) return []
@@ -55,6 +62,7 @@ function Placeholder({
   onPick: (message: string) => void
   showTemporaryLabel?: boolean
 }) {
+  const { t } = useTranslation()
   const model = getCatalogModel(modelId)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
@@ -65,7 +73,7 @@ function Placeholder({
           className="temporary-label-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-violet-700 dark:text-violet-300"
         >
           <Ghost className="size-3.5" />
-          Temporary
+          {t('chat.temporary')}
         </div>
         <ModelIcon model={model} className="size-12" boxed={false} />
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
@@ -73,14 +81,14 @@ function Placeholder({
       <p className="mt-1.5 text-sm text-muted-foreground">
         {model.provider === model.inferenceProvider
           ? model.provider
-          : `${model.provider} · ${model.inferenceProvider}`}
+          : uit`${model.provider} · ${model.inferenceProvider}`}
       </p>
       {suggestions.length > 0 && (
         <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
           {suggestions.map((s, i) => (
             <button
               key={`${s.id}-${i}`}
-              onClick={() => onPick(s.message)}
+              onClick={() => onPick(s.message ?? '')}
               className={cn(
                 'cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent',
                 showTemporaryLabel && 'border-dashed !border-violet-500/50 bg-violet-100/80 hover:bg-violet-200/80 dark:!border-violet-600/30 dark:bg-violet-950/30 dark:hover:bg-violet-900/40',
@@ -96,6 +104,7 @@ function Placeholder({
 }
 
 export function ChatPage() {
+  const { t } = useTranslation()
   const { chatId: routeChatId } = useParams()
   const [params] = useSearchParams()
   const location = useLocation()
@@ -122,7 +131,7 @@ export function ChatPage() {
   const [promptConfig, setPromptConfig] = useState<{ enabled: boolean; count: number; prompts: SuggestedPrompt[] }>({
     enabled: true,
     count: 4,
-    prompts: DEFAULT_SUGGESTED_PROMPTS,
+    prompts: [...DEFAULT_SUGGESTED_PROMPTS],
   })
 
   const chatModelId = chat?.modelId
@@ -228,10 +237,14 @@ export function ChatPage() {
   const isEmpty = !chat
   const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
   const suggestions = useMemo(
-    () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : []),
+    () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
+      if (!prompt.translationKey) return prompt
+      const value = t(prompt.translationKey)
+      return { ...prompt, label: value, message: value }
+    }), promptConfig.count) : []),
     // Re-roll when opening a new empty chat
     // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
-    [chatId, isEmpty, promptConfig],
+    [chatId, isEmpty, promptConfig, t],
   )
 
   const sendSuggestion = (s: string) => {
@@ -255,7 +268,7 @@ export function ChatPage() {
       navigate(`/c/${chat.id}`)
     } catch (error) {
       if (temporaryViewVersionRef.current !== viewVersion) return
-      setTemporaryError(error instanceof Error ? error.message : 'Unable to save this chat')
+      setTemporaryError(error instanceof Error ? error.message : t('chat.temporarySaveError'))
     } finally {
       setSavingTemporary(false)
     }
@@ -295,7 +308,7 @@ export function ChatPage() {
   const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
 
   if (legacyTemporaryRoute) {
-    return <div className="grid h-full place-items-center text-sm text-muted-foreground">Opening a new chat…</div>
+    return <div className="grid h-full place-items-center text-sm text-muted-foreground">{t('chat.openingNewChat')}</div>
   }
 
   return (
@@ -313,8 +326,8 @@ export function ChatPage() {
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                 aria-label={expirationEnabled
-                  ? 'Disable chat expiry'
-                  : expirationPeriodLabel ? `Expire chat in ${expirationPeriodLabel}` : 'Enable chat expiry'}
+                  ? t('chat.disableChatExpiry')
+                  : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
                 aria-pressed={expirationEnabled}
                 onClick={toggleExpiration}
               >
@@ -324,9 +337,9 @@ export function ChatPage() {
             <TooltipContent>
               {expirationEnabled
                 ? chat?.expiresAt
-                  ? <>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></>
-                  : expirationPeriodLabel ? `Disable ${expirationPeriodLabel} expiry` : 'Disable chat expiry'
-                : expirationPeriodLabel ? `Expire chat in ${expirationPeriodLabel}` : 'Enable chat expiry'}
+                  ? <>{t('chat.disableExpiry')} <ExpiryCountdown expiresAt={chat.expiresAt} /></>
+                  : t('chat.disableChatExpiry')
+                : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
             </TooltipContent>
           </Tooltip>
         )}
@@ -336,7 +349,7 @@ export function ChatPage() {
               <TooltipTrigger asChild>
                 <button
                   className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label="Save chat"
+                  aria-label={t('chat.saveChat')}
                   onClick={() => void handleTemporaryControl()}
                   disabled={savingTemporary || Boolean(chat.expired)}
                 >
@@ -345,19 +358,19 @@ export function ChatPage() {
                     : <Save className="size-4 text-primary" />}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>{chat.expired ? 'Temporary chat expired' : 'Save chat'}</TooltipContent>
+              <TooltipContent>{chat.expired ? t('chat.temporaryExpired') : t('chat.saveChat')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
                   className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                  aria-label="New temporary chat"
+                  aria-label={t('chat.newTemporaryChat')}
                   onClick={() => startNewChat(true)}
                 >
                   <SquarePen className="size-4 text-primary" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>New temporary chat</TooltipContent>
+              <TooltipContent>{t('chat.newTemporaryChat')}</TooltipContent>
             </Tooltip>
           </div>
         ) : (
@@ -365,14 +378,14 @@ export function ChatPage() {
             <TooltipTrigger asChild>
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label={temporaryMode ? 'Disable temporary chat' : 'Enable temporary chat'}
+                aria-label={temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}
                 onClick={() => void handleTemporaryControl()}
                 data-active={temporaryMode}
               >
                 <Ghost className={cn('size-4', temporaryMode && 'text-primary')} />
               </button>
             </TooltipTrigger>
-            <TooltipContent>{temporaryMode ? 'Disable temporary chat' : 'Enable temporary chat'}</TooltipContent>
+            <TooltipContent>{temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}</TooltipContent>
           </Tooltip>
         ))}
         {chat && !chat.temporary && (
@@ -380,13 +393,13 @@ export function ChatPage() {
             <TooltipTrigger asChild>
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-                aria-label="New chat"
+                aria-label={t('chat.newChat')}
                 onClick={() => startNewChat()}
               >
                 <SquarePen className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent>New chat</TooltipContent>
+            <TooltipContent>{t('chat.newChat')}</TooltipContent>
           </Tooltip>
         )}
       </header>
@@ -448,9 +461,7 @@ export function ChatPage() {
             )}
           >
             {chat.expired ? (
-              <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.
-              </div>
+              <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
                 chatId={chat.id}

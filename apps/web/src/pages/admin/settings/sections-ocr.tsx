@@ -10,6 +10,7 @@ import {
 import { apiRequest } from '@/lib/api'
 import { DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
 import { modelOptionLabel, useAvailableModels } from './use-available-models'
+import { ui } from '@/i18n/ui'
 
 const UNCONFIGURED = '__unconfigured__'
 
@@ -46,7 +47,7 @@ export function OcrSection() {
       return aVision - bVision
     })
     const options = [
-      { value: UNCONFIGURED, label: 'Select a model' },
+      { value: UNCONFIGURED, label: ui("Select a model") },
       ...sorted.map((model) => ({
         value: model.id,
         label: `${model.tags.includes('vision') ? 'Vision · ' : ''}${modelOptionLabel(model)}`,
@@ -60,19 +61,19 @@ export function OcrSection() {
 
   return (
     <div>
-      <Section title="OCR pipeline" hint="Configure a catalog model used to process images before they reach chat models.">
-        <Toggle label="Enable OCR pipeline" checked={enabled} onChange={setEnabled} />
+      <Section title={ui("OCR pipeline")} hint="Configure a catalog model used to process images before they reach chat models.">
+        <Toggle label={ui("Enable OCR pipeline")} checked={enabled} onChange={setEnabled} />
         <Toggle
-          label="Cache results"
+          label={ui("Cache results")}
           hint="Reuse OCR output for identical images within the TTL window."
           checked={cacheEnabled}
           onChange={setCacheEnabled}
         />
       </Section>
 
-      <Section title="Model" hint="Vision-tagged models are listed first, but any available model can be selected.">
+      <Section title={ui("Model")} hint="Vision-tagged models are listed first, but any available model can be selected.">
         <SelectField
-          label="OCR model"
+          label={ui("OCR model")}
           hint={enabled && !modelId ? 'A model is required while OCR is enabled.' : undefined}
           value={modelId ?? UNCONFIGURED}
           onChange={(value) => setModelId(value === UNCONFIGURED ? null : value)}
@@ -80,9 +81,9 @@ export function OcrSection() {
         />
       </Section>
 
-      <Section title="Prompt">
+      <Section title={ui("Prompt")}>
         <TextAreaField
-          label="System prompt"
+          label={ui("System prompt")}
           hint="Instructions for how the vision model should turn images into text."
           value={systemPrompt}
           onChange={setSystemPrompt}
@@ -90,9 +91,9 @@ export function OcrSection() {
         />
       </Section>
 
-      <Section title="Cache">
+      <Section title={ui("Cache")}>
         <NumField
-          label="Cache TTL"
+          label={ui("Cache TTL")}
           hint="How long OCR results are retained."
           value={cacheTtl}
           onChange={setCacheTtl}
@@ -101,7 +102,7 @@ export function OcrSection() {
       </Section>
 
       <SaveBar onSave={async () => {
-        if (enabled && !modelId) throw new Error('Select an OCR model before enabling OCR')
+        if (enabled && !modelId) throw new Error(ui("Select an OCR model before enabling OCR"))
         await apiRequest('/api/admin/settings/ocr', {
           method: 'PATCH',
           body: { enabled, cacheEnabled, cacheTtlSeconds: cacheTtl, modelId, systemPrompt },

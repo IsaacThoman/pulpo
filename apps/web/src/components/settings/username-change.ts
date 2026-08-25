@@ -1,6 +1,7 @@
 import { usernameSchema } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import type { AuthUser } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 export function normalizeUsername(value: string): string {
   return value.trim().replace(/^@/, '').toLowerCase()
@@ -10,7 +11,7 @@ export function usernameChangeValidationError(value: string, currentUsername: st
   const username = normalizeUsername(value)
   const parsed = usernameSchema.safeParse(username)
   if (!parsed.success) return parsed.error.issues[0]?.message ?? 'Enter a valid username.'
-  if (username === currentUsername) return 'Enter a different username.'
+  if (username === currentUsername) return ui("Enter a different username.")
   return null
 }
 

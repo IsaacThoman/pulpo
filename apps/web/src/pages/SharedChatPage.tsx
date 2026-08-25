@@ -5,6 +5,7 @@ import { apiRequest } from '@/lib/api'
 import { AiLogo } from '@/components/ProviderLogo'
 import { Markdown } from '@/components/chat/Markdown'
 import { timeAgo } from '@/lib/format'
+import { ui } from '@/i18n/ui'
 
 interface SharedModel {
   id: string
@@ -87,9 +88,7 @@ export function SharedChatView({ share }: { share: SharedChat }) {
             <span className="hidden sm:inline">Pulpo</span>
           </Link>
           <div className="flex-1" />
-          <Link className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:block" to="/">
-            Open Pulpo
-          </Link>
+          <Link className="hidden shrink-0 text-sm text-muted-foreground hover:text-foreground sm:block" to="/"> {ui("Open Pulpo")} </Link>
         </div>
       </header>
 
@@ -97,13 +96,11 @@ export function SharedChatView({ share }: { share: SharedChat }) {
         <h1 className="text-2xl font-semibold tracking-tight">{share.chat.title}</h1>
         {share.responses.map((response) => <SharedResponseView key={response.id} response={response} />)}
         {share.responses.length === 0 && (
-          <div className="grid flex-1 place-items-center py-24 text-sm text-muted-foreground">This shared chat has no messages.</div>
+          <div className="grid flex-1 place-items-center py-24 text-sm text-muted-foreground">{ui("This shared chat has no messages.")}</div>
         )}
       </section>
 
-      <footer className="border-t bg-muted/20 px-4 py-4 text-center text-xs text-muted-foreground">
-        Public, read-only chat shared from Pulpo. Reasoning is not included.
-      </footer>
+      <footer className="border-t bg-muted/20 px-4 py-4 text-center text-xs text-muted-foreground"> {ui("Public, read-only chat shared from Pulpo. Reasoning is not included.")} </footer>
     </>
   )
 }
@@ -129,16 +126,16 @@ export function SharedChatPage() {
     <main className="flex min-h-dvh flex-col bg-background text-foreground">
       {!share && !error && (
         <div role="status" className="grid flex-1 place-items-center px-6 py-16 text-sm text-muted-foreground">
-          <span className="flex items-center gap-2"><Loader2 className="size-4 animate-spin" /> Loading shared chat…</span>
+          <span className="flex items-center gap-2"><Loader2 className="size-4 animate-spin" /> {ui("Loading shared chat…")}</span>
         </div>
       )}
       {error && (
         <div className="grid flex-1 place-items-center px-6 py-16 text-center">
           <div className="max-w-sm">
             <span className="mx-auto flex size-11 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"><AlertCircle className="size-5" /></span>
-            <h1 className="mt-4 text-lg font-semibold">Shared chat unavailable</h1>
+            <h1 className="mt-4 text-lg font-semibold">{ui("Shared chat unavailable")}</h1>
             <p className="mt-1 text-sm leading-6 text-muted-foreground">{error}</p>
-            <Link to="/" className="mt-5 inline-block text-sm font-medium text-primary hover:underline">Open Pulpo</Link>
+            <Link to="/" className="mt-5 inline-block text-sm font-medium text-primary hover:underline">{ui("Open Pulpo")}</Link>
           </div>
         </div>
       )}

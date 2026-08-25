@@ -1,16 +1,17 @@
 import { Info } from 'lucide-react'
 import { formatUsd } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { activeLocale, ui } from '@/i18n/ui'
 
 /** Flat divide-x stat strip: calls, tokens, spend, avg/call, estimated water — no cards. */
 export function StatsRow({ calls, tokens, cost }: { calls: number; tokens: number; cost: number }) {
   const stats = [
-    { label: 'Calls', value: calls.toLocaleString() },
-    { label: 'Tokens', value: tokens.toLocaleString() },
-    { label: 'Spend', value: formatUsd(cost) },
-    { label: 'Avg per call', value: formatUsd(calls > 0 ? cost / calls : 0) },
+    { label: ui("Calls"), value: calls.toLocaleString(activeLocale()) },
+    { label: ui("Tokens"), value: tokens.toLocaleString(activeLocale()) },
+    { label: ui("Spend"), value: formatUsd(cost) },
+    { label: ui("Avg per call"), value: formatUsd(calls > 0 ? cost / calls : 0) },
     {
-      label: 'Estimated water',
+      label: ui("Estimated water"),
       value: `${(cost / 23.04).toFixed(4)} Gal`,
       info: 'A rough spend-based estimate for comparison only. Actual water use varies by model, datacenter, workload, and energy mix.',
     },

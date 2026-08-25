@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { ArrowLeft, KeyRound, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,7 @@ import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 
 export function LoginOptionsPage() {
+  const { t } = useTranslation()
   const user = useAuth((state) => state.user)
   const passkeyLogin = useAuth((state) => state.passkeyLogin)
   const setupRequired = useAuth((state) => state.setupRequired)
@@ -35,21 +37,21 @@ export function LoginOptionsPage() {
   return (
     <div className="rounded-xl border bg-card p-6 shadow-xs sm:p-8">
       <div className="mb-6">
-        <h1 className="text-lg font-semibold">More login options</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Choose another way to sign in to your Pulpo account.</p>
+        <h1 className="text-lg font-semibold">{t('auth.moreLoginOptions')}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t('auth.chooseLogin')}</p>
       </div>
 
       <div className="space-y-3">
         <Button type="button" variant="outline" className="w-full" disabled={!passkeySupported || loading} onClick={() => void submitPasskey()}>
           {loading ? <Loader2 className="animate-spin" /> : <KeyRound />}
-          Sign in with a passkey
+          {t('auth.signInPasskey')}
         </Button>
 
-        {!passkeySupported && <p className="text-center text-xs text-muted-foreground">Passkeys are not supported by this browser.</p>}
+        {!passkeySupported && <p className="text-center text-xs text-muted-foreground">{t('auth.passkeysUnsupported')}</p>}
         {error && <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>}
 
         <Button asChild type="button" variant="ghost" className="w-full">
-          <Link to="/login"><ArrowLeft /> Back</Link>
+          <Link to="/login"><ArrowLeft /> {t('common.back')}</Link>
         </Button>
       </div>
     </div>

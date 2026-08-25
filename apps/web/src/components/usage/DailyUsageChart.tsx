@@ -5,6 +5,7 @@ import { getCatalogModel } from '@/stores/catalog'
 import { formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'
 import { ContributionGraph } from './ContributionGraph'
+import { ui, activeLocale } from '@/i18n/ui'
 
 // Series colors by usage rank (OpenWebUI-Monitor palette)
 const CHART_COLORS = [
@@ -33,14 +34,14 @@ function valueOf(m: { calls: number; tokens: number; cost: number }, metric: Met
 
 function formatValue(v: number, metric: Metric): string {
   if (metric === 'cost') return formatUsd(v)
-  if (metric === 'tokens') return `${Math.round(v).toLocaleString()} Tokens`
-  return `${Math.round(v).toLocaleString()} calls`
+  if (metric === 'tokens') return `${Math.round(v).toLocaleString(activeLocale())} Tokens`
+  return `${Math.round(v).toLocaleString(activeLocale())} calls`
 }
 
 /** per-day averages keep one decimal for small call counts ("0.3 calls") */
 function formatAvg(v: number, metric: Metric): string {
   if (metric !== 'calls') return formatValue(v, metric)
-  return `${v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString()} calls`
+  return `${v < 10 ? v.toFixed(1) : Math.round(v).toLocaleString(activeLocale())} calls`
 }
 
 /** adaptive axis decimals for small dollar amounts */
@@ -52,7 +53,7 @@ function axisCost(v: number): string {
 }
 
 function formatDay(date: string, withYear = false): string {
-  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
+  return new Date(`${date}T00:00:00`).toLocaleDateString(activeLocale(), {
     month: 'short',
     day: 'numeric',
     ...(withYear ? { year: 'numeric' as const } : {}),
@@ -91,7 +92,7 @@ function ChartTip({
     <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
       <div className="font-medium">{formatDay(String(label), true)}</div>
       <div className="mt-1 border-b pb-1 text-muted-foreground">
-        {metric === 'cost' ? 'USD' : metric === 'tokens' ? 'Tokens' : 'Calls'}:{' '}
+        {metric === 'cost' ? ui("USD") : metric === 'tokens' ? ui("Tokens") : ui("Calls")}:{' '}
         <span className="font-medium text-foreground tabular-nums">{formatValue(total, metric)}</span>
       </div>
       <div className="mt-1.5 space-y-0.5">
@@ -202,9 +203,7 @@ export function DailyUsageChart({
       </div>
 
       {rows.length === 0 ? (
-        <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">
-          No usage in this period
-        </div>
+        <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground"> {ui("No usage in this period")} </div>
       ) : (
         <div className="mt-3 h-[250px]">
           <ResponsiveContainer width="100%" height="100%">
@@ -246,9 +245,9 @@ export function DailyUsageChart({
       {/* per-day averages */}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-0 sm:divide-x">
         {[
-          { label: 'Avg. spend per day', value: formatAvg(averages.cost, 'cost') },
-          { label: 'Avg. tokens per day', value: formatAvg(averages.tokens, 'tokens') },
-          { label: 'Avg. calls per day', value: formatAvg(averages.calls, 'calls') },
+          { label: ui("Avg. spend per day"), value: formatAvg(averages.cost, 'cost') },
+          { label: ui("Avg. tokens per day"), value: formatAvg(averages.tokens, 'tokens') },
+          { label: ui("Avg. calls per day"), value: formatAvg(averages.calls, 'calls') },
         ].map((s) => (
           <div key={s.label} className="sm:px-4 py-3 first:pl-0 last:pr-0">
             <div className="text-xs text-muted-foreground">{s.label}</div>

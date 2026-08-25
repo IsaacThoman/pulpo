@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import { InviteCodesCard } from '@/components/InviteCodesCard'
 import { FriendsTabs } from '@/components/FriendsTabs'
+import { ui, uit } from '@/i18n/ui'
 
 export function FriendsHandle({ username }: { username: string }) {
   const [copied, setCopied] = useState(false)
@@ -29,18 +30,18 @@ export function FriendsHandle({ username }: { username: string }) {
   }
   return (
     <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-      <span>Your handle is</span>
+      <span>{ui("Your handle is")}</span>
       <button
         type="button"
         className="inline-flex cursor-pointer items-center gap-1"
         onClick={() => void copyHandle()}
-        aria-label={`Copy @${username}`}
-        title={copied ? 'Copied' : 'Copy handle'}
+        aria-label={uit`Copy @${username}`}
+        title={copied ? ui("Copied") : ui("Copy handle")}
       >
         <span>@{username}</span>
         {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
       </button>
-      <span className="sr-only" aria-live="polite">{copied ? 'Handle copied' : ''}</span>
+      <span className="sr-only" aria-live="polite">{copied ? ui("Handle copied") : ''}</span>
     </p>
   )
 }
@@ -265,7 +266,7 @@ export function FriendsPage() {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-3xl space-y-5 px-5 py-6">
           <div>
-            <h2 className="text-lg font-medium">Find your friends</h2>
+            <h2 className="text-lg font-medium">{ui("Find your friends")}</h2>
             {user && <FriendsHandle username={user.username} />}
           </div>
           <InviteCodesCard />
@@ -278,21 +279,21 @@ export function FriendsPage() {
               onFocus={() => setSearchDismissed(false)}
               onKeyDown={handleSearchKeyDown}
               className="px-9"
-              placeholder="Name or username"
+              placeholder={ui("Name or username")}
               maxLength={120}
-              aria-label="Search friends"
+              aria-label={ui("Search friends")}
               role="combobox"
               aria-autocomplete="list"
               aria-expanded={searchReady && !searchDismissed}
               aria-controls="friend-search-results"
               aria-activedescendant={activeSearchIndex >= 0 ? `friend-search-result-${activeSearchIndex}` : undefined}
             />
-            {searchState === 'loading' && <LoaderCircle className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-label="Searching" />}
+            {searchState === 'loading' && <LoaderCircle className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted-foreground" aria-label={ui("Searching")} />}
           </div>
-          {searchReady && !searchDismissed && <div id="friend-search-results" role="listbox" aria-label="Friend search results" className="overflow-hidden rounded-xl border">
-            {searchState === 'loading' ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">Searching people…</div>
+          {searchReady && !searchDismissed && <div id="friend-search-results" role="listbox" aria-label={ui("Friend search results")} className="overflow-hidden rounded-xl border">
+            {searchState === 'loading' ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">{ui("Searching people…")}</div>
               : searchState === 'error' ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">{searchError}</div>
-              : searchState === 'success' && !searchResults.length ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">No people found for “{searchInput.trim()}”</div>
+              : searchState === 'success' && !searchResults.length ? <div className="px-4 py-5 text-center text-sm text-muted-foreground">{ui("No people found for “")}{searchInput.trim()}”</div>
                 : searchResults.map((result, index) => <div
                   id={`friend-search-result-${index}`}
                   key={result.profile.id}
@@ -303,56 +304,56 @@ export function FriendsPage() {
                 >
                   <ProfileIdentity profile={result.profile} query={searchQuery} matchedOn={result.matchedOn} />
                   <div className="flex shrink-0 items-center gap-2">
-                    {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? 'Sending…' : 'Add friend'}</Button>}
-                    {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? 'Accepting…' : 'Accept'}</Button>}
-                    {result.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">Request sent</span>}
-                    {result.relationship === 'friends' && <span className="flex items-center gap-1.5 text-sm text-emerald-500"><Check className="size-4" aria-hidden />Already friends</span>}
-                    {result.relationship === 'self' && <span className="text-sm text-muted-foreground">You</span>}
+                    {result.relationship === 'none' && <Button size="sm" disabled={actionIds.has(`request:${result.profile.id}`)} onClick={() => sendSearchRequest(result)}><UserRoundPlus />{actionIds.has(`request:${result.profile.id}`) ? ui("Sending…") : ui("Add friend")}</Button>}
+                    {result.relationship === 'incoming' && <Button size="sm" disabled={actionIds.has(`accept:${result.requestId}`)} onClick={() => acceptSearchRequest(result)}>{actionIds.has(`accept:${result.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>}
+                    {result.relationship === 'outgoing' && <span className="text-sm text-muted-foreground">{ui("Request sent")}</span>}
+                    {result.relationship === 'friends' && <span className="flex items-center gap-1.5 text-sm text-emerald-500"><Check className="size-4" aria-hidden />{ui("Already friends")}</span>}
+                    {result.relationship === 'self' && <span className="text-sm text-muted-foreground">{ui("You")}</span>}
                   </div>
                 </div>)}
           </div>}
           {(actionError || actionMessage) && <p role="status" className={actionError ? 'text-sm text-destructive' : 'text-sm text-muted-foreground'}>{actionError || actionMessage}</p>}
 
-          {listQuery.isLoading ? <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">Loading friends…</div>
-            : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>Try again</Button></div>
+          {listQuery.isLoading ? <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">{ui("Loading friends…")}</div>
+            : listQuery.error ? <div className="rounded-xl border py-12 text-center"><p className="text-sm text-muted-foreground">{listQuery.error.message}</p><Button className="mt-3" size="sm" variant="outline" onClick={() => void listQuery.refetch()}>{ui("Try again")}</Button></div>
               : data && <div className="space-y-5">
-                {data.incoming.length > 0 && <Section title="Friend requests" count={data.incoming.length}>
+                {data.incoming.length > 0 && <Section title={ui("Friend requests")} count={data.incoming.length}>
                   {data.incoming.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Requested ${friendRequestAge(connection.requestedAt)}`} actions={<>
-                    <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? 'Accepting…' : 'Accept'}</Button>
+                    <Button size="sm" disabled={actionIds.has(`accept:${connection.requestId}`)} onClick={() => void act(`accept:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}/accept`, { method: 'POST' }), `${connection.profile.displayName} is now your friend.`)}>{actionIds.has(`accept:${connection.requestId}`) ? ui("Accepting…") : ui("Accept")}</Button>
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => void act(`decline:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request from ${connection.profile.displayName} declined.`)}>Decline request</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void act(`decline:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request from ${connection.profile.displayName} declined.`)}>{ui("Decline request")}</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>Block</DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>{ui("Block")}</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </>} />)}
                 </Section>}
 
-                {data.friends.length > 0 ? <Section title="Friends" count={data.friends.length}>
+                {data.friends.length > 0 ? <Section title={ui("Friends")} count={data.friends.length}>
                   {data.friends.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} actions={<>
                     <DropdownMenu>
-                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                      <DropdownMenuTrigger asChild><Button size="icon-sm" variant="ghost" aria-label={uit`More options for ${connection.profile.displayName}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => { if (confirm(`Remove ${connection.profile.displayName} from your friends?`)) void act(`unfriend:${connection.profile.id}`, () => apiRequest(`/api/friends/${connection.profile.id}`, { method: 'DELETE' }), `${connection.profile.displayName} was removed from your friends.`) }}>Remove friend</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => { if (confirm(`Remove ${connection.profile.displayName} from your friends?`)) void act(`unfriend:${connection.profile.id}`, () => apiRequest(`/api/friends/${connection.profile.id}`, { method: 'DELETE' }), `${connection.profile.displayName} was removed from your friends.`) }}>{ui("Remove friend")}</DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>Block</DropdownMenuItem>
+                        <DropdownMenuItem variant="destructive" onClick={() => block(connection.profile)}>{ui("Block")}</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </>} />)}
                 </Section> : <div className="rounded-xl border px-6 py-10 text-center">
                   <UsersRound className="mx-auto size-6 text-muted-foreground" />
-                  <h2 className="mt-3 text-sm font-medium">Add friends</h2>
-                  <p className="mt-1 text-xs text-muted-foreground">Find someone by their name or Pulpo username.</p>
+                  <h2 className="mt-3 text-sm font-medium">{ui("Add friends")}</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">{ui("Find someone by their name or Pulpo username.")}</p>
                 </div>}
 
-                {data.outgoing.length > 0 && <CollapsibleSection title="Sent requests" count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
-                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? 'Canceling…' : 'Cancel'}</Button>} />)}
+                {data.outgoing.length > 0 && <CollapsibleSection title={ui("Sent requests")} count={data.outgoing.length} open={outgoingOpen} onToggle={() => setOutgoingOpen((value) => !value)}>
+                  {data.outgoing.map((connection) => <ConnectionRow key={connection.requestId} connection={connection} detail={`Sent ${friendRequestAge(connection.requestedAt)}`} actions={<Button size="sm" variant="ghost" disabled={actionIds.has(`cancel:${connection.requestId}`)} onClick={() => void act(`cancel:${connection.requestId}`, () => apiRequest(`/api/friends/requests/${connection.requestId}`, { method: 'DELETE' }), `Request to ${connection.profile.displayName} canceled.`)}>{actionIds.has(`cancel:${connection.requestId}`) ? ui("Canceling…") : ui("Cancel")}</Button>} />)}
                 </CollapsibleSection>}
 
-                {data.blocked.length > 0 && <CollapsibleSection title="Blocked users" count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
-                  {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? 'Unblocking…' : 'Unblock'}</Button></div>)}
+                {data.blocked.length > 0 && <CollapsibleSection title={ui("Blocked users")} count={data.blocked.length} open={blockedOpen} onToggle={() => setBlockedOpen((value) => !value)}>
+                  {data.blocked.map((profile) => <div key={profile.id} className="flex items-center justify-between gap-3 px-4 py-3"><ProfileIdentity profile={profile} /><Button size="sm" variant="outline" disabled={actionIds.has(`unblock:${profile.id}`)} onClick={() => void act(`unblock:${profile.id}`, () => apiRequest(`/api/friends/blocks/${profile.id}`, { method: 'DELETE' }), `${profile.displayName} was unblocked.`)}>{actionIds.has(`unblock:${profile.id}`) ? ui("Unblocking…") : ui("Unblock")}</Button></div>)}
                 </CollapsibleSection>}
               </div>}
         </div>

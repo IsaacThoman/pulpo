@@ -5,10 +5,11 @@ import type { Model } from '@/lib/types'
 import { apiRequest } from '@/lib/api'
 import { findCatalogModel } from '@/lib/catalog-model'
 import type { CatalogIconReference } from '@/lib/catalog-icons'
+import { ui } from '@/i18n/ui'
 
 const EMPTY_MODEL: Model = {
   id: '', name: 'Configure a model', providerGroupId: 'internal', provider: 'OpenAI', inferenceProvider: 'Not configured',
-  labLogo: 'openai', modelLogo: 'openai', description: 'An administrator needs to configure an OpenAI model.',
+  labLogo: 'openai', modelLogo: 'openai', description: ui("An administrator needs to configure an OpenAI model."),
   labCustomIcon: null, modelCustomIcon: null,
   contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
   outputPrice: 0, perMessagePrice: 0, enabled: false, agentEnabled: false, presets: [],
@@ -91,13 +92,13 @@ export function getCatalogModel(id: string): Model {
       modelLogo: 'pulpo',
       labCustomIcon: null,
       modelCustomIcon: null,
-      description: 'The original model was deleted from this Pulpo instance.',
+      description: ui("The original model was deleted from this Pulpo instance."),
     }
   }
   return {
     ...EMPTY_MODEL,
     id,
     name: id,
-    description: 'This model is not available in the current catalog.',
+    description: ui("This model is not available in the current catalog."),
   }
 }

@@ -5,6 +5,7 @@ import { Check, Copy, Plus, Trash2 } from 'lucide-react'
 import { ApiError, apiRequest } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 export function InviteCodesCard() {
   const enabled = useAuth((state) => state.inviteCodesEnabled)
@@ -46,13 +47,11 @@ export function InviteCodesCard() {
     <section className="overflow-hidden rounded-xl border">
       <div className={`flex items-center justify-between px-4 py-3${data.codes.length || error ? ' border-b' : ''}`}>
         <div>
-          <h2 className="text-sm font-medium">Invite codes</h2>
-          <p className="text-xs text-muted-foreground">{remaining} of {data.quota} remaining</p>
+          <h2 className="text-sm font-medium">{ui("Invite codes")}</h2>
+          <p className="text-xs text-muted-foreground">{remaining} {ui("of")} {data.quota} {ui("remaining")}</p>
         </div>
         <Button size="sm" disabled={busy || remaining <= 0} onClick={() => void act(() => apiRequest('/api/invite-codes', { method: 'POST' }))}>
-          <Plus />
-          Generate
-        </Button>
+          <Plus /> {ui("Generate")} </Button>
       </div>
       {error && <p className="px-4 pt-3 text-sm text-destructive">{error}</p>}
       {data.codes.length > 0 && (
@@ -61,10 +60,10 @@ export function InviteCodesCard() {
             <div key={code.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <span className="font-mono text-sm tracking-wider">{code.code}</span>
               <div className="flex items-center gap-1">
-                <Button size="icon-sm" variant="ghost" title={copiedId === code.id ? 'Copied' : 'Copy'} onClick={() => void copy(code.id, code.code)}>
+                <Button size="icon-sm" variant="ghost" title={copiedId === code.id ? ui("Copied") : ui("Copy")} onClick={() => void copy(code.id, code.code)}>
                   {copiedId === code.id ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                 </Button>
-                <Button size="icon-sm" variant="ghost" title="Revoke" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void act(() => apiRequest(`/api/invite-codes/${code.id}`, { method: 'DELETE' }))}>
+                <Button size="icon-sm" variant="ghost" title={ui("Revoke")} className="text-destructive hover:text-destructive" disabled={busy} onClick={() => void act(() => apiRequest(`/api/invite-codes/${code.id}`, { method: 'DELETE' }))}>
                   <Trash2 className="size-3.5" />
                 </Button>
               </div>

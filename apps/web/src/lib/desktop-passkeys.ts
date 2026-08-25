@@ -1,6 +1,7 @@
 import { apiRequest } from './api'
 import { onDesktopProtocolUrl, openExternalUrl, runtimeInstanceUrl } from './runtime'
 import type { NativeAuthResponse } from '@pulpo/contracts'
+import { ui } from '@/i18n/ui'
 
 export class DesktopPasskeyCancelledError extends Error {
   constructor() {
@@ -26,7 +27,7 @@ export function waitForDesktopPasskeyCallback(path: '/passkey' | '/passkey-enrol
   return new Promise((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       unsubscribe()
-      reject(new Error('The passkey request expired.'))
+      reject(new Error(ui("The passkey request expired.")))
     }, 5 * 60_000)
     const unsubscribe = onDesktopProtocolUrl((value) => {
       try {
@@ -56,7 +57,7 @@ export async function authenticateDesktopPasskey(): Promise<NativeAuthResponse> 
   await openExternalUrl(authorization.toString())
   const parameters = await callbackPromise
   const code = parameters.get('code')
-  if (!code || code.length < 32) throw new Error('The passkey authorization code was missing.')
+  if (!code || code.length < 32) throw new Error(ui("The passkey authorization code was missing."))
   return apiRequest<NativeAuthResponse>('/api/mobile/auth/passkey/browser/exchange', {
     method: 'POST', body: { code, codeVerifier: request.verifier, deviceLabel: 'Pulpo for Mac' },
   })
@@ -73,10 +74,10 @@ export async function enrollDesktopPasskey(input: {
   })
   const enrollment = new URL(result.url)
   if (enrollment.origin !== new URL(runtimeInstanceUrl()).origin || enrollment.pathname !== '/mobile/passkey/enroll') {
-    throw new Error('The passkey enrollment URL did not match this instance.')
+    throw new Error(ui("The passkey enrollment URL did not match this instance."))
   }
   const callbackPromise = waitForDesktopPasskeyCallback('/passkey-enrollment', state)
   await openExternalUrl(enrollment.toString())
   const parameters = await callbackPromise
-  if (parameters.get('status') !== 'success') throw new Error('Passkey enrollment was not completed.')
+  if (parameters.get('status') !== 'success') throw new Error(ui("Passkey enrollment was not completed."))
 }

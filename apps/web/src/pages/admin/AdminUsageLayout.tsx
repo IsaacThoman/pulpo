@@ -1,10 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { ui } from '@/i18n/ui'
 
 const TABS = [
-  { to: '/admin/usage', label: 'Leaderboard', end: true },
-  { to: '/admin/usage/requests', label: 'Requests', end: false },
-  { to: '/admin/usage/workspaces', label: 'Workspaces', end: false },
+  { to: '/admin/usage', label: ui("Leaderboard"), end: true },
+  { to: '/admin/usage/requests', label: ui("Requests"), end: false },
+  { to: '/admin/usage/workspaces', label: ui("Workspaces"), end: false },
 ]
 
 export function AdminUsageLayout() {

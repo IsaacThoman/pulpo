@@ -3,6 +3,11 @@ import { persist } from 'zustand/middleware'
 import type { SidebarPins } from '@pulpo/contracts'
 
 export type Theme = 'light' | 'dark' | 'system'
+export const SUPPORTED_LANGUAGES = [
+  { value: 'en-US', label: 'English' },
+  { value: 'es-ES', label: 'Español' },
+] as const
+export type Language = (typeof SUPPORTED_LANGUAGES)[number]['value']
 export type TrashRetention = 'instant' | '24h' | '7d' | '30d' | '90d' | 'indefinite'
 export type AutomaticChatExpiration = 'disabled' | '24h' | '7d'
 
@@ -12,7 +17,7 @@ export type GenerationPrefs = Record<string, string>
 interface SettingsState {
   ownerUserId: string | null
   theme: Theme
-  language: string
+  language: Language
   sendWithEnter: boolean
   streamResponses: boolean
   showReasoning: boolean
@@ -43,7 +48,7 @@ interface SettingsState {
 
 export const DEFAULT_SETTINGS = {
   theme: 'system' as Theme,
-  language: 'en-US',
+  language: 'en-US' as Language,
   sendWithEnter: true,
   streamResponses: true,
   showReasoning: true,
@@ -86,9 +91,25 @@ export const useSettings = create<SettingsState>()(
       setAgentMode: (modelId, enabled) =>
         set((s) => ({ agentModes: { ...s.agentModes, [modelId]: enabled } })),
     }),
-    { name: 'pulpo-settings' }
+    {
+      name: 'pulpo-settings',
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<SettingsState>
+        return {
+          ...current,
+          ...saved,
+          language: normalizeLanguage(saved.language),
+        }
+      },
+    }
   )
 )
+
+export function normalizeLanguage(value: unknown): Language {
+  return SUPPORTED_LANGUAGES.some((language) => language.value === value)
+    ? value as Language
+    : DEFAULT_SETTINGS.language
+}
 
 export function applyTheme(theme: Theme) {
   const root = document.documentElement
@@ -97,9 +118,17 @@ export function applyTheme(theme: Theme) {
   root.classList.toggle('dark', dark)
 }
 
+export function applyLanguage(language: Language) {
+  document.documentElement.lang = language
+}
+
 // Apply on load + react to system changes
 applyTheme(useSettings.getState().theme)
-useSettings.subscribe((s) => applyTheme(s.theme))
+applyLanguage(normalizeLanguage(useSettings.getState().language))
+useSettings.subscribe((state, previous) => {
+  if (state.theme !== previous.theme) applyTheme(state.theme)
+  if (state.language !== previous.language) applyLanguage(normalizeLanguage(state.language))
+})
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (useSettings.getState().theme === 'system') applyTheme('system')
 })

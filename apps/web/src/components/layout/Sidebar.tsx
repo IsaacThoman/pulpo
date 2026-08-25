@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -62,6 +63,7 @@ import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { uit } from '@/i18n/ui'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -219,6 +221,7 @@ function DropLines({
 }
 
 function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
+  const { t } = useTranslation()
   const togglePin = useChat((state) => state.togglePin)
   const setChatAutoExpiration = useChat((state) => state.setChatAutoExpiration)
   const shareChat = useChat((state) => state.shareChat)
@@ -232,28 +235,28 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
     <DropdownMenuContent side="right" align="start" className="w-48">
       <DropdownMenuItem onClick={() => togglePin(chat.id)}>
         {chat.pinned ? <PinOff /> : <Pin />}
-        {chat.pinned ? 'Unpin' : 'Pin'}
+        {chat.pinned ? t('chat.unpin') : t('chat.pin')}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={onRename}>
         <Pencil />
-        Rename
+        {t('common.rename')}
       </DropdownMenuItem>
       {expirationMenuAction && (
         <DropdownMenuItem onClick={() => setChatAutoExpiration(chat.id, expirationMenuAction.kind === 'enable')}>
           <Hourglass className={cn(expirationMenuAction.kind === 'disable' && 'text-teal-500 dark:text-teal-400')} />
           {expirationMenuAction.kind === 'disable' && chat.expiresAt !== null
-            ? <span>Disable expiry in <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
+            ? <span>{t('chat.disableExpiry')} <ExpiryCountdown expiresAt={chat.expiresAt} /></span>
             : expirationMenuAction.kind === 'enable' ? expirationMenuAction.label : null}
         </DropdownMenuItem>
       )}
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <FolderInput />
-          Move to folder
+          {t('chat.moveToFolder')}
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-44">
           <DropdownMenuItem onClick={() => moveToFolder(chat.id, null)}>
-            No folder
+            {t('chat.noFolder')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           {folders.map((f) => (
@@ -268,12 +271,12 @@ function ChatMenu({ chat, onRename }: { chat: Chat; onRename: () => void }) {
         onClick={() => void shareChat(chat.id).then((url) => navigator.clipboard?.writeText(url))}
       >
         <Share2 />
-        Copy share link
+        {t('chat.copyShareLink')}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => deleteChat(chat.id)}>
         <Trash2 />
-        {trashRetention === 'instant' ? 'Delete' : 'Trash'}
+        {trashRetention === 'instant' ? t('common.delete') : t('chat.trash')}
       </DropdownMenuItem>
     </DropdownMenuContent>
   )
@@ -332,6 +335,7 @@ function ChatRow({
   onDragEnd?: () => void
   didDragRef?: { current: boolean }
 }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [renameOpen, setRenameOpen] = useState(false)
   const [title, setTitle] = useState(chat.title)
@@ -380,7 +384,7 @@ function ChatRow({
             e.stopPropagation()
             deleteChat(chat.id)
           }}
-          aria-label={`${trashRetention === 'instant' ? 'Delete' : 'Trash'} chat`}
+          aria-label={uit`${trashRetention === 'instant' ? t('common.delete') : t('chat.trash')} chat`}
         >
           <Trash2 className="size-4" />
         </button>
@@ -396,7 +400,7 @@ function ChatRow({
               'data-[state=open]:visible',
             )}
             onClick={(e) => e.stopPropagation()}
-            aria-label={generating ? 'Generation active; chat options' : 'Chat options'}
+            aria-label={t('sidebar.chatOptions')}
           >
             {generating ? (
               <>
@@ -435,7 +439,7 @@ function ChatRow({
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm" onClick={(e) => e.stopPropagation()}>
           <DialogHeader>
-            <DialogTitle>Rename chat</DialogTitle>
+            <DialogTitle>{t('sidebar.renameChat')}</DialogTitle>
           </DialogHeader>
           <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
           <DialogFooter>
@@ -445,7 +449,7 @@ function ChatRow({
                 setRenameOpen(false)
               }}
             >
-              Save
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -493,6 +497,7 @@ function FolderGroup({
   onChatDrop: (e: DragEvent, list: ChatList, targetId: string) => void
   onFolderChatTarget: (e: DragEvent, folderId: string) => void
 }) {
+  const { t } = useTranslation()
   const toggleFolder = useChat((state) => state.toggleFolder)
   const renameFolder = useChat((state) => state.renameFolder)
   const toggleFolderPin = useChat((state) => state.toggleFolderPin)
@@ -536,7 +541,7 @@ function FolderGroup({
           <DropdownMenuTrigger asChild>
             <button
               className="invisible rounded p-0.5 text-muted-foreground hover:bg-background/60 hover:text-foreground group-hover:visible data-[state=open]:visible"
-              aria-label="Folder options"
+              aria-label={t('sidebar.folderOptions')}
             >
               <MoreHorizontal className="size-4" />
             </button>
@@ -544,16 +549,16 @@ function FolderGroup({
           <DropdownMenuContent side="right" align="start" className="w-48">
             <DropdownMenuItem onClick={() => toggleFolderPin(folder.id)}>
               {folder.pinned ? <PinOff /> : <Pin />}
-              {folder.pinned ? 'Unpin' : 'Pin'}
+              {folder.pinned ? t('chat.unpin') : t('chat.pin')}
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => setRenameOpen(true)}>
               <Pencil />
-              Rename
+              {t('common.rename')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={() => deleteFolder(folder.id)}>
               <Trash2 />
-              Delete
+              {t('common.delete')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -571,7 +576,7 @@ function FolderGroup({
               chatDropHighlight && 'bg-sidebar-accent/80 text-foreground',
             )}
           >
-            {chatDropHighlight ? 'Drop to add' : 'Empty'}
+            {chatDropHighlight ? t('sidebar.dropToAdd') : t('sidebar.empty')}
           </div>
         )}
         {chats.map((chat) => {
@@ -603,7 +608,7 @@ function FolderGroup({
       <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Rename folder</DialogTitle>
+            <DialogTitle>{t('sidebar.renameFolder')}</DialogTitle>
           </DialogHeader>
           <Input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
           <DialogFooter>
@@ -613,7 +618,7 @@ function FolderGroup({
                 setRenameOpen(false)
               }}
             >
-              Save
+              {t('common.save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -641,6 +646,7 @@ export function Sidebar({
   onOpenSearch: () => void
   onOpenSettings: () => void
 }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
@@ -696,6 +702,14 @@ export function Sidebar({
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null)
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
+  const openSidebarLabel = t('sidebar.expand')
+  const groupLabels: Record<(typeof GROUP_ORDER)[number], string> = {
+    Today: t('sidebar.groups.today'),
+    Yesterday: t('sidebar.groups.yesterday'),
+    'Previous 7 Days': t('sidebar.groups.previous7'),
+    'Previous 30 Days': t('sidebar.groups.previous30'),
+    Older: t('sidebar.groups.older'),
+  }
 
   const ensureFolderExpanded = (folderId: string) => {
     const target = useChat.getState().folders.find((folder) => folder.id === folderId)
@@ -912,8 +926,8 @@ export function Sidebar({
         </DropdownMenuItem>
         <button
           type="button"
-          aria-label={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
-          title={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          aria-label={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          title={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
           className="invisible absolute right-1 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground focus-visible:visible focus-visible:ring-1 focus-visible:ring-ring group-hover/account-nav:visible group-focus-within/account-nav:visible"
           onClick={(event) => {
             event.preventDefault()
@@ -929,7 +943,7 @@ export function Sidebar({
 
   return (
     <aside
-      aria-label="Sidebar"
+      aria-label={t('sidebar.sidebar')}
       aria-hidden={mobile && !mobileOpen}
       inert={mobile && !mobileOpen}
       className={cn(
@@ -961,16 +975,16 @@ export function Sidebar({
       {/* header */}
       <div className="flex items-center gap-1 p-2">
         <Tooltip
-          open={collapsed && activeTooltip === 'Open sidebar'}
+          open={collapsed && activeTooltip === openSidebarLabel}
           onOpenChange={(open) => {
-            if (collapsed) setActiveTooltip(open ? 'Open sidebar' : null)
+            if (collapsed) setActiveTooltip(open ? openSidebarLabel : null)
           }}
         >
           <TooltipTrigger asChild>
             <button
               className="group/logo flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
               onClick={collapsed ? onToggle : () => go('/')}
-              aria-label={collapsed ? 'Open sidebar' : 'Home'}
+              aria-label={collapsed ? openSidebarLabel : t('sidebar.home')}
             >
               <img
                 src="/pulpo-smiley.png"
@@ -980,7 +994,7 @@ export function Sidebar({
               {collapsed && <PanelLeftOpen className="hidden size-4 group-hover/logo:block" />}
             </button>
           </TooltipTrigger>
-          {collapsed && <TooltipContent side="right">Open sidebar</TooltipContent>}
+          {collapsed && <TooltipContent side="right">{openSidebarLabel}</TooltipContent>}
         </Tooltip>
         <span
           className={cn(
@@ -996,12 +1010,12 @@ export function Sidebar({
               <button
                 className="flex size-8 cursor-pointer items-center justify-center rounded-lg text-muted-foreground hover:bg-sidebar-accent hover:text-foreground"
                 onClick={onToggle}
-                aria-label="Collapse sidebar"
+                aria-label={t('sidebar.collapse')}
               >
                 <PanelLeftClose className="size-4" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="right">Collapse</TooltipContent>
+            <TooltipContent side="right">{t('sidebar.collapse')}</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -1010,12 +1024,12 @@ export function Sidebar({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
-          {iconBtn('New chat', startNewChat, <SquarePen className="size-4" />)}
-          {iconBtn('Search chats', onOpenSearch, <Search className="size-4" />)}
-          {sidebarPins.usage && iconBtn('Usage', () => go('/usage'), <BarChart3 className="size-4" />)}
-          {billingEnabled && sidebarPins.billing && iconBtn('Billing', () => go('/billing'), <CreditCard className="size-4" />)}
-          {sidebarPins.friends && iconBtn('Friends', () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
-          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn('API keys', () => go('/api-keys'), <KeyRound className="size-4" />)}
+          {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
+          {iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
+          {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
+          {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
+          {apiKeysEnabled && sidebarPins.apiKeys && iconBtn(t('sidebar.apiKeys'), () => go('/api-keys'), <KeyRound className="size-4" />)}
         </div>
 
         {/* Secondary content stays mounted so every section animates on one timeline. */}
@@ -1032,7 +1046,7 @@ export function Sidebar({
             {pinned.length > 0 && (
               <div className="mb-2">
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Pinned
+                  {t('sidebar.pinned')}
                 </div>
                 <div className="space-y-0.5">
                   {pinned.map((c) => {
@@ -1105,7 +1119,7 @@ export function Sidebar({
               className="mt-1 flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-sidebar-accent/70 hover:text-foreground"
               onClick={() => setNewFolderOpen(true)}
             >
-              <Plus className="size-3.5" /> New folder
+              <Plus className="size-3.5" /> {t('sidebar.newFolder')}
             </button>
 
             <div
@@ -1122,7 +1136,7 @@ export function Sidebar({
                 return (
                   <div key={g} className="mt-3">
                     <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                      {g}
+                      {groupLabels[g]}
                     </div>
                     <div className="space-y-0.5">
                       {items.map((c) => {
@@ -1151,7 +1165,7 @@ export function Sidebar({
               })}
               {loose.length === 0 && drag.dragKind === 'chat' && drag.dragList !== 'loose' && drag.dragList !== 'pinned' && (
                 <div className="mt-3 px-2 py-2 text-xs text-muted-foreground">
-                  Drop here to remove from folder
+                  {t('sidebar.dropHere')}
                 </div>
               )}
             </div>
@@ -1176,8 +1190,8 @@ export function Sidebar({
                   sidebarTextTransition
                 )}
               >
-                <div className="truncate text-sm font-medium">{user?.name ?? 'Signed out'}</div>
-                <div className="truncate text-xs text-muted-foreground">{user?.username ? `@${user.username}` : ''}</div>
+                <div className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</div>
+                <div className="truncate text-xs text-muted-foreground">{user?.username ? uit`@${user.username}` : ''}</div>
               </div>
               {!sidebarPins.friends && Boolean(pendingSocialCount) && (
                 <span className={cn(
@@ -1190,22 +1204,22 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
-            {accountNavItem('usage', 'Usage', '/usage', <BarChart3 />)}
-            {accountNavItem('friends', 'Friends', '/friends', <UsersRound />, pendingSocialCount)}
-            {apiKeysEnabled && accountNavItem('apiKeys', 'API keys', '/api-keys', <KeyRound />)}
-            {billingEnabled && accountNavItem('billing', 'Billing', '/billing', <CreditCard />)}
+            {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
+            {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
+            {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}
+            {billingEnabled && accountNavItem('billing', t('sidebar.billing'), '/billing', <CreditCard />)}
             {billingEnabled && billingQuery.data?.onHold && (
-              <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">Billing usage is on hold</div>
+              <div className="px-3 pb-2 pl-8 text-[11px] text-destructive">{t('sidebar.billingOnHold')}</div>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={onOpenSettings}>
               <Settings />
-              Settings
+              {t('sidebar.settings')}
             </DropdownMenuItem>
             {user?.role === 'admin' && (
               <DropdownMenuItem onClick={() => go('/admin')}>
                 <ShieldCheck />
-                Admin panel
+                {t('sidebar.adminPanel')}
               </DropdownMenuItem>
             )}
             <DropdownMenuItem
@@ -1217,7 +1231,7 @@ export function Sidebar({
               }}
             >
               <LogOut />
-              Sign out
+              {t('sidebar.signOut')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -1226,10 +1240,10 @@ export function Sidebar({
       <Dialog open={newFolderOpen} onOpenChange={setNewFolderOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>New folder</DialogTitle>
+            <DialogTitle>{t('sidebar.newFolder')}</DialogTitle>
           </DialogHeader>
           <Input
-            placeholder="Folder name"
+            placeholder={t('sidebar.folderName')}
             value={folderName}
             onChange={(e) => setFolderName(e.target.value)}
             autoFocus
@@ -1242,7 +1256,7 @@ export function Sidebar({
                 setNewFolderOpen(false)
               }}
             >
-              Create
+              {t('common.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
