@@ -44,7 +44,8 @@ describe('DesktopUpdateLink', () => {
     const indicator = screen.getByRole('button', { name: 'Update to v1.2.3' })
     expect(indicator.getAttribute('title')).toBe('Restart to install Pulpo v1.2.3')
     expect(indicator.textContent).toBe('Update')
-    expect(indicator.className).toContain('rounded-full')
+    expect(indicator.innerHTML).toContain('h-3 min-w-3')
+    expect(indicator.innerHTML).toContain('bg-[#0a84ff]')
     expect(indicator.innerHTML).toContain('group-hover:max-w-20')
   })
 
