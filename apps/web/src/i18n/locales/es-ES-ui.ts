@@ -949,6 +949,7 @@ const esUi: Record<string, string> = {
   "Unassigned": "Sin asignar",
   "Unblock": "Desbloquear",
   "Unblocking…": "Desbloqueando...",
+  "Update": "Actualizar",
   "Update password": "Actualizar contraseña",
   "Update the password used to sign in to your account.": "Actualiza la contraseña utilizada para iniciar sesión en tu cuenta.",
   "Update to v{{0}}": "Actualizar a v{{0}}",

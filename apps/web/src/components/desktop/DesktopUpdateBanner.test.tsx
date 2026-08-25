@@ -41,8 +41,11 @@ describe('DesktopUpdateLink', () => {
     render(<DesktopUpdateLink />)
     expect(screen.queryByText(/Update to/)).toBeNull()
     await act(async () => desktop.emit({ status: 'ready', version: '1.2.3' }))
-    expect(screen.getByRole('button', { name: 'Update to v1.2.3' }).getAttribute('title'))
-      .toBe('Restart to install Pulpo v1.2.3')
+    const indicator = screen.getByRole('button', { name: 'Update to v1.2.3' })
+    expect(indicator.getAttribute('title')).toBe('Restart to install Pulpo v1.2.3')
+    expect(indicator.textContent).toBe('Update')
+    expect(indicator.className).toContain('rounded-full')
+    expect(indicator.innerHTML).toContain('group-hover:max-w-20')
   })
 
   it('restarts through the desktop bridge', async () => {
