@@ -8,13 +8,47 @@ import { desktopConnectionStatus } from '@/lib/desktop-startup'
 import { DesktopUpdateLink } from './DesktopUpdateBanner'
 import { ui } from '@/i18n/ui'
 
+type DesktopConnectionStatusValue = 'connecting' | 'offline'
+
+function DesktopConnectionStatus({
+  status,
+  onRetry,
+}: {
+  status?: DesktopConnectionStatusValue
+  onRetry?: () => void
+}) {
+  if (!status) return null
+
+  const className = 'desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground'
+
+  if (status === 'connecting') {
+    return (
+      <div className={className} role="status">
+        <Loader2 className="size-3 animate-spin" />
+        {ui("Connecting…")}
+      </div>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className={`${className} rounded-full px-2 py-1 hover:bg-accent hover:text-foreground`}
+      onClick={onRetry}
+    >
+      <WifiOff className="size-3" />
+      {ui("Offline · Retry")}
+    </button>
+  )
+}
+
 export function DesktopTitleBarSurface({
   temporaryChat,
   connectionStatus,
   onRetry,
 }: {
   temporaryChat: boolean
-  connectionStatus?: 'connecting' | 'offline'
+  connectionStatus?: DesktopConnectionStatusValue
   onRetry?: () => void
 }) {
   return (
@@ -24,19 +58,8 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
-      <DesktopUpdateLink hidden={connectionStatus === 'connecting'} />
-      {connectionStatus === 'connecting' && (
-        <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
-          <Loader2 className="size-3 animate-spin" />{ui("Connecting…")} </div>
-      )}
-      {connectionStatus === 'offline' && (
-        <button
-          type="button"
-          className="desktop-connection-status fixed right-3 top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onRetry}
-        >
-          <WifiOff className="size-3" />{ui("Offline · Retry")} </button>
-      )}
+      <DesktopUpdateLink hidden={Boolean(connectionStatus)} />
+      <DesktopConnectionStatus status={connectionStatus} onRetry={onRetry} />
     </>
   )
 }

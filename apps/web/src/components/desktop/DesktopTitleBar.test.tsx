@@ -30,5 +30,7 @@ describe('desktop title bar', () => {
     expect(connecting).not.toContain('right-3')
     expect(offline).toContain('Offline · Retry')
     expect(offline).toContain('<button')
+    expect(offline).toContain('left-[84px]')
+    expect(offline).not.toContain('right-3')
   })
 })
