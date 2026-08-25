@@ -21,6 +21,7 @@ import {
   type AttachmentPreviewKind,
   type DelimitedPreview,
 } from '@/lib/attachment-previews'
+import { ui, uit } from '@/i18n/ui'
 
 type PreviewContent =
   | { status: 'idle' }
@@ -29,9 +30,9 @@ type PreviewContent =
   | { status: 'error'; message: string }
 
 function previewLabel(kind: AttachmentPreviewKind): string {
-  if (kind === 'pdf') return 'PDF preview'
-  if (kind === 'table') return 'Table preview'
-  if (kind === 'text') return 'Text preview'
+  if (kind === 'pdf') return ui("PDF preview")
+  if (kind === 'table') return ui("Table preview")
+  if (kind === 'text') return ui("Text preview")
   return `${kind[0]!.toUpperCase()}${kind.slice(1)} preview`
 }
 
@@ -71,7 +72,7 @@ function usePreviewContent(
       try {
         let blob: Blob | undefined = sourceFile
         if (!blob) {
-          if (!userId) throw new Error('Sign in to preview this file.')
+          if (!userId) throw new Error(ui("Sign in to preview this file."))
           const cached = await getCachedAttachment(userId, attachment.id)
           if (cancelled) return
           if (cached) {
@@ -82,7 +83,7 @@ function usePreviewContent(
           }
         }
         if (cancelled) return
-        if (!blob) throw new Error('This preview could not be loaded.')
+        if (!blob) throw new Error(ui("This preview could not be loaded."))
         if (blob.size > previewSizeLimit(kind)) {
           throw new Error(`This file is too large to preview (${formatBytes(blob.size)}).`)
         }
@@ -152,8 +153,7 @@ function TextPreview({
           </tbody>
         </table>
         {(truncated || table.truncated) && (
-          <p className="sticky bottom-0 border-t bg-background/95 px-3 py-2 text-xs text-muted-foreground backdrop-blur">
-            Showing the first part of {attachment.name}.
+          <p className="sticky bottom-0 border-t bg-background/95 px-3 py-2 text-xs text-muted-foreground backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
           </p>
         )}
       </div>
@@ -164,8 +164,7 @@ function TextPreview({
     <div className="size-full overflow-auto bg-[#0d1117] text-slate-200" data-preview-kind="text">
       <pre className="min-h-full p-5 font-mono text-xs leading-5 whitespace-pre-wrap break-words">{text}</pre>
       {truncated && (
-        <p className="sticky bottom-0 border-t border-white/10 bg-[#0d1117]/95 px-5 py-2 text-xs text-slate-400 backdrop-blur">
-          Showing the first part of {attachment.name}.
+        <p className="sticky bottom-0 border-t border-white/10 bg-[#0d1117]/95 px-5 py-2 text-xs text-slate-400 backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
         </p>
       )}
     </div>
@@ -188,9 +187,7 @@ function PreviewBody({
   if (content.status === 'idle' || content.status === 'loading') {
     return (
       <div role="status" className="flex size-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
-        <Loader2 className="size-6 animate-spin" />
-        Loading preview…
-      </div>
+        <Loader2 className="size-6 animate-spin" /> {ui("Loading preview…")} </div>
     )
   }
   if (content.status === 'error') {
@@ -200,7 +197,7 @@ function PreviewBody({
           <FileWarning className="size-6" />
         </span>
         <div>
-          <p className="text-sm font-medium">Preview unavailable</p>
+          <p className="text-sm font-medium">{ui("Preview unavailable")}</p>
           <p className="mt-1 max-w-sm text-xs text-muted-foreground">{content.message}</p>
         </div>
       </div>
@@ -214,16 +211,16 @@ function PreviewBody({
     return <img src={content.url} alt={attachment.name} className="size-full object-contain p-4" data-preview-kind="image" draggable={false} />
   }
   if (kind === 'pdf') {
-    return <iframe src={content.url} title={`Preview of ${attachment.name}`} className="size-full bg-white" data-preview-kind="pdf" />
+    return <iframe src={content.url} title={uit`Preview of ${attachment.name}`} className="size-full bg-white" data-preview-kind="pdf" />
   }
   if (kind === 'audio') {
     return (
       <div className="flex size-full items-center justify-center bg-gradient-to-br from-fuchsia-500/10 via-background to-violet-500/10 p-6" data-preview-kind="audio">
-        <audio src={content.url} controls preload="metadata" aria-label={`Audio preview of ${attachment.name}`} className="w-full max-w-xl" />
+        <audio src={content.url} controls preload="metadata" aria-label={uit`Audio preview of ${attachment.name}`} className="w-full max-w-xl" />
       </div>
     )
   }
-  return <video src={content.url} controls preload="metadata" aria-label={`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
+  return <video src={content.url} controls preload="metadata" aria-label={uit`Video preview of ${attachment.name}`} className="size-full bg-black object-contain" data-preview-kind="video" />
 }
 
 export function AttachmentPreviewDialog({
@@ -257,11 +254,11 @@ export function AttachmentPreviewDialog({
               {attachmentDescription(attachment, kind)}
             </DialogDescription>
           </div>
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={`Download ${attachment.name}`} className="rounded-full">
+          <Button type="button" variant="ghost" size="icon-sm" onClick={onDownload} aria-label={uit`Download ${attachment.name}`} className="rounded-full">
             <Download className="size-4" />
           </Button>
           <DialogClose asChild>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="Close preview" className="rounded-full">
+            <Button type="button" variant="ghost" size="icon-sm" aria-label={ui("Close preview")} className="rounded-full">
               <X className="size-4" />
             </Button>
           </DialogClose>

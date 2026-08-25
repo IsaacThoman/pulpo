@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ui } from '@/i18n/ui'
 
 type EditDraft = { id: string; name: string; mode: CatalogIconMode }
 
@@ -78,14 +79,12 @@ export function AdminIconsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Icons</h2>
+        <h2 className="text-lg font-semibold">{ui("Icons")}</h2>
         <Badge variant="secondary">{icons.length}</Badge>
         <div className="flex-1" />
-        <Button size="sm" onClick={() => setUploadOpen(true)}><Upload />Upload icon</Button>
+        <Button size="sm" onClick={() => setUploadOpen(true)}><Upload />{ui("Upload icon")}</Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Reusable artwork for labs and models. Upload PNG, JPEG, WebP, or SVG images up to 2 MiB.
-      </p>
+      <p className="text-sm text-muted-foreground"> {ui("Reusable artwork for labs and models. Upload PNG, JPEG, WebP, or SVG images up to 2 MiB.")} </p>
       {error && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</div>}
 
       {icons.length ? (
@@ -95,36 +94,36 @@ export function AdminIconsPage() {
       ) : (
         <Card className="shadow-none"><CardContent className="grid place-items-center py-14 text-center">
           <ImagePlus className="size-8 text-muted-foreground" />
-          <div className="mt-3 text-sm font-medium">No custom icons yet</div>
-          <div className="mt-1 text-xs text-muted-foreground">Upload an icon, then assign it from a lab or model editor.</div>
+          <div className="mt-3 text-sm font-medium">{ui("No custom icons yet")}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{ui("Upload an icon, then assign it from a lab or model editor.")}</div>
         </CardContent></Card>
       )}
 
       <Dialog open={uploadOpen} onOpenChange={(open) => { if (!busy) setUploadOpen(open) }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Upload icon</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{ui("Upload icon")}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <input ref={fileInput} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" className="hidden" onChange={(event) => chooseFile(event.target.files?.[0] ?? null)} />
             <button type="button" className="flex w-full flex-col items-center justify-center rounded-lg border border-dashed px-4 py-8 hover:bg-accent/50" onClick={() => fileInput.current?.click()}>
               <Upload className="size-6 text-muted-foreground" />
-              <span className="mt-2 text-sm font-medium">{uploadFile?.name ?? 'Choose an image'}</span>
-              <span className="mt-1 text-xs text-muted-foreground">The image is safely rasterized and fitted into a transparent square.</span>
+              <span className="mt-2 text-sm font-medium">{uploadFile?.name ?? ui("Choose an image")}</span>
+              <span className="mt-1 text-xs text-muted-foreground">{ui("The image is safely rasterized and fitted into a transparent square.")}</span>
             </button>
-            <div className="space-y-1.5"><Label htmlFor="icon-name">Name</Label><Input id="icon-name" value={uploadName} maxLength={120} onChange={(event) => setUploadName(event.target.value)} /></div>
+            <div className="space-y-1.5"><Label htmlFor="icon-name">{ui("Name")}</Label><Input id="icon-name" value={uploadName} maxLength={120} onChange={(event) => setUploadName(event.target.value)} /></div>
             <ModeField value={uploadMode} onChange={setUploadMode} />
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setUploadOpen(false)} disabled={busy}>Cancel</Button><Button onClick={() => void upload()} disabled={busy || !uploadFile || !uploadName.trim()}>Upload</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setUploadOpen(false)} disabled={busy}>{ui("Cancel")}</Button><Button onClick={() => void upload()} disabled={busy || !uploadFile || !uploadName.trim()}>{ui("Upload")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={!!edit} onOpenChange={(open) => { if (!open && !busy) setEdit(null) }}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>Edit icon</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{ui("Edit icon")}</DialogTitle></DialogHeader>
           {edit && <div className="space-y-4">
-            <div className="space-y-1.5"><Label htmlFor="edit-icon-name">Name</Label><Input id="edit-icon-name" value={edit.name} maxLength={120} onChange={(event) => setEdit({ ...edit, name: event.target.value })} /></div>
+            <div className="space-y-1.5"><Label htmlFor="edit-icon-name">{ui("Name")}</Label><Input id="edit-icon-name" value={edit.name} maxLength={120} onChange={(event) => setEdit({ ...edit, name: event.target.value })} /></div>
             <ModeField value={edit.mode} onChange={(mode) => setEdit({ ...edit, mode })} />
           </div>}
-          <DialogFooter><Button variant="outline" onClick={() => setEdit(null)} disabled={busy}>Cancel</Button><Button onClick={() => void saveEdit()} disabled={busy || !edit?.name.trim()}>Save</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setEdit(null)} disabled={busy}>{ui("Cancel")}</Button><Button onClick={() => void saveEdit()} disabled={busy || !edit?.name.trim()}>{ui("Save")}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -137,15 +136,15 @@ function IconCard({ icon, onEdit, onDelete }: { icon: AdminCatalogIcon; onEdit: 
       <div className="grid h-28 place-items-center bg-zinc-950"><img src={runtimeResourceUrl(icon.darkUrl)} alt="" className="size-16 object-contain" /></div>
     </div>
     <CardContent className="p-3">
-      <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{icon.name}</div><div className="mt-1 flex gap-1"><Badge variant="outline" className="font-normal">{icon.mode}</Badge><Badge variant="secondary" className="font-normal">{icon.usage.total} uses</Badge></div></div>
-        <Button size="icon-sm" variant="ghost" title="Edit icon" onClick={onEdit}><Pencil className="size-3.5" /></Button>
-        <Button size="icon-sm" variant="ghost" title={icon.usage.total ? 'Icon is in use' : 'Delete icon'} disabled={icon.usage.total > 0} className="hover:text-destructive" onClick={onDelete}><Trash2 className="size-3.5" /></Button>
+      <div className="flex items-start gap-2"><div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{icon.name}</div><div className="mt-1 flex gap-1"><Badge variant="outline" className="font-normal">{icon.mode}</Badge><Badge variant="secondary" className="font-normal">{icon.usage.total} {ui("uses")}</Badge></div></div>
+        <Button size="icon-sm" variant="ghost" title={ui("Edit icon")} onClick={onEdit}><Pencil className="size-3.5" /></Button>
+        <Button size="icon-sm" variant="ghost" title={icon.usage.total ? ui("Icon is in use") : ui("Delete icon")} disabled={icon.usage.total > 0} className="hover:text-destructive" onClick={onDelete}><Trash2 className="size-3.5" /></Button>
       </div>
-      {icon.usage.total > 0 && <div className="mt-2 text-[11px] text-muted-foreground">{icon.usage.labs} labs · {icon.usage.models} models</div>}
+      {icon.usage.total > 0 && <div className="mt-2 text-[11px] text-muted-foreground">{icon.usage.labs} {ui("labs ·")} {icon.usage.models} {ui("models")}</div>}
     </CardContent>
   </Card>
 }
 
 function ModeField({ value, onChange }: { value: CatalogIconMode; onChange: (value: CatalogIconMode) => void }) {
-  return <div className="space-y-1.5"><Label>Appearance</Label><Select value={value} onValueChange={(mode: CatalogIconMode) => onChange(mode)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="original">Original color</SelectItem><SelectItem value="monochrome">Monochrome · adapts to theme</SelectItem></SelectContent></Select><p className="text-[11px] text-muted-foreground">Monochrome uses the artwork as a silhouette and switches between black and white.</p></div>
+  return <div className="space-y-1.5"><Label>{ui("Appearance")}</Label><Select value={value} onValueChange={(mode: CatalogIconMode) => onChange(mode)}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="original">{ui("Original color")}</SelectItem><SelectItem value="monochrome">{ui("Monochrome · adapts to theme")}</SelectItem></SelectContent></Select><p className="text-[11px] text-muted-foreground">{ui("Monochrome uses the artwork as a silhouette and switches between black and white.")}</p></div>
 }

@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { ui, uit } from '@/i18n/ui'
 
 type Action = 'setup' | 'regenerate' | 'disable' | null
 
@@ -83,46 +84,46 @@ export function TwoFactorSettings() {
   return <>
     <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">Two-factor authentication</div>
+        <div className="text-sm font-medium">{ui("Two-factor authentication")}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
-          {status === null ? 'Checking status…' : status.enabled ? `Enabled · ${status.recoveryCodesRemaining} recovery codes remaining` : 'Add an authenticator app to protect your account.'}
+          {status === null ? ui("Checking status…") : status.enabled ? uit`Enabled · ${status.recoveryCodesRemaining} recovery codes remaining` : ui("Add an authenticator app to protect your account.")}
         </div>
       </div>
       <Button variant="outline" size="sm" disabled={!status} onClick={() => setAction('setup')}>
-        {status?.enabled ? 'Replace' : 'Set up'}
+        {status?.enabled ? ui("Replace") : ui("Set up")}
       </Button>
     </div>
     {status?.enabled && <div className="flex flex-wrap justify-end gap-2 pb-3">
-      <Button variant="outline" size="sm" onClick={() => setAction('regenerate')}><RefreshCw />New recovery codes</Button>
-      <Button variant="outline" size="sm" onClick={() => setAction('disable')}><ShieldOff />Disable</Button>
+      <Button variant="outline" size="sm" onClick={() => setAction('regenerate')}><RefreshCw />{ui("New recovery codes")}</Button>
+      <Button variant="outline" size="sm" onClick={() => setAction('disable')}><ShieldOff />{ui("Disable")}</Button>
     </div>}
 
     <Dialog open={action !== null} onOpenChange={(open) => { if (!open) close() }}>
       <DialogContent className="max-w-md">
-        <DialogTitle>{action === 'disable' ? 'Disable two-factor authentication' : action === 'regenerate' ? 'Generate new recovery codes' : status?.enabled ? 'Replace authenticator app' : 'Set up two-factor authentication'}</DialogTitle>
+        <DialogTitle>{action === 'disable' ? ui("Disable two-factor authentication") : action === 'regenerate' ? ui("Generate new recovery codes") : status?.enabled ? ui("Replace authenticator app") : ui("Set up two-factor authentication")}</DialogTitle>
 
         {recoveryCodes.length > 0 ? <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Save these codes now. Each can be used once and they will not be shown again.</p>
+          <p className="text-sm text-muted-foreground">{ui("Save these codes now. Each can be used once and they will not be shown again.")}</p>
           <div className="grid grid-cols-2 gap-2 rounded-lg border bg-muted/40 p-4 font-mono text-sm">
             {recoveryCodes.map((code) => <div key={code}>{code}</div>)}
           </div>
-          <div className="flex gap-2"><Button variant="outline" onClick={() => void copyRecoveryCodes()}>{copied ? <Check /> : <Copy />}{copied ? 'Copied' : 'Copy'}</Button><Button variant="outline" onClick={downloadRecoveryCodes}><Download />Download</Button></div>
-          <Button className="w-full" onClick={close}>Done</Button>
+          <div className="flex gap-2"><Button variant="outline" onClick={() => void copyRecoveryCodes()}>{copied ? <Check /> : <Copy />}{copied ? ui("Copied") : ui("Copy")}</Button><Button variant="outline" onClick={downloadRecoveryCodes}><Download />{ui("Download")}</Button></div>
+          <Button className="w-full" onClick={close}>{ui("Done")}</Button>
         </div> : action === 'setup' && enrollment ? <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Scan this QR code in your authenticator app, or enter the manual key.</p>
-          <img src={enrollment.qrCodeDataUrl} alt="Authenticator enrollment QR code" className="mx-auto size-56 rounded-lg border bg-white p-2" />
-          <div><Label>Manual key</Label><div className="mt-1 break-all rounded-md border bg-muted/40 p-2 font-mono text-sm">{enrollment.manualKey}</div></div>
-          <div className="space-y-2"><Label htmlFor="totp-confirmation">Six-digit code</Label><Input id="totp-confirmation" autoFocus autoComplete="one-time-code" inputMode="numeric" maxLength={6} className="font-mono tracking-widest" value={confirmationCode} onChange={(event) => setConfirmationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} /></div>
+          <p className="text-sm text-muted-foreground">{ui("Scan this QR code in your authenticator app, or enter the manual key.")}</p>
+          <img src={enrollment.qrCodeDataUrl} alt={ui("Authenticator enrollment QR code")} className="mx-auto size-56 rounded-lg border bg-white p-2" />
+          <div><Label>{ui("Manual key")}</Label><div className="mt-1 break-all rounded-md border bg-muted/40 p-2 font-mono text-sm">{enrollment.manualKey}</div></div>
+          <div className="space-y-2"><Label htmlFor="totp-confirmation">{ui("Six-digit code")}</Label><Input id="totp-confirmation" autoFocus autoComplete="one-time-code" inputMode="numeric" maxLength={6} className="font-mono tracking-widest" value={confirmationCode} onChange={(event) => setConfirmationCode(event.target.value.replace(/\D/g, '').slice(0, 6))} /></div>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button className="w-full" disabled={confirmationCode.length !== 6 || loading} onClick={() => void confirm()}>{loading && <Loader2 className="animate-spin" />}Confirm and enable</Button>
+          <Button className="w-full" disabled={confirmationCode.length !== 6 || loading} onClick={() => void confirm()}>{loading && <Loader2 className="animate-spin" />}{ui("Confirm and enable")}</Button>
         </div> : <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Confirm this security change with your password{status?.enabled ? ' and current authenticator or recovery code' : ''}.</p>
-          <div className="space-y-2"><Label htmlFor="two-factor-password">Current password</Label><Input id="two-factor-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
-          {status?.enabled && <div className="space-y-2"><Label htmlFor="two-factor-verification">Authenticator or recovery code</Label><Input id="two-factor-verification" autoComplete="one-time-code" className="font-mono" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.toUpperCase())} /></div>}
+          <p className="text-sm text-muted-foreground">{ui("Confirm this security change with your password")}{status?.enabled ? ui(" and current authenticator or recovery code") : ''}.</p>
+          <div className="space-y-2"><Label htmlFor="two-factor-password">{ui("Current password")}</Label><Input id="two-factor-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} /></div>
+          {status?.enabled && <div className="space-y-2"><Label htmlFor="two-factor-verification">{ui("Authenticator or recovery code")}</Label><Input id="two-factor-verification" autoComplete="one-time-code" className="font-mono" value={verificationCode} onChange={(event) => setVerificationCode(event.target.value.toUpperCase())} /></div>}
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Separator />
           <Button variant={action === 'disable' ? 'destructive' : 'default'} className="w-full" disabled={!currentPassword || (Boolean(status?.enabled) && verificationCode.length < 6) || loading} onClick={() => void (action === 'setup' ? begin() : change())}>
-            {loading && <Loader2 className="animate-spin" />}{action === 'disable' ? 'Disable two-factor authentication' : action === 'regenerate' ? 'Generate recovery codes' : 'Continue'}
+            {loading && <Loader2 className="animate-spin" />}{action === 'disable' ? ui("Disable two-factor authentication") : action === 'regenerate' ? ui("Generate recovery codes") : ui("Continue")}
           </Button>
         </div>}
       </DialogContent>

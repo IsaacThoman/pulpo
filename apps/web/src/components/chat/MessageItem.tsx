@@ -48,6 +48,7 @@ import { ModelIcon } from '@/components/ModelIcon'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { ui, activeLocale } from '@/i18n/ui'
 
 function ActionButton({
   label,
@@ -225,7 +226,7 @@ function ActivityToolRow({ tool }: { tool: ToolItem }) {
         ) : (
           <Icon className="size-3 shrink-0" />
         )}
-        <span className="shrink-0 font-medium text-foreground/80">{tool.tool ?? 'tool'}</span>
+        <span className="shrink-0 font-medium text-foreground/80">{tool.tool ?? ui("tool")}</span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] opacity-80">{toolSummary(tool)}</span>
         <StepDuration ms={running ? liveMs : tool.durationMs} live={running} />
         {hasBody && (
@@ -262,17 +263,17 @@ function CompactionStepRow({ item }: { item: CompactionItem }) {
     <Collapsible open={open} onOpenChange={setOpen} className="min-w-0">
       <CollapsibleTrigger className="flex w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-[12px] text-muted-foreground hover:text-foreground">
         {active ? <Loader2 className="size-3 shrink-0 animate-spin" /> : failed ? <XCircle className="size-3 shrink-0 text-destructive" /> : <Minimize2 className="size-3 shrink-0" />}
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">{active ? 'Compacting context…' : failed ? 'Context compaction failed' : 'Compacted context'}</span>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground/80">{active ? ui("Compacting context…") : failed ? ui("Context compaction failed") : ui("Compacted context")}</span>
         <StepDuration ms={active ? undefined : item.duration_ms} live={active} />
         <ChevronRight className={cn('size-3 shrink-0 transition-transform', open && 'rotate-90')} />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="mt-2 space-y-3 pl-4 text-xs">
           {item.error ? <p className="text-destructive">{item.error}</p> : null}
-          {item.summary ? <div><div className="mb-1 font-medium text-foreground/80">Compacted summary</div><Markdown content={item.summary} /></div> : null}
+          {item.summary ? <div><div className="mb-1 font-medium text-foreground/80">{ui("Compacted summary")}</div><Markdown content={item.summary} /></div> : null}
           {item.retained_turns.length ? (
             <div>
-              <div className="mb-1 font-medium text-foreground/80">Kept verbatim</div>
+              <div className="mb-1 font-medium text-foreground/80">{ui("Kept verbatim")}</div>
               <div className="space-y-1.5">
                 {item.retained_turns.map((entry, index) => (
                   <div key={`${entry.role}:${index}`} className="rounded-md bg-muted/40 px-2 py-1.5">
@@ -301,11 +302,11 @@ function workspaceLabel(item: WorkspaceItem): string {
   if (item.state === 'waiting') {
     return `Waiting for workspace${typeof item.position === 'number' ? ` · queue #${item.position}` : ''}`
   }
-  if (item.state === 'provisioning') return 'Starting workspace…'
-  if (item.state === 'continuing_without_agent') return 'Continuing without agent tools'
+  if (item.state === 'provisioning') return ui("Starting workspace…")
+  if (item.state === 'continuing_without_agent') return ui("Continuing without agent tools")
   if (workspaceIsFailed(item.state)) return `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
-  if (workspaceIsQuiet(item.state)) return 'Started workspace'
-  return 'Workspace'
+  if (workspaceIsQuiet(item.state)) return ui("Started workspace")
+  return ui("Workspace")
 }
 
 function WorkspaceStepRow({ workspace }: { workspace: WorkspaceItem }) {
@@ -345,7 +346,7 @@ function ReasoningStepRow({ step }: { step: ReasoningStep }) {
           {step.text ? (
             <Markdown content={step.text} streaming={step.active} />
           ) : step.active ? (
-            'Thinking…'
+            ui("Thinking…")
           ) : (
             ''
           )}
@@ -411,17 +412,17 @@ function ActivityBlock({
   const runningTool = tools.find((tool) => tool.status === 'running')
 
   const label = useMemo(() => {
-    if (compaction?.status === 'in_progress') return 'Compacting context…'
-    if (compaction?.status === 'failed') return 'Context compaction failed'
-    if (compaction) return 'Compacted context'
+    if (compaction?.status === 'in_progress') return ui("Compacting context…")
+    if (compaction?.status === 'failed') return ui("Context compaction failed")
+    if (compaction) return ui("Compacted context")
     if (workspace && workspaceBusy) return workspaceLabel(workspace)
     if (workspaceFailed && workspace) return workspaceLabel(workspace)
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
       return workspaceLabel(workspace)
     }
     if (runningTool) return `Running ${runningTool.tool ?? 'tool'}…`
-    if (active && hasTools) return 'Working…'
-    if (active) return 'Thinking…'
+    if (active && hasTools) return ui("Working…")
+    if (active) return ui("Thinking…")
     if (showDuration && durationMs !== undefined) {
       const duration = formatSecondsLabel(durationMs)
       return hasTools || hasWorkspace ? `Worked for ${duration}` : `Thought for ${duration}`
@@ -479,18 +480,16 @@ function ActivityBlock({
               )
             })}
             {active && steps.length === 0 ? (
-              <div className="text-[13px] leading-5 text-muted-foreground/70">Thinking…</div>
+              <div className="text-[13px] leading-5 text-muted-foreground/70">{ui("Thinking…")}</div>
             ) : null}
           </div>
         </CollapsibleContent>
       </Collapsible>
       {needsWorkspaceActions && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => onStop(messageId)}>
-            Cancel generation
-          </Button>
+          <Button size="sm" variant="outline" onClick={() => onStop(messageId)}> {ui("Cancel generation")} </Button>
           <Button size="sm" disabled={capacityPending} onClick={() => onContinue(messageId)}>
-            {capacityPending ? 'Continuing…' : 'Continue without agent'}
+            {capacityPending ? ui("Continuing…") : ui("Continue without agent")}
           </Button>
         </div>
       )}
@@ -791,7 +790,7 @@ export const MessageItem = memo(function MessageItem({
                 {(message.tokensIn !== undefined || message.cost !== undefined) && (
                   <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&
-                      `${message.tokensIn.toLocaleString()}→${(message.tokensOut ?? 0).toLocaleString()} tok`}
+                      `${message.tokensIn.toLocaleString(activeLocale())}→${(message.tokensOut ?? 0).toLocaleString(activeLocale())} tok`}
                     {message.tokensOut !== undefined &&
                       message.latencyMs !== undefined &&
                       message.latencyMs > 0 &&

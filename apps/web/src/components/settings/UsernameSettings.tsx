@@ -18,6 +18,7 @@ import {
   requestUsernameChange,
   usernameChangeValidationError,
 } from './username-change'
+import { ui } from '@/i18n/ui'
 
 export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean }) {
   const user = useAuth((state) => state.user)
@@ -65,13 +66,13 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
     }
   }
 
-  const trigger = <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)}>Change username</Button>
+  const trigger = <Button variant="outline" size="sm" onClick={() => handleOpenChange(true)}>{ui("Change username")}</Button>
 
   return <>
     {buttonOnly ? trigger : <div className="flex min-w-0 flex-col items-start gap-2 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium">Username</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">Friends can find you using @{user?.username}.</div>
+        <div className="text-sm font-medium">{ui("Username")}</div>
+        <div className="mt-0.5 text-xs text-muted-foreground">{ui("Friends can find you using @")}{user?.username}.</div>
       </div>
       {trigger}
     </div>}
@@ -81,20 +82,20 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
         {updated ? <>
           <div className="flex flex-col items-center gap-3 py-3 text-center">
             <CircleCheck className="size-10 text-emerald-500" aria-hidden />
-            <DialogTitle>Username updated</DialogTitle>
-            <DialogDescription>Your username is now @{normalizeUsername(username)}.</DialogDescription>
+            <DialogTitle>{ui("Username updated")}</DialogTitle>
+            <DialogDescription>{ui("Your username is now @")}{normalizeUsername(username)}.</DialogDescription>
           </div>
           <DialogFooter>
-            <Button className="w-full sm:w-auto" onClick={() => handleOpenChange(false)}>Done</Button>
+            <Button className="w-full sm:w-auto" onClick={() => handleOpenChange(false)}>{ui("Done")}</Button>
           </DialogFooter>
         </> : <form className="space-y-4" onSubmit={(event) => void submit(event)}>
           <DialogHeader>
-            <DialogTitle>Change username</DialogTitle>
-            <DialogDescription>Friends can search by your username or display name. Your username must be unique.</DialogDescription>
+            <DialogTitle>{ui("Change username")}</DialogTitle>
+            <DialogDescription>{ui("Friends can search by your username or display name. Your username must be unique.")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <Label htmlFor="new-username">New username</Label>
+            <Label htmlFor="new-username">{ui("New username")}</Label>
             <div className="relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
               <Input
@@ -110,24 +111,22 @@ export function UsernameSettings({ buttonOnly = false }: { buttonOnly?: boolean 
                 minLength={3}
                 maxLength={30}
                 pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]"
-                title="Use 3–30 letters, numbers, or underscores; begin and end with a letter or number"
+                title={ui("Use 3–30 letters, numbers, or underscores; begin and end with a letter or number")}
                 aria-invalid={showValidationError}
                 required
               />
             </div>
             {showValidationError
               ? <p className="text-xs text-destructive">{validationError}</p>
-              : <p className="text-xs text-muted-foreground">Use 3–30 lowercase letters, numbers, or underscores.</p>}
+              : <p className="text-xs text-muted-foreground">{ui("Use 3–30 lowercase letters, numbers, or underscores.")}</p>}
           </div>
 
           {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
 
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>{ui("Cancel")}</Button>
             <Button type="submit" disabled={Boolean(validationError) || loading}>
-              {loading && <Loader2 className="animate-spin" aria-hidden />}
-              Update username
-            </Button>
+              {loading && <Loader2 className="animate-spin" aria-hidden />} {ui("Update username")} </Button>
           </DialogFooter>
         </form>}
       </DialogContent>

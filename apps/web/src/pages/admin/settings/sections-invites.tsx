@@ -8,6 +8,7 @@ import { SaveBar, Section, Toggle } from '@/components/admin/kit'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
 import { formatDate } from '@/lib/format'
+import { ui, uit } from '@/i18n/ui'
 
 interface AdminSettings { values: Record<string, unknown> }
 
@@ -66,18 +67,18 @@ export function InviteCodesSection() {
 
   return (
     <div>
-      <Section title="Invite codes" hint="Pending users can redeem a code to gain access. Only available when billing is enabled.">
+      <Section title={ui("Invite codes")} hint="Pending users can redeem a code to gain access. Only available when billing is enabled.">
         <Toggle
-          label="Enable invite codes"
+          label={ui("Enable invite codes")}
           hint="Lets pending users redeem a code and lets granted users generate codes to share."
           checked={enabled}
           onChange={setEnabled}
         />
       </Section>
 
-      <Section title="Pool codes" hint="Unassigned codes anyone with the value can redeem once.">
+      <Section title={ui("Pool codes")} hint="Unassigned codes anyone with the value can redeem once.">
         <div className="flex items-center justify-between gap-3">
-          <div className="text-sm">Generate codes</div>
+          <div className="text-sm">{ui("Generate codes")}</div>
           <div className="flex items-center gap-2">
             <Input
               type="number"
@@ -89,7 +90,7 @@ export function InviteCodesSection() {
             />
             <Button size="sm" disabled={generating} onClick={() => void generate()}>
               <Plus />
-              {generating ? 'Generating…' : 'Generate'}
+              {generating ? ui("Generating…") : ui("Generate")}
             </Button>
           </div>
         </div>
@@ -99,35 +100,35 @@ export function InviteCodesSection() {
         <table className="data-table">
           <thead className="border-b">
             <tr>
-              <th className="px-3 py-2">Code</th>
-              <th className="px-3 py-2">Owner</th>
-              <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Redeemed by</th>
-              <th className="px-3 py-2">Created</th>
-              <th className="px-3 py-2 text-right">Actions</th>
+              <th className="px-3 py-2">{ui("Code")}</th>
+              <th className="px-3 py-2">{ui("Owner")}</th>
+              <th className="px-3 py-2">{ui("Status")}</th>
+              <th className="px-3 py-2">{ui("Redeemed by")}</th>
+              <th className="px-3 py-2">{ui("Created")}</th>
+              <th className="px-3 py-2 text-right">{ui("Actions")}</th>
             </tr>
           </thead>
           <tbody>
             {listQuery.isLoading ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Loading codes…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">{ui("Loading codes…")}</td></tr>
             ) : codes.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No invite codes yet.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">{ui("No invite codes yet.")}</td></tr>
             ) : codes.map((code) => {
               const status = inviteStatus(code)
               return (
                 <tr key={code.id}>
                   <td className="px-3 py-2 font-mono tracking-wider">{code.code}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{code.ownerUsername ? `@${code.ownerUsername}` : 'Pool'}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{code.ownerUsername ? uit`@${code.ownerUsername}` : ui("Pool")}</td>
                   <td className="px-3 py-2 capitalize text-muted-foreground">{status}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{code.redeemedByUsername ? `@${code.redeemedByUsername}` : '—'}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{code.redeemedByUsername ? uit`@${code.redeemedByUsername}` : '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground">{formatDate(Date.parse(code.createdAt))}</td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
-                      <Button size="icon-sm" variant="ghost" title={copiedId === code.id ? 'Copied' : 'Copy'} onClick={() => void copy(code)}>
+                      <Button size="icon-sm" variant="ghost" title={copiedId === code.id ? ui("Copied") : ui("Copy")} onClick={() => void copy(code)}>
                         <Copy className="size-3.5" />
                       </Button>
                       {status === 'unused' && (
-                        <Button size="icon-sm" variant="ghost" title="Revoke" className="text-destructive hover:text-destructive" onClick={() => void revoke(code.id)}>
+                        <Button size="icon-sm" variant="ghost" title={ui("Revoke")} className="text-destructive hover:text-destructive" onClick={() => void revoke(code.id)}>
                           <Trash2 className="size-3.5" />
                         </Button>
                       )}

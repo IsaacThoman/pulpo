@@ -10,6 +10,7 @@ import { apiRequest } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { queryClient } from '@/lib/query-client'
 import { moveInstructionPreset } from './personalization-presets-logic'
+import { ui, uit } from '@/i18n/ui'
 
 const DEFAULT_COLOR = '#8b5cf6'
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
@@ -33,7 +34,7 @@ export function PersonalizationSection() {
   const add = () => {
     setPresets((current) => [...current, {
       id: crypto.randomUUID(),
-      title: 'New preset',
+      title: ui("New preset"),
       instructions: 'Add custom instructions for this preset.',
       color: DEFAULT_COLOR,
       defaultEnabled: false,
@@ -51,11 +52,11 @@ export function PersonalizationSection() {
   return (
     <div>
       <Section
-        title="Custom-instruction presets"
+        title={ui("Custom-instruction presets")}
         hint="Shown as toggle buttons above each user's custom instructions. List order also controls instruction order."
       >
         {presets.length === 0 && (
-          <div className="text-sm text-muted-foreground">No presets configured.</div>
+          <div className="text-sm text-muted-foreground">{ui("No presets configured.")}</div>
         )}
         {presets.map((preset, index) => {
           const colorValid = HEX_COLOR.test(preset.color)
@@ -65,7 +66,7 @@ export function PersonalizationSection() {
                 <div className="min-w-0 flex-1 space-y-3">
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem]">
                     <div>
-                      <div className="mb-1 text-xs text-muted-foreground">Button title</div>
+                      <div className="mb-1 text-xs text-muted-foreground">{ui("Button title")}</div>
                       <Input
                         value={preset.title}
                         maxLength={80}
@@ -73,17 +74,17 @@ export function PersonalizationSection() {
                       />
                     </div>
                     <div>
-                      <div className="mb-1 text-xs text-muted-foreground">Accent color</div>
+                      <div className="mb-1 text-xs text-muted-foreground">{ui("Accent color")}</div>
                       <div className="flex gap-2">
                         <input
                           type="color"
-                          aria-label={`Choose ${preset.title || 'preset'} color`}
+                          aria-label={uit`Choose ${preset.title || 'preset'} color`}
                           value={colorValid ? preset.color : DEFAULT_COLOR}
                           onChange={(event) => update(index, { color: event.target.value })}
                           className="h-9 w-10 cursor-pointer rounded-md border bg-background p-1"
                         />
                         <Input
-                          aria-label={`${preset.title || 'Preset'} hex color`}
+                          aria-label={uit`${preset.title || 'Preset'} hex color`}
                           className={cn('font-mono text-xs', !colorValid && 'border-destructive')}
                           value={preset.color}
                           maxLength={7}
@@ -93,19 +94,19 @@ export function PersonalizationSection() {
                     </div>
                   </div>
                   <div>
-                    <div className="mb-1 text-xs text-muted-foreground">Instructions</div>
+                    <div className="mb-1 text-xs text-muted-foreground">{ui("Instructions")}</div>
                     <Textarea
                       rows={7}
                       value={preset.instructions}
                       maxLength={100_000}
                       onChange={(event) => update(index, { instructions: event.target.value })}
-                      placeholder="Prepended when this preset is enabled."
+                      placeholder={ui("Prepended when this preset is enabled.")}
                     />
                   </div>
                   <div className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2">
                     <div>
-                      <div className="text-sm">Enabled by default</div>
-                      <div className="text-xs text-muted-foreground">Applies only while a user has no explicit choice for this preset.</div>
+                      <div className="text-sm">{ui("Enabled by default")}</div>
+                      <div className="text-xs text-muted-foreground">{ui("Applies only while a user has no explicit choice for this preset.")}</div>
                     </div>
                     <Switch
                       checked={preset.defaultEnabled}
@@ -118,7 +119,7 @@ export function PersonalizationSection() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Move ${preset.title || 'preset'} up`}
+                    aria-label={uit`Move ${preset.title || 'preset'} up`}
                     disabled={index === 0}
                     onClick={() => setPresets((current) => moveInstructionPreset(current, index, -1))}
                   >
@@ -128,7 +129,7 @@ export function PersonalizationSection() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Move ${preset.title || 'preset'} down`}
+                    aria-label={uit`Move ${preset.title || 'preset'} down`}
                     disabled={index === presets.length - 1}
                     onClick={() => setPresets((current) => moveInstructionPreset(current, index, 1))}
                   >
@@ -138,7 +139,7 @@ export function PersonalizationSection() {
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Delete ${preset.title || 'preset'}`}
+                    aria-label={uit`Delete ${preset.title || 'preset'}`}
                     onClick={() => setPresets((current) => current.filter((_, itemIndex) => itemIndex !== index))}
                   >
                     <Trash2 className="size-3.5" />
@@ -151,9 +152,7 @@ export function PersonalizationSection() {
         {presets.length < 50 && (
           <div>
             <Button type="button" variant="outline" size="sm" onClick={add}>
-              <Plus className="size-3.5" />
-              Add preset
-            </Button>
+              <Plus className="size-3.5" /> {ui("Add preset")} </Button>
           </div>
         )}
       </Section>

@@ -9,6 +9,7 @@ import { isDesktopRuntime } from '@/lib/runtime'
 import { DesktopInstancePage } from '@/components/desktop/DesktopInstancePage'
 import { DesktopTitleBar } from '@/components/desktop/DesktopTitleBar'
 import { desktopStartupSurface } from '@/lib/desktop-startup'
+import { ui } from '@/i18n/ui'
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
@@ -47,7 +48,7 @@ function RequireBilling({ children }: { children: ReactNode }) {
   const billingEnabled = useAuth((state) => state.billingEnabled)
 
   if (checkingSession) {
-    return <div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">Loading billing…</div>
+    return <div className="grid min-h-[50vh] place-items-center text-sm text-muted-foreground">{ui("Loading billing…")}</div>
   }
 
   return billingEnabled ? children : <Navigate to="/usage" replace />
@@ -73,9 +74,9 @@ export default function App() {
       <DesktopTitleBar />
       {startupSurface !== 'app' ? (
         startupSurface === 'connecting'
-          ? <div className="grid h-full place-items-center text-sm text-muted-foreground">Connecting to Pulpo…</div>
+          ? <div className="grid h-full place-items-center text-sm text-muted-foreground">{ui("Connecting to Pulpo…")}</div>
           : <DesktopInstancePage />
-      ) : <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">Loading Pulpo…</div>}>
+      ) : <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">{ui("Loading Pulpo…")}</div>}>
         <Routes>
         <Route element={<AuthLayout />}>
           <Route path="setup" element={<SetupPage />} />

@@ -21,39 +21,40 @@ import {
   type PublicTopModel,
   type PublicUsageRecord,
 } from '@/components/usage/PublicUsagePanels'
+import { ui, uit, activeLocale } from '@/i18n/ui'
 
 type LBMetric = Metric | 'balance'
 
 const RANGES: { id: TimeRange; label: string }[] = [
-  { id: '24h', label: '24h' },
-  { id: '7d', label: '7d' },
-  { id: '30d', label: '30d' },
-  { id: '90d', label: '90d' },
-  { id: 'all', label: 'All' },
+  { id: '24h', label: ui("24h") },
+  { id: '7d', label: ui("7d") },
+  { id: '30d', label: ui("30d") },
+  { id: '90d', label: ui("90d") },
+  { id: 'all', label: ui("All") },
 ]
 const METRICS: { id: LBMetric; label: string }[] = [
-  { id: 'cost', label: 'USD' },
-  { id: 'tokens', label: 'Tokens' },
-  { id: 'calls', label: 'Calls' },
-  { id: 'balance', label: 'Balance' },
+  { id: 'cost', label: ui("USD") },
+  { id: 'tokens', label: ui("Tokens") },
+  { id: 'calls', label: ui("Calls") },
+  { id: 'balance', label: ui("Balance") },
 ]
 function metricLabel(m: LBMetric): string {
   switch (m) {
     case 'cost':
       return 'USD'
     case 'tokens':
-      return 'Tokens'
+      return ui("Tokens")
     case 'calls':
-      return 'Calls'
+      return ui("Calls")
     case 'balance':
-      return 'Balance'
+      return ui("Balance")
   }
 }
 
 function formatMetric(v: number, m: LBMetric): string {
   if (m === 'balance') return formatBalance(v)
   if (m === 'cost') return formatUsd(v)
-  return Math.round(v).toLocaleString()
+  return Math.round(v).toLocaleString(activeLocale())
 }
 
 /** adaptive axis decimals for small dollar amounts */
@@ -252,14 +253,14 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
   return (
     <div className="space-y-6">
       {instanceMode ? <div>
-        <div className="text-lg font-medium">Instance leaderboard</div>
+        <div className="text-lg font-medium">{ui("Instance leaderboard")}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
-          {circleUsageQuery.isLoading ? 'Loading active participants…' : `${users.length.toLocaleString()} active users with settled usage in this period`}
+          {circleUsageQuery.isLoading ? ui("Loading active participants…") : uit`${users.length.toLocaleString(activeLocale())} active users with settled usage in this period`}
         </div>
       </div> : <div>
         <div className="text-lg font-medium">{me.name}</div>
         <div className="mt-0.5 text-xs text-muted-foreground">
-          {me.email} · Joined {formatDate(me.joinedAt)}
+          {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
         </div>
       </div>}
 
@@ -268,9 +269,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-3">
             <span className="flex items-center gap-2 text-xs font-medium">
-              <Clock className="size-3" />
-              Usage overview
-            </span>
+              <Clock className="size-3" /> {ui("Usage overview")} </span>
             <div className="h-4 w-px bg-border" />
             <ToggleGroup options={METRICS} value={metric} onChange={setMetric} />
           </div>
@@ -284,14 +283,13 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-2 text-sm font-medium">
             <BarChart3 className="size-4" />
-            {scope === 'pool' ? 'Pool' : instanceMode ? 'Instance' : 'Friends'} ranking
-          </span>
-          <span className="ml-auto text-xs text-muted-foreground">{rows.length} users</span>
+            {scope === 'pool' ? ui("Pool") : instanceMode ? ui("Instance") : ui("Friends")} {ui("ranking")} </span>
+          <span className="ml-auto text-xs text-muted-foreground">{rows.length} {ui("users")}</span>
         </div>
         {!hasRankingParticipants ? (
           <div className="flex h-[250px] flex-col items-center justify-center gap-3 text-xs text-muted-foreground">
-            <span>{instanceMode ? 'No settled usage in this period' : scope === 'pool' ? 'Add Pool members to compare usage' : 'Add friends to compare usage'}</span>
-            {!instanceMode && <Button asChild size="sm" variant="outline"><Link to={scope === 'pool' ? '/friends/pool' : '/friends'}>{scope === 'pool' ? 'Manage Pool' : 'Find friends'}</Link></Button>}
+            <span>{instanceMode ? ui("No settled usage in this period") : scope === 'pool' ? ui("Add Pool members to compare usage") : ui("Add friends to compare usage")}</span>
+            {!instanceMode && <Button asChild size="sm" variant="outline"><Link to={scope === 'pool' ? '/friends/pool' : '/friends'}>{scope === 'pool' ? ui("Manage Pool") : ui("Find friends")}</Link></Button>}
           </div>
         ) : (
           <div className="h-[250px]">
@@ -336,11 +334,11 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
       </section>}
 
       {loading ? (
-        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
+        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">{ui("Loading settled usage…")}</div>
       ) : error ? (
         <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
-          <span>{error instanceof Error ? error.message : 'Unable to load leaderboard usage'}</span>
-          <Button size="sm" variant="outline" onClick={() => { void circleUsageQuery.refetch(); void recordsQuery.refetch() }}>Try again</Button>
+          <span>{error instanceof Error ? error.message : ui("Unable to load leaderboard usage")}</span>
+          <Button size="sm" variant="outline" onClick={() => { void circleUsageQuery.refetch(); void recordsQuery.refetch() }}>{ui("Try again")}</Button>
         </div>
       ) : (
         <>

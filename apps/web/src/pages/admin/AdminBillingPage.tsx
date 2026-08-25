@@ -9,15 +9,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
+import { ui, uit, activeLocale } from '@/i18n/ui'
 
 type Range = '7d' | '30d' | '90d' | 'all'
 type ProductKind = 'eight' | 'fat' | 'credits' | 'unknown'
 
 const RANGES: { id: Range; label: string }[] = [
-  { id: '7d', label: '7d' },
-  { id: '30d', label: '30d' },
-  { id: '90d', label: '90d' },
-  { id: 'all', label: 'All' },
+  { id: '7d', label: ui("7d") },
+  { id: '30d', label: ui("30d") },
+  { id: '90d', label: ui("90d") },
+  { id: 'all', label: ui("All") },
 ]
 
 interface Dashboard {
@@ -135,7 +136,7 @@ export function AdminBillingPage() {
           fatStorageLimitBytes: Math.round(Number(fatStorage) * 1024 ** 3),
         },
       })
-      setMessage('Plan defaults saved.')
+      setMessage(ui("Plan defaults saved."))
       await Promise.all([settingsQuery.refetch(), dashboardQuery.refetch()])
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save defaults.')
@@ -149,7 +150,7 @@ export function AdminBillingPage() {
     setMessage('')
     try {
       await apiRequest('/api/admin/billing/reconcile', { method: 'POST' })
-      setMessage('Reconciliation queued.')
+      setMessage(ui("Reconciliation queued."))
       window.setTimeout(() => { void dashboardQuery.refetch() }, 2_000)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not queue reconciliation.')
@@ -164,7 +165,7 @@ export function AdminBillingPage() {
     setMessage('')
     try {
       await apiRequest(`/api/admin/billing/users/${userId}/clear-hold`, { method: 'POST', body: { note } })
-      setMessage('Billing hold cleared.')
+      setMessage(ui("Billing hold cleared."))
       await dashboardQuery.refetch()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not clear hold.')
@@ -179,45 +180,44 @@ export function AdminBillingPage() {
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
   const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
   const stats = [
-    { label: 'Collected', value: formatBalance((totals?.grossCollectedCents ?? 0) / 100) },
-    { label: 'MRR', value: formatBalance((totals?.monthlyRecurringCents ?? 0) / 100) },
-    { label: 'Subscribers', value: (totals?.activeSubscribers ?? 0).toLocaleString() },
-    { label: 'Credits granted', value: formatBalance((totals?.creditsGrantedMicros ?? 0) / 1_000_000) },
-    { label: 'Payments', value: (totals?.payments ?? 0).toLocaleString() },
-    { label: 'Needs attention', value: attention.toLocaleString(), alert: attention > 0 },
+    { label: ui("Collected"), value: formatBalance((totals?.grossCollectedCents ?? 0) / 100) },
+    { label: ui("MRR"), value: formatBalance((totals?.monthlyRecurringCents ?? 0) / 100) },
+    { label: ui("Subscribers"), value: (totals?.activeSubscribers ?? 0).toLocaleString(activeLocale()) },
+    { label: ui("Credits granted"), value: formatBalance((totals?.creditsGrantedMicros ?? 0) / 1_000_000) },
+    { label: ui("Payments"), value: (totals?.payments ?? 0).toLocaleString(activeLocale()) },
+    { label: ui("Needs attention"), value: attention.toLocaleString(activeLocale()), alert: attention > 0 },
   ]
   const breakdown = [
-    { label: 'Sales before tax', value: formatBalance((totals?.salesBeforeTaxCents ?? 0) / 100) },
-    { label: 'Tax collected', value: formatBalance((totals?.taxCollectedCents ?? 0) / 100) },
-    { label: 'Platform fees', value: formatBalance((totals?.platformFeesCents ?? 0) / 100) },
-    { label: 'Stripe fees', value: formatBalance((totals?.processingFeesCents ?? 0) / 100) },
-    { label: 'Refunded', value: formatBalance((totals?.refundedCents ?? 0) / 100) },
-    { label: 'Top-ups', value: (totals?.topUps ?? 0).toLocaleString() },
+    { label: ui("Sales before tax"), value: formatBalance((totals?.salesBeforeTaxCents ?? 0) / 100) },
+    { label: ui("Tax collected"), value: formatBalance((totals?.taxCollectedCents ?? 0) / 100) },
+    { label: ui("Platform fees"), value: formatBalance((totals?.platformFeesCents ?? 0) / 100) },
+    { label: ui("Stripe fees"), value: formatBalance((totals?.processingFeesCents ?? 0) / 100) },
+    { label: ui("Refunded"), value: formatBalance((totals?.refundedCents ?? 0) / 100) },
+    { label: ui("Top-ups"), value: (totals?.topUps ?? 0).toLocaleString(activeLocale()) },
   ]
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3">
-          <span className="text-xs font-medium">Billing overview</span>
+          <span className="text-xs font-medium">{ui("Billing overview")}</span>
           {stripeMode && <>
             <div className="h-4 w-px bg-border" />
             <StripeLink href={stripeDashboardUrl(stripeMode)} />
-            <StripeLink href={stripeWebhooksUrl(stripeMode)} label="Webhooks" />
+            <StripeLink href={stripeWebhooksUrl(stripeMode)} label={ui("Webhooks")} />
           </>}
         </div>
         <div className="flex items-center gap-2">
           <ToggleGroup options={RANGES} value={range} onChange={setRange} />
           <Button variant="outline" size="sm" onClick={() => void reconcile()} disabled={syncing}>
-            <RefreshCw className={syncing ? 'animate-spin' : ''} />Sync now
-          </Button>
+            <RefreshCw className={syncing ? 'animate-spin' : ''} />{ui("Sync now")} </Button>
         </div>
       </div>
 
       {message && <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs">{message}</div>}
       {data?.reconciliation.lastError && (
         <div className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <AlertTriangle className="mt-0.5 size-3.5" />Last reconciliation failed: {data.reconciliation.lastError}
+          <AlertTriangle className="mt-0.5 size-3.5" />{ui("Last reconciliation failed:")} {data.reconciliation.lastError}
         </div>
       )}
 
@@ -232,11 +232,11 @@ export function AdminBillingPage() {
 
       <div>
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-medium">Payment volume</h3>
-          <span className="text-xs text-muted-foreground">Includes tax</span>
+          <h3 className="text-sm font-medium">{ui("Payment volume")}</h3>
+          <span className="text-xs text-muted-foreground">{ui("Includes tax")}</span>
         </div>
         {chart.length === 0 ? (
-          <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">No payments in this period</div>
+          <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">{ui("No payments in this period")}</div>
         ) : (
           <div className="mt-3 h-[250px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -261,50 +261,50 @@ export function AdminBillingPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel icon={<UsersRound className="size-3" />} title="Subscription health">
+        <Panel icon={<UsersRound className="size-3" />} title={ui("Subscription health")}>
           <div className="divide-y">
-            <Stat label="Pulpo Eight" value={data?.subscribers.eight ?? 0} />
-            <Stat label="Le Pulpo Fat" value={data?.subscribers.fat ?? 0} />
-            <Stat label="Canceling" value={totals?.canceling ?? 0} />
-            <Stat label="Past due" value={totals?.pastDue ?? 0} alert={(totals?.pastDue ?? 0) > 0} />
-            <Stat label="Billing holds" value={totals?.holds ?? 0} alert={(totals?.holds ?? 0) > 0} />
-            <Stat label="Failed webhooks" value={totals?.failedWebhooks ?? 0} alert={(totals?.failedWebhooks ?? 0) > 0} />
+            <Stat label={ui("Pulpo Eight")} value={data?.subscribers.eight ?? 0} />
+            <Stat label={ui("Le Pulpo Fat")} value={data?.subscribers.fat ?? 0} />
+            <Stat label={ui("Canceling")} value={totals?.canceling ?? 0} />
+            <Stat label={ui("Past due")} value={totals?.pastDue ?? 0} alert={(totals?.pastDue ?? 0) > 0} />
+            <Stat label={ui("Billing holds")} value={totals?.holds ?? 0} alert={(totals?.holds ?? 0) > 0} />
+            <Stat label={ui("Failed webhooks")} value={totals?.failedWebhooks ?? 0} alert={(totals?.failedWebhooks ?? 0) > 0} />
           </div>
         </Panel>
         <Panel
           icon={<WalletCards className="size-3" />}
-          title="Plan defaults"
-          extra={<Button size="sm" onClick={() => void saveDefaults()} disabled={saving || !limitsAreValid}>{saving ? 'Saving…' : 'Save'}</Button>}
+          title={ui("Plan defaults")}
+          extra={<Button size="sm" onClick={() => void saveDefaults()} disabled={saving || !limitsAreValid}>{saving ? ui("Saving…") : ui("Save")}</Button>}
         >
           <div className="space-y-3 px-3 py-3">
-            <p className="text-xs text-muted-foreground">USD values are internal. Users only see the percentage remaining.</p>
+            <p className="text-xs text-muted-foreground">{ui("USD values are internal. Users only see the percentage remaining.")}</p>
             <div className="flex flex-wrap items-end gap-3">
-              <LimitInput label="Pulpo Eight" value={eightLimit} onChange={setEightLimit} />
-              <LimitInput label="Le Pulpo Fat" value={fatLimit} onChange={setFatLimit} />
+              <LimitInput label={ui("Pulpo Eight")} value={eightLimit} onChange={setEightLimit} />
+              <LimitInput label={ui("Le Pulpo Fat")} value={fatLimit} onChange={setFatLimit} />
             </div>
-            <p className="pt-1 text-xs text-muted-foreground">File storage allowances apply immediately to users without an override.</p>
+            <p className="pt-1 text-xs text-muted-foreground">{ui("File storage allowances apply immediately to users without an override.")}</p>
             <div className="flex flex-wrap items-end gap-3">
-              <StorageInput label="Pulpo Baby" value={babyStorage} onChange={setBabyStorage} />
-              <StorageInput label="Pulpo Eight" value={eightStorage} onChange={setEightStorage} />
-              <StorageInput label="Le Pulpo Fat" value={fatStorage} onChange={setFatStorage} />
+              <StorageInput label={ui("Pulpo Baby")} value={babyStorage} onChange={setBabyStorage} />
+              <StorageInput label={ui("Pulpo Eight")} value={eightStorage} onChange={setEightStorage} />
+              <StorageInput label={ui("Le Pulpo Fat")} value={fatStorage} onChange={setFatStorage} />
             </div>
           </div>
         </Panel>
       </div>
 
-      <Panel icon={<CreditCard className="size-3" />} title="Recent payments" extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString()}</span>}>
+      <Panel icon={<CreditCard className="size-3" />} title={ui("Recent payments")} extra={<span className="text-xs text-muted-foreground">{(data?.recentOrders.length ?? 0).toLocaleString(activeLocale())}</span>}>
         {data?.recentOrders.length ? (
           <div className="max-h-96 overflow-auto">
             <table className="data-table min-w-max">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="px-3 py-2 font-normal">User</th>
-                  <th className="px-3 py-2 font-normal">Reason</th>
-                  <th className="px-3 py-2 font-normal">Product</th>
-                  <th className="px-3 py-2 text-right font-normal">Amount</th>
-                  <th className="px-3 py-2 text-right font-normal">Credits</th>
-                  <th className="px-3 py-2 font-normal">Status</th>
-                  <th className="px-3 py-2 font-normal">Date</th>
+                  <th className="px-3 py-2 font-normal">{ui("User")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Reason")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Product")}</th>
+                  <th className="px-3 py-2 text-right font-normal">{ui("Amount")}</th>
+                  <th className="px-3 py-2 text-right font-normal">{ui("Credits")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Status")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Date")}</th>
                   <th className="px-3 py-2 text-right font-normal" />
                 </tr>
               </thead>
@@ -319,10 +319,10 @@ export function AdminBillingPage() {
                     <td className="px-3 py-2"><ProductBadge product={order.product} /></td>
                     <td className="px-3 py-2 text-right tabular-nums">
                       {formatBalance(order.totalAmountCents / 100)}
-                      {order.taxAmountCents > 0 && <div className="text-muted-foreground">{formatBalance(order.taxAmountCents / 100)} tax</div>}
+                      {order.taxAmountCents > 0 && <div className="text-muted-foreground">{formatBalance(order.taxAmountCents / 100)} {ui("tax")}</div>}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">{order.grantedCreditMicros > 0 ? formatBalance(order.grantedCreditMicros / 1_000_000) : '—'}</td>
-                    <td className="px-3 py-2"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? 'refunded' : order.status}</Badge></td>
+                    <td className="px-3 py-2"><Badge variant={order.refundedAmountCents > 0 ? 'destructive' : 'outline'}>{order.refundedAmountCents > 0 ? ui("refunded") : order.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{formatDate(Date.parse(order.createdAt))}</td>
                     <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripePaymentUrl(stripeMode, order.stripePaymentId)} />}</td>
                   </tr>
@@ -333,17 +333,17 @@ export function AdminBillingPage() {
         ) : <Empty />}
       </Panel>
 
-      <Panel icon={<Repeat2 className="size-3" />} title="Recent subscriptions" extra={<span className="text-xs text-muted-foreground">{(data?.recentSubscriptions.length ?? 0).toLocaleString()}</span>}>
+      <Panel icon={<Repeat2 className="size-3" />} title={ui("Recent subscriptions")} extra={<span className="text-xs text-muted-foreground">{(data?.recentSubscriptions.length ?? 0).toLocaleString(activeLocale())}</span>}>
         {data?.recentSubscriptions.length ? (
           <div className="max-h-96 overflow-auto">
             <table className="data-table min-w-max">
               <thead>
                 <tr className="border-b text-left text-muted-foreground">
-                  <th className="px-3 py-2 font-normal">User</th>
-                  <th className="px-3 py-2 font-normal">Plan</th>
-                  <th className="px-3 py-2 font-normal">Status</th>
-                  <th className="px-3 py-2 font-normal">Paid through</th>
-                  <th className="px-3 py-2 font-normal">Period end</th>
+                  <th className="px-3 py-2 font-normal">{ui("User")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Plan")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Status")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Paid through")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Period end")}</th>
                   <th className="px-3 py-2 text-right font-normal" />
                 </tr>
               </thead>
@@ -355,7 +355,7 @@ export function AdminBillingPage() {
                       <div className="truncate text-muted-foreground">{row.userEmail}</div>
                     </td>
                     <td className="px-3 py-2"><ProductBadge product={row.plan} /></td>
-                    <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? 'canceling' : row.status}</Badge></td>
+                    <td className="px-3 py-2"><Badge variant={row.status === 'past_due' ? 'destructive' : 'outline'}>{row.cancelAtPeriodEnd ? ui("canceling") : row.status}</Badge></td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.paidThrough ? formatDate(Date.parse(row.paidThrough)) : '—'}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{row.currentPeriodEnd ? formatDate(Date.parse(row.currentPeriodEnd)) : '—'}</td>
                     <td className="px-3 py-2 text-right">{stripeMode && <StripeLink href={stripeSubscriptionUrl(stripeMode, row.stripeSubscriptionId)} />}</td>
@@ -368,7 +368,7 @@ export function AdminBillingPage() {
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel icon={<AlertTriangle className="size-3" />} title="Failed webhooks" extra={stripeMode && <StripeLink href={stripeWebhooksUrl(stripeMode)} label="Stripe deliveries" />}>
+        <Panel icon={<AlertTriangle className="size-3" />} title={ui("Failed webhooks")} extra={stripeMode && <StripeLink href={stripeWebhooksUrl(stripeMode)} label={ui("Stripe deliveries")} />}>
           {data?.failedEvents.length ? (
             <div className="max-h-96 divide-y overflow-y-auto">
               {data.failedEvents.map((event) => (
@@ -382,9 +382,9 @@ export function AdminBillingPage() {
                 </div>
               ))}
             </div>
-          ) : <Empty label="No failed webhooks." />}
+          ) : <Empty label={ui("No failed webhooks.")} />}
         </Panel>
-        <Panel icon={<AlertTriangle className="size-3" />} title="Billing holds">
+        <Panel icon={<AlertTriangle className="size-3" />} title={ui("Billing holds")}>
           {data?.holds.length ? (
             <div className="max-h-96 divide-y overflow-y-auto">
               {data.holds.map((hold) => (
@@ -392,38 +392,38 @@ export function AdminBillingPage() {
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{hold.userName}</div>
                     <div className="truncate text-muted-foreground">{hold.userEmail}</div>
-                    <div className="mt-1 text-muted-foreground">{hold.holdReason?.replaceAll('_', ' ') ?? 'hold'}{hold.holdAt ? ` · ${formatDate(Date.parse(hold.holdAt))}` : ''}</div>
+                    <div className="mt-1 text-muted-foreground">{hold.holdReason?.replaceAll('_', ' ') ?? ui("hold")}{hold.holdAt ? uit` · ${formatDate(Date.parse(hold.holdAt))}` : ''}</div>
                     {hold.holdReference && <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{hold.holdReference}</div>}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {stripeMode && hold.holdReference && <StripeLink href={stripeDashboardUrl(stripeMode, `/search?query=${encodeURIComponent(hold.holdReference)}`)} />}
-                    <Button size="sm" variant="outline" onClick={() => void clearHold(hold.userId)}>Clear</Button>
+                    <Button size="sm" variant="outline" onClick={() => void clearHold(hold.userId)}>{ui("Clear")}</Button>
                   </div>
                 </div>
               ))}
             </div>
-          ) : <Empty label="No billing holds." />}
+          ) : <Empty label={ui("No billing holds.")} />}
         </Panel>
       </div>
 
-      <div className="text-xs text-muted-foreground">Last reconciled: {data?.reconciliation.lastReconciledAt ? new Date(data.reconciliation.lastReconciledAt).toLocaleString() : 'Never'}</div>
+      <div className="text-xs text-muted-foreground">{ui("Last reconciled:")} {data?.reconciliation.lastReconciledAt ? new Date(data.reconciliation.lastReconciledAt).toLocaleString(activeLocale()) : ui("Never")}</div>
     </div>
   )
 }
 
 function humanReason(reason: string) {
-  if (reason === 'purchase') return 'Top-up'
-  if (reason === 'subscription_create') return 'Subscription create'
-  if (reason === 'subscription_cycle') return 'Renewal'
-  if (reason === 'subscription_update') return 'Plan update'
+  if (reason === 'purchase') return ui("Top-up")
+  if (reason === 'subscription_create') return ui("Subscription create")
+  if (reason === 'subscription_cycle') return ui("Renewal")
+  if (reason === 'subscription_update') return ui("Plan update")
   return reason.replaceAll('_', ' ')
 }
 
 function productLabel(product: ProductKind | 'eight' | 'fat') {
-  if (product === 'fat') return 'Fat'
-  if (product === 'eight') return 'Eight'
-  if (product === 'credits') return 'Top-up'
-  return 'Other'
+  if (product === 'fat') return ui("Fat")
+  if (product === 'eight') return ui("Eight")
+  if (product === 'credits') return ui("Top-up")
+  return ui("Other")
 }
 
 function ProductBadge({ product }: { product: ProductKind | 'eight' | 'fat' }) {
@@ -480,7 +480,7 @@ function StorageInput({ label, value, onChange }: { label: string; value: string
       <span className="text-xs text-muted-foreground">{label}</span>
       <div className="relative">
         <Input className="h-8 w-28 pr-9 text-xs tabular-nums" type="number" min="0" step="1" value={value} onChange={(event) => onChange(event.target.value)} />
-        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">GiB</span>
+        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">{ui("GiB")}</span>
       </div>
     </label>
   )
@@ -502,8 +502,7 @@ function ChartTip({ active, payload, label }: { active?: boolean; payload?: Arra
   return (
     <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
       <div className="font-medium">{label}</div>
-      <div className="mt-1 text-muted-foreground">
-        Collected: <span className="font-medium text-foreground tabular-nums">{formatBalance(Number(payload[0]?.value ?? 0))}</span>
+      <div className="mt-1 text-muted-foreground"> {ui("Collected:")} <span className="font-medium text-foreground tabular-nums">{formatBalance(Number(payload[0]?.value ?? 0))}</span>
       </div>
     </div>
   )

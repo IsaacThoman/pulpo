@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 export function SetupPage() {
   const { t } = useTranslation()
@@ -53,17 +54,17 @@ export function SetupPage() {
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="setup-name">{t('auth.displayName')}</Label>
-          <Input id="setup-name" autoComplete="name" placeholder="Ada Lovelace" value={name} onChange={(event) => setName(event.target.value)} required />
+          <Input id="setup-name" autoComplete="name" placeholder={ui("Ada Lovelace")} value={name} onChange={(event) => setName(event.target.value)} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-email">{t('auth.email')}</Label>
-          <Input id="setup-email" type="email" autoComplete="email" placeholder="jon@pulpo.baby" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          <Input id="setup-email" type="email" autoComplete="email" placeholder={ui("jon@pulpo.baby")} value={email} onChange={(event) => setEmail(event.target.value)} required />
         </div>
         <div className="space-y-2">
           <Label htmlFor="setup-username">{t('auth.username')}</Label>
           <div className="relative">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">@</span>
-            <Input id="setup-username" autoComplete="username" placeholder="ada_lovelace" value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" title={t('auth.usernameRequirements')} required />
+            <Input id="setup-username" autoComplete="username" placeholder={ui("ada_lovelace")} value={username} onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())} className="pl-7" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" title={t('auth.usernameRequirements')} required />
           </div>
           <p className="text-xs text-muted-foreground">{t('auth.usernameHint')}</p>
         </div>
