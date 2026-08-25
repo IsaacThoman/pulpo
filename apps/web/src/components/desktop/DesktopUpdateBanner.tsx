@@ -33,7 +33,6 @@ export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
   const updateLabel = uit`Update to v${ready.version}`
   return (
     <Button
-      variant="outline"
       size="sm"
       aria-label={restarting ? ui("Restarting…") : updateLabel}
       title={uit`Restart to install Pulpo v${ready.version}`}

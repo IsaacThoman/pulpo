@@ -45,7 +45,7 @@ describe('DesktopUpdateLink', () => {
     expect(indicator.getAttribute('title')).toBe('Restart to install Pulpo v1.2.3')
     expect(indicator.textContent).toBe('Update')
     expect(indicator.className).toContain('h-7')
-    expect(indicator.className).toContain('border')
+    expect(indicator.className).toContain('bg-primary')
     expect(indicator.innerHTML).toContain('size-3.5')
   })
 
@@ -56,7 +56,7 @@ describe('DesktopUpdateLink', () => {
     expect(desktop.restartAndInstall).toHaveBeenCalledTimes(1)
   })
 
-  it('can hide with the collapsed sidebar header', async () => {
+  it('can yield the title-bar slot to the connecting status', async () => {
     installDesktopApi({ status: 'ready', version: '1.2.3' })
     render(<DesktopUpdateLink hidden />)
     await act(async () => undefined)
