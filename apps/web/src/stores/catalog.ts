@@ -7,12 +7,14 @@ import { findCatalogModel } from '@/lib/catalog-model'
 import type { CatalogIconReference } from '@/lib/catalog-icons'
 import { ui } from '@/i18n/ui'
 
-const EMPTY_MODEL: Model = {
-  id: '', name: 'Configure a model', providerGroupId: 'internal', provider: 'OpenAI', inferenceProvider: 'Not configured',
-  labLogo: 'openai', modelLogo: 'openai', description: ui("An administrator needs to configure an OpenAI model."),
-  labCustomIcon: null, modelCustomIcon: null,
-  contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
-  outputPrice: 0, perMessagePrice: 0, enabled: false, agentEnabled: false, presets: [],
+function emptyModel(): Model {
+  return {
+    id: '', name: 'Configure a model', providerGroupId: 'internal', provider: 'OpenAI', inferenceProvider: 'Not configured',
+    labLogo: 'openai', modelLogo: 'openai', description: ui("An administrator needs to configure an OpenAI model."),
+    labCustomIcon: null, modelCustomIcon: null,
+    contextWindow: 0, tags: [], iconLight: '#18181b', iconDark: '#fafafa', inputPrice: 0,
+    outputPrice: 0, perMessagePrice: 0, enabled: false, agentEnabled: false, presets: [],
+  }
 }
 
 interface ServerModel {
@@ -80,10 +82,10 @@ export function getCatalogModel(id: string): Model {
   const models = useCatalog.getState().models
   const model = findCatalogModel(models, id)
   if (model) return model
-  if (!id) return models[0] ?? EMPTY_MODEL
+  if (!id) return models[0] ?? emptyModel()
   if (id === UNKNOWN_MODEL_ID) {
     return {
-      ...EMPTY_MODEL,
+      ...emptyModel(),
       id,
       name: 'unknown model',
       provider: 'Pulpo',
@@ -96,7 +98,7 @@ export function getCatalogModel(id: string): Model {
     }
   }
   return {
-    ...EMPTY_MODEL,
+    ...emptyModel(),
     id,
     name: id,
     description: ui("This model is not available in the current catalog."),

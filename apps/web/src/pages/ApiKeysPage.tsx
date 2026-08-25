@@ -50,8 +50,8 @@ import { useAuth } from '@/stores/auth'
 import { ui, uit } from '@/i18n/ui'
 
 const ALL_SCOPES = [
-  { id: 'responses', label: ui("Responses") },
-  { id: 'models', label: ui("List models") },
+  { id: 'responses', label: "Responses" },
+  { id: 'models', label: "List models" },
 ] as const
 
 const API_BASE_URL = `${runtimeInstanceUrl()}/v1`
@@ -456,7 +456,7 @@ export function ApiKeysPage() {
                 {ALL_SCOPES.map((s) => (
                   <CheckboxRow
                     key={s.id}
-                    label={s.label}
+                    label={ui(s.label)}
                     checked={scopes.includes(s.id)}
                     onChange={(v) =>
                       setScopes((cur) => (v ? [...cur, s.id] : cur.filter((x) => x !== s.id)))

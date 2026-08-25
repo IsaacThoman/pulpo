@@ -10,6 +10,7 @@ import { DesktopInstancePage } from '@/components/desktop/DesktopInstancePage'
 import { DesktopTitleBar } from '@/components/desktop/DesktopTitleBar'
 import { desktopStartupSurface } from '@/lib/desktop-startup'
 import { ui } from '@/i18n/ui'
+import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
@@ -54,6 +55,10 @@ function RequireBilling({ children }: { children: ReactNode }) {
   return billingEnabled ? children : <Navigate to="/usage" replace />
 }
 
+function LocalizedRoute({ children }: { children: ReactNode }) {
+  return <LocaleBoundary>{children}</LocaleBoundary>
+}
+
 export default function App() {
   const bootstrap = useAuth((state) => state.bootstrap)
   const checkingSession = useAuth((state) => state.checkingSession)
@@ -78,50 +83,50 @@ export default function App() {
           : <DesktopInstancePage />
       ) : <Suspense fallback={<div className="grid min-h-dvh place-items-center text-sm text-muted-foreground">{ui("Loading Pulpo…")}</div>}>
         <Routes>
-        <Route element={<AuthLayout />}>
-          <Route path="setup" element={<SetupPage />} />
-          <Route path="login" element={<LoginPage />} />
-          <Route path="login/options" element={<LoginOptionsPage />} />
-          <Route path="signup" element={<SignupPage />} />
-          <Route path="forgot-password" element={<ForgotPasswordPage />} />
-          <Route path="reset-password" element={<ResetPasswordPage />} />
+        <Route element={<LocalizedRoute><AuthLayout /></LocalizedRoute>}>
+          <Route path="setup" element={<LocalizedRoute><SetupPage /></LocalizedRoute>} />
+          <Route path="login" element={<LocalizedRoute><LoginPage /></LocalizedRoute>} />
+          <Route path="login/options" element={<LocalizedRoute><LoginOptionsPage /></LocalizedRoute>} />
+          <Route path="signup" element={<LocalizedRoute><SignupPage /></LocalizedRoute>} />
+          <Route path="forgot-password" element={<LocalizedRoute><ForgotPasswordPage /></LocalizedRoute>} />
+          <Route path="reset-password" element={<LocalizedRoute><ResetPasswordPage /></LocalizedRoute>} />
         </Route>
-        <Route path="pending" element={<PendingPage />} />
-        <Route path="share/:token" element={<SharedChatPage />} />
-        <Route path="privacy" element={<PrivacyPage />} />
-        <Route path="support" element={<SupportPage />} />
-        <Route path="mobile/passkey" element={<MobilePasskeyPage />} />
-        <Route path="mobile/passkey/enroll" element={<MobilePasskeyEnrollmentPage />} />
+        <Route path="pending" element={<LocalizedRoute><PendingPage /></LocalizedRoute>} />
+        <Route path="share/:token" element={<LocalizedRoute><SharedChatPage /></LocalizedRoute>} />
+        <Route path="privacy" element={<LocalizedRoute><PrivacyPage /></LocalizedRoute>} />
+        <Route path="support" element={<LocalizedRoute><SupportPage /></LocalizedRoute>} />
+        <Route path="mobile/passkey" element={<LocalizedRoute><MobilePasskeyPage /></LocalizedRoute>} />
+        <Route path="mobile/passkey/enroll" element={<LocalizedRoute><MobilePasskeyEnrollmentPage /></LocalizedRoute>} />
 
         <Route element={<RequireAuth />}>
-          <Route element={<AppLayout />}>
-            <Route index element={<ChatPage />} />
-            <Route path="c/:chatId" element={<ChatPage />} />
-            <Route path="usage" element={<UsageLayout />}>
-              <Route index element={<PersonalPage />} />
-              <Route path="friends" element={<LeaderboardPage />} />
-              <Route path="pool" element={<LeaderboardPage scope="pool" />} />
+          <Route element={<LocalizedRoute><AppLayout /></LocalizedRoute>}>
+            <Route index element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
+            <Route path="c/:chatId" element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
+            <Route path="usage" element={<LocalizedRoute><UsageLayout /></LocalizedRoute>}>
+              <Route index element={<LocalizedRoute><PersonalPage /></LocalizedRoute>} />
+              <Route path="friends" element={<LocalizedRoute><LeaderboardPage /></LocalizedRoute>} />
+              <Route path="pool" element={<LocalizedRoute><LeaderboardPage scope="pool" /></LocalizedRoute>} />
               <Route path="leaderboard" element={<Navigate to="/usage/friends" replace />} />
             </Route>
-            <Route path="friends" element={<FriendsPage />} />
-            <Route path="friends/pool" element={<PoolPage />} />
-            <Route path="api-keys" element={<ApiKeysPage />} />
-            <Route path="billing" element={<RequireBilling><BillingPage /></RequireBilling>} />
+            <Route path="friends" element={<LocalizedRoute><FriendsPage /></LocalizedRoute>} />
+            <Route path="friends/pool" element={<LocalizedRoute><PoolPage /></LocalizedRoute>} />
+            <Route path="api-keys" element={<LocalizedRoute><ApiKeysPage /></LocalizedRoute>} />
+            <Route path="billing" element={<LocalizedRoute><RequireBilling><BillingPage /></RequireBilling></LocalizedRoute>} />
             <Route element={<RequireAdmin />}>
-              <Route path="admin" element={<AdminLayout />}>
+              <Route path="admin" element={<LocalizedRoute><AdminLayout /></LocalizedRoute>}>
                 <Route index element={<Navigate to="users" replace />} />
-                <Route path="users" element={<AdminUsersPage />} />
-                <Route path="providers" element={<AdminProvidersPage />} />
-                <Route path="labs" element={<AdminLabsPage />} />
-                <Route path="icons" element={<AdminIconsPage />} />
-                <Route path="models" element={<AdminModelsPage />} />
-                <Route path="usage" element={<AdminUsageLayout />}>
-                  <Route index element={<LeaderboardPage scope="instance" />} />
-                  <Route path="requests" element={<AdminUsagePage />} />
-                  <Route path="workspaces" element={<AdminWorkspacesPage />} />
+                <Route path="users" element={<LocalizedRoute><AdminUsersPage /></LocalizedRoute>} />
+                <Route path="providers" element={<LocalizedRoute><AdminProvidersPage /></LocalizedRoute>} />
+                <Route path="labs" element={<LocalizedRoute><AdminLabsPage /></LocalizedRoute>} />
+                <Route path="icons" element={<LocalizedRoute><AdminIconsPage /></LocalizedRoute>} />
+                <Route path="models" element={<LocalizedRoute><AdminModelsPage /></LocalizedRoute>} />
+                <Route path="usage" element={<LocalizedRoute><AdminUsageLayout /></LocalizedRoute>}>
+                  <Route index element={<LocalizedRoute><LeaderboardPage scope="instance" /></LocalizedRoute>} />
+                  <Route path="requests" element={<LocalizedRoute><AdminUsagePage /></LocalizedRoute>} />
+                  <Route path="workspaces" element={<LocalizedRoute><AdminWorkspacesPage /></LocalizedRoute>} />
                 </Route>
-                <Route path="billing" element={<RequireBilling><AdminBillingPage /></RequireBilling>} />
-                <Route path="settings" element={<AdminSettingsPage />} />
+                <Route path="billing" element={<LocalizedRoute><RequireBilling><AdminBillingPage /></RequireBilling></LocalizedRoute>} />
+                <Route path="settings" element={<LocalizedRoute><AdminSettingsPage /></LocalizedRoute>} />
               </Route>
             </Route>
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -411,7 +411,7 @@ function ActivityBlock({
   const hasWorkspace = Boolean(workspace)
   const runningTool = tools.find((tool) => tool.status === 'running')
 
-  const label = useMemo(() => {
+  const label = (() => {
     if (compaction?.status === 'in_progress') return ui("Compacting context…")
     if (compaction?.status === 'failed') return ui("Context compaction failed")
     if (compaction) return ui("Compacted context")
@@ -428,7 +428,7 @@ function ActivityBlock({
       return hasTools || hasWorkspace ? `Worked for ${duration}` : `Thought for ${duration}`
     }
     return hasTools || hasWorkspace ? 'Worked' : 'Thought'
-  }, [compaction, workspace, workspaceBusy, workspaceFailed, runningTool, active, hasTools, hasReasoning, hasWorkspace, showDuration, durationMs])
+  })()
 
   const triggerIcon = (() => {
     if (compaction?.status === 'in_progress') return <Loader2 className="size-3.5 shrink-0 animate-spin" />
