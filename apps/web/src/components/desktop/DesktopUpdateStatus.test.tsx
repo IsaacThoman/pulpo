@@ -44,6 +44,7 @@ describe('DesktopUpdateStatus', () => {
 
     const indicator = screen.getByRole('button', { name: 'Restart to install Pulpo v1.2.3' })
     expect(indicator.textContent).toBe('Update Available')
+    expect(indicator.className).toContain('desktop-update-status')
     expect(indicator.className).toContain('cursor-pointer')
     expect(indicator.className).toContain('hover:text-foreground')
   })
