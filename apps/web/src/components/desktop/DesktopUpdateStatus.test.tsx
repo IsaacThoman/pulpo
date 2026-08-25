@@ -61,7 +61,7 @@ describe('DesktopUpdateStatus', () => {
     const view = render(<DesktopUpdateStatus separated />)
 
     await screen.findByText('Update Available')
-    expect(view.container.textContent).toBe('·Update Available')
+    expect(view.container.textContent).toBe('Update Available·')
   })
 
   it('removes its update listener when unmounted', () => {

@@ -25,6 +25,7 @@ export function DesktopTitleBarSurface({
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
       <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground">
+        <DesktopUpdateStatus separated={Boolean(connectionStatus)} />
         {connectionStatus && (
           <span className="flex items-center gap-1.5" role="status">
             {connectionStatus === 'connecting' ? (
@@ -40,7 +41,6 @@ export function DesktopTitleBarSurface({
             )}
           </span>
         )}
-        <DesktopUpdateStatus separated={Boolean(connectionStatus)} />
       </div>
     </>
   )

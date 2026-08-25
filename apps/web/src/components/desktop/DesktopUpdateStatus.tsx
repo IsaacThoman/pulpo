@@ -34,7 +34,6 @@ export function DesktopUpdateStatus({ separated = false }: { separated?: boolean
 
   return (
     <>
-      {separated && <span aria-hidden="true">·</span>}
       <button
         type="button"
         className="flex items-center gap-1.5 hover:text-foreground disabled:pointer-events-none"
@@ -55,6 +54,7 @@ export function DesktopUpdateStatus({ separated = false }: { separated?: boolean
         )}
         {restarting ? ui('Restarting…') : ui('Update Available')}
       </button>
+      {separated && <span aria-hidden="true">·</span>}
     </>
   )
 }
