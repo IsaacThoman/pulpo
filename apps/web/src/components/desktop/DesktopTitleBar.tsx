@@ -1,12 +1,87 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Loader2, WifiOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { isDesktopRuntime } from '@/lib/runtime'
+import { isDesktopRuntime, type DesktopUpdateState } from '@/lib/runtime'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { desktopConnectionStatus } from '@/lib/desktop-startup'
-import { DesktopUpdateLink } from './DesktopUpdateBanner'
-import { ui } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
+
+type DesktopConnectionStatusValue = 'connecting' | 'offline'
+
+function DesktopStatusIndicator({
+  status,
+  onRetry,
+}: {
+  status?: DesktopConnectionStatusValue
+  onRetry?: () => void
+}) {
+  const [readyUpdate, setReadyUpdate] = useState<Extract<DesktopUpdateState, { status: 'ready' }> | null>(null)
+  const [restarting, setRestarting] = useState(false)
+
+  useEffect(() => {
+    const updates = window.pulpoDesktop?.updates
+    if (!updates) return
+    let active = true
+    let receivedEvent = false
+    const applyState = (state: DesktopUpdateState) => {
+      if (active) setReadyUpdate(state.status === 'ready' ? state : null)
+    }
+    const unsubscribe = updates.onStateChanged((state) => {
+      receivedEvent = true
+      applyState(state)
+    })
+    void updates.getState().then((state) => {
+      if (!receivedEvent) applyState(state)
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [])
+
+  const className = 'desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground'
+
+  if (status === 'connecting') {
+    return (
+      <div className={className} role="status">
+        <Loader2 className="size-3 animate-spin" />
+        {ui("Connecting…")}
+      </div>
+    )
+  }
+
+  if (status === 'offline') {
+    return (
+      <button
+        type="button"
+        className={`${className} rounded-full px-2 py-1 hover:bg-accent hover:text-foreground`}
+        onClick={onRetry}
+      >
+        <WifiOff className="size-3" />
+        {ui("Offline · Retry")}
+      </button>
+    )
+  }
+
+  if (!readyUpdate) return null
+  return (
+    <button
+      type="button"
+      title={uit`Restart to install Pulpo v${readyUpdate.version}`}
+      className={`${className} font-medium text-primary underline underline-offset-2 hover:text-primary/80 disabled:opacity-60`}
+      disabled={restarting}
+      onClick={() => {
+        const restartAndInstall = window.pulpoDesktop?.updates.restartAndInstall
+        if (!restartAndInstall) return
+        setRestarting(true)
+        void restartAndInstall().catch(() => setRestarting(false))
+      }}
+    >
+      {restarting ? ui("Restarting…") : uit`Update to v${readyUpdate.version}`}
+    </button>
+  )
+}
 
 export function DesktopTitleBarSurface({
   temporaryChat,
@@ -14,7 +89,7 @@ export function DesktopTitleBarSurface({
   onRetry,
 }: {
   temporaryChat: boolean
-  connectionStatus?: 'connecting' | 'offline'
+  connectionStatus?: DesktopConnectionStatusValue
   onRetry?: () => void
 }) {
   return (
@@ -24,19 +99,7 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
-      <DesktopUpdateLink hidden={connectionStatus === 'connecting'} />
-      {connectionStatus === 'connecting' && (
-        <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
-          <Loader2 className="size-3 animate-spin" />{ui("Connecting…")} </div>
-      )}
-      {connectionStatus === 'offline' && (
-        <button
-          type="button"
-          className="desktop-connection-status fixed right-3 top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onRetry}
-        >
-          <WifiOff className="size-3" />{ui("Offline · Retry")} </button>
-      )}
+      <DesktopStatusIndicator status={connectionStatus} onRetry={onRetry} />
     </>
   )
 }
