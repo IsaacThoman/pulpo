@@ -7,14 +7,14 @@ import { useAuth } from '@/stores/auth'
 import { desktopConnectionStatus } from '@/lib/desktop-startup'
 import { ui } from '@/i18n/ui'
 
+const DESKTOP_CONNECTION_RETRY_INTERVAL_MS = 10_000
+
 export function DesktopTitleBarSurface({
   temporaryChat,
   connectionStatus,
-  onRetry,
 }: {
   temporaryChat: boolean
   connectionStatus?: 'connecting' | 'offline'
-  onRetry?: () => void
 }) {
   return (
     <>
@@ -34,14 +34,10 @@ export function DesktopTitleBarSurface({
               {ui('Connecting…')}
             </>
           ) : (
-            <button
-              type="button"
-              className="flex items-center gap-1.5 hover:text-foreground"
-              onClick={onRetry}
-            >
+            <>
               <WifiOff className="size-3" />
-              {ui('Offline · Retry')}
-            </button>
+              {ui('Offline')}
+            </>
           )}
         </div>
       )}
@@ -74,6 +70,21 @@ export function DesktopTitleBar() {
     return () => window.removeEventListener('online', retry)
   }, [retryDesktopConnection])
 
+  useEffect(() => {
+    if (
+      !window.pulpoDesktop
+      || !user
+      || checkingSession
+      || instanceReady
+      || !navigator.onLine
+    ) return
+
+    const timeout = window.setTimeout(() => {
+      void retryDesktopConnection()
+    }, DESKTOP_CONNECTION_RETRY_INTERVAL_MS)
+    return () => window.clearTimeout(timeout)
+  }, [checkingSession, instanceReady, retryDesktopConnection, user])
+
   if (!isDesktopRuntime()) return null
   const connectionStatus = desktopConnectionStatus({
     hasCachedUser: Boolean(user),
@@ -84,7 +95,6 @@ export function DesktopTitleBar() {
     <DesktopTitleBarSurface
       temporaryChat={temporaryChat}
       connectionStatus={connectionStatus}
-      onRetry={() => { void retryDesktopConnection() }}
     />
   )
 }

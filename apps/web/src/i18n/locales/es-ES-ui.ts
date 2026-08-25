@@ -630,7 +630,7 @@ const esUi: Record<string, string> = {
   "OCR pipeline": "Oleoducto OCR",
   "of": "de",
   "of 6 members ·": "de 6 miembros ·",
-  "Offline · Retry": "Sin conexión · Reintentar",
+  "Offline": "Sin conexión",
   "Open for": "Abierto para",
   "Open Pulpo": "Pulpo abierto",
   "Open sidebar": "Abrir barra lateral",
