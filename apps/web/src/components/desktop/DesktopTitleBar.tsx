@@ -6,6 +6,7 @@ import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { desktopConnectionStatus } from '@/lib/desktop-startup'
 import { ui } from '@/i18n/ui'
+import { DesktopUpdateStatus } from './DesktopUpdateStatus'
 
 const DESKTOP_CONNECTION_RETRY_INTERVAL_MS = 10_000
 
@@ -23,24 +24,24 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
-      {connectionStatus && (
-        <div
-          className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground"
-          role="status"
-        >
-          {connectionStatus === 'connecting' ? (
-            <>
-              <Loader2 className="size-3 animate-spin" />
-              {ui('Connecting…')}
-            </>
-          ) : (
-            <>
-              <WifiOff className="size-3" />
-              {ui('Offline')}
-            </>
-          )}
-        </div>
-      )}
+      <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground">
+        {connectionStatus && (
+          <span className="flex items-center gap-1.5" role="status">
+            {connectionStatus === 'connecting' ? (
+              <>
+                <Loader2 className="size-3 animate-spin" />
+                {ui('Connecting…')}
+              </>
+            ) : (
+              <>
+                <WifiOff className="size-3" />
+                {ui('Offline')}
+              </>
+            )}
+          </span>
+        )}
+        <DesktopUpdateStatus separated={Boolean(connectionStatus)} />
+      </div>
     </>
   )
 }
