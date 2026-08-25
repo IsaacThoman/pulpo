@@ -11,9 +11,12 @@ export function desktopStartupSurface(state: DesktopStartupState): 'app' | 'conn
 }
 
 export function desktopConnectionStatus(
-  state: Pick<DesktopStartupState, 'hasCachedUser' | 'checkingSession' | 'instanceReady'>,
+  state: Pick<DesktopStartupState, 'hasCachedUser' | 'checkingSession' | 'instanceReady'> & {
+    hasConnectionError: boolean
+  },
 ): 'connecting' | 'offline' | undefined {
   if (!state.hasCachedUser) return undefined
+  if (state.hasConnectionError) return 'offline'
   if (state.checkingSession) return 'connecting'
   return state.instanceReady ? undefined : 'offline'
 }

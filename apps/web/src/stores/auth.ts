@@ -404,7 +404,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   retryDesktopConnection: async () => {
     if (!isDesktopRuntime() || get().checkingSession || get().instanceReady) return
-    set({ checkingSession: true, instanceError: '' })
+    set({ checkingSession: true })
     await get().bootstrap()
   },
 

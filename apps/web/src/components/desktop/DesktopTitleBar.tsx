@@ -51,6 +51,7 @@ export function DesktopTitleBar() {
   const user = useAuth((state) => state.user)
   const checkingSession = useAuth((state) => state.checkingSession)
   const instanceReady = useAuth((state) => state.instanceReady)
+  const instanceError = useAuth((state) => state.instanceError)
   const retryDesktopConnection = useAuth((state) => state.retryDesktopConnection)
 
   useEffect(() => {
@@ -90,6 +91,7 @@ export function DesktopTitleBar() {
     hasCachedUser: Boolean(user),
     checkingSession,
     instanceReady,
+    hasConnectionError: Boolean(instanceError),
   })
   return (
     <DesktopTitleBarSurface
