@@ -1,10 +1,12 @@
-import { Fragment, type ReactNode } from "react";
+import { cloneElement, isValidElement, type ReactNode } from "react";
 import { useTranslation } from "./useAppTranslation";
 
-/** Re-evaluates source-keyed UI copy whenever the active catalog changes. */
+/** Re-evaluates source-keyed UI copy without remounting the application. */
 export function LocaleBoundary({ children }: { children: ReactNode }) {
-  const { i18n } = useTranslation();
-  return (
-    <Fragment key={i18n.resolvedLanguage ?? i18n.language}>{children}</Fragment>
-  );
+  useTranslation();
+
+  // A fresh element makes source-keyed `ui()` calls render again. Keeping its
+  // type and key stable preserves component state and avoids re-running mount
+  // effects such as settings hydration.
+  return isValidElement(children) ? cloneElement(children) : children;
 }
