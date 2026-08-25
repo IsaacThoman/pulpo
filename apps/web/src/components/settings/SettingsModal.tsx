@@ -60,6 +60,7 @@ import { AvatarCropEditor } from './AvatarCropEditor'
 import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
+import { DesktopAppVersion } from './DesktopAppVersion'
 import { ui, uit } from '@/i18n/ui'
 
 const SECTION_CONFIG = {
@@ -835,6 +836,7 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui("About")}</h2>
                   <Separator className="my-3" />
                   <div className="space-y-2 py-3 text-sm">
+                    <DesktopAppVersion />
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{ui("Version")}</span>
                       <span className="font-mono">0.1.0</span>

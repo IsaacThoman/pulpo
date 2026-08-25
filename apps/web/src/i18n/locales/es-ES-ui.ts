@@ -104,6 +104,7 @@ const esUi: Record<string, string> = {
   "and sign them out of all active sessions.": "y cerrar sesión en todas las sesiones activas.",
   "API base URL": "URL base de la API",
   "API endpoint": "Punto final de la API",
+  "App version": "Versión de la aplicación",
   "API key": "Clave de API",
   "API keys": "Claves de API",
   "API Keys": "Claves de API",
