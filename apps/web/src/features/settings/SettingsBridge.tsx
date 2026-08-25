@@ -7,7 +7,7 @@ import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
 import { useModels } from '@/stores/models'
-import { DEFAULT_SETTINGS, useSettings } from '@/stores/settings'
+import { DEFAULT_SETTINGS, normalizeLanguage, useSettings } from '@/stores/settings'
 import { isDesktopRuntime } from '@/lib/runtime'
 
 const persistedKeys = [
@@ -97,7 +97,12 @@ export function SettingsBridge() {
     if (!data || !userId) return
     applyingRemote.current = true
     try {
-      useSettings.setState({ ...DEFAULT_SETTINGS, ...data.values, ownerUserId: userId })
+      useSettings.setState({
+        ...DEFAULT_SETTINGS,
+        ...data.values,
+        language: normalizeLanguage(data.values.language),
+        ownerUserId: userId,
+      })
       const modelPreferences = modelPreferencesSchema.parse(data.values)
       const newAccountFavoriteModelIds = data.newAccountFavoriteModelIds ?? []
       const newAccountFavoritesLoaded = Array.isArray(data.newAccountFavoriteModelIds)

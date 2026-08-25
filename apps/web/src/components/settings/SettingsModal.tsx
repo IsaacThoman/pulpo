@@ -33,7 +33,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { ModelIcon } from '@/components/ModelIcon'
-import { useSettings, type AutomaticChatExpiration, type Theme, type TrashRetention } from '@/stores/settings'
+import {
+  SUPPORTED_LANGUAGES,
+  normalizeLanguage,
+  useSettings,
+  type AutomaticChatExpiration,
+  type Theme,
+  type TrashRetention,
+} from '@/stores/settings'
 import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
 import { apiRequest, downloadApiFile } from '@/lib/api'
@@ -508,16 +515,16 @@ export function SettingsModal({
                     <ThemePicker />
                   </Row>
                   <Row label="Language">
-                    <Select value={s.language} onValueChange={(v) => s.set('language', v)}>
+                    <Select value={s.language} onValueChange={(value) => s.set('language', normalizeLanguage(value))}>
                       <SelectTrigger className="w-40">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="en-US">English (US)</SelectItem>
-                        <SelectItem value="en-GB">English (UK)</SelectItem>
-                        <SelectItem value="de-DE">Deutsch</SelectItem>
-                        <SelectItem value="es-ES">Español</SelectItem>
-                        <SelectItem value="zh-CN">中文</SelectItem>
+                        {SUPPORTED_LANGUAGES.map((language) => (
+                          <SelectItem key={language.value} value={language.value}>
+                            {language.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </Row>
