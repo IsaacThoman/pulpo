@@ -89,7 +89,7 @@ export function AdminWorkspacesPage() {
   return <div className="space-y-4">
     <div className="flex items-center gap-3"><div><h2 className="text-lg font-semibold">{ui("Agent workspaces")}</h2><p className="text-xs text-muted-foreground">{ui("Live leases, owners, queue state, and forced cleanup deadlines.")}</p></div><div className="flex-1" /><Button variant="outline" size="icon-sm" onClick={() => void load()} aria-label={ui("Refresh workspaces")}><RefreshCw /></Button></div>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-      <Metric icon={<Server />} label={ui("Controller")} value={result?.controller.healthy ? 'Healthy' : 'Unavailable'} />
+      <Metric icon={<Server />} label={ui("Controller")} value={result?.controller.healthy ? ui("Healthy") : ui("Unavailable")} />
       <Metric icon={<Activity />} label={ui("Open VMs")} value={result ? openWorkspaces.length : '—'} />
       <Metric icon={<Users />} label={ui("Claimed")} value={`${result?.controller.active ?? 0} / ${policy?.maxActiveWorkspaces ?? '—'}`} />
       <Metric icon={<Users />} label={ui("Pending users")} value={result?.summary.pending ?? 0} />

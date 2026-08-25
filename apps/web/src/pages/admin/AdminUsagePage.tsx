@@ -49,7 +49,7 @@ export function AdminUsagePage() {
   return <div className="space-y-5">
     <div className="flex items-center gap-3"><div><h2 className="text-lg font-semibold">{ui("Usage & operations")}</h2><p className="text-xs text-muted-foreground">{ui("Every web, API, agent, and built-in model call in real time.")}</p></div><div className="flex-1" /><Select value={range} onValueChange={(v: Range) => setRange(v)}><SelectTrigger className="w-28"><SelectValue /></SelectTrigger><SelectContent>{['24h','7d','30d','90d','all'].map((v) => <SelectItem key={v} value={v}>{v === 'all' ? ui("All time") : v}</SelectItem>)}</SelectContent></Select><Button variant="outline" size="icon-sm" onClick={() => void load()}><RefreshCw /></Button></div>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-      <Metric icon={<Activity />} label={ui("Active")} value={(s.queued ?? 0) + (s.inProgress ?? 0)} />
+      <Metric icon={<Activity />} label={ui("Active requests")} value={(s.queued ?? 0) + (s.inProgress ?? 0)} />
       <Metric icon={<CircleCheck />} label={ui("Completed")} value={s.completed ?? 0} />
       <Metric icon={<AlertTriangle />} label={ui("Errors")} value={(s.failed ?? 0) + (s.incomplete ?? 0)} />
       <Metric icon={<Coins />} label={ui("Spend")} value={`$${((s.spendMicros ?? 0) / 1_000_000).toFixed(4)}`} />

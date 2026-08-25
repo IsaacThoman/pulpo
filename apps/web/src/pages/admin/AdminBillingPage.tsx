@@ -15,10 +15,10 @@ type Range = '7d' | '30d' | '90d' | 'all'
 type ProductKind = 'eight' | 'fat' | 'credits' | 'unknown'
 
 const RANGES: { id: Range; label: string }[] = [
-  { id: '7d', label: ui("7d") },
-  { id: '30d', label: ui("30d") },
-  { id: '90d', label: ui("90d") },
-  { id: 'all', label: ui("All") },
+  { id: '7d', label: "7d" },
+  { id: '30d', label: "30d" },
+  { id: '90d', label: "90d" },
+  { id: 'all', label: "All" },
 ]
 
 interface Dashboard {
@@ -208,7 +208,7 @@ export function AdminBillingPage() {
           </>}
         </div>
         <div className="flex items-center gap-2">
-          <ToggleGroup options={RANGES} value={range} onChange={setRange} />
+          <ToggleGroup options={RANGES.map((option) => ({ ...option, label: ui(option.label) }))} value={range} onChange={setRange} />
           <Button variant="outline" size="sm" onClick={() => void reconcile()} disabled={syncing}>
             <RefreshCw className={syncing ? 'animate-spin' : ''} />{ui("Sync now")} </Button>
         </div>
