@@ -47,10 +47,11 @@ import {
 import { ModelIcon } from '@/components/ModelIcon'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
+import { ui, uit } from '@/i18n/ui'
 
 const ALL_SCOPES = [
-  { id: 'responses', label: 'Responses' },
-  { id: 'models', label: 'List models' },
+  { id: 'responses', label: ui("Responses") },
+  { id: 'models', label: ui("List models") },
 ] as const
 
 const API_BASE_URL = `${runtimeInstanceUrl()}/v1`
@@ -96,7 +97,7 @@ function LimitRow({
       <div className="flex items-center gap-2">
         <span className="text-sm tabular-nums">{formatCost(amount)}</span>
         <span className="rounded-full border px-1.5 py-0.5 text-[10px] font-medium tracking-wide text-muted-foreground">
-          {kind === 'total' ? 'TOTAL' : 'MONTH'}
+          {kind === 'total' ? ui("TOTAL") : ui("MONTH")}
         </span>
       </div>
       <div className="mt-1.5 h-1 w-full max-w-[110px] overflow-hidden rounded-full bg-muted">
@@ -197,7 +198,7 @@ export function ApiKeysPage() {
   }
 
   const modelLabel = (ids: string[]) => {
-    if (ids.length === 0) return 'All models'
+    if (ids.length === 0) return ui("All models")
     if (ids.length === 1) return models.find((m) => m.id === ids[0])?.name ?? '1 model'
     return `${ids.length} models`
   }
@@ -207,7 +208,7 @@ export function ApiKeysPage() {
   const keyActions = (key: ApiKey) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="icon-sm" variant="ghost" aria-label={`Actions for ${key.name}`}>
+        <Button size="icon-sm" variant="ghost" aria-label={uit`Actions for ${key.name}`}>
           <MoreHorizontal className="size-4" />
         </Button>
       </DropdownMenuTrigger>
@@ -215,24 +216,18 @@ export function ApiKeysPage() {
         <DropdownMenuItem
           onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
         >
-          <Copy />
-          Copy prefix
-        </DropdownMenuItem>
+          <Copy /> {ui("Copy prefix")} </DropdownMenuItem>
         {!key.revoked && (
-          <DropdownMenuItem onClick={() => setConfirmRevoke(key)}>
-            Revoke
-          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setConfirmRevoke(key)}> {ui("Revoke")} </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void deleteKey(key.id)}>
-          <Trash2 />
-          Delete
-        </DropdownMenuItem>
+          <Trash2 /> {ui("Delete")} </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
 
-  if (!apiKeysEnabled) return <div className="grid h-full place-items-center p-8"><div className="max-w-md rounded-xl border p-6 text-center"><TriangleAlert className="mx-auto size-8 text-amber-500" /><h1 className="mt-3 text-lg font-semibold">API keys are disabled</h1><p className="mt-2 text-sm text-muted-foreground">The administrator has suspended API-key authentication. Existing keys remain stored and can be used again if the policy is re-enabled.</p></div></div>
+  if (!apiKeysEnabled) return <div className="grid h-full place-items-center p-8"><div className="max-w-md rounded-xl border p-6 text-center"><TriangleAlert className="mx-auto size-8 text-amber-500" /><h1 className="mt-3 text-lg font-semibold">{ui("API keys are disabled")}</h1><p className="mt-2 text-sm text-muted-foreground">{ui("The administrator has suspended API-key authentication. Existing keys remain stored and can be used again if the policy is re-enabled.")}</p></div></div>
 
   return (
     <ScrollArea className="h-full">
@@ -240,18 +235,15 @@ export function ApiKeysPage() {
         {/* header */}
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl font-semibold tracking-tight">API Keys</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create and manage OpenAI-compatible keys.{' '}
+            <h1 className="text-xl font-semibold tracking-tight">{ui("API Keys")}</h1>
+            <p className="mt-1 text-sm text-muted-foreground"> {ui("Create and manage OpenAI-compatible keys.")}{' '}
               <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
                 {API_BASE_URL}
               </code>
             </p>
           </div>
           <Button onClick={() => setCreateOpen(true)}>
-            <Plus />
-            New Key
-          </Button>
+            <Plus /> {ui("New Key")} </Button>
         </div>
 
         {/* search */}
@@ -259,7 +251,7 @@ export function ApiKeysPage() {
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Search by name…"
+            placeholder={ui("Search by name…")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -269,7 +261,7 @@ export function ApiKeysPage() {
         <div className="divide-y rounded-xl border lg:hidden">
           {filtered.length === 0 && (
             <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-              {keys.length === 0 ? 'No keys yet — create one to get started.' : 'No keys match your search.'}
+              {keys.length === 0 ? ui("No keys yet — create one to get started.") : ui("No keys match your search.")}
             </p>
           )}
           {filtered.map((key) => (
@@ -278,7 +270,7 @@ export function ApiKeysPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate font-medium">{key.name}</span>
-                    {key.revoked && <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px]">revoked</Badge>}
+                    {key.revoked && <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px]">{ui("revoked")}</Badge>}
                   </div>
                   <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{maskKey(key.prefix)}</div>
                 </div>
@@ -286,20 +278,20 @@ export function ApiKeysPage() {
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-x-3 gap-y-4 text-sm">
                 <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">Models</dt>
+                  <dt className="text-xs text-muted-foreground">{ui("Models")}</dt>
                   <dd className="mt-1 truncate">{modelLabel(key.allowedModels)}</dd>
                   <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.join(' · ')}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Last used</dt>
-                  <dd className="mt-1">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : 'Never'}</dd>
+                  <dt className="text-xs text-muted-foreground">{ui("Last used")}</dt>
+                  <dd className="mt-1">{key.lastUsedAt ? timeAgo(key.lastUsedAt) : ui("Never")}</dd>
                 </div>
                 <div>
-                  <dt className="text-xs text-muted-foreground">Usage</dt>
+                  <dt className="text-xs text-muted-foreground">{ui("Usage")}</dt>
                   <dd className="mt-1 tabular-nums">{formatCost(key.spentTotal ?? 0)}</dd>
                 </div>
                 <div className="min-w-0">
-                  <dt className="text-xs text-muted-foreground">Limit</dt>
+                  <dt className="text-xs text-muted-foreground">{ui("Limit")}</dt>
                   <dd className="mt-1"><LimitCell k={key} /></dd>
                 </div>
               </dl>
@@ -308,8 +300,8 @@ export function ApiKeysPage() {
           {keys.length > 0 && (
             <div className="px-4 py-2.5 text-xs text-muted-foreground">
               {filtered.length === keys.length
-                ? `${keys.length} key${keys.length === 1 ? '' : 's'}`
-                : `${filtered.length} of ${keys.length} keys`}
+                ? uit`${keys.length} key${keys.length === 1 ? '' : 's'}`
+                : uit`${filtered.length} of ${keys.length} keys`}
             </div>
           )}
         </div>
@@ -319,11 +311,11 @@ export function ApiKeysPage() {
           <table className="data-table">
             <thead>
               <tr className="border-b">
-                <th className="px-3 py-2">Key</th>
-                <th className="px-3 py-2">Models</th>
-                <th className="px-3 py-2">Last used</th>
-                <th className="px-3 py-2">Usage</th>
-                <th className="px-3 py-2">Limit</th>
+                <th className="px-3 py-2">{ui("Key")}</th>
+                <th className="px-3 py-2">{ui("Models")}</th>
+                <th className="px-3 py-2">{ui("Last used")}</th>
+                <th className="px-3 py-2">{ui("Usage")}</th>
+                <th className="px-3 py-2">{ui("Limit")}</th>
                 <th className="w-12 px-2 py-2" />
               </tr>
             </thead>
@@ -331,7 +323,7 @@ export function ApiKeysPage() {
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">
-                    {keys.length === 0 ? 'No keys yet — create one to get started.' : 'No keys match your search.'}
+                    {keys.length === 0 ? ui("No keys yet — create one to get started.") : ui("No keys match your search.")}
                   </td>
                 </tr>
               )}
@@ -346,9 +338,7 @@ export function ApiKeysPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{k.name}</span>
                           {k.revoked && (
-                            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
-                              revoked
-                            </Badge>
+                            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]"> {ui("revoked")} </Badge>
                           )}
                         </div>
                         <div className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -374,7 +364,7 @@ export function ApiKeysPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    {k.lastUsedAt ? timeAgo(k.lastUsedAt) : 'Never'}
+                    {k.lastUsedAt ? timeAgo(k.lastUsedAt) : ui("Never")}
                   </td>
                   <td className="px-3 py-2 tabular-nums">
                     {formatCost(k.spentTotal ?? 0)}
@@ -393,8 +383,8 @@ export function ApiKeysPage() {
                 <tr className="border-t">
                   <td colSpan={6} className="px-3 py-2 text-muted-foreground">
                     {filtered.length === keys.length
-                      ? `${keys.length} key${keys.length === 1 ? '' : 's'}`
-                      : `${filtered.length} of ${keys.length} keys`}
+                      ? uit`${keys.length} key${keys.length === 1 ? '' : 's'}`
+                      : uit`${filtered.length} of ${keys.length} keys`}
                   </td>
                 </tr>
               </tfoot>
@@ -410,7 +400,7 @@ export function ApiKeysPage() {
                 className={cn('size-4 transition-transform', usageDocsOpen && 'rotate-90')}
               />
               <Terminal className="size-4" />
-              <span className="text-sm font-semibold">Using the API</span>
+              <span className="text-sm font-semibold">{ui("Using the API")}</span>
             </CollapsibleTrigger>
             <CollapsibleContent>
               <CardContent className="space-y-4">
@@ -434,8 +424,8 @@ export function ApiKeysPage() {
                     </div>
                   ))}
                 </div>
-                <Snippet title="curl" code={CURL_SNIPPET} />
-                <Snippet title="openai (node)" code={SDK_SNIPPET} />
+                <Snippet title={ui("curl")} code={CURL_SNIPPET} />
+                <Snippet title={ui("openai (node)")} code={SDK_SNIPPET} />
               </CardContent>
             </CollapsibleContent>
           </Card>
@@ -446,24 +436,22 @@ export function ApiKeysPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Create API key</DialogTitle>
-            <DialogDescription>
-              The secret is shown exactly once. Store it somewhere safe.
-            </DialogDescription>
+            <DialogTitle>{ui("Create API key")}</DialogTitle>
+            <DialogDescription> {ui("The secret is shown exactly once. Store it somewhere safe.")} </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="key-name">Name</Label>
+              <Label htmlFor="key-name">{ui("Name")}</Label>
               <Input
                 id="key-name"
-                placeholder="e.g. laptop scripts"
+                placeholder={ui("e.g. laptop scripts")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoFocus
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Scopes</Label>
+              <Label>{ui("Scopes")}</Label>
               <div className="space-y-1">
                 {ALL_SCOPES.map((s) => (
                   <CheckboxRow
@@ -478,13 +466,11 @@ export function ApiKeysPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Model access</Label>
-              <p className="text-xs text-muted-foreground">
-                Restrict this key to specific models, or allow every model.
-              </p>
+              <Label>{ui("Model access")}</Label>
+              <p className="text-xs text-muted-foreground"> {ui("Restrict this key to specific models, or allow every model.")} </p>
               <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-lg border p-1.5">
                 <CheckboxRow
-                  label="All models"
+                  label={ui("All models")}
                   checked={allModels}
                   onChange={(v) => {
                     setAllModels(v)
@@ -524,9 +510,7 @@ export function ApiKeysPage() {
                 })}
               </div>
               {!allModels && selectedModels.length === 0 && (
-                <p className="text-xs text-destructive">
-                  Select at least one model, or choose All models.
-                </p>
+                <p className="text-xs text-destructive"> {ui("Select at least one model, or choose All models.")} </p>
               )}
               {!allModels && selectedModels.length > 0 && (
                 <div className="flex flex-wrap gap-1 pt-0.5">
@@ -541,7 +525,7 @@ export function ApiKeysPage() {
                           type="button"
                           className="ml-0.5 cursor-pointer opacity-60 hover:opacity-100"
                           onClick={() => toggleModel(id, false)}
-                          aria-label={`Remove ${m.name}`}
+                          aria-label={uit`Remove ${m.name}`}
                         >
                           ×
                         </button>
@@ -553,7 +537,7 @@ export function ApiKeysPage() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="key-budget-monthly">Monthly limit</Label>
+                <Label htmlFor="key-budget-monthly">{ui("Monthly limit")}</Label>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">$</span>
                   <Input
@@ -561,14 +545,14 @@ export function ApiKeysPage() {
                     type="number"
                     min="0"
                     step="1"
-                    placeholder="none"
+                    placeholder={ui("none")}
                     value={monthlyBudget}
                     onChange={(e) => setMonthlyBudget(e.target.value)}
                   />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="key-budget-total">All-time limit</Label>
+                <Label htmlFor="key-budget-total">{ui("All-time limit")}</Label>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">$</span>
                   <Input
@@ -576,24 +560,18 @@ export function ApiKeysPage() {
                     type="number"
                     min="0"
                     step="1"
-                    placeholder="none"
+                    placeholder={ui("none")}
                     value={totalBudget}
                     onChange={(e) => setTotalBudget(e.target.value)}
                   />
                 </div>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Monthly resets each billing period. All-time is a lifetime cap for this key.
-            </p>
+            <p className="text-xs text-muted-foreground"> {ui("Monthly resets each billing period. All-time is a lifetime cap for this key.")} </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submit} disabled={!canCreate}>
-              Create
-            </Button>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}> {ui("Cancel")} </Button>
+            <Button onClick={submit} disabled={!canCreate}> {ui("Create")} </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -602,10 +580,8 @@ export function ApiKeysPage() {
       <Dialog open={!!secret} onOpenChange={(v) => !v && setSecret(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Save your API key</DialogTitle>
-            <DialogDescription>
-              This is the only time the full key will be shown.
-            </DialogDescription>
+            <DialogTitle>{ui("Save your API key")}</DialogTitle>
+            <DialogDescription> {ui("This is the only time the full key will be shown.")} </DialogDescription>
           </DialogHeader>
           <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
             <code className="flex-1 truncate font-mono text-xs">
@@ -614,7 +590,7 @@ export function ApiKeysPage() {
             <button
               className="cursor-pointer text-muted-foreground hover:text-foreground"
               onClick={() => setRevealed((v) => !v)}
-              aria-label={revealed ? 'Hide key' : 'Show key'}
+              aria-label={revealed ? ui("Hide key") : ui("Show key")}
             >
               {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
@@ -625,17 +601,15 @@ export function ApiKeysPage() {
                 setCopied(true)
                 setTimeout(() => setCopied(false), 1200)
               }}
-              aria-label="Copy key"
+              aria-label={ui("Copy key")}
             >
               {copied ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4" />}
             </button>
           </div>
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-400">
-            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" />
-            Treat this key like a password. Anyone with it can spend against your balance.
-          </div>
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0" /> {ui("Treat this key like a password. Anyone with it can spend against your balance.")} </div>
           <DialogFooter>
-            <Button onClick={() => setSecret(null)}>Done</Button>
+            <Button onClick={() => setSecret(null)}>{ui("Done")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -644,24 +618,18 @@ export function ApiKeysPage() {
       <Dialog open={!!confirmRevoke} onOpenChange={(v) => !v && setConfirmRevoke(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Revoke “{confirmRevoke?.name}”?</DialogTitle>
-            <DialogDescription>
-              Requests using this key will start failing immediately. This cannot be undone.
-            </DialogDescription>
+            <DialogTitle>{ui("Revoke “")}{confirmRevoke?.name}”?</DialogTitle>
+            <DialogDescription> {ui("Requests using this key will start failing immediately. This cannot be undone.")} </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmRevoke(null)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setConfirmRevoke(null)}> {ui("Cancel")} </Button>
             <Button
               variant="destructive"
               onClick={() => {
                 if (confirmRevoke) void revokeKey(confirmRevoke.id)
                 setConfirmRevoke(null)
               }}
-            >
-              Revoke key
-            </Button>
+            > {ui("Revoke key")} </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

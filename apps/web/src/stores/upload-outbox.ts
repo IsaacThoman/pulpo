@@ -9,6 +9,7 @@ import { useAuth } from '@/stores/auth'
 import { useSettings } from '@/stores/settings'
 import { useChat, waitForResponseDispatch } from '@/stores/chat'
 import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
+import { ui } from '@/i18n/ui'
 
 export type UploadStatus = 'uploading' | 'ready' | 'error'
 
@@ -261,9 +262,9 @@ function restrictionMessage(submission: PendingSubmission, records: UploadRecord
     agentAvailable: useCatalog.getState().agentAvailable,
     agentCapable: Boolean(model.agentEnabled),
   })
-  if (restriction === 'enable_agent') return 'Enable Agent mode before sending this non-image attachment.'
-  if (restriction === 'model_not_capable') return 'Switch to an Agent-capable model or remove the non-image attachment.'
-  if (restriction === 'agent_unavailable') return 'Agent mode is unavailable. Remove the non-image attachment to continue.'
+  if (restriction === 'enable_agent') return ui("Enable Agent mode before sending this non-image attachment.")
+  if (restriction === 'model_not_capable') return ui("Switch to an Agent-capable model or remove the non-image attachment.")
+  if (restriction === 'agent_unavailable') return ui("Agent mode is unavailable. Remove the non-image attachment to continue.")
   return null
 }
 

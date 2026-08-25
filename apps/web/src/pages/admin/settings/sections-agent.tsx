@@ -17,6 +17,7 @@ import {
   type WebToolSecretDraft,
 } from './web-tools-form'
 import { SensitiveRevealDialog, type SensitiveRevealCredentials } from '@/components/admin/SensitiveRevealDialog'
+import { ui, uit } from '@/i18n/ui'
 
 const defaults: AgentSettings = {
   enabled: false,
@@ -56,8 +57,8 @@ function ProviderOrder({ label, hint, value, onChange }: {
       {value.map((provider, index) => <div key={provider} className="flex items-center justify-between rounded-md border px-2 py-1.5 text-sm">
         <span><span className="mr-2 text-xs tabular-nums text-muted-foreground">{index + 1}</span>{providerLabel[provider]}</span>
         <div className="flex gap-1">
-          <Button type="button" variant="ghost" size="icon-sm" disabled={index === 0} aria-label={`Move ${providerLabel[provider]} earlier`} onClick={() => onChange(moveWebProvider(value, index, -1))}><ArrowUp /></Button>
-          <Button type="button" variant="ghost" size="icon-sm" disabled={index === value.length - 1} aria-label={`Move ${providerLabel[provider]} later`} onClick={() => onChange(moveWebProvider(value, index, 1))}><ArrowDown /></Button>
+          <Button type="button" variant="ghost" size="icon-sm" disabled={index === 0} aria-label={uit`Move ${providerLabel[provider]} earlier`} onClick={() => onChange(moveWebProvider(value, index, -1))}><ArrowUp /></Button>
+          <Button type="button" variant="ghost" size="icon-sm" disabled={index === value.length - 1} aria-label={uit`Move ${providerLabel[provider]} later`} onClick={() => onChange(moveWebProvider(value, index, 1))}><ArrowDown /></Button>
         </div>
       </div>)}
     </div>
@@ -143,49 +144,49 @@ export function AgentSection() {
     else setFirecrawlApiKey(revealedWebToolSecret(result.apiKey))
   }
   return <div>
-    <Section title="Pi agent mode" hint="The Pulpo worker runs Pi; an external Kubernetes controller owns Kata workspaces and credentials.">
-      <Toggle label="Enable agent mode" hint="Models must also be opted in individually." checked={value.enabled} onChange={(enabled) => setValue({ ...value, enabled })} />
-      <label className="block space-y-1 text-xs"><span>Immutable workspace image</span><Input className="font-mono text-xs" value={value.imageDigest} onChange={(event) => setValue({ ...value, imageDigest: event.target.value })} /></label>
+    <Section title={ui("Pi agent mode")} hint="The Pulpo worker runs Pi; an external Kubernetes controller owns Kata workspaces and credentials.">
+      <Toggle label={ui("Enable agent mode")} hint="Models must also be opted in individually." checked={value.enabled} onChange={(enabled) => setValue({ ...value, enabled })} />
+      <label className="block space-y-1 text-xs"><span>{ui("Immutable workspace image")}</span><Input className="font-mono text-xs" value={value.imageDigest} onChange={(event) => setValue({ ...value, imageDigest: event.target.value })} /></label>
       <div className="grid grid-cols-2 gap-3">
-        <label className="space-y-1 text-xs"><span>Concurrent responses</span>{number('generationConcurrency', 1)}</label>
-        <label className="space-y-1 text-xs"><span>Warm workspaces</span>{number('warmCapacity')}</label>
-        <label className="space-y-1 text-xs"><span>Maximum active workspaces</span>{number('maxActiveWorkspaces', 1)}</label>
-        <label className="space-y-1 text-xs"><span>CPU (cores)</span><Input type="number" min={0.001} step={0.1} value={cpuCores(value.cpu)} onChange={(event) => {
+        <label className="space-y-1 text-xs"><span>{ui("Concurrent responses")}</span>{number('generationConcurrency', 1)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Warm workspaces")}</span>{number('warmCapacity')}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Maximum active workspaces")}</span>{number('maxActiveWorkspaces', 1)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("CPU (cores)")}</span><Input type="number" min={0.001} step={0.1} value={cpuCores(value.cpu)} onChange={(event) => {
           if (Number.isFinite(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, cpu: String(event.target.valueAsNumber) })
         }} /></label>
-        <label className="space-y-1 text-xs"><span>Memory (MiB)</span><Input type="number" min={1} step={128} value={memoryMiB(value.memory)} onChange={(event) => {
+        <label className="space-y-1 text-xs"><span>{ui("Memory (MiB)")}</span><Input type="number" min={1} step={128} value={memoryMiB(value.memory)} onChange={(event) => {
           if (Number.isInteger(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, memory: `${event.target.valueAsNumber}Mi` })
         }} /></label>
-        <label className="space-y-1 text-xs"><span>Ephemeral disk (GiB)</span><Input type="number" min={1} step={1} value={diskGiB(value.ephemeralStorage)} onChange={(event) => {
+        <label className="space-y-1 text-xs"><span>{ui("Ephemeral disk (GiB)")}</span><Input type="number" min={1} step={1} value={diskGiB(value.ephemeralStorage)} onChange={(event) => {
           if (Number.isInteger(event.target.valueAsNumber) && event.target.valueAsNumber > 0) setValue({ ...value, ephemeralStorage: `${event.target.valueAsNumber}Gi` })
         }} /></label>
-        <label className="space-y-1 text-xs"><span>Idle timeout (seconds)</span>{number('idleTimeoutSeconds', 60)}</label>
-        <label className="space-y-1 text-xs"><span>Hard timeout (seconds)</span>{number('hardTimeoutSeconds', 300)}</label>
-        <label className="space-y-1 text-xs"><span>Capacity wait timeout (seconds)</span>{number('workspaceWaitTimeoutSeconds', 30)}</label>
-        <label className="space-y-1 text-xs"><span>Maximum model turns</span>{number('maxModelTurns', 1)}</label>
-        <label className="space-y-1 text-xs"><span>Maximum tool calls</span>{number('maxToolCalls', 1)}</label>
-        <label className="space-y-1 text-xs"><span>Response timeout (seconds)</span>{number('responseTimeoutSeconds', 60)}</label>
-        <label className="space-y-1 text-xs"><span>Command timeout (seconds)</span>{number('commandTimeoutSeconds', 1)}</label>
-        <label className="space-y-1 text-xs"><span>Retained tool output (bytes)</span>{number('maxToolOutputBytes', 1024)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Idle timeout (seconds)")}</span>{number('idleTimeoutSeconds', 60)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Hard timeout (seconds)")}</span>{number('hardTimeoutSeconds', 300)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Capacity wait timeout (seconds)")}</span>{number('workspaceWaitTimeoutSeconds', 30)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Maximum model turns")}</span>{number('maxModelTurns', 1)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Maximum tool calls")}</span>{number('maxToolCalls', 1)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Response timeout (seconds)")}</span>{number('responseTimeoutSeconds', 60)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Command timeout (seconds)")}</span>{number('commandTimeoutSeconds', 1)}</label>
+        <label className="space-y-1 text-xs"><span>{ui("Retained tool output (bytes)")}</span>{number('maxToolOutputBytes', 1024)}</label>
       </div>
-      <Toggle label="Bill users for agent workspaces" hint="Charges from lease ready until the response ends. Queue wait is free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
-      {value.billWorkspaces && <NumField label="Price per workspace minute" value={value.workspacePricePerMinuteMicros / 1_000_000} onChange={(usd) => setValue({ ...value, workspacePricePerMinuteMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" />}
+      <Toggle label={ui("Bill users for agent workspaces")} hint="Charges from lease ready until the response ends. Queue wait is free." checked={value.billWorkspaces} onChange={(billWorkspaces) => setValue({ ...value, billWorkspaces })} />
+      {value.billWorkspaces && <NumField label={ui("Price per workspace minute")} value={value.workspacePricePerMinuteMicros / 1_000_000} onChange={(usd) => setValue({ ...value, workspacePricePerMinuteMicros: Math.round(usd * 1_000_000) })} min={0} step={0.001} decimals={4} suffix="USD" />}
       <div className="flex items-center gap-2 text-sm">
         {health.healthy ? <CheckCircle2 className="size-4 text-emerald-600" /> : <AlertCircle className="size-4 text-amber-600" />}
-        <span>{health.healthy ? 'Workspace controller is healthy' : health.configured ? health.detail ?? 'Workspace controller is unavailable' : 'Controller URL and token are not configured in deployment secrets'}</span>
+        <span>{health.healthy ? ui("Workspace controller is healthy") : health.configured ? health.detail ?? ui("Workspace controller is unavailable") : ui("Controller URL and token are not configured in deployment secrets")}</span>
       </div>
     </Section>
-    <Section title="Web tools" hint="Control global agent web capabilities and the order in which enabled providers are attempted.">
-      <Toggle label="Enable web search" hint="Adds the web_search tool when at least one search provider is available." checked={web.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, searchEnabled })} />
-      <ProviderOrder label="Search fallback order" hint="The first enabled provider returning results wins." value={web.searchProviderOrder} onChange={(searchProviderOrder) => setWeb({ ...web, searchProviderOrder })} />
-      <Toggle label="Enable page extraction" hint="Adds the web_fetch tool when at least one extraction provider is available." checked={web.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, extractEnabled })} />
-      <ProviderOrder label="Extraction fallback order" hint="Empty content and provider failures advance to the next provider." value={web.extractProviderOrder} onChange={(extractProviderOrder) => setWeb({ ...web, extractProviderOrder })} />
-      {web.searchEnabled && !capabilityAvailable('search') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Web search is enabled, but no usable search provider is configured.</div>}
-      {web.extractEnabled && !capabilityAvailable('extract') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Page extraction is enabled, but no usable extraction provider is configured.</div>}
+    <Section title={ui("Web tools")} hint="Control global agent web capabilities and the order in which enabled providers are attempted.">
+      <Toggle label={ui("Enable web search")} hint="Adds the web_search tool when at least one search provider is available." checked={web.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, searchEnabled })} />
+      <ProviderOrder label={ui("Search fallback order")} hint="The first enabled provider returning results wins." value={web.searchProviderOrder} onChange={(searchProviderOrder) => setWeb({ ...web, searchProviderOrder })} />
+      <Toggle label={ui("Enable page extraction")} hint="Adds the web_fetch tool when at least one extraction provider is available." checked={web.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, extractEnabled })} />
+      <ProviderOrder label={ui("Extraction fallback order")} hint="Empty content and provider failures advance to the next provider." value={web.extractProviderOrder} onChange={(extractProviderOrder) => setWeb({ ...web, extractProviderOrder })} />
+      {web.searchEnabled && !capabilityAvailable('search') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />{ui("Web search is enabled, but no usable search provider is configured.")}</div>}
+      {web.extractEnabled && !capabilityAvailable('extract') && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />{ui("Page extraction is enabled, but no usable extraction provider is configured.")}</div>}
     </Section>
-    <Section title="Kagi" hint="Use Kagi Search and Extract as one provider in the web-tool fallback chains.">
+    <Section title={ui("Kagi")} hint="Use Kagi Search and Extract as one provider in the web-tool fallback chains.">
       <SecretField
-        label="Kagi API key"
+        label={ui("Kagi API key")}
         hint={web.kagi.hasApiKey ? 'Configured — leave blank to keep' : 'Required before Kagi can run'}
         value={kagiApiKey.value}
         onChange={(value) => setKagiApiKey(changedWebToolSecret(value))}
@@ -193,18 +194,18 @@ export function AgentSection() {
         show={kagiApiKey.visible}
         onShowChange={() => toggleSecret('kagi')}
       />
-      <Toggle label="Use for web search" checked={web.kagi.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, kagi: { ...web.kagi, searchEnabled } })} />
-      <Toggle label="Bill users for Kagi searches" checked={web.kagi.billSearches} onChange={(billSearches) => setWeb({ ...web, kagi: { ...web.kagi, billSearches } })} indent />
-      {web.kagi.billSearches && <NumField label="Price per Kagi search" value={web.kagi.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
-      <Toggle label="Use for page extraction" checked={web.kagi.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, kagi: { ...web.kagi, extractEnabled } })} />
-      <Toggle label="Bill users for Kagi page extracts" checked={web.kagi.billExtracts} onChange={(billExtracts) => setWeb({ ...web, kagi: { ...web.kagi, billExtracts } })} indent />
-      {web.kagi.billExtracts && <NumField label="Price per Kagi page extract" value={web.kagi.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, extractPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
-      {((web.searchEnabled && web.kagi.searchEnabled) || (web.extractEnabled && web.kagi.extractEnabled)) && !kagiAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Kagi is enabled but will be skipped until an API key is configured.</div>}
+      <Toggle label={ui("Use for web search")} checked={web.kagi.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, kagi: { ...web.kagi, searchEnabled } })} />
+      <Toggle label={ui("Bill users for Kagi searches")} checked={web.kagi.billSearches} onChange={(billSearches) => setWeb({ ...web, kagi: { ...web.kagi, billSearches } })} indent />
+      {web.kagi.billSearches && <NumField label={ui("Price per Kagi search")} value={web.kagi.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
+      <Toggle label={ui("Use for page extraction")} checked={web.kagi.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, kagi: { ...web.kagi, extractEnabled } })} />
+      <Toggle label={ui("Bill users for Kagi page extracts")} checked={web.kagi.billExtracts} onChange={(billExtracts) => setWeb({ ...web, kagi: { ...web.kagi, billExtracts } })} indent />
+      {web.kagi.billExtracts && <NumField label={ui("Price per Kagi page extract")} value={web.kagi.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, kagi: { ...web.kagi, extractPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
+      {((web.searchEnabled && web.kagi.searchEnabled) || (web.extractEnabled && web.kagi.extractEnabled)) && !kagiAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />{ui("Kagi is enabled but will be skipped until an API key is configured.")}</div>}
     </Section>
-    <Section title="Firecrawl" hint="Use Firecrawl Cloud or a v2-compatible self-hosted endpoint. Secrets remain encrypted on the Pulpo server.">
-      <TextField label="API base URL" hint="Private endpoints require ALLOW_PRIVATE_PROVIDER_URLS=true." value={web.firecrawl.baseUrl} onChange={(baseUrl) => setWeb({ ...web, firecrawl: { ...web.firecrawl, baseUrl } })} mono />
+    <Section title={ui("Firecrawl")} hint="Use Firecrawl Cloud or a v2-compatible self-hosted endpoint. Secrets remain encrypted on the Pulpo server.">
+      <TextField label={ui("API base URL")} hint="Private endpoints require ALLOW_PRIVATE_PROVIDER_URLS=true." value={web.firecrawl.baseUrl} onChange={(baseUrl) => setWeb({ ...web, firecrawl: { ...web.firecrawl, baseUrl } })} mono />
       <SecretField
-        label="Firecrawl API key"
+        label={ui("Firecrawl API key")}
         hint={web.firecrawl.hasApiKey ? 'Configured — leave blank to keep' : firecrawlCloudRequiresKey(web.firecrawl.baseUrl) ? 'Required for Firecrawl Cloud' : 'Optional for this custom endpoint'}
         value={firecrawlApiKey.value}
         onChange={(value) => setFirecrawlApiKey(changedWebToolSecret(value))}
@@ -212,14 +213,14 @@ export function AgentSection() {
         show={firecrawlApiKey.visible}
         onShowChange={() => toggleSecret('firecrawl')}
       />
-      <Toggle label="Use for web search" checked={web.firecrawl.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchEnabled } })} />
-      <Toggle label="Bill users for Firecrawl searches" checked={web.firecrawl.billSearches} onChange={(billSearches) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billSearches } })} indent />
-      {web.firecrawl.billSearches && <NumField label="Price per Firecrawl search" value={web.firecrawl.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
-      <Toggle label="Use for page extraction" checked={web.firecrawl.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractEnabled } })} />
-      <Toggle label="Bill users for Firecrawl page extracts" checked={web.firecrawl.billExtracts} onChange={(billExtracts) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billExtracts } })} indent />
-      {web.firecrawl.billExtracts && <NumField label="Price per Firecrawl page extract" value={web.firecrawl.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
-      <NumField label="Maximum scrape cache age" hint="0 always requests fresh content." value={web.firecrawl.maxAgeSeconds} onChange={(maxAgeSeconds) => setWeb({ ...web, firecrawl: { ...web.firecrawl, maxAgeSeconds: Math.round(maxAgeSeconds) } })} min={0} max={31_536_000} step={60} suffix="seconds" />
-      {((web.searchEnabled && web.firecrawl.searchEnabled) || (web.extractEnabled && web.firecrawl.extractEnabled)) && !firecrawlAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Firecrawl Cloud is enabled but will be skipped until an API key is configured.</div>}
+      <Toggle label={ui("Use for web search")} checked={web.firecrawl.searchEnabled} onChange={(searchEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchEnabled } })} />
+      <Toggle label={ui("Bill users for Firecrawl searches")} checked={web.firecrawl.billSearches} onChange={(billSearches) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billSearches } })} indent />
+      {web.firecrawl.billSearches && <NumField label={ui("Price per Firecrawl search")} value={web.firecrawl.searchPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, searchPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
+      <Toggle label={ui("Use for page extraction")} checked={web.firecrawl.extractEnabled} onChange={(extractEnabled) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractEnabled } })} />
+      <Toggle label={ui("Bill users for Firecrawl page extracts")} checked={web.firecrawl.billExtracts} onChange={(billExtracts) => setWeb({ ...web, firecrawl: { ...web.firecrawl, billExtracts } })} indent />
+      {web.firecrawl.billExtracts && <NumField label={ui("Price per Firecrawl page extract")} value={web.firecrawl.extractPriceMicros / 1_000_000} onChange={(usd) => setWeb({ ...web, firecrawl: { ...web.firecrawl, extractPriceMicros: Math.round(usd * 1_000_000) } })} min={0} step={0.001} decimals={4} suffix="USD" indent />}
+      <NumField label={ui("Maximum scrape cache age")} hint="0 always requests fresh content." value={web.firecrawl.maxAgeSeconds} onChange={(maxAgeSeconds) => setWeb({ ...web, firecrawl: { ...web.firecrawl, maxAgeSeconds: Math.round(maxAgeSeconds) } })} min={0} max={31_536_000} step={60} suffix="seconds" />
+      {((web.searchEnabled && web.firecrawl.searchEnabled) || (web.extractEnabled && web.firecrawl.extractEnabled)) && !firecrawlAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />{ui("Firecrawl Cloud is enabled but will be skipped until an API key is configured.")}</div>}
     </Section>
     <SaveBar onSave={async () => {
       const [, savedWeb] = await Promise.all([
@@ -240,7 +241,7 @@ export function AgentSection() {
     }} />
     <SensitiveRevealDialog
       open={revealProvider !== null}
-      description={`${revealProvider ? providerLabel[revealProvider] : 'Web tool'} API keys are sensitive. Confirm your identity before revealing this saved key.`}
+      description={uit`${revealProvider ? providerLabel[revealProvider] : 'Web tool'} API keys are sensitive. Confirm your identity before revealing this saved key.`}
       onOpenChange={(open) => { if (!open) setRevealProvider(null) }}
       onConfirm={revealSecret}
     />

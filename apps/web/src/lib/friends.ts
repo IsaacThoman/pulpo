@@ -1,3 +1,6 @@
+
+import { activeLocale } from '@/i18n/ui'
+
 export function friendRequestAge(isoDate: string, now = Date.now()): string {
   const timestamp = Date.parse(isoDate)
   if (!Number.isFinite(timestamp)) return ''
@@ -7,5 +10,5 @@ export function friendRequestAge(isoDate: string, now = Date.now()): string {
   if (elapsedDays === 1) return 'yesterday'
   if (elapsedDays < 7) return `${elapsedDays} days ago`
 
-  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(timestamp)
+  return new Intl.DateTimeFormat(activeLocale(), { month: 'short', day: 'numeric' }).format(timestamp)
 }

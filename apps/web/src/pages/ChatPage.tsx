@@ -20,6 +20,7 @@ import type { Message } from '@/lib/types'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { ui, uit } from '@/i18n/ui'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -80,7 +81,7 @@ function Placeholder({
       <p className="mt-1.5 text-sm text-muted-foreground">
         {model.provider === model.inferenceProvider
           ? model.provider
-          : `${model.provider} · ${model.inferenceProvider}`}
+          : uit`${model.provider} · ${model.inferenceProvider}`}
       </p>
       {suggestions.length > 0 && (
         <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
@@ -460,9 +461,7 @@ export function ChatPage() {
             )}
           >
             {chat.expired ? (
-              <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.
-              </div>
+              <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
                 chatId={chat.id}

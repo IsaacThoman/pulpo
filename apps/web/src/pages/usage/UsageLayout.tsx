@@ -1,17 +1,18 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import { ui } from '@/i18n/ui'
 
 const TABS = [
-  { to: '/usage', label: 'Personal', end: true },
-  { to: '/usage/friends', label: 'Friends', end: false },
-  { to: '/usage/pool', label: 'Pool', end: false },
+  { to: '/usage', label: ui("Personal"), end: true },
+  { to: '/usage/friends', label: ui("Friends"), end: false },
+  { to: '/usage/pool', label: ui("Pool"), end: false },
 ]
 
 export function UsageLayout() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
-        <h1 className="text-sm font-semibold">Usage</h1>
+        <h1 className="text-sm font-semibold">{ui("Usage")}</h1>
         <nav className="flex items-center gap-1">
           {TABS.map((t) => (
             <NavLink

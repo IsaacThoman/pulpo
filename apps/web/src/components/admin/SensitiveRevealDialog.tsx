@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ui } from '@/i18n/ui'
 
 export type SensitiveRevealCredentials = {
   currentPassword?: string
@@ -68,12 +69,12 @@ export function SensitiveRevealDialog({
   return <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="sm:max-w-md">
       <DialogHeader>
-        <DialogTitle>Confirm your identity</DialogTitle>
+        <DialogTitle>{ui("Confirm your identity")}</DialogTitle>
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <div className="space-y-4">
         {requiresSecondFactor === false && <div className="space-y-2">
-          <Label htmlFor="sensitive-reveal-password">Current password</Label>
+          <Label htmlFor="sensitive-reveal-password">{ui("Current password")}</Label>
           <Input
             id="sensitive-reveal-password"
             type="password"
@@ -84,7 +85,7 @@ export function SensitiveRevealDialog({
           />
         </div>}
         {requiresSecondFactor && <div className="space-y-2">
-          <Label htmlFor="sensitive-reveal-verification">Authenticator or recovery code</Label>
+          <Label htmlFor="sensitive-reveal-verification">{ui("Authenticator or recovery code")}</Label>
           <Input
             id="sensitive-reveal-verification"
             autoComplete="one-time-code"
@@ -94,20 +95,18 @@ export function SensitiveRevealDialog({
           />
         </div>}
         {requiresSecondFactor === null && !error && (
-          <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />Checking security requirements…</p>
+          <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{ui("Checking security requirements…")}</p>
         )}
         {error && <p className="text-sm text-destructive" role="alert">{error}</p>}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{ui("Cancel")}</Button>
           <Button
             disabled={requiresSecondFactor === null
               || (requiresSecondFactor ? verificationCode.length < 6 : !currentPassword)
               || loading}
             onClick={() => void confirm()}
           >
-            {loading && <Loader2 className="animate-spin" />}
-            Reveal API key
-          </Button>
+            {loading && <Loader2 className="animate-spin" />} {ui("Reveal API key")} </Button>
         </DialogFooter>
       </div>
     </DialogContent>

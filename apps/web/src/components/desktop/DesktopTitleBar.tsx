@@ -6,6 +6,7 @@ import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { desktopConnectionStatus } from '@/lib/desktop-startup'
 import { DesktopUpdateLink } from './DesktopUpdateBanner'
+import { ui } from '@/i18n/ui'
 
 export function DesktopTitleBarSurface({
   temporaryChat,
@@ -26,8 +27,7 @@ export function DesktopTitleBarSurface({
       <DesktopUpdateLink hidden={connectionStatus === 'connecting'} />
       {connectionStatus === 'connecting' && (
         <div className="desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground" role="status">
-          <Loader2 className="size-3 animate-spin" />Connecting…
-        </div>
+          <Loader2 className="size-3 animate-spin" />{ui("Connecting…")} </div>
       )}
       {connectionStatus === 'offline' && (
         <button
@@ -35,8 +35,7 @@ export function DesktopTitleBarSurface({
           className="desktop-connection-status fixed right-3 top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 rounded-full px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={onRetry}
         >
-          <WifiOff className="size-3" />Offline · Retry
-        </button>
+          <WifiOff className="size-3" />{ui("Offline · Retry")} </button>
       )}
     </>
   )

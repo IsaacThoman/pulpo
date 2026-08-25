@@ -1,3 +1,6 @@
+
+import { ui } from '@/i18n/ui'
+
 export interface AvatarCropSettings {
   cropToCircle: boolean
   zoom: number
@@ -49,7 +52,7 @@ export async function prepareAvatarFile(file: File, settings: AvatarCropSettings
     canvas.width = 512
     canvas.height = 512
     const context = canvas.getContext('2d')
-    if (!context) throw new Error('Could not prepare the profile picture')
+    if (!context) throw new Error(ui("Could not prepare the profile picture"))
     const rect = avatarDrawRect(image.width, image.height, settings)
     if (settings.cropToCircle) {
       context.beginPath()
@@ -58,7 +61,7 @@ export async function prepareAvatarFile(file: File, settings: AvatarCropSettings
     }
     context.drawImage(image, rect.x, rect.y, rect.width, rect.height)
     const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
-      (value) => value ? resolve(value) : reject(new Error('Could not prepare the profile picture')),
+      (value) => value ? resolve(value) : reject(new Error(ui("Could not prepare the profile picture"))),
       'image/webp',
       0.9,
     ))

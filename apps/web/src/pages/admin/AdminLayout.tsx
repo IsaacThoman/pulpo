@@ -2,15 +2,16 @@ import { NavLink, Outlet, useMatch } from 'react-router-dom'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 const TABS = [
-  { to: '/admin/users', label: 'Users', end: false },
-  { to: '/admin/providers', label: 'Providers', end: false },
-  { to: '/admin/labs', label: 'Labs', end: false },
-  { to: '/admin/icons', label: 'Icons', end: false },
-  { to: '/admin/models', label: 'Models', end: false },
-  { to: '/admin/usage', label: 'Usage', end: false },
-  { to: '/admin/settings', label: 'Settings', end: false },
+  { to: '/admin/users', label: ui("Users"), end: false },
+  { to: '/admin/providers', label: ui("Providers"), end: false },
+  { to: '/admin/labs', label: ui("Labs"), end: false },
+  { to: '/admin/icons', label: ui("Icons"), end: false },
+  { to: '/admin/models', label: ui("Models"), end: false },
+  { to: '/admin/usage', label: ui("Usage"), end: false },
+  { to: '/admin/settings', label: ui("Settings"), end: false },
 ]
 
 export function AdminLayout() {
@@ -19,12 +20,12 @@ export function AdminLayout() {
   const usersPage = useMatch('/admin/users')
   const widePage = billingPage || usersPage
   const tabs = billingEnabled
-    ? [...TABS.slice(0, -1), { to: '/admin/billing', label: 'Billing', end: false }, TABS.at(-1)!]
+    ? [...TABS.slice(0, -1), { to: '/admin/billing', label: ui("Billing"), end: false }, TABS.at(-1)!]
     : TABS
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-12 shrink-0 items-center gap-4 border-b px-5">
-        <h1 className="text-sm font-semibold">Admin panel</h1>
+        <h1 className="text-sm font-semibold">{ui("Admin panel")}</h1>
         <nav className="flex items-center gap-1">
           {tabs.map((t) => (
             <NavLink

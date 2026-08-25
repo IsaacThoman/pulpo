@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { apiRequest } from '@/lib/api'
+import { ui } from '@/i18n/ui'
 
 export function ForgotPasswordPage() {
   const { t } = useTranslation()
@@ -55,7 +56,7 @@ export function ForgotPasswordPage() {
                 id="email"
                 type="email"
                 autoComplete="email"
-                placeholder="jon@pulpo.baby"
+                placeholder={ui("jon@pulpo.baby")}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

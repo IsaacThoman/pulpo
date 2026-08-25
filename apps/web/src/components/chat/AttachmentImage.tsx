@@ -35,6 +35,7 @@ import { runtimeAccountKey } from '@/lib/runtime'
 import { useRuntimeImageUrl } from '@/lib/runtime-resource'
 import { AttachmentPreviewDialog } from './AttachmentPreview'
 import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
+import { ui, uit } from '@/i18n/ui'
 
 const ATTACHMENT_KIND_DETAILS: Record<AttachmentKind, {
   icon: LucideIcon
@@ -247,14 +248,14 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
   return (
     <>
       <div
-        title={previewable ? `Preview ${attachment.name}` : attachment.name}
+        title={previewable ? uit`Preview ${attachment.name}` : attachment.name}
         className="group/attachment flex min-w-0 items-center rounded-2xl border bg-background/75 text-left shadow-sm transition-[background-color,border-color,box-shadow,transform] hover:-translate-y-px hover:border-foreground/15 hover:bg-background hover:shadow-md"
       >
         {previewable ? (
           <button
             type="button"
             onClick={() => setPreviewOpen(true)}
-            aria-label={`Preview ${attachment.name}`}
+            aria-label={uit`Preview ${attachment.name}`}
             className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-l-2xl p-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             {details}
@@ -265,7 +266,7 @@ function MessageFilePreview({ attachment }: { attachment: Attachment }) {
         <button
           type="button"
           onClick={() => performAttachmentDownload(attachment)}
-          aria-label={`Download ${attachment.name}`}
+          aria-label={uit`Download ${attachment.name}`}
           className="mr-2.5 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Download className="size-4" aria-hidden="true" />
@@ -300,7 +301,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
       >
         <button
           type="button"
-          aria-label={`Preview ${attachment.name}`}
+          aria-label={uit`Preview ${attachment.name}`}
           onClick={() => setPreviewOpen(true)}
           className="block w-full cursor-zoom-in bg-muted/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
@@ -326,7 +327,7 @@ function MessageImagePreview({ attachment }: { attachment: Attachment }) {
           </span>
           <button
             type="button"
-            aria-label={`Download ${attachment.name}`}
+            aria-label={uit`Download ${attachment.name}`}
             onClick={handleDownload}
             className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -407,7 +408,7 @@ export function PendingAttachmentChip({
           )}>
             {uploading && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
             {error && <AlertCircle className="size-3" aria-hidden="true" />}
-            {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
+            {error ? ui("Upload failed") : uploading ? ui("Uploading") : attachmentMeta(name, mimeType, size)}
           </span>
         </span>
       </>
@@ -417,12 +418,12 @@ export function PendingAttachmentChip({
         <div className={cn(
           'group/attachment relative w-64 max-w-full overflow-hidden rounded-2xl border bg-muted/20 shadow-sm transition-colors hover:bg-muted/35',
           error && 'border-destructive/40 bg-destructive/5',
-        )} title={error ?? (previewable ? `Preview ${name}` : name)}>
+        )} title={error ?? (previewable ? uit`Preview ${name}` : name)}>
           {previewable ? (
             <button
               type="button"
               onClick={() => setPreviewOpen(true)}
-              aria-label={`Preview ${name}`}
+              aria-label={uit`Preview ${name}`}
               className={cn(
                 'flex h-full w-full min-w-0 cursor-pointer items-center gap-3 p-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
                 onRemove ? 'pr-[4.75rem]' : 'pr-12',
@@ -435,7 +436,7 @@ export function PendingAttachmentChip({
           )}
           <button
             type="button"
-            aria-label={error && onRetry ? `Retry ${name}` : `Download ${name}`}
+            aria-label={error && onRetry ? uit`Retry ${name}` : uit`Download ${name}`}
             onClick={error && onRetry ? onRetry : onDownload}
             className={cn(
               'absolute top-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
@@ -447,7 +448,7 @@ export function PendingAttachmentChip({
           {onRemove && (
             <button
               type="button"
-              aria-label={`Remove ${name}`}
+              aria-label={uit`Remove ${name}`}
               onClick={onRemove}
               className="absolute top-2 right-2 flex size-7 cursor-pointer items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
@@ -467,13 +468,13 @@ export function PendingAttachmentChip({
           'group/attachment relative size-24 overflow-hidden rounded-2xl border bg-muted/30 shadow-sm',
           error && 'border-destructive/50',
         )}
-        title={error ?? (previewable ? `Preview ${name}` : name)}
+        title={error ?? (previewable ? uit`Preview ${name}` : name)}
       >
         {previewable ? (
           <button
             type="button"
             onClick={() => setPreviewOpen(true)}
-            aria-label={`Preview ${name}`}
+            aria-label={uit`Preview ${name}`}
             className="size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <PendingImageContent name={name} size={size} mimeType={mimeType} url={resolvedPreviewUrl} uploading={uploading} error={error} />
@@ -495,7 +496,7 @@ export function PendingAttachmentChip({
         )}
         <button
           type="button"
-          aria-label={error && onRetry ? `Retry ${name}` : `Download ${name}`}
+          aria-label={error && onRetry ? uit`Retry ${name}` : uit`Download ${name}`}
           onClick={error && onRetry ? onRetry : onDownload}
           className="absolute top-1.5 left-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -504,7 +505,7 @@ export function PendingAttachmentChip({
         {onRemove && (
           <button
             type="button"
-            aria-label={`Remove ${name}`}
+            aria-label={uit`Remove ${name}`}
             onClick={onRemove}
             className="absolute top-1.5 right-1.5 flex size-6 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm ring-1 ring-border transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
@@ -546,7 +547,7 @@ function PendingImageContent({
         <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 pt-6 pb-1.5 text-left">
           <span className="block truncate text-[10px] font-medium text-white">{name}</span>
           <span className="block text-[9px] text-white/80">
-            {error ? 'Upload failed' : uploading ? 'Uploading' : attachmentMeta(name, mimeType, size)}
+            {error ? ui("Upload failed") : uploading ? ui("Uploading") : attachmentMeta(name, mimeType, size)}
           </span>
         </span>
       </span>

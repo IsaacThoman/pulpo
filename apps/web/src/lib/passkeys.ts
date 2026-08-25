@@ -11,6 +11,7 @@ import {
   type RegistrationResponseJSON,
 } from '@simplewebauthn/browser'
 import type { PasskeyCeremony } from '@pulpo/contracts'
+import { ui } from '@/i18n/ui'
 
 export { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill }
 
@@ -27,7 +28,7 @@ export function isPasskeyCancellation(error: unknown): boolean {
 export function passkeyErrorMessage(error: unknown, fallback: string): string {
   if (isPasskeyCancellation(error)) return ''
   if (error instanceof WebAuthnError && error.name === 'SecurityError') {
-    return 'Passkeys are not configured for this Pulpo domain.'
+    return ui("Passkeys are not configured for this Pulpo domain.")
   }
   return error instanceof Error ? error.message : fallback
 }
