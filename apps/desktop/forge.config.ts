@@ -17,7 +17,10 @@ const config: ForgeConfig = {
     name: 'Pulpo',
     appBundleId: 'com.isaacthoman.pulpo.desktop',
     appCategoryType: 'public.app-category.productivity',
-    icon: 'assets/Pulpo',
+    icon: [
+      'assets/Pulpo.icns',
+      '../mobile/assets/Pulpo.icon',
+    ],
     extendInfo: {
       LSMinimumSystemVersion: '13.0',
       NSAppTransportSecurity: { NSAllowsArbitraryLoads: false },
