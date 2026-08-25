@@ -40,7 +40,7 @@ export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
         void restartAndInstall().catch(() => setRestarting(false))
       }}
     >
-      {restarting ? 'Restarting…' : 'Update available'}
+      {restarting ? 'Restarting…' : `Update to v${ready.version}`}
     </button>
   )
 }

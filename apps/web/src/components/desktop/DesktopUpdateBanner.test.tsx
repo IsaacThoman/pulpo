@@ -39,16 +39,16 @@ describe('DesktopUpdateLink', () => {
   it('renders only after a desktop update is ready', async () => {
     const desktop = installDesktopApi({ status: 'idle' })
     render(<DesktopUpdateLink />)
-    expect(screen.queryByText('Update available')).toBeNull()
+    expect(screen.queryByText(/Update to/)).toBeNull()
     await act(async () => desktop.emit({ status: 'ready', version: '1.2.3' }))
-    expect(screen.getByRole('button', { name: 'Update available' }).getAttribute('title'))
+    expect(screen.getByRole('button', { name: 'Update to v1.2.3' }).getAttribute('title'))
       .toBe('Restart to install Pulpo v1.2.3')
   })
 
   it('restarts through the desktop bridge', async () => {
     const desktop = installDesktopApi({ status: 'ready', version: '1.2.3' })
     render(<DesktopUpdateLink />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Update available' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Update to v1.2.3' }))
     expect(desktop.restartAndInstall).toHaveBeenCalledTimes(1)
   })
 
@@ -56,7 +56,7 @@ describe('DesktopUpdateLink', () => {
     installDesktopApi({ status: 'ready', version: '1.2.3' })
     render(<DesktopUpdateLink hidden />)
     await act(async () => undefined)
-    expect(screen.queryByText('Update available')).toBeNull()
+    expect(screen.queryByText(/Update to/)).toBeNull()
   })
 
   it('removes its update listener when unmounted', () => {
