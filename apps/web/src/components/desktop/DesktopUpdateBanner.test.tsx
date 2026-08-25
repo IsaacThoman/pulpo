@@ -44,10 +44,9 @@ describe('DesktopUpdateLink', () => {
     const indicator = screen.getByRole('button', { name: 'Update to v1.2.3' })
     expect(indicator.getAttribute('title')).toBe('Restart to install Pulpo v1.2.3')
     expect(indicator.textContent).toBe('Update')
-    expect(indicator.innerHTML).toContain('h-[13px] min-w-[13px]')
-    expect(indicator.innerHTML).toContain('bg-[#0a84ff]')
-    expect(indicator.innerHTML).toContain('group-hover:max-w-20')
-    expect(indicator.innerHTML).toContain('size-2 shrink-0 stroke-[2.5]')
+    expect(indicator.className).toContain('h-7')
+    expect(indicator.className).toContain('border')
+    expect(indicator.innerHTML).toContain('size-3.5')
   })
 
   it('restarts through the desktop bridge', async () => {
@@ -57,7 +56,7 @@ describe('DesktopUpdateLink', () => {
     expect(desktop.restartAndInstall).toHaveBeenCalledTimes(1)
   })
 
-  it('can yield the title-bar slot to the connecting status', async () => {
+  it('can hide with the collapsed sidebar header', async () => {
     installDesktopApi({ status: 'ready', version: '1.2.3' })
     render(<DesktopUpdateLink hidden />)
     await act(async () => undefined)

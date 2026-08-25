@@ -64,6 +64,7 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
+import { DesktopUpdateLink } from '@/components/desktop/DesktopUpdateBanner'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -1004,6 +1005,7 @@ export function Sidebar({
         >
           Pulpo
         </span>
+        <DesktopUpdateLink hidden={collapsed} />
         {!collapsed && (
           <Tooltip>
             <TooltipTrigger asChild>

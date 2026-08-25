@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ArrowDown, Loader2 } from 'lucide-react'
 import type { DesktopUpdateState } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
+import { Button } from '@/components/ui/button'
 
 export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
   const [ready, setReady] = useState<Extract<DesktopUpdateState, { status: 'ready' }> | null>(null)
@@ -31,11 +32,12 @@ export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
   if (!ready || hidden) return null
   const updateLabel = uit`Update to v${ready.version}`
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
+      size="sm"
       aria-label={restarting ? ui("Restarting…") : updateLabel}
       title={uit`Restart to install Pulpo v${ready.version}`}
-      className="desktop-connection-status group fixed left-[82px] top-[19px] z-50 flex h-6 min-w-[13px] -translate-y-1/2 items-center text-[9px] font-medium leading-none text-white focus-visible:outline-none disabled:opacity-60"
+      className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
       disabled={restarting}
       onClick={() => {
         const restartAndInstall = window.pulpoDesktop?.updates.restartAndInstall
@@ -44,14 +46,10 @@ export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
         void restartAndInstall().catch(() => setRestarting(false))
       }}
     >
-      <span className="flex h-[13px] min-w-[13px] items-center overflow-hidden rounded-full bg-[#0a84ff] shadow-[inset_0_0_0_0.5px_rgba(0,0,0,0.22)] group-focus-visible:ring-2 group-focus-visible:ring-[#0a84ff]/40 group-focus-visible:ring-offset-1 group-focus-visible:ring-offset-background">
-        {restarting
-          ? <Loader2 aria-hidden="true" className="mx-[2.5px] size-2 shrink-0 animate-spin" />
-          : <ArrowDown aria-hidden="true" className="mx-[2.5px] size-2 shrink-0 stroke-[2.5]" />}
-        <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-[max-width,margin,opacity] duration-200 group-hover:mr-1.5 group-hover:max-w-20 group-hover:opacity-100 group-focus-visible:mr-1.5 group-focus-visible:max-w-20 group-focus-visible:opacity-100">
-          {restarting ? ui("Restarting…") : ui("Update")}
-        </span>
-      </span>
-    </button>
+      {restarting
+        ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+        : <ArrowDown aria-hidden="true" className="size-3.5" />}
+      {restarting ? ui("Restarting…") : ui("Update")}
+    </Button>
   )
 }
