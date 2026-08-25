@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ui, uit } from '@/i18n/ui'
 
 /** section container */
 export function Section({
@@ -216,7 +217,7 @@ export function SecretField({
           type="button"
           className="absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer text-muted-foreground hover:text-foreground"
           onClick={() => setShow(!show)}
-          aria-label={`${show ? 'Hide' : 'Show'} ${label}`}
+          aria-label={uit`${show ? 'Hide' : 'Show'} ${label}`}
         >
           {show ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
         </button>}
@@ -312,7 +313,7 @@ export function SaveBar({ onSave }: { onSave?: () => void | Promise<void> }) {
         onClick={() => void save()}
         disabled={!onSave || status === 'saving'}
       >
-        {status === 'saving' ? 'Saving…' : status === 'saved' ? 'Saved ✓' : status === 'error' ? 'Save failed — retry' : 'Save'}
+        {status === 'saving' ? ui("Saving…") : status === 'saved' ? ui("Saved ✓") : status === 'error' ? ui("Save failed — retry") : ui("Save")}
       </Button>
     </div>
   )

@@ -20,3 +20,23 @@ t('profile.greeting', { name: user.name })
 ```
 
 Keep user-generated content, model/provider names, and server error messages unchanged. Add application-authored interface copy to the catalogs.
+
+## Leaf-level UI copy
+
+Reusable product concepts and workflows should continue to use named keys from
+`en-US.ts` and `es-ES.ts`. One-off labels, status text, admin copy, validation
+messages, and accessibility text use their English source as the key:
+
+```tsx
+import { ui, uit } from '@/i18n/ui'
+
+<Button>{ui('Refresh workspaces')}</Button>
+<span>{uit`${count} active users`}</span>
+```
+
+Add matching Spanish text to `locales/es-ES-ui.ts`. The localization coverage
+test rejects missing Spanish source keys, mismatched template placeholders,
+hard-coded JSX text, and hard-coded visible attributes.
+
+Use `activeLocale()` for direct `Intl` or `toLocaleString` formatting so dates
+and numbers follow the in-app language instead of the operating-system locale.

@@ -1,5 +1,6 @@
 import type { NewAccountModelDefaults } from '@pulpo/contracts'
 import { modelOptionLabel, type AvailableModel } from './use-available-models'
+import { ui } from '@/i18n/ui'
 
 export const AUTOMATIC_MODEL_VALUE = '__automatic__'
 export const ADD_MODEL_VALUE = '__add_model__'
@@ -35,7 +36,7 @@ export function withDefaultModel(
 
 export function defaultModelOptions(models: AvailableModel[], selectedId: string | null) {
   const options = [
-    { value: AUTOMATIC_MODEL_VALUE, label: 'Automatic (first available)' },
+    { value: AUTOMATIC_MODEL_VALUE, label: ui("Automatic (first available)") },
     ...models.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
   ]
   if (selectedId && !models.some((model) => model.id === selectedId)) {

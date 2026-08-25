@@ -4,6 +4,7 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { avatarDrawRect, type AvatarCropSettings } from './avatar-crop'
+import { ui } from '@/i18n/ui'
 
 export function AvatarCropEditor({
   imageUrl,
@@ -71,7 +72,7 @@ export function AvatarCropEditor({
         ref={canvasRef}
         width={512}
         height={512}
-        aria-label={settings.cropToCircle ? 'Circular profile picture crop preview' : 'Full profile picture preview'}
+        aria-label={settings.cropToCircle ? ui("Circular profile picture crop preview") : ui("Full profile picture preview")}
         className={cn(
           'size-32 shrink-0 border bg-muted/40 object-contain',
           settings.cropToCircle ? 'cursor-grab touch-none rounded-full active:cursor-grabbing' : 'rounded-lg',
@@ -90,9 +91,9 @@ export function AvatarCropEditor({
       />
       <div className="min-w-0 flex-1 space-y-3">
         <div>
-          <div className="text-sm font-medium">Profile picture preview</div>
+          <div className="text-sm font-medium">{ui("Profile picture preview")}</div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {settings.cropToCircle ? 'Drag to reposition, then adjust the zoom.' : 'The full image will be resized without cropping.'}
+            {settings.cropToCircle ? ui("Drag to reposition, then adjust the zoom.") : ui("The full image will be resized without cropping.")}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -101,10 +102,10 @@ export function AvatarCropEditor({
             checked={settings.cropToCircle}
             onCheckedChange={(cropToCircle) => onChange({ ...settings, cropToCircle, zoom: 1, offsetX: 0, offsetY: 0 })}
           />
-          <Label htmlFor="crop-avatar-circle" className="text-xs">Crop to circle</Label>
+          <Label htmlFor="crop-avatar-circle" className="text-xs">{ui("Crop to circle")}</Label>
         </div>
         {settings.cropToCircle && <div className="flex items-center gap-3">
-          <Label htmlFor="avatar-crop-zoom" className="text-xs text-muted-foreground">Zoom</Label>
+          <Label htmlFor="avatar-crop-zoom" className="text-xs text-muted-foreground">{ui("Zoom")}</Label>
           <Slider
             id="avatar-crop-zoom"
             value={[settings.zoom]}

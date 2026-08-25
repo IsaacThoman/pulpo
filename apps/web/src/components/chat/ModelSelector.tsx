@@ -13,6 +13,7 @@ import { ProviderLogo } from '@/components/ProviderLogo'
 import { favoriteIdsMatch, resolveProviderOrder, useModels } from '@/stores/models'
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
+import { ui } from '@/i18n/ui'
 
 type DragKind = 'model' | 'provider'
 
@@ -381,9 +382,7 @@ export function ModelSelector({
           type="button"
           className="absolute left-9 top-7 cursor-pointer whitespace-nowrap text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
           onClick={() => setSetting('defaultModelId', value)}
-        >
-          Set as default
-        </button>
+        > {ui("Set as default")} </button>
       )}
     </div>
   )

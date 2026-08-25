@@ -15,6 +15,7 @@ import {
   runtimeProfileKey,
   storeDesktopSession,
 } from '@/lib/runtime'
+import { ui } from '@/i18n/ui'
 
 export type AuthRole = 'pending' | 'user' | 'admin'
 
@@ -374,7 +375,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
         apiRequest<PublicAuthSettings>('/api/auth/settings').catch(() => null),
       ])
       if (config.mobileApiVersion !== 1 || !config.capabilities.bearerSessions || !config.capabilities.realtime) {
-        throw new Error('This server does not support the Pulpo desktop app.')
+        throw new Error(ui("This server does not support the Pulpo desktop app."))
       }
       const settings = authSettings ?? {
         signupEnabled: config.auth.signupEnabled,

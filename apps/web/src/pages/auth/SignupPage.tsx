@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuth } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 export function SignupPage() {
   const { t } = useTranslation()
@@ -75,7 +76,7 @@ export function SignupPage() {
           <Input
             id="name"
             autoComplete="name"
-            placeholder="Jon Arbuckle"
+            placeholder={ui("Jon Arbuckle")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
@@ -87,7 +88,7 @@ export function SignupPage() {
             id="email"
             type="email"
             autoComplete="email"
-            placeholder="jon@pulpo.baby"
+            placeholder={ui("jon@pulpo.baby")}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -100,7 +101,7 @@ export function SignupPage() {
             <Input
               id="username"
               autoComplete="username"
-              placeholder="popbob"
+              placeholder={ui("popbob")}
               value={username}
               onChange={(event) => setUsername(event.target.value.replace(/^@/, '').toLowerCase())}
               className="pl-6"

@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { ui, uit } from '@/i18n/ui'
 
 export function UpstreamModelField({
   providerConnectionId,
@@ -89,7 +90,7 @@ export function UpstreamModelField({
                 className="pr-8 font-mono text-xs"
                 value={query}
                 disabled={!providerConnectionId}
-                placeholder={providerConnectionId ? 'Select or type model name' : 'Select a provider first'}
+                placeholder={providerConnectionId ? ui("Select or type model name") : ui("Select a provider first")}
                 onChange={(event) => {
                   setQuery(event.target.value)
                   onChange(event.target.value)
@@ -124,7 +125,7 @@ export function UpstreamModelField({
             onCloseAutoFocus={(event) => event.preventDefault()}
           >
             <div className="border-b px-2 py-1.5 text-[11px] text-muted-foreground">
-              {loading ? 'Loading…' : options.length ? `${filtered.length} of ${options.length} models` : 'No cached models — refresh to load'}
+              {loading ? ui("Loading…") : options.length ? uit`${filtered.length} of ${options.length} models` : ui("No cached models — refresh to load")}
             </div>
             <ScrollArea className="h-52">
               <div className="p-1">
@@ -148,7 +149,7 @@ export function UpstreamModelField({
                 })}
                 {!loading && !filtered.length && (
                   <div className="px-2 py-6 text-center text-xs text-muted-foreground">
-                    {options.length ? 'No matches' : 'Refresh to fetch upstream models'}
+                    {options.length ? ui("No matches") : ui("Refresh to fetch upstream models")}
                   </div>
                 )}
               </div>
@@ -159,7 +160,7 @@ export function UpstreamModelField({
           type="button"
           size="icon"
           variant="outline"
-          title="Refresh upstream models"
+          title={ui("Refresh upstream models")}
           disabled={!providerConnectionId || refreshing}
           onClick={() => void refresh()}
         >

@@ -61,6 +61,7 @@ import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
+import { ui, uit } from '@/i18n/ui'
 
 const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
@@ -108,9 +109,9 @@ function trashTrashedLabel(iso: string): string {
 }
 
 function trashDeletesLabel(iso: string | null, now = Date.now()): string {
-  if (!iso) return 'Kept indefinitely'
+  if (!iso) return ui("Kept indefinitely")
   const ms = new Date(iso).getTime() - now
-  if (ms <= 0) return 'Deletes now'
+  if (ms <= 0) return ui("Deletes now")
   const minutes = Math.max(1, Math.ceil(ms / 60_000))
   if (minutes < 60) return `Deletes in ${minutes}m`
   const hours = Math.ceil(ms / 3_600_000)
@@ -251,7 +252,7 @@ export function SettingsModal({
         body: { name: profileName, profileColor },
       })
       replaceUser(result.user)
-      setProfileMessage('Profile saved.')
+      setProfileMessage(ui("Profile saved."))
     } catch (cause) {
       setProfileError(cause instanceof Error ? cause.message : 'Could not save profile')
     } finally {
@@ -270,7 +271,7 @@ export function SettingsModal({
       const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'PUT', body })
       replaceUser(result.user)
       setAvatarCandidate(null)
-      setProfileMessage('Profile picture updated.')
+      setProfileMessage(ui("Profile picture updated."))
     } catch (cause) {
       setProfileError(cause instanceof Error ? cause.message : 'Could not upload profile picture')
     } finally {
@@ -285,7 +286,7 @@ export function SettingsModal({
     try {
       const result = await apiRequest<{ user: Omit<AuthUser, 'initials'> }>('/api/me/avatar', { method: 'DELETE' })
       replaceUser(result.user)
-      setProfileMessage('Profile picture removed.')
+      setProfileMessage(ui("Profile picture removed."))
     } catch (cause) {
       setProfileError(cause instanceof Error ? cause.message : 'Could not remove profile picture')
     } finally {
@@ -339,7 +340,7 @@ export function SettingsModal({
   }
 
   const permanentlyDeleteAll = async () => {
-    if (!deletedChats.length || !confirm('Permanently delete every chat in trash? This cannot be undone.')) return
+    if (!deletedChats.length || !confirm(ui("Permanently delete every chat in trash? This cannot be undone."))) return
     await apiRequest('/api/chats/deleted', { method: 'DELETE' })
     await queryClient.invalidateQueries({ queryKey: deletedChatsQueryKey })
   }
@@ -419,9 +420,7 @@ export function SettingsModal({
                   }}
                   className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
                 >
-                  <ShieldCheck className="size-4" />
-                  Admin settings
-                </button>
+                  <ShieldCheck className="size-4" /> {ui("Admin settings")} </button>
               </div>
             )}
           </div>
@@ -431,9 +430,9 @@ export function SettingsModal({
             <div className="p-4 sm:p-6">
               {section === 'trash' && (
                 <div className="min-w-0">
-                  <h2 className="text-base font-semibold">Trash</h2>
+                  <h2 className="text-base font-semibold">{ui("Trash")}</h2>
                   <Separator className="my-3" />
-                  <Row label="Trash retention period" hint="How long trashed chats stay recoverable before permanent deletion.">
+                  <Row label={ui("Trash retention period")} hint="How long trashed chats stay recoverable before permanent deletion.">
                     <Select value={s.trashRetention} disabled={trashRetentionSaving} onValueChange={(value) => void updateTrashRetention(value as TrashRetention)}>
                       <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -447,15 +446,15 @@ export function SettingsModal({
                   <Separator className="my-3" />
                   <div className="flex min-w-0 items-center justify-between gap-3 py-1">
                     <div className="min-w-0">
-                      <div className="text-sm font-medium">Trashed chats</div>
+                      <div className="text-sm font-medium">{ui("Trashed chats")}</div>
                       <div className="mt-0.5 text-xs text-muted-foreground">
                         {s.trashRetention === 'instant'
-                          ? 'Chats are permanently deleted immediately.'
+                          ? ui("Chats are permanently deleted immediately.")
                           : deletedChatsQuery.isLoading
-                            ? 'Loading…'
+                            ? ui("Loading…")
                             : deletedChats.length
-                              ? `${deletedChats.length} chat${deletedChats.length === 1 ? '' : 's'}`
-                              : 'Recover chats or permanently delete them.'}
+                              ? uit`${deletedChats.length} chat${deletedChats.length === 1 ? '' : 's'}`
+                              : ui("Recover chats or permanently delete them.")}
                       </div>
                     </div>
                     <Button
@@ -464,19 +463,17 @@ export function SettingsModal({
                       className="shrink-0"
                       disabled={!deletedChats.length || s.trashRetention === 'instant'}
                       onClick={() => void permanentlyDeleteAll()}
-                    >
-                      Empty trash
-                    </Button>
+                    > {ui("Empty trash")} </Button>
                   </div>
                   {s.trashRetention === 'instant' ? null : deletedChatsQuery.isLoading ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">Loading trashed chats…</p>
+                    <p className="py-8 text-center text-sm text-muted-foreground">{ui("Loading trashed chats…")}</p>
                   ) : deletedChatsQuery.error ? (
                     <div className="py-8 text-center text-sm text-destructive">
-                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : 'Could not load trashed chats'}</p>
-                      <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>Try again</Button>
+                      <p>{deletedChatsQuery.error instanceof Error ? deletedChatsQuery.error.message : ui("Could not load trashed chats")}</p>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => void deletedChatsQuery.refetch()}>{ui("Try again")}</Button>
                     </div>
                   ) : !deletedChats.length ? (
-                    <p className="py-8 text-center text-sm text-muted-foreground">Trash is empty.</p>
+                    <p className="py-8 text-center text-sm text-muted-foreground">{ui("Trash is empty.")}</p>
                   ) : (
                     <div className="min-w-0 divide-y">
                       {deletedChats.map((chat) => {
@@ -499,12 +496,8 @@ export function SettingsModal({
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}>
-                                Recover
-                              </Button>
-                              <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}>
-                                Delete
-                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => void recoverChat(chat.id)}> {ui("Recover")} </Button>
+                              <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteChat(chat)}> {ui("Delete")} </Button>
                             </div>
                           </div>
                         )
@@ -540,13 +533,13 @@ export function SettingsModal({
 
               {section === 'profile' && (
                 <div>
-                  <h2 className="text-base font-semibold">Profile</h2>
+                  <h2 className="text-base font-semibold">{ui("Profile")}</h2>
                   <Separator className="my-3" />
                   <div className="flex flex-wrap items-start gap-4 py-3">
                     <div className="flex shrink-0 flex-col items-center">
                       <button
                         type="button"
-                        aria-label="Change profile picture"
+                        aria-label={ui("Change profile picture")}
                         disabled={profileSaving}
                         className="group relative size-14 cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => avatarInputRef.current?.click()}
@@ -554,7 +547,7 @@ export function SettingsModal({
                         <ProfileAvatar name={user?.name ?? 'Pulpo user'} avatarUrl={user?.avatarUrl} className="size-14" fallbackClassName="text-lg" />
                         <span className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-0.5 rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                           <Camera className="size-4" />
-                          <span className="text-[9px] font-medium leading-none">Change</span>
+                          <span className="text-[9px] font-medium leading-none">{ui("Change")}</span>
                         </span>
                       </button>
                       {user?.avatarUrl && <button
@@ -562,7 +555,7 @@ export function SettingsModal({
                         disabled={profileSaving}
                         className="mt-1 cursor-pointer text-[10px] leading-none text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                         onClick={() => void removeAvatar()}
-                      >Remove</button>}
+                      >{ui("Remove")}</button>}
                     </div>
                     <input
                       ref={avatarInputRef}
@@ -590,14 +583,14 @@ export function SettingsModal({
                   </div>
                   {avatarCandidate && <div className="mb-3 rounded-lg border bg-muted/20 p-3">
                     <AvatarCropEditor imageUrl={avatarCandidate.url} settings={avatarCrop} onChange={setAvatarCrop} />
-                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>Use picture</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>Cancel</Button></div>
+                    <div className="mt-3 flex justify-end gap-2"><Button size="sm" disabled={profileSaving} onClick={() => void uploadAvatar()}>{ui("Use picture")}</Button><Button size="sm" variant="outline" disabled={profileSaving} onClick={() => setAvatarCandidate(null)}>{ui("Cancel")}</Button></div>
                   </div>}
-                  <Row label="Display name"><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
-                  <Row label="Friends chart color" hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2">
+                  <Row label={ui("Display name")}><Input value={profileName} onChange={(event) => { setProfileMessage(''); setProfileName(event.target.value) }} maxLength={120} className="w-52" /></Row>
+                  <Row label={ui("Friends chart color")} hint="Used on accepted friends’ usage charts."><div className="flex flex-wrap items-center justify-end gap-2">
                     {PROFILE_COLORS.map((color) => <button
                       key={color}
                       type="button"
-                      aria-label={`Profile color ${color}`}
+                      aria-label={uit`Profile color ${color}`}
                       className={cn('size-5 cursor-pointer rounded border', !customColorSelected && profileColor === color && 'ring-2 ring-foreground ring-offset-2 ring-offset-background')}
                       style={{ backgroundColor: color }}
                       onClick={() => { setProfileMessage(''); setCustomColorSelected(false); setProfileColor(color) }}
@@ -605,7 +598,7 @@ export function SettingsModal({
                     <div className="relative size-5 shrink-0">
                       <input
                         type="color"
-                        aria-label="Choose a custom profile color"
+                        aria-label={ui("Choose a custom profile color")}
                         value={profileColor}
                         className="peer absolute inset-0 z-10 size-full cursor-pointer opacity-0"
                         onPointerDown={() => setCustomColorSelected(true)}
@@ -629,49 +622,45 @@ export function SettingsModal({
                   <div className="flex min-h-10 items-center justify-end gap-3 py-2">
                     {profileError && <span className="mr-auto text-sm text-destructive">{profileError}</span>}
                     {!profileError && profileMessage && <span className="mr-auto text-sm text-muted-foreground">{profileMessage}</span>}
-                    <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? 'Saving…' : 'Save profile'}</Button>
+                    <Button size="sm" disabled={!profileDirty || profileSaving || !profileName.trim()} onClick={() => void saveProfile()}>{profileSaving ? ui("Saving…") : ui("Save profile")}</Button>
                   </div>
                 </div>
               )}
 
               {section === 'security' && (
                 <div>
-                  <h2 className="text-base font-semibold">Security</h2>
+                  <h2 className="text-base font-semibold">{ui("Security")}</h2>
                   <Separator className="my-3" />
-                  <Row label="Email" hint="Used to sign in to your account.">
+                  <Row label={ui("Email")} hint="Used to sign in to your account.">
                     <span className="block max-w-64 truncate text-sm text-muted-foreground">{user?.email}</span>
                   </Row>
                   <PasswordSettings />
                   <PasskeySettings />
                   <TwoFactorSettings />
                   <Separator className="my-3" />
-                  <Row label="Sign out" hint="End this session on this device.">
-                    <Button variant="outline" size="sm" onClick={() => { onClose(); logout(); navigate('/login') }}>Sign out</Button>
+                  <Row label={ui("Sign out")} hint="End this session on this device.">
+                    <Button variant="outline" size="sm" onClick={() => { onClose(); logout(); navigate('/login') }}>{ui("Sign out")}</Button>
                   </Row>
                 </div>
               )}
 
               {section === 'personalization' && (
                 <div>
-                  <h2 className="text-base font-semibold">Personalization</h2>
+                  <h2 className="text-base font-semibold">{ui("Personalization")}</h2>
                   <Separator className="my-3" />
                   <div className="py-3">
-                    <Label className="text-sm font-medium">Custom instructions</Label>
-                    <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-                      Appended to every conversation as a system prompt.
-                    </p>
+                    <Label className="text-sm font-medium">{ui("Custom instructions")}</Label>
+                    <p className="mb-2 mt-0.5 text-xs text-muted-foreground"> {ui("Appended to every conversation as a system prompt.")} </p>
                     <Textarea
                       value={s.customInstructions}
                       onChange={(e) => s.set('customInstructions', e.target.value)}
-                      placeholder="e.g. Be terse. Prefer code over prose. Never apologize."
+                      placeholder={ui("e.g. Be terse. Prefer code over prose. Never apologize.")}
                       rows={5}
                     />
                     {instructionPresets.length > 0 && (
                       <div className="mt-3">
-                        <Label className="text-sm font-medium">Instruction presets</Label>
-                        <p className="mb-2 mt-0.5 text-xs text-muted-foreground">
-                          Click to toggle preset behaviors.
-                        </p>
+                        <Label className="text-sm font-medium">{ui("Instruction presets")}</Label>
+                        <p className="mb-2 mt-0.5 text-xs text-muted-foreground"> {ui("Click to toggle preset behaviors.")} </p>
                         <InstructionPresetButtons
                           presets={instructionPresets}
                           selections={s.instructionPresetSelections}
@@ -686,10 +675,8 @@ export function SettingsModal({
                   <div className="py-3">
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <Label className="text-sm font-medium">Memories</Label>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          Allow Pulpo to remember durable facts from future chats.
-                        </p>
+                        <Label className="text-sm font-medium">{ui("Memories")}</Label>
+                        <p className="mt-0.5 text-xs text-muted-foreground"> {ui("Allow Pulpo to remember durable facts from future chats.")} </p>
                       </div>
                       <Switch
                         checked={s.memoryEnabled}
@@ -698,10 +685,10 @@ export function SettingsModal({
                     </div>
                     <div className="space-y-1.5">
                       {memoriesLoading && (
-                        <div className="pt-2 text-sm text-muted-foreground">Loading memories…</div>
+                        <div className="pt-2 text-sm text-muted-foreground">{ui("Loading memories…")}</div>
                       )}
                       {!memoriesLoading && memories.length === 0 && (
-                        <div className="pt-2 text-sm text-muted-foreground">No saved memories.</div>
+                        <div className="pt-2 text-sm text-muted-foreground">{ui("No saved memories.")}</div>
                       )}
                       {memories.map((memory) => (
                         <div
@@ -713,9 +700,7 @@ export function SettingsModal({
                             type="button"
                             onClick={() => void forgetMemory(memory.id)}
                             className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
-                          >
-                            forget
-                          </button>
+                          > {ui("forget")} </button>
                         </div>
                       ))}
                     </div>
@@ -725,9 +710,9 @@ export function SettingsModal({
 
               {section === 'interface' && (
                 <div>
-                  <h2 className="text-base font-semibold">Interface</h2>
+                  <h2 className="text-base font-semibold">{ui("Interface")}</h2>
                   <Separator className="my-3" />
-                  <Row label="Chat width">
+                  <Row label={ui("Chat width")}>
                     <Select
                       value={s.chatWidth}
                       onValueChange={(v) => s.set('chatWidth', v as 'full' | 'narrow')}
@@ -736,24 +721,24 @@ export function SettingsModal({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="narrow">Comfortable</SelectItem>
-                        <SelectItem value="full">Full width</SelectItem>
+                        <SelectItem value="narrow">{ui("Comfortable")}</SelectItem>
+                        <SelectItem value="full">{ui("Full width")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </Row>
-                  <Row label="Send with Enter" hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
+                  <Row label={ui("Send with Enter")} hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
                   </Row>
-                  <Row label="Show reasoning" hint="Show expandable thought/work activity above assistant replies.">
+                  <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>
-                  <Row label="Chats kept on this device" hint="Recent chats remain available instantly and while offline (0–500).">
+                  <Row label={ui("Chats kept on this device")} hint="Recent chats remain available instantly and while offline (0–500).">
                     <Input className="w-28" type="number" min={0} max={500} value={s.localChatLimit} onChange={(event) => s.set('localChatLimit', Math.min(500, Math.max(0, Number(event.target.value))))} />
                   </Row>
-                  <Row label="Downloaded attachment cache" hint="Maximum file data retained after you upload or explicitly download a file.">
+                  <Row label={ui("Downloaded attachment cache")} hint="Maximum file data retained after you upload or explicitly download a file.">
                     <div className="flex items-center gap-2">
                       <Input className="w-24" type="number" min={0} max={2048} step={10} value={s.localAttachmentCacheMb} onChange={(event) => s.set('localAttachmentCacheMb', Math.min(2048, Math.max(0, Number(event.target.value))))} />
-                      <span className="text-xs text-muted-foreground">MB</span>
+                      <span className="text-xs text-muted-foreground">{ui("MB")}</span>
                     </div>
                   </Row>
                 </div>
@@ -761,9 +746,9 @@ export function SettingsModal({
 
               {section === 'api' && (
                 <div>
-                  <h2 className="text-base font-semibold">API keys</h2>
+                  <h2 className="text-base font-semibold">{ui("API keys")}</h2>
                   <Separator className="my-3" />
-                  <p className="py-2 text-sm text-muted-foreground">{useAuth.getState().apiKeysEnabled ? 'Create OpenAI-compatible API keys for scripts and third-party tools. Keys are managed on the dedicated API page.' : 'API keys are disabled by the administrator. Existing keys are retained but cannot authenticate until the policy is re-enabled.'}</p>
+                  <p className="py-2 text-sm text-muted-foreground">{useAuth.getState().apiKeysEnabled ? ui("Create OpenAI-compatible API keys for scripts and third-party tools. Keys are managed on the dedicated API page.") : ui("API keys are disabled by the administrator. Existing keys are retained but cannot authenticate until the policy is re-enabled.")}</p>
                   <Button
                     disabled={!useAuth.getState().apiKeysEnabled}
                     onClick={() => {
@@ -771,21 +756,17 @@ export function SettingsModal({
                       navigate('/api-keys')
                     }}
                   >
-                    <KeyRound />
-                    Manage API keys
-                  </Button>
+                    <KeyRound /> {ui("Manage API keys")} </Button>
                 </div>
               )}
 
               {billingEnabled && section === 'billing' && (
                 <div>
-                  <h2 className="text-base font-semibold">Billing</h2>
+                  <h2 className="text-base font-semibold">{ui("Billing")}</h2>
                   <Separator className="my-3" />
                   <div className="py-2">
-                    <div className="text-sm font-medium">Credits and plan</div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Add credits, manage your plan, and review payment history.
-                    </p>
+                    <div className="text-sm font-medium">{ui("Credits and plan")}</div>
+                    <p className="mt-1 text-sm text-muted-foreground"> {ui("Add credits, manage your plan, and review payment history.")} </p>
                   </div>
                   <Button
                     onClick={() => {
@@ -793,34 +774,32 @@ export function SettingsModal({
                       navigate('/billing')
                     }}
                   >
-                    <CreditCard />
-                    Manage billing
-                  </Button>
+                    <CreditCard /> {ui("Manage billing")} </Button>
                 </div>
               )}
 
               {section === 'data' && (
                 <div>
-                  <h2 className="text-base font-semibold">Data controls</h2>
+                  <h2 className="text-base font-semibold">{ui("Data controls")}</h2>
                   <Separator className="my-3" />
-                  <Row label="Automatic chat expiration" hint="Move chats to Trash automatically unless saved within the selected period.">
+                  <Row label={ui("Automatic chat expiration")} hint="Move chats to Trash automatically unless saved within the selected period.">
                     <Select
                       value={s.automaticChatExpiration}
                       onValueChange={(value) => s.set('automaticChatExpiration', value as AutomaticChatExpiration)}
                     >
                       <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="disabled">Disabled</SelectItem>
-                        <SelectItem value="24h">24 hours</SelectItem>
-                        <SelectItem value="7d">7 days</SelectItem>
+                        <SelectItem value="disabled">{ui("Disabled")}</SelectItem>
+                        <SelectItem value="24h">{ui("24 hours")}</SelectItem>
+                        <SelectItem value="7d">{ui("7 days")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </Row>
                   <div className="py-3">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-medium">File storage</span>
+                      <span className="font-medium">{ui("File storage")}</span>
                       <span className="text-xs tabular-nums text-muted-foreground">
-                        {storageUsage ? `${formatBytes(storageUsage.usedBytes)} of ${formatBytes(storageUsage.limitBytes)}` : 'Loading…'}
+                        {storageUsage ? uit`${formatBytes(storageUsage.usedBytes)} of ${formatBytes(storageUsage.limitBytes)}` : ui("Loading…")}
                       </span>
                     </div>
                     <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
@@ -829,44 +808,42 @@ export function SettingsModal({
                         style={{ width: `${storageUsage?.limitBytes ? Math.min(100, storageUsage.usedBytes / storageUsage.limitBytes * 100) : 0}%` }}
                       />
                     </div>
-                    <p className="mt-1.5 text-xs text-muted-foreground">Uploaded files and files created by models count toward this allowance.</p>
+                    <p className="mt-1.5 text-xs text-muted-foreground">{ui("Uploaded files and files created by models count toward this allowance.")}</p>
                   </div>
-                  <Row label="Export chats" hint="Download all conversations as JSON.">
-                    <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}>
-                      Export
-                    </Button>
+                  <Row label={ui("Export chats")} hint="Download all conversations as JSON.">
+                    <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}> {ui("Export")} </Button>
                   </Row>
-                  <Row label="Fallback model" hint="Used when an imported source model is unavailable."><Select value={importFallback} onValueChange={setImportFallback}><SelectTrigger className="w-44"><SelectValue placeholder="Select if needed" /></SelectTrigger><SelectContent>{models.filter((model) => model.enabled).map((model) => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}</SelectContent></Select></Row>
-                  <Row label="Import Pulpo chats"><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>Import</Button></Row>
-                  <Row label="Import chats from OpenWebUI" hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>Import OpenWebUI</Button></Row>
+                  <Row label={ui("Fallback model")} hint="Used when an imported source model is unavailable."><Select value={importFallback} onValueChange={setImportFallback}><SelectTrigger className="w-44"><SelectValue placeholder={ui("Select if needed")} /></SelectTrigger><SelectContent>{models.filter((model) => model.enabled).map((model) => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}</SelectContent></Select></Row>
+                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>{ui("Import")}</Button></Row>
+                  <Row label={ui("Import chats from OpenWebUI")} hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>{ui("Import OpenWebUI")}</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
                   <Separator className="my-3" />
                   <Row
-                    label="Trash all chats"
+                    label={ui("Trash all chats")}
                     hint={s.trashRetention === 'instant'
                       ? 'Permanently deletes every chat.'
                       : s.trashRetention === 'indefinite'
                         ? 'Moves every conversation to trash. (no automatic permanent deletion)'
                         : `Moves every conversation to trash. (delete in ${TRASH_RETENTION_LABELS[s.trashRetention].toLowerCase()})`}
                   >
-                    <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>Trash all chats</Button>
+                    <Button variant="destructive" size="sm" disabled={trashRetentionSaving} onClick={() => void deleteAllChats()}>{ui("Trash all chats")}</Button>
                   </Row>
                 </div>
               )}
 
               {section === 'about' && (
                 <div>
-                  <h2 className="text-base font-semibold">About</h2>
+                  <h2 className="text-base font-semibold">{ui("About")}</h2>
                   <Separator className="my-3" />
                   <div className="space-y-2 py-3 text-sm">
                     <DesktopAppVersion />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Version</span>
+                      <span className="text-muted-foreground">{ui("Version")}</span>
                       <span className="font-mono">0.1.0</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">API endpoint</span>
-                      <span className="font-mono text-xs">{location.origin}/v1</span>
+                      <span className="text-muted-foreground">{ui("API endpoint")}</span>
+                      <span className="font-mono text-xs">{location.origin}{ui("/v1")}</span>
                     </div>
                   </div>
                 </div>

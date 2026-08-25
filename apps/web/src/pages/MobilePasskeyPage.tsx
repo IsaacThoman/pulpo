@@ -4,6 +4,7 @@ import type { PasskeyCeremony } from '@pulpo/contracts'
 import { apiRequest } from '@/lib/api'
 import { authenticateWithPasskey, isPasskeyCancellation, passkeyErrorMessage, registerPasskey } from '@/lib/passkeys'
 import { Button } from '@/components/ui/button'
+import { ui } from '@/i18n/ui'
 
 type BridgeMode = 'authentication' | 'enrollment'
 
@@ -45,7 +46,7 @@ export function MobilePasskeyPage({ mode = 'authentication' }: { mode?: BridgeMo
           method: 'POST', body: { ceremonyToken: ceremony.ceremonyToken, response },
         })
         const redirect = new URL(result.redirectUrl)
-        if (redirect.protocol !== 'pulpo:' || redirect.host !== 'auth' || redirect.pathname !== '/passkey-enrollment' || redirect.searchParams.get('state') !== params.state) throw new Error('The passkey callback was invalid.')
+        if (redirect.protocol !== 'pulpo:' || redirect.host !== 'auth' || redirect.pathname !== '/passkey-enrollment' || redirect.searchParams.get('state') !== params.state) throw new Error(ui("The passkey callback was invalid."))
         window.location.assign(redirect.toString())
         return
       }
@@ -58,7 +59,7 @@ export function MobilePasskeyPage({ mode = 'authentication' }: { mode?: BridgeMo
         method: 'POST', body: { ceremonyToken: ceremony.ceremonyToken, response },
       })
       const redirect = new URL(result.redirectUrl)
-      if (redirect.protocol !== 'pulpo:' || redirect.host !== 'auth' || redirect.pathname !== '/passkey' || redirect.searchParams.get('state') !== params.state || !redirect.searchParams.get('code')) throw new Error('The passkey callback was invalid.')
+      if (redirect.protocol !== 'pulpo:' || redirect.host !== 'auth' || redirect.pathname !== '/passkey' || redirect.searchParams.get('state') !== params.state || !redirect.searchParams.get('code')) throw new Error(ui("The passkey callback was invalid."))
       window.location.assign(redirect.toString())
     } catch (next) {
       if (isPasskeyCancellation(next)) {
@@ -86,22 +87,22 @@ export function MobilePasskeyPage({ mode = 'authentication' }: { mode?: BridgeMo
           <span className="font-semibold">Pulpo</span>
         </div>
         <KeyRound className="mb-3 size-7" aria-hidden />
-        <h1 className="text-xl font-semibold">{enrollment ? 'Add a passkey' : 'Sign in with a passkey'}</h1>
+        <h1 className="text-xl font-semibold">{enrollment ? ui("Add a passkey") : ui("Sign in with a passkey")}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {enrollment ? 'Safari will ask where you want to save this passkey.' : 'Continue to use a passkey saved on this device, another device, or a security key.'}
+          {enrollment ? ui("Safari will ask where you want to save this passkey.") : ui("Continue to use a passkey saved on this device, another device, or a security key.")}
         </p>
 
-        {!valid ? <p className="mt-5 text-sm text-destructive" role="alert">This passkey request is invalid or has expired. Return to the Pulpo app and try again.</p> : status === 'cancelled' ? <div className="mt-5 rounded-lg bg-muted p-4 text-sm">
-          <div className="flex items-center gap-2 font-medium"><X className="size-4" />Passkey prompt cancelled</div>
-          <p className="mt-1 text-muted-foreground">You can try again or return to the app.</p>
+        {!valid ? <p className="mt-5 text-sm text-destructive" role="alert">{ui("This passkey request is invalid or has expired. Return to the Pulpo app and try again.")}</p> : status === 'cancelled' ? <div className="mt-5 rounded-lg bg-muted p-4 text-sm">
+          <div className="flex items-center gap-2 font-medium"><X className="size-4" />{ui("Passkey prompt cancelled")}</div>
+          <p className="mt-1 text-muted-foreground">{ui("You can try again or return to the app.")}</p>
         </div> : status === 'error' ? <p className="mt-5 text-sm text-destructive" role="alert">{error}</p> : null}
 
         <div className="mt-6 grid gap-2">
           <Button size="lg" disabled={!valid || status === 'working'} onClick={() => void continueWithPasskey()}>
             {status === 'working' ? <Loader2 className="animate-spin" /> : <KeyRound />}
-            {status === 'working' ? 'Waiting for passkey…' : enrollment ? 'Add passkey' : 'Continue with passkey'}
+            {status === 'working' ? ui("Waiting for passkey…") : enrollment ? ui("Add passkey") : ui("Continue with passkey")}
           </Button>
-          {valid && <Button variant="ghost" onClick={cancel}>Cancel</Button>}
+          {valid && <Button variant="ghost" onClick={cancel}>{ui("Cancel")}</Button>}
         </div>
       </main>
     </div>

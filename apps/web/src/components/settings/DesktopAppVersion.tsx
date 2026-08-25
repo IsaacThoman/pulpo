@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ui } from '@/i18n/ui'
 
 export function DesktopAppVersion() {
   const [version, setVersion] = useState<string | null>(null)
@@ -20,8 +21,8 @@ export function DesktopAppVersion() {
   if (!appInfo) return null
   return (
     <div className="flex justify-between">
-      <span className="text-muted-foreground">App version</span>
-      <span className="font-mono">{version ?? 'Loading…'}</span>
+      <span className="text-muted-foreground">{ui('App version')}</span>
+      <span className="font-mono">{version ?? ui('Loading…')}</span>
     </div>
   )
 }

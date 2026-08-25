@@ -24,6 +24,7 @@ import { cn } from '@/lib/utils'
 import { useCatalog } from '@/stores/catalog'
 import { useCatalogIcons } from '@/stores/catalogIcons'
 import type { AdminCatalogIcon } from '@/lib/catalog-icons'
+import { ui, uit } from '@/i18n/ui'
 
 type Draft = {
   id?: string
@@ -113,27 +114,23 @@ export function AdminLabsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Labs</h2>
+        <h2 className="text-lg font-semibold">{ui("Labs")}</h2>
         <Badge variant="secondary">{labs.length}</Badge>
         <div className="flex-1" />
         <Button size="sm" onClick={openAdd}>
-          <Plus />
-          Add lab
-        </Button>
+          <Plus /> {ui("Add lab")} </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Company marks shown in the model picker. Use the arrows to set the order of models within each lab.
-      </p>
+      <p className="text-sm text-muted-foreground"> {ui("Company marks shown in the model picker. Use the arrows to set the order of models within each lab.")} </p>
 
       <Card className="gap-0 rounded-lg py-0 shadow-none">
         <CardContent className="overflow-x-auto px-0 py-0">
           <table className="data-table">
             <thead>
               <tr className="border-b">
-                <th className="px-3 py-2">Lab</th>
-                <th className="px-3 py-2">Logo</th>
-                <th className="px-3 py-2">Models</th>
-                <th className="px-3 py-2 text-right">Actions</th>
+                <th className="px-3 py-2">{ui("Lab")}</th>
+                <th className="px-3 py-2">{ui("Logo")}</th>
+                <th className="px-3 py-2">{ui("Models")}</th>
+                <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -163,14 +160,14 @@ export function AdminLabsPage() {
                             <span className="min-w-0 flex-1 truncate font-medium">{model.name}</span>
                             {(!model.enabled || !model.visible) && (
                               <Badge variant="outline" className="text-[10px] font-normal">
-                                {!model.enabled ? 'Disabled' : 'Hidden'}
+                                {!model.enabled ? ui("Disabled") : ui("Hidden")}
                               </Badge>
                             )}
                             <Button
                               size="icon-sm"
                               variant="ghost"
-                              title={`Move ${model.name} up`}
-                              aria-label={`Move ${model.name} up`}
+                              title={uit`Move ${model.name} up`}
+                              aria-label={uit`Move ${model.name} up`}
                               disabled={index === 0}
                               onClick={() => void moveModel(lab, index, -1)}
                             >
@@ -179,8 +176,8 @@ export function AdminLabsPage() {
                             <Button
                               size="icon-sm"
                               variant="ghost"
-                              title={`Move ${model.name} down`}
-                              aria-label={`Move ${model.name} down`}
+                              title={uit`Move ${model.name} down`}
+                              aria-label={uit`Move ${model.name} down`}
                               disabled={index === lab.models.length - 1}
                               onClick={() => void moveModel(lab, index, 1)}
                             >
@@ -190,15 +187,15 @@ export function AdminLabsPage() {
                         ))}
                       </div>
                     ) : (
-                      <span className="text-muted-foreground">No linked models</span>
+                      <span className="text-muted-foreground">{ui("No linked models")}</span>
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    {lab.builtin ? <div className="flex justify-end"><Badge variant="outline">Built-in</Badge></div> : <div className="flex justify-end gap-1">
+                    {lab.builtin ? <div className="flex justify-end"><Badge variant="outline">{ui("Built-in")}</Badge></div> : <div className="flex justify-end gap-1">
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Edit"
+                        title={ui("Edit")}
                         onClick={() => openEdit(lab)}
                       >
                         <Pencil className="size-3.5" />
@@ -206,7 +203,7 @@ export function AdminLabsPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Delete"
+                        title={ui("Delete")}
                         className="hover:text-destructive"
                         onClick={() => void remove(lab.id)}
                       >
@@ -218,9 +215,7 @@ export function AdminLabsPage() {
               ))}
               {!labs.length && (
                 <tr>
-                  <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
-                    No labs yet. Add one to associate with models.
-                  </td>
+                  <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground"> {ui("No labs yet. Add one to associate with models.")} </td>
                 </tr>
               )}
             </tbody>
@@ -231,22 +226,22 @@ export function AdminLabsPage() {
       <Dialog open={!!draft} onOpenChange={(v) => !v && setDraft(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{draft?.id ? 'Edit lab' : 'Add lab'}</DialogTitle>
+            <DialogTitle>{draft?.id ? ui("Edit lab") : ui("Add lab")}</DialogTitle>
           </DialogHeader>
           {draft && (
             <div className="space-y-3.5">
               <div className="space-y-1.5">
-                <Label htmlFor="lab-name">Name</Label>
+                <Label htmlFor="lab-name">{ui("Name")}</Label>
                 <Input
                   id="lab-name"
-                  placeholder="OpenAI"
+                  placeholder={ui("OpenAI")}
                   value={draft.name}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                   autoFocus
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Logo</Label>
+                <Label className="text-xs">{ui("Logo")}</Label>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
@@ -258,18 +253,14 @@ export function AdminLabsPage() {
                         customIcon={findCustomIcon(customIcons, draft.customIconId)}
                         className="size-14 transition-transform duration-150 group-hover/tile:scale-105"
                       />
-                      <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">
-                        lab
-                      </Badge>
+                      <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal"> {ui("lab")} </Badge>
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="start"
                     className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-[336px] overflow-y-auto p-2"
                   >
-                    <div className="mb-2 px-1 text-xs font-medium text-muted-foreground">
-                      Choose a lab logo
-                    </div>
+                    <div className="mb-2 px-1 text-xs font-medium text-muted-foreground"> {ui("Choose a lab logo")} </div>
                     <div className="grid grid-cols-4 gap-1">
                       {LAB_ICONS.map((icon) => (
                         <button
@@ -291,7 +282,7 @@ export function AdminLabsPage() {
                       ))}
                     </div>
                     {!!customIcons.length && <>
-                      <div className="mb-2 mt-3 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">Custom icons</div>
+                      <div className="mb-2 mt-3 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">{ui("Custom icons")}</div>
                       <div className="grid grid-cols-4 gap-1">
                         {customIcons.map((icon) => <button
                           key={icon.id}
@@ -312,11 +303,9 @@ export function AdminLabsPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDraft(null)}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={() => setDraft(null)}> {ui("Cancel")} </Button>
             <Button onClick={() => void save()} disabled={!draft?.name.trim()}>
-              {draft?.id ? 'Save' : 'Create'}
+              {draft?.id ? ui("Save") : ui("Create")}
             </Button>
           </DialogFooter>
         </DialogContent>
