@@ -88,15 +88,7 @@ export function LoginPage() {
           />
         </div>}
         {!twoFactorStep && <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="password">Password</Label>
-            <Link
-              to="/forgot-password"
-              className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Forgot password?
-            </Link>
-          </div>
+          <Label htmlFor="password">Password</Label>
           <div className="relative">
             <Input
               id="password"
@@ -157,9 +149,12 @@ export function LoginPage() {
       </form>
 
       {!twoFactorStep && (
-        <div className="mt-4 text-center">
+        <div className="mt-4 flex flex-col items-center gap-2">
           <Link to="/login/options" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
             More login options
+          </Link>
+          <Link to="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+            Forgot password?
           </Link>
         </div>
       )}
