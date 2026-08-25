@@ -27,10 +27,15 @@ async function main() {
       PULPO_FORGE_NODE24: '1',
     })
   }
-  if (process.env.PULPO_FORGE_NODE24 === '1') {
-    const rebuildCode = await run('npm', ['rebuild', 'macos-alias'])
-    if (rebuildCode !== 0) return rebuildCode
+
+  for (const workspace of ['@pulpo/contracts', '@pulpo/client-core']) {
+    const buildCode = await run('npm', ['run', 'build', '--workspace', workspace])
+    if (buildCode !== 0) return buildCode
   }
+
+  const rebuildCode = await run('npm', ['rebuild', 'macos-alias', 'fs-xattr'])
+  if (rebuildCode !== 0) return rebuildCode
+
   return run(process.execPath, [forge, 'make', ...forwarded])
 }
 
