@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { DesktopUpdateState } from '@/lib/runtime'
-import { DesktopUpdateBanner } from './DesktopUpdateBanner'
+import { DesktopUpdateLink } from './DesktopUpdateBanner'
 
 function installDesktopApi(initial: DesktopUpdateState) {
   let listener: ((state: DesktopUpdateState) => void) | undefined
@@ -35,42 +35,39 @@ afterEach(() => {
   Reflect.deleteProperty(window, 'pulpoDesktop')
 })
 
-describe('DesktopUpdateBanner', () => {
+describe('DesktopUpdateLink', () => {
   it('renders only after a desktop update is ready', async () => {
     const desktop = installDesktopApi({ status: 'idle' })
-    render(<DesktopUpdateBanner />)
-    expect(screen.queryByText(/is ready/)).toBeNull()
+    render(<DesktopUpdateLink />)
+    expect(screen.queryByText('Update available')).toBeNull()
     await act(async () => desktop.emit({ status: 'ready', version: '1.2.3' }))
-    expect(screen.getByText('Pulpo v1.2.3 is ready.')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Update available' }).getAttribute('title'))
+      .toBe('Restart to install Pulpo v1.2.3')
   })
 
   it('restarts through the desktop bridge', async () => {
     const desktop = installDesktopApi({ status: 'ready', version: '1.2.3' })
-    render(<DesktopUpdateBanner />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Restart to update' }))
+    render(<DesktopUpdateLink />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Update available' }))
     expect(desktop.restartAndInstall).toHaveBeenCalledTimes(1)
   })
 
-  it('dismisses a version for the rest of the app session', async () => {
+  it('can yield the title-bar slot to the connecting status', async () => {
     installDesktopApi({ status: 'ready', version: '1.2.3' })
-    const first = render(<DesktopUpdateBanner />)
-    fireEvent.click(await screen.findByRole('button', { name: 'Later' }))
-    expect(screen.queryByText(/is ready/)).toBeNull()
-    first.unmount()
-    render(<DesktopUpdateBanner />)
+    render(<DesktopUpdateLink hidden />)
     await act(async () => undefined)
-    expect(screen.queryByText(/is ready/)).toBeNull()
+    expect(screen.queryByText('Update available')).toBeNull()
   })
 
   it('removes its update listener when unmounted', () => {
     const desktop = installDesktopApi({ status: 'idle' })
-    const view = render(<DesktopUpdateBanner />)
+    const view = render(<DesktopUpdateLink />)
     view.unmount()
     expect(desktop.unsubscribe).toHaveBeenCalledTimes(1)
   })
 
   it('does not render in the web runtime', () => {
-    const view = render(<DesktopUpdateBanner />)
+    const view = render(<DesktopUpdateLink />)
     expect(view.container.innerHTML).toBe('')
   })
 })
