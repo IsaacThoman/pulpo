@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill, cancelPasskeyCeremony } from '@/lib/passkeys'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { ui } from '@/i18n/ui'
 
 export function LoginPage() {
   const { t } = useTranslation()
@@ -83,7 +84,7 @@ export function LoginPage() {
             id="email"
             type="email"
             autoComplete="username webauthn"
-            placeholder="jon@pulpo.baby"
+            placeholder={ui("jon@pulpo.baby")}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -124,7 +125,7 @@ export function LoginPage() {
               autoComplete="one-time-code"
               inputMode={recoveryMode ? 'text' : 'numeric'}
               maxLength={recoveryMode ? 14 : 6}
-              placeholder={recoveryMode ? 'XXXX-XXXX-XXXX' : '000000'}
+              placeholder={recoveryMode ? ui("XXXX-XXXX-XXXX") : '000000'}
               value={twoFactorCode}
               onChange={(event) => setTwoFactorCode(recoveryMode ? event.target.value.toUpperCase() : event.target.value.replace(/\D/g, '').slice(0, 6))}
               className="pl-9 font-mono tracking-widest"

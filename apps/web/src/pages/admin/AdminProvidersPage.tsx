@@ -33,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ui, uit } from '@/i18n/ui'
 
 type Draft = {
   id?: string
@@ -170,29 +171,25 @@ export function AdminProvidersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Providers</h2>
+        <h2 className="text-lg font-semibold">{ui("Providers")}</h2>
         <Badge variant="secondary">{providers.length}</Badge>
         <div className="flex-1" />
         <Button size="sm" onClick={openAdd}>
-          <Plus />
-          Add provider
-        </Button>
+          <Plus /> {ui("Add provider")} </Button>
       </div>
-      <p className="text-sm text-muted-foreground">
-        Manage reusable upstream endpoints and API keys.
-      </p>
+      <p className="text-sm text-muted-foreground"> {ui("Manage reusable upstream endpoints and API keys.")} </p>
 
       <Card className="gap-0 rounded-lg py-0 shadow-none">
         <CardContent className="overflow-x-auto px-0 py-0">
           <table className="data-table">
             <thead>
               <tr className="border-b">
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Base URL</th>
-                <th className="px-3 py-2">Linked models</th>
-                <th className="px-3 py-2">API key</th>
-                <th className="px-3 py-2">Prompt cache</th>
-                <th className="px-3 py-2 text-right">Actions</th>
+                <th className="px-3 py-2">{ui("Name")}</th>
+                <th className="px-3 py-2">{ui("Base URL")}</th>
+                <th className="px-3 py-2">{ui("Linked models")}</th>
+                <th className="px-3 py-2">{ui("API key")}</th>
+                <th className="px-3 py-2">{ui("Prompt cache")}</th>
+                <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -207,16 +204,16 @@ export function AdminProvidersPage() {
                   <td className="px-3 py-2 tabular-nums text-muted-foreground">{p.modelCount}</td>
                   <td className="px-3 py-2">
                     <Badge variant={p.hasApiKey ? 'secondary' : 'outline'} className="font-normal">
-                      {p.hasApiKey ? 'Configured' : 'Missing'}
+                      {p.hasApiKey ? ui("Configured") : ui("Missing")}
                     </Badge>
                   </td>
                   <td className="px-3 py-2">
                     <Badge variant={p.cacheAffinityMode === 'none' ? 'outline' : 'secondary'} className="font-normal">
                       {p.cacheAffinityMode === 'openai_prompt_cache_key'
-                        ? `OpenAI · ${p.cacheAffinityScope}`
+                        ? uit`OpenAI · ${p.cacheAffinityScope}`
                         : p.cacheAffinityMode === 'fireworks_session_affinity'
-                          ? `Fireworks · ${p.cacheAffinityScope}`
-                          : 'Disabled'}
+                          ? uit`Fireworks · ${p.cacheAffinityScope}`
+                          : ui("Disabled")}
                     </Badge>
                   </td>
                   <td className="px-3 py-2">
@@ -224,7 +221,7 @@ export function AdminProvidersPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Check health"
+                        title={ui("Check health")}
                         onClick={() => void apiRequest(`/api/admin/providers/${p.id}/health`, { method: 'POST' }).then(load)}
                       >
                         <Activity className="size-3.5" />
@@ -232,7 +229,7 @@ export function AdminProvidersPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Edit"
+                        title={ui("Edit")}
                         onClick={() => openEdit(p)}
                       >
                         <Pencil className="size-3.5" />
@@ -240,7 +237,7 @@ export function AdminProvidersPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Delete"
+                        title={ui("Delete")}
                         className="hover:text-destructive"
                         onClick={() => void remove(p.id)}
                       >
@@ -252,9 +249,7 @@ export function AdminProvidersPage() {
               ))}
               {!providers.length && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                    No providers yet. Add one to reuse it across models.
-                  </td>
+                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground"> {ui("No providers yet. Add one to reuse it across models.")} </td>
                 </tr>
               )}
             </tbody>
@@ -265,15 +260,15 @@ export function AdminProvidersPage() {
       <Dialog open={!!draft} onOpenChange={(v) => !v && closeEditor()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{draft?.id ? 'Edit provider' : 'Add provider'}</DialogTitle>
+            <DialogTitle>{draft?.id ? ui("Edit provider") : ui("Add provider")}</DialogTitle>
           </DialogHeader>
           {draft && (
             <div className="space-y-3.5">
               <div className="space-y-1.5">
-                <Label htmlFor="prov-name">Provider name</Label>
+                <Label htmlFor="prov-name">{ui("Provider name")}</Label>
                 <Input
                   id="prov-name"
-                  placeholder="OpenAI Production"
+                  placeholder={ui("OpenAI Production")}
                   value={draft.name}
                   onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                   autoFocus
@@ -281,54 +276,54 @@ export function AdminProvidersPage() {
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Cache affinity transport</Label>
+                  <Label>{ui("Cache affinity transport")}</Label>
                   <Select value={draft.cacheAffinityMode} onValueChange={(cacheAffinityMode: CacheAffinityMode) => setDraft({ ...draft, cacheAffinityMode })}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Disabled</SelectItem>
-                      <SelectItem value="openai_prompt_cache_key">OpenAI prompt_cache_key</SelectItem>
-                      <SelectItem value="fireworks_session_affinity">Fireworks x-session-affinity</SelectItem>
+                      <SelectItem value="none">{ui("Disabled")}</SelectItem>
+                      <SelectItem value="openai_prompt_cache_key">{ui("OpenAI prompt_cache_key")}</SelectItem>
+                      <SelectItem value="fireworks_session_affinity">{ui("Fireworks x-session-affinity")}</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">Uses a supported request field or header; no arbitrary headers are accepted.</p>
+                  <p className="text-xs text-muted-foreground">{ui("Uses a supported request field or header; no arbitrary headers are accepted.")}</p>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Affinity scope</Label>
+                  <Label>{ui("Affinity scope")}</Label>
                   <Select disabled={draft.cacheAffinityMode === 'none'} value={draft.cacheAffinityScope} onValueChange={(cacheAffinityScope: CacheScope) => setDraft({ ...draft, cacheAffinityScope })}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="agent_run">Agent run / response</SelectItem>
-                      <SelectItem value="chat">Chat</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="agent_run">{ui("Agent run / response")}</SelectItem>
+                      <SelectItem value="chat">{ui("Chat")}</SelectItem>
+                      <SelectItem value="user">{ui("User")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label>Cache isolation</Label>
+                  <Label>{ui("Cache isolation")}</Label>
                   <Select value={draft.cacheIsolationMode} onValueChange={(cacheIsolationMode: CacheIsolationMode) => setDraft({ ...draft, cacheIsolationMode })}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Disabled</SelectItem>
-                      <SelectItem value="fireworks_prompt_cache_isolation">Fireworks isolation header</SelectItem>
+                      <SelectItem value="none">{ui("Disabled")}</SelectItem>
+                      <SelectItem value="fireworks_prompt_cache_isolation">{ui("Fireworks isolation header")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Isolation scope</Label>
+                  <Label>{ui("Isolation scope")}</Label>
                   <Select disabled={draft.cacheIsolationMode === 'none'} value={draft.cacheIsolationScope} onValueChange={(cacheIsolationScope: CacheScope) => setDraft({ ...draft, cacheIsolationScope })}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="agent_run">Agent run / response</SelectItem>
-                      <SelectItem value="chat">Chat</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="agent_run">{ui("Agent run / response")}</SelectItem>
+                      <SelectItem value="chat">{ui("Chat")}</SelectItem>
+                      <SelectItem value="user">{ui("User")}</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="prov-url">Provider base URL</Label>
+                <Label htmlFor="prov-url">{ui("Provider base URL")}</Label>
                 <Input
                   id="prov-url"
                   className="font-mono text-xs"
@@ -338,13 +333,13 @@ export function AdminProvidersPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="prov-key">Provider API key</Label>
+                <Label htmlFor="prov-key">{ui("Provider API key")}</Label>
                 <div className="relative">
                   <Input
                     id="prov-key"
                     type={showKey ? 'text' : 'password'}
                     className="pr-10 font-mono text-xs"
-                    placeholder={draft.hasSavedApiKey ? '••••••••••••••••' : 'sk-…'}
+                    placeholder={draft.hasSavedApiKey ? '••••••••••••••••' : ui("sk-…")}
                     value={draft.apiKey}
                     onChange={(e) => setDraft({ ...draft, apiKey: e.target.value, apiKeyChanged: true })}
                   />
@@ -353,7 +348,7 @@ export function AdminProvidersPage() {
                       type="button"
                       onClick={toggleKeyVisibility}
                       className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground"
-                      aria-label={showKey ? 'Hide provider API key' : 'Show provider API key'}
+                      aria-label={showKey ? ui("Hide provider API key") : ui("Show provider API key")}
                     >
                       {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
@@ -363,14 +358,12 @@ export function AdminProvidersPage() {
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={closeEditor}>
-              Cancel
-            </Button>
+            <Button variant="outline" onClick={closeEditor}> {ui("Cancel")} </Button>
             <Button
               onClick={() => void save()}
               disabled={!draft?.name.trim() || !draft.baseUrl.trim()}
             >
-              {draft?.id ? 'Save' : 'Create'}
+              {draft?.id ? ui("Save") : ui("Create")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -378,7 +371,7 @@ export function AdminProvidersPage() {
 
       <SensitiveRevealDialog
         open={revealOpen}
-        description="Provider API keys are sensitive. Confirm your identity before revealing this saved key."
+        description={ui("Provider API keys are sensitive. Confirm your identity before revealing this saved key.")}
         onOpenChange={setRevealOpen}
         onConfirm={reveal}
       />

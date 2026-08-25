@@ -14,18 +14,19 @@ import { StatsRow } from '@/components/usage/StatsRow'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
 import { RecentUsagePanel, TopModelsPanel } from '@/components/usage/UsagePanels'
 import { Button } from '@/components/ui/button'
+import { ui } from '@/i18n/ui'
 
 const RANGES: { id: TimeRange; label: string }[] = [
-  { id: '24h', label: '24h' },
-  { id: '7d', label: '7d' },
-  { id: '30d', label: '30d' },
-  { id: '90d', label: '90d' },
-  { id: 'all', label: 'All' },
+  { id: '24h', label: ui("24h") },
+  { id: '7d', label: ui("7d") },
+  { id: '30d', label: ui("30d") },
+  { id: '90d', label: ui("90d") },
+  { id: 'all', label: ui("All") },
 ]
 const METRICS: { id: Metric; label: string }[] = [
-  { id: 'cost', label: 'USD' },
-  { id: 'tokens', label: 'Tokens' },
-  { id: 'calls', label: 'Calls' },
+  { id: 'cost', label: ui("USD") },
+  { id: 'tokens', label: ui("Tokens") },
+  { id: 'calls', label: ui("Calls") },
 ]
 
 interface PersonalActivity {
@@ -117,20 +118,18 @@ export function PersonalPage() {
         <div>
           <div className="text-lg font-medium">{me.name}</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            {me.email} · Joined {formatDate(me.joinedAt)}
+            {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
           </div>
         </div>
         <div className="text-right">
-          <div className="mb-1 text-xs text-muted-foreground">{activity?.balanceKind === 'pool' ? 'Balance (pooled)' : 'Balance'}</div>
+          <div className="mb-1 text-xs text-muted-foreground">{activity?.balanceKind === 'pool' ? ui("Balance (pooled)") : ui("Balance")}</div>
           <div className="text-2xl font-medium text-emerald-600 dark:text-emerald-400">
             {formatBalance(me.balance)}
           </div>
           {billingEnabled && <Link
             to="/billing?topup=1"
             className="mt-1 inline-block text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          >
-            Add credits
-          </Link>}
+          > {ui("Add credits")} </Link>}
         </div>
       </div>
 
@@ -138,9 +137,7 @@ export function PersonalPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-2 text-xs font-medium">
-              <Clock className="size-3" />
-              Usage overview
-            </span>
+              <Clock className="size-3" /> {ui("Usage overview")} </span>
             <div className="h-4 w-px bg-border" />
             <ToggleGroup options={METRICS} value={metric} onChange={setMetric} />
           </div>
@@ -150,11 +147,11 @@ export function PersonalPage() {
       </section>
 
       {activityQuery.isLoading || recordsQuery.isLoading ? (
-        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">Loading settled usage…</div>
+        <div className="flex h-64 items-center justify-center rounded-lg border text-xs text-muted-foreground">{ui("Loading settled usage…")}</div>
       ) : error ? (
         <div className="flex h-40 flex-col items-center justify-center gap-3 rounded-lg border text-sm text-muted-foreground">
-          <span>{error instanceof Error ? error.message : 'Unable to load personal usage'}</span>
-          <Button size="sm" variant="outline" onClick={() => { void activityQuery.refetch(); void recordsQuery.refetch() }}>Try again</Button>
+          <span>{error instanceof Error ? error.message : ui("Unable to load personal usage")}</span>
+          <Button size="sm" variant="outline" onClick={() => { void activityQuery.refetch(); void recordsQuery.refetch() }}>{ui("Try again")}</Button>
         </div>
       ) : (
         <>

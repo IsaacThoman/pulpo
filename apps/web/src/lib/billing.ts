@@ -1,4 +1,5 @@
 import { apiRequest } from './api'
+import { ui } from '@/i18n/ui'
 
 export type BillingPlan = 'baby' | 'eight' | 'fat'
 
@@ -51,8 +52,8 @@ export function planChoiceLabel(plan: BillingPlan, current: BillingPlan, cancelA
   if (plan === current) return cancelAtPeriodEnd ? `Renew for $${plan === 'eight' ? 8 : 24}/month` : 'Current plan'
   if (current === 'baby') return `Subscribe for $${plan === 'eight' ? 8 : 24}/month`
   if (cancelAtPeriodEnd) return `Renew for $${plan === 'eight' ? 8 : 24}/month`
-  if (plan === 'fat') return 'Upgrade for $24/month'
-  return 'Downgrade to $8/month'
+  if (plan === 'fat') return ui("Upgrade for $24/month")
+  return ui("Downgrade to $8/month")
 }
 
 export function planChoiceDisabled(plan: BillingPlan, current: BillingPlan, cancelAtPeriodEnd: boolean): boolean {

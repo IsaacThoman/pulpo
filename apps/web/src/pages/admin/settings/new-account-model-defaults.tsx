@@ -12,6 +12,7 @@ import {
   removeFavoriteModel,
   withDefaultModel,
 } from './new-account-model-defaults-logic'
+import { ui, uit } from '@/i18n/ui'
 
 function favoriteLabel(models: AvailableModel[], modelId: string): string {
   const model = models.find((candidate) => candidate.id === modelId)
@@ -38,11 +39,11 @@ export function NewAccountModelDefaultsFields({
 
   return (
     <Section
-      title="New account models"
+      title={ui("New account models")}
       hint="Copied into each new account. Existing accounts keep their own model preferences."
     >
       <SelectField
-        label="Default model"
+        label={ui("Default model")}
         hint="Automatic uses the first available model. The default does not need to be a favorite."
         value={value.defaultModelId ?? AUTOMATIC_MODEL_VALUE}
         onChange={(modelId) => onChange(withDefaultModel(
@@ -52,7 +53,7 @@ export function NewAccountModelDefaultsFields({
         options={defaultModelOptions(models, value.defaultModelId)}
       />
       <SelectField
-        label="Add favorite model"
+        label={ui("Add favorite model")}
         hint="Favorites appear in the order shown below."
         value={ADD_MODEL_VALUE}
         onChange={(modelId) => {
@@ -62,11 +63,9 @@ export function NewAccountModelDefaultsFields({
         options={addOptions}
       />
       <div>
-        <div className="mb-2 text-sm">Favorite model order</div>
+        <div className="mb-2 text-sm">{ui("Favorite model order")}</div>
         {value.favoriteModelIds.length === 0 ? (
-          <div className="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
-            New accounts will start without favorite models.
-          </div>
+          <div className="rounded-lg border border-dashed px-3 py-4 text-center text-xs text-muted-foreground"> {ui("New accounts will start without favorite models.")} </div>
         ) : (
           <div className="space-y-1.5">
             {value.favoriteModelIds.map((modelId, index) => {
@@ -80,7 +79,7 @@ export function NewAccountModelDefaultsFields({
                     variant="ghost"
                     size="icon-sm"
                     disabled={index === 0}
-                    aria-label={`Move ${label} up`}
+                    aria-label={uit`Move ${label} up`}
                     onClick={() => onChange({
                       ...value,
                       favoriteModelIds: moveFavoriteModel(value.favoriteModelIds, index, -1),
@@ -93,7 +92,7 @@ export function NewAccountModelDefaultsFields({
                     variant="ghost"
                     size="icon-sm"
                     disabled={index === value.favoriteModelIds.length - 1}
-                    aria-label={`Move ${label} down`}
+                    aria-label={uit`Move ${label} down`}
                     onClick={() => onChange({
                       ...value,
                       favoriteModelIds: moveFavoriteModel(value.favoriteModelIds, index, 1),
@@ -105,7 +104,7 @@ export function NewAccountModelDefaultsFields({
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    aria-label={`Remove ${label}`}
+                    aria-label={uit`Remove ${label}`}
                     onClick={() => onChange({
                       ...value,
                       favoriteModelIds: removeFavoriteModel(value.favoriteModelIds, modelId),

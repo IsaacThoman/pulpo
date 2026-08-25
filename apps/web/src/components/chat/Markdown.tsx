@@ -5,6 +5,7 @@ import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Check, Copy } from 'lucide-react'
 import 'katex/dist/katex.min.css'
+import { ui } from '@/i18n/ui'
 
 /** Convert \( \) / \[ \] (common in LLM output) to $ / $$ for remark-math. Skip fenced/inline code. */
 function normalizeMathDelimiters(content: string): string {
@@ -34,7 +35,7 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
           }}
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          {copied ? 'copied' : 'copy'}
+          {copied ? ui("copied") : ui("copy")}
         </button>
       </div>
       <pre className="max-w-full overflow-x-auto p-3 text-[13px] leading-relaxed text-zinc-100">

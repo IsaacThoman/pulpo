@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DesktopUpdateState } from '@/lib/runtime'
+import { ui, uit } from '@/i18n/ui'
 
 export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
   const [ready, setReady] = useState<Extract<DesktopUpdateState, { status: 'ready' }> | null>(null)
@@ -30,7 +31,7 @@ export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
   return (
     <button
       type="button"
-      title={`Restart to install Pulpo v${ready.version}`}
+      title={uit`Restart to install Pulpo v${ready.version}`}
       className="desktop-connection-status fixed left-[84px] top-[19px] z-50 -translate-y-1/2 text-[11px] font-medium text-primary underline underline-offset-2 hover:text-primary/80 disabled:opacity-60"
       disabled={restarting}
       onClick={() => {
@@ -40,7 +41,7 @@ export function DesktopUpdateLink({ hidden = false }: { hidden?: boolean }) {
         void restartAndInstall().catch(() => setRestarting(false))
       }}
     >
-      {restarting ? 'Restarting…' : `Update to v${ready.version}`}
+      {restarting ? ui("Restarting…") : uit`Update to v${ready.version}`}
     </button>
   )
 }

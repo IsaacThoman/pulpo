@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react'
 import { NumField, SaveBar, SecretField, Section, Toggle } from '@/components/admin/kit'
 import { apiRequest } from '@/lib/api'
 import { useAuth } from '@/stores/auth'
+import { ui } from '@/i18n/ui'
 
 interface DictationSettingsResponse {
   enabled: boolean
@@ -29,17 +30,17 @@ export function DictationSection() {
 
   const keyAvailable = hasApiKey || Boolean(groqApiKey.trim())
   return <div>
-    <Section title="Dictation" hint="Transcribe microphone recordings on the server with Groq Whisper Large v3 Turbo. Audio is not retained by Pulpo.">
+    <Section title={ui("Dictation")} hint="Transcribe microphone recordings on the server with Groq Whisper Large v3 Turbo. Audio is not retained by Pulpo.">
       <Toggle
-        label="Enable web dictation"
+        label={ui("Enable web dictation")}
         hint="Shows the microphone control in the web chat composer. Disabled by default."
         checked={enabled}
         onChange={setEnabled}
       />
-      {enabled && !keyAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />Configure a Groq API key before enabling dictation.</div>}
-      <Toggle label="Bill users for dictation" hint="Charges successful transcriptions by audio duration, rounded up to the next second." checked={billUsers} onChange={setBillUsers} />
+      {enabled && !keyAvailable && <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400"><AlertCircle className="size-4" />{ui("Configure a Groq API key before enabling dictation.")}</div>}
+      <Toggle label={ui("Bill users for dictation")} hint="Charges successful transcriptions by audio duration, rounded up to the next second." checked={billUsers} onChange={setBillUsers} />
       {billUsers && <NumField
-        label="Price per dictation minute"
+        label={ui("Price per dictation minute")}
         value={pricePerMinuteMicros / 1_000_000}
         onChange={(usd) => setPricePerMinuteMicros(Math.round(usd * 1_000_000))}
         min={0}
@@ -48,9 +49,9 @@ export function DictationSection() {
         suffix="USD"
       />}
     </Section>
-    <Section title="Groq" hint="The API key is encrypted on the Pulpo server and is never sent to the browser.">
+    <Section title={ui("Groq")} hint="The API key is encrypted on the Pulpo server and is never sent to the browser.">
       <SecretField
-        label="Groq API key"
+        label={ui("Groq API key")}
         hint={hasApiKey ? 'Configured — leave blank to keep' : 'Required before dictation can be enabled'}
         value={groqApiKey}
         onChange={setGroqApiKey}
@@ -58,7 +59,7 @@ export function DictationSection() {
       />
     </Section>
     <SaveBar onSave={async () => {
-      if (enabled && !keyAvailable) throw new Error('Configure a Groq API key before enabling dictation')
+      if (enabled && !keyAvailable) throw new Error(ui("Configure a Groq API key before enabling dictation"))
       const saved = await apiRequest<DictationSettingsResponse>('/api/admin/settings/dictation', {
         method: 'PATCH', body: { enabled, billUsers, pricePerMinuteMicros, ...(groqApiKey.trim() ? { groqApiKey: groqApiKey.trim() } : {}) },
       })

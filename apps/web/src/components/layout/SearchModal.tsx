@@ -9,6 +9,7 @@ import type { ServerChat } from '@/stores/chat'
 import { timeAgo } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
 import { cn } from '@/lib/utils'
+import { ui } from '@/i18n/ui'
 
 const EMPTY_CHATS = [] as const
 
@@ -105,14 +106,14 @@ export function SearchModal({
                 go(cursor)
               }
             }}
-            placeholder="Search chats and messages…"
+            placeholder={ui("Search chats and messages…")}
             className="h-12 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           />
-          <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">esc</kbd>
+          <kbd className="rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{ui("esc")}</kbd>
         </div>
         <div className="max-h-[320px] overflow-y-auto p-1.5">
           {results.length === 0 && (
-            <div className="px-3 py-8 text-center text-sm text-muted-foreground">No results</div>
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">{ui("No results")}</div>
           )}
           {results.map((c, i) => (
             <button

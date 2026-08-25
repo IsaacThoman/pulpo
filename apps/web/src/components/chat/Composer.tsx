@@ -50,6 +50,7 @@ import { useUploadOutbox, type UploadRecord } from '@/stores/upload-outbox'
 import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { ui, uit } from '@/i18n/ui'
 
 export interface ComposerMessageEdit {
   messageId: string
@@ -236,7 +237,7 @@ export function Composer({
       const result = await apiRequest<{ text: string }>('/api/dictation/transcriptions', {
         method: 'POST', body: form, signal: controller.signal,
       })
-      if (!result.text.trim()) throw new Error('No speech was detected in the recording')
+      if (!result.text.trim()) throw new Error(ui("No speech was detected in the recording"))
       const textarea = ref.current
       const start = textarea?.selectionStart ?? value.length
       const end = textarea?.selectionEnd ?? start
@@ -267,7 +268,7 @@ export function Composer({
   const startDictation = useCallback(async () => {
     setDictationError(null)
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setDictationError('This browser does not support microphone recording')
+      setDictationError(ui("This browser does not support microphone recording"))
       return
     }
     try {
@@ -280,7 +281,7 @@ export function Composer({
       recorder.ondataavailable = (event) => { if (event.data.size > 0) dictationChunksRef.current.push(event.data) }
       recorder.onerror = () => {
         dictationChunksRef.current = []
-        setDictationError('Microphone recording failed')
+        setDictationError(ui("Microphone recording failed"))
         releaseMicrophone()
         setDictationState('idle')
       }
@@ -665,9 +666,7 @@ export function Composer({
                 else setAgentMode(modelId, true)
               }}
               className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
-            >
-              Enable Agent
-            </button>
+            > {ui("Enable Agent")} </button>
           )}
         </div>
       )}
@@ -680,37 +679,33 @@ export function Composer({
             ? <AlertCircle className="size-3.5 shrink-0 text-destructive" aria-hidden="true" />
             : <Pencil className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />}
           <span className="min-w-0 flex-1">
-            <span className="font-medium">{uploadFailed || recovery.recoveryError ? 'Message needs attention.' : 'Editing pending message.'}</span>{' '}
+            <span className="font-medium">{uploadFailed || recovery.recoveryError ? ui("Message needs attention.") : ui("Editing pending message.")}</span>{' '}
             <span className="text-muted-foreground">
               {recovery.recoveryError
                 ?? (uploadFailed
-                  ? 'Retry or remove the failed upload to continue. Later messages will wait.'
+                  ? ui("Retry or remove the failed upload to continue. Later messages will wait.")
                   : uploading
-                    ? 'You can resend now; delivery will still wait for its files. Later messages remain queued.'
-                    : 'Resend or discard this message to let later messages continue.')}
+                    ? ui("You can resend now; delivery will still wait for its files. Later messages remain queued.")
+                    : ui("Resend or discard this message to let later messages continue."))}
             </span>
           </span>
           <button
             type="button"
             onClick={() => discardSubmission(recovery.id)}
             className="shrink-0 cursor-pointer text-xs font-medium text-destructive hover:underline"
-          >
-            Discard
-          </button>
+          > {ui("Discard")} </button>
         </div>
       )}
       {messageEdit && (
         <div className="flex items-center gap-2 rounded-t-2xl border border-b-0 bg-card px-3 py-2 text-sm shadow-sm">
           <Pencil className="size-3.5 text-muted-foreground" />
-          <span className="flex-1 font-medium">Editing message</span>
+          <span className="flex-1 font-medium">{ui("Editing message")}</span>
           <button
             type="button"
             onClick={cancelMessageEdit}
             disabled={submitting}
             className="cursor-pointer text-xs text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Cancel
-          </button>
+          > {ui("Cancel")} </button>
         </div>
       )}
       {queuedMessages.length > 0 && (
@@ -764,8 +759,8 @@ export function Composer({
                   {(editing || message.content) && (
                     <p className={cn('truncate text-foreground/90', editing && 'italic text-muted-foreground')}>
                       {editing
-                        ? 'Editing queued message…'
-                        : `${message.content}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
+                        ? ui("Editing queued message…")
+                        : uit`${message.content}${message.status === 'editing' ? ' · Editing on another session' : ''}`}
                     </p>
                   )}
                   {message.attachments.length > 0 && !editing && (
@@ -778,7 +773,7 @@ export function Composer({
                             key={attachment.localUploadId ?? attachment.id}
                             className="flex min-w-0 items-center gap-1"
                             role={uploadStatus === 'uploading' ? 'status' : undefined}
-                            aria-label={uploadStatus === 'uploading' ? `Uploading ${attachment.name}` : undefined}
+                            aria-label={uploadStatus === 'uploading' ? uit`Uploading ${attachment.name}` : undefined}
                             title={attachment.name}
                           >
                             {uploadStatus === 'uploading' ? (
@@ -801,7 +796,7 @@ export function Composer({
                   onClick={() => void removeQueuedMessage(message.id)}
                   disabled={submitting || message.status === 'dispatching'}
                   className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Delete queued message"
+                  aria-label={ui("Delete queued message")}
                 >
                   <Trash2 className="size-3.5" />
                 </button>
@@ -813,7 +808,7 @@ export function Composer({
                     'flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40',
                     editing && 'bg-accent text-foreground',
                   )}
-                  aria-label={editing ? 'Cancel queued message edit' : 'Edit queued message'}
+                  aria-label={editing ? ui("Cancel queued message edit") : ui("Edit queued message")}
                 >
                   <Pencil className="size-3.5" />
                 </button>

@@ -30,6 +30,7 @@ import { filterPresetIconOptions, formatPresetIconLabel } from '@/components/cha
 import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 import { useCatalogIcons } from '@/stores/catalogIcons'
 import type { AdminCatalogIcon, CatalogIconReference } from '@/lib/catalog-icons'
+import { ui, uit } from '@/i18n/ui'
 
 interface AdminModel {
   id: string
@@ -127,7 +128,7 @@ export function AdminModelsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Models</h2>
+        <h2 className="text-lg font-semibold">{ui("Models")}</h2>
         <Badge variant="secondary">{models.length}</Badge>
         <div className="flex-1" />
         <Button
@@ -138,15 +139,13 @@ export function AdminModelsPage() {
             setDraft(empty(providers[0]?.id, labs.find((lab) => lab.name === 'Internal')?.id ?? labs[0]?.id ?? null))
           }}
         >
-          <Plus />
-          New model
-        </Button>
+          <Plus /> {ui("New model")} </Button>
       </div>
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input className="pl-8" placeholder="Search models…" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Input className="pl-8" placeholder={ui("Search models…")} value={query} onChange={(event) => setQuery(event.target.value)} />
         </div>
         <Select value={filter} onValueChange={(v: typeof filter) => setFilter(v)}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
@@ -172,23 +171,22 @@ export function AdminModelsPage() {
                   <span className="font-medium">{model.name}</span>
                   <Badge variant="outline" className="font-normal">{model.id}</Badge>
                   <Badge variant="secondary" className="font-normal">{model.executionMode}</Badge>
-                  {!model.visible && <Badge variant="secondary" className="font-normal">hidden</Badge>}
+                  {!model.visible && <Badge variant="secondary" className="font-normal">{ui("hidden")}</Badge>}
                 </div>
                 <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                  {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} ctx
-                </div>
+                  {model.description || model.upstreamModelId} · {formatNumber(model.contextWindow)} {ui("ctx")} </div>
               </div>
-              <Button size="icon-sm" variant="ghost" title="Edit" onClick={() => { setCreating(false); setDraft({ ...model }) }}>
+              <Button size="icon-sm" variant="ghost" title={ui("Edit")} onClick={() => { setCreating(false); setDraft({ ...model }) }}>
                 <Pencil className="size-4" />
               </Button>
-              <Button size="icon-sm" variant="ghost" title="Clone" onClick={() => { setCreating(true); setDraft({ ...model, id: `${model.id}-copy`, name: `${model.name} copy` }) }}>
+              <Button size="icon-sm" variant="ghost" title={ui("Clone")} onClick={() => { setCreating(true); setDraft({ ...model, id: `${model.id}-copy`, name: `${model.name} copy` }) }}>
                 <Copy className="size-4" />
               </Button>
               <Button
                 size="icon-sm"
                 variant="ghost"
                 className="hover:text-destructive"
-                title="Delete"
+                title={ui("Delete")}
                 onClick={() => {
                   if (confirm(`Delete ${model.name}? Historical references will be permanently reassigned to “unknown model”.`)) {
                     void apiRequest(`/api/admin/models/${model.id}`, { method: 'DELETE' }).then(() => Promise.all([load(), useCatalog.getState().load()]))
@@ -211,7 +209,7 @@ export function AdminModelsPage() {
           <DialogHeader className="shrink-0 border-b px-6 py-4">
             <DialogTitle className="flex items-center gap-2.5">
               {draft && <AiLogo icon={draft.logo ?? labs.find((lab) => lab.id === draft.labId)?.logo ?? 'pulpo'} customIcon={effectiveModelCustomIcon(draft, labs, customIcons)} className="size-6 rounded-[3px]" />}
-              {creating ? 'New model' : 'Edit model'}
+              {creating ? ui("New model") : ui("Edit model")}
               {draft?.id && <Badge variant="outline" className="font-mono font-normal">{draft.id}</Badge>}
             </DialogTitle>
           </DialogHeader>
@@ -235,8 +233,8 @@ export function AdminModelsPage() {
           )}
 
           <div className="flex shrink-0 justify-end gap-2 border-t px-6 py-3">
-            <Button variant="outline" onClick={() => setDraft(null)}>Cancel</Button>
-            <Button disabled={!canSave} onClick={() => void save()}>Save & update</Button>
+            <Button variant="outline" onClick={() => setDraft(null)}>{ui("Cancel")}</Button>
+            <Button disabled={!canSave} onClick={() => void save()}>{ui("Save & update")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -306,7 +304,7 @@ function ModelEditorBody({
           onChange={(labId) => setDraft({ ...draft, labId })}
         />
         <LogoPickerTile
-          label="Model logo"
+          label={ui("Model logo")}
           helper="Product mark used in chat, favorites, and model lists."
           kind="model"
           value={draft.logo}
@@ -321,10 +319,10 @@ function ModelEditorBody({
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Model name">
+        <Field label={ui("Model name")}>
           <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
         </Field>
-        <Field label="Model ID">
+        <Field label={ui("Model ID")}>
           <Input
             value={draft.id}
             disabled={!creating}
@@ -335,32 +333,32 @@ function ModelEditorBody({
       </div>
 
       <div className="space-y-1.5">
-        <Label className="text-xs">Description</Label>
+        <Label className="text-xs">{ui("Description")}</Label>
         <Textarea rows={2} value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} />
       </div>
 
       <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-        <ToggleRow label="Enable Pi agent mode" checked={draft.agentEnabled} onChange={(agentEnabled) => setDraft({ ...draft, agentEnabled })} />
+        <ToggleRow label={ui("Enable Pi agent mode")} checked={draft.agentEnabled} onChange={(agentEnabled) => setDraft({ ...draft, agentEnabled })} />
         {draft.agentEnabled && (
           <div className="space-y-1.5">
-            <Label className="text-xs">Agent instructions</Label>
-            <Textarea rows={3} placeholder="Additional instructions appended to Pulpo's Pi coding prompt." value={draft.agentInstructions} onChange={(e) => setDraft({ ...draft, agentInstructions: e.target.value })} />
+            <Label className="text-xs">{ui("Agent instructions")}</Label>
+            <Textarea rows={3} placeholder={ui("Additional instructions appended to Pulpo's Pi coding prompt.")} value={draft.agentInstructions} onChange={(e) => setDraft({ ...draft, agentInstructions: e.target.value })} />
           </div>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <ToggleRow label="Enabled" checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
-        <ToggleRow label="Visible in picker" checked={draft.visible} onChange={(visible) => setDraft({ ...draft, visible })} />
+        <ToggleRow label={ui("Enabled")} checked={draft.enabled} onChange={(enabled) => setDraft({ ...draft, enabled })} />
+        <ToggleRow label={ui("Visible in picker")} checked={draft.visible} onChange={(visible) => setDraft({ ...draft, visible })} />
       </div>
 
       <Separator />
 
       <div className="space-y-3">
-        <div className="text-sm font-medium">Upstream</div>
-        <Field label="Provider">
+        <div className="text-sm font-medium">{ui("Upstream")}</div>
+        <Field label={ui("Provider")}>
           <Select value={draft.providerConnectionId} onValueChange={(providerConnectionId) => setDraft({ ...draft, providerConnectionId })}>
-            <SelectTrigger className="w-full"><SelectValue placeholder="Select provider" /></SelectTrigger>
+            <SelectTrigger className="w-full"><SelectValue placeholder={ui("Select provider")} /></SelectTrigger>
             <SelectContent>
               {providers.map((provider) => (
                 <SelectItem key={provider.id} value={provider.id}>{provider.name}</SelectItem>
@@ -377,11 +375,11 @@ function ModelEditorBody({
               </code>
             )}
             {selectedLab && (
-              <div className="mt-1 text-[11px] text-muted-foreground">Lab: {selectedLab.name}</div>
+              <div className="mt-1 text-[11px] text-muted-foreground">{ui("Lab:")} {selectedLab.name}</div>
             )}
           </div>
         )}
-        <Field label="Upstream model">
+        <Field label={ui("Upstream model")}>
           <UpstreamModelField
             providerConnectionId={draft.providerConnectionId}
             value={draft.upstreamModelId}
@@ -389,38 +387,38 @@ function ModelEditorBody({
           />
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Execution">
+          <Field label={ui("Execution")}>
             <Select value={draft.executionMode} onValueChange={(executionMode: 'stream' | 'background') => setDraft({ ...draft, executionMode })}>
               <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="stream">Streaming</SelectItem>
-                <SelectItem value="background">Background</SelectItem>
+                <SelectItem value="stream">{ui("Streaming")}</SelectItem>
+                <SelectItem value="background">{ui("Background")}</SelectItem>
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Context window">
+          <Field label={ui("Context window")}>
             <Input type="number" min={1} className="tabular-nums" value={draft.contextWindow} onChange={(e) => setDraft({ ...draft, contextWindow: Number(e.target.value) })} />
           </Field>
-          <Field label="Max output tokens">
+          <Field label={ui("Max output tokens")}>
             <Input type="number" min={1} className="tabular-nums" value={draft.maxOutputTokens} onChange={(e) => setDraft({ ...draft, maxOutputTokens: Number(e.target.value) })} />
           </Field>
-          <Field label="Tags">
-            <Input value={draft.tags.join(', ')} onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} placeholder="reasoning, vision" />
+          <Field label={ui("Tags")}>
+            <Input value={draft.tags.join(', ')} onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })} placeholder={ui("reasoning, vision")} />
           </Field>
         </div>
         <div className="mt-3 rounded-lg border bg-muted/20 p-3">
           <ToggleRow
-            label="Enable context compaction"
-            description="Summarize older context when the token threshold is reached. Chat and agent turns share this limit; agent runs also compact mid-turn if live context grows."
+            label={ui("Enable context compaction")}
+            description={ui("Summarize older context when the token threshold is reached. Chat and agent turns share this limit; agent runs also compact mid-turn if live context grows.")}
             checked={draft.compactionEnabled}
             onChange={(compactionEnabled) => setDraft({ ...draft, compactionEnabled })}
           />
           {draft.compactionEnabled && (
             <div className="mt-3 grid grid-cols-2 gap-3">
-              <Field label="Threshold tokens">
+              <Field label={ui("Threshold tokens")}>
                 <Input type="number" min={2000} max={1000000} className="tabular-nums" value={draft.compactionThresholdTokens} onChange={(e) => setDraft({ ...draft, compactionThresholdTokens: Number(e.target.value) })} />
               </Field>
-              <Field label="Recent turns kept">
+              <Field label={ui("Recent turns kept")}>
                 <Input type="number" min={1} max={32} className="tabular-nums" value={draft.compactionRetainedTurns} onChange={(e) => setDraft({ ...draft, compactionRetainedTurns: Number(e.target.value) })} />
               </Field>
             </div>
@@ -431,28 +429,28 @@ function ModelEditorBody({
       <Separator />
 
       <div className="space-y-3">
-        <div className="text-sm font-medium">Pricing</div>
+        <div className="text-sm font-medium">{ui("Pricing")}</div>
         <ToggleRow
-          label="Use provider-reported cost"
-          description="Use the USD value in response usage.cost when the provider returns it; otherwise fall back to the prices below."
+          label={ui("Use provider-reported cost")}
+          description={ui("Use the USD value in response usage.cost when the provider returns it; otherwise fall back to the prices below.")}
           checked={draft.useProviderCost}
           onChange={(useProviderCost) => setDraft({ ...draft, useProviderCost })}
         />
         <div className="grid grid-cols-2 gap-3">
-          <PriceField label="Input $/M tokens" valueMicros={draft.inputPriceMicros} onChange={(inputPriceMicros) => setDraft({ ...draft, inputPriceMicros })} />
-          <PriceField label="Cache read $/M tokens" valueMicros={draft.cachedInputPriceMicros} onChange={(cachedInputPriceMicros) => setDraft({ ...draft, cachedInputPriceMicros })} />
-          <PriceField label="Cache write $/M tokens" valueMicros={draft.cacheWritePriceMicros} onChange={(cacheWritePriceMicros) => setDraft({ ...draft, cacheWritePriceMicros })} />
-          <PriceField label="Output $/M tokens" valueMicros={draft.outputPriceMicros} onChange={(outputPriceMicros) => setDraft({ ...draft, outputPriceMicros })} />
+          <PriceField label={ui("Input $/M tokens")} valueMicros={draft.inputPriceMicros} onChange={(inputPriceMicros) => setDraft({ ...draft, inputPriceMicros })} />
+          <PriceField label={ui("Cache read $/M tokens")} valueMicros={draft.cachedInputPriceMicros} onChange={(cachedInputPriceMicros) => setDraft({ ...draft, cachedInputPriceMicros })} />
+          <PriceField label={ui("Cache write $/M tokens")} valueMicros={draft.cacheWritePriceMicros} onChange={(cacheWritePriceMicros) => setDraft({ ...draft, cacheWritePriceMicros })} />
+          <PriceField label={ui("Output $/M tokens")} valueMicros={draft.outputPriceMicros} onChange={(outputPriceMicros) => setDraft({ ...draft, outputPriceMicros })} />
         </div>
-        <PriceField label="Per-request $" valueMicros={draft.perRequestPriceMicros} onChange={(perRequestPriceMicros) => setDraft({ ...draft, perRequestPriceMicros })} />
-        <Field label="Allowed Responses parameters">
+        <PriceField label={ui("Per-request $")} valueMicros={draft.perRequestPriceMicros} onChange={(perRequestPriceMicros) => setDraft({ ...draft, perRequestPriceMicros })} />
+        <Field label={ui("Allowed Responses parameters")}>
           <Input
             value={draft.allowedParameters.join(', ')}
             onChange={(e) => setDraft({ ...draft, allowedParameters: e.target.value.split(',').map((v) => v.trim()).filter(Boolean) })}
-            placeholder="temperature, reasoning_effort"
+            placeholder={ui("temperature, reasoning_effort")}
           />
         </Field>
-        <Field label="Custom parameters (JSON)">
+        <Field label={ui("Custom parameters (JSON)")}>
           <JsonObjectEditor
             value={draft.defaultParameters}
             onValidityChange={onParamsValidityChange}
@@ -464,17 +462,17 @@ function ModelEditorBody({
       <Separator />
 
       <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-        <ToggleRow label="Enable retry on failure" checked={retryEnabled} onChange={setRetryEnabled} />
+        <ToggleRow label={ui("Enable retry on failure")} checked={retryEnabled} onChange={setRetryEnabled} />
         {retryEnabled && (
           <div className="space-y-3 pt-1">
-            <Field label="Fallback model">
+            <Field label={ui("Fallback model")}>
               <Select
                 value={draft.fallbackModelId ?? '__same__'}
                 onValueChange={(value) => setDraft({ ...draft, fallbackModelId: value === '__same__' ? null : value })}
               >
                 <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__same__">Same model ({draft.name || draft.id || 'current'}) — retry on current</SelectItem>
+                  <SelectItem value="__same__">{ui("Same model (")}{draft.name || draft.id || 'current'}{ui(") — retry on current")}</SelectItem>
                   {models.filter((model) => model.id !== draft.id && model.enabled).map((model) => (
                     <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>
                   ))}
@@ -482,23 +480,23 @@ function ModelEditorBody({
               </Select>
             </Field>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Max retries">
+              <Field label={ui("Max retries")}>
                 <Input type="number" min={1} max={10} className="tabular-nums" value={draft.maxRetries || 1} onChange={(e) => setDraft({ ...draft, maxRetries: Number(e.target.value) })} />
               </Field>
-              <Field label="Retry delay (sec)">
+              <Field label={ui("Retry delay (sec)")}>
                 <Input type="number" min={0} max={300} className="tabular-nums" value={draft.retryDelaySeconds} onChange={(e) => setDraft({ ...draft, retryDelaySeconds: Number(e.target.value) })} />
               </Field>
-              <Field label="Sticky block (sec)">
+              <Field label={ui("Sticky block (sec)")}>
                 <Input type="number" min={0} max={3600} className="tabular-nums" value={draft.stickyFallbackSeconds} onChange={(e) => setDraft({ ...draft, stickyFallbackSeconds: Number(e.target.value) })} />
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <ToggleRow
-                label="Fallback if no first streamed token arrives in time"
+                label={ui("Fallback if no first streamed token arrives in time")}
                 checked={draft.firstTokenTimeoutEnabled}
                 onChange={(firstTokenTimeoutEnabled) => setDraft({ ...draft, firstTokenTimeoutEnabled })}
               />
-              <Field label="First token timeout (sec)">
+              <Field label={ui("First token timeout (sec)")}>
                 <Input
                   type="number"
                   min={1}
@@ -512,13 +510,13 @@ function ModelEditorBody({
             </div>
             <div className="space-y-3">
               <ToggleRow
-                label="Sticky-block slow completions"
+                label={ui("Sticky-block slow completions")}
                 checked={draft.slowStickyEnabled}
                 onChange={(slowStickyEnabled) => setDraft({ ...draft, slowStickyEnabled })}
                 disabled={stickySeconds <= 0}
               />
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Min avg output tok/sec">
+                <Field label={ui("Min avg output tok/sec")}>
                   <Input
                     type="number"
                     min={0.1}
@@ -530,7 +528,7 @@ function ModelEditorBody({
                     onChange={(e) => setDraft({ ...draft, slowStickyMinTokensPerSecond: Number(e.target.value) })}
                   />
                 </Field>
-                <Field label="Min completion time (sec)">
+                <Field label={ui("Min completion time (sec)")}>
                   <Input
                     type="number"
                     min={1}
@@ -543,15 +541,13 @@ function ModelEditorBody({
                 </Field>
               </div>
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              If “Same model” is selected, retries use the current model. Sticky block temporarily routes to fallback without attempting the primary. First-token timeout applies to streamed requests only. Slow sticky blocking requires sticky block &gt; 0.
-            </p>
+            <p className="text-[11px] leading-relaxed text-muted-foreground"> {ui("If “Same model” is selected, retries use the current model. Sticky block temporarily routes to fallback without attempting the primary. First-token timeout applies to streamed requests only. Slow sticky blocking requires sticky block &gt; 0.")} </p>
           </div>
         )}
       </div>
 
       <ToggleRow
-        label="Enable OCR for images"
+        label={ui("Enable OCR for images")}
         checked={draft.interceptImagesWithOcr}
         onChange={(interceptImagesWithOcr) => setDraft({ ...draft, interceptImagesWithOcr })}
       />
@@ -559,10 +555,10 @@ function ModelEditorBody({
       <Separator />
 
       <div className="space-y-1.5">
-        <Label className="text-xs">System prompt</Label>
+        <Label className="text-xs">{ui("System prompt")}</Label>
         <Textarea
           rows={3}
-          placeholder="You are a helpful assistant."
+          placeholder={ui("You are a helpful assistant.")}
           value={draft.systemPrompt}
           onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })}
         />
@@ -581,9 +577,7 @@ function ModelEditorBody({
 
       <Collapsible open={jsonOpen} onOpenChange={setJsonOpen}>
         <CollapsibleTrigger className="flex cursor-pointer items-center gap-1.5 text-sm font-medium">
-          <ChevronRight className={cn('size-4 transition-transform', jsonOpen && 'rotate-90')} />
-          JSON preview
-        </CollapsibleTrigger>
+          <ChevronRight className={cn('size-4 transition-transform', jsonOpen && 'rotate-90')} /> {ui("JSON preview")} </CollapsibleTrigger>
         <CollapsibleContent className="mt-2">
           <pre className="max-h-48 overflow-auto rounded-lg border bg-muted/50 p-3 font-mono text-[11px] leading-relaxed">
             {JSON.stringify(
@@ -656,10 +650,10 @@ function LogoPickerTile({
   )
   const selectedCustomIcon = findCustomIcon(customIcons, customIconId)
   const displayed = selectedCustomIcon
-    ? { logo: 'pulpo', customIcon: selectedCustomIcon, label: 'custom' }
+    ? { logo: 'pulpo', customIcon: selectedCustomIcon, label: ui("custom") }
     : value
       ? { logo: value, customIcon: null, label: kind }
-      : { ...inheritedIcon, label: 'inherit' }
+      : { ...inheritedIcon, label: ui("inherit") }
   return (
     <div>
       <Label className="text-xs">{label}</Label>
@@ -679,10 +673,10 @@ function LogoPickerTile({
         >
           <button type="button" onClick={() => onChange({ logo: null, customIconId: null })} className={cn('mb-2 flex w-full items-center gap-2 rounded-md p-2 text-left text-xs hover:bg-accent', !value && !customIconId && 'bg-accent ring-1 ring-border')}>
             <AiLogo icon={inheritedIcon.logo} customIcon={inheritedIcon.customIcon} className="size-6" />
-            <span className="flex-1"><span className="block font-medium">Inherit lab icon</span><span className="text-[10px] text-muted-foreground">Follow the associated lab</span></span>
+            <span className="flex-1"><span className="block font-medium">{ui("Inherit lab icon")}</span><span className="text-[10px] text-muted-foreground">{ui("Follow the associated lab")}</span></span>
             {!value && !customIconId && <Check className="size-3 text-primary" />}
           </button>
-          <div className="mb-2 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">Built-in icons</div>
+          <div className="mb-2 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">{ui("Built-in icons")}</div>
           <div className="grid grid-cols-4 gap-1">
             {options.map((icon) => (
               <button
@@ -693,7 +687,7 @@ function LogoPickerTile({
                   'relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-2 text-[10px] transition-colors hover:bg-accent',
                   !customIconId && value === icon.id && 'bg-accent ring-1 ring-border',
                 )}
-                title={`${icon.label}${icon.color ? ' · color' : ' · monochrome'}`}
+                title={uit`${icon.label}${icon.color ? ' · color' : ' · monochrome'}`}
               >
                 <AiLogo icon={icon.id} className="size-7" />
                 <span className="w-full truncate">{icon.label}</span>
@@ -702,7 +696,7 @@ function LogoPickerTile({
             ))}
           </div>
           {!!customIcons.length && <>
-            <div className="mb-2 mt-3 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">Custom icons</div>
+            <div className="mb-2 mt-3 border-t px-1 pt-3 text-xs font-medium text-muted-foreground">{ui("Custom icons")}</div>
             <div className="grid grid-cols-4 gap-1">
               {customIcons.map((icon) => <button key={icon.id} type="button" onClick={() => onChange({ logo: null, customIconId: icon.id })} className={cn('relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-md p-2 text-[10px] transition-colors hover:bg-accent', customIconId === icon.id && 'bg-accent ring-1 ring-border')} title={icon.name}>
                 <AiLogo icon="pulpo" customIcon={icon} className="size-7" />
@@ -732,7 +726,7 @@ function LabPickerTile({
   const selected = labs.find((lab) => lab.id === value)
   return (
     <div>
-      <Label className="text-xs">Associated lab</Label>
+      <Label className="text-xs">{ui("Associated lab")}</Label>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -744,14 +738,14 @@ function LabPickerTile({
               customIcon={findCustomIcon(customIcons, selected?.customIconId)}
               className="size-14 transition-transform duration-150 group-hover/tile:scale-105"
             />
-            <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">lab</Badge>
+            <Badge variant="secondary" className="absolute bottom-2 right-2 font-normal">{ui("lab")}</Badge>
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
           align="start"
           className="max-h-[var(--radix-dropdown-menu-content-available-height)] w-[336px] overflow-y-auto p-2"
         >
-          <div className="mb-2 px-1 text-xs font-medium text-muted-foreground">Choose an associated lab</div>
+          <div className="mb-2 px-1 text-xs font-medium text-muted-foreground">{ui("Choose an associated lab")}</div>
           <div className="grid grid-cols-4 gap-1">
             {labs.map((lab) => (
               <button
@@ -772,9 +766,7 @@ function LabPickerTile({
           </div>
         </DropdownMenuContent>
       </DropdownMenu>
-      <p className="mt-1.5 text-[11px] text-muted-foreground">
-        Monochrome company mark used in the model picker.
-      </p>
+      <p className="mt-1.5 text-[11px] text-muted-foreground"> {ui("Monochrome company mark used in the model picker.")} </p>
     </div>
   )
 }
@@ -869,7 +861,7 @@ function JsonObjectEditor({
             setText(e.target.value)
             try {
               const parsed = JSON.parse(e.target.value || '{}')
-              if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('Must be a JSON object')
+              if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(ui("Must be a JSON object"))
               setError('')
               onValidityChange?.(true)
               onChange(parsed)
@@ -884,12 +876,12 @@ function JsonObjectEditor({
           rows={3}
           className="font-mono text-xs"
           value={text}
-          placeholder='{"temperature": 0.7}'
+          placeholder={ui("{\"temperature\": 0.7}")}
           onChange={(e) => {
             setText(e.target.value)
             try {
               const parsed = JSON.parse(e.target.value)
-              if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error('Must be a JSON object')
+              if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') throw new Error(ui("Must be a JSON object"))
               setError('')
               onValidityChange?.(true)
               onChange(parsed)
@@ -975,7 +967,7 @@ function IconSelect({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          aria-label="Choose preset icon"
+          aria-label={ui("Choose preset icon")}
           className="h-8 w-full justify-between px-2 font-normal"
           onClick={(event) => {
             setPortalContainer(event.currentTarget.closest<HTMLElement>('[data-slot="dialog-content"]'))
@@ -984,7 +976,7 @@ function IconSelect({
         >
           <span className="flex min-w-0 items-center gap-2">
             {selected ? <PresetIcon name={selected} /> : <CircleIconPlaceholder />}
-            <span className="truncate">{selected ? formatPresetIconLabel(selected) : 'Default'}</span>
+            <span className="truncate">{selected ? formatPresetIconLabel(selected) : ui("Default")}</span>
           </span>
           <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
         </Button>
@@ -1002,8 +994,8 @@ function IconSelect({
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search Lucide icons…"
-            aria-label="Search Lucide icons"
+            placeholder={ui("Search Lucide icons…")}
+            aria-label={ui("Search Lucide icons")}
             className="h-8 pl-8"
           />
         </div>
@@ -1016,7 +1008,7 @@ function IconSelect({
                 onClick={() => select(null)}
               >
                 <CircleIconPlaceholder />
-                <span>Default</span>
+                <span>{ui("Default")}</span>
                 {selected === null && <Check className="ml-auto size-3.5" />}
               </button>
             )}
@@ -1034,7 +1026,7 @@ function IconSelect({
               </button>
             ))}
           </div>
-          {!options.length && <div className="px-2 py-8 text-center text-xs text-muted-foreground">No matching icons</div>}
+          {!options.length && <div className="px-2 py-8 text-center text-xs text-muted-foreground">{ui("No matching icons")}</div>}
         </ScrollArea>
       </PopoverContent>
     </Popover>
@@ -1076,10 +1068,8 @@ function PresetsEditor({
   return (
     <div className="space-y-3">
       <div>
-        <Label className="text-xs">Chat presets</Label>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Generic composer controls. Each choice can do nothing, override custom params, or redirect to another model.
-        </p>
+        <Label className="text-xs">{ui("Chat presets")}</Label>
+        <p className="mt-1 text-[11px] text-muted-foreground"> {ui("Generic composer controls. Each choice can do nothing, override custom params, or redirect to another model.")} </p>
       </div>
       {errors.length > 0 && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
@@ -1093,15 +1083,15 @@ function PresetsEditor({
           <div key={preset.id} className="space-y-3 rounded-lg border p-3">
             <div className="flex items-start gap-2">
               <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
-                <Field label="Preset name">
+                <Field label={ui("Preset name")}>
                   <Input
                     className="h-8"
-                    placeholder="e.g. Reasoning"
+                    placeholder={ui("e.g. Reasoning")}
                     value={preset.name}
                     onChange={(e) => update(index, { name: e.target.value })}
                   />
                 </Field>
-                <Field label="Default icon">
+                <Field label={ui("Default icon")}>
                   <IconSelect value={preset.icon} onChange={(icon) => update(index, { icon: icon ?? 'circle' })} />
                 </Field>
               </div>
@@ -1111,7 +1101,7 @@ function PresetsEditor({
                   variant="ghost"
                   size="icon-sm"
                   disabled={index === 0}
-                  aria-label={`Move ${preset.name || 'preset'} up`}
+                  aria-label={uit`Move ${preset.name || 'preset'} up`}
                   onClick={() => movePreset(index, -1)}
                 >
                   <ArrowUp className="size-3.5" />
@@ -1121,7 +1111,7 @@ function PresetsEditor({
                   variant="ghost"
                   size="icon-sm"
                   disabled={index === presets.length - 1}
-                  aria-label={`Move ${preset.name || 'preset'} down`}
+                  aria-label={uit`Move ${preset.name || 'preset'} down`}
                   onClick={() => movePreset(index, 1)}
                 >
                   <ArrowDown className="size-3.5" />
@@ -1130,7 +1120,7 @@ function PresetsEditor({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  aria-label={`Remove ${preset.name || 'preset'}`}
+                  aria-label={uit`Remove ${preset.name || 'preset'}`}
                   onClick={() => onChange(presets.filter((_, i) => i !== index))}
                 >
                   <Trash2 className="size-3.5" />
@@ -1139,7 +1129,7 @@ function PresetsEditor({
             </div>
 
             <div className="space-y-2">
-              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Choices</div>
+              <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{ui("Choices")}</div>
               {preset.choices.map((choice, choiceIndex) => {
                 const patchChoice = (patch: Partial<ChatPresetChoice>) =>
                   update(index, { choices: preset.choices.map((item, i) => i === choiceIndex ? { ...item, ...patch } : item) })
@@ -1158,7 +1148,7 @@ function PresetsEditor({
                     <div className="grid grid-cols-[1fr_120px_auto] gap-2">
                       <Input
                         className="h-8"
-                        placeholder="Display name"
+                        placeholder={ui("Display name")}
                         value={choice.displayName}
                         onChange={(e) => patchChoice({ displayName: e.target.value })}
                       />
@@ -1169,7 +1159,7 @@ function PresetsEditor({
                           variant="ghost"
                           size="icon-sm"
                           disabled={choiceIndex === 0}
-                          aria-label={`Move ${choice.displayName || 'choice'} up`}
+                          aria-label={uit`Move ${choice.displayName || 'choice'} up`}
                           onClick={() => update(index, { choices: moveItem(preset.choices, choiceIndex, choiceIndex - 1) })}
                         >
                           <ArrowUp className="size-3.5" />
@@ -1179,7 +1169,7 @@ function PresetsEditor({
                           variant="ghost"
                           size="icon-sm"
                           disabled={choiceIndex === preset.choices.length - 1}
-                          aria-label={`Move ${choice.displayName || 'choice'} down`}
+                          aria-label={uit`Move ${choice.displayName || 'choice'} down`}
                           onClick={() => update(index, { choices: moveItem(preset.choices, choiceIndex, choiceIndex + 1) })}
                         >
                           <ArrowDown className="size-3.5" />
@@ -1188,7 +1178,7 @@ function PresetsEditor({
                           type="button"
                           variant="ghost"
                           size="icon-sm"
-                          aria-label={`Remove ${choice.displayName || 'choice'}`}
+                          aria-label={uit`Remove ${choice.displayName || 'choice'}`}
                           onClick={() => {
                             setParameterEditorValidity(parameterEditorId, true)
                             update(index, {
@@ -1205,26 +1195,24 @@ function PresetsEditor({
                       <Select value={choice.action.type} onValueChange={(type: ChatPresetAction['type']) => setAction(type)}>
                         <SelectTrigger className="h-8 w-full"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="none">None</SelectItem>
-                          <SelectItem value="redirect">Redirect</SelectItem>
-                          <SelectItem value="params">Custom params</SelectItem>
+                          <SelectItem value="none">{ui("None")}</SelectItem>
+                          <SelectItem value="redirect">{ui("Redirect")}</SelectItem>
+                          <SelectItem value="params">{ui("Custom params")}</SelectItem>
                         </SelectContent>
                       </Select>
                       {choice.action.type === 'none' && (
-                        <div className="flex h-8 items-center text-xs text-muted-foreground">
-                          No override when selected
-                        </div>
+                        <div className="flex h-8 items-center text-xs text-muted-foreground"> {ui("No override when selected")} </div>
                       )}
                       {choice.action.type === 'redirect' && (
                         <Select
                           value={choice.action.modelId || undefined}
                           onValueChange={(targetId) => patchChoice({ action: { type: 'redirect', modelId: targetId } })}
                         >
-                          <SelectTrigger className="h-8 w-full"><SelectValue placeholder="Target model" /></SelectTrigger>
+                          <SelectTrigger className="h-8 w-full"><SelectValue placeholder={ui("Target model")} /></SelectTrigger>
                           <SelectContent>
                             {models.filter((model) => model.id !== modelId).map((model) => (
                               <SelectItem key={model.id} value={model.id} disabled={!model.enabled}>
-                                {model.name}{!model.enabled ? ' (disabled)' : ''}
+                                {model.name}{!model.enabled ? ui(" (disabled)") : ''}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -1239,7 +1227,7 @@ function PresetsEditor({
                             onChange={(params) => patchChoice({ action: { type: 'params', params } })}
                           />
                           {allowedParameters.length > 0 && (
-                            <p className="text-[11px] text-muted-foreground">Allowed: {allowedParameters.join(', ')}</p>
+                            <p className="text-[11px] text-muted-foreground">{ui("Allowed:")} {allowedParameters.join(', ')}</p>
                           )}
                         </div>
                       )}
@@ -1260,18 +1248,16 @@ function PresetsEditor({
                     })
                   }}
                 >
-                  <Plus />
-                  Add choice
-                </Button>
+                  <Plus /> {ui("Add choice")} </Button>
                 <div className="ml-auto flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground">Default</Label>
+                  <Label className="text-xs text-muted-foreground">{ui("Default")}</Label>
                   <Select
                     value={preset.defaultChoiceId ?? 'none'}
                     onValueChange={(defaultChoiceId) => update(index, { defaultChoiceId: defaultChoiceId === 'none' ? null : defaultChoiceId })}
                   >
                     <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">First choice</SelectItem>
+                      <SelectItem value="none">{ui("First choice")}</SelectItem>
                       {preset.choices.map((choice) => (
                         <SelectItem key={choice.id} value={choice.id}>{choice.displayName || 'Unnamed'}</SelectItem>
                       ))}
@@ -1302,9 +1288,7 @@ function PresetsEditor({
             ])
           }}
         >
-          <Plus />
-          Add preset
-        </Button>
+          <Plus /> {ui("Add preset")} </Button>
       </div>
     </div>
   )

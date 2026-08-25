@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Copy } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { ui } from '@/i18n/ui'
 
 export function CheckboxRow({
   label,
@@ -47,7 +48,7 @@ export function Snippet({ title, code }: { title: string; code: string }) {
           }}
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-          {copied ? 'copied' : 'copy'}
+          {copied ? ui("copied") : ui("copy")}
         </button>
       </div>
       <pre className="overflow-x-auto p-3 font-mono text-xs leading-relaxed text-zinc-100">{code}</pre>

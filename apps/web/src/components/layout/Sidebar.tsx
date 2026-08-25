@@ -63,6 +63,7 @@ import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { uit } from '@/i18n/ui'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -383,7 +384,7 @@ function ChatRow({
             e.stopPropagation()
             deleteChat(chat.id)
           }}
-          aria-label={`${trashRetention === 'instant' ? t('common.delete') : t('chat.trash')} chat`}
+          aria-label={uit`${trashRetention === 'instant' ? t('common.delete') : t('chat.trash')} chat`}
         >
           <Trash2 className="size-4" />
         </button>
@@ -925,8 +926,8 @@ export function Sidebar({
         </DropdownMenuItem>
         <button
           type="button"
-          aria-label={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
-          title={`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          aria-label={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
+          title={uit`${action} ${label} ${pinned ? 'from' : 'to'} sidebar`}
           className="invisible absolute right-1 top-1/2 z-10 flex size-6 -translate-y-1/2 items-center justify-center rounded text-muted-foreground outline-hidden hover:bg-background/60 hover:text-foreground focus-visible:visible focus-visible:ring-1 focus-visible:ring-ring group-hover/account-nav:visible group-focus-within/account-nav:visible"
           onClick={(event) => {
             event.preventDefault()
@@ -1190,7 +1191,7 @@ export function Sidebar({
                 )}
               >
                 <div className="truncate text-sm font-medium">{user?.name ?? t('sidebar.signedOut')}</div>
-                <div className="truncate text-xs text-muted-foreground">{user?.username ? `@${user.username}` : ''}</div>
+                <div className="truncate text-xs text-muted-foreground">{user?.username ? uit`@${user.username}` : ''}</div>
               </div>
               {!sidebarPins.friends && Boolean(pendingSocialCount) && (
                 <span className={cn(

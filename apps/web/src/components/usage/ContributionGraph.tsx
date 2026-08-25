@@ -3,6 +3,7 @@ import type { DailyModelUsage } from '@/lib/mock'
 import { formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { ui, uit, activeLocale } from '@/i18n/ui'
 
 const CELL = 11
 const GAP = 3
@@ -38,8 +39,8 @@ function metricValue(day: DailyModelUsage, metric: Metric): number {
 
 function formatValue(value: number, metric: Metric): string {
   if (metric === 'cost') return formatUsd(value)
-  if (metric === 'tokens') return `${Math.round(value).toLocaleString()} tokens`
-  return `${Math.round(value).toLocaleString()} calls`
+  if (metric === 'tokens') return `${Math.round(value).toLocaleString(activeLocale())} tokens`
+  return `${Math.round(value).toLocaleString(activeLocale())} calls`
 }
 
 /** GitHub-style contribution heatmap with year switcher, month labels and hover tooltip. */
@@ -114,7 +115,7 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
       }
       week.push({
         key: localKey(it),
-        dateLabel: it.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+        dateLabel: it.toLocaleDateString(activeLocale(), { month: 'short', day: 'numeric', year: 'numeric' }),
         value: v,
         level: before ? 0 : levelOf(v),
         placeholder: before,
@@ -145,8 +146,8 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
     <div onScrollCapture={clear}>
       <div className="mb-3 text-xs font-medium text-muted-foreground">
         {year === 'now'
-          ? `${activeDays} active days in the last year`
-          : `${activeDays} active days in ${year}`}
+          ? uit`${activeDays} active days in the last year`
+          : uit`${activeDays} active days in ${year}`}
       </div>
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -165,9 +166,9 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
               ))}
               {/* day-of-week labels */}
               {[
-                { dow: 1, label: 'Mon' },
-                { dow: 3, label: 'Wed' },
-                { dow: 5, label: 'Fri' },
+                { dow: 1, label: ui("Mon") },
+                { dow: 3, label: ui("Wed") },
+                { dow: 5, label: ui("Fri") },
               ].map((d) => (
                 <span
                   key={d.dow}
@@ -204,15 +205,15 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
           <div className="mt-1 flex items-center justify-between" style={{ maxWidth: graphWidth }}>
             <span className="text-[10px] text-muted-foreground">
               {total > 0
-                ? `Total: ${formatValue(total, metric)}`
-                : `No activity in ${year === 'now' ? 'the last year' : year}`}
+                ? uit`Total: ${formatValue(total, metric)}`
+                : uit`No activity in ${year === 'now' ? 'the last year' : year}`}
             </span>
             <div className="flex items-center gap-1">
-              <span className="mr-1 text-[10px] text-muted-foreground">Less</span>
+              <span className="mr-1 text-[10px] text-muted-foreground">{ui("Less")}</span>
               {LEVEL_COLORS.map((c, i) => (
                 <div key={i} className={cn('size-2.5 rounded-[2px]', c)} />
               ))}
-              <span className="ml-1 text-[10px] text-muted-foreground">More</span>
+              <span className="ml-1 text-[10px] text-muted-foreground">{ui("More")}</span>
             </div>
           </div>
         </div>
@@ -233,7 +234,7 @@ export function ContributionGraph({ data, metric }: { data: DailyModelUsage[]; m
                   : 'text-muted-foreground hover:bg-accent hover:text-foreground'
               )}
             >
-              {y === 'now' ? 'Now' : y}
+              {y === 'now' ? ui("Now") : y}
             </button>
           ))}
         </div>

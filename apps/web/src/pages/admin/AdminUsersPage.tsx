@@ -27,6 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { ui, activeLocale } from '@/i18n/ui'
 
 interface AdminBillingUser {
   userId: string
@@ -95,21 +96,19 @@ export function AdminUsersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <h2 className="text-lg font-semibold">Users</h2>
+        <h2 className="text-lg font-semibold">{ui("Users")}</h2>
         <div className="flex-1" />
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="w-52 pl-8"
-            placeholder="Search…"
+            placeholder={ui("Search…")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
         <Button size="sm" onClick={() => setAddOpen(true)}>
-          <Plus />
-          Add user
-        </Button>
+          <Plus /> {ui("Add user")} </Button>
       </div>
 
       <Card className="gap-0 rounded-lg py-0 shadow-none">
@@ -117,17 +116,17 @@ export function AdminUsersPage() {
           <table className="data-table min-w-max">
             <thead>
               <tr className="border-b">
-                <th className="px-3 py-2">Role</th>
-                <th className="px-3 py-2">Display name</th>
-                <th className="px-3 py-2">Email</th>
-                {billingEnabled && <th className="px-3 py-2">Plan</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">Weekly limit</th>}
-                {billingEnabled && <th className="px-3 py-2 text-right">Invites</th>}
-                <th className="px-3 py-2 text-right">Balance</th>
-                <th className="px-3 py-2 text-right">File storage</th>
-                <th className="px-3 py-2">Last active</th>
-                <th className="px-3 py-2">Created</th>
-                <th className="px-3 py-2 text-right">Actions</th>
+                <th className="px-3 py-2">{ui("Role")}</th>
+                <th className="px-3 py-2">{ui("Display name")}</th>
+                <th className="px-3 py-2">{ui("Email")}</th>
+                {billingEnabled && <th className="px-3 py-2">{ui("Plan")}</th>}
+                {billingEnabled && <th className="px-3 py-2 text-right">{ui("Weekly limit")}</th>}
+                {billingEnabled && <th className="px-3 py-2 text-right">{ui("Invites")}</th>}
+                <th className="px-3 py-2 text-right">{ui("Balance")}</th>
+                <th className="px-3 py-2 text-right">{ui("File storage")}</th>
+                <th className="px-3 py-2">{ui("Last active")}</th>
+                <th className="px-3 py-2">{ui("Created")}</th>
+                <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -142,9 +141,9 @@ export function AdminUsersPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="pending">pending</SelectItem>
-                        <SelectItem value="user">user</SelectItem>
-                        <SelectItem value="admin">admin</SelectItem>
+                        <SelectItem value="pending">{ui("pending")}</SelectItem>
+                        <SelectItem value="user">{ui("user")}</SelectItem>
+                        <SelectItem value="admin">{ui("admin")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </td>
@@ -165,7 +164,7 @@ export function AdminUsersPage() {
                     <StorageCell user={u} row={billingByUser.get(u.id)} onChanged={() => void Promise.all([loadAdmin(), billingUsersQuery.refetch()])} />
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">
-                    {u.lastActiveAt ? timeAgo(u.lastActiveAt) : 'Never'}
+                    {u.lastActiveAt ? timeAgo(u.lastActiveAt) : ui("Never")}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-3 py-2">
@@ -173,7 +172,7 @@ export function AdminUsersPage() {
                       {billingEnabled && billingByUser.get(u.id)?.hold && <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Clear billing hold"
+                        title={ui("Clear billing hold")}
                         className="text-destructive hover:text-destructive"
                         onClick={() => {
                           const note = prompt('Reconciliation note required to clear this billing hold:')
@@ -185,7 +184,7 @@ export function AdminUsersPage() {
                       {u.twoFactorEnabled && u.id !== currentUserId && <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Reset two-factor authentication"
+                        title={ui("Reset two-factor authentication")}
                         className="hover:text-destructive"
                         onClick={() => { setTwoFactorError(null); setTwoFactorCode(''); setResetTwoFactorUser(u) }}
                       >
@@ -194,7 +193,7 @@ export function AdminUsersPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Edit"
+                        title={ui("Edit")}
                         onClick={() => setEditUser(u)}
                       >
                         <Pencil className="size-3.5" />
@@ -202,7 +201,7 @@ export function AdminUsersPage() {
                       <Button
                         size="icon-sm"
                         variant="ghost"
-                        title="Delete"
+                        title={ui("Delete")}
                         className="hover:text-destructive"
                         onClick={() => {
                           if (confirm(`Delete ${u.email}? This cannot be undone.`)) {
@@ -232,41 +231,41 @@ export function AdminUsersPage() {
             }}).then(() => { setAddOpen(false); return loadAdmin() })
           }} className="contents">
           <DialogHeader>
-            <DialogTitle>Add user</DialogTitle>
+            <DialogTitle>{ui("Add user")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Role</Label>
+              <Label>{ui("Role")}</Label>
               <Select name="role" defaultValue="user">
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pending">pending</SelectItem>
-                  <SelectItem value="user">user</SelectItem>
-                  <SelectItem value="admin">admin</SelectItem>
+                  <SelectItem value="pending">{ui("pending")}</SelectItem>
+                  <SelectItem value="user">{ui("user")}</SelectItem>
+                  <SelectItem value="admin">{ui("admin")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label>Display name</Label>
-              <Input name="name" placeholder="Display name" required />
+              <Label>{ui("Display name")}</Label>
+              <Input name="name" placeholder={ui("Display name")} required />
             </div>
             <div className="space-y-1.5">
-              <Label>Username</Label>
-              <Input name="username" placeholder="username" minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
+              <Label>{ui("Username")}</Label>
+              <Input name="username" placeholder={ui("username")} minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
-              <Input name="email" type="email" placeholder="name@example.com" required />
+              <Label>{ui("Email")}</Label>
+              <Input name="email" type="email" placeholder={ui("name@example.com")} required />
             </div>
             <div className="space-y-1.5">
-              <Label>Password</Label>
-              <Input name="password" type="password" minLength={8} placeholder="Temporary password" required />
+              <Label>{ui("Password")}</Label>
+              <Input name="password" type="password" minLength={8} placeholder={ui("Temporary password")} required />
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit">Create</Button>
+            <Button type="submit">{ui("Create")}</Button>
           </DialogFooter>
           </form>
         </DialogContent>
@@ -275,17 +274,16 @@ export function AdminUsersPage() {
       <Dialog open={!!promoteUser} onOpenChange={(open) => !open && setPromoteUser(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Promote user to administrator?</DialogTitle>
+            <DialogTitle>{ui("Promote user to administrator?")}</DialogTitle>
             <DialogDescription>
-              {promoteUser?.email} will gain full administrative access to this Pulpo instance.
-            </DialogDescription>
+              {promoteUser?.email} {ui("will gain full administrative access to this Pulpo instance.")} </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPromoteUser(null)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setPromoteUser(null)}>{ui("Cancel")}</Button>
             <Button onClick={() => {
               if (!promoteUser) return
               void patchUser(promoteUser.id, { role: 'admin' }).then(() => setPromoteUser(null))
-            }}>Promote to admin</Button>
+            }}>{ui("Promote to admin")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -295,13 +293,11 @@ export function AdminUsersPage() {
       }}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>Reset two-factor authentication?</DialogTitle>
-            <DialogDescription>
-              This will disable two-factor authentication for {resetTwoFactorUser?.email} and sign them out of all active sessions.
-            </DialogDescription>
+            <DialogTitle>{ui("Reset two-factor authentication?")}</DialogTitle>
+            <DialogDescription> {ui("This will disable two-factor authentication for")} {resetTwoFactorUser?.email} {ui("and sign them out of all active sessions.")} </DialogDescription>
           </DialogHeader>
           {adminTwoFactorEnabled && <div className="space-y-1.5">
-            <Label htmlFor="admin-two-factor-code">Your authenticator or recovery code</Label>
+            <Label htmlFor="admin-two-factor-code">{ui("Your authenticator or recovery code")}</Label>
             <Input
               id="admin-two-factor-code"
               autoFocus
@@ -313,13 +309,13 @@ export function AdminUsersPage() {
           </div>}
           {twoFactorError && <p className="text-sm text-destructive">{twoFactorError}</p>}
           <DialogFooter>
-            <Button variant="outline" disabled={resettingTwoFactor} onClick={() => setResetTwoFactorUser(null)}>Cancel</Button>
+            <Button variant="outline" disabled={resettingTwoFactor} onClick={() => setResetTwoFactorUser(null)}>{ui("Cancel")}</Button>
             <Button
               variant="destructive"
               disabled={resettingTwoFactor || (adminTwoFactorEnabled && twoFactorCode.trim().length < 6)}
               onClick={() => void resetTwoFactor()}
             >
-              {resettingTwoFactor ? 'Resetting…' : 'Reset 2FA'}
+              {resettingTwoFactor ? ui("Resetting…") : ui("Reset 2FA")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -340,35 +336,35 @@ export function AdminUsersPage() {
             }).then(() => setEditUser(null))
           }} className="contents">
           <DialogHeader>
-            <DialogTitle>Edit user</DialogTitle>
-            <DialogDescription>Joined {editUser && formatDate(editUser.joinedAt)}</DialogDescription>
+            <DialogTitle>{ui("Edit user")}</DialogTitle>
+            <DialogDescription>{ui("Joined")} {editUser && formatDate(editUser.joinedAt)}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Display name</Label>
+              <Label>{ui("Display name")}</Label>
               <Input name="name" defaultValue={editUser?.name} required />
             </div>
             <div className="space-y-1.5">
-              <Label>Username</Label>
+              <Label>{ui("Username")}</Label>
               <Input name="username" defaultValue={editUser?.username} minLength={3} maxLength={30} pattern="[a-z0-9][a-z0-9_]{1,28}[a-z0-9]" required />
             </div>
             <div className="space-y-1.5">
-              <Label>Email</Label>
+              <Label>{ui("Email")}</Label>
               <Input name="email" type="email" defaultValue={editUser?.email} required />
             </div>
             <div className="space-y-1.5">
-              <Label>New password</Label>
-              <Input name="password" type="password" minLength={8} placeholder="Leave blank to keep" />
+              <Label>{ui("New password")}</Label>
+              <Input name="password" type="password" minLength={8} placeholder={ui("Leave blank to keep")} />
             </div>
             {billingEnabled && (
               <div className="space-y-1.5">
-                <Label>Invite code quota</Label>
+                <Label>{ui("Invite code quota")}</Label>
                 <Input name="inviteCodeQuota" type="number" min={0} max={1000} defaultValue={editUser?.inviteCodeQuota ?? 0} />
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button type="submit">Save</Button>
+            <Button type="submit">{ui("Save")}</Button>
           </DialogFooter>
           </form>
         </DialogContent>
@@ -392,7 +388,7 @@ function InviteQuotaCell({ user, onChanged }: { user: MonitorUser; onChanged: ()
 
   if (editing) return <Input autoFocus className="ml-auto h-7 w-16 text-right text-xs" type="number" min="0" max="1000" step="1" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
 
-  return <button type="button" title="Edit invite quota" className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue(String(quota)); setEditing(true) }}>
+  return <button type="button" title={ui("Edit invite quota")} className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue(String(quota)); setEditing(true) }}>
     {quota}
   </button>
 }
@@ -421,10 +417,10 @@ function WeeklyLimitCell({ row, onChanged }: { row: AdminBillingUser | undefined
   if (editing) return <Input autoFocus className="ml-auto h-7 w-20 text-right text-xs" type="number" min="0" step="0.01" value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => void save()} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setEditing(false) }} />
 
   return <span className="inline-flex items-center justify-end gap-1">
-    <button type="button" title="Edit weekly limit" className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue((row.weeklyLimitMicros / 1_000_000).toFixed(2)); setEditing(true) }}>
+    <button type="button" title={ui("Edit weekly limit")} className="rounded-md px-1.5 py-0.5 hover:bg-accent" onClick={() => { setValue((row.weeklyLimitMicros / 1_000_000).toFixed(2)); setEditing(true) }}>
       {formatBalance(row.weeklySpentMicros / 1_000_000)} / {formatBalance(row.weeklyLimitMicros / 1_000_000)}
     </button>
-    {row.weeklyLimitOverridden && <Button size="icon-sm" variant="ghost" title="Reset to plan default" onClick={() => {
+    {row.weeklyLimitOverridden && <Button size="icon-sm" variant="ghost" title={ui("Reset to plan default")} onClick={() => {
       void apiRequest(`/api/admin/billing/users/${row.userId}/weekly-limit`, { method: 'PATCH', body: { weeklyLimitMicros: null } }).then(onChanged)
     }}><RefreshCw className="size-3.5" /></Button>}
   </span>
@@ -445,7 +441,7 @@ function BalanceCell({ user }: { user: MonitorUser }) {
     return (
       <button
         type="button"
-        title="Edit balance"
+        title={ui("Edit balance")}
         onClick={() => {
           setValue(user.balance.toFixed(2))
           setEditing(true)
@@ -498,13 +494,12 @@ function StorageCell({ user, row, onChanged }: { user: MonitorUser; row: AdminBi
     <span className="inline-flex items-center justify-end gap-1">
       <button
         type="button"
-        title="Edit file storage allowance"
+        title={ui("Edit file storage allowance")}
         onClick={() => { setValue(String(Math.round(limitMiB))); setEditing(true) }}
         className="cursor-pointer rounded-md px-1.5 py-0.5 transition-colors hover:bg-accent"
       >
-        {usedMiB.toLocaleString(undefined, { maximumFractionDigits: 1 })} / {limitMiB.toLocaleString(undefined, { maximumFractionDigits: 0 })} MiB
-      </button>
-      {row?.storageLimitOverridden && <Button size="icon-sm" variant="ghost" title="Reset to plan default" onClick={() => {
+        {usedMiB.toLocaleString(activeLocale(), { maximumFractionDigits: 1 })} / {limitMiB.toLocaleString(activeLocale(), { maximumFractionDigits: 0 })} {ui("MiB")} </button>
+      {row?.storageLimitOverridden && <Button size="icon-sm" variant="ghost" title={ui("Reset to plan default")} onClick={() => {
         void apiRequest(`/api/admin/billing/users/${user.id}/storage-limit`, { method: 'PATCH', body: { storageLimitBytes: null } }).then(onChanged)
       }}><RefreshCw className="size-3.5" /></Button>}
     </span>

@@ -17,12 +17,13 @@ import { apiRequest } from '@/lib/api'
 import { modelOptionLabel, useAvailableModels } from './use-available-models'
 import { NewAccountModelDefaultsFields } from './new-account-model-defaults'
 import { DEFAULT_MAX_ATTACHMENT_BYTES, MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
+import { ui } from '@/i18n/ui'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
-  { id: '1', label: 'What can you help me build today?', message: 'What can you help me build today?' },
-  { id: '2', label: 'Explain how KV caching speeds up decoding', message: 'Explain how KV caching speeds up decoding' },
-  { id: '3', label: 'Draft a terse commit message for a sidebar refactor', message: 'Draft a terse commit message for a sidebar refactor' },
-  { id: '4', label: 'Compare mixture-of-experts vs dense models', message: 'Compare mixture-of-experts vs dense models' },
+  { id: '1', label: ui("What can you help me build today?"), message: 'What can you help me build today?' },
+  { id: '2', label: ui("Explain how KV caching speeds up decoding"), message: 'Explain how KV caching speeds up decoding' },
+  { id: '3', label: ui("Draft a terse commit message for a sidebar refactor"), message: 'Draft a terse commit message for a sidebar refactor' },
+  { id: '4', label: ui("Compare mixture-of-experts vs dense models"), message: 'Compare mixture-of-experts vs dense models' },
 ]
 
 const DEFAULT_TITLE_PROMPT = `### Task:
@@ -74,16 +75,14 @@ export function GeneralSection() {
 
   return (
     <div>
-      <Section title="Version">
+      <Section title={ui("Version")}>
         <Field label="Pulpo" hint="Self-hosted source build">
-          <Button variant="outline" size="sm">
-            Check for updates
-          </Button>
+          <Button variant="outline" size="sm"> {ui("Check for updates")} </Button>
         </Field>
       </Section>
 
-      <Section title="General">
-        <TextField label="Public URL" hint="Managed by the PUBLIC_URL deployment setting." value={publicUrl} mono disabled />
+      <Section title={ui("General")}>
+        <TextField label={ui("Public URL")} hint="Managed by the PUBLIC_URL deployment setting." value={publicUrl} mono disabled />
       </Section>
     </div>
   )
@@ -112,14 +111,14 @@ export function AuthenticationSection() {
 
   return (
     <div>
-      <Section title="User access">
+      <Section title={ui("User access")}>
         <Toggle
-          label="Enable new sign ups"
+          label={ui("Enable new sign ups")}
           checked={t.signupEnabled}
           onChange={(v) => s('signupEnabled', v)}
         />
         <NumField
-          label="Default balance"
+          label={ui("Default balance")}
           hint="Credit assigned to each newly created user."
           value={t.defaultBalanceMicros / 1_000_000}
           onChange={(value) => s('defaultBalanceMicros', Math.round(Math.max(0, value) * 1_000_000))}
@@ -129,7 +128,7 @@ export function AuthenticationSection() {
           suffix="USD"
         />
         <NumField
-          label="Default file storage"
+          label={ui("Default file storage")}
           hint="Storage allowance assigned to each newly created user."
           value={t.defaultStorageLimitBytes / (1024 * 1024)}
           onChange={(value) => s('defaultStorageLimitBytes', Math.round(Math.max(0, value) * 1024 * 1024))}
@@ -138,7 +137,7 @@ export function AuthenticationSection() {
           suffix="MiB"
         />
         <NumField
-          label="Maximum attachment size"
+          label={ui("Maximum attachment size")}
           hint={`Per-file upload limit, up to ${MAX_CONFIGURABLE_ATTACHMENT_BYTES / (1024 * 1024)} MiB. Set to 0 to disable attachments.`}
           value={t.maxAttachmentBytes / (1024 * 1024)}
           onChange={(value) => s('maxAttachmentBytes', Math.round(Math.max(0, value) * 1024 * 1024))}
@@ -147,26 +146,26 @@ export function AuthenticationSection() {
           step={5}
           suffix="MiB"
         />
-        <SelectField label="Default user role" hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: 'Pending approval' }, { value: 'user', label: 'User' }]} />
-        <Toggle label="Enable API keys" hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />
+        <SelectField label={ui("Default user role")} hint="Role assigned to future public signups." value={t.defaultSignupRole} onChange={(v) => s('defaultSignupRole', v as 'pending' | 'user')} options={[{ value: 'pending', label: ui("Pending approval") }, { value: 'user', label: ui("User") }]} />
+        <Toggle label={ui("Enable API keys")} hint="Suspends API-key creation and authentication without deleting existing keys." checked={t.apiKeysEnabled} onChange={(v) => s('apiKeysEnabled', v)} />
       </Section>
 
-      <Section title="Pending accounts">
+      <Section title={ui("Pending accounts")}>
         <Toggle
-          label="Show admin details in pending overlay"
+          label={ui("Show admin details in pending overlay")}
           checked={t.pendingDetails}
           onChange={(v) => s('pendingDetails', v)}
         />
         {t.pendingDetails && (
           <TextField
-            label="Admin contact email"
+            label={ui("Admin contact email")}
             value={t.adminEmail}
             onChange={(v) => s('adminEmail', v)}
             indent
           />
         )}
         <TextAreaField
-          label="Pending overlay content"
+          label={ui("Pending overlay content")}
           value={t.pendingMessage}
           onChange={(v) => s('pendingMessage', v)}
         />
@@ -200,7 +199,7 @@ export function InterfaceSection() {
   const prompts = Array.isArray(t.suggestedPrompts) ? t.suggestedPrompts : DEFAULT_SUGGESTED_PROMPTS
   const taskModelOptions = useMemo(() => {
     const options = [
-      { value: 'current', label: 'Current model' },
+      { value: 'current', label: ui("Current model") },
       ...models.map((model) => ({ value: model.id, label: modelOptionLabel(model) })),
     ]
     if (t.localTask !== 'current' && !models.some((model) => model.id === t.localTask)) {
@@ -214,31 +213,31 @@ export function InterfaceSection() {
   return (
     <div>
       <Section
-        title="Task model"
+        title={ui("Task model")}
         hint="Small model used for background tasks like titles and follow-ups."
       >
         <SelectField
-          label="Task model"
+          label={ui("Task model")}
           value={t.localTask}
           onChange={(v) => s('localTask', v)}
           options={taskModelOptions}
         />
       </Section>
 
-      <Section title="Tasks">
-        <Toggle label="Title generation" checked={t.title} onChange={(v) => s('title', v)} />
+      <Section title={ui("Tasks")}>
+        <Toggle label={ui("Title generation")} checked={t.title} onChange={(v) => s('title', v)} />
         {t.title && (
           <div className="space-y-3 pl-4">
-            <TextAreaField label="Title prompt" value={t.titlePrompt} onChange={(v) => s('titlePrompt', v)} />
+            <TextAreaField label={ui("Title prompt")} value={t.titlePrompt} onChange={(v) => s('titlePrompt', v)} />
             <NumField
-              label="Include first characters"
+              label={ui("Include first characters")}
               hint="Characters included from the beginning of the chat history."
               value={t.titleIncludeFirstCharacters}
               onChange={(v) => s('titleIncludeFirstCharacters', Math.max(0, Math.round(v)))}
               min={0}
             />
             <NumField
-              label="Include last characters"
+              label={ui("Include last characters")}
               hint="Characters included from the end. Overlapping ranges are included only once."
               value={t.titleIncludeLastCharacters}
               onChange={(v) => s('titleIncludeLastCharacters', Math.max(0, Math.round(v)))}
@@ -246,22 +245,22 @@ export function InterfaceSection() {
             />
           </div>
         )}
-        <Toggle label="Follow-up generation" checked={t.followUp} onChange={(v) => s('followUp', v)} />
+        <Toggle label={ui("Follow-up generation")} checked={t.followUp} onChange={(v) => s('followUp', v)} />
       </Section>
 
       <Section
-        title="Suggested prompts"
+        title={ui("Suggested prompts")}
         hint="Starter buttons shown on empty chats. A random subset is picked each time."
       >
         <Toggle
-          label="Show suggested prompts"
+          label={ui("Show suggested prompts")}
           checked={t.suggestedPromptsEnabled}
           onChange={(v) => s('suggestedPromptsEnabled', v)}
         />
         {t.suggestedPromptsEnabled && (
           <>
             <NumField
-              label="Prompts shown"
+              label={ui("Prompts shown")}
               hint="How many buttons to show on new chats."
               value={t.suggestedPromptsCount}
               onChange={(v) => s('suggestedPromptsCount', Math.max(0, Math.min(12, Math.round(v))))}
@@ -275,21 +274,21 @@ export function InterfaceSection() {
                   <div className="flex items-start gap-2">
                     <div className="grid min-w-0 flex-1 gap-2">
                       <div>
-                        <div className="mb-1 text-xs text-muted-foreground">Button label</div>
+                        <div className="mb-1 text-xs text-muted-foreground">{ui("Button label")}</div>
                         <Input
                           className="h-8"
                           value={prompt.label}
                           onChange={(e) => updatePrompt(index, { label: e.target.value })}
-                          placeholder="Shown on the button"
+                          placeholder={ui("Shown on the button")}
                         />
                       </div>
                       <div>
-                        <div className="mb-1 text-xs text-muted-foreground">Message</div>
+                        <div className="mb-1 text-xs text-muted-foreground">{ui("Message")}</div>
                         <Input
                           className="h-8"
                           value={prompt.message}
                           onChange={(e) => updatePrompt(index, { message: e.target.value })}
-                          placeholder="Submitted when clicked"
+                          placeholder={ui("Submitted when clicked")}
                         />
                       </div>
                     </div>
@@ -298,7 +297,7 @@ export function InterfaceSection() {
                       variant="ghost"
                       size="icon-sm"
                       className="mt-5"
-                      aria-label="Remove prompt"
+                      aria-label={ui("Remove prompt")}
                       onClick={() => s('suggestedPrompts', prompts.filter((_, i) => i !== index))}
                     >
                       <Trash2 className="size-3.5" />
@@ -314,13 +313,11 @@ export function InterfaceSection() {
                   onClick={() =>
                     s('suggestedPrompts', [
                       ...prompts,
-                      { id: crypto.randomUUID(), label: 'New prompt', message: 'New prompt' },
+                      { id: crypto.randomUUID(), label: ui("New prompt"), message: 'New prompt' },
                     ])
                   }
                 >
-                  <Plus className="size-3.5" />
-                  Add prompt
-                </Button>
+                  <Plus className="size-3.5" /> {ui("Add prompt")} </Button>
               )}
             </div>
           </>

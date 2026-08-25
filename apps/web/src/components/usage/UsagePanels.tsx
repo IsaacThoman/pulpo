@@ -5,6 +5,7 @@ import { getCatalogModel } from '@/stores/catalog'
 import { formatBalance, formatUsd, formatUsageTime } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
 import { SubscriptionCoverageCost } from './SubscriptionCoverageCost'
+import { ui, activeLocale } from '@/i18n/ui'
 
 /** Bordered panel with a scrollable, cursor-paginated records table. */
 export function RecentUsagePanel({
@@ -57,15 +58,14 @@ export function RecentUsagePanel({
       <div className="flex items-center justify-between border-b px-3 py-2">
         <div className="flex items-center gap-2">
           <Zap className="size-3" />
-          <h3 className="text-xs font-medium">Recent usage</h3>
+          <h3 className="text-xs font-medium">{ui("Recent usage")}</h3>
         </div>
         <span className="text-xs text-muted-foreground">
-          {records.length.toLocaleString()} settled calls
-        </span>
+          {records.length.toLocaleString(activeLocale())} {ui("settled calls")} </span>
       </div>
 
       {records.length === 0 ? (
-        <div className="p-6 text-center text-xs text-muted-foreground">No usage records yet</div>
+        <div className="p-6 text-center text-xs text-muted-foreground">{ui("No usage records yet")}</div>
       ) : (
         <>
           <div className="usage-records-head border-b">
@@ -80,13 +80,13 @@ export function RecentUsagePanel({
               </colgroup>
               <thead>
                 <tr className="text-left text-muted-foreground">
-                  <th className="px-3 py-2 font-normal">Time</th>
-                  <th className="px-3 py-2 font-normal">Model</th>
-                  {showUser && <th className="px-3 py-2 font-normal">User</th>}
-                  <th className="px-3 py-2 text-right font-normal">Tokens</th>
-                  <th className="px-3 py-2 text-right font-normal">Cost</th>
+                  <th className="px-3 py-2 font-normal">{ui("Time")}</th>
+                  <th className="px-3 py-2 font-normal">{ui("Model")}</th>
+                  {showUser && <th className="px-3 py-2 font-normal">{ui("User")}</th>}
+                  <th className="px-3 py-2 text-right font-normal">{ui("Tokens")}</th>
+                  <th className="px-3 py-2 text-right font-normal">{ui("Cost")}</th>
                   {showBalance && (
-                    <th className="px-3 py-2 text-right font-normal">Balance after</th>
+                    <th className="px-3 py-2 text-right font-normal">{ui("Balance after")}</th>
                   )}
                 </tr>
               </thead>
@@ -124,7 +124,7 @@ export function RecentUsagePanel({
                         </td>
                       )}
                       <td className="px-3 py-2 text-right tabular-nums">
-                        {(r.tokensIn + r.tokensOut).toLocaleString()}
+                        {(r.tokensIn + r.tokensOut).toLocaleString(activeLocale())}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
                         <SubscriptionCoverageCost
@@ -145,8 +145,8 @@ export function RecentUsagePanel({
             </table>
             {(loadingMore || error) && <div className="border-t p-2 text-center text-xs text-muted-foreground">
               {error
-                ? <button type="button" className="text-destructive hover:underline" onClick={onLoadMore}>{error} — Retry</button>
-                : 'Loading…'}
+                ? <button type="button" className="text-destructive hover:underline" onClick={onLoadMore}>{error} {ui("— Retry")}</button>
+                : ui("Loading…")}
             </div>}
           </div>
         </>
@@ -167,11 +167,11 @@ export function TopModelsPanel({ models }: { models: TopModelStat[] }) {
     <div className="rounded-lg border">
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <BarChart3 className="size-3" />
-        <h3 className="text-xs font-medium">Top models</h3>
+        <h3 className="text-xs font-medium">{ui("Top models")}</h3>
       </div>
 
       {models.length === 0 ? (
-        <div className="p-6 text-center text-xs text-muted-foreground">No usage records yet</div>
+        <div className="p-6 text-center text-xs text-muted-foreground">{ui("No usage records yet")}</div>
       ) : (
         <div className="max-h-96 divide-y overflow-y-auto">
           {models.map((m, i) => {
@@ -187,7 +187,7 @@ export function TopModelsPanel({ models }: { models: TopModelStat[] }) {
                     <p className="truncate text-xs" title={model.name}>
                       {model.name}
                     </p>
-                    <p className="text-xs text-muted-foreground">{m.calls.toLocaleString()} calls</p>
+                    <p className="text-xs text-muted-foreground">{m.calls.toLocaleString(activeLocale())} {ui("calls")}</p>
                   </div>
                 </div>
                 <span className="shrink-0 text-xs tabular-nums">{formatUsd(m.cost)}</span>

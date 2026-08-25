@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ui, uit, activeLocale } from '@/i18n/ui'
 
 interface WorkspaceRow {
   id: string; controllerLeaseId: string | null; status: string; capacityState: string | null; queuePosition: number | null
@@ -27,7 +28,7 @@ interface WorkspaceResult {
 }
 
 function duration(milliseconds: number): string {
-  if (milliseconds <= 0) return 'now'
+  if (milliseconds <= 0) return ui("now")
   const seconds = Math.floor(milliseconds / 1000)
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
@@ -43,18 +44,18 @@ function remaining(value: string | null, now: number): string {
 const stateOrder: Record<string, number> = { active: 0, starting: 1, shutting_down: 2, idle: 3, warming: 4, warm: 5, unknown: 6 }
 
 function stateLabel(state: string): string {
-  if (state === 'shutting_down') return 'Shutting down'
-  if (state === 'warm') return 'Warm · unclaimed'
+  if (state === 'shutting_down') return ui("Shutting down")
+  if (state === 'warm') return ui("Warm · unclaimed")
   return state.charAt(0).toUpperCase() + state.slice(1).replaceAll('_', ' ')
 }
 
 function activityLabel(workspace: OpenWorkspace): string {
   if (workspace.lifecycleState === 'active') return `${workspace.activeOperations} running operation${workspace.activeOperations === 1 ? '' : 's'}`
-  if (workspace.lifecycleState === 'idle') return 'No operation running'
+  if (workspace.lifecycleState === 'idle') return ui("No operation running")
   if (workspace.lifecycleState === 'starting') return workspace.user ? 'Starting for user' : 'Cold starting'
-  if (workspace.lifecycleState === 'shutting_down') return 'Terminating pod'
-  if (workspace.lifecycleState === 'warming') return 'Preparing warm capacity'
-  if (workspace.lifecycleState === 'warm') return 'Waiting to be claimed'
+  if (workspace.lifecycleState === 'shutting_down') return ui("Terminating pod")
+  if (workspace.lifecycleState === 'warming') return ui("Preparing warm capacity")
+  if (workspace.lifecycleState === 'warm') return ui("Waiting to be claimed")
   return workspace.phase
 }
 
@@ -86,71 +87,71 @@ export function AdminWorkspacesPage() {
     }
   }
   return <div className="space-y-4">
-    <div className="flex items-center gap-3"><div><h2 className="text-lg font-semibold">Agent workspaces</h2><p className="text-xs text-muted-foreground">Live leases, owners, queue state, and forced cleanup deadlines.</p></div><div className="flex-1" /><Button variant="outline" size="icon-sm" onClick={() => void load()} aria-label="Refresh workspaces"><RefreshCw /></Button></div>
+    <div className="flex items-center gap-3"><div><h2 className="text-lg font-semibold">{ui("Agent workspaces")}</h2><p className="text-xs text-muted-foreground">{ui("Live leases, owners, queue state, and forced cleanup deadlines.")}</p></div><div className="flex-1" /><Button variant="outline" size="icon-sm" onClick={() => void load()} aria-label={ui("Refresh workspaces")}><RefreshCw /></Button></div>
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-      <Metric icon={<Server />} label="Controller" value={result?.controller.healthy ? 'Healthy' : 'Unavailable'} />
-      <Metric icon={<Activity />} label="Open VMs" value={result ? openWorkspaces.length : '—'} />
-      <Metric icon={<Users />} label="Claimed" value={`${result?.controller.active ?? 0} / ${policy?.maxActiveWorkspaces ?? '—'}`} />
-      <Metric icon={<Users />} label="Pending users" value={result?.summary.pending ?? 0} />
-      <Metric icon={<Clock3 />} label="Warm pool" value={`${openWorkspaces.filter((workspace) => ['warm', 'warming'].includes(workspace.lifecycleState)).length} / ${result?.controller.warmCapacity ?? policy?.warmCapacity ?? '—'}`} />
-      <Metric icon={<Server />} label="Per workspace" value={policy ? `${policy.cpu} CPU · ${policy.memory} · ${policy.ephemeralStorage}` : '—'} />
+      <Metric icon={<Server />} label={ui("Controller")} value={result?.controller.healthy ? 'Healthy' : 'Unavailable'} />
+      <Metric icon={<Activity />} label={ui("Open VMs")} value={result ? openWorkspaces.length : '—'} />
+      <Metric icon={<Users />} label={ui("Claimed")} value={`${result?.controller.active ?? 0} / ${policy?.maxActiveWorkspaces ?? '—'}`} />
+      <Metric icon={<Users />} label={ui("Pending users")} value={result?.summary.pending ?? 0} />
+      <Metric icon={<Clock3 />} label={ui("Warm pool")} value={`${openWorkspaces.filter((workspace) => ['warm', 'warming'].includes(workspace.lifecycleState)).length} / ${result?.controller.warmCapacity ?? policy?.warmCapacity ?? '—'}`} />
+      <Metric icon={<Server />} label={ui("Per workspace")} value={policy ? `${policy.cpu} CPU · ${policy.memory} · ${policy.ephemeralStorage}` : '—'} />
     </div>
     {!result?.controller.healthy && result?.controller.detail && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">{result.controller.detail}</div>}
     <div>
-      <h3 className="text-sm font-semibold">Open VMs</h3>
-      <p className="mb-2 text-xs text-muted-foreground">Every workspace pod currently present in the cluster, including warm capacity and terminating VMs.</p>
+      <h3 className="text-sm font-semibold">{ui("Open VMs")}</h3>
+      <p className="mb-2 text-xs text-muted-foreground">{ui("Every workspace pod currently present in the cluster, including warm capacity and terminating VMs.")}</p>
       <Card className="gap-0 rounded-lg py-0 shadow-none"><div className="overflow-x-auto"><table className="data-table min-w-[1120px]">
-        <thead><tr className="border-b"><th className="px-3 py-2">State</th><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Chat / model</th><th className="px-3 py-2">VM</th><th className="px-3 py-2">Open for</th><th className="px-3 py-2">Activity</th><th className="px-3 py-2">Idle closes in</th><th className="px-3 py-2">Forced close in</th><th className="px-3 py-2">Health</th><th className="px-3 py-2 text-right">Actions</th></tr></thead>
+        <thead><tr className="border-b"><th className="px-3 py-2">{ui("State")}</th><th className="px-3 py-2">{ui("Owner")}</th><th className="px-3 py-2">{ui("Chat / model")}</th><th className="px-3 py-2">{ui("VM")}</th><th className="px-3 py-2">{ui("Open for")}</th><th className="px-3 py-2">{ui("Activity")}</th><th className="px-3 py-2">{ui("Idle closes in")}</th><th className="px-3 py-2">{ui("Forced close in")}</th><th className="px-3 py-2">{ui("Health")}</th><th className="px-3 py-2 text-right">{ui("Actions")}</th></tr></thead>
         <tbody>{openWorkspaces.length ? openWorkspaces.map((workspace) => {
           const warmPool = ['warm', 'warming'].includes(workspace.lifecycleState)
           return <tr key={workspace.id} className="align-top">
             <td className="px-3 py-2"><Badge variant={workspace.lifecycleState === 'active' ? 'secondary' : workspace.lifecycleState === 'shutting_down' ? 'destructive' : 'outline'}>{stateLabel(workspace.lifecycleState)}</Badge></td>
-            <td className="max-w-40 px-3 py-2">{workspace.user ? <><div className="truncate font-medium">{workspace.user.name || workspace.user.email}</div><div className="truncate text-muted-foreground">{workspace.user.email}</div></> : <><span className="text-muted-foreground">{warmPool ? 'Warm pool' : 'Unassigned'}</span>{workspace.instanceId && <div className="truncate font-mono text-[10px] text-muted-foreground" title={workspace.instanceId}>{workspace.instanceId}</div>}</>}</td>
-            <td className="max-w-48 px-3 py-2">{workspace.chat ? <><div className="truncate">{workspace.chat.title}</div><div className="truncate text-muted-foreground">{workspace.response?.modelId ?? 'Waiting for workspace'}</div></> : '—'}</td>
+            <td className="max-w-40 px-3 py-2">{workspace.user ? <><div className="truncate font-medium">{workspace.user.name || workspace.user.email}</div><div className="truncate text-muted-foreground">{workspace.user.email}</div></> : <><span className="text-muted-foreground">{warmPool ? ui("Warm pool") : ui("Unassigned")}</span>{workspace.instanceId && <div className="truncate font-mono text-[10px] text-muted-foreground" title={workspace.instanceId}>{workspace.instanceId}</div>}</>}</td>
+            <td className="max-w-48 px-3 py-2">{workspace.chat ? <><div className="truncate">{workspace.chat.title}</div><div className="truncate text-muted-foreground">{workspace.response?.modelId ?? ui("Waiting for workspace")}</div></> : '—'}</td>
             <td className="max-w-44 px-3 py-2 font-mono text-[11px]"><div className="truncate" title={workspace.name}>{workspace.name}</div><div className="truncate text-muted-foreground" title={workspace.imageDigest ?? undefined}>{workspace.imageDigest?.split('@')[1]?.slice(0, 15) ?? workspace.leaseId?.slice(0, 12) ?? '—'}</div></td>
             <td className="px-3 py-2 tabular-nums">{duration(now - new Date(workspace.createdAt).getTime())}</td>
-            <td className="px-3 py-2"><span>{activityLabel(workspace)}</span>{workspace.run && <div className="text-muted-foreground">{workspace.run.modelTurns} turns · {workspace.run.toolCalls} tools</div>}</td>
+            <td className="px-3 py-2"><span>{activityLabel(workspace)}</span>{workspace.run && <div className="text-muted-foreground">{workspace.run.modelTurns} {ui("turns ·")} {workspace.run.toolCalls} {ui("tools")}</div>}</td>
             <td className="px-3 py-2 tabular-nums">{remaining(workspace.idleExpiresAt, now)}</td>
             <td className="px-3 py-2 tabular-nums">{remaining(workspace.hardExpiresAt, now)}</td>
-            <td className="px-3 py-2"><span className={workspace.ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>{workspace.ready ? 'Ready' : workspace.phase}</span>{workspace.restartCount > 0 && <div className="text-amber-600">{workspace.restartCount} restarts</div>}</td>
-            <td className="px-3 py-2 text-right">{((workspace.leaseId && ['active', 'idle', 'starting'].includes(workspace.lifecycleState)) || (!workspace.leaseId && ['starting', 'unknown'].includes(workspace.lifecycleState))) ? <Button size="icon-sm" variant="ghost" className="hover:text-destructive" title={workspace.leaseId ? 'Terminate VM' : 'Delete orphan VM'} aria-label={`${workspace.leaseId ? 'Terminate' : 'Delete orphan'} ${workspace.name}`} onClick={() => { setTerminateError(null); setTerminateTarget(workspace) }}><Power /></Button> : <span className="text-muted-foreground">—</span>}</td>
+            <td className="px-3 py-2"><span className={workspace.ready ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}>{workspace.ready ? ui("Ready") : workspace.phase}</span>{workspace.restartCount > 0 && <div className="text-amber-600">{workspace.restartCount} {ui("restarts")}</div>}</td>
+            <td className="px-3 py-2 text-right">{((workspace.leaseId && ['active', 'idle', 'starting'].includes(workspace.lifecycleState)) || (!workspace.leaseId && ['starting', 'unknown'].includes(workspace.lifecycleState))) ? <Button size="icon-sm" variant="ghost" className="hover:text-destructive" title={workspace.leaseId ? ui("Terminate VM") : ui("Delete orphan VM")} aria-label={uit`${workspace.leaseId ? 'Terminate' : 'Delete orphan'} ${workspace.name}`} onClick={() => { setTerminateError(null); setTerminateTarget(workspace) }}><Power /></Button> : <span className="text-muted-foreground">—</span>}</td>
           </tr>
-        }) : <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">{result ? 'No open workspace VMs.' : 'Loading VM inventory…'}</td></tr>}</tbody>
+        }) : <tr><td colSpan={10} className="p-8 text-center text-muted-foreground">{result ? ui("No open workspace VMs.") : ui("Loading VM inventory…")}</td></tr>}</tbody>
       </table></div></Card>
     </div>
     <div>
-      <h3 className="text-sm font-semibold">Lease history</h3>
-      <p className="mb-2 text-xs text-muted-foreground">Recent user workspace requests, including queued, released, expired, and failed leases.</p>
+      <h3 className="text-sm font-semibold">{ui("Lease history")}</h3>
+      <p className="mb-2 text-xs text-muted-foreground">{ui("Recent user workspace requests, including queued, released, expired, and failed leases.")}</p>
     <Card className="gap-0 rounded-lg py-0 shadow-none"><div className="overflow-x-auto"><table className="data-table min-w-[1120px]">
-      <thead><tr className="border-b"><th className="px-3 py-2">State</th><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Chat / model</th><th className="px-3 py-2">Workspace</th><th className="px-3 py-2">Active for</th><th className="px-3 py-2">Idle closes in</th><th className="px-3 py-2">Forced close in</th><th className="px-3 py-2">Activity</th><th className="px-3 py-2">Last use</th></tr></thead>
+      <thead><tr className="border-b"><th className="px-3 py-2">{ui("State")}</th><th className="px-3 py-2">{ui("Owner")}</th><th className="px-3 py-2">{ui("Chat / model")}</th><th className="px-3 py-2">{ui("Workspace")}</th><th className="px-3 py-2">{ui("Active for")}</th><th className="px-3 py-2">{ui("Idle closes in")}</th><th className="px-3 py-2">{ui("Forced close in")}</th><th className="px-3 py-2">{ui("Activity")}</th><th className="px-3 py-2">{ui("Last use")}</th></tr></thead>
       <tbody>{rows.length ? rows.map((row) => {
         const activeSince = row.claimedAt ?? row.createdAt
         const live = ['ready', 'provisioning'].includes(row.status)
         return <tr key={row.id} className="align-top">
-          <td className="px-3 py-2"><Badge variant={row.status === 'failed' ? 'destructive' : live ? 'secondary' : 'outline'}>{row.status}</Badge>{row.queuePosition && <div className="mt-1 text-muted-foreground">Queue #{row.queuePosition}</div>}{row.capacityState && <div className="text-muted-foreground">{row.capacityState}</div>}</td>
+          <td className="px-3 py-2"><Badge variant={row.status === 'failed' ? 'destructive' : live ? 'secondary' : 'outline'}>{row.status}</Badge>{row.queuePosition && <div className="mt-1 text-muted-foreground">{ui("Queue #")}{row.queuePosition}</div>}{row.capacityState && <div className="text-muted-foreground">{row.capacityState}</div>}</td>
           <td className="max-w-40 px-3 py-2"><div className="truncate font-medium">{row.user.name || row.user.email}</div><div className="truncate text-muted-foreground">{row.user.email}</div></td>
-          <td className="max-w-48 px-3 py-2"><div className="truncate">{row.chat.title}</div><div className="truncate text-muted-foreground">{row.response.modelId ?? 'Waiting for workspace'}</div></td>
+          <td className="max-w-48 px-3 py-2"><div className="truncate">{row.chat.title}</div><div className="truncate text-muted-foreground">{row.response.modelId ?? ui("Waiting for workspace")}</div></td>
           <td className="max-w-40 px-3 py-2 font-mono text-[11px]"><div className="truncate" title={row.controllerLeaseId ?? row.id}>{row.controllerLeaseId?.slice(0, 12) ?? row.id.slice(0, 12)}</div><div className="truncate text-muted-foreground" title={row.imageDigest}>{row.imageDigest.split('@')[1]?.slice(0, 15) ?? '—'}</div></td>
           <td className="px-3 py-2 tabular-nums">{live ? duration(now - new Date(activeSince).getTime()) : duration(new Date(row.releasedAt ?? row.updatedAt ?? row.createdAt).getTime() - new Date(activeSince).getTime())}</td>
           <td className="px-3 py-2 tabular-nums">{live ? remaining(row.expiresAt, now) : '—'}</td>
           <td className="px-3 py-2 tabular-nums">{live ? remaining(row.hardExpiresAt, now) : '—'}</td>
-          <td className="px-3 py-2">{row.run ? <><span>{row.run.modelTurns} turns</span><div className="text-muted-foreground">{row.run.toolCalls} tools · {row.run.status}</div></> : '—'}</td>
-          <td className="whitespace-nowrap px-3 py-2">{row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleTimeString() : '—'}{row.error && <div className="max-w-44 truncate text-destructive" title={row.error}>{row.error}</div>}</td>
+          <td className="px-3 py-2">{row.run ? <><span>{row.run.modelTurns} {ui("turns")}</span><div className="text-muted-foreground">{row.run.toolCalls} {ui("tools ·")} {row.run.status}</div></> : '—'}</td>
+          <td className="whitespace-nowrap px-3 py-2">{row.lastUsedAt ? new Date(row.lastUsedAt).toLocaleTimeString(activeLocale()) : '—'}{row.error && <div className="max-w-44 truncate text-destructive" title={row.error}>{row.error}</div>}</td>
         </tr>
-      }) : <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">No workspace leases yet.</td></tr>}</tbody>
+      }) : <tr><td colSpan={9} className="p-8 text-center text-muted-foreground">{ui("No workspace leases yet.")}</td></tr>}</tbody>
     </table></div></Card>
     </div>
     <Dialog open={!!terminateTarget} onOpenChange={(open) => { if (!open && !terminating) { setTerminateTarget(null); setTerminateError(null) } }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{terminateTarget?.leaseId ? 'Terminate workspace VM?' : 'Delete orphan workspace VM?'}</DialogTitle>
-          <DialogDescription>{terminateTarget?.leaseId ? 'This immediately stops the VM and any running operation. The user can receive a new workspace if they use agent tools again.' : 'This VM has no active lease or owner. Deleting it immediately removes the abandoned workspace pod.'}</DialogDescription>
+          <DialogTitle>{terminateTarget?.leaseId ? ui("Terminate workspace VM?") : ui("Delete orphan workspace VM?")}</DialogTitle>
+          <DialogDescription>{terminateTarget?.leaseId ? ui("This immediately stops the VM and any running operation. The user can receive a new workspace if they use agent tools again.") : ui("This VM has no active lease or owner. Deleting it immediately removes the abandoned workspace pod.")}</DialogDescription>
         </DialogHeader>
-        {terminateTarget && <div className="rounded-md border bg-muted/30 p-3 text-xs"><div className="font-medium">{terminateTarget.user?.name || terminateTarget.user?.email || 'Unassigned workspace'}</div><div className="mt-1 text-muted-foreground">{terminateTarget.chat?.title ?? 'No chat'} · <span className="font-mono">{terminateTarget.name}</span></div></div>}
+        {terminateTarget && <div className="rounded-md border bg-muted/30 p-3 text-xs"><div className="font-medium">{terminateTarget.user?.name || terminateTarget.user?.email || 'Unassigned workspace'}</div><div className="mt-1 text-muted-foreground">{terminateTarget.chat?.title ?? ui("No chat")} · <span className="font-mono">{terminateTarget.name}</span></div></div>}
         {terminateError && <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">{terminateError}</div>}
         <DialogFooter>
-          <Button variant="outline" disabled={terminating} onClick={() => { setTerminateTarget(null); setTerminateError(null) }}>Cancel</Button>
-          <Button variant="destructive" disabled={terminating} onClick={() => void terminate()}>{terminating ? <Loader2 className="animate-spin" /> : <Power />}{terminating ? (terminateTarget?.leaseId ? 'Terminating…' : 'Deleting…') : (terminateTarget?.leaseId ? 'Terminate VM' : 'Delete orphan VM')}</Button>
+          <Button variant="outline" disabled={terminating} onClick={() => { setTerminateTarget(null); setTerminateError(null) }}>{ui("Cancel")}</Button>
+          <Button variant="destructive" disabled={terminating} onClick={() => void terminate()}>{terminating ? <Loader2 className="animate-spin" /> : <Power />}{terminating ? (terminateTarget?.leaseId ? ui("Terminating…") : ui("Deleting…")) : (terminateTarget?.leaseId ? ui("Terminate VM") : ui("Delete orphan VM"))}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

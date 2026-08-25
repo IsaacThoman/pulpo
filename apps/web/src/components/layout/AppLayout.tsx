@@ -13,6 +13,7 @@ import { useChat } from '@/stores/chat'
 import { DesktopSidebarTitleBar } from '@/components/desktop/DesktopSidebarTitleBar'
 import { cn } from '@/lib/utils'
 import { handleDoubleShiftKeyDown, type DoubleShiftState } from '@/lib/double-shift'
+import { ui } from '@/i18n/ui'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -132,7 +133,7 @@ export function AppLayout() {
           <button
             className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
             onClick={() => setMobileOpen(true)}
-            aria-label="Open sidebar"
+            aria-label={ui("Open sidebar")}
             aria-expanded={mobileOpen}
           >
             <PanelLeftOpen className="size-5" />
@@ -143,7 +144,7 @@ export function AppLayout() {
                 mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
               }`}
               onClick={() => setMobileOpen(false)}
-              aria-label="Close sidebar"
+              aria-label={ui("Close sidebar")}
               aria-hidden={!mobileOpen}
               tabIndex={mobileOpen ? 0 : -1}
             />
@@ -165,7 +166,7 @@ export function AppLayout() {
             }}
           />
           <main className="app-main min-w-0 flex-1 overflow-hidden">
-            <Suspense fallback={<div className="h-full bg-background" aria-label="Loading view" />}>
+            <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
               <Outlet />
             </Suspense>
           </main>
