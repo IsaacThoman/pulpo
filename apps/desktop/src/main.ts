@@ -33,6 +33,9 @@ const pendingProtocolUrls: string[] = []
 let mainWindow: BrowserWindow | null = null
 let rendererReady = false
 let desktopUpdater: DesktopUpdater | null = null
+const previewUpdateVersion = !app.isPackaged
+  ? process.env.PULPO_DESKTOP_PREVIEW_UPDATE_VERSION?.trim()
+  : undefined
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) {
@@ -168,10 +171,12 @@ function registerIpc(): void {
   })
   ipcMain.handle('desktop:update-state', (event) => {
     assertTrustedSender(event)
+    if (previewUpdateVersion) return { status: 'ready', version: previewUpdateVersion }
     return desktopUpdater?.getState() ?? { status: 'idle' }
   })
   ipcMain.handle('desktop:update-restart', (event) => {
     assertTrustedSender(event)
+    if (previewUpdateVersion) return
     desktopUpdater?.restartAndInstall()
   })
 }
