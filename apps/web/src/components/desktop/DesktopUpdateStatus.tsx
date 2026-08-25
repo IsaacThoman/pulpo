@@ -36,7 +36,7 @@ export function DesktopUpdateStatus({ separated = false }: { separated?: boolean
     <>
       <button
         type="button"
-        className="flex items-center gap-1.5 hover:text-foreground disabled:pointer-events-none"
+        className="flex cursor-pointer items-center gap-1.5 hover:text-foreground disabled:pointer-events-none"
         aria-label={restarting ? ui('Restarting…') : uit`Restart to install Pulpo v${ready.version}`}
         title={uit`Restart to install Pulpo v${ready.version}`}
         disabled={restarting}
