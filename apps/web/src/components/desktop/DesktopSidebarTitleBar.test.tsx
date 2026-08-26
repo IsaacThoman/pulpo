@@ -47,7 +47,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('data-collapsed="true"')
     expect(markup).toContain('desktop-sidebar-titlebar-collapsed')
     expect(markup).toContain('z-0')
-    expect(markup).toContain('w-[124px]')
+    expect(markup).toContain('w-[89px]')
     expect(markup).toContain('rounded-br-[22px]')
     expect(markup).toContain('border-b')
     expect(markup).toContain('border-r')

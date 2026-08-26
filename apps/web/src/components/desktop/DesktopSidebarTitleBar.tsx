@@ -69,7 +69,7 @@ export function DesktopSidebarTitleBar({
       </div>
       <div
         className={cn(
-          'desktop-sidebar-titlebar-collapsed absolute inset-y-0 left-0 z-0 w-[124px] rounded-br-[22px] border-b border-r border-sidebar-border bg-sidebar',
+          'desktop-sidebar-titlebar-collapsed absolute inset-y-0 left-0 z-0 w-[89px] rounded-br-[22px] border-b border-r border-sidebar-border bg-sidebar',
           showCollapsedCap ? 'block' : 'hidden',
         )}
       >
