@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
-import { formatBalance, formatNumber, formatSecondsLabel } from './format'
+import { formatBalance, formatNumber, formatSecondsLabel, timeAgo } from './format'
 
 describe('locale-aware formatting', () => {
   afterEach(async () => {
@@ -13,5 +13,20 @@ describe('locale-aware formatting', () => {
     expect(formatNumber(1_250)).toBe('1,25K')
     expect(formatBalance(12.5)).toContain('12,50')
     expect(formatSecondsLabel(2_000)).toBe('2 segundos')
+  })
+})
+
+describe('timeAgo', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('formats valid timestamps', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-26T12:00:00.000Z'))
+
+    expect(timeAgo(Date.parse('2026-08-26T11:55:00.000Z'))).toContain('5')
+  })
+
+  it('does not throw when a search result has an invalid timestamp', () => {
+    expect(timeAgo(Number.NaN)).toBe('')
+    expect(timeAgo(Number.POSITIVE_INFINITY)).toBe('')
   })
 })

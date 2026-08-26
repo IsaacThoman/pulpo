@@ -101,16 +101,21 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const query = String((request.query as { q?: string }).q ?? '').trim().slice(0, 200)
     if (!query) return { data: [] }
-    const result = await db.execute<typeof chats.$inferSelect>(sql`
-      select distinct c.* from chats c
-      left join responses r on r.chat_id = c.id
-      where c.user_id = ${user.id} and c.deleted_at is null and c.temporary = false
-        and (c.expires_at is null or c.expires_at > now())
-        and to_tsvector('simple', coalesce(c.title, '') || ' ' || coalesce(r.input::text, '') || ' ' || coalesce(r.output::text, ''))
-          @@ plainto_tsquery('simple', ${query})
-      order by c.updated_at desc limit 50
-    `)
-    return { data: [...result] }
+    const result = await db
+      .selectDistinct({ chat: chats })
+      .from(chats)
+      .leftJoin(responses, eq(responses.chatId, chats.id))
+      .where(and(
+        eq(chats.userId, user.id),
+        isNull(chats.deletedAt),
+        eq(chats.temporary, false),
+        accessibleChatCondition(),
+        sql`to_tsvector('simple', coalesce(${chats.title}, '') || ' ' || coalesce(${responses.input}::text, '') || ' ' || coalesce(${responses.output}::text, ''))
+          @@ plainto_tsquery('simple', ${query})`,
+      ))
+      .orderBy(desc(chats.updatedAt))
+      .limit(50)
+    return { data: result.map(({ chat }) => toPublicChat(chat)) }
   })
 
   app.get('/api/chats/export', async (request, reply) => {
