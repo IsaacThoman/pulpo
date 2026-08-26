@@ -278,6 +278,19 @@ jobs:
           spctl --assess --type execute --verbose=4 "${app_path}"
           xcrun stapler validate "${app_path}"
 
+      - name: Add platform to DMG artifact name
+        env:
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          dmg_count="$(find apps/desktop/out/make -type f -name '*.dmg' | wc -l | tr -d ' ')"
+          if [[ "${dmg_count}" != '1' ]]; then
+            echo "Expected one DMG artifact, found ${dmg_count}." >&2
+            exit 1
+          fi
+          dmg_path="$(find apps/desktop/out/make -type f -name '*.dmg' -print -quit)"
+          mv "${dmg_path}" "$(dirname "${dmg_path}")/Pulpo-darwin-${{ matrix.arch }}-${RELEASE_VERSION}.dmg"
+
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
