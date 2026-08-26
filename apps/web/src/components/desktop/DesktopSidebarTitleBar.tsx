@@ -1,54 +1,21 @@
-import { useEffect, useRef, useState } from 'react'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { cn } from '@/lib/utils'
-import { DEFAULT_ANIMATION_SPEED, scaledAnimationDuration } from '@/lib/animation-speed'
-
-const SIDEBAR_TRANSITION_MS = 300
 
 export function DesktopSidebarTitleBar({
   collapsed,
   transitions,
   visible,
-  animationSpeed = DEFAULT_ANIMATION_SPEED,
 }: {
   collapsed: boolean
   transitions: boolean
   visible: boolean
-  animationSpeed?: number
 }) {
-  const previousCollapsedRef = useRef(collapsed)
-  const [animationActive, setAnimationActive] = useState(false)
-  const collapsedChanged = previousCollapsedRef.current !== collapsed
-  const showAboveSidebar = !transitions || (!collapsedChanged && !animationActive)
-
-  useEffect(() => {
-    const changed = previousCollapsedRef.current !== collapsed
-    previousCollapsedRef.current = collapsed
-
-    if (!transitions) {
-      setAnimationActive(false)
-      return
-    }
-    if (!changed) return
-
-    setAnimationActive(true)
-    const timeout = window.setTimeout(
-      () => setAnimationActive(false),
-      scaledAnimationDuration(SIDEBAR_TRANSITION_MS, animationSpeed),
-    )
-    return () => window.clearTimeout(timeout)
-  }, [animationSpeed, collapsed, transitions])
-
   if (!isDesktopRuntime() || !visible) return null
   return (
     <div
       aria-hidden="true"
       data-collapsed={collapsed ? 'true' : undefined}
-      data-animation-active={showAboveSidebar ? undefined : 'true'}
-      className={cn(
-        'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
-        showAboveSidebar ? 'z-[42]' : 'z-[41]',
-      )}
+      className="desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 z-[42] h-[38px]"
     >
       <div className="desktop-sidebar-titlebar-base absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
       <div
@@ -68,11 +35,12 @@ export function DesktopSidebarTitleBar({
       </div>
       <div
         className={cn(
-          'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
-          transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-          collapsed ? 'translate-y-0' : '-translate-y-[54px]',
+          'desktop-sidebar-titlebar-collapsed absolute inset-y-0 left-0 z-0 w-[124px] rounded-br-[22px] border-b border-r border-sidebar-border bg-sidebar',
+          collapsed ? 'block' : 'hidden',
         )}
-      />
+      >
+        <div className="desktop-sidebar-titlebar-collapsed-seam-cover absolute bottom-[-1px] left-0 h-[2px] w-[67px] bg-sidebar" />
+      </div>
     </div>
   )
 }

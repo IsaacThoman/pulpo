@@ -31,15 +31,13 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('left-[52px]')
     expect(markup).toContain('w-[212px]')
     expect(markup).toContain('z-[42]')
-    expect(markup).toContain('-translate-y-[54px]')
-    expect(markup).toContain('transition-transform')
     expect(markup).toContain('transition-[width]')
     expect(markup).toContain('transition-opacity')
     expect(markup).toContain('opacity-100')
-    expect(markup).not.toContain('data-animation-active')
+    expect(markup).toContain('hidden')
   })
 
-  it('makes the collapsed title bar a full-width sidebar surface with a curved boundary', () => {
+  it('curves the collapsed title bar around the macOS traffic lights', () => {
     installDesktopWindow()
     const markup = renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed transitions={false} visible />,
@@ -48,9 +46,14 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('data-collapsed="true"')
     expect(markup).toContain('desktop-sidebar-titlebar-collapsed')
     expect(markup).toContain('z-0')
-    expect(markup).toContain('w-full')
+    expect(markup).toContain('w-[124px]')
+    expect(markup).toContain('rounded-br-[22px]')
+    expect(markup).toContain('border-b')
+    expect(markup).toContain('border-r')
     expect(markup).toContain('bg-sidebar')
-    expect(markup).toContain('translate-y-0')
+    expect(markup).toContain('desktop-sidebar-titlebar-collapsed-seam-cover')
+    expect(markup).toContain('w-[67px]')
+    expect(markup).toContain('block')
     expect(markup).toContain('desktop-sidebar-titlebar-base')
     expect(markup).toContain('w-0')
     expect(markup).toContain('opacity-0')

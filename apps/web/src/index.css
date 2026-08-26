@@ -331,7 +331,7 @@ html[data-desktop="true"] .desktop-sidebar-titlebar {
   -webkit-app-region: drag;
 }
 
-html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
+html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
   position: absolute;
   top: 100%;
   left: 51px;
@@ -344,16 +344,6 @@ html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
     var(--sidebar-border) 1rem,
     var(--sidebar) 1rem
   );
-  content: '';
-  pointer-events: none;
-}
-
-html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  left: 67px;
-  border-top: 1px solid var(--sidebar-border);
   content: '';
   pointer-events: none;
 }
