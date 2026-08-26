@@ -4,8 +4,7 @@ import path from 'node:path'
 const forge = path.resolve(import.meta.dirname, '../../../node_modules/@electron-forge/cli/dist/electron-forge.js')
 const nodeMajor = Number(process.versions.node.split('.')[0])
 const forwarded = process.argv.slice(2)
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+const npmCli = process.env.npm_execpath
 
 function run(command, args, env = process.env) {
   return new Promise((resolve, reject) => {
@@ -22,21 +21,26 @@ function run(command, args, env = process.env) {
   })
 }
 
+function runNpm(args, env = process.env) {
+  if (!npmCli) throw new Error('npm_execpath is required to build the desktop application.')
+  return run(process.execPath, [npmCli, ...args], env)
+}
+
 async function main() {
   if (nodeMajor >= 26 && process.env.PULPO_FORGE_NODE24 !== '1') {
-    return run(npxCommand, ['--yes', '--package=node@24.18.1', 'node', import.meta.filename, ...forwarded], {
+    return runNpm(['exec', '--yes', '--package=node@24.18.1', '--', 'node', import.meta.filename, ...forwarded], {
       ...process.env,
       PULPO_FORGE_NODE24: '1',
     })
   }
 
   for (const workspace of ['@pulpo/contracts', '@pulpo/client-core']) {
-    const buildCode = await run(npmCommand, ['run', 'build', '--workspace', workspace])
+    const buildCode = await runNpm(['run', 'build', '--workspace', workspace])
     if (buildCode !== 0) return buildCode
   }
 
   if (process.platform === 'darwin') {
-    const rebuildCode = await run(npmCommand, ['rebuild', 'macos-alias', 'fs-xattr'])
+    const rebuildCode = await runNpm(['rebuild', 'macos-alias', 'fs-xattr'])
     if (rebuildCode !== 0) return rebuildCode
   }
 
