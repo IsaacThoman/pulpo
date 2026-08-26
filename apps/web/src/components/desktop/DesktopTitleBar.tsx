@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, WifiOff } from 'lucide-react'
+import { CircleArrowUp, Loader2, WifiOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { isDesktopRuntime, type DesktopUpdateState } from '@/lib/runtime'
 import { useDesktopChrome } from '@/stores/desktopChrome'
@@ -11,10 +11,8 @@ type DesktopConnectionStatusValue = 'connecting' | 'offline'
 
 function DesktopStatusIndicator({
   status,
-  onRetry,
 }: {
   status?: DesktopConnectionStatusValue
-  onRetry?: () => void
 }) {
   const [updateState, setUpdateState] = useState<DesktopUpdateState>({ status: 'idle' })
   const [restarting, setRestarting] = useState(false)
@@ -42,25 +40,12 @@ function DesktopStatusIndicator({
 
   const className = 'desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground'
 
-  if (status === 'connecting') {
+  if (updateState.status === 'checking') {
     return (
       <div className={className} role="status">
         <Loader2 className="size-3 animate-spin" />
-        {ui("Connecting…")}
+        {ui("Checking for updates…")}
       </div>
-    )
-  }
-
-  if (status === 'offline') {
-    return (
-      <button
-        type="button"
-        className={`${className} rounded-full px-2 py-1 hover:bg-accent hover:text-foreground`}
-        onClick={onRetry}
-      >
-        <WifiOff className="size-3" />
-        {ui("Offline · Retry")}
-      </button>
     )
   }
 
@@ -73,23 +58,46 @@ function DesktopStatusIndicator({
     )
   }
 
-  if (updateState.status !== 'ready') return null
-  return (
-    <button
-      type="button"
-      title={uit`Restart to install Pulpo v${updateState.version}`}
-      className={`${className} font-medium text-primary underline underline-offset-2 hover:text-primary/80 disabled:opacity-60`}
-      disabled={restarting}
-      onClick={() => {
-        const restartAndInstall = window.pulpoDesktop?.updates.restartAndInstall
-        if (!restartAndInstall) return
-        setRestarting(true)
-        void restartAndInstall().catch(() => setRestarting(false))
-      }}
-    >
-      {restarting ? ui("Restarting…") : uit`Update to v${updateState.version}`}
-    </button>
-  )
+  if (updateState.status === 'ready') {
+    return (
+      <button
+        type="button"
+        title={uit`Restart to install Pulpo v${updateState.version}`}
+        className={`${className} hover:text-foreground disabled:opacity-60`}
+        disabled={restarting}
+        onClick={() => {
+          const restartAndInstall = window.pulpoDesktop?.updates.restartAndInstall
+          if (!restartAndInstall) return
+          setRestarting(true)
+          void restartAndInstall().catch(() => setRestarting(false))
+        }}
+      >
+        {restarting
+          ? <><Loader2 className="size-3 animate-spin" />{ui("Restarting…")}</>
+          : <><CircleArrowUp className="size-3" />{uit`Update to v${updateState.version}`}</>}
+      </button>
+    )
+  }
+
+  if (status === 'connecting') {
+    return (
+      <div className={className} role="status">
+        <Loader2 className="size-3 animate-spin" />
+        {ui("Connecting…")}
+      </div>
+    )
+  }
+
+  if (status === 'offline') {
+    return (
+      <div className={className} role="status">
+        <WifiOff className="size-3" />
+        {ui("Offline")}
+      </div>
+    )
+  }
+
+  return null
 }
 
 export function DesktopTitleBarSurface({
@@ -101,6 +109,12 @@ export function DesktopTitleBarSurface({
   connectionStatus?: DesktopConnectionStatusValue
   onRetry?: () => void
 }) {
+  useEffect(() => {
+    if (connectionStatus !== 'offline' || !onRetry) return
+    const interval = window.setInterval(onRetry, 15_000)
+    return () => window.clearInterval(interval)
+  }, [connectionStatus, onRetry])
+
   return (
     <>
       <div
@@ -108,7 +122,7 @@ export function DesktopTitleBarSurface({
         data-temporary-chat={temporaryChat ? 'true' : undefined}
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
-      <DesktopStatusIndicator status={connectionStatus} onRetry={onRetry} />
+      <DesktopStatusIndicator status={connectionStatus} />
     </>
   )
 }
@@ -148,7 +162,7 @@ export function DesktopTitleBar() {
     <DesktopTitleBarSurface
       temporaryChat={temporaryChat}
       connectionStatus={connectionStatus}
-      onRetry={() => { void retryDesktopConnection() }}
+      onRetry={retryDesktopConnection}
     />
   )
 }
