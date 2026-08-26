@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { DesktopUpdateState } from './globals'
-import { DesktopUpdater } from './updater'
+import { DesktopUpdater, type DesktopUpdateState, type ManualUpdateCheckResult } from './updater'
 
 class FakeAutoUpdater {
   private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>()
@@ -19,16 +18,18 @@ class FakeAutoUpdater {
 function setup(enabled = true) {
   const autoUpdater = new FakeAutoUpdater()
   const states: DesktopUpdateState[] = []
+  const manualResults: ManualUpdateCheckResult[] = []
+  const errors: unknown[] = []
   const startUpdates = vi.fn()
   const updater = new DesktopUpdater({
     enabled,
     autoUpdater,
     startUpdates,
     onStateChanged: (state) => states.push(state),
-    checkingTimeoutMs: 100,
-    downloadingTimeoutMs: 200,
+    onManualCheckResult: (result) => manualResults.push(result),
+    onError: (error) => errors.push(error),
   })
-  return { autoUpdater, states, startUpdates, updater }
+  return { autoUpdater, errors, manualResults, states, startUpdates, updater }
 }
 
 describe('DesktopUpdater', () => {
@@ -49,14 +50,16 @@ describe('DesktopUpdater', () => {
   })
 
   it('reports a bootstrap error without crashing app startup', () => {
-    const { startUpdates, updater } = setup()
-    startUpdates.mockImplementation(() => { throw new Error('invalid feed') })
+    const { errors, startUpdates, updater } = setup()
+    const error = new Error('invalid feed')
+    startUpdates.mockImplementation(() => { throw error })
     expect(() => updater.start()).not.toThrow()
     expect(updater.getState()).toEqual({ status: 'error' })
+    expect(errors).toEqual([error])
   })
 
   it('publishes update lifecycle states and caches the downloaded version', () => {
-    const { autoUpdater, states, updater } = setup()
+    const { autoUpdater, manualResults, states, updater } = setup()
     updater.start()
     autoUpdater.emit('checking-for-update')
     autoUpdater.emit('update-available')
@@ -70,10 +73,11 @@ describe('DesktopUpdater', () => {
     autoUpdater.emit('checking-for-update')
     autoUpdater.emit('error', new Error('offline'))
     expect(updater.getState()).toEqual({ status: 'ready', version: '1.4.0' })
+    expect(manualResults).toEqual([])
   })
 
   it('recovers from an error on a later update check', () => {
-    const { autoUpdater, updater } = setup()
+    const { autoUpdater, manualResults, updater } = setup()
     updater.start()
     autoUpdater.emit('error', new Error('offline'))
     expect(updater.getState()).toEqual({ status: 'error' })
@@ -82,46 +86,46 @@ describe('DesktopUpdater', () => {
     expect(updater.getState()).toEqual({ status: 'checking' })
     autoUpdater.emit('update-not-available')
     expect(updater.getState()).toEqual({ status: 'idle' })
+    expect(manualResults).toEqual(['up-to-date'])
   })
 
-  it('recovers when an update check never emits a terminal event', () => {
-    vi.useFakeTimers()
+  it('does not invent a terminal state while Electron is still checking or downloading', () => {
     const { autoUpdater, updater } = setup()
     updater.start()
     autoUpdater.emit('checking-for-update')
-
-    vi.advanceTimersByTime(99)
     expect(updater.getState()).toEqual({ status: 'checking' })
-    vi.advanceTimersByTime(1)
-    expect(updater.getState()).toEqual({ status: 'error' })
-    vi.useRealTimers()
-  })
-
-  it('recovers when an update download stalls', () => {
-    vi.useFakeTimers()
-    const { autoUpdater, updater } = setup()
-    updater.start()
     autoUpdater.emit('update-available')
-
-    vi.advanceTimersByTime(199)
     expect(updater.getState()).toEqual({ status: 'downloading' })
-    vi.advanceTimersByTime(1)
-    expect(updater.getState()).toEqual({ status: 'error' })
-    vi.useRealTimers()
   })
 
   it('reports synchronous and asynchronous manual check failures', async () => {
     const synchronous = setup()
     synchronous.updater.start()
-    synchronous.autoUpdater.checkForUpdates.mockImplementation(() => { throw new Error('offline') })
+    const synchronousError = new Error('offline')
+    synchronous.autoUpdater.checkForUpdates.mockImplementation(() => { throw synchronousError })
     synchronous.updater.checkForUpdates()
     expect(synchronous.updater.getState()).toEqual({ status: 'error' })
+    expect(synchronous.manualResults).toEqual(['error'])
+    expect(synchronous.errors).toEqual([synchronousError])
 
     const asynchronous = setup()
     asynchronous.updater.start()
-    asynchronous.autoUpdater.checkForUpdates.mockRejectedValue(new Error('offline'))
+    const error = new Error('offline')
+    asynchronous.autoUpdater.checkForUpdates.mockRejectedValue(error)
     asynchronous.updater.checkForUpdates()
     await vi.waitFor(() => expect(asynchronous.updater.getState()).toEqual({ status: 'error' }))
+    expect(asynchronous.manualResults).toEqual(['error'])
+    expect(asynchronous.errors).toEqual([error])
+  })
+
+  it('lets the standard download notification handle a successful manual update', () => {
+    const { autoUpdater, manualResults, updater } = setup()
+    updater.start()
+    updater.checkForUpdates()
+    autoUpdater.emit('update-available')
+    autoUpdater.emit('update-downloaded', undefined, undefined, 'v2.0.0')
+    expect(manualResults).toEqual([])
+    expect(updater.getState()).toEqual({ status: 'ready', version: '2.0.0' })
   })
 
   it('does not start duplicate checks while one is active or an update is ready', () => {

@@ -6,10 +6,6 @@ export interface DesktopStoredSession {
   expiresAt: string
 }
 
-export type DesktopUpdateState =
-  | { status: 'idle' | 'checking' | 'downloading' | 'error' }
-  | { status: 'ready'; version: string }
-
 interface DesktopApi {
   platform: 'desktop'
   os: 'darwin' | 'win32' | 'linux'
@@ -28,11 +24,6 @@ interface DesktopApi {
     close(): Promise<void>
     isMaximized(): Promise<boolean>
     onMaximizedChanged(listener: (maximized: boolean) => void): () => void
-  }
-  updates: {
-    getState(): Promise<DesktopUpdateState>
-    onStateChanged(listener: (state: DesktopUpdateState) => void): () => void
-    restartAndInstall(): Promise<void>
   }
 }
 

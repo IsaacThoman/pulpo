@@ -76,7 +76,6 @@ interface AuthState {
   logout: () => Promise<void>
   switchInstance: (url: string) => Promise<void>
   chooseInstance: () => Promise<void>
-  retryDesktopConnection: () => Promise<void>
   handleDesktopUnauthorized: () => Promise<void>
   replaceUser: (user: ServerUser) => void
   setSignupEnabled: (value: boolean) => void
@@ -400,12 +399,6 @@ export const useAuth = create<AuthState>()((set, get) => ({
     if (!isDesktopRuntime()) return
     await get().logout()
     set({ instanceReady: false, instanceError: '' })
-  },
-
-  retryDesktopConnection: async () => {
-    if (!isDesktopRuntime() || get().checkingSession || get().instanceReady) return
-    set({ checkingSession: true, instanceError: '' })
-    await get().bootstrap()
   },
 
   handleDesktopUnauthorized: async () => {
