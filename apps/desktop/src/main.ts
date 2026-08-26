@@ -26,6 +26,7 @@ import {
 } from './security'
 import { loadWindowState, saveWindowState } from './window-state'
 import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
+import { desktopUpdatesSupported } from './update-support'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -47,10 +48,6 @@ if (!squirrelStartup && !hasSingleInstanceLock) {
   app.quit()
 }
 
-function desktopUpdatesSupported(): boolean {
-  return app.isPackaged && (process.platform === 'darwin' || process.platform === 'win32')
-}
-
 function sendCommand(command: DesktopCommand): void {
   mainWindow?.webContents.send('desktop:command', command)
 }
@@ -68,7 +65,7 @@ function applicationMenu(): Menu {
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => sendCommand('settings') },
         {
           label: 'Check for Updates…',
-          visible: desktopUpdatesSupported(),
+          visible: desktopUpdatesSupported(app.isPackaged, process.platform, process.arch),
           enabled: !updateBusy && !updateReady,
           click: () => desktopUpdater?.checkForUpdates(),
         },
@@ -142,7 +139,7 @@ function showManualUpdateCheckResult(result: ManualUpdateCheckResult): void {
 
 function initializeDesktopUpdater(): void {
   desktopUpdater = new DesktopUpdater({
-    enabled: desktopUpdatesSupported(),
+    enabled: desktopUpdatesSupported(app.isPackaged, process.platform, process.arch),
     autoUpdater,
     startUpdates: () => updateElectronApp({
       updateSource: {
