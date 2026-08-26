@@ -4,10 +4,20 @@ import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model
 describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
-      theme: 'dark', automaticChatExpiration: '24h', newChatAutoExpire: false,
+      theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
       agentModes: {}, instructionPresetSelections: {}, favoriteModelIds: [], providerOrder: [],
     })
+  })
+
+  it('defaults malformed animation speeds and validates supplied patches', () => {
+    expect(preferencesWithModelDefaults({ animationSpeed: 0.01 }).animationSpeed).toBe(0.01)
+    expect(preferencesWithModelDefaults({ animationSpeed: 5 }).animationSpeed).toBe(5)
+    expect(preferencesWithModelDefaults({ animationSpeed: 0 }).animationSpeed).toBe(1)
+    expect(preferencesWithModelDefaults({ animationSpeed: '2' }).animationSpeed).toBe(1)
+    expect(normalizedPreferencePatch({ animationSpeed: 1.25 })).toEqual({ animationSpeed: 1.25 })
+    expect(() => normalizedPreferencePatch({ animationSpeed: 0 })).toThrow()
+    expect(() => normalizedPreferencePatch({ animationSpeed: 5.01 })).toThrow()
   })
 
   it('preserves valid new-chat expiration defaults and repairs invalid legacy values', () => {

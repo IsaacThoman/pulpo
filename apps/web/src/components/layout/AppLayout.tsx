@@ -26,6 +26,7 @@ export function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
   const doubleShiftSearch = useSettings((state) => state.doubleShiftSearch)
+  const animationSpeed = useSettings((state) => state.animationSpeed)
   const location = useLocation()
   const sidebarCollapsed = collapsed || searchHasQuery
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
@@ -128,6 +129,7 @@ export function AppLayout() {
           collapsed={sidebarCollapsed}
           transitions={sidebarTransitions}
           visible={!mobile}
+          animationSpeed={animationSpeed}
         />
         <div
           className={cn(

@@ -6,6 +6,8 @@ import { formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'
 import { ContributionGraph } from './ContributionGraph'
 import { ui, activeLocale } from '@/i18n/ui'
+import { useSettings } from '@/stores/settings'
+import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 
 // Series colors by usage rank (OpenWebUI-Monitor palette)
 const CHART_COLORS = [
@@ -124,6 +126,8 @@ export function DailyUsageChart({
   periodDayCount: number
   modelNames?: Record<string, string>
 }) {
+  const animationSpeed = useSettings((state) => state.animationSpeed)
+  const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const { rows, series } = useMemo(() => {
     // rank models by total metric value across the whole period
     const totals = new Map<string, number>()
@@ -235,7 +239,7 @@ export function DailyUsageChart({
                 content={<ChartTip metric={metric} series={series} />}
               />
               {series.map((s) => (
-                <Bar key={s.key} dataKey={s.key} stackId="day" fill={s.color} maxBarSize={28} />
+                <Bar key={s.key} dataKey={s.key} stackId="day" fill={s.color} maxBarSize={28} animationDuration={animationDuration} />
               ))}
             </BarChart>
           </ResponsiveContainer>
