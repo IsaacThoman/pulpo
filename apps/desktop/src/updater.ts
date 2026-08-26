@@ -18,7 +18,12 @@ interface DesktopUpdaterOptions {
   autoUpdater: AutoUpdaterLike
   startUpdates: () => unknown
   onStateChanged: (state: DesktopUpdateState) => void
+  checkingTimeoutMs?: number
+  downloadingTimeoutMs?: number
 }
+
+const DEFAULT_CHECKING_TIMEOUT_MS = 60_000
+const DEFAULT_DOWNLOADING_TIMEOUT_MS = 30 * 60_000
 
 function normalizedVersion(value: unknown): string {
   if (typeof value !== 'string') return 'new version'
@@ -28,6 +33,7 @@ function normalizedVersion(value: unknown): string {
 export class DesktopUpdater {
   private state: DesktopUpdateState = { status: 'idle' }
   private started = false
+  private stateTimeout: ReturnType<typeof setTimeout> | undefined
 
   constructor(private readonly options: DesktopUpdaterOptions) {}
 
@@ -47,7 +53,7 @@ export class DesktopUpdater {
     })
     autoUpdater.on('error', () => this.setState({ status: 'error' }))
     try {
-      this.options.startUpdates()
+      this.observeFailure(this.options.startUpdates())
     } catch {
       this.setState({ status: 'error' })
     }
@@ -56,7 +62,12 @@ export class DesktopUpdater {
   checkForUpdates(): void {
     if (!this.options.enabled || !this.started) return
     if (this.state.status === 'checking' || this.state.status === 'downloading' || this.state.status === 'ready') return
-    this.options.autoUpdater.checkForUpdates()
+    this.setState({ status: 'checking' })
+    try {
+      this.observeFailure(this.options.autoUpdater.checkForUpdates())
+    } catch {
+      this.setState({ status: 'error' })
+    }
   }
 
   restartAndInstall(): void {
@@ -66,7 +77,25 @@ export class DesktopUpdater {
 
   private setState(state: DesktopUpdateState): void {
     if (this.state.status === 'ready' && state.status !== 'ready') return
+    if (this.stateTimeout) clearTimeout(this.stateTimeout)
+    this.stateTimeout = undefined
     this.state = state
     this.options.onStateChanged(state)
+    const timeoutMs = state.status === 'checking'
+      ? (this.options.checkingTimeoutMs ?? DEFAULT_CHECKING_TIMEOUT_MS)
+      : state.status === 'downloading'
+        ? (this.options.downloadingTimeoutMs ?? DEFAULT_DOWNLOADING_TIMEOUT_MS)
+        : undefined
+    if (timeoutMs === undefined) return
+    this.stateTimeout = setTimeout(() => {
+      this.stateTimeout = undefined
+      if (this.state.status === state.status) this.setState({ status: 'error' })
+    }, timeoutMs)
+    this.stateTimeout.unref?.()
+  }
+
+  private observeFailure(result: unknown): void {
+    if (!result || typeof (result as PromiseLike<unknown>).then !== 'function') return
+    void Promise.resolve(result).catch(() => this.setState({ status: 'error' }))
   }
 }

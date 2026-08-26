@@ -38,7 +38,7 @@ function DesktopStatusIndicator({
     }
   }, [])
 
-  const className = 'desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground'
+  const className = 'desktop-status-indicator fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground'
 
   if (updateState.status === 'checking') {
     return (

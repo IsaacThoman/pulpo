@@ -25,6 +25,8 @@ function setup(enabled = true) {
     autoUpdater,
     startUpdates,
     onStateChanged: (state) => states.push(state),
+    checkingTimeoutMs: 100,
+    downloadingTimeoutMs: 200,
   })
   return { autoUpdater, states, startUpdates, updater }
 }
@@ -77,8 +79,49 @@ describe('DesktopUpdater', () => {
     expect(updater.getState()).toEqual({ status: 'error' })
     updater.checkForUpdates()
     expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1)
+    expect(updater.getState()).toEqual({ status: 'checking' })
     autoUpdater.emit('update-not-available')
     expect(updater.getState()).toEqual({ status: 'idle' })
+  })
+
+  it('recovers when an update check never emits a terminal event', () => {
+    vi.useFakeTimers()
+    const { autoUpdater, updater } = setup()
+    updater.start()
+    autoUpdater.emit('checking-for-update')
+
+    vi.advanceTimersByTime(99)
+    expect(updater.getState()).toEqual({ status: 'checking' })
+    vi.advanceTimersByTime(1)
+    expect(updater.getState()).toEqual({ status: 'error' })
+    vi.useRealTimers()
+  })
+
+  it('recovers when an update download stalls', () => {
+    vi.useFakeTimers()
+    const { autoUpdater, updater } = setup()
+    updater.start()
+    autoUpdater.emit('update-available')
+
+    vi.advanceTimersByTime(199)
+    expect(updater.getState()).toEqual({ status: 'downloading' })
+    vi.advanceTimersByTime(1)
+    expect(updater.getState()).toEqual({ status: 'error' })
+    vi.useRealTimers()
+  })
+
+  it('reports synchronous and asynchronous manual check failures', async () => {
+    const synchronous = setup()
+    synchronous.updater.start()
+    synchronous.autoUpdater.checkForUpdates.mockImplementation(() => { throw new Error('offline') })
+    synchronous.updater.checkForUpdates()
+    expect(synchronous.updater.getState()).toEqual({ status: 'error' })
+
+    const asynchronous = setup()
+    asynchronous.updater.start()
+    asynchronous.autoUpdater.checkForUpdates.mockRejectedValue(new Error('offline'))
+    asynchronous.updater.checkForUpdates()
+    await vi.waitFor(() => expect(asynchronous.updater.getState()).toEqual({ status: 'error' }))
   })
 
   it('does not start duplicate checks while one is active or an update is ready', () => {

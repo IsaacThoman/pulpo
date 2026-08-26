@@ -275,7 +275,7 @@ html[data-desktop="true"] .desktop-titlebar {
   background: var(--background);
 }
 
-html[data-desktop="true"] .desktop-connection-status {
+html[data-desktop="true"] .desktop-status-indicator {
   -webkit-app-region: no-drag;
 }
 
