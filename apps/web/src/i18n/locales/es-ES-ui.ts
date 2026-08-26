@@ -774,7 +774,6 @@ const esUi: Record<string, string> = {
   "Requests using this key will start failing immediately. This cannot be undone.": "Las solicitudes que utilicen esta clave comenzarán a fallar inmediatamente. Esto no se puede deshacer.",
   "Resend or discard this message to let later messages continue.": "Reenviar o descartar este mensaje para permitir que los mensajes posteriores continúen.",
   "reserved": "reservado",
-  "Reset": "Restablecer",
   "Reset 2FA": "Reiniciar 2FA",
   "Reset to plan default": "Restablecer al plan predeterminado",
   "Reset two-factor authentication": "Restablecer la autenticación de dos factores",

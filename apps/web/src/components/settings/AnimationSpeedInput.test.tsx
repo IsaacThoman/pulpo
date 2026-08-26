@@ -26,12 +26,4 @@ describe('AnimationSpeedInput', () => {
     fireEvent.blur(input)
     expect(input.value).toBe('5')
   })
-
-  it('restores normal speed with Reset', () => {
-    const view = render(<Harness />)
-    const input = view.getByLabelText('Animation speed multiplier') as HTMLInputElement
-    fireEvent.change(input, { target: { value: '2.5' } })
-    fireEvent.click(view.getByRole('button', { name: 'Reset' }))
-    expect(input.value).toBe('1')
-  })
 })
