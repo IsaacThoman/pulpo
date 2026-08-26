@@ -35,6 +35,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('transition-opacity')
     expect(markup).toContain('opacity-100')
     expect(markup).toContain('hidden')
+    expect(markup).not.toContain('data-animation-active')
   })
 
   it('curves the collapsed title bar around the macOS traffic lights', () => {

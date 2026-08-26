@@ -1,21 +1,54 @@
+import { useEffect, useRef, useState } from 'react'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { cn } from '@/lib/utils'
+import { DEFAULT_ANIMATION_SPEED, scaledAnimationDuration } from '@/lib/animation-speed'
+
+const SIDEBAR_TRANSITION_MS = 300
 
 export function DesktopSidebarTitleBar({
   collapsed,
   transitions,
   visible,
+  animationSpeed = DEFAULT_ANIMATION_SPEED,
 }: {
   collapsed: boolean
   transitions: boolean
   visible: boolean
+  animationSpeed?: number
 }) {
+  const previousCollapsedRef = useRef(collapsed)
+  const [animationActive, setAnimationActive] = useState(false)
+  const collapsedChanged = previousCollapsedRef.current !== collapsed
+  const showAboveSidebar = !transitions || (!collapsedChanged && !animationActive)
+
+  useEffect(() => {
+    const changed = previousCollapsedRef.current !== collapsed
+    previousCollapsedRef.current = collapsed
+
+    if (!transitions) {
+      setAnimationActive(false)
+      return
+    }
+    if (!changed) return
+
+    setAnimationActive(true)
+    const timeout = window.setTimeout(
+      () => setAnimationActive(false),
+      scaledAnimationDuration(SIDEBAR_TRANSITION_MS, animationSpeed),
+    )
+    return () => window.clearTimeout(timeout)
+  }, [animationSpeed, collapsed, transitions])
+
   if (!isDesktopRuntime() || !visible) return null
   return (
     <div
       aria-hidden="true"
       data-collapsed={collapsed ? 'true' : undefined}
-      className="desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 z-[42] h-[38px]"
+      data-animation-active={showAboveSidebar ? undefined : 'true'}
+      className={cn(
+        'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
+        showAboveSidebar ? 'z-[42]' : 'z-[41]',
+      )}
     >
       <div className="desktop-sidebar-titlebar-base absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
       <div
