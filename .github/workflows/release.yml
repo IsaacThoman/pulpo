@@ -110,9 +110,7 @@ jobs:
 
   desktop-windows-check:
     name: Desktop / Windows / ${{ matrix.arch }} package check
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.action != 'closed'
+    if: github.event_name != 'pull_request'
     runs-on: windows-2025
     strategy:
       fail-fast: false
