@@ -24,7 +24,7 @@ export function DesktopSidebarTitleBar({
   const showAboveSidebar = !transitions || (!collapsedChanged && !animationActive)
   const showCollapsedCap = collapsed || !showAboveSidebar
   const desktopVisible = isDesktopRuntime() && visible
-  const setSidebarCapVisible = useDesktopChrome((state) => state.setSidebarCapVisible)
+  const setSidebarTitleBarVisible = useDesktopChrome((state) => state.setSidebarTitleBarVisible)
 
   useEffect(() => {
     const changed = previousCollapsedRef.current !== collapsed
@@ -45,9 +45,9 @@ export function DesktopSidebarTitleBar({
   }, [animationSpeed, collapsed, transitions])
 
   useEffect(() => {
-    setSidebarCapVisible(desktopVisible && showCollapsedCap)
-    return () => setSidebarCapVisible(false)
-  }, [desktopVisible, setSidebarCapVisible, showCollapsedCap])
+    setSidebarTitleBarVisible(desktopVisible)
+    return () => setSidebarTitleBarVisible(false)
+  }, [desktopVisible, setSidebarTitleBarVisible])
 
   if (!desktopVisible) return null
   return (
@@ -83,11 +83,15 @@ export function DesktopSidebarTitleBar({
         )}
       >
         <div aria-hidden="true" className="desktop-sidebar-titlebar-collapsed-seam-cover absolute bottom-[-1px] left-0 h-[2px] w-[67px] bg-sidebar" />
-        <div
-          id={DESKTOP_COLLAPSED_MODEL_PICKER_ID}
-          className="desktop-collapsed-model-picker-host desktop-no-drag pointer-events-auto absolute left-[72px] top-[3px] z-20 w-[184px]"
-        />
       </div>
+      <div
+        id={DESKTOP_COLLAPSED_MODEL_PICKER_ID}
+        className={cn(
+          'desktop-collapsed-model-picker-host desktop-no-drag pointer-events-auto absolute top-[3px] z-20 flex w-[184px] justify-end motion-reduce:transition-none',
+          transitions && 'transition-[left] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+          collapsed ? 'left-[72px]' : 'left-[276px]',
+        )}
+      />
     </div>
   )
 }

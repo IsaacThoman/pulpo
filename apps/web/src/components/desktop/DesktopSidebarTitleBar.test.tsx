@@ -35,6 +35,8 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('transition-opacity')
     expect(markup).toContain('opacity-100')
     expect(markup).toContain('hidden')
+    expect(markup).toContain('left-[276px]')
+    expect(markup).toContain('transition-[left]')
     expect(markup).not.toContain('data-animation-active')
   })
 
@@ -57,6 +59,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('desktop-collapsed-model-picker')
     expect(markup).toContain('left-[72px]')
     expect(markup).toContain('w-[184px]')
+    expect(markup).toContain('justify-end')
     expect(markup).toContain('pointer-events-auto')
     expect(markup).toContain('block')
     expect(markup).toContain('desktop-sidebar-titlebar-base')

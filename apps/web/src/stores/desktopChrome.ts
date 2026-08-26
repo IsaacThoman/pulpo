@@ -2,14 +2,14 @@ import { create } from 'zustand'
 
 interface DesktopChromeState {
   temporaryChat: boolean
-  sidebarCapVisible: boolean
+  sidebarTitleBarVisible: boolean
   setTemporaryChat: (temporaryChat: boolean) => void
-  setSidebarCapVisible: (sidebarCapVisible: boolean) => void
+  setSidebarTitleBarVisible: (sidebarTitleBarVisible: boolean) => void
 }
 
 export const useDesktopChrome = create<DesktopChromeState>()((set) => ({
   temporaryChat: false,
-  sidebarCapVisible: false,
+  sidebarTitleBarVisible: false,
   setTemporaryChat: (temporaryChat) => set({ temporaryChat }),
-  setSidebarCapVisible: (sidebarCapVisible) => set({ sidebarCapVisible }),
+  setSidebarTitleBarVisible: (sidebarTitleBarVisible) => set({ sidebarTitleBarVisible }),
 }))

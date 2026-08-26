@@ -128,7 +128,7 @@ export function ChatPage() {
   const [savingTemporary, setSavingTemporary] = useState(false)
   const [temporaryError, setTemporaryError] = useState<string | null>(null)
   const setDesktopTemporaryChat = useDesktopChrome((state) => state.setTemporaryChat)
-  const sidebarCapVisible = useDesktopChrome((state) => state.sidebarCapVisible)
+  const sidebarTitleBarVisible = useDesktopChrome((state) => state.sidebarTitleBarVisible)
   const [desktopModelPickerHost, setDesktopModelPickerHost] = useState<HTMLElement | null>(null)
   const [messageEdit, setMessageEdit] = useState<ComposerMessageEdit | null>(null)
   const [composerEditActive, setComposerEditActive] = useState(false)
@@ -139,9 +139,12 @@ export function ChatPage() {
   })
 
   useEffect(() => {
-    if (!isDesktopRuntime()) return
+    if (!sidebarTitleBarVisible) {
+      setDesktopModelPickerHost(null)
+      return
+    }
     setDesktopModelPickerHost(document.getElementById(DESKTOP_COLLAPSED_MODEL_PICKER_ID))
-  }, [])
+  }, [sidebarTitleBarVisible])
 
   const chatModelId = chat?.modelId
   const shouldApplyDefaultRef = useRef(!chatId && !routeModelId && !carriedModelId)
@@ -315,7 +318,7 @@ export function ChatPage() {
     useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
   }
   const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
-  const modelSelectorInDesktopCap = sidebarCapVisible && desktopModelPickerHost
+  const modelSelectorInDesktopTitleBar = sidebarTitleBarVisible && desktopModelPickerHost
   const modelSelector = <ModelSelector value={modelId} onChange={selectModel} />
 
   if (legacyTemporaryRoute) {
@@ -329,7 +332,7 @@ export function ChatPage() {
     )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
       {/* header */}
       <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
-        {!modelSelectorInDesktopCap && modelSelector}
+        {!modelSelectorInDesktopTitleBar && modelSelector}
         <div className="flex-1" />
         {showExpirationControl && (
           <Tooltip>
@@ -414,7 +417,7 @@ export function ChatPage() {
           </Tooltip>
         )}
       </header>
-      {modelSelectorInDesktopCap && createPortal(modelSelector, desktopModelPickerHost)}
+      {modelSelectorInDesktopTitleBar && createPortal(modelSelector, desktopModelPickerHost)}
 
       {temporaryError && (
         <div role="status" className="mx-auto w-full max-w-5xl px-4 pb-2 text-sm text-destructive">
