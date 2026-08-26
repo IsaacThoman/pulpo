@@ -663,8 +663,9 @@ jobs:
             "Pulpo-win32-arm64-${RELEASE_VERSION}-full.nupkg" \
             RELEASES \
             RELEASES-win32-arm64; do
-            if [[ ! -f "desktop-artifacts/${expected}" ]]; then
-              echo "Missing expected Windows release artifact: ${expected}" >&2
+            match_count="$(find desktop-artifacts -type f -name "${expected}" | wc -l | tr -d ' ')"
+            if [[ "${match_count}" != '1' ]]; then
+              echo "Expected exactly one release artifact named ${expected}; found ${match_count}." >&2
               exit 1
             fi
           done
