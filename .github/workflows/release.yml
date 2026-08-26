@@ -109,11 +109,15 @@ jobs:
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
 
   desktop-windows-check:
-    name: Desktop Windows package check
+    name: Desktop / Windows / ${{ matrix.arch }} package check
     if: >-
       github.event_name != 'pull_request' ||
       github.event.action != 'closed'
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -128,12 +132,13 @@ jobs:
         run: npm clean-install
 
       - name: Build unsigned Squirrel.Windows artifacts
-        run: npm run make -w @pulpo/desktop -- --platform=win32 --arch=x64
+        run: npm run make -w @pulpo/desktop -- --platform=win32 --arch=${{ matrix.arch }}
 
       - name: Validate Squirrel.Windows artifacts
         shell: pwsh
         run: |
-          $makeDirectory = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/out/make/squirrel.windows/x64'
+          $makeDirectory = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}'
+          $appPath = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/out/Pulpo-win32-${{ matrix.arch }}/Pulpo.exe'
           $artifacts = @(Get-ChildItem -Path $makeDirectory -File)
           $setupFiles = @(Get-ChildItem -Path $makeDirectory -File -Filter '*Setup.exe')
           $packages = @(Get-ChildItem -Path $makeDirectory -File -Filter '*-full.nupkg')
@@ -146,6 +151,39 @@ jobs:
           $manifest = Get-Content -Raw $manifests[0].FullName
           if ($manifest -notmatch [regex]::Escape($packages[0].Name)) {
             throw "The RELEASES manifest does not reference $($packages[0].Name)."
+          }
+
+          $stream = [System.IO.File]::OpenRead($appPath)
+          $reader = [System.IO.BinaryReader]::new($stream)
+          try {
+            $stream.Position = 0x3c
+            $peOffset = $reader.ReadInt32()
+            $stream.Position = $peOffset + 4
+            $machine = $reader.ReadUInt16()
+          } finally {
+            $reader.Dispose()
+            $stream.Dispose()
+          }
+          $expectedMachine = if ('${{ matrix.arch }}' -eq 'arm64') { 0xaa64 } else { 0x8664 }
+          if ($machine -ne $expectedMachine) {
+            throw ('Pulpo.exe has PE machine 0x{0:x4}; expected 0x{1:x4} for ${{ matrix.arch }}.' -f $machine, $expectedMachine)
+          }
+
+          $stageDirectory = Join-Path $env:RUNNER_TEMP 'pulpo-windows-${{ matrix.arch }}'
+          node apps/desktop/scripts/stage-windows-artifacts.mjs $makeDirectory $stageDirectory '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to stage architecture-specific Windows artifacts.'
+          }
+          $staged = @(Get-ChildItem -Path $stageDirectory -File)
+          $expectedSetup = if ('${{ matrix.arch }}' -eq 'x64') { 'Setup.exe' } else { 'Pulpo-win32-arm64-Setup.exe' }
+          $expectedPackagePattern = if ('${{ matrix.arch }}' -eq 'x64') { 'Pulpo-*-full.nupkg' } else { 'Pulpo-win32-arm64-*-full.nupkg' }
+          $stagedPackages = @(Get-ChildItem -Path $stageDirectory -File -Filter $expectedPackagePattern)
+          $expectedManifest = if ('${{ matrix.arch }}' -eq 'x64') { 'RELEASES' } else { 'RELEASES-win32-arm64' }
+          if ($staged.Count -ne 3 -or
+              !(Test-Path (Join-Path $stageDirectory $expectedSetup)) -or
+              !(Test-Path (Join-Path $stageDirectory $expectedManifest)) -or
+              $stagedPackages.Count -ne 1) {
+            throw 'The staged Windows artifact names are invalid.'
           }
 
   release:
@@ -214,6 +252,9 @@ jobs:
             runner: macos-26-intel
           - platform: Windows
             arch: x64
+            runner: windows-2025
+          - platform: Windows
+            arch: arm64
             runner: windows-2025
     steps:
       - name: Check out release tag
@@ -513,6 +554,22 @@ jobs:
             }
           }
 
+          $stream = [System.IO.File]::OpenRead($appPath.FullName)
+          $reader = [System.IO.BinaryReader]::new($stream)
+          try {
+            $stream.Position = 0x3c
+            $peOffset = $reader.ReadInt32()
+            $stream.Position = $peOffset + 4
+            $machine = $reader.ReadUInt16()
+          } finally {
+            $reader.Dispose()
+            $stream.Dispose()
+          }
+          $expectedMachine = if ('${{ matrix.arch }}' -eq 'arm64') { 0xaa64 } else { 0x8664 }
+          if ($machine -ne $expectedMachine) {
+            throw ('Pulpo.exe has PE machine 0x{0:x4}; expected 0x{1:x4} for ${{ matrix.arch }}.' -f $machine, $expectedMachine)
+          }
+
           $makeDirectory = 'apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}'
           $artifacts = @(Get-ChildItem -Path $makeDirectory -File)
           $packages = @(Get-ChildItem -Path $makeDirectory -File -Filter '*-full.nupkg')
@@ -524,15 +581,27 @@ jobs:
             throw "The RELEASES manifest does not reference $($packages[0].Name)."
           }
 
+      - name: Stage architecture-specific Windows artifacts
+        if: matrix.platform == 'Windows'
+        shell: pwsh
+        run: |
+          node apps/desktop/scripts/stage-windows-artifacts.mjs `
+            'apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}' `
+            'apps/desktop/out/release/windows/${{ matrix.arch }}' `
+            '${{ matrix.arch }}'
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to stage architecture-specific Windows artifacts.'
+          }
+
       - name: Upload Windows desktop artifacts
         if: matrix.platform == 'Windows'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: desktop-windows-${{ matrix.arch }}
           path: |
-            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*Setup.exe
-            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*-full.nupkg
-            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/RELEASES
+            apps/desktop/out/release/windows/${{ matrix.arch }}/*Setup.exe
+            apps/desktop/out/release/windows/${{ matrix.arch }}/*-full.nupkg
+            apps/desktop/out/release/windows/${{ matrix.arch }}/RELEASES*
           if-no-files-found: error
           retention-days: 7
 
@@ -563,21 +632,33 @@ jobs:
             -name '*.dmg' -o \
             -name '*Setup.exe' -o \
             -name '*-full.nupkg' -o \
-            -name 'RELEASES' \
+            -name 'RELEASES*' \
           \) -print0)
-          if (( ${#artifacts[@]} != 7 )); then
-            echo "Expected two ZIPs, two DMGs, one Setup EXE, one full NUPKG, and one RELEASES manifest; found ${#artifacts[@]}." >&2
+          if (( ${#artifacts[@]} != 10 )); then
+            echo "Expected two ZIPs, two DMGs, two Setup EXEs, two full NUPKGs, and two RELEASES manifests; found ${#artifacts[@]}." >&2
             exit 1
           fi
           zip_count="$(find desktop-artifacts -type f -name '*.zip' | wc -l | tr -d ' ')"
           dmg_count="$(find desktop-artifacts -type f -name '*.dmg' | wc -l | tr -d ' ')"
           setup_count="$(find desktop-artifacts -type f -name '*Setup.exe' | wc -l | tr -d ' ')"
           package_count="$(find desktop-artifacts -type f -name '*-full.nupkg' | wc -l | tr -d ' ')"
-          manifest_count="$(find desktop-artifacts -type f -name 'RELEASES' | wc -l | tr -d ' ')"
-          if [[ "${zip_count}:${dmg_count}:${setup_count}:${package_count}:${manifest_count}" != '2:2:1:1:1' ]]; then
+          manifest_count="$(find desktop-artifacts -type f -name 'RELEASES*' | wc -l | tr -d ' ')"
+          if [[ "${zip_count}:${dmg_count}:${setup_count}:${package_count}:${manifest_count}" != '2:2:2:2:2' ]]; then
             echo "Unexpected release artifact mix (ZIP: ${zip_count}, DMG: ${dmg_count}, Setup: ${setup_count}, NUPKG: ${package_count}, RELEASES: ${manifest_count})." >&2
             exit 1
           fi
+          for expected in \
+            Setup.exe \
+            Pulpo-win32-arm64-Setup.exe \
+            "Pulpo-${RELEASE_VERSION}-full.nupkg" \
+            "Pulpo-win32-arm64-${RELEASE_VERSION}-full.nupkg" \
+            RELEASES \
+            RELEASES-win32-arm64; do
+            if [[ ! -f "desktop-artifacts/${expected}" ]]; then
+              echo "Missing expected Windows release artifact: ${expected}" >&2
+              exit 1
+            fi
+          done
           gh release upload "v${RELEASE_VERSION}" "${artifacts[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
 
   deploy-preview:
