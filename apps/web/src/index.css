@@ -305,10 +305,6 @@ html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
   margin-top: -38px;
 }
 
-html[data-desktop="true"] .desktop-main-titlebar-active .app-main > div > header {
-  -webkit-app-region: drag;
-}
-
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header {
   padding-right: 138px;
 }
@@ -329,6 +325,42 @@ html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
 
 html[data-desktop="true"] .desktop-sidebar-titlebar {
   -webkit-app-region: drag;
+}
+
+html[data-desktop="true"] .desktop-model-titlebar-slot {
+  left: 276px;
+  height: 48px;
+}
+
+html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] {
+  left: 12px;
+  height: 38px;
+}
+
+html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true"] {
+  left: 84px;
+}
+
+html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
+  position: static;
+}
+
+html[data-desktop="true"] .desktop-actions-titlebar-slot {
+  height: 48px;
+}
+
+html[data-desktop="true"] .desktop-actions-titlebar-slot[data-collapsed="true"] {
+  height: 38px;
+}
+
+html[data-desktop-os="win32"] .desktop-actions-titlebar-slot {
+  right: 150px;
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {

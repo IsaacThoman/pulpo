@@ -19,6 +19,8 @@ import type { DesktopCommand, DesktopStoredSession } from './globals'
 import { clearStoredSession, loadStoredSession, storeSession } from './session-store'
 import {
   DESKTOP_ORIGIN,
+  desktopDevelopmentRequestHeaders,
+  desktopDevelopmentResponseHeaders,
   isTrustedRendererUrl,
   rendererAssetPath,
   validatedExternalUrl,
@@ -251,8 +253,24 @@ function registerRendererProtocol(): void {
 
 function configureSession(): void {
   const contentsSession = session.defaultSession
+  contentsSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const targetsDevelopmentServer = developmentUrl
+      && new URL(details.url).host === new URL(rendererOrigin).host
+    callback({
+      requestHeaders: developmentUrl && !targetsDevelopmentServer
+        ? desktopDevelopmentRequestHeaders(details.requestHeaders, rendererOrigin)
+        : details.requestHeaders,
+    })
+  })
   contentsSession.webRequest.onHeadersReceived((details, callback) => {
-    if (developmentUrl || new URL(details.url).origin !== rendererOrigin) return callback({ responseHeaders: details.responseHeaders })
+    if (developmentUrl) {
+      return callback({
+        responseHeaders: details.responseHeaders
+          ? desktopDevelopmentResponseHeaders(details.responseHeaders, rendererOrigin)
+          : undefined,
+      })
+    }
+    if (new URL(details.url).origin !== rendererOrigin) return callback({ responseHeaders: details.responseHeaders })
     callback({
       responseHeaders: {
         ...details.responseHeaders,

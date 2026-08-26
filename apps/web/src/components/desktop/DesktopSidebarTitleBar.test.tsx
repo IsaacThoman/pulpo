@@ -42,7 +42,7 @@ describe('desktop sidebar title bar', () => {
   it('makes the collapsed title bar a full-width sidebar surface with a curved boundary', () => {
     installDesktopWindow()
     const markup = renderToStaticMarkup(
-      <DesktopSidebarTitleBar collapsed transitions={false} visible />,
+      <DesktopSidebarTitleBar collapsed transitions visible />,
     )
 
     expect(markup).toContain('data-collapsed="true"')
@@ -55,6 +55,13 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('w-0')
     expect(markup).toContain('opacity-0')
     expect(markup).toContain('z-[42]')
+    expect(markup).toContain('desktop-model-titlebar-slot')
+    expect(markup).toContain('desktop-actions-titlebar-slot')
+    expect(markup.match(/desktop-no-drag/g)).toHaveLength(2)
+    expect(markup).toContain('h-[38px]')
+    expect(markup).toContain('transition-[left,height]')
+    expect(markup).toContain('transition-[height]')
+    expect(markup).toContain('z-[43]')
   })
 
   it('stays out of mobile layouts', () => {
