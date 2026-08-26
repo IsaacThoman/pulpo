@@ -14,7 +14,8 @@ import {
   shell,
 } from 'electron'
 import { updateElectronApp, UpdateSourceType } from 'update-electron-app'
-import type { DesktopCommand, DesktopStoredSession, DesktopUpdateState } from './globals'
+import log from 'electron-log/main'
+import type { DesktopCommand, DesktopStoredSession } from './globals'
 import { clearStoredSession, loadStoredSession, storeSession } from './session-store'
 import {
   DESKTOP_ORIGIN,
@@ -24,7 +25,7 @@ import {
   validatedProtocolUrl,
 } from './security'
 import { loadWindowState, saveWindowState } from './window-state'
-import { DesktopUpdater } from './updater'
+import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -36,9 +37,8 @@ const pendingProtocolUrls: string[] = []
 let mainWindow: BrowserWindow | null = null
 let rendererReady = false
 let desktopUpdater: DesktopUpdater | null = null
-const previewUpdateVersion = !app.isPackaged
-  ? process.env.PULPO_DESKTOP_PREVIEW_UPDATE_VERSION?.trim()
-  : undefined
+
+log.initialize({ preload: false })
 
 if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
 
@@ -58,6 +58,7 @@ function sendCommand(command: DesktopCommand): void {
 function applicationMenu(): Menu {
   const updateState = desktopUpdater?.getState()
   const updateReady = updateState?.status === 'ready'
+  const updateBusy = updateState?.status === 'checking' || updateState?.status === 'downloading'
   return Menu.buildFromTemplate([
     {
       label: 'Pulpo',
@@ -68,6 +69,7 @@ function applicationMenu(): Menu {
         {
           label: 'Check for Updates…',
           visible: desktopUpdatesSupported(),
+          enabled: !updateBusy && !updateReady,
           click: () => desktopUpdater?.checkForUpdates(),
         },
         {
@@ -116,9 +118,26 @@ function updateApplicationMenu(): void {
   Menu.setApplicationMenu(applicationMenu())
 }
 
-function publishUpdateState(state: DesktopUpdateState): void {
+function publishUpdateState(): void {
   updateApplicationMenu()
-  if (rendererReady) mainWindow?.webContents.send('desktop:update-state-changed', state)
+}
+
+function showManualUpdateCheckResult(result: ManualUpdateCheckResult): void {
+  const options: Electron.MessageBoxOptions = result === 'up-to-date'
+    ? {
+        type: 'info',
+        title: 'Software Update',
+        message: 'Pulpo is up to date.',
+        detail: `Pulpo v${app.getVersion()} is currently the newest version available.`,
+      }
+    : {
+        type: 'error',
+        title: 'Software Update',
+        message: 'Unable to check for updates.',
+        detail: 'Check your internet connection and try again.',
+      }
+  if (mainWindow && !mainWindow.isDestroyed()) void dialog.showMessageBox(mainWindow, options)
+  else void dialog.showMessageBox(options)
 }
 
 function initializeDesktopUpdater(): void {
@@ -131,9 +150,12 @@ function initializeDesktopUpdater(): void {
         repo: 'IsaacThoman/pulpo',
       },
       updateInterval: '1 hour',
-      notifyUser: false,
+      logger: log,
+      notifyUser: true,
     }),
     onStateChanged: publishUpdateState,
+    onManualCheckResult: showManualUpdateCheckResult,
+    onError: (error) => log.error('Desktop updater failed', error),
   })
 }
 
@@ -198,16 +220,6 @@ function registerIpc(): void {
     trustedWindow(event).close()
   })
   ipcMain.handle('desktop:window:is-maximized', (event) => trustedWindow(event).isMaximized())
-  ipcMain.handle('desktop:update-state', (event) => {
-    assertTrustedSender(event)
-    if (previewUpdateVersion) return { status: 'ready', version: previewUpdateVersion }
-    return desktopUpdater?.getState() ?? { status: 'idle' }
-  })
-  ipcMain.handle('desktop:update-restart', (event) => {
-    assertTrustedSender(event)
-    if (previewUpdateVersion) return
-    desktopUpdater?.restartAndInstall()
-  })
 }
 
 function deliverProtocolUrl(value: string): void {

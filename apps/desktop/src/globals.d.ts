@@ -7,10 +7,6 @@ export interface DesktopStoredSession {
 export type DesktopCommand = 'new-chat' | 'settings'
 export type DesktopOperatingSystem = 'darwin' | 'win32' | 'linux'
 
-export type DesktopUpdateState =
-  | { status: 'idle' | 'checking' | 'downloading' | 'error' }
-  | { status: 'ready'; version: string }
-
 export interface PulpoDesktopApi {
   readonly platform: 'desktop'
   readonly os: DesktopOperatingSystem
@@ -29,11 +25,6 @@ export interface PulpoDesktopApi {
     close: () => Promise<void>
     isMaximized: () => Promise<boolean>
     onMaximizedChanged: (listener: (maximized: boolean) => void) => () => void
-  }
-  updates: {
-    getState: () => Promise<DesktopUpdateState>
-    onStateChanged: (listener: (state: DesktopUpdateState) => void) => () => void
-    restartAndInstall: () => Promise<void>
   }
 }
 

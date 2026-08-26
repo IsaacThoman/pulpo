@@ -3,7 +3,6 @@ import type {
   DesktopCommand,
   DesktopOperatingSystem,
   DesktopStoredSession,
-  DesktopUpdateState,
   PulpoDesktopApi,
 } from './globals'
 
@@ -42,15 +41,6 @@ const api: PulpoDesktopApi = {
       ipcRenderer.on('desktop:window:maximized-changed', handler)
       return () => ipcRenderer.removeListener('desktop:window:maximized-changed', handler)
     },
-  },
-  updates: {
-    getState: () => ipcRenderer.invoke('desktop:update-state') as Promise<DesktopUpdateState>,
-    onStateChanged: (listener) => {
-      const handler = (_event: Electron.IpcRendererEvent, state: DesktopUpdateState) => listener(state)
-      ipcRenderer.on('desktop:update-state-changed', handler)
-      return () => ipcRenderer.removeListener('desktop:update-state-changed', handler)
-    },
-    restartAndInstall: () => ipcRenderer.invoke('desktop:update-restart') as Promise<void>,
   },
 }
 
