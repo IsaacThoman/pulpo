@@ -41,6 +41,7 @@ export function formatTokens(inTok: number, outTok: number): string {
 }
 
 export function timeAgo(ts: number): string {
+  if (!Number.isFinite(ts)) return ''
   const s = Math.floor((Date.now() - ts) / 1000)
   const relative = new Intl.RelativeTimeFormat(activeLocale(), { numeric: 'auto', style: 'narrow' })
   if (s < 60) return relative.format(0, 'second')
