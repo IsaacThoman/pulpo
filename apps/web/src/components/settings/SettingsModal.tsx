@@ -729,6 +729,9 @@ export function SettingsModal({
                   <Row label={ui("Send with Enter")} hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
                   </Row>
+                  <Row label={ui("Open search with double Shift")} hint={ui("Press Shift twice quickly to open search.")}>
+                    <Switch checked={s.doubleShiftSearch} onCheckedChange={(v) => s.set('doubleShiftSearch', v)} />
+                  </Row>
                   <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>

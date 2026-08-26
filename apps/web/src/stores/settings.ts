@@ -19,6 +19,7 @@ interface SettingsState {
   theme: Theme
   language: Language
   sendWithEnter: boolean
+  doubleShiftSearch: boolean
   streamResponses: boolean
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS = {
   theme: 'system' as Theme,
   language: 'en-US' as Language,
   sendWithEnter: true,
+  doubleShiftSearch: true,
   streamResponses: true,
   showReasoning: true,
   chatWidth: 'narrow' as const,

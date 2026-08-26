@@ -21,7 +21,13 @@ Object.defineProperty(window, 'localStorage', {
   },
 })
 
-const { applyLanguage, normalizeLanguage } = await import('./settings')
+const { applyLanguage, DEFAULT_SETTINGS, normalizeLanguage } = await import('./settings')
+
+describe('interface settings', () => {
+  it('enables the double Shift search shortcut by default', () => {
+    expect(DEFAULT_SETTINGS.doubleShiftSearch).toBe(true)
+  })
+})
 
 describe('language settings', () => {
   beforeEach(() => {

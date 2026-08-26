@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, normalizeLanguage, useSettings } from '@/stores/setti
 import { isDesktopRuntime } from '@/lib/runtime'
 
 const persistedKeys = [
-  'theme', 'language', 'sendWithEnter', 'streamResponses', 'showReasoning',
+  'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showReasoning',
   'chatWidth', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',
