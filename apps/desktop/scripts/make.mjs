@@ -4,6 +4,8 @@ import path from 'node:path'
 const forge = path.resolve(import.meta.dirname, '../../../node_modules/@electron-forge/cli/dist/electron-forge.js')
 const nodeMajor = Number(process.versions.node.split('.')[0])
 const forwarded = process.argv.slice(2)
+const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx'
 
 function run(command, args, env = process.env) {
   return new Promise((resolve, reject) => {
@@ -22,19 +24,19 @@ function run(command, args, env = process.env) {
 
 async function main() {
   if (nodeMajor >= 26 && process.env.PULPO_FORGE_NODE24 !== '1') {
-    return run('npx', ['--yes', '--package=node@24.18.1', 'node', import.meta.filename, ...forwarded], {
+    return run(npxCommand, ['--yes', '--package=node@24.18.1', 'node', import.meta.filename, ...forwarded], {
       ...process.env,
       PULPO_FORGE_NODE24: '1',
     })
   }
 
   for (const workspace of ['@pulpo/contracts', '@pulpo/client-core']) {
-    const buildCode = await run('npm', ['run', 'build', '--workspace', workspace])
+    const buildCode = await run(npmCommand, ['run', 'build', '--workspace', workspace])
     if (buildCode !== 0) return buildCode
   }
 
   if (process.platform === 'darwin') {
-    const rebuildCode = await run('npm', ['rebuild', 'macos-alias', 'fs-xattr'])
+    const rebuildCode = await run(npmCommand, ['rebuild', 'macos-alias', 'fs-xattr'])
     if (rebuildCode !== 0) return rebuildCode
   }
 
