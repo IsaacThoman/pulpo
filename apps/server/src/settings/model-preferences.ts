@@ -1,5 +1,6 @@
 import {
   agentModesSchema,
+  animationSpeedSchema,
   automaticChatExpirationSchema,
   instructionPresetSelectionsSchema,
   modelPreferencesPatchSchema,
@@ -9,12 +10,14 @@ import {
 } from '@pulpo/contracts'
 
 export function preferencesWithModelDefaults(values?: Record<string, unknown>): Record<string, unknown> {
+  const parsedAnimationSpeed = animationSpeedSchema.safeParse(values?.animationSpeed)
   const parsedAutomaticChatExpiration = automaticChatExpirationSchema.safeParse(values?.automaticChatExpiration)
   const parsedNewChatAutoExpire = newChatAutoExpireSchema.safeParse(values?.newChatAutoExpire)
   const parsedAgentModes = agentModesSchema.safeParse(values?.agentModes)
   const parsedInstructionPresetSelections = instructionPresetSelectionsSchema.safeParse(values?.instructionPresetSelections)
   return {
     ...values,
+    animationSpeed: parsedAnimationSpeed.success ? parsedAnimationSpeed.data : animationSpeedSchema.parse(undefined),
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
@@ -28,6 +31,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
 }
 
 export function normalizedPreferencePatch(patch: Record<string, unknown>): Record<string, unknown> {
+  const animationSpeed = 'animationSpeed' in patch ? animationSpeedSchema.parse(patch.animationSpeed) : undefined
   const modelPatch = modelPreferencesPatchSchema.parse({
     ...('favoriteModelIds' in patch ? { favoriteModelIds: patch.favoriteModelIds } : {}),
     ...('providerOrder' in patch ? { providerOrder: patch.providerOrder } : {}),
@@ -39,6 +43,7 @@ export function normalizedPreferencePatch(patch: Record<string, unknown>): Recor
     : undefined
   return {
     ...patch,
+    ...(animationSpeed === undefined ? {} : { animationSpeed }),
     ...modelPatch,
     ...(sidebarPins === undefined ? {} : { sidebarPins }),
     ...(agentModes === undefined ? {} : { agentModes }),

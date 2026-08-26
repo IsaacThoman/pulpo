@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { cn } from '@/lib/utils'
+import { DEFAULT_ANIMATION_SPEED, scaledAnimationDuration } from '@/lib/animation-speed'
 
 const SIDEBAR_TRANSITION_MS = 300
 
@@ -8,10 +9,12 @@ export function DesktopSidebarTitleBar({
   collapsed,
   transitions,
   visible,
+  animationSpeed = DEFAULT_ANIMATION_SPEED,
 }: {
   collapsed: boolean
   transitions: boolean
   visible: boolean
+  animationSpeed?: number
 }) {
   const previousCollapsedRef = useRef(collapsed)
   const [animationActive, setAnimationActive] = useState(false)
@@ -29,9 +32,12 @@ export function DesktopSidebarTitleBar({
     if (!changed) return
 
     setAnimationActive(true)
-    const timeout = window.setTimeout(() => setAnimationActive(false), SIDEBAR_TRANSITION_MS)
+    const timeout = window.setTimeout(
+      () => setAnimationActive(false),
+      scaledAnimationDuration(SIDEBAR_TRANSITION_MS, animationSpeed),
+    )
     return () => window.clearTimeout(timeout)
-  }, [collapsed, transitions])
+  }, [animationSpeed, collapsed, transitions])
 
   if (!isDesktopRuntime() || !visible) return null
   return (

@@ -10,6 +10,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ui, uit, activeLocale } from '@/i18n/ui'
+import { useSettings } from '@/stores/settings'
+import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 
 type Range = '24h' | '7d' | '30d' | '90d' | 'all'
 interface SummaryResult {
@@ -21,6 +23,8 @@ interface LogRow { id: string; responseId: string; origin: string; purpose: stri
 
 export function AdminUsagePage() {
   const [range, setRange] = useState<Range>('24h')
+  const animationSpeed = useSettings((state) => state.animationSpeed)
+  const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const [status, setStatus] = useState('all')
   const [summary, setSummary] = useState<SummaryResult | null>(null)
   const [rows, setRows] = useState<LogRow[]>([])
@@ -59,7 +63,7 @@ export function AdminUsagePage() {
     <Card className="gap-0 rounded-lg py-0 shadow-none"><div className="flex items-center gap-2 border-b px-3 py-2"><span className="text-xs font-medium">{ui("Recent model calls")}</span><div className="flex-1" /><Select value={status} onValueChange={setStatus}><SelectTrigger size="sm" className="w-32 text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">{ui("All statuses")}</SelectItem>{['in_progress','completed','failed'].map((v) => <SelectItem key={v} value={v}>{v.replace('_',' ')}</SelectItem>)}</SelectContent></Select></div>
       <div className="overflow-x-auto"><table className="data-table"><thead><tr className="border-b"><th className="px-3 py-2" /><th className="px-3 py-2">{ui("Started")}</th><th className="px-3 py-2">{ui("Source / identity")}</th><th className="px-3 py-2">{ui("Requested → actual")}</th><th className="px-3 py-2">{ui("Turn / attempt")}</th><th className="px-3 py-2">{ui("OCR")}</th><th className="px-3 py-2 text-right">{ui("Tokens")}</th><th className="px-3 py-2 text-right">{ui("Cost")}</th><th className="px-3 py-2">{ui("Status")}</th></tr></thead><tbody>{rows.map((row) => <RequestRow key={row.id} row={row} open={expanded === row.id} detail={expanded === row.id ? detail : null} onToggle={async () => { if (expanded === row.id) { setExpanded(null); setDetail(null); return } setExpanded(row.id); setDetail(await apiRequest(`/api/admin/usage/requests/${row.id}`)) }} />)}</tbody></table></div>
     </Card>
-    <Card><CardContent className="h-64 p-4"><div className="mb-2 text-sm font-medium">{ui("Daily model calls")}</div><ResponsiveContainer width="100%" height="90%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="calls" fill="#3b82f6" radius={[4,4,0,0]} /></BarChart></ResponsiveContainer></CardContent></Card>
+    <Card><CardContent className="h-64 p-4"><div className="mb-2 text-sm font-medium">{ui("Daily model calls")}</div><ResponsiveContainer width="100%" height="90%"><BarChart data={chart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="day" tick={{ fontSize: 11 }} /><YAxis allowDecimals={false} tick={{ fontSize: 11 }} /><Tooltip /><Bar dataKey="calls" fill="#3b82f6" radius={[4,4,0,0]} animationDuration={animationDuration} /></BarChart></ResponsiveContainer></CardContent></Card>
     <div className="grid gap-3 lg:grid-cols-3"><Top title={ui("Top models")} rows={(summary?.topModels ?? []).map((x) => ({ label: x.id, value: `${x.calls} calls` }))} /><Top title={ui("Top users")} rows={(summary?.topUsers ?? []).map((x) => ({ label: x.name || x.email, value: `${x.calls} calls` }))} /><Top title={ui("Top API keys")} rows={(summary?.topApiKeys ?? []).map((x) => ({ label: x.name, value: `${x.calls} calls` }))} /></div>
   </div>
 }

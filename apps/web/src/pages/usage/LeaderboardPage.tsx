@@ -22,6 +22,8 @@ import {
   type PublicUsageRecord,
 } from '@/components/usage/PublicUsagePanels'
 import { ui, uit, activeLocale } from '@/i18n/ui'
+import { useSettings } from '@/stores/settings'
+import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 
 type LBMetric = Metric | 'balance'
 
@@ -145,6 +147,8 @@ function LeaderboardTip({
 export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'pool' | 'instance' }) {
   const [range, setRange] = useState<TimeRange>('30d')
   const [metric, setMetric] = useState<LBMetric>('cost')
+  const animationSpeed = useSettings((state) => state.animationSpeed)
+  const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const instanceMode = scope === 'instance'
   const queryKey = scope === 'pool' ? 'pool-usage' : instanceMode ? 'instance-usage' : 'friends-usage'
   const leaderboardEndpoint = instanceMode ? '/api/admin/usage/leaderboard' : '/api/usage/leaderboard'
@@ -322,7 +326,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
                   }
                 />
                 <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
-                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48}>
+                <Bar dataKey="value" radius={[3, 3, 0, 0]} maxBarSize={48} animationDuration={animationDuration}>
                   {chartData.map((d) => (
                     <Cell key={d.rank} fill={d.fill} />
                   ))}

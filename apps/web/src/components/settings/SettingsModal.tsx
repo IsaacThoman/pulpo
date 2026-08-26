@@ -61,6 +61,7 @@ import { DEFAULT_AVATAR_CROP, prepareAvatarFile } from './avatar-crop'
 import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
+import { AnimationSpeedInput } from './AnimationSpeedInput'
 import { ui, uit } from '@/i18n/ui'
 
 const SECTION_CONFIG = {
@@ -725,6 +726,12 @@ export function SettingsModal({
                         <SelectItem value="full">{ui("Full width")}</SelectItem>
                       </SelectContent>
                     </Select>
+                  </Row>
+                  <Row label={ui("Animation speed")} hint={ui("Controls visual transitions and loading motion. 1× is normal speed.")}>
+                    <AnimationSpeedInput
+                      value={s.animationSpeed}
+                      onChange={(value) => s.set('animationSpeed', value)}
+                    />
                   </Row>
                   <Row label={ui("Send with Enter")} hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />

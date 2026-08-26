@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { ui, uit, activeLocale } from '@/i18n/ui'
+import { useSettings } from '@/stores/settings'
+import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
 
 type Range = '7d' | '30d' | '90d' | 'all'
 type ProductKind = 'eight' | 'fat' | 'credits' | 'unknown'
@@ -96,6 +98,8 @@ interface BillingSettings {
 
 export function AdminBillingPage() {
   const [range, setRange] = useState<Range>('30d')
+  const animationSpeed = useSettings((state) => state.animationSpeed)
+  const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const [eightLimit, setEightLimit] = useState('3.00')
   const [fatLimit, setFatLimit] = useState('4.00')
   const [babyStorage, setBabyStorage] = useState('5')
@@ -245,7 +249,7 @@ export function AdminBillingPage() {
                 <XAxis dataKey="day" tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} minTickGap={30} />
                 <YAxis tick={{ fontSize: 11, fill: 'var(--muted-foreground)' }} tickLine={false} axisLine={{ stroke: 'var(--border)' }} width={48} tickFormatter={(value: number) => axisCost(value)} />
                 <Tooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<ChartTip />} />
-                <Bar dataKey="collected" fill="hsl(160 60% 45%)" maxBarSize={28} />
+                <Bar dataKey="collected" fill="hsl(160 60% 45%)" maxBarSize={28} animationDuration={animationDuration} />
               </BarChart>
             </ResponsiveContainer>
           </div>
