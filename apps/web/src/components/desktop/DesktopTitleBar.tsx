@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Loader2, WifiOff } from 'lucide-react'
+import { CircleArrowUp, Loader2, WifiOff } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { isDesktopRuntime, type DesktopUpdateState } from '@/lib/runtime'
 import { useDesktopChrome } from '@/stores/desktopChrome'
@@ -40,6 +40,45 @@ function DesktopStatusIndicator({
 
   const className = 'desktop-connection-status fixed left-[84px] top-[19px] z-50 flex -translate-y-1/2 items-center gap-1.5 text-[11px] text-muted-foreground'
 
+  if (updateState.status === 'checking') {
+    return (
+      <div className={className} role="status">
+        <Loader2 className="size-3 animate-spin" />
+        {ui("Checking for updates…")}
+      </div>
+    )
+  }
+
+  if (updateState.status === 'downloading') {
+    return (
+      <div className={className} role="status">
+        <Loader2 className="size-3 animate-spin" />
+        {ui("Downloading update…")}
+      </div>
+    )
+  }
+
+  if (updateState.status === 'ready') {
+    return (
+      <button
+        type="button"
+        title={uit`Restart to install Pulpo v${updateState.version}`}
+        className={`${className} hover:text-foreground disabled:opacity-60`}
+        disabled={restarting}
+        onClick={() => {
+          const restartAndInstall = window.pulpoDesktop?.updates.restartAndInstall
+          if (!restartAndInstall) return
+          setRestarting(true)
+          void restartAndInstall().catch(() => setRestarting(false))
+        }}
+      >
+        {restarting
+          ? <><Loader2 className="size-3 animate-spin" />{ui("Restarting…")}</>
+          : <><CircleArrowUp className="size-3" />{uit`Update to v${updateState.version}`}</>}
+      </button>
+    )
+  }
+
   if (status === 'connecting') {
     return (
       <div className={className} role="status">
@@ -58,32 +97,7 @@ function DesktopStatusIndicator({
     )
   }
 
-  if (updateState.status === 'downloading') {
-    return (
-      <div className={className} role="status">
-        <Loader2 className="size-3 animate-spin" />
-        {ui("Downloading update…")}
-      </div>
-    )
-  }
-
-  if (updateState.status !== 'ready') return null
-  return (
-    <button
-      type="button"
-      title={uit`Restart to install Pulpo v${updateState.version}`}
-      className={`${className} font-medium text-primary underline underline-offset-2 hover:text-primary/80 disabled:opacity-60`}
-      disabled={restarting}
-      onClick={() => {
-        const restartAndInstall = window.pulpoDesktop?.updates.restartAndInstall
-        if (!restartAndInstall) return
-        setRestarting(true)
-        void restartAndInstall().catch(() => setRestarting(false))
-      }}
-    >
-      {restarting ? ui("Restarting…") : uit`Update to v${updateState.version}`}
-    </button>
-  )
+  return null
 }
 
 export function DesktopTitleBarSurface({
@@ -148,7 +162,7 @@ export function DesktopTitleBar() {
     <DesktopTitleBarSurface
       temporaryChat={temporaryChat}
       connectionStatus={connectionStatus}
-      onRetry={() => { void retryDesktopConnection() }}
+      onRetry={retryDesktopConnection}
     />
   )
 }

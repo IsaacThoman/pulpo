@@ -182,6 +182,7 @@ const esUi: Record<string, string> = {
   "Chats kept on this device": "Chats guardados en este dispositivo",
   "Check for updates": "Buscar actualizaciones",
   "Check health": "Comprobar estado",
+  "Checking for updates…": "Buscando actualizaciones...",
   "Checking security requirements…": "Comprobando los requisitos de seguridad...",
   "Checking status…": "Comprobando estado...",
   "Checkout was not completed.": "No se completó el pago.",
