@@ -20,6 +20,7 @@ export function DesktopSidebarTitleBar({
   const [animationActive, setAnimationActive] = useState(false)
   const collapsedChanged = previousCollapsedRef.current !== collapsed
   const showAboveSidebar = !transitions || (!collapsedChanged && !animationActive)
+  const showCollapsedCap = collapsed || !showAboveSidebar
 
   useEffect(() => {
     const changed = previousCollapsedRef.current !== collapsed
@@ -69,7 +70,7 @@ export function DesktopSidebarTitleBar({
       <div
         className={cn(
           'desktop-sidebar-titlebar-collapsed absolute inset-y-0 left-0 z-0 w-[124px] rounded-br-[22px] border-b border-r border-sidebar-border bg-sidebar',
-          collapsed ? 'block' : 'hidden',
+          showCollapsedCap ? 'block' : 'hidden',
         )}
       >
         <div className="desktop-sidebar-titlebar-collapsed-seam-cover absolute bottom-[-1px] left-0 h-[2px] w-[67px] bg-sidebar" />
