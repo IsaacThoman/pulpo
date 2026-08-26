@@ -192,7 +192,7 @@ jobs:
           npm run release
 
   desktop-build:
-    name: Desktop / ${{ matrix.arch }}
+    name: Desktop / ${{ matrix.platform }} / ${{ matrix.arch }}
     if: >-
       needs.release.outputs.version != ''
     needs: release
@@ -201,14 +201,20 @@ jobs:
       name: desktop-release
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - arch: arm64
+          - platform: macOS
+            arch: arm64
             runner: macos-26
-          - arch: x64
+          - platform: macOS
+            arch: x64
             runner: macos-26-intel
+          - platform: Windows
+            arch: x64
+            runner: windows-2025
     steps:
       - name: Check out release tag
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -226,6 +232,7 @@ jobs:
         run: npm clean-install
 
       - name: Validate release credentials
+        if: matrix.platform == 'macOS'
         env:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -247,6 +254,7 @@ jobs:
           done
 
       - name: Import Developer ID identity
+        if: matrix.platform == 'macOS'
         env:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
           APP_STORE_CONNECT_API_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_API_PRIVATE_KEY }}
@@ -292,6 +300,7 @@ jobs:
           } >> "${GITHUB_ENV}"
 
       - name: Build signed and notarized desktop artifacts
+        if: matrix.platform == 'macOS'
         env:
           APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
@@ -307,6 +316,7 @@ jobs:
           npm run make -w @pulpo/desktop -- --arch=${{ matrix.arch }}
 
       - name: Verify signed application
+        if: matrix.platform == 'macOS'
         run: |
           set -euo pipefail
           app_path="$(find apps/desktop/out -type d -name Pulpo.app -print -quit)"
@@ -319,6 +329,7 @@ jobs:
           xcrun stapler validate "${app_path}"
 
       - name: Add platform to DMG artifact name
+        if: matrix.platform == 'macOS'
         env:
           RELEASE_VERSION: ${{ needs.release.outputs.version }}
         run: |
@@ -332,9 +343,10 @@ jobs:
           mv "${dmg_path}" "$(dirname "${dmg_path}")/Pulpo-darwin-${{ matrix.arch }}-${RELEASE_VERSION}.dmg"
 
       - name: Upload desktop artifacts
+        if: matrix.platform == 'macOS'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: desktop-${{ matrix.arch }}
+          name: desktop-macos-${{ matrix.arch }}
           path: |
             apps/desktop/out/make/**/*.zip
             apps/desktop/out/make/**/*.dmg
@@ -342,47 +354,21 @@ jobs:
           retention-days: 7
 
       - name: Clean up signing credentials
-        if: always()
+        if: always() && matrix.platform == 'macOS'
         run: |
           security delete-keychain "${DESKTOP_KEYCHAIN_PATH}" 2>/dev/null || true
           rm -f "${APPLE_API_KEY_PATH}" "${DESKTOP_CERTIFICATE_PATH}"
 
-  desktop-windows-build:
-    name: Desktop Windows / x64
-    if: >-
-      needs.release.outputs.version != ''
-    needs: release
-    runs-on: windows-2025
-    environment:
-      name: desktop-release
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-      AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
-      AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
-      AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
-    steps:
-      - name: Check out release tag
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          ref: v${{ needs.release.outputs.version }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24.18.1
-          cache: npm
-
-      - name: Install dependencies
-        run: npm clean-install
-
       - name: Validate Artifact Signing configuration
+        if: matrix.platform == 'Windows'
         shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
         run: |
           $requiredVariables = @(
             'AZURE_CLIENT_ID',
@@ -400,6 +386,7 @@ jobs:
           }
 
       - name: Log in to Azure with GitHub OIDC
+        if: matrix.platform == 'Windows'
         uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -407,7 +394,12 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Install Artifact Signing client tools
+        if: matrix.platform == 'Windows'
         shell: pwsh
+        env:
+          AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+          AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
         run: |
           $ProgressPreference = 'SilentlyContinue'
           $installerPath = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
@@ -485,6 +477,7 @@ jobs:
           Remove-Item $installerPath -Force
 
       - name: Build signed Squirrel.Windows artifacts
+        if: matrix.platform == 'Windows'
         shell: pwsh
         env:
           PULPO_DESKTOP_RELEASE: 1
@@ -494,13 +487,14 @@ jobs:
             throw "Semantic-release produced an invalid version: $env:RELEASE_VERSION"
           }
           npm version $env:RELEASE_VERSION --workspace @pulpo/desktop --no-git-tag-version
-          npm run make -w @pulpo/desktop -- --platform=win32 --arch=x64
+          npm run make -w @pulpo/desktop -- --platform=win32 --arch=${{ matrix.arch }}
 
       - name: Verify signed Windows application and installer
+        if: matrix.platform == 'Windows'
         shell: pwsh
         run: |
-          $appPath = Get-ChildItem -Path 'apps/desktop/out/Pulpo-win32-x64' -File -Filter 'Pulpo.exe' | Select-Object -First 1
-          $setupFiles = @(Get-ChildItem -Path 'apps/desktop/out/make/squirrel.windows/x64' -File -Filter '*Setup.exe')
+          $appPath = Get-ChildItem -Path 'apps/desktop/out/Pulpo-win32-${{ matrix.arch }}' -File -Filter 'Pulpo.exe' | Select-Object -First 1
+          $setupFiles = @(Get-ChildItem -Path 'apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}' -File -Filter '*Setup.exe')
           if (!$appPath -or $setupFiles.Count -ne 1) {
             throw 'Forge did not produce the expected Pulpo.exe and Setup.exe files.'
           }
@@ -519,7 +513,7 @@ jobs:
             }
           }
 
-          $makeDirectory = 'apps/desktop/out/make/squirrel.windows/x64'
+          $makeDirectory = 'apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}'
           $artifacts = @(Get-ChildItem -Path $makeDirectory -File)
           $packages = @(Get-ChildItem -Path $makeDirectory -File -Filter '*-full.nupkg')
           $manifests = @(Get-ChildItem -Path $makeDirectory -File -Filter 'RELEASES')
@@ -531,13 +525,14 @@ jobs:
           }
 
       - name: Upload Windows desktop artifacts
+        if: matrix.platform == 'Windows'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: desktop-windows-x64
+          name: desktop-windows-${{ matrix.arch }}
           path: |
-            apps/desktop/out/make/squirrel.windows/x64/*Setup.exe
-            apps/desktop/out/make/squirrel.windows/x64/*-full.nupkg
-            apps/desktop/out/make/squirrel.windows/x64/RELEASES
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*Setup.exe
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/*-full.nupkg
+            apps/desktop/out/make/squirrel.windows/${{ matrix.arch }}/RELEASES
           if-no-files-found: error
           retention-days: 7
 
@@ -545,7 +540,7 @@ jobs:
     name: Publish desktop artifacts
     if: >-
       needs.release.outputs.version != ''
-    needs: [release, desktop-build, desktop-windows-build]
+    needs: [release, desktop-build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
