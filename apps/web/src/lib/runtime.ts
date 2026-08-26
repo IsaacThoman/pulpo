@@ -12,6 +12,7 @@ export type DesktopUpdateState =
 
 interface DesktopApi {
   platform: 'desktop'
+  os: 'darwin' | 'win32' | 'linux'
   session: {
     load(): Promise<DesktopStoredSession | null>
     store(session: DesktopStoredSession): Promise<void>
@@ -21,6 +22,13 @@ interface DesktopApi {
   onProtocolUrl(listener: (url: string) => void): () => void
   onCommand(listener: (command: 'new-chat' | 'settings') => void): () => void
   appInfo(): Promise<{ name: string; version: string; packaged: boolean }>
+  windowControls: {
+    minimize(): Promise<void>
+    toggleMaximize(): Promise<boolean>
+    close(): Promise<void>
+    isMaximized(): Promise<boolean>
+    onMaximizedChanged(listener: (maximized: boolean) => void): () => void
+  }
   updates: {
     getState(): Promise<DesktopUpdateState>
     onStateChanged(listener: (state: DesktopUpdateState) => void): () => void

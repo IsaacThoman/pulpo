@@ -313,6 +313,10 @@ html[data-desktop="true"] .desktop-main-titlebar-active .app-main > div > header
   -webkit-app-region: drag;
 }
 
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header {
+  padding-right: 138px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html[data-desktop="true"] .app-main {
     transition: none;
