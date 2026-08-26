@@ -20,6 +20,7 @@ export async function stageWindowsArtifacts(inputDirectory, outputDirectory, arc
   if (!packageMatch) throw new Error(`Could not determine the release version from ${packageFiles[0]}.`)
 
   const setupName = arch === 'x64' ? 'Setup.exe' : 'Pulpo-win32-arm64-Setup.exe'
+  const installerName = `Pulpo-${packageMatch[1]}-Windows-${arch}-Setup.exe`
   const packageName = arch === 'x64'
     ? packageFiles[0]
     : `Pulpo-win32-arm64-${packageMatch[1]}-full.nupkg`
@@ -32,11 +33,12 @@ export async function stageWindowsArtifacts(inputDirectory, outputDirectory, arc
   await mkdir(outputDirectory, { recursive: true })
   await Promise.all([
     copyFile(path.join(inputDirectory, setupFiles[0]), path.join(outputDirectory, setupName)),
+    copyFile(path.join(inputDirectory, setupFiles[0]), path.join(outputDirectory, installerName)),
     copyFile(path.join(inputDirectory, packageFiles[0]), path.join(outputDirectory, packageName)),
     writeFile(path.join(outputDirectory, manifestName), manifest.replaceAll(packageFiles[0], packageName), 'utf8'),
   ])
 
-  return { setupName, packageName, manifestName }
+  return { setupName, installerName, packageName, manifestName }
 }
 
 async function main() {
