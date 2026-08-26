@@ -6,13 +6,34 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { DesktopUpdateState } from '@/lib/runtime'
 import { DesktopTitleBarSurface } from './DesktopTitleBar'
 
-function installDesktopApi(initial: DesktopUpdateState) {
+function installDesktopApi(initial: DesktopUpdateState, os: 'darwin' | 'win32' = 'darwin') {
   let listener: ((state: DesktopUpdateState) => void) | undefined
+  let maximizedListener: ((maximized: boolean) => void) | undefined
+  let maximized = false
   const unsubscribe = vi.fn()
+  const windowUnsubscribe = vi.fn()
   const restartAndInstall = vi.fn().mockResolvedValue(undefined)
+  const minimize = vi.fn().mockResolvedValue(undefined)
+  const close = vi.fn().mockResolvedValue(undefined)
+  const toggleMaximize = vi.fn().mockImplementation(async () => {
+    maximized = !maximized
+    return maximized
+  })
+  const isMaximized = vi.fn().mockImplementation(async () => maximized)
   Object.defineProperty(window, 'pulpoDesktop', {
     configurable: true,
     value: {
+      os,
+      windowControls: {
+        minimize,
+        close,
+        toggleMaximize,
+        isMaximized,
+        onMaximizedChanged: vi.fn((next: (value: boolean) => void) => {
+          maximizedListener = next
+          return windowUnsubscribe
+        }),
+      },
       updates: {
         getState: vi.fn().mockResolvedValue(initial),
         onStateChanged: vi.fn((next: (state: DesktopUpdateState) => void) => {
@@ -27,6 +48,14 @@ function installDesktopApi(initial: DesktopUpdateState) {
     emit: (state: DesktopUpdateState) => listener?.(state),
     restartAndInstall,
     unsubscribe,
+    minimize,
+    close,
+    toggleMaximize,
+    windowUnsubscribe,
+    emitMaximized: (value: boolean) => {
+      maximized = value
+      maximizedListener?.(value)
+    },
   }
 }
 
@@ -49,6 +78,39 @@ describe('desktop title bar', () => {
     const markup = renderToStaticMarkup(<DesktopTitleBarSurface temporaryChat={false} />)
 
     expect(markup).not.toContain('data-temporary-chat')
+  })
+
+  it('shows working custom window controls on Windows', async () => {
+    const desktop = installDesktopApi({ status: 'idle' }, 'win32')
+    const view = render(<DesktopTitleBarSurface temporaryChat={false} />)
+
+    const minimize = screen.getByRole('button', { name: 'Minimize' })
+    const maximize = screen.getByRole('button', { name: 'Maximize' })
+    const close = screen.getByRole('button', { name: 'Close' })
+    expect(minimize.parentElement?.className).toContain('desktop-no-drag')
+
+    fireEvent.click(minimize)
+    fireEvent.click(close)
+    expect(desktop.minimize).toHaveBeenCalledTimes(1)
+    expect(desktop.close).toHaveBeenCalledTimes(1)
+
+    await act(async () => { fireEvent.click(maximize) })
+    expect(desktop.toggleMaximize).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Restore' })).toBeTruthy()
+
+    act(() => desktop.emitMaximized(false))
+    expect(screen.getByRole('button', { name: 'Maximize' })).toBeTruthy()
+
+    view.unmount()
+    expect(desktop.windowUnsubscribe).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps Windows controls out of the macOS title bar', () => {
+    installDesktopApi({ status: 'idle' }, 'darwin')
+    render(<DesktopTitleBarSurface temporaryChat={false} />)
+
+    expect(screen.queryByRole('button', { name: 'Minimize' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
   })
 
   it('shows non-blocking desktop connection states', () => {

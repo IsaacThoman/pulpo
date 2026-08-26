@@ -8,6 +8,7 @@ import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 import '@/i18n/index'
 
 document.documentElement.dataset.desktop = 'true'
+document.documentElement.dataset.desktopOs = window.pulpoDesktop?.os ?? 'linux'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

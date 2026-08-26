@@ -33,8 +33,10 @@ async function main() {
     if (buildCode !== 0) return buildCode
   }
 
-  const rebuildCode = await run('npm', ['rebuild', 'macos-alias', 'fs-xattr'])
-  if (rebuildCode !== 0) return rebuildCode
+  if (process.platform === 'darwin') {
+    const rebuildCode = await run('npm', ['rebuild', 'macos-alias', 'fs-xattr'])
+    if (rebuildCode !== 0) return rebuildCode
+  }
 
   return run(process.execPath, [forge, 'make', ...forwarded])
 }

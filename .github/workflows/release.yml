@@ -108,12 +108,52 @@ jobs:
           "${smoke_dir}/node_modules/.bin/pulpo" --version
           "${smoke_dir}/node_modules/.bin/pulpo" --json settings schema >/dev/null
 
+  desktop-windows-check:
+    name: Desktop Windows package check
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.action != 'closed'
+    runs-on: windows-2025
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Build unsigned Squirrel.Windows artifacts
+        run: npm run make -w @pulpo/desktop -- --platform=win32 --arch=x64
+
+      - name: Validate Squirrel.Windows artifacts
+        shell: pwsh
+        run: |
+          $makeDirectory = Join-Path $env:GITHUB_WORKSPACE 'apps/desktop/out/make/squirrel.windows/x64'
+          $artifacts = @(Get-ChildItem -Path $makeDirectory -File)
+          $setupFiles = @(Get-ChildItem -Path $makeDirectory -File -Filter '*Setup.exe')
+          $packages = @(Get-ChildItem -Path $makeDirectory -File -Filter '*-full.nupkg')
+          $manifests = @(Get-ChildItem -Path $makeDirectory -File -Filter 'RELEASES')
+
+          if ($artifacts.Count -ne 3 -or $setupFiles.Count -ne 1 -or $setupFiles[0].Name -ne 'Setup.exe' -or $packages.Count -ne 1 -or $manifests.Count -ne 1) {
+            throw "Expected one Setup.exe, one full NUPKG, and one RELEASES manifest."
+          }
+
+          $manifest = Get-Content -Raw $manifests[0].FullName
+          if ($manifest -notmatch [regex]::Escape($packages[0].Name)) {
+            throw "The RELEASES manifest does not reference $($packages[0].Name)."
+          }
+
   release:
     name: Semantic release
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main')
-    needs: [checks, cli-package]
+    needs: [checks, cli-package, desktop-windows-check]
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.release.outputs.version }}
@@ -307,11 +347,205 @@ jobs:
           security delete-keychain "${DESKTOP_KEYCHAIN_PATH}" 2>/dev/null || true
           rm -f "${APPLE_API_KEY_PATH}" "${DESKTOP_CERTIFICATE_PATH}"
 
+  desktop-windows-build:
+    name: Desktop Windows / x64
+    if: >-
+      needs.release.outputs.version != ''
+    needs: release
+    runs-on: windows-2025
+    environment:
+      name: desktop-release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      AZURE_ARTIFACT_SIGNING_ENDPOINT: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+      AZURE_ARTIFACT_SIGNING_ACCOUNT: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT }}
+      AZURE_CERTIFICATE_PROFILE: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: v${{ needs.release.outputs.version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.1
+          cache: npm
+
+      - name: Install dependencies
+        run: npm clean-install
+
+      - name: Validate Artifact Signing configuration
+        shell: pwsh
+        run: |
+          $requiredVariables = @(
+            'AZURE_CLIENT_ID',
+            'AZURE_TENANT_ID',
+            'AZURE_SUBSCRIPTION_ID',
+            'AZURE_ARTIFACT_SIGNING_ENDPOINT',
+            'AZURE_ARTIFACT_SIGNING_ACCOUNT',
+            'AZURE_CERTIFICATE_PROFILE'
+          )
+          foreach ($name in $requiredVariables) {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "The $name desktop-release environment variable is not configured."
+            }
+          }
+
+      - name: Log in to Azure with GitHub OIDC
+        uses: azure/login@f5d393ae46f8fde4be8b75f32e3fc50e654ad0ca # v3.0.1
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Artifact Signing client tools
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $installerPath = Join-Path $env:RUNNER_TEMP 'ArtifactSigningClientTools.msi'
+          $installerUri = 'https://download.microsoft.com/download/70ad2c3b-761f-4aa9-a9de-e7405aa2b4c1/ArtifactSigningClientTools.msi'
+          Invoke-WebRequest -Uri $installerUri -OutFile $installerPath
+
+          $installerSignature = Get-AuthenticodeSignature $installerPath
+          if ($installerSignature.Status -ne 'Valid' -or $installerSignature.SignerCertificate.Subject -notlike '*Microsoft Corporation*') {
+            throw "Artifact Signing client installer signature is not valid and issued to Microsoft."
+          }
+
+          $installer = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', $installerPath, '/quiet', '/norestart')
+          if ($installer.ExitCode -ne 0) {
+            throw "Artifact Signing client installer exited with code $($installer.ExitCode)."
+          }
+
+          $toolDirectory = Join-Path $env:SystemDrive 'pulpo-artifact-signing'
+          New-Item -ItemType Directory -Force -Path $toolDirectory | Out-Null
+
+          $dlibCandidates = @(
+            (Join-Path ${env:ProgramFiles(x86)} 'Microsoft/ArtifactSigningClientTools/bin/Azure.CodeSigning.Dlib.dll'),
+            (Join-Path $env:LOCALAPPDATA 'Microsoft/MicrosoftArtifactSigningClientTools/Azure.CodeSigning.Dlib.dll')
+          )
+          $installedDlib = $dlibCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$installedDlib) {
+            $installedDlib = Get-ChildItem -Path ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA -Recurse -File -Filter 'Azure.CodeSigning.Dlib.dll' -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName -First 1
+          }
+          if (!$installedDlib) {
+            throw 'The Artifact Signing Dlib was not installed.'
+          }
+
+          $installedSignTool = Get-ChildItem -Path (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin') -Recurse -File -Filter 'signtool.exe' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -ExpandProperty FullName -First 1
+          if (!$installedSignTool) {
+            throw 'A compatible x64 SignTool was not installed.'
+          }
+
+          Copy-Item -Path (Join-Path (Split-Path $installedDlib) '*') -Destination $toolDirectory -Recurse -Force
+          Copy-Item -Path $installedSignTool -Destination (Join-Path $toolDirectory 'signtool.exe') -Force
+
+          $signToolPath = Join-Path $toolDirectory 'signtool.exe'
+          $dlibPath = Join-Path $toolDirectory 'Azure.CodeSigning.Dlib.dll'
+          if (!(Test-Path $signToolPath) -or !(Test-Path $dlibPath)) {
+            throw 'The installed Artifact Signing client tools are incomplete.'
+          }
+
+          $metadataPath = Join-Path $toolDirectory 'metadata.json'
+          @{
+            Endpoint = $env:AZURE_ARTIFACT_SIGNING_ENDPOINT
+            CodeSigningAccountName = $env:AZURE_ARTIFACT_SIGNING_ACCOUNT
+            CertificateProfileName = $env:AZURE_CERTIFICATE_PROFILE
+            CorrelationId = "$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            ExcludeCredentials = @(
+              'EnvironmentCredential',
+              'WorkloadIdentityCredential',
+              'ManagedIdentityCredential',
+              'SharedTokenCacheCredential',
+              'VisualStudioCredential',
+              'VisualStudioCodeCredential',
+              'AzurePowerShellCredential',
+              'AzureDeveloperCliCredential',
+              'InteractiveBrowserCredential'
+            )
+          } | ConvertTo-Json -Depth 3 | Set-Content -Encoding utf8 $metadataPath
+
+          @(
+            "WINDOWS_SIGNTOOL_PATH=$signToolPath",
+            "AZURE_CODE_SIGNING_DLIB=$dlibPath",
+            "AZURE_ARTIFACT_SIGNING_METADATA=$metadataPath"
+          ) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          Remove-Item $installerPath -Force
+
+      - name: Build signed Squirrel.Windows artifacts
+        shell: pwsh
+        env:
+          PULPO_DESKTOP_RELEASE: 1
+          RELEASE_VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          if ($env:RELEASE_VERSION -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Semantic-release produced an invalid version: $env:RELEASE_VERSION"
+          }
+          npm version $env:RELEASE_VERSION --workspace @pulpo/desktop --no-git-tag-version
+          npm run make -w @pulpo/desktop -- --platform=win32 --arch=x64
+
+      - name: Verify signed Windows application and installer
+        shell: pwsh
+        run: |
+          $appPath = Get-ChildItem -Path 'apps/desktop/out/Pulpo-win32-x64' -File -Filter 'Pulpo.exe' | Select-Object -First 1
+          $setupFiles = @(Get-ChildItem -Path 'apps/desktop/out/make/squirrel.windows/x64' -File -Filter '*Setup.exe')
+          if (!$appPath -or $setupFiles.Count -ne 1) {
+            throw 'Forge did not produce the expected Pulpo.exe and Setup.exe files.'
+          }
+
+          foreach ($file in @($appPath, $setupFiles[0])) {
+            $signature = Get-AuthenticodeSignature $file.FullName
+            if ($signature.Status -ne 'Valid') {
+              throw "$($file.Name) has an invalid Authenticode signature: $($signature.Status)."
+            }
+            if ($signature.SignerCertificate.Subject -notlike '*CN=Isaac Thoman*') {
+              throw "$($file.Name) was not signed by Isaac Thoman."
+            }
+            & $env:WINDOWS_SIGNTOOL_PATH verify /pa /all /v $file.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "SignTool rejected $($file.Name)."
+            }
+          }
+
+          $makeDirectory = 'apps/desktop/out/make/squirrel.windows/x64'
+          $artifacts = @(Get-ChildItem -Path $makeDirectory -File)
+          $packages = @(Get-ChildItem -Path $makeDirectory -File -Filter '*-full.nupkg')
+          $manifests = @(Get-ChildItem -Path $makeDirectory -File -Filter 'RELEASES')
+          if ($artifacts.Count -ne 3 -or $setupFiles[0].Name -ne 'Setup.exe' -or $packages.Count -ne 1 -or $manifests.Count -ne 1) {
+            throw 'Forge did not produce exactly Setup.exe, one full NUPKG, and one RELEASES manifest.'
+          }
+          if ((Get-Content -Raw $manifests[0].FullName) -notmatch [regex]::Escape($packages[0].Name)) {
+            throw "The RELEASES manifest does not reference $($packages[0].Name)."
+          }
+
+      - name: Upload Windows desktop artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop-windows-x64
+          path: |
+            apps/desktop/out/make/squirrel.windows/x64/*Setup.exe
+            apps/desktop/out/make/squirrel.windows/x64/*-full.nupkg
+            apps/desktop/out/make/squirrel.windows/x64/RELEASES
+          if-no-files-found: error
+          retention-days: 7
+
   desktop-publish:
     name: Publish desktop artifacts
     if: >-
       needs.release.outputs.version != ''
-    needs: [release, desktop-build]
+    needs: [release, desktop-build, desktop-windows-build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -329,9 +563,24 @@ jobs:
           RELEASE_VERSION: ${{ needs.release.outputs.version }}
         run: |
           set -euo pipefail
-          mapfile -d '' artifacts < <(find desktop-artifacts -type f \( -name '*.zip' -o -name '*.dmg' \) -print0)
-          if (( ${#artifacts[@]} != 4 )); then
-            echo "Expected two ZIP and two DMG artifacts, found ${#artifacts[@]}." >&2
+          mapfile -d '' artifacts < <(find desktop-artifacts -type f \( \
+            -name '*.zip' -o \
+            -name '*.dmg' -o \
+            -name '*Setup.exe' -o \
+            -name '*-full.nupkg' -o \
+            -name 'RELEASES' \
+          \) -print0)
+          if (( ${#artifacts[@]} != 7 )); then
+            echo "Expected two ZIPs, two DMGs, one Setup EXE, one full NUPKG, and one RELEASES manifest; found ${#artifacts[@]}." >&2
+            exit 1
+          fi
+          zip_count="$(find desktop-artifacts -type f -name '*.zip' | wc -l | tr -d ' ')"
+          dmg_count="$(find desktop-artifacts -type f -name '*.dmg' | wc -l | tr -d ' ')"
+          setup_count="$(find desktop-artifacts -type f -name '*Setup.exe' | wc -l | tr -d ' ')"
+          package_count="$(find desktop-artifacts -type f -name '*-full.nupkg' | wc -l | tr -d ' ')"
+          manifest_count="$(find desktop-artifacts -type f -name 'RELEASES' | wc -l | tr -d ' ')"
+          if [[ "${zip_count}:${dmg_count}:${setup_count}:${package_count}:${manifest_count}" != '2:2:1:1:1' ]]; then
+            echo "Unexpected release artifact mix (ZIP: ${zip_count}, DMG: ${dmg_count}, Setup: ${setup_count}, NUPKG: ${package_count}, RELEASES: ${manifest_count})." >&2
             exit 1
           fi
           gh release upload "v${RELEASE_VERSION}" "${artifacts[@]}" --clobber --repo "${GITHUB_REPOSITORY}"

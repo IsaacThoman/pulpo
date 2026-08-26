@@ -5,6 +5,7 @@ export interface DesktopStoredSession {
 }
 
 export type DesktopCommand = 'new-chat' | 'settings'
+export type DesktopOperatingSystem = 'darwin' | 'win32' | 'linux'
 
 export type DesktopUpdateState =
   | { status: 'idle' | 'checking' | 'downloading' | 'error' }
@@ -12,6 +13,7 @@ export type DesktopUpdateState =
 
 export interface PulpoDesktopApi {
   readonly platform: 'desktop'
+  readonly os: DesktopOperatingSystem
   session: {
     load: () => Promise<DesktopStoredSession | null>
     store: (session: DesktopStoredSession) => Promise<void>
@@ -21,6 +23,13 @@ export interface PulpoDesktopApi {
   onProtocolUrl: (listener: (url: string) => void) => () => void
   onCommand: (listener: (command: DesktopCommand) => void) => () => void
   appInfo: () => Promise<{ name: string; version: string; packaged: boolean }>
+  windowControls: {
+    minimize: () => Promise<void>
+    toggleMaximize: () => Promise<boolean>
+    close: () => Promise<void>
+    isMaximized: () => Promise<boolean>
+    onMaximizedChanged: (listener: (maximized: boolean) => void) => () => void
+  }
   updates: {
     getState: () => Promise<DesktopUpdateState>
     onStateChanged: (listener: (state: DesktopUpdateState) => void) => () => void
