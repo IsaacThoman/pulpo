@@ -14,6 +14,7 @@ import { DesktopSidebarTitleBar } from '@/components/desktop/DesktopSidebarTitle
 import { cn } from '@/lib/utils'
 import { handleDoubleShiftKeyDown, type DoubleShiftState } from '@/lib/double-shift'
 import { ui } from '@/i18n/ui'
+import { useSettings } from '@/stores/settings'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -24,6 +25,7 @@ export function AppLayout() {
   const [searchHasQuery, setSearchHasQuery] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
+  const doubleShiftSearch = useSettings((state) => state.doubleShiftSearch)
   const location = useLocation()
   const sidebarCollapsed = collapsed || searchHasQuery
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
@@ -73,7 +75,7 @@ export function AppLayout() {
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (handleDoubleShiftKeyDown(doubleShiftRef.current, e, performance.now())) {
+      if (doubleShiftSearch && handleDoubleShiftKeyDown(doubleShiftRef.current, e, performance.now())) {
         e.preventDefault()
         setMobileOpen(false)
         setSearchOpen(true)
@@ -102,7 +104,11 @@ export function AppLayout() {
       window.removeEventListener('keydown', handler)
       window.removeEventListener('blur', resetDoubleShift)
     }
-  }, [openSettings])
+  }, [doubleShiftSearch, openSettings])
+
+  useEffect(() => {
+    if (!doubleShiftSearch) doubleShiftRef.current.lastPressAt = null
+  }, [doubleShiftSearch])
 
   useEffect(() => {
     if (!mobileOpen) return
