@@ -6,15 +6,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  FilePenLine,
-  FileText,
-  FolderSearch,
-  List,
   Pencil,
   RefreshCw,
-  Search,
   Server,
-  Terminal,
   Trash2,
   Wrench,
   Loader2,
@@ -49,6 +43,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
 import { ui, activeLocale } from '@/i18n/ui'
+import { toolActivityPresentation } from './tool-activity-presentation'
 
 function ActionButton({
   label,
@@ -137,26 +132,6 @@ function BranchControls({
   )
 }
 
-function toolIcon(name?: string) {
-  switch (name) {
-    case 'read':
-      return FileText
-    case 'write':
-    case 'edit':
-      return FilePenLine
-    case 'bash':
-      return Terminal
-    case 'ls':
-      return List
-    case 'find':
-      return FolderSearch
-    case 'grep':
-      return Search
-    default:
-      return Wrench
-  }
-}
-
 function toolSummary(tool: ToolItem): string {
   const args = tool.arguments
   if (!args || typeof args !== 'object') return tool.tool ?? 'tool'
@@ -206,7 +181,7 @@ function StepDuration({ ms, live }: { ms?: number; live?: boolean }) {
 
 function ActivityToolRow({ tool }: { tool: ToolItem }) {
   const [open, setOpen] = useState(false)
-  const Icon = toolIcon(tool.tool)
+  const Icon = toolActivityPresentation(tool.tool).icon
   const running = tool.status === 'running'
   const failed = tool.status === 'failed' || tool.isError
   const hasBody = tool.arguments !== undefined || Boolean(tool.output)
@@ -420,7 +395,7 @@ function ActivityBlock({
     if (workspace?.state === 'continuing_without_agent' && !hasTools && !hasReasoning && !active) {
       return workspaceLabel(workspace)
     }
-    if (runningTool) return `Running ${runningTool.tool ?? 'tool'}…`
+    if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
     if (showDuration && durationMs !== undefined) {
@@ -439,7 +414,7 @@ function ActivityBlock({
     }
     if (workspaceFailed) return <XCircle className="size-3.5 shrink-0 text-destructive" />
     if (runningTool) {
-      const Icon = toolIcon(runningTool.tool)
+      const Icon = toolActivityPresentation(runningTool.tool).icon
       return <Icon className="size-3.5 shrink-0 animate-pulse" />
     }
     if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />

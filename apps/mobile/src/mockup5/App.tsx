@@ -101,16 +101,10 @@ import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
   Brain,
-  FilePenLine,
-  FileText,
-  FolderSearch,
   Ghost,
-  List,
   Loader2,
   Minimize2,
-  Search,
   Server,
-  Terminal,
   Wrench,
   XCircle,
 } from 'lucide-react-native';
@@ -214,6 +208,7 @@ import {
   type HistoryChatSummary,
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
@@ -2581,26 +2576,6 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
   );
 }
 
-function toolActivityIcon(name?: string) {
-  switch (name) {
-    case 'read':
-      return FileText;
-    case 'write':
-    case 'edit':
-      return FilePenLine;
-    case 'bash':
-      return Terminal;
-    case 'ls':
-      return List;
-    case 'find':
-      return FolderSearch;
-    case 'grep':
-      return Search;
-    default:
-      return Wrench;
-  }
-}
-
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
   const compaction = steps.find((step) => step.kind === 'compaction');
   if (compaction?.kind === 'compaction') {
@@ -2616,7 +2591,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   const tools = steps.filter((step) => step.kind === 'tool');
   const runningTool = tools.find((step) => step.tool.status === 'running');
   if (runningTool?.kind === 'tool') {
-    const RunningToolIcon = toolActivityIcon(runningTool.tool.tool);
+    const RunningToolIcon = toolActivityPresentation(runningTool.tool.tool).icon;
     return <RunningToolIcon color={COLORS.muted} size={14} />;
   }
   if (active && tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
@@ -2674,7 +2649,7 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
     if (['expired', 'unavailable'].includes(workspace.workspace.state ?? '')) return `Workspace ${workspace.workspace.state}`;
   }
   const runningTool = steps.find((step) => step.kind === 'tool' && step.tool.status === 'running');
-  if (runningTool?.kind === 'tool') return `Running ${runningTool.tool.tool ?? 'tool'}…`;
+  if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
   return completedActivityLabel(steps, durationMs);
 }
@@ -2704,7 +2679,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
     step.tool.output ?? '',
   ].filter(Boolean).join('\n'), [step.tool.arguments, step.tool.output]);
   const seconds = step.tool.durationMs === undefined ? null : Math.max(0, Math.round(step.tool.durationMs / 1000));
-  const ToolIcon = toolActivityIcon(step.tool.tool);
+  const ToolIcon = toolActivityPresentation(step.tool.tool).icon;
   return (
     <View style={styles.workStep}>
       <Pressable
