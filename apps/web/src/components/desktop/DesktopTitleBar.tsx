@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CircleArrowUp, Loader2, WifiOff } from 'lucide-react'
+import { CircleArrowUp, Copy, Loader2, Minus, Square, WifiOff, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { isDesktopRuntime, type DesktopUpdateState } from '@/lib/runtime'
 import { useDesktopChrome } from '@/stores/desktopChrome'
@@ -8,6 +8,62 @@ import { desktopConnectionStatus } from '@/lib/desktop-startup'
 import { ui, uit } from '@/i18n/ui'
 
 type DesktopConnectionStatusValue = 'connecting' | 'offline'
+
+function DesktopWindowControls() {
+  const controls = window.pulpoDesktop?.windowControls
+  const windows = window.pulpoDesktop?.os === 'win32'
+  const [maximized, setMaximized] = useState(false)
+
+  useEffect(() => {
+    if (!windows || !controls) return
+    let active = true
+    const unsubscribe = controls.onMaximizedChanged((next) => {
+      if (active) setMaximized(next)
+    })
+    void controls.isMaximized().then((next) => {
+      if (active) setMaximized(next)
+    }).catch(() => undefined)
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [controls, windows])
+
+  if (!windows || !controls) return null
+
+  return (
+    <div className="desktop-window-controls desktop-no-drag fixed right-0 top-0 z-[60] flex h-[38px]">
+      <button
+        type="button"
+        aria-label={ui("Minimize")}
+        className="flex h-[38px] w-[46px] items-center justify-center text-foreground/80 hover:bg-foreground/10 hover:text-foreground"
+        onClick={() => { void controls.minimize() }}
+      >
+        <Minus className="size-4" strokeWidth={1.5} />
+      </button>
+      <button
+        type="button"
+        aria-label={maximized ? ui("Restore") : ui("Maximize")}
+        className="flex h-[38px] w-[46px] items-center justify-center text-foreground/80 hover:bg-foreground/10 hover:text-foreground"
+        onClick={() => {
+          void controls.toggleMaximize().then(setMaximized).catch(() => undefined)
+        }}
+      >
+        {maximized
+          ? <Copy className="size-3.5" strokeWidth={1.5} />
+          : <Square className="size-3" strokeWidth={1.5} />}
+      </button>
+      <button
+        type="button"
+        aria-label={ui("Close")}
+        className="flex h-[38px] w-[46px] items-center justify-center text-foreground/80 hover:bg-[#c42b1c] hover:text-white"
+        onClick={() => { void controls.close() }}
+      >
+        <X className="size-4" strokeWidth={1.5} />
+      </button>
+    </div>
+  )
+}
 
 function DesktopStatusIndicator({
   status,
@@ -123,6 +179,7 @@ export function DesktopTitleBarSurface({
         className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
       />
       <DesktopStatusIndicator status={connectionStatus} />
+      <DesktopWindowControls />
     </>
   )
 }

@@ -16,6 +16,7 @@ apps/desktop/assets/Pulpo.iconset/
 docs/.vitepress/cache/
 *.local
 .env
+electron-windows-sign.log
 
 # Editor directories and files
 .vscode/*

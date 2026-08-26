@@ -1,5 +1,6 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import squirrelStartup from 'electron-squirrel-startup'
 import {
   app,
   autoUpdater,
@@ -25,6 +26,8 @@ import {
 import { loadWindowState, saveWindowState } from './window-state'
 import { DesktopUpdater } from './updater'
 
+const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
+
 const developmentUrl = typeof MAIN_WINDOW_VITE_DEV_SERVER_URL === 'string'
   ? MAIN_WINDOW_VITE_DEV_SERVER_URL
   : undefined
@@ -37,9 +40,15 @@ const previewUpdateVersion = !app.isPackaged
   ? process.env.PULPO_DESKTOP_PREVIEW_UPDATE_VERSION?.trim()
   : undefined
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock()
-if (!hasSingleInstanceLock) {
+if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)
+
+const hasSingleInstanceLock = !squirrelStartup && app.requestSingleInstanceLock()
+if (!squirrelStartup && !hasSingleInstanceLock) {
   app.quit()
+}
+
+function desktopUpdatesSupported(): boolean {
+  return app.isPackaged && (process.platform === 'darwin' || process.platform === 'win32')
 }
 
 function sendCommand(command: DesktopCommand): void {
@@ -58,7 +67,7 @@ function applicationMenu(): Menu {
         { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => sendCommand('settings') },
         {
           label: 'Check for Updates…',
-          visible: app.isPackaged && process.platform === 'darwin',
+          visible: desktopUpdatesSupported(),
           click: () => desktopUpdater?.checkForUpdates(),
         },
         {
@@ -114,7 +123,7 @@ function publishUpdateState(state: DesktopUpdateState): void {
 
 function initializeDesktopUpdater(): void {
   desktopUpdater = new DesktopUpdater({
-    enabled: app.isPackaged && process.platform === 'darwin',
+    enabled: desktopUpdatesSupported(),
     autoUpdater,
     startUpdates: () => updateElectronApp({
       updateSource: {
@@ -130,6 +139,13 @@ function initializeDesktopUpdater(): void {
 
 function assertTrustedSender(event: Electron.IpcMainInvokeEvent): void {
   if (!event.senderFrame || !isTrustedRendererUrl(event.senderFrame.url, developmentUrl)) throw new Error('Untrusted renderer.')
+}
+
+function trustedWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
+  assertTrustedSender(event)
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window || window !== mainWindow) throw new Error('Untrusted window.')
+  return window
 }
 
 function validStoredSession(value: unknown): DesktopStoredSession {
@@ -169,6 +185,19 @@ function registerIpc(): void {
     assertTrustedSender(event)
     return { name: app.getName(), version: app.getVersion(), packaged: app.isPackaged }
   })
+  ipcMain.handle('desktop:window:minimize', (event) => {
+    trustedWindow(event).minimize()
+  })
+  ipcMain.handle('desktop:window:toggle-maximize', (event) => {
+    const window = trustedWindow(event)
+    if (window.isMaximized()) window.unmaximize()
+    else window.maximize()
+    return window.isMaximized()
+  })
+  ipcMain.handle('desktop:window:close', (event) => {
+    trustedWindow(event).close()
+  })
+  ipcMain.handle('desktop:window:is-maximized', (event) => trustedWindow(event).isMaximized())
   ipcMain.handle('desktop:update-state', (event) => {
     assertTrustedSender(event)
     if (previewUpdateVersion) return { status: 'ready', version: previewUpdateVersion }
@@ -259,8 +288,11 @@ async function createMainWindow(): Promise<void> {
     minHeight: 600,
     show: false,
     title: 'Pulpo',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 14 },
+    ...(process.platform === 'win32'
+      ? { frame: false }
+      : process.platform === 'darwin'
+        ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } }
+        : {}),
     backgroundColor: '#0a0a0a',
     webPreferences: {
       preload,
@@ -290,6 +322,9 @@ async function createMainWindow(): Promise<void> {
   window.webContents.on('did-start-loading', () => { rendererReady = false })
   window.once('ready-to-show', () => window.show())
   window.on('close', () => { void saveWindowState(window) })
+  const publishMaximizedState = () => window.webContents.send('desktop:window:maximized-changed', window.isMaximized())
+  window.on('maximize', publishMaximizedState)
+  window.on('unmaximize', publishMaximizedState)
   window.on('closed', () => {
     rendererReady = false
     if (mainWindow === window) mainWindow = null
