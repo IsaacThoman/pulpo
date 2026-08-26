@@ -344,7 +344,7 @@ html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
 }
 
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
