@@ -34,7 +34,8 @@ describe('stageWindowsArtifacts', () => {
       setupName,
       installerName,
     ].sort())
-    expect(await readFile(path.join(output, installerName), 'utf8')).toBe('signed installer')
+    expect(await readFile(path.join(output, installerName), 'utf8'))
+      .toBe(await readFile(path.join(output, setupName), 'utf8'))
     expect(await readFile(path.join(output, manifestName), 'utf8'))
       .toBe(`ABC ${packageName} 14`)
   })
