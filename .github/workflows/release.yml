@@ -179,9 +179,12 @@ jobs:
           $expectedPackagePattern = if ('${{ matrix.arch }}' -eq 'x64') { 'Pulpo-*-full.nupkg' } else { 'Pulpo-win32-arm64-*-full.nupkg' }
           $stagedPackages = @(Get-ChildItem -Path $stageDirectory -File -Filter $expectedPackagePattern)
           $expectedManifest = if ('${{ matrix.arch }}' -eq 'x64') { 'RELEASES' } else { 'RELEASES-win32-arm64' }
-          if ($staged.Count -ne 3 -or
+          $expectedInstaller = "Pulpo-*-Windows-${{ matrix.arch }}-Setup.exe"
+          $stagedInstallers = @(Get-ChildItem -Path $stageDirectory -File -Filter $expectedInstaller)
+          if ($staged.Count -ne 4 -or
               !(Test-Path (Join-Path $stageDirectory $expectedSetup)) -or
               !(Test-Path (Join-Path $stageDirectory $expectedManifest)) -or
+              $stagedInstallers.Count -ne 1 -or
               $stagedPackages.Count -ne 1) {
             throw 'The staged Windows artifact names are invalid.'
           }
@@ -381,7 +384,7 @@ jobs:
             exit 1
           fi
           dmg_path="$(find apps/desktop/out/make -type f -name '*.dmg' -print -quit)"
-          mv "${dmg_path}" "$(dirname "${dmg_path}")/Pulpo-darwin-${{ matrix.arch }}-${RELEASE_VERSION}.dmg"
+          mv "${dmg_path}" "$(dirname "${dmg_path}")/Pulpo-${RELEASE_VERSION}-macOS-${{ matrix.arch }}.dmg"
 
       - name: Upload desktop artifacts
         if: matrix.platform == 'macOS'
@@ -634,8 +637,8 @@ jobs:
             -name '*-full.nupkg' -o \
             -name 'RELEASES*' \
           \) -print0)
-          if (( ${#artifacts[@]} != 10 )); then
-            echo "Expected two ZIPs, two DMGs, two Setup EXEs, two full NUPKGs, and two RELEASES manifests; found ${#artifacts[@]}." >&2
+          if (( ${#artifacts[@]} != 12 )); then
+            echo "Expected two ZIPs, two DMGs, four Setup EXEs, two full NUPKGs, and two RELEASES manifests; found ${#artifacts[@]}." >&2
             exit 1
           fi
           zip_count="$(find desktop-artifacts -type f -name '*.zip' | wc -l | tr -d ' ')"
@@ -643,13 +646,19 @@ jobs:
           setup_count="$(find desktop-artifacts -type f -name '*Setup.exe' | wc -l | tr -d ' ')"
           package_count="$(find desktop-artifacts -type f -name '*-full.nupkg' | wc -l | tr -d ' ')"
           manifest_count="$(find desktop-artifacts -type f -name 'RELEASES*' | wc -l | tr -d ' ')"
-          if [[ "${zip_count}:${dmg_count}:${setup_count}:${package_count}:${manifest_count}" != '2:2:2:2:2' ]]; then
+          if [[ "${zip_count}:${dmg_count}:${setup_count}:${package_count}:${manifest_count}" != '2:2:4:2:2' ]]; then
             echo "Unexpected release artifact mix (ZIP: ${zip_count}, DMG: ${dmg_count}, Setup: ${setup_count}, NUPKG: ${package_count}, RELEASES: ${manifest_count})." >&2
             exit 1
           fi
           for expected in \
+            "Pulpo-darwin-arm64-${RELEASE_VERSION}.zip" \
+            "Pulpo-darwin-x64-${RELEASE_VERSION}.zip" \
+            "Pulpo-${RELEASE_VERSION}-macOS-arm64.dmg" \
+            "Pulpo-${RELEASE_VERSION}-macOS-x64.dmg" \
             Setup.exe \
             Pulpo-win32-arm64-Setup.exe \
+            "Pulpo-${RELEASE_VERSION}-Windows-x64-Setup.exe" \
+            "Pulpo-${RELEASE_VERSION}-Windows-arm64-Setup.exe" \
             "Pulpo-${RELEASE_VERSION}-full.nupkg" \
             "Pulpo-win32-arm64-${RELEASE_VERSION}-full.nupkg" \
             RELEASES \

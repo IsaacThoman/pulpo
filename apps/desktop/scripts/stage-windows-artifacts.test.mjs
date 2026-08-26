@@ -17,13 +17,14 @@ async function fixture() {
 
 describe('stageWindowsArtifacts', () => {
   it.each([
-    ['x64', 'Setup.exe', 'Pulpo-1.2.3-full.nupkg', 'RELEASES'],
-    ['arm64', 'Pulpo-win32-arm64-Setup.exe', 'Pulpo-win32-arm64-1.2.3-full.nupkg', 'RELEASES-win32-arm64'],
-  ])('stages collision-free %s release assets', async (arch, setupName, packageName, manifestName) => {
+    ['x64', 'Setup.exe', 'Pulpo-1.2.3-Windows-x64-Setup.exe', 'Pulpo-1.2.3-full.nupkg', 'RELEASES'],
+    ['arm64', 'Pulpo-win32-arm64-Setup.exe', 'Pulpo-1.2.3-Windows-arm64-Setup.exe', 'Pulpo-win32-arm64-1.2.3-full.nupkg', 'RELEASES-win32-arm64'],
+  ])('stages collision-free %s release assets', async (arch, setupName, installerName, packageName, manifestName) => {
     const { input, output } = await fixture()
     const names = await stageWindowsArtifacts(input, output, arch)
     expect(names).toEqual({
       setupName,
+      installerName,
       packageName,
       manifestName,
     })
@@ -31,7 +32,10 @@ describe('stageWindowsArtifacts', () => {
       manifestName,
       packageName,
       setupName,
+      installerName,
     ].sort())
+    expect(await readFile(path.join(output, installerName), 'utf8'))
+      .toBe(await readFile(path.join(output, setupName), 'utf8'))
     expect(await readFile(path.join(output, manifestName), 'utf8'))
       .toBe(`ABC ${packageName} 14`)
   })
