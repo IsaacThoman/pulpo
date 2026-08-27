@@ -7,6 +7,7 @@ import { newId } from '../lib/ids.js'
 import { parseEpisodicMemorySettings } from '../settings/application-settings.js'
 import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_PROFILE_LIST } from './profiles.js'
+import { EPISODIC_MEMORY_AUDIT_ACTIONS, settingsAuditEvents } from './audit.js'
 
 export async function readEpisodicMemorySettings(): Promise<EpisodicMemorySettings> {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
@@ -67,17 +68,7 @@ export async function updateEpisodicMemorySettings(
     await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
     await tx.insert(applicationSettings).values({ key: 'episodicMemory', value: next, updatedBy: actorUserId })
       .onConflictDoUpdate({ target: applicationSettings.key, set: { value: next, updatedBy: actorUserId, updatedAt: new Date() } })
-    const events: Array<{ action: string; metadata: Record<string, unknown> }> = []
-    if (previous.enabled !== next.enabled) events.push({
-      action: next.enabled ? 'episodic_memory.enable' : 'episodic_memory.disable',
-      metadata: { profile: next.profile, recallMode: next.recallMode },
-    })
-    if (previous.profile !== next.profile) events.push({
-      action: 'episodic_memory.model.select', metadata: { previous: previous.profile, profile: next.profile },
-    })
-    if (previous.recallMode !== next.recallMode) events.push({
-      action: 'episodic_memory.recall_mode.update', metadata: { previous: previous.recallMode, recallMode: next.recallMode },
-    })
+    const events = settingsAuditEvents(previous, next)
     if (events.length) await tx.insert(auditEvents).values(events.map((event) => ({
       id: newId(), actorUserId, action: event.action, targetType: 'episodic_memory', metadata: event.metadata,
     })))
@@ -94,7 +85,7 @@ export async function requestEpisodicMemoryRebuild(actorUserId: string): Promise
   const settings = await readEpisodicMemorySettings()
   if (!settings.enabled) throw new Error('Episodic memory must be enabled before rebuilding')
   await db.insert(auditEvents).values({
-    id: newId(), actorUserId, action: 'episodic_memory.rebuild', targetType: 'episodic_memory', metadata: { profile: settings.profile },
+    id: newId(), actorUserId, action: EPISODIC_MEMORY_AUDIT_ACTIONS.rebuild, targetType: 'episodic_memory', metadata: { profile: settings.profile },
   })
   await enqueueEpisodicReconciliation(true)
 }
@@ -104,7 +95,7 @@ export async function cancelEpisodicMemoryBuild(actorUserId: string): Promise<vo
     await tx.update(episodicMemoryGenerations).set({ cancelRequestedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(episodicMemoryGenerations.active, false), inArray(episodicMemoryGenerations.status, ['pending', 'pulling', 'indexing'])))
     await tx.insert(auditEvents).values({
-      id: newId(), actorUserId, action: 'episodic_memory.cancel', targetType: 'episodic_memory', metadata: {},
+      id: newId(), actorUserId, action: EPISODIC_MEMORY_AUDIT_ACTIONS.cancel, targetType: 'episodic_memory', metadata: {},
     })
   })
   const jobs = await embeddingQueue.getJobs(['waiting', 'delayed', 'prioritized'])

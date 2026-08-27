@@ -7,16 +7,12 @@ import { attachments, backupJobs, catalogIcons, users } from '../database/schema
 import { getBlobStore } from '../storage/index.js'
 import { redis } from '../redis.js'
 import { fillMissingUsernames } from '../profile/username.js'
-
-const TABLES = [
-  'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
-  'catalog_icons', 'labs', 'provider_connections',
-  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
-  'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories', 'api_keys',
-  'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
-  'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
-  'workspace_leases', 'agent_runs', 'tool_executions',
-] as const
+import {
+  FULL_BACKUP_EXPLICIT_COLUMNS,
+  FULL_BACKUP_TABLES,
+  OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
+  type FullBackupTable,
+} from './backup-format.js'
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
@@ -47,9 +43,10 @@ export async function createFullBackup(jobId: string): Promise<void> {
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   try {
     const database: Record<string, unknown[]> = {}
-    for (const [index, table] of TABLES.entries()) {
-      database[table] = [...await db.execute(sql.raw(`select * from ${table}`))] as unknown[]
-      await db.update(backupJobs).set({ progress: Math.round(((index + 1) / TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
+      const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
+      database[table] = [...await db.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))] as unknown[]
+      await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
     const attachmentBlobRows = await db.select({ objectKey: attachments.objectKey, checksum: attachments.checksum }).from(attachments).where(eq(attachments.status, 'ready'))
     const avatarBlobRows = await db.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
@@ -71,7 +68,7 @@ export async function createFullBackup(jobId: string): Promise<void> {
       entries.push({ name: entry, body }); blobs.push({ entry, objectKey: blob.objectKey, checksum: blob.checksum ?? checksum(body) })
       await db.update(backupJobs).set({ progress: 55 + Math.round(((index + 1) / Math.max(blobRows.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
     }
-    const manifest = { format: 'pulpo-instance-backup', version: 1, createdAt: new Date().toISOString(), tables: TABLES, blobs }
+    const manifest = { format: 'pulpo-instance-backup', version: 1, createdAt: new Date().toISOString(), tables: FULL_BACKUP_TABLES, blobs }
     entries.unshift({ name: 'manifest.json', body: Buffer.from(json(manifest)) }, { name: 'database.json', body: Buffer.from(json(database)) })
     const archive = await tarBytes(entries)
     const objectKey = `backups/${job.userId}/${job.id}.tar.gz`
@@ -102,13 +99,14 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     database.two_factor_recovery_codes ??= []
     database.friendships ??= []
     database.user_blocks ??= []
+    for (const table of OPTIONAL_TABLES_IN_LEGACY_BACKUPS) database[table] ??= []
     fillMissingUsernames(database.users ?? [])
     for (const user of database.users ?? []) {
       user.profile_color ??= null
       user.avatar_object_key ??= null
       user.avatar_version ??= 0
     }
-    for (const table of TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
+    for (const table of FULL_BACKUP_TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
     for (const [index, blob] of manifest.blobs.entries()) {
       const body = files.get(blob.entry); if (!body || !checksumMatches(body, blob.checksum)) throw new Error(`Blob checksum failed: ${blob.objectKey}`)
       const staged = `restored/${jobId}/${Buffer.from(blob.objectKey).toString('base64url')}`
@@ -135,11 +133,11 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       ]),
     ]
     await db.transaction(async (tx) => {
-      await tx.execute(sql.raw(`truncate table ${[...TABLES].reverse().join(', ')} restart identity cascade`))
-      for (const [index, table] of TABLES.entries()) {
+      await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
+      for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const rows = database[table]!
-        if (rows.length) await tx.execute(sql`insert into ${sql.raw(table)} select * from json_populate_recordset(null::${sql.raw(table)}, ${json(rows)}::json)`)
-        await db.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+        if (rows.length) await insertBackupRows(tx, table, rows)
+        await db.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
     })
     await redis.flushdb()
@@ -149,4 +147,19 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     for (const key of stagedKeys) await getBlobStore().delete(key).catch(() => undefined)
     await db.update(backupJobs).set({ status: 'failed', error: error instanceof Error ? error.message : 'Restore failed', updatedAt: new Date() }).where(eq(backupJobs.id, jobId)); throw error
   }
+}
+
+async function insertBackupRows(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  table: FullBackupTable,
+  rows: Array<Record<string, unknown>>,
+): Promise<void> {
+  const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
+  if (!columns) {
+    await tx.execute(sql`insert into ${sql.raw(table)} select * from json_populate_recordset(null::${sql.raw(table)}, ${json(rows)}::json)`)
+    return
+  }
+  const columnList = columns.join(', ')
+  await tx.execute(sql`insert into ${sql.raw(table)} (${sql.raw(columnList)})
+    select ${sql.raw(columnList)} from json_populate_recordset(null::${sql.raw(table)}, ${json(rows)}::json)`)
 }

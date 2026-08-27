@@ -14,6 +14,7 @@ import {
 import { newId } from '../lib/ids.js'
 import { activeLineageChunks, contentHash } from './chunks.js'
 import { OllamaClient } from './ollama.js'
+import { EPISODIC_MEMORY_AUDIT_ACTIONS } from './audit.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
 import { readEpisodicMemorySettings } from './settings.js'
 
@@ -347,7 +348,7 @@ export async function buildAndActivateGeneration(generationId: string, client = 
     await tx.delete(chatTurnEmbeddings).where(ne(chatTurnEmbeddings.generationId, generation.id))
     await tx.delete(savedMemoryEmbeddings).where(ne(savedMemoryEmbeddings.generationId, generation.id))
     await tx.insert(auditEvents).values({
-      id: newId(), action: 'episodic_memory.model.activate', targetType: 'episodic_memory_generation', targetId: generation.id,
+      id: newId(), action: EPISODIC_MEMORY_AUDIT_ACTIONS.modelActivate, targetType: 'episodic_memory_generation', targetId: generation.id,
       metadata: { profile: generation.profile, model: generation.model, digest: generation.modelDigest, items: progress.total },
     })
   })

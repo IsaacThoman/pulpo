@@ -29,17 +29,25 @@ export class OllamaClient {
   constructor(
     private readonly baseUrl = getConfig().PULPO_OLLAMA_URL,
     private readonly fetchImpl: Fetch = globalThis.fetch,
+    private readonly defaultSignal?: AbortSignal,
   ) {}
 
   private url(path: string): string {
     return new URL(path, this.baseUrl.endsWith('/') ? this.baseUrl : `${this.baseUrl}/`).toString()
   }
 
-  async status(signal = AbortSignal.timeout(5_000)): Promise<OllamaStatus> {
+  private signal(signal: AbortSignal | undefined, timeoutMs?: number): AbortSignal | undefined {
+    const signals = [signal, this.defaultSignal, timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined]
+      .filter((value): value is AbortSignal => Boolean(value))
+    return signals.length > 1 ? AbortSignal.any(signals) : signals[0]
+  }
+
+  async status(signal?: AbortSignal): Promise<OllamaStatus> {
     try {
+      const requestSignal = this.signal(signal, 5_000)
       const [versionResponse, tagsResponse] = await Promise.all([
-        this.fetchImpl(this.url('api/version'), { signal }),
-        this.fetchImpl(this.url('api/tags'), { signal }),
+        this.fetchImpl(this.url('api/version'), { signal: requestSignal }),
+        this.fetchImpl(this.url('api/tags'), { signal: requestSignal }),
       ])
       if (!versionResponse.ok) throw await responseError(versionResponse)
       if (!tagsResponse.ok) throw await responseError(tagsResponse)
@@ -68,7 +76,7 @@ export class OllamaClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ model: profile.model, stream: true }),
-      signal: options.signal,
+      signal: this.signal(options.signal),
     })
     if (!response.ok) throw await responseError(response)
     if (!response.body) throw new Error('Ollama model pull returned no response body')
@@ -91,7 +99,7 @@ export class OllamaClient {
       if (done) break
     }
 
-    const status = await this.status(options.signal ?? AbortSignal.timeout(5_000))
+    const status = await this.status(options.signal)
     if (!status.healthy) throw new Error(status.error ?? 'Ollama became unavailable after pulling the model')
     const installed = status.installedModels.find((model) => model.name === profile.model)
     if (!installed) throw new Error(`Ollama did not report ${profile.model} after a successful pull`)
@@ -103,7 +111,7 @@ export class OllamaClient {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ model: profile.model, input }),
-      signal,
+      signal: this.signal(signal, 120_000),
     })
     if (!response.ok) throw await responseError(response)
     const body = await response.json() as { embeddings?: unknown }

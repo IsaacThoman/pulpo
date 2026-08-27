@@ -18,6 +18,7 @@ import { searchEpisodicChats, selectRelevantMemories } from '../src/episodic-mem
 import type { OllamaClient } from '../src/episodic-memory/ollama.js'
 import { readEpisodicChatPage } from '../src/episodic-memory/agent-tools.js'
 import { recalledChatContext, retrieveAutomaticRecall } from '../src/episodic-memory/automatic-recall.js'
+import { embeddingQueue } from '../src/jobs.js'
 
 if (process.env.PULPO_EPISODIC_SMOKE !== '1') {
   throw new Error('Set PULPO_EPISODIC_SMOKE=1 and use a disposable database before running this script')
@@ -253,5 +254,6 @@ async function main(): Promise<void> {
 try {
   await main()
 } finally {
-  await queryClient.end()
+  await Promise.all([queryClient.end(), embeddingQueue.disconnect()])
 }
+process.exit(0)

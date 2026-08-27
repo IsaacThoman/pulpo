@@ -36,4 +36,15 @@ describe('OllamaClient', () => {
       'hello',
     )).resolves.toEqual([expected])
   })
+
+  it('propagates default cancellation to an in-flight embedding request', async () => {
+    const controller = new AbortController()
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true })
+    }))
+    const client = new OllamaClient('http://ollama.test', fetchImpl, controller.signal)
+    const request = client.embed(EPISODIC_MEMORY_PROFILES.embeddinggemma, 'cancel me')
+    controller.abort(new Error('cancelled'))
+    await expect(request).rejects.toThrow('cancelled')
+  })
 })

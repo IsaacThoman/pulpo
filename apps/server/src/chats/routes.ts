@@ -25,6 +25,7 @@ import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueu
 import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
 import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
+import { createChatExportPayload } from './export-format.js'
 
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
   if (!enabled) return null
@@ -129,7 +130,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       ))
       : []
     return reply.type('application/json').header('content-disposition', 'attachment; filename="pulpo-chats.json"')
-      .send({ format: 'pulpo-chat-export', version: 2, exportedAt: new Date().toISOString(), chats: chatRows, responses: responseRows })
+      .send(createChatExportPayload(chatRows, responseRows))
   })
 
   app.post('/api/chats/import', async (request) => {

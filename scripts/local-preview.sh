@@ -208,7 +208,7 @@ refresh_stack() {
     exit 1
   fi
   if ! compose up --detach --wait \
-    postgres redis seaweed-master seaweed-volume seaweed-filer seaweed-s3; then
+    postgres ollama redis seaweed-master seaweed-volume seaweed-filer seaweed-s3; then
     echo 'Local preview infrastructure failed to start.' >&2
     compose ps >&2 || true
     exit 1

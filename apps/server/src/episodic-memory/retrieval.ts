@@ -198,7 +198,7 @@ export async function selectRelevantMemories(userId: string, query: string, clie
   if (!settings.enabled || !generation || !query.trim()) return fitMemoryBudget(await newestMemories(userId))
   try {
     const profile = EPISODIC_MEMORY_PROFILES[generation.profile as EpisodicMemoryProfile]
-    const [vector] = await client.embed(profile, query.slice(0, 4_000))
+    const [vector] = await client.embed(profile, query.slice(0, 4_000), AbortSignal.timeout(10_000))
     const value = `[${vector!.join(',')}]`
     const distance = sql<number>`${savedMemoryEmbeddings.embedding} <=> ${value}::halfvec`
     const rows = await db.select({ content: memories.content }).from(savedMemoryEmbeddings)

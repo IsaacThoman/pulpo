@@ -6,6 +6,8 @@ import { newId } from '../lib/ids.js'
 import { readEpisodicMemorySettings } from './settings.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
 import { OllamaClient } from './ollama.js'
+import { EPISODIC_MEMORY_AUDIT_ACTIONS } from './audit.js'
+import { watchCancellation } from './cancellation.js'
 import {
   activeGeneration,
   buildAndActivateGeneration,
@@ -72,19 +74,32 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
     status: 'pending',
   })
 
-  const client = new OllamaClient()
+  let cancellation: ReturnType<typeof watchCancellation> | undefined
   try {
     await db.update(episodicMemoryGenerations).set({
       status: 'pulling', error: null, startedAt: new Date(), cancelRequestedAt: null, updatedAt: new Date(),
     }).where(eq(episodicMemoryGenerations.id, generationId))
+    cancellation = watchCancellation(async () => {
+      const [generation] = await db.select({ cancelRequestedAt: episodicMemoryGenerations.cancelRequestedAt })
+        .from(episodicMemoryGenerations).where(eq(episodicMemoryGenerations.id, generationId)).limit(1)
+      return Boolean(generation?.cancelRequestedAt)
+    })
+    const client = new OllamaClient(undefined, undefined, cancellation.signal)
     const status = await client.status()
     if (!status.healthy) throw new Error(status.error ?? 'Ollama is unavailable')
     let installed = status.installedModels.find((model) => model.name === profile.model)
-    if (!installed) installed = await client.pullModel(profile, {
-      onProgress: (completed, total) => { void db.update(episodicMemoryGenerations).set({
-        downloadCompletedBytes: completed, downloadTotalBytes: total, updatedAt: new Date(),
-      }).where(eq(episodicMemoryGenerations.id, generationId)) },
-    })
+    if (!installed) {
+      installed = await client.pullModel(profile, {
+        onProgress: (completed, total) => { void db.update(episodicMemoryGenerations).set({
+          downloadCompletedBytes: completed, downloadTotalBytes: total, updatedAt: new Date(),
+        }).where(eq(episodicMemoryGenerations.id, generationId)) },
+      })
+      await db.insert(auditEvents).values({
+        id: newId(), action: EPISODIC_MEMORY_AUDIT_ACTIONS.modelInstall,
+        targetType: 'episodic_memory_generation', targetId: generationId,
+        metadata: { profile: profile.id, model: profile.model, digest: installed.digest, size: installed.size },
+      })
+    }
     await client.embed(profile, 'Pulpo episodic memory model validation')
     const [generation] = await db.select({ cancelRequestedAt: episodicMemoryGenerations.cancelRequestedAt })
       .from(episodicMemoryGenerations).where(eq(episodicMemoryGenerations.id, generationId)).limit(1)
@@ -102,7 +117,7 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
     }).where(eq(episodicMemoryGenerations.id, generationId))
     await buildAndActivateGeneration(generationId, client)
   } catch (error) {
-    if (error instanceof EpisodicIndexCancelledError) {
+    if (error instanceof EpisodicIndexCancelledError || cancellation?.signal.aborted) {
       await db.update(episodicMemoryGenerations).set({
         status: 'cancelled', error: null, completedAt: new Date(), updatedAt: new Date(),
       }).where(eq(episodicMemoryGenerations.id, generationId))
@@ -112,9 +127,11 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
       status: 'failed', error: error instanceof Error ? error.message : String(error), completedAt: new Date(), updatedAt: new Date(),
     }).where(eq(episodicMemoryGenerations.id, generationId))
     await db.insert(auditEvents).values({
-      id: newId(), action: 'episodic_memory.failure', targetType: 'episodic_memory_generation', targetId: generationId,
+      id: newId(), action: EPISODIC_MEMORY_AUDIT_ACTIONS.failure, targetType: 'episodic_memory_generation', targetId: generationId,
       metadata: { profile: profile.id, error: error instanceof Error ? error.message : String(error) },
     })
     throw error
+  } finally {
+    cancellation?.stop()
   }
 }
