@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   apiKeyModelAllowed: vi.fn(),
   filterApiKeyAllowedModels: vi.fn(),
   executePublicGeneration: vi.fn(),
+  logInfo: vi.fn(),
 }))
 
 vi.mock('../database/client.js', () => ({
@@ -49,7 +50,8 @@ function request(input: { body?: unknown; params?: unknown; idempotencyKey?: str
     body: input.body,
     params: input.params ?? {},
     headers: input.idempotencyKey ? { 'idempotency-key': input.idempotencyKey } : {},
-  } as FastifyRequest
+    log: { info: mocks.logInfo },
+  } as unknown as FastifyRequest
 }
 
 describe('public OpenAI-compatible routes', () => {
@@ -86,6 +88,27 @@ describe('public OpenAI-compatible routes', () => {
     } }), {} as FastifyReply)).rejects.toMatchObject({ statusCode: 400, code: 'unsupported_parameter', param: 'stop' })
     expect(mocks.assertApiKeyModelAllowed).not.toHaveBeenCalled()
     expect(mocks.executePublicGeneration).not.toHaveBeenCalled()
+  })
+
+  it('queues requests with harmless or unknown parameters and logs what was ignored', async () => {
+    const handler = (await handlers()).get('POST /v1/responses')!
+    await expect(handler(request({ body: {
+      model: 'm', input: 'hi', store: false, include: [], future_client_option: true,
+    } }), {} as FastifyReply)).resolves.toEqual({ ok: true })
+
+    expect(mocks.executePublicGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({ publiclyStored: false }),
+    }))
+    expect(mocks.logInfo).toHaveBeenCalledWith({
+      protocol: 'responses', ignoredParameters: ['future_client_option', 'include'],
+    }, 'Ignored OpenAI-compatible request parameters')
+  })
+
+  it('does not expose Responses created with store=false through retrieval', async () => {
+    mocks.selectRows = [{ response: { publiclyStored: false } }]
+    const handler = (await handlers()).get('GET /v1/responses/:id')!
+    await expect(handler(request({ params: { id: 'response-1' } }), {} as FastifyReply))
+      .rejects.toMatchObject({ statusCode: 404 })
   })
 
   it('filters model listings through the key permission set', async () => {

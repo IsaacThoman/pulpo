@@ -38,6 +38,7 @@ function responseRow(overrides: Record<string, unknown> = {}) {
     presetSelections: {},
     parameters: {},
     metadata: { trace: 'public' },
+    publiclyStored: true,
     output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Hello' }] }],
     usage: { inputTokens: 4, cachedInputTokens: 1, cacheWriteTokens: 2, outputTokens: 3, reasoningTokens: 1, totalTokens: 7 },
     error: null,
@@ -128,7 +129,7 @@ describe('Chat Completions input codec', () => {
   it('rejects every explicitly unsupported Chat Completions parameter', () => {
     const base = { model: 'm', messages: [{ role: 'user', content: 'hi' }] }
     for (const [param, value] of [
-      ['audio', {}], ['functions', []], ['function_call', 'auto'], ['logprobs', true], ['top_logprobs', 1],
+      ['audio', {}], ['functions', [{ name: 'legacy' }]], ['function_call', 'auto'], ['logprobs', true], ['top_logprobs', 1],
       ['stop', ['END']], ['presence_penalty', 1], ['frequency_penalty', 1], ['seed', 1],
       ['prediction', {}], ['modalities', ['audio']],
     ] as const) expectUnsupported(() => parseChatCompletionRequest({ ...base, [param]: value }), param)
@@ -141,6 +142,21 @@ describe('Chat Completions input codec', () => {
     expectUnsupported(() => parseChatCompletionRequest({
       model: 'm', messages: [{ role: 'user', content: [{ type: 'file', file: {} }] }],
     }), 'messages.0.content.0.type')
+  })
+
+  it('accepts explicit no-op defaults and ignores unknown future fields', () => {
+    const parsed = parseChatCompletionRequest({
+      model: 'm', messages: [{ role: 'user', name: 'caller', content: 'hi', future_message_field: true }],
+      n: 1, store: false, logprobs: false, top_logprobs: 0, stop: null,
+      presence_penalty: 0, frequency_penalty: 0, modalities: ['text'], functions: [],
+      future_client_option: 'ignored',
+    })
+
+    expect(parsed.ignoredParameters).toEqual([
+      'frequency_penalty', 'functions', 'logprobs', 'modalities', 'presence_penalty',
+      'stop', 'top_logprobs', 'future_client_option',
+    ].sort())
+    expect(parsed.rawInput).toEqual([{ role: 'user', content: 'hi' }])
   })
 })
 
@@ -159,6 +175,17 @@ describe('legacy Completions input codec', () => {
       ['presence_penalty', 1], ['frequency_penalty', 1], ['seed', 1],
     ] as const) expectUnsupported(() => parseCompletionRequest({ model: 'm', prompt: 'hi', [param]: value }), param)
   })
+
+  it('accepts legacy no-op defaults without silently ignoring requested behavior', () => {
+    const parsed = parseCompletionRequest({
+      model: 'm', prompt: 'hi', n: 1, best_of: 1, echo: false, suffix: null,
+      stop: [], presence_penalty: 0, frequency_penalty: 0, future_option: true,
+    })
+    expect(parsed.ignoredParameters).toEqual([
+      'best_of', 'echo', 'frequency_penalty', 'future_option', 'presence_penalty', 'stop', 'suffix',
+    ].sort())
+    expectUnsupported(() => parseCompletionRequest({ model: 'm', prompt: 'hi', echo: true }), 'echo')
+  })
 })
 
 describe('public response serialization', () => {
@@ -167,6 +194,7 @@ describe('public response serialization', () => {
       type: 'pulpo_compaction', summary: 'safe', retained_context: [{ secret: true }], retained_context_turns: [{ secret: true }],
     }] }))
     expect(serialized.metadata).toEqual({ trace: 'public' })
+    expect(serialized.store).toBe(true)
     expect(serialized.output).toEqual([{ type: 'pulpo_compaction', summary: 'safe', retained_context: [], retained_context_turns: [] }])
   })
 
@@ -232,8 +260,38 @@ describe('completion streaming projections', () => {
 
 describe('Responses request codec', () => {
   it('retains metadata and supported parameters', () => {
-    expect(parseResponsesRequest({ model: 'm', input: 'hi', metadata: { trace: '1' }, instructions: 'Be brief', parallel_tool_calls: false }))
-      .toMatchObject({ protocol: 'responses', metadata: { trace: '1' }, parameters: { instructions: 'Be brief', parallel_tool_calls: false } })
+    expect(parseResponsesRequest({
+      model: 'm', input: 'hi', metadata: { trace: '1' }, instructions: 'Be brief', parallel_tool_calls: false,
+      tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' }, future_tool_field: true }],
+      tool_choice: { type: 'function', name: 'lookup', future_choice_field: true },
+    })).toMatchObject({
+      protocol: 'responses', metadata: { trace: '1' },
+      parameters: {
+        instructions: 'Be brief', parallel_tool_calls: false,
+        tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }],
+        tool_choice: { type: 'function', name: 'lookup' },
+      },
+    })
+  })
+
+  it('honors store, fingerprints its retrieval semantics, and ignores harmless compatibility fields', () => {
+    const parsed = parseResponsesRequest({
+      model: 'm', input: 'hi', store: false, service_tier: 'flex', include: [],
+      stream_options: { include_obfuscation: false }, safety_identifier: 'hashed-user', future_option: true,
+    })
+    expect(parsed).toMatchObject({
+      publiclyStored: false,
+      parameters: { service_tier: 'flex' },
+      fingerprintValue: { store: false },
+    })
+    expect(parsed.ignoredParameters).toEqual(['future_option', 'include', 'safety_identifier', 'stream_options'])
+    expect(serializePublicResponse(responseRow({ publiclyStored: false })).store).toBe(false)
+  })
+
+  it('defaults Responses storage on and rejects unsupported behavior-changing values', () => {
+    expect(parseResponsesRequest({ model: 'm', input: 'hi' }).publiclyStored).toBe(true)
+    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', previous_response_id: 'resp_1' }), 'previous_response_id')
+    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', stream_options: { include_obfuscation: true } }), 'stream_options')
   })
 
   it('rejects custom tools and deferred audio/file input parts', () => {

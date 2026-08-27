@@ -34,6 +34,8 @@ export interface CreateResponseOptions {
   rawInput?: unknown
   parameters?: Record<string, unknown>
   metadata?: Record<string, string>
+  /** Whether an API response may be retrieved through the public Responses lifecycle. */
+  publiclyStored?: boolean
   idempotencyKey?: string | null
   idempotencyScope?: string
   idempotencyFingerprint?: string | null
@@ -209,6 +211,7 @@ export async function createResponse(options: CreateResponseOptions) {
     presetSelections: resolved.selections,
     parameters: { ...(options.parameters ?? {}), ...resolved.parameters },
     metadata: options.metadata ?? {},
+    publiclyStored: options.publiclyStored ?? true,
     idempotencyKey: options.idempotencyKey,
     idempotencyScope,
     idempotencyFingerprint: options.idempotencyFingerprint,
