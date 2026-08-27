@@ -732,15 +732,14 @@ jobs:
           }
           bash .github/scripts/smoke-preview-runtime.sh
 
-      - name: Remove topology-incompatible preview
+      - name: Explain topology-incompatible preview
         if: steps.topology.outputs.supported == 'false'
         run: |
           set -euo pipefail
-          coolify app previews delete "${COOLIFY_APP_UUID}" "${PULL_REQUEST_ID}" --force --format json
           {
-            echo '### Coolify preview not published'
+            echo '### Coolify preview smoke test skipped'
             echo
-            echo 'This pull request changes `compose.yaml`. Coolify built the pull request images using the base application topology, so the resulting deployment would not represent the proposed stack and was removed.'
+            echo 'This pull request changes `compose.yaml`. Coolify built the pull request images using the base application topology, so the resulting deployment does not represent the proposed stack.'
             echo
             echo 'The Compose configuration remains validated by the build checks.'
           } >> "${GITHUB_STEP_SUMMARY}"
