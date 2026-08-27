@@ -367,11 +367,11 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-a
     clip-path: inset(0 0 0 0);
   }
 
-  35% {
+  49.9% {
     clip-path: inset(0 0 0 100%);
   }
 
-  65% {
+  50.1% {
     clip-path: inset(0 100% 0 0);
   }
 
