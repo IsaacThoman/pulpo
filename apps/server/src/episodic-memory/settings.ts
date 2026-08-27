@@ -1,5 +1,11 @@
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm'
-import { episodicMemorySettingsSchema, type EpisodicMemoryAdminStatus, type EpisodicMemoryGeneration, type EpisodicMemorySettings } from '@pulpo/contracts'
+import {
+  episodicMemorySettingsSchema,
+  type EpisodicMemoryAdminStatus,
+  type EpisodicMemoryGeneration,
+  type EpisodicMemorySettings,
+  type EpisodicMemoryStatisticsRange,
+} from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, auditEvents, episodicMemoryGenerations } from '../database/schema.js'
 import { embeddingQueue } from '../jobs.js'
@@ -8,6 +14,7 @@ import { parseEpisodicMemorySettings } from '../settings/application-settings.js
 import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_PROFILE_LIST } from './profiles.js'
 import { EPISODIC_MEMORY_AUDIT_ACTIONS, settingsAuditEvents } from './audit.js'
+import { readEpisodicMemoryStatistics } from './statistics.js'
 
 export async function readEpisodicMemorySettings(): Promise<EpisodicMemorySettings> {
   const [row] = await db.select({ value: applicationSettings.value }).from(applicationSettings)
@@ -35,11 +42,15 @@ function generationDto(row: typeof episodicMemoryGenerations.$inferSelect): Epis
   }
 }
 
-export async function readEpisodicMemoryAdminStatus(client = new OllamaClient()): Promise<EpisodicMemoryAdminStatus> {
-  const [settings, ollama, generations] = await Promise.all([
+export async function readEpisodicMemoryAdminStatus(
+  client = new OllamaClient(),
+  statisticsRange: EpisodicMemoryStatisticsRange = '24h',
+): Promise<EpisodicMemoryAdminStatus> {
+  const [settings, ollama, generations, statistics] = await Promise.all([
     readEpisodicMemorySettings(),
     client.status(),
     db.select().from(episodicMemoryGenerations).orderBy(desc(episodicMemoryGenerations.createdAt)).limit(20),
+    readEpisodicMemoryStatistics(statisticsRange),
   ])
   const active = generations.find((generation) => generation.active) ?? null
   const building = generations.find((generation) => !generation.active && ['pending', 'pulling', 'indexing'].includes(generation.status)) ?? null
@@ -49,6 +60,7 @@ export async function readEpisodicMemoryAdminStatus(client = new OllamaClient())
     ollama,
     activeGeneration: active ? generationDto(active) : null,
     buildingGeneration: building ? generationDto(building) : null,
+    statistics,
   }
 }
 

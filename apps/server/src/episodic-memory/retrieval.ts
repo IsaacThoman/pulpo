@@ -6,6 +6,7 @@ import { activeGeneration, userMemoryIsEnabled } from './indexer.js'
 import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
 import { readEpisodicMemorySettings } from './settings.js'
+import { measureEpisodicMemoryOperation, recordEpisodicMemoryMetric } from './metrics.js'
 
 const RRF_K = 60
 const CHAT_CANDIDATE_LIMIT = 50
@@ -89,6 +90,9 @@ export async function searchEpisodicChats(input: {
     eq(episodicMemoryGenerations.status, 'indexing'),
   )).orderBy(desc(episodicMemoryGenerations.createdAt)).limit(1)
   if (!generation) return []
+  const retrievalStarted = performance.now()
+  let embeddingDurationMs = 0
+  let semanticFallback = false
   const mode = input.mode ?? settings.recallMode
   const limit = Math.max(1, Math.min(11, Math.floor(input.limit ?? 5)))
   const common = and(
@@ -103,25 +107,39 @@ export async function searchEpisodicChats(input: {
     or(isNull(chats.expiresAt), gt(chats.expiresAt, new Date())),
   )
   const lexicalRankExpression = sql<number>`ts_rank_cd(${chatTurnEmbeddings.searchVector}, websearch_to_tsquery('simple', ${query}))`
-  const lexicalRows = await db.select({
-    key: chatTurnEmbeddings.responseId,
-    responseId: chatTurnEmbeddings.responseId,
-    chatId: chatTurnEmbeddings.chatId,
-    title: chats.title,
-    updatedAt: chats.updatedAt,
-    text: chatTurnEmbeddings.chunkText,
-    lexicalScore: lexicalRankExpression,
-  }).from(chatTurnEmbeddings).innerJoin(chats, eq(chats.id, chatTurnEmbeddings.chatId)).where(and(
-    common,
-    sql`${chatTurnEmbeddings.searchVector} @@ websearch_to_tsquery('simple', ${query})`,
-  )).orderBy(desc(lexicalRankExpression), desc(chats.updatedAt)).limit(CHAT_CANDIDATE_LIMIT)
+  const lexicalRows = await (async () => {
+    try {
+      return await db.select({
+        key: chatTurnEmbeddings.responseId,
+        responseId: chatTurnEmbeddings.responseId,
+        chatId: chatTurnEmbeddings.chatId,
+        title: chats.title,
+        updatedAt: chats.updatedAt,
+        text: chatTurnEmbeddings.chunkText,
+        lexicalScore: lexicalRankExpression,
+      }).from(chatTurnEmbeddings).innerJoin(chats, eq(chats.id, chatTurnEmbeddings.chatId)).where(and(
+        common,
+        sql`${chatTurnEmbeddings.searchVector} @@ websearch_to_tsquery('simple', ${query})`,
+      )).orderBy(desc(lexicalRankExpression), desc(chats.updatedAt)).limit(CHAT_CANDIDATE_LIMIT)
+    } catch (error) {
+      const durationMs = performance.now() - retrievalStarted
+      recordEpisodicMemoryMetric({ metric: 'retrieval', durationMs, error: true })
+      recordEpisodicMemoryMetric({ metric: 'database_search', durationMs, error: true })
+      throw error
+    }
+  })()
 
   type Row = (typeof lexicalRows)[number]
   let semanticRows: Array<Row & { semanticSimilarity: number }> = []
   try {
     if (!active) throw new Error('Semantic retrieval waits for an active generation')
     const profile = EPISODIC_MEMORY_PROFILES[generation.profile as EpisodicMemoryProfile]
-    const [vector] = await client.embed(profile, query, input.signal)
+    const embeddingStarted = performance.now()
+    const [vector] = await measureEpisodicMemoryOperation(
+      'embedding',
+      () => client.embed(profile, query, input.signal),
+      1,
+    ).finally(() => { embeddingDurationMs += performance.now() - embeddingStarted })
     const value = `[${vector!.join(',')}]`
     const distance = sql<number>`${chatTurnEmbeddings.embedding} <=> ${value}::halfvec`
     semanticRows = await db.select({
@@ -136,6 +154,7 @@ export async function searchEpisodicChats(input: {
     }).from(chatTurnEmbeddings).innerJoin(chats, eq(chats.id, chatTurnEmbeddings.chatId))
       .where(common).orderBy(distance).limit(CHAT_CANDIDATE_LIMIT)
   } catch {
+    semanticFallback = true
     // Lexical retrieval is the bounded, non-fatal fallback when Ollama is unavailable.
   }
 
@@ -166,6 +185,13 @@ export async function searchEpisodicChats(input: {
       score: ranked.score,
     })
   }
+  const durationMs = performance.now() - retrievalStarted
+  recordEpisodicMemoryMetric({ metric: 'retrieval', durationMs, fallback: semanticFallback, items: results.length })
+  recordEpisodicMemoryMetric({
+    metric: 'database_search',
+    durationMs: Math.max(0, durationMs - embeddingDurationMs),
+    items: results.length,
+  })
   return results
 }
 
@@ -198,7 +224,11 @@ export async function selectRelevantMemories(userId: string, query: string, clie
   if (!settings.enabled || !generation || !query.trim()) return fitMemoryBudget(await newestMemories(userId))
   try {
     const profile = EPISODIC_MEMORY_PROFILES[generation.profile as EpisodicMemoryProfile]
-    const [vector] = await client.embed(profile, query.slice(0, 4_000), AbortSignal.timeout(10_000))
+    const [vector] = await measureEpisodicMemoryOperation(
+      'embedding',
+      () => client.embed(profile, query.slice(0, 4_000), AbortSignal.timeout(10_000)),
+      1,
+    )
     const value = `[${vector!.join(',')}]`
     const distance = sql<number>`${savedMemoryEmbeddings.embedding} <=> ${value}::halfvec`
     const rows = await db.select({ content: memories.content }).from(savedMemoryEmbeddings)

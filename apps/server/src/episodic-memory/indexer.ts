@@ -17,6 +17,7 @@ import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_AUDIT_ACTIONS } from './audit.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
 import { readEpisodicMemorySettings } from './settings.js'
+import { measureEpisodicMemoryOperation, recordEpisodicMemoryMetric } from './metrics.js'
 
 const EMBEDDING_BATCH_SIZE = 16
 
@@ -76,8 +77,13 @@ async function embedChatRows(generation: Generation, client: OllamaClient, chatI
     await assertBuildIsCurrent(generation)
     await assertUserCanIndex(userId)
     const batch = pending.slice(offset, offset + EMBEDDING_BATCH_SIZE)
+    const indexingStarted = performance.now()
     try {
-      const vectors = await client.embed(profile, batch.map((row) => row.text))
+      const vectors = await measureEpisodicMemoryOperation(
+        'embedding',
+        () => client.embed(profile, batch.map((row) => row.text)),
+        batch.length,
+      )
       await assertUserCanIndex(userId)
       await db.transaction(async (tx) => {
         for (let index = 0; index < batch.length; index += 1) {
@@ -86,7 +92,9 @@ async function embedChatRows(generation: Generation, client: OllamaClient, chatI
           }).where(eq(chatTurnEmbeddings.id, batch[index]!.id))
         }
       })
+      recordEpisodicMemoryMetric({ metric: 'indexing', durationMs: performance.now() - indexingStarted, items: batch.length })
     } catch (error) {
+      recordEpisodicMemoryMetric({ metric: 'indexing', durationMs: performance.now() - indexingStarted, items: batch.length, error: true })
       await db.update(chatTurnEmbeddings).set({
         status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: new Date(),
       }).where(inArray(chatTurnEmbeddings.id, batch.map((row) => row.id)))
@@ -209,8 +217,13 @@ async function reconcileSavedMemories(generation: Generation, userId: string, cl
     await assertBuildIsCurrent(generation)
     await assertUserCanIndex(userId)
     const batch = pending.slice(offset, offset + EMBEDDING_BATCH_SIZE)
+    const indexingStarted = performance.now()
     try {
-      const vectors = await client.embed(profile, batch.map((row) => row.text))
+      const vectors = await measureEpisodicMemoryOperation(
+        'embedding',
+        () => client.embed(profile, batch.map((row) => row.text)),
+        batch.length,
+      )
       await assertUserCanIndex(userId)
       await db.transaction(async (tx) => {
         for (let index = 0; index < batch.length; index += 1) {
@@ -219,7 +232,9 @@ async function reconcileSavedMemories(generation: Generation, userId: string, cl
           }).where(eq(savedMemoryEmbeddings.id, batch[index]!.id))
         }
       })
+      recordEpisodicMemoryMetric({ metric: 'indexing', durationMs: performance.now() - indexingStarted, items: batch.length })
     } catch (error) {
+      recordEpisodicMemoryMetric({ metric: 'indexing', durationMs: performance.now() - indexingStarted, items: batch.length, error: true })
       await db.update(savedMemoryEmbeddings).set({
         status: 'failed', error: error instanceof Error ? error.message : String(error), updatedAt: new Date(),
       }).where(inArray(savedMemoryEmbeddings.id, batch.map((row) => row.id)))

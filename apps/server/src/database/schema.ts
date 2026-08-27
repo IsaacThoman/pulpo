@@ -770,6 +770,38 @@ export const savedMemoryEmbeddings = pgTable('saved_memory_embeddings', {
   check('saved_memory_embeddings_status_check', sql`${table.status} in ('pending', 'ready', 'failed')`),
 ])
 
+export const episodicMemoryMetricBuckets = pgTable('episodic_memory_metric_buckets', {
+  bucketStart: timestamp('bucket_start', { withTimezone: true }).notNull(),
+  metric: text('metric').notNull(),
+  eventCount: bigint('event_count', { mode: 'number' }).notNull().default(0),
+  errorCount: bigint('error_count', { mode: 'number' }).notNull().default(0),
+  fallbackCount: bigint('fallback_count', { mode: 'number' }).notNull().default(0),
+  recalledCount: bigint('recalled_count', { mode: 'number' }).notNull().default(0),
+  abstainedCount: bigint('abstained_count', { mode: 'number' }).notNull().default(0),
+  itemCount: bigint('item_count', { mode: 'number' }).notNull().default(0),
+  durationSumMs: bigint('duration_sum_ms', { mode: 'number' }).notNull().default(0),
+  durationMinMs: integer('duration_min_ms').notNull().default(0),
+  durationMaxMs: integer('duration_max_ms').notNull().default(0),
+  durationLe10: bigint('duration_le_10', { mode: 'number' }).notNull().default(0),
+  durationLe25: bigint('duration_le_25', { mode: 'number' }).notNull().default(0),
+  durationLe50: bigint('duration_le_50', { mode: 'number' }).notNull().default(0),
+  durationLe100: bigint('duration_le_100', { mode: 'number' }).notNull().default(0),
+  durationLe250: bigint('duration_le_250', { mode: 'number' }).notNull().default(0),
+  durationLe500: bigint('duration_le_500', { mode: 'number' }).notNull().default(0),
+  durationLe1000: bigint('duration_le_1000', { mode: 'number' }).notNull().default(0),
+  durationLe2500: bigint('duration_le_2500', { mode: 'number' }).notNull().default(0),
+  durationLe5000: bigint('duration_le_5000', { mode: 'number' }).notNull().default(0),
+  durationGt5000: bigint('duration_gt_5000', { mode: 'number' }).notNull().default(0),
+  lastSuccessAt: timestamp('last_success_at', { withTimezone: true }),
+  lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.bucketStart, table.metric] }),
+  index('episodic_memory_metric_buckets_metric_time_idx').on(table.metric, table.bucketStart),
+  check('episodic_memory_metric_buckets_metric_check', sql`${table.metric} in ('automatic_recall', 'retrieval', 'database_search', 'embedding', 'indexing', 'agent_search', 'agent_read')`),
+  check('episodic_memory_metric_buckets_counts_check', sql`${table.eventCount} >= 0 and ${table.errorCount} >= 0 and ${table.fallbackCount} >= 0 and ${table.recalledCount} >= 0 and ${table.abstainedCount} >= 0 and ${table.itemCount} >= 0 and ${table.durationSumMs} >= 0`),
+])
+
 export const apiKeys = pgTable('api_keys', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),

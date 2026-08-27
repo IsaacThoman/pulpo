@@ -24,7 +24,7 @@ describe('automatic episodic recall', () => {
       userId: 'user',
       currentChatId: 'current',
       query: 'question',
-    }, search)
+    }, search, vi.fn())
     expect(item?.sources).toHaveLength(1)
     expect(recallItemFromOutput([item], item!.id.replace(':recall', ''))).toEqual(item)
     expect(recalledChatContext(item)).toContain('untrusted reference material')
@@ -33,9 +33,22 @@ describe('automatic episodic recall', () => {
 
   it('makes retrieval failure non-fatal', async () => {
     const search = vi.fn().mockRejectedValue(new Error('Ollama unavailable'))
+    const record = vi.fn()
     await expect(retrieveAutomaticRecall({
       responseId: '30000000-0000-4000-8000-000000000001',
       userId: 'user', currentChatId: 'current', query: 'question',
-    }, search)).resolves.toBeNull()
+    }, search, record)).resolves.toBeNull()
+    expect(record).toHaveBeenCalledWith(expect.objectContaining({ metric: 'automatic_recall', error: true }))
+  })
+
+  it('does not count a cancelled response as a recall or an error', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const record = vi.fn()
+    await expect(retrieveAutomaticRecall({
+      responseId: '30000000-0000-4000-8000-000000000001',
+      userId: 'user', currentChatId: 'current', query: 'question', signal: controller.signal,
+    }, vi.fn(), record)).resolves.toBeNull()
+    expect(record).not.toHaveBeenCalled()
   })
 })

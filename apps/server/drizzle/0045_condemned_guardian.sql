@@ -1,0 +1,31 @@
+CREATE TABLE "episodic_memory_metric_buckets" (
+	"bucket_start" timestamp with time zone NOT NULL,
+	"metric" text NOT NULL,
+	"event_count" bigint DEFAULT 0 NOT NULL,
+	"error_count" bigint DEFAULT 0 NOT NULL,
+	"fallback_count" bigint DEFAULT 0 NOT NULL,
+	"recalled_count" bigint DEFAULT 0 NOT NULL,
+	"abstained_count" bigint DEFAULT 0 NOT NULL,
+	"item_count" bigint DEFAULT 0 NOT NULL,
+	"duration_sum_ms" bigint DEFAULT 0 NOT NULL,
+	"duration_min_ms" integer DEFAULT 0 NOT NULL,
+	"duration_max_ms" integer DEFAULT 0 NOT NULL,
+	"duration_le_10" bigint DEFAULT 0 NOT NULL,
+	"duration_le_25" bigint DEFAULT 0 NOT NULL,
+	"duration_le_50" bigint DEFAULT 0 NOT NULL,
+	"duration_le_100" bigint DEFAULT 0 NOT NULL,
+	"duration_le_250" bigint DEFAULT 0 NOT NULL,
+	"duration_le_500" bigint DEFAULT 0 NOT NULL,
+	"duration_le_1000" bigint DEFAULT 0 NOT NULL,
+	"duration_le_2500" bigint DEFAULT 0 NOT NULL,
+	"duration_le_5000" bigint DEFAULT 0 NOT NULL,
+	"duration_gt_5000" bigint DEFAULT 0 NOT NULL,
+	"last_success_at" timestamp with time zone,
+	"last_error_at" timestamp with time zone,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "episodic_memory_metric_buckets_bucket_start_metric_pk" PRIMARY KEY("bucket_start","metric"),
+	CONSTRAINT "episodic_memory_metric_buckets_metric_check" CHECK ("episodic_memory_metric_buckets"."metric" in ('automatic_recall', 'retrieval', 'database_search', 'embedding', 'indexing', 'agent_search', 'agent_read')),
+	CONSTRAINT "episodic_memory_metric_buckets_counts_check" CHECK ("episodic_memory_metric_buckets"."event_count" >= 0 and "episodic_memory_metric_buckets"."error_count" >= 0 and "episodic_memory_metric_buckets"."fallback_count" >= 0 and "episodic_memory_metric_buckets"."recalled_count" >= 0 and "episodic_memory_metric_buckets"."abstained_count" >= 0 and "episodic_memory_metric_buckets"."item_count" >= 0 and "episodic_memory_metric_buckets"."duration_sum_ms" >= 0)
+);
+--> statement-breakpoint
+CREATE INDEX "episodic_memory_metric_buckets_metric_time_idx" ON "episodic_memory_metric_buckets" USING btree ("metric","bucket_start");

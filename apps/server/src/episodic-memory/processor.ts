@@ -8,6 +8,7 @@ import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
 import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_AUDIT_ACTIONS } from './audit.js'
 import { watchCancellation } from './cancellation.js'
+import { measureEpisodicMemoryOperation } from './metrics.js'
 import {
   activeGeneration,
   buildAndActivateGeneration,
@@ -100,7 +101,11 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
         metadata: { profile: profile.id, model: profile.model, digest: installed.digest, size: installed.size },
       })
     }
-    await client.embed(profile, 'Pulpo episodic memory model validation')
+    await measureEpisodicMemoryOperation(
+      'embedding',
+      () => client.embed(profile, 'Pulpo episodic memory model validation'),
+      1,
+    )
     const [generation] = await db.select({ cancelRequestedAt: episodicMemoryGenerations.cancelRequestedAt })
       .from(episodicMemoryGenerations).where(eq(episodicMemoryGenerations.id, generationId)).limit(1)
     if (generation?.cancelRequestedAt) {

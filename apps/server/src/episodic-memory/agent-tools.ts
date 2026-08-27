@@ -8,6 +8,7 @@ import { chatTurnChunk } from './chunks.js'
 import { searchEpisodicChats, type EpisodicChatResult } from './retrieval.js'
 import { userMemoryIsEnabled } from './indexer.js'
 import { readEpisodicMemorySettings } from './settings.js'
+import { recordEpisodicMemoryMetric, type EpisodicMemoryMetricInput } from './metrics.js'
 
 const DEFAULT_SEARCH_LIMIT = 5
 const MAX_SEARCH_LIMIT = 10
@@ -232,11 +233,13 @@ export function createEpisodicMemoryTools(input: {
   currentChatId: string
   maxOutputBytes: number
   onOperationStarted?: (operationId: string) => void | Promise<void>
+  recordMetric?: (metric: EpisodicMemoryMetricInput) => void
   search?: typeof searchEpisodicChats
   read?: typeof readEpisodicChatPage
 }): AgentTool[] {
   const search = input.search ?? searchEpisodicChats
   const read = input.read ?? readEpisodicChatPage
+  const recordMetric = input.recordMetric ?? recordEpisodicMemoryMetric
   return [{
     name: 'search_chats',
     label: 'search_chats',
@@ -247,22 +250,31 @@ export function createEpisodicMemoryTools(input: {
     }, { additionalProperties: false }),
     executionMode: 'sequential',
     execute: async (id, rawArgs, signal) => {
-      signal?.throwIfAborted()
-      await input.onOperationStarted?.(id)
-      const args = rawArgs && typeof rawArgs === 'object' ? rawArgs as Record<string, unknown> : {}
-      const query = typeof args.query === 'string' ? args.query.replace(/\s+/g, ' ').trim().slice(0, 4_000) : ''
-      if (!query) throw new Error('query must be a non-empty string')
-      const limit = integer(args.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT)
-      const results = await search({
-        userId: input.userId,
-        currentChatId: input.currentChatId,
-        query,
-        limit: Math.min(MAX_SEARCH_LIMIT + 1, limit + 1),
-        signal,
-      })
-      signal?.throwIfAborted()
-      const output = fitSearchResults(results, limit, Math.max(1_024, input.maxOutputBytes))
-      return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], details: { kind: 'episodic_search', ...output.pagination } }
+      const started = performance.now()
+      try {
+        signal?.throwIfAborted()
+        await input.onOperationStarted?.(id)
+        const args = rawArgs && typeof rawArgs === 'object' ? rawArgs as Record<string, unknown> : {}
+        const query = typeof args.query === 'string' ? args.query.replace(/\s+/g, ' ').trim().slice(0, 4_000) : ''
+        if (!query) throw new Error('query must be a non-empty string')
+        const limit = integer(args.limit, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT)
+        const results = await search({
+          userId: input.userId,
+          currentChatId: input.currentChatId,
+          query,
+          limit: Math.min(MAX_SEARCH_LIMIT + 1, limit + 1),
+          signal,
+        })
+        signal?.throwIfAborted()
+        const output = fitSearchResults(results, limit, Math.max(1_024, input.maxOutputBytes))
+        recordMetric({ metric: 'agent_search', durationMs: performance.now() - started, items: output.results.length })
+        return { content: [{ type: 'text' as const, text: JSON.stringify(output) }], details: { kind: 'episodic_search', ...output.pagination } }
+      } catch (error) {
+        if (signal?.aborted !== true) {
+          recordMetric({ metric: 'agent_search', durationMs: performance.now() - started, error: true })
+        }
+        throw error
+      }
     },
   }, {
     name: 'read_chat',
@@ -275,23 +287,32 @@ export function createEpisodicMemoryTools(input: {
     }, { additionalProperties: false }),
     executionMode: 'sequential',
     execute: async (id, rawArgs, signal) => {
-      signal?.throwIfAborted()
-      await input.onOperationStarted?.(id)
-      const args = rawArgs && typeof rawArgs === 'object' ? rawArgs as Record<string, unknown> : {}
-      const chatId = typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
-      if (!chatId) throw new Error('chat_id must be a non-empty string')
-      const page = await read({
-        userId: input.userId,
-        currentChatId: input.currentChatId,
-        chatId,
-        cursor: typeof args.cursor === 'string' ? args.cursor : undefined,
-        maxTurns: integer(args.max_turns, DEFAULT_TURN_LIMIT, MAX_TURN_LIMIT),
-        maxOutputBytes: input.maxOutputBytes,
-        signal,
-      })
-      signal?.throwIfAborted()
-      if (!page) throw new Error('Chat is unavailable')
-      return { content: [{ type: 'text' as const, text: JSON.stringify(page) }], details: { kind: 'episodic_read', ...page.pagination } }
+      const started = performance.now()
+      try {
+        signal?.throwIfAborted()
+        await input.onOperationStarted?.(id)
+        const args = rawArgs && typeof rawArgs === 'object' ? rawArgs as Record<string, unknown> : {}
+        const chatId = typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
+        if (!chatId) throw new Error('chat_id must be a non-empty string')
+        const page = await read({
+          userId: input.userId,
+          currentChatId: input.currentChatId,
+          chatId,
+          cursor: typeof args.cursor === 'string' ? args.cursor : undefined,
+          maxTurns: integer(args.max_turns, DEFAULT_TURN_LIMIT, MAX_TURN_LIMIT),
+          maxOutputBytes: input.maxOutputBytes,
+          signal,
+        })
+        signal?.throwIfAborted()
+        if (!page) throw new Error('Chat is unavailable')
+        recordMetric({ metric: 'agent_read', durationMs: performance.now() - started, items: page.turns.length })
+        return { content: [{ type: 'text' as const, text: JSON.stringify(page) }], details: { kind: 'episodic_read', ...page.pagination } }
+      } catch (error) {
+        if (signal?.aborted !== true) {
+          recordMetric({ metric: 'agent_read', durationMs: performance.now() - started, error: true })
+        }
+        throw error
+      }
     },
   }]
 }

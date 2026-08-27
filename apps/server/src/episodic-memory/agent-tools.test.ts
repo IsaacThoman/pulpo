@@ -12,8 +12,9 @@ describe('episodic-memory agent tools', () => {
       score: 1 - index / 100,
     })))
     const started = vi.fn()
+    const recordMetric = vi.fn()
     const [tool] = createEpisodicMemoryTools({
-      userId: 'user-1', currentChatId: 'current-chat', maxOutputBytes: 100_000, search, onOperationStarted: started,
+      userId: 'user-1', currentChatId: 'current-chat', maxOutputBytes: 100_000, search, onOperationStarted: started, recordMetric,
     })
 
     const result = await tool!.execute('search-1', { query: 'old project', limit: 10 })
@@ -23,6 +24,7 @@ describe('episodic-memory agent tools', () => {
     expect(search).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', currentChatId: 'current-chat', limit: 11 }))
     expect(payload.results).toHaveLength(10)
     expect(payload.pagination.hasMore).toBe(true)
+    expect(recordMetric).toHaveBeenCalledWith(expect.objectContaining({ metric: 'agent_search', items: 10 }))
   })
 
   it('passes bounded pagination to read_chat and rejects unavailable chats', async () => {
@@ -33,7 +35,8 @@ describe('episodic-memory agent tools', () => {
       safety: 'untrusted',
     }
     const read = vi.fn().mockResolvedValue(page)
-    const tools = createEpisodicMemoryTools({ userId: 'user-1', currentChatId: 'current-chat', maxOutputBytes: 4_096, read })
+    const recordMetric = vi.fn()
+    const tools = createEpisodicMemoryTools({ userId: 'user-1', currentChatId: 'current-chat', maxOutputBytes: 4_096, read, recordMetric })
     const tool = tools.find((candidate) => candidate.name === 'read_chat')!
 
     await tool.execute('read-1', { chat_id: 'source', max_turns: 999 })
@@ -43,6 +46,7 @@ describe('episodic-memory agent tools', () => {
 
     read.mockResolvedValueOnce(null)
     await expect(tool.execute('read-2', { chat_id: 'current-chat' })).rejects.toThrow('unavailable')
+    expect(recordMetric).toHaveBeenCalledWith(expect.objectContaining({ metric: 'agent_read', error: true }))
   })
 
   it('uses opaque validated cursors and keeps transcript JSON under the byte limit', () => {
@@ -63,10 +67,12 @@ describe('episodic-memory agent tools', () => {
 
   it('honors cancellation before invoking retrieval', async () => {
     const search = vi.fn()
-    const [tool] = createEpisodicMemoryTools({ userId: 'user', currentChatId: 'current', maxOutputBytes: 4_096, search })
+    const recordMetric = vi.fn()
+    const [tool] = createEpisodicMemoryTools({ userId: 'user', currentChatId: 'current', maxOutputBytes: 4_096, search, recordMetric })
     const controller = new AbortController()
     controller.abort(new Error('cancelled'))
     await expect(tool!.execute('search-cancelled', { query: 'anything' }, controller.signal)).rejects.toThrow('cancelled')
     expect(search).not.toHaveBeenCalled()
+    expect(recordMetric).not.toHaveBeenCalled()
   })
 })

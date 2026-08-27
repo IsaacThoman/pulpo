@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, dictationSettingsSchema, episodicMemorySettingsSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -135,14 +135,16 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
 
   app.get('/api/admin/settings/episodic-memory', async (request) => {
     requireAdmin(request)
-    return readEpisodicMemoryAdminStatus()
+    const range = episodicMemoryStatisticsRangeSchema.parse((request.query as { range?: unknown }).range ?? '24h')
+    return readEpisodicMemoryAdminStatus(undefined, range)
   })
 
   app.patch('/api/admin/settings/episodic-memory', async (request) => {
     const admin = requireAdmin(request)
     const settings = episodicMemorySettingsSchema.parse(request.body)
+    const range = episodicMemoryStatisticsRangeSchema.parse((request.query as { range?: unknown }).range ?? '24h')
     await updateEpisodicMemorySettings(admin.id, settings)
-    return readEpisodicMemoryAdminStatus()
+    return readEpisodicMemoryAdminStatus(undefined, range)
   })
 
   app.post('/api/admin/settings/episodic-memory/rebuild', async (request) => {

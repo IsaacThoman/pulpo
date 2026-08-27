@@ -991,6 +991,75 @@ export const episodicMemoryGenerationSchema = z.object({
 })
 export type EpisodicMemoryGeneration = z.infer<typeof episodicMemoryGenerationSchema>
 
+export const episodicMemoryStatisticsRangeSchema = z.enum(['24h', '7d', '30d'])
+export type EpisodicMemoryStatisticsRange = z.infer<typeof episodicMemoryStatisticsRangeSchema>
+
+const episodicMemoryLatencySchema = z.object({
+  averageMs: z.number().nonnegative(),
+  p50Ms: z.number().nonnegative(),
+  p95Ms: z.number().nonnegative(),
+})
+
+const episodicMemoryOperationStatisticsSchema = z.object({
+  events: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  errorRate: z.number().min(0).max(1),
+  items: z.number().int().nonnegative(),
+  latency: episodicMemoryLatencySchema,
+})
+
+export const episodicMemoryStatisticsSchema = z.object({
+  range: episodicMemoryStatisticsRangeSchema,
+  from: z.string(),
+  to: z.string(),
+  current: z.object({
+    indexedChats: z.number().int().nonnegative(),
+    indexedChunks: z.number().int().nonnegative(),
+    indexedFacts: z.number().int().nonnegative(),
+    indexedUsers: z.number().int().nonnegative(),
+    pendingItems: z.number().int().nonnegative(),
+    failedItems: z.number().int().nonnegative(),
+    coverage: z.number().min(0).max(1),
+    storageBytes: z.number().nonnegative(),
+    lastIndexedAt: z.string().nullable(),
+    queue: z.object({
+      available: z.boolean(),
+      pending: z.number().int().nonnegative(),
+      active: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      oldestJobAgeMs: z.number().nonnegative(),
+    }),
+  }),
+  summary: z.object({
+    recall: episodicMemoryOperationStatisticsSchema.extend({
+      recalled: z.number().int().nonnegative(),
+      abstained: z.number().int().nonnegative(),
+      recallRate: z.number().min(0).max(1),
+      abstentionRate: z.number().min(0).max(1),
+    }),
+    retrieval: episodicMemoryOperationStatisticsSchema.extend({
+      fallbacks: z.number().int().nonnegative(),
+      fallbackRate: z.number().min(0).max(1),
+    }),
+    databaseSearch: episodicMemoryOperationStatisticsSchema,
+    embedding: episodicMemoryOperationStatisticsSchema,
+    indexing: episodicMemoryOperationStatisticsSchema.extend({
+      itemsPerHour: z.number().nonnegative(),
+    }),
+    agentSearch: episodicMemoryOperationStatisticsSchema,
+    agentRead: episodicMemoryOperationStatisticsSchema,
+    totalErrorRate: z.number().min(0).max(1),
+  }),
+  series: z.array(z.object({
+    bucketStart: z.string(),
+    recallRequests: z.number().int().nonnegative(),
+    recalled: z.number().int().nonnegative(),
+    errors: z.number().int().nonnegative(),
+    p95RecallLatencyMs: z.number().nonnegative(),
+  })),
+})
+export type EpisodicMemoryStatistics = z.infer<typeof episodicMemoryStatisticsSchema>
+
 export const episodicMemoryAdminStatusSchema = z.object({
   settings: episodicMemorySettingsSchema,
   profiles: z.array(episodicMemoryModelProfileSchema),
@@ -1002,6 +1071,7 @@ export const episodicMemoryAdminStatusSchema = z.object({
   }),
   activeGeneration: episodicMemoryGenerationSchema.nullable(),
   buildingGeneration: episodicMemoryGenerationSchema.nullable(),
+  statistics: episodicMemoryStatisticsSchema,
 })
 export type EpisodicMemoryAdminStatus = z.infer<typeof episodicMemoryAdminStatusSchema>
 

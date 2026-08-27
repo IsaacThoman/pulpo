@@ -1,5 +1,6 @@
 import { recallItemSchema, type RecallItem, type RecallSource } from '@pulpo/contracts'
 import { searchEpisodicChats, type EpisodicChatResult } from './retrieval.js'
+import { recordEpisodicMemoryMetric } from './metrics.js'
 
 const MAX_RECALL_CHATS = 5
 const MAX_RECALL_TOKENS = 1_200
@@ -49,7 +50,8 @@ export async function retrieveAutomaticRecall(input: {
   currentChatId: string
   query: string
   signal?: AbortSignal
-}, search = searchEpisodicChats): Promise<RecallItem | null> {
+}, search = searchEpisodicChats, record = recordEpisodicMemoryMetric): Promise<RecallItem | null> {
+  const started = performance.now()
   try {
     const timeout = AbortSignal.timeout(10_000)
     const signal = input.signal ? AbortSignal.any([input.signal, timeout]) : timeout
@@ -63,6 +65,13 @@ export async function retrieveAutomaticRecall(input: {
     })
     signal.throwIfAborted()
     const sources = fitRecallSources(results)
+    record({
+      metric: 'automatic_recall',
+      durationMs: performance.now() - started,
+      recalled: sources.length > 0,
+      abstained: sources.length === 0,
+      items: sources.length,
+    })
     return sources.length ? {
       id: `${input.responseId}:recall`,
       type: 'pulpo_recall',
@@ -70,6 +79,9 @@ export async function retrieveAutomaticRecall(input: {
       sources,
     } : null
   } catch {
+    if (input.signal?.aborted !== true) {
+      record({ metric: 'automatic_recall', durationMs: performance.now() - started, error: true })
+    }
     // Recall is optional context. Ollama, database, or cancellation failures never fail generation.
     return null
   }

@@ -27,6 +27,7 @@ import {
   chatTurnEmbeddings,
   savedMemoryEmbeddings,
   episodicMemoryGenerations,
+  episodicMemoryMetricBuckets,
 } from './schema.js'
 
 describe('user-owned operational records', () => {
@@ -152,5 +153,19 @@ describe('user-owned operational records', () => {
     ]))
     expect(chatConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
     expect(memoryConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+  })
+
+  it('stores only fixed aggregate episodic-memory metrics', () => {
+    const config = getTableConfig(episodicMemoryMetricBuckets)
+    expect(config.primaryKeys).toHaveLength(1)
+    expect(config.primaryKeys[0]!.columns.map((column) => column.name)).toEqual(['bucket_start', 'metric'])
+    expect(config.indexes.map((item) => item.config.name)).toContain('episodic_memory_metric_buckets_metric_time_idx')
+    expect(config.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'episodic_memory_metric_buckets_metric_check',
+      'episodic_memory_metric_buckets_counts_check',
+    ]))
+    expect(config.columns.map((column) => column.name)).not.toEqual(expect.arrayContaining([
+      'user_id', 'chat_id', 'query', 'prompt', 'excerpt', 'content',
+    ]))
   })
 })
