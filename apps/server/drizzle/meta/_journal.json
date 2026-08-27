@@ -309,6 +309,20 @@
       "when": 1787843619932,
       "tag": "0043_wild_mockingbird",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787848979118,
+      "tag": "0044_disable-api-keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1787850752163,
+      "tag": "0045_openai_completions_compatibility",
+      "breakpoints": true
     }
   ]
 }

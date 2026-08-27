@@ -1,7 +1,7 @@
 import argon2 from 'argon2'
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { createApiKeySchema } from '@pulpo/contracts'
+import { createApiKeySchema, updateApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { apiKeyModelPermissions, apiKeys, applicationSettings, modelPresetChoices, modelPresets, models, usageEvents, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
@@ -42,9 +42,15 @@ export async function authenticateApiKey(request: FastifyRequest, requiredScope:
 }
 
 export async function assertApiKeyModelAllowed(apiKeyId: string, modelId: string): Promise<void> {
+  if (!(await apiKeyModelAllowed(apiKeyId, modelId))) {
+    throw new AppError(403, 'model_not_allowed', 'This API key cannot use the selected model', 'permission_error')
+  }
+}
+
+async function loadApiKeyModelPermissionContext(apiKeyId: string) {
   const permissions = await db.select({ modelId: apiKeyModelPermissions.modelId }).from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, apiKeyId))
   const permittedModelIds = permissions.map((permission) => permission.modelId)
-  if (permittedModelIds.length === 0 || permittedModelIds.includes(modelId)) return
+  if (permittedModelIds.length === 0) return { permittedModelIds, catalog: [], redirects: [] }
   const [catalog, redirectRows] = await Promise.all([
     db.select({ id: models.id, enabled: models.enabled, visible: models.visible, fallbackModelId: models.fallbackModelId }).from(models),
     db.select({ modelId: modelPresets.modelId, action: modelPresetChoices.action })
@@ -56,9 +62,19 @@ export async function assertApiKeyModelAllowed(apiKeyId: string, modelId: string
     const targetModelId = (row.action as { modelId?: unknown }).modelId
     return typeof targetModelId === 'string' ? [{ modelId: row.modelId, targetModelId }] : []
   })
-  if (!modelPermissionAllows(modelId, permittedModelIds, catalog, redirects)) {
-    throw new AppError(403, 'model_not_allowed', 'This API key cannot use the selected model', 'permission_error')
-  }
+  return { permittedModelIds, catalog, redirects }
+}
+
+export async function apiKeyModelAllowed(apiKeyId: string, modelId: string): Promise<boolean> {
+  const context = await loadApiKeyModelPermissionContext(apiKeyId)
+  return context.permittedModelIds.length === 0
+    || modelPermissionAllows(modelId, context.permittedModelIds, context.catalog, context.redirects)
+}
+
+export async function filterApiKeyAllowedModels<T extends { id: string }>(apiKeyId: string, rows: T[]): Promise<T[]> {
+  const context = await loadApiKeyModelPermissionContext(apiKeyId)
+  if (context.permittedModelIds.length === 0) return rows
+  return rows.filter((row) => modelPermissionAllows(row.id, context.permittedModelIds, context.catalog, context.redirects))
 }
 
 export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> {
@@ -119,16 +135,17 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
     return result
   })
 
-  app.post('/api/api-keys/:id/revoke', async (request) => {
+  app.patch('/api/api-keys/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
+    const { enabled } = updateApiKeySchema.parse(request.body)
     const result = await db
       .update(apiKeys)
-      .set({ status: 'revoked', revokedAt: new Date() })
+      .set({ status: enabled ? 'active' : 'disabled', disabledAt: enabled ? null : new Date() })
       .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id)))
       .returning({ id: apiKeys.id })
     if (!result.length) throw new AppError(404, 'not_found', 'API key not found')
-    return { id, revoked: true }
+    return { id, enabled }
   })
 
   app.delete('/api/api-keys/:id', async (request, reply) => {

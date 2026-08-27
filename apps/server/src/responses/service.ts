@@ -19,6 +19,7 @@ import {
 } from '../chats/temporary.js'
 import { sanitizeOutputForClient } from './public-output.js'
 import { responseAttachmentIds } from '../messages/input.js'
+import { unsupportedPublicModelParameter } from './model-parameters.js'
 
 export interface CreateResponseOptions {
   /** Owner of the chat, response, files, memories, and conversation context. */
@@ -32,7 +33,10 @@ export interface CreateResponseOptions {
   input: CreateChatResponseInput
   rawInput?: unknown
   parameters?: Record<string, unknown>
+  metadata?: Record<string, string>
   idempotencyKey?: string | null
+  idempotencyScope?: string
+  idempotencyFingerprint?: string | null
   parentResponseId?: string | null
   userMessageId?: string
   branchReason?: 'message' | 'regenerate' | 'user_edit'
@@ -71,6 +75,7 @@ export async function resolveResponseGeneration(modelId: string, presetSelection
 }
 
 export async function createResponse(options: CreateResponseOptions) {
+  const idempotencyScope = options.idempotencyScope ?? 'default'
   if (options.idempotencyKey) {
     const [existing] = await db
       .select({ response: responses })
@@ -78,12 +83,22 @@ export async function createResponse(options: CreateResponseOptions) {
       .innerJoin(chats, eq(chats.id, responses.chatId))
       .where(and(
         eq(responses.userId, options.ownerUserId),
+        eq(responses.idempotencyScope, idempotencyScope),
         eq(responses.idempotencyKey, options.idempotencyKey),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
       ))
       .limit(1)
-    if (existing) return existing.response
+    if (existing) {
+      if (
+        options.idempotencyFingerprint
+        && existing.response.idempotencyFingerprint
+        && options.idempotencyFingerprint !== existing.response.idempotencyFingerprint
+      ) {
+        throw new AppError(409, 'idempotency_conflict', 'The idempotency key was already used with a different request', 'invalid_request_error')
+      }
+      return existing.response
+    }
   }
   const now = new Date()
   const [chat] = await db
@@ -109,6 +124,10 @@ export async function createResponse(options: CreateResponseOptions) {
   const resolved = await resolveResponseGeneration(options.input.modelId, options.input.presetSelections)
   const [model] = await db.select().from(models).where(and(eq(models.id, resolved.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
+  if (options.apiKeyId && options.parameters) {
+    const rejected = unsupportedPublicModelParameter(model, options.parameters)
+    if (rejected) throw new AppError(400, 'parameter_not_allowed', `Parameter ${rejected} is not available for this model`, 'invalid_request_error', rejected)
+  }
   if (options.input.agentMode) {
     if (options.apiKeyId) throw new AppError(400, 'agent_web_only', 'Agent mode is only available in Pulpo web chat')
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
@@ -189,7 +208,10 @@ export async function createResponse(options: CreateResponseOptions) {
     input: storedInput,
     presetSelections: resolved.selections,
     parameters: { ...(options.parameters ?? {}), ...resolved.parameters },
+    metadata: options.metadata ?? {},
     idempotencyKey: options.idempotencyKey,
+    idempotencyScope,
+    idempotencyFingerprint: options.idempotencyFingerprint,
     origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
   })
   const requestLogId = newId()

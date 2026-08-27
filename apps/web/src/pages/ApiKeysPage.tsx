@@ -50,18 +50,18 @@ import { useAuth } from '@/stores/auth'
 import { ui, uit } from '@/i18n/ui'
 
 const ALL_SCOPES = [
-  { id: 'responses', label: "Responses" },
+  { id: 'responses', label: "Inference" },
   { id: 'models', label: "List models" },
 ] as const
 
 const API_BASE_URL = `${runtimeInstanceUrl()}/v1`
 
-const CURL_SNIPPET = `curl ${API_BASE_URL}/responses \\
+const CURL_SNIPPET = `curl ${API_BASE_URL}/chat/completions \\
   -H "Authorization: Bearer $PULPO_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "your-model-id",
-    "input": "hello",
+    "messages": [{"role": "user", "content": "hello"}],
     "stream": true
   }'`
 
@@ -72,15 +72,21 @@ const client = new OpenAI({
   apiKey: process.env.PULPO_API_KEY,
 });
 
-const stream = await client.responses.create({
+const stream = await client.chat.completions.create({
   model: "your-model-id",
-  input: "hello",
+  messages: [{ role: "user", content: "hello" }],
   stream: true,
 });
 
 for await (const chunk of stream) {
-  if (chunk.type === "response.output_text.delta") process.stdout.write(chunk.delta);
+  process.stdout.write(chunk.choices[0]?.delta.content ?? "");
 }`
+
+function scopeLabel(scope: string): string {
+  if (scope === 'responses') return ui('Inference')
+  if (scope === 'models') return ui('List models')
+  return scope
+}
 
 function LimitRow({
   amount,
@@ -134,7 +140,7 @@ export function ApiKeysPage() {
   const apiKeysEnabled = useAuth((state) => state.apiKeysEnabled)
   const keys = useApiKeys((s) => s.keys)
   const createKey = useApiKeys((s) => s.createKey)
-  const revokeKey = useApiKeys((s) => s.revokeKey)
+  const setKeyEnabled = useApiKeys((s) => s.setKeyEnabled)
   const deleteKey = useApiKeys((s) => s.deleteKey)
   const load = useApiKeys((s) => s.load)
   const models = useCatalog((state) => state.models)
@@ -150,7 +156,7 @@ export function ApiKeysPage() {
   const [secret, setSecret] = useState<string | null>(null)
   const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [confirmRevoke, setConfirmRevoke] = useState<ApiKey | null>(null)
+  const [confirmDisable, setConfirmDisable] = useState<ApiKey | null>(null)
   const [usageDocsOpen, setUsageDocsOpen] = useState(false)
 
   useEffect(() => { void load() }, [load])
@@ -217,8 +223,10 @@ export function ApiKeysPage() {
           onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
         >
           <Copy /> {ui("Copy prefix")} </DropdownMenuItem>
-        {!key.revoked && (
-          <DropdownMenuItem onClick={() => setConfirmRevoke(key)}> {ui("Revoke")} </DropdownMenuItem>
+        {key.disabled ? (
+          <DropdownMenuItem onClick={() => void setKeyEnabled(key.id, true).catch(() => {})}> {ui("Enable")} </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => setConfirmDisable(key)}> {ui("Disable")} </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void deleteKey(key.id)}>
@@ -265,12 +273,12 @@ export function ApiKeysPage() {
             </p>
           )}
           {filtered.map((key) => (
-            <div key={key.id} className={cn('p-4', key.revoked && 'opacity-50')}>
+            <div key={key.id} className={cn('p-4', key.disabled && 'opacity-50')}>
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate font-medium">{key.name}</span>
-                    {key.revoked && <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px]">{ui("revoked")}</Badge>}
+                    {key.disabled && <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">{ui("disabled")}</Badge>}
                   </div>
                   <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{maskKey(key.prefix)}</div>
                 </div>
@@ -280,7 +288,7 @@ export function ApiKeysPage() {
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">{ui("Models")}</dt>
                   <dd className="mt-1 truncate">{modelLabel(key.allowedModels)}</dd>
-                  <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.join(' · ')}</dd>
+                  <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.map(scopeLabel).join(' · ')}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">{ui("Last used")}</dt>
@@ -330,15 +338,15 @@ export function ApiKeysPage() {
               {filtered.map((k) => (
                 <tr
                   key={k.id}
-                  className={cn(k.revoked && 'opacity-50')}
+                  className={cn(k.disabled && 'opacity-50')}
                 >
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{k.name}</span>
-                          {k.revoked && (
-                            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]"> {ui("revoked")} </Badge>
+                          {k.disabled && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]"> {ui("disabled")} </Badge>
                           )}
                         </div>
                         <div className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -407,7 +415,10 @@ export function ApiKeysPage() {
                 <div className="grid gap-2 text-sm sm:grid-cols-2">
                   {[
                     ['POST', '/v1/responses'],
+                    ['POST', '/v1/chat/completions'],
+                    ['POST', '/v1/completions'],
                     ['GET', '/v1/models'],
+                    ['GET', '/v1/models/:model'],
                     ['GET', '/v1/responses/:id'],
                   ].map(([method, path]) => (
                     <div
@@ -583,19 +594,19 @@ export function ApiKeysPage() {
             <DialogTitle>{ui("Save your API key")}</DialogTitle>
             <DialogDescription> {ui("This is the only time the full key will be shown.")} </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
-            <code className="flex-1 truncate font-mono text-xs">
+          <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
+            <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs">
               {revealed ? secret : secret?.replace(/(?<=sk-pulpo-)./g, '•')}
             </code>
             <button
-              className="cursor-pointer text-muted-foreground hover:text-foreground"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               onClick={() => setRevealed((v) => !v)}
               aria-label={revealed ? ui("Hide key") : ui("Show key")}
             >
               {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
             <button
-              className="cursor-pointer text-muted-foreground hover:text-foreground"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               onClick={() => {
                 if (secret) navigator.clipboard?.writeText(secret).catch(() => {})
                 setCopied(true)
@@ -614,22 +625,21 @@ export function ApiKeysPage() {
         </DialogContent>
       </Dialog>
 
-      {/* revoke confirm */}
-      <Dialog open={!!confirmRevoke} onOpenChange={(v) => !v && setConfirmRevoke(null)}>
+      {/* disable confirm */}
+      <Dialog open={!!confirmDisable} onOpenChange={(v) => !v && setConfirmDisable(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{ui("Revoke “")}{confirmRevoke?.name}”?</DialogTitle>
-            <DialogDescription> {ui("Requests using this key will start failing immediately. This cannot be undone.")} </DialogDescription>
+            <DialogTitle>{ui("Disable “")}{confirmDisable?.name}”?</DialogTitle>
+            <DialogDescription> {ui("Requests using this key will start failing immediately. You can enable it again later.")} </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmRevoke(null)}> {ui("Cancel")} </Button>
+            <Button variant="outline" onClick={() => setConfirmDisable(null)}> {ui("Cancel")} </Button>
             <Button
-              variant="destructive"
               onClick={() => {
-                if (confirmRevoke) void revokeKey(confirmRevoke.id)
-                setConfirmRevoke(null)
+                if (confirmDisable) void setKeyEnabled(confirmDisable.id, false).catch(() => {})
+                setConfirmDisable(null)
               }}
-            > {ui("Revoke key")} </Button>
+            > {ui("Disable key")} </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

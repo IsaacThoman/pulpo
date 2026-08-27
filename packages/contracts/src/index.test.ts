@@ -45,6 +45,7 @@ import {
   syncRequestSchema,
   syncResultSchema,
   updateChatSchema,
+  updateApiKeySchema,
   updateProviderSchema,
   workspaceContinueWithoutAgentAvailableAtMs,
   type ResponseEvent,
@@ -92,6 +93,12 @@ function targetedDelta(type: string, text: string, sequence: number, itemId: str
 }
 
 describe('shared contracts', () => {
+  it('requires an explicit API key enabled state', () => {
+    expect(updateApiKeySchema.parse({ enabled: true })).toEqual({ enabled: true })
+    expect(updateApiKeySchema.parse({ enabled: false })).toEqual({ enabled: false })
+    expect(updateApiKeySchema.safeParse({}).success).toBe(false)
+  })
+
   it('validates semantic provider cache configuration', () => {
     expect(createProviderSchema.parse({
       name: 'Fireworks',

@@ -36,7 +36,8 @@ describe('public chat DTOs', () => {
       presetSelections: {}, parameters: { private: true },
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'answer' }] }],
       usage: null, error: null, lastSequence: 2, upstreamSequence: 3,
-      idempotencyKey: 'private-key', startedAt: date, completedAt: date, deletedAt: null,
+      idempotencyKey: 'private-key', idempotencyScope: 'default', idempotencyFingerprint: null,
+      metadata: {}, incompleteDetails: null, startedAt: date, completedAt: date, deletedAt: null,
       createdAt: date, updatedAt: date,
     }
     const result = toPublicChatResponse(row, [row])
@@ -59,7 +60,8 @@ describe('public chat DTOs', () => {
       executionMode: 'stream' as const, agentMode: false, agentCapacityAction: null,
       input: [], instructions: null, presetSelections: {}, parameters: {},
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'unique-output-sentinel' }] }],
-      usage: null, error: null, lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      usage: null, error: null, metadata: {}, incompleteDetails: null,
+      lastSequence: 1, upstreamSequence: 1, idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
       startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
     }
     const legacy = toPublicChatResponse(row, [row])
@@ -83,7 +85,8 @@ describe('public chat DTOs', () => {
       presetSelections: { style: 'long' }, parameters: {},
       output: [{ type: 'message', content: [{ type: 'output_text', text: 'large inactive answer' }] }],
       usage: { inputTokens: 1, outputTokens: 1 }, error: { message: 'hidden with body' },
-      lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      metadata: {}, incompleteDetails: null, lastSequence: 1, upstreamSequence: 1,
+      idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
       startedAt: date, completedAt: date, deletedAt: null, createdAt: date, updatedAt: date,
     }
     const stub = toPublicChatResponseStub(row, [row])
@@ -112,7 +115,8 @@ describe('public chat DTOs', () => {
         },
         { id: `tool-${index}`, type: 'pulpo_tool', output: index === 0 ? 'active tool' : `inactive-${index}-${'x'.repeat(512 * 1024)}` },
       ],
-      usage: null, error: null, lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      usage: null, error: null, metadata: {}, incompleteDetails: null,
+      lastSequence: 1, upstreamSequence: 1, idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
       startedAt: date, completedAt: date, deletedAt: null, createdAt: new Date(date.getTime() + index), updatedAt: date,
     }))
 
@@ -134,7 +138,8 @@ describe('public chat DTOs', () => {
       agentCapacityAction: null, input: [{ role: 'user', content: `prompt ${index}` }],
       instructions: null, presetSelections: {}, parameters: {},
       output: [{ type: 'message', content: [{ type: 'output_text', text: `answer ${index}` }] }],
-      usage: null, error: null, lastSequence: 1, upstreamSequence: 1, idempotencyKey: null,
+      usage: null, error: null, metadata: {}, incompleteDetails: null,
+      lastSequence: 1, upstreamSequence: 1, idempotencyKey: null, idempotencyScope: 'default', idempotencyFingerprint: null,
       startedAt: date, completedAt: date, deletedAt: null,
       createdAt: new Date(date.getTime() + index), updatedAt: date,
     }))
