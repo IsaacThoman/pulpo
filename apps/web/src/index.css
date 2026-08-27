@@ -346,37 +346,77 @@ html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true
   left: 84px;
 }
 
-html[data-desktop="true"] .desktop-model-titlebar-slot .model-selector-set-default {
-  transition-duration: 300ms;
-  transition-property: color, left, top, transform;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
   top: 50%;
   left: calc(100% + 4px);
   transform: translateY(-50%);
 }
 
-html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-active="true"] .model-selector-set-default {
-  animation: desktop-model-default-swipe 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-active="true"][data-collapsed="true"] .model-selector-set-default {
+  animation: desktop-model-default-swipe-to-collapsed 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
-@keyframes desktop-model-default-swipe {
+html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-active="true"]:not([data-collapsed="true"]) .model-selector-set-default {
+  animation: desktop-model-default-swipe-to-expanded 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+@keyframes desktop-model-default-swipe-to-collapsed {
   0% {
+    top: 1.75rem;
+    left: 2.25rem;
     clip-path: inset(0 0 0 0);
+    transform: none;
   }
 
   49.9% {
+    top: 1.75rem;
+    left: 2.25rem;
     clip-path: inset(0 0 0 100%);
+    transform: none;
   }
 
   50.1% {
+    top: 50%;
+    left: calc(100% + 4px);
     clip-path: inset(0 100% 0 0);
+    transform: translateY(-50%);
   }
 
   100% {
+    top: 50%;
+    left: calc(100% + 4px);
     clip-path: inset(0 0 0 0);
+    transform: translateY(-50%);
+  }
+}
+
+@keyframes desktop-model-default-swipe-to-expanded {
+  0% {
+    top: 50%;
+    left: calc(100% + 4px);
+    clip-path: inset(0 0 0 0);
+    transform: translateY(-50%);
+  }
+
+  49.9% {
+    top: 50%;
+    left: calc(100% + 4px);
+    clip-path: inset(0 0 0 100%);
+    transform: translateY(-50%);
+  }
+
+  50.1% {
+    top: 1.75rem;
+    left: 2.25rem;
+    clip-path: inset(0 100% 0 0);
+    transform: none;
+  }
+
+  100% {
+    top: 1.75rem;
+    left: 2.25rem;
+    clip-path: inset(0 0 0 0);
+    transform: none;
   }
 }
 
