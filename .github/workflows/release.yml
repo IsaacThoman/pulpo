@@ -687,6 +687,7 @@ jobs:
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
       PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PREVIEW_URL: ${{ github.event.pull_request.base.ref == 'dev' && format('https://pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) || format('https://pulpo-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -700,7 +701,7 @@ jobs:
             echo 'supported=true' >> "${GITHUB_OUTPUT}"
           else
             echo 'supported=false' >> "${GITHUB_OUTPUT}"
-            echo '::notice::Skipping the HTTP preview smoke test because this PR changes compose.yaml; Coolify PR previews use the base application topology.'
+            echo '::notice::The complete bootstrap smoke test will be skipped because this PR changes compose.yaml; public edge health is still required.'
           fi
 
       - name: Set up Coolify CLI
@@ -716,15 +717,16 @@ jobs:
       - name: Wait for preview deployment
         run: bash .github/scripts/wait-coolify-deployment.sh "${{ steps.deploy.outputs.deployment_uuid }}"
 
+      - name: Validate preview edge health
+        run: bash .github/scripts/wait-http-health.sh "${PREVIEW_URL}/health" preview
+
       - name: Smoke-test preview bootstrap
         if: steps.topology.outputs.supported == 'true'
         env:
-          PREVIEW_URL: ${{ github.event.pull_request.base.ref == 'dev' && format('https://pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) || format('https://pulpo-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
           PULPO_PREVIEW_SMOKE_EMAIL: ${{ secrets.PULPO_PREVIEW_SMOKE_EMAIL }}
           PULPO_PREVIEW_SMOKE_PASSWORD: ${{ secrets.PULPO_PREVIEW_SMOKE_PASSWORD }}
         run: |
           set -euo pipefail
-          bash .github/scripts/wait-http-health.sh "${PREVIEW_URL}/health" preview
           setup_status="$(curl --fail --silent --show-error --max-time 10 "${PREVIEW_URL}/api/auth/setup-status")"
           jq -e '.required == false' <<< "${setup_status}" >/dev/null || {
             echo "Preview bootstrap did not create the initial administrator." >&2
@@ -737,9 +739,9 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo '### Coolify preview smoke test skipped'
+            echo '### Coolify preview edge verified'
             echo
-            echo 'This pull request changes `compose.yaml`. Coolify built the pull request images using the base application topology, so the resulting deployment does not represent the proposed stack.'
+            echo 'The public health endpoint passed. This pull request changes `compose.yaml`, so Coolify built the images using the base application topology and the complete bootstrap smoke test was not run.'
             echo
             echo 'The Compose configuration remains validated by the build checks.'
           } >> "${GITHUB_STEP_SUMMARY}"

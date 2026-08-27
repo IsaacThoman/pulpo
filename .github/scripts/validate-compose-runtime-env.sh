@@ -54,6 +54,36 @@ for service in api worker; do
   }
 done
 
+preview_routing_config="$(
+  SERVICE_NAME_WEB='web-pr-319' \
+    SERVICE_FQDN_WEB='pulpo-dev-pr-319.deathgrips.org' \
+    SERVICE_USER_POSTGRES='preview-db-user' \
+    SERVICE_PASSWORD_64_POSTGRES='preview-database-magic-password' \
+    SERVICE_USER_S3='preview-storage-user' \
+    SERVICE_PASSWORD_64_S3='preview-storage-magic-password' \
+    PULPO_ENV_FILE="${runtime_env}" \
+    docker compose --env-file .env.example config --format json
+)"
+
+jq -e '
+  .services.web.labels as $labels
+  | $labels["traefik.enable"] == "true"
+    and $labels["traefik.http.middlewares.web-pr-319-redirect.redirectscheme.scheme"] == "https"
+    and $labels["traefik.http.routers.web-pr-319-http.entryPoints"] == "http"
+    and $labels["traefik.http.routers.web-pr-319-http.middlewares"] == "web-pr-319-redirect"
+    and $labels["traefik.http.routers.web-pr-319-http.rule"] == "Host(`pulpo-dev-pr-319.deathgrips.org`) && PathPrefix(`/`)"
+    and $labels["traefik.http.routers.web-pr-319-http.service"] == "web-pr-319"
+    and $labels["traefik.http.routers.web-pr-319-https.entryPoints"] == "https"
+    and $labels["traefik.http.routers.web-pr-319-https.rule"] == "Host(`pulpo-dev-pr-319.deathgrips.org`) && PathPrefix(`/`)"
+    and $labels["traefik.http.routers.web-pr-319-https.service"] == "web-pr-319"
+    and $labels["traefik.http.routers.web-pr-319-https.tls"] == "true"
+    and $labels["traefik.http.routers.web-pr-319-https.tls.certresolver"] == "letsencrypt"
+    and $labels["traefik.http.services.web-pr-319.loadbalancer.server.port"] == "80"
+' <<< "${preview_routing_config}" >/dev/null || {
+  echo 'Compose did not generate isolated HTTP and HTTPS routers for the preview web service.' >&2
+  exit 1
+}
+
 jq -e '
   .services.postgres.environment as $env
   | $env.POSTGRES_USER == "preview-db-user"

@@ -59,6 +59,23 @@ services:
       timeout: 3s
       retries: 6
       start_period: 30s
+    labels:
+      # Do not rely on Coolify's disposable preview-domain metadata for edge
+      # routing. SERVICE_NAME_WEB is deployment-scoped (for example,
+      # web-pr-319), so these router and middleware names remain unique when
+      # several previews share the same Traefik instance.
+      - traefik.enable=true
+      - "traefik.http.middlewares.${SERVICE_NAME_WEB:-pulpo-web}-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-http.entryPoints=http"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-http.middlewares=${SERVICE_NAME_WEB:-pulpo-web}-redirect"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-http.rule=Host(`${SERVICE_FQDN_WEB:-localhost}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-http.service=${SERVICE_NAME_WEB:-pulpo-web}"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.entryPoints=https"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.rule=Host(`${SERVICE_FQDN_WEB:-localhost}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.service=${SERVICE_NAME_WEB:-pulpo-web}"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls=true"
+      - "traefik.http.services.${SERVICE_NAME_WEB:-pulpo-web}.loadbalancer.server.port=80"
     restart: unless-stopped
 
   api:
