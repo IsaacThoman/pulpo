@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Chat, Message } from '@/lib/types'
+import i18n from '@/i18n'
 import { activityDurationMs } from './activity-timing'
 
 const mediaQuery = { matches: false, addEventListener: () => undefined }
@@ -115,6 +116,75 @@ describe('live tool activity presentation', () => {
 
     expect(markup).toContain('Working…')
     expect(markup).not.toContain('Running web_search…')
+  })
+})
+
+describe('Spanish activity summaries', () => {
+  it('translates completed work and reasoning as complete phrases', async () => {
+    await i18n.changeLanguage('es-ES')
+    try {
+      const { MessageItem } = await import('./MessageItem')
+      const worked = renderToStaticMarkup(<MessageItem
+        chat={chat}
+        message={assistant({
+          outputItems: [{
+            type: 'pulpo_tool', id: 'tool-1', tool: 'web_search', status: 'completed',
+            output: 'result', durationMs: 3_000,
+          }],
+        })}
+        streaming={false}
+        activeModelId="model-1"
+      />)
+      const thought = renderToStaticMarkup(<MessageItem
+        chat={chat}
+        message={assistant({
+          outputItems: [{
+            type: 'reasoning', status: 'completed', durationMs: 3_000,
+            summary: [{ type: 'summary_text', text: 'Resumen' }],
+          }],
+        })}
+        streaming={false}
+        activeModelId="model-1"
+      />)
+
+      expect(worked).toContain('Trabajó durante 3 segundos')
+      expect(thought).toContain('Pensó durante 3 segundos')
+      expect(worked).not.toContain('Worked')
+      expect(thought).not.toContain('Thought')
+    } finally {
+      await i18n.changeLanguage('en-US')
+    }
+  })
+
+  it('translates queued and failed workspace states', async () => {
+    await i18n.changeLanguage('es-ES')
+    try {
+      const { MessageItem } = await import('./MessageItem')
+      const queued = renderToStaticMarkup(<MessageItem
+        chat={chat}
+        message={assistant({
+          done: false,
+          outputItems: [{ type: 'pulpo_workspace', state: 'waiting', position: 3 }],
+        })}
+        streaming
+        activeModelId="model-1"
+      />)
+      const expired = renderToStaticMarkup(<MessageItem
+        chat={chat}
+        message={assistant({
+          outputItems: [{ type: 'pulpo_workspace', state: 'expired' }],
+        })}
+        streaming={false}
+        activeModelId="model-1"
+      />)
+
+      expect(queued).toContain('Esperando un espacio de trabajo · puesto 3 en la cola')
+      expect(expired).toContain('Espacio de trabajo caducado')
+      expect(queued).not.toContain('Waiting for workspace')
+      expect(expired).not.toContain('Workspace expired')
+    } finally {
+      await i18n.changeLanguage('en-US')
+    }
   })
 })
 
