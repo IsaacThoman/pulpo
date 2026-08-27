@@ -1,7 +1,7 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import type { CompactionItem, ResponseSnapshot } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
@@ -51,6 +51,7 @@ import { responseInputText } from '../messages/input.js'
 import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
 import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
+import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -161,12 +162,21 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const enabledMemories = preferenceValues.memoryEnabled
     ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
     : []
-  const currentAgentSystemPrompt = buildAgentSystemPrompt(
+  const existingRecallItem = recallItemFromOutput(record.response.output, responseId)
+  const recallItem = existingRecallItem ?? await retrieveAutomaticRecall({
+    responseId,
+    userId: record.response.userId,
+    currentChatId: record.response.chatId,
+    query: responseInputText(record.response.input),
+  })
+  const recallContext = recalledChatContext(recallItem)
+  const baseAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
     enabledMemories,
   )
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -298,6 +308,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const compactionItems: CompactionItem[] = (record.response.output as unknown[]).filter((raw): raw is CompactionItem => (
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
+  const recallItems: RecallItem[] = recallItem ? [recallItem] : []
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -319,6 +330,16 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     })
     emissionQueue = emission
     return emission
+  }
+  if (recallItem && !existingRecallItem) {
+    await emit('pulpo.recall.completed', recallItem)
+    await db.update(responses).set({
+      status: 'in_progress',
+      output: streamProjection.output,
+      lastSequence: streamProjection.sequence,
+      startedAt: record.response.startedAt ?? new Date(),
+      updatedAt: new Date(),
+    }).where(eq(responses.id, responseId))
   }
   let agent!: Agent
   const activateFallbackRuntime = async (fromIndex: number): Promise<boolean> => {
@@ -355,6 +376,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         attachmentItems,
         workspaceItem,
         compactionItems,
+        recallItems,
         turnDurationsMs,
         streaming: false,
         terminal: true,

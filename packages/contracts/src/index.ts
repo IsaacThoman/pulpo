@@ -457,6 +457,23 @@ export const compactionItemSchema = z.object({
 })
 export type CompactionItem = z.infer<typeof compactionItemSchema>
 
+export const recallSourceSchema = z.object({
+  chat_id: idSchema,
+  response_id: idSchema,
+  title: z.string(),
+  updated_at: isoDateSchema,
+  excerpt: z.string(),
+})
+export type RecallSource = z.infer<typeof recallSourceSchema>
+
+export const recallItemSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('pulpo_recall'),
+  status: z.literal('completed'),
+  sources: z.array(recallSourceSchema).max(5),
+})
+export type RecallItem = z.infer<typeof recallItemSchema>
+
 export const responseSnapshotSchema = z.object({
   responseId: idSchema,
   status: responseStatusSchema,
@@ -583,6 +600,9 @@ function upsertOutputItem(
 
 function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown[] {
   const payload = event.payload as Record<string, unknown>
+  if (event.type === 'pulpo.recall.completed' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_recall' && item.id === payload.id, payload)
+  }
   if (event.type.startsWith('pulpo.agent.workspace.')) {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_workspace', payload)
   }

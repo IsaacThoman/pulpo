@@ -119,6 +119,31 @@ describe('live tool activity presentation', () => {
   })
 })
 
+describe('recalled chat activity', () => {
+  it('summarizes recalled sources in the normal activity disclosure', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        outputItems: [{
+          id: 'response-1:recall', type: 'pulpo_recall', status: 'completed',
+          sources: [{
+            chat_id: '00000000-0000-4000-8000-000000000001',
+            response_id: '00000000-0000-4000-8000-000000000002',
+            title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+            excerpt: 'Use a parallel index generation during model changes.',
+          }],
+        }, { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] }],
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('Recalled from 1 chats.')
+    expect(markup).not.toContain('pulpo recall')
+  })
+})
+
 describe('Spanish activity summaries', () => {
   it('translates completed work and reasoning as complete phrases', async () => {
     await i18n.changeLanguage('es-ES')

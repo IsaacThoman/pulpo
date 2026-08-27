@@ -17,6 +17,7 @@ import { processEmbeddingJob } from '../src/episodic-memory/processor.js'
 import { searchEpisodicChats, selectRelevantMemories } from '../src/episodic-memory/retrieval.js'
 import type { OllamaClient } from '../src/episodic-memory/ollama.js'
 import { readEpisodicChatPage } from '../src/episodic-memory/agent-tools.js'
+import { recalledChatContext, retrieveAutomaticRecall } from '../src/episodic-memory/automatic-recall.js'
 
 if (process.env.PULPO_EPISODIC_SMOKE !== '1') {
   throw new Error('Set PULPO_EPISODIC_SMOKE=1 and use a disposable database before running this script')
@@ -217,6 +218,16 @@ async function main(): Promise<void> {
     maxOutputBytes: 10_000,
   })
   assert(excludedCurrent === null, 'read_chat did not exclude the current chat')
+  const automaticRecall = await retrieveAutomaticRecall({
+    responseId: '70000000-0000-4000-8000-000000000001',
+    userId: ids.user,
+    currentChatId: ids.destinationChat,
+    query: 'Which glaze did we choose for the ceramic planters?',
+  })
+  assert(automaticRecall?.sources[0]?.chat_id === ids.chat, 'automatic recall did not return the source chat')
+  const automaticContext = recalledChatContext(automaticRecall)
+  assert(automaticContext.includes('untrusted reference material'), 'automatic recall context was not marked untrusted')
+  assert(!automaticContext.includes('SECRET'), 'automatic recall exposed hidden response content')
 
   await db.update(userPreferences).set({ values: { memoryEnabled: false } }).where(eq(userPreferences.userId, ids.user))
   await processEmbeddingJob({ type: 'delete-user', userId: ids.user })
@@ -234,6 +245,7 @@ async function main(): Promise<void> {
     switchedProfile: 'qwen3-embedding',
     hybridTopChatId: initial[0]?.chatId,
     lexicalFallbackTopChatId: lexical[0]?.chatId,
+    automaticRecallSources: automaticRecall.sources.length,
     durableFactsRetainedAfterOptOut: durableFacts.length,
   }))
 }

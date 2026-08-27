@@ -87,6 +87,23 @@ describe('buildMessageTimeline', () => {
     ])
   })
 
+  it('groups recalled sources with subsequent work and labels the disclosure', () => {
+    const timeline = buildMessageTimeline([{
+      id: 'response-1:recall', type: 'pulpo_recall', status: 'completed',
+      sources: [{
+        chat_id: '00000000-0000-4000-8000-000000000001',
+        response_id: '00000000-0000-4000-8000-000000000002',
+        title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+        excerpt: 'Use a parallel index generation during model changes.',
+      }],
+    }, { type: 'pulpo_tool', id: 'tool-1', status: 'completed' }, { type: 'message', content: [{ text: 'Answer' }] }], true)
+    const activity = timeline[0]
+
+    expect(activity).toMatchObject({ kind: 'activity', steps: [{ kind: 'recall' }, { kind: 'tool' }] })
+    if (activity?.kind !== 'activity') throw new Error('Expected recall activity')
+    expect(completedActivityLabel(activity.steps)).toBe('Recalled from 1 chats.')
+  })
+
   it('keeps work visible when reasoning is hidden', () => {
     const timeline = buildMessageTimeline([
       { type: 'reasoning', status: 'in_progress', summary: [{ text: 'secret' }] },

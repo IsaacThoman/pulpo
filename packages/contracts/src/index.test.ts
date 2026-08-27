@@ -37,6 +37,7 @@ import {
   newChatAutoExpireSchema,
   ocrSettingsSchema,
   persistChatResponseSchema,
+  recallItemSchema,
   responseEventSchema,
   secretRevealInputSchema,
   sensitiveActionInputSchema,
@@ -600,6 +601,32 @@ describe('response snapshot accumulation', () => {
       { type: 'pulpo_attachment', attachment_id: 'file-1' },
     ])
     expect(result.sequence).toBe(7)
+  })
+
+  it('validates and projects recalled-chat events without a full snapshot', () => {
+    const recall = recallItemSchema.parse({
+      id: `${streamingSnapshot.responseId}:recall`,
+      type: 'pulpo_recall',
+      status: 'completed',
+      sources: [{
+        chat_id: '00000000-0000-4000-8000-000000000071',
+        response_id: '00000000-0000-4000-8000-000000000072',
+        title: 'Earlier planning chat',
+        updated_at: '2026-08-27T00:00:00.000Z',
+        excerpt: 'The deployment uses a blue-green model switch.',
+      }],
+    })
+    const result = applyResponseEventToSnapshot(streamingSnapshot, {
+      responseId: streamingSnapshot.responseId,
+      sequence: 1,
+      type: 'pulpo.recall.completed',
+      payload: recall,
+      emittedAt: '2026-08-27T00:00:01.000Z',
+    })
+
+    expect(result.output).toEqual([recall])
+    expect(result.sequence).toBe(1)
+    expect(() => recallItemSchema.parse({ ...recall, sources: Array(6).fill(recall.sources[0]) })).toThrow()
   })
 
   it('accepts terminal output as authoritative', () => {

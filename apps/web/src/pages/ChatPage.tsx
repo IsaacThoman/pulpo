@@ -462,6 +462,7 @@ export function ChatPage() {
                   streaming={m.role === 'assistant' && !m.done}
                   activeModelId={modelId}
                   onEditUserMessage={beginMessageEdit}
+                  onOpenChat={(sourceChatId) => navigate(`/c/${sourceChatId}`)}
                   composerEditActive={composerEditActive || Boolean(messageEdit)}
                 />
               ))}

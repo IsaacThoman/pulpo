@@ -14,8 +14,10 @@ import {
   Loader2,
   XCircle,
   Minimize2,
+  History,
+  ExternalLink,
 } from 'lucide-react'
-import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem } from '@pulpo/contracts'
+import { workspaceContinueWithoutAgentAvailableAtMs, type CompactionItem, type RecallItem } from '@pulpo/contracts'
 import type { Chat, Message } from '@/lib/types'
 import { hasMultipleBranches } from '@/lib/message-branches'
 import { getCatalogModel } from '@/stores/catalog'
@@ -337,6 +339,55 @@ function ReasoningStepRow({ step }: { step: ReasoningStep }) {
   )
 }
 
+function recallDate(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(activeLocale(), { dateStyle: 'medium' }).format(date)
+}
+
+function RecallStepRow({
+  item,
+  availableChatIds,
+  onOpenChat,
+}: {
+  item: RecallItem
+  availableChatIds: Set<string> | null
+  onOpenChat: (chatId: string) => void
+}) {
+  return (
+    <div className="space-y-2">
+      {item.sources.map((source) => {
+        const available = availableChatIds === null || availableChatIds.has(source.chat_id)
+        return (
+          <div key={`${source.chat_id}:${source.response_id}`} className="rounded-md bg-muted/40 px-2.5 py-2 text-xs">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="truncate font-medium text-foreground/90">{source.title}</div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">{recallDate(source.updated_at)}</div>
+              </div>
+              {available ? (
+                <button
+                  type="button"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                  aria-label={ui('Open source chat')}
+                  onClick={() => onOpenChat(source.chat_id)}
+                >
+                  {ui('Open')}
+                  <ExternalLink className="size-3" />
+                </button>
+              ) : (
+                <span className="shrink-0 text-[11px] text-muted-foreground/70">{ui('Source unavailable')}</span>
+              )}
+            </div>
+            <p className="mt-1.5 whitespace-pre-wrap break-words leading-5 text-muted-foreground">{source.excerpt}</p>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function ActivityBlock({
   steps,
   active,
@@ -346,6 +397,8 @@ function ActivityBlock({
   onStop,
   onContinue,
   capacityPending,
+  availableChatIds,
+  onOpenChat,
 }: {
   steps: ActivityStep[]
   active: boolean
@@ -355,9 +408,12 @@ function ActivityBlock({
   onStop: (id: string) => void
   onContinue: (id: string) => void
   capacityPending: boolean
+  availableChatIds: Set<string> | null
+  onOpenChat: (chatId: string) => void
 }) {
   const workspace = steps.find((step): step is WorkspaceStep => step.kind === 'workspace')?.workspace
   const compaction = steps.find((step) => step.kind === 'compaction')?.compaction
+  const recall = steps.find((step) => step.kind === 'recall')?.recall
   const tools = steps.flatMap((step) => (step.kind === 'tool' ? [step.tool] : []))
   const hasReasoning = steps.some((step) => step.kind === 'reasoning' && step.text)
   const workspaceBusy = workspaceIsActive(workspace?.state)
@@ -401,6 +457,7 @@ function ActivityBlock({
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
+    if (recall) return ui('Recalled from {{count}} chats.', { count: recall.sources.length })
     if (showDuration && durationMs !== undefined) {
       const duration = formatSecondsLabel(durationMs)
       return hasTools || hasWorkspace
@@ -424,6 +481,7 @@ function ActivityBlock({
     }
     if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
     if (active) return <Brain className="size-3.5 shrink-0 animate-pulse" />
+    if (recall) return <History className="size-3.5 shrink-0" />
     if (hasTools) return <Wrench className="size-3.5 shrink-0" />
     if (hasWorkspace && !hasReasoning) return <Server className="size-3.5 shrink-0" />
     return <Brain className="size-3.5 shrink-0" />
@@ -452,6 +510,9 @@ function ActivityBlock({
               if (step.kind === 'compaction') {
                 return <CompactionStepRow key={step.compaction.id} item={step.compaction} />
               }
+              if (step.kind === 'recall') {
+                return <RecallStepRow key={step.recall.id} item={step.recall} availableChatIds={availableChatIds} onOpenChat={onOpenChat} />
+              }
               return (
                 <ActivityToolRow
                   key={step.tool.id ?? `tool:${index}`}
@@ -478,6 +539,7 @@ function ActivityBlock({
 }
 
 const ignoreUserMessageEdit = () => undefined
+const ignoreOpenChat = () => undefined
 
 export const MessageItem = memo(function MessageItem({
   chat,
@@ -486,6 +548,7 @@ export const MessageItem = memo(function MessageItem({
   activeModelId,
   onEditUserMessage = ignoreUserMessageEdit,
   composerEditActive = false,
+  onOpenChat = ignoreOpenChat,
 }: {
   chat: Chat
   message: Message
@@ -493,6 +556,7 @@ export const MessageItem = memo(function MessageItem({
   activeModelId: string
   onEditUserMessage?: (message: Message) => void
   composerEditActive?: boolean
+  onOpenChat?: (chatId: string) => void
 }) {
   const { t } = useTranslation()
   const regenerate = useChat((state) => state.regenerate)
@@ -500,12 +564,17 @@ export const MessageItem = memo(function MessageItem({
   const deleteUserMessage = useChat((state) => state.deleteUserMessage)
   const stopStreaming = useChat((state) => state.stopStreaming)
   const continueWithoutAgent = useChat((state) => state.continueWithoutAgent)
+  const chats = useChat((state) => state.chats)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
   const [streamingFallbackDurationMs, setStreamingFallbackDurationMs] = useState<number>()
+  const availableChatIds = useMemo(
+    () => chats.length ? new Set(chats.filter((item) => !item.expired).map((item) => item.id)) : null,
+    [chats],
+  )
   const timeline = useMemo(() => {
     if (message.role !== 'assistant') return [] as TimelineSegment[]
     const items = message.outputItems ?? []
@@ -624,7 +693,7 @@ export const MessageItem = memo(function MessageItem({
   const outputItems = message.outputItems ?? []
   const otherItems = outputItems.filter((item) => {
     const type = (item as { type?: string }).type
-    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction'].includes(type)
+    return type && !['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall'].includes(type)
   })
   const lastActivityIndex = activitySegments.length - 1
   const hasVisibleBody = timeline.length > 0 || Boolean(message.error)
@@ -696,6 +765,8 @@ export const MessageItem = memo(function MessageItem({
                         void continueWithoutAgent(id).catch(() => setCapacityActionPending(false))
                       }}
                       capacityPending={capacityActionPending}
+                      availableChatIds={availableChatIds}
+                      onOpenChat={onOpenChat}
                     />
                   )
                 }

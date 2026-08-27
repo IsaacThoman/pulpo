@@ -8,6 +8,7 @@ export interface Preferences {
   textSize: TextSizePreference
   streamResponses: boolean
   showReasoning: boolean
+  memoryEnabled: boolean
   haptics: boolean
   sendWithEnter: boolean
   attachmentCacheMb: number
@@ -25,7 +26,7 @@ export interface Preferences {
 }
 
 export const defaultPreferences: Preferences = {
-  theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true,
+  theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true, memoryEnabled: false,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
@@ -45,6 +46,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
   if (typeof values.streamResponses === 'boolean') result.streamResponses = values.streamResponses
   if (typeof values.showReasoning === 'boolean') result.showReasoning = values.showReasoning
+  if (typeof values.memoryEnabled === 'boolean') result.memoryEnabled = values.memoryEnabled
   if (typeof values.defaultModelId === 'string') result.defaultModelId = values.defaultModelId || null
   if (typeof values.localChatLimit === 'number' && Number.isFinite(values.localChatLimit)) {
     result.localChatLimit = Math.max(0, Math.min(50, Math.floor(values.localChatLimit)))
@@ -87,7 +89,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
   const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
   return serverKey ? { [serverKey]: value } : null
