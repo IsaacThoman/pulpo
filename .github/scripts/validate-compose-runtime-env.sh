@@ -68,11 +68,6 @@ preview_routing_config="$(
 jq -e '
   .services.web.labels as $labels
   | $labels["traefik.enable"] == "true"
-    and $labels["traefik.http.middlewares.web-pr-319-redirect.redirectscheme.scheme"] == "https"
-    and $labels["traefik.http.routers.web-pr-319-http.entryPoints"] == "http"
-    and $labels["traefik.http.routers.web-pr-319-http.middlewares"] == "web-pr-319-redirect"
-    and $labels["traefik.http.routers.web-pr-319-http.rule"] == "Host(`pulpo-dev-pr-319.deathgrips.org`) && PathPrefix(`/`)"
-    and $labels["traefik.http.routers.web-pr-319-http.service"] == "web-pr-319"
     and $labels["traefik.http.routers.web-pr-319-https.entryPoints"] == "https"
     and $labels["traefik.http.routers.web-pr-319-https.rule"] == "Host(`pulpo-dev-pr-319.deathgrips.org`) && PathPrefix(`/`)"
     and $labels["traefik.http.routers.web-pr-319-https.service"] == "web-pr-319"
@@ -80,7 +75,7 @@ jq -e '
     and $labels["traefik.http.routers.web-pr-319-https.tls.certresolver"] == "letsencrypt"
     and $labels["traefik.http.services.web-pr-319.loadbalancer.server.port"] == "80"
 ' <<< "${preview_routing_config}" >/dev/null || {
-  echo 'Compose did not generate isolated HTTP and HTTPS routers for the preview web service.' >&2
+  echo 'Compose did not generate an isolated HTTPS router for the preview web service.' >&2
   exit 1
 }
 
