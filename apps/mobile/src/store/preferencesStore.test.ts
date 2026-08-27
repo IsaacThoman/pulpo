@@ -22,6 +22,36 @@ beforeEach(() => {
     modelPreferencesDirty: false,
     generationPreferenceDirty: false,
     agentModesPreferenceDirty: false,
+    pendingServerPreferenceKeys: [],
+  })
+})
+
+describe('realtime preference reconciliation', () => {
+  it('keeps the latest local menu choice while an older server value is in flight', async () => {
+    await usePreferencesStore.getState().setPreference('theme', 'dark')
+
+    await usePreferencesStore.getState().applyServerPreferences({ theme: 'light' })
+    expect(usePreferencesStore.getState()).toMatchObject({
+      theme: 'dark',
+      pendingServerPreferenceKeys: ['theme'],
+    })
+
+    await usePreferencesStore.getState().applyServerPreferences({ theme: 'dark' })
+    expect(usePreferencesStore.getState()).toMatchObject({
+      theme: 'dark',
+      pendingServerPreferenceKeys: [],
+    })
+  })
+
+  it('does not let one model setting acknowledgement expose another pending setting', async () => {
+    await usePreferencesStore.getState().setPreference('favoriteModelIds', ['model-a'])
+    await usePreferencesStore.getState().setPreference('providerOrder', ['lab-a'])
+
+    await usePreferencesStore.getState().markSynchronizedPreferenceSynced('favoriteModelIds', ['model-a'])
+    expect(usePreferencesStore.getState()).toMatchObject({
+      modelPreferencesDirty: true,
+      pendingServerPreferenceKeys: ['providerOrder'],
+    })
   })
 })
 
