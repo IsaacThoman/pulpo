@@ -302,6 +302,13 @@
       "when": 1787350826772,
       "tag": "0042_clear_legacy_billing_records",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1787843619932,
+      "tag": "0043_wild_mockingbird",
+      "breakpoints": true
     }
   ]
 }

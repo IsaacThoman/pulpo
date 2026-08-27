@@ -12,7 +12,8 @@ import type {
 import { idSchema, syncRequestSchema } from '@pulpo/contracts'
 import { createRedis } from '../redis.js'
 import { getConfig, isAllowedOrigin } from '../config.js'
-import { authenticateSessionToken, type AuthenticatedUser } from '../auth/service.js'
+import { authenticateSessionToken, type AdminChatAccessContext, type AuthenticatedUser } from '../auth/service.js'
+import { resolveAdminChatSocketAccess } from '../admin/chat-access.js'
 import { db } from '../database/client.js'
 import { chats, responses, users } from '../database/schema.js'
 import { readResponseEvents } from '../responses/events.js'
@@ -21,6 +22,8 @@ import { accessibleChatCondition } from '../chats/temporary.js'
 
 interface SocketData {
   user: AuthenticatedUser
+  actorUser: AuthenticatedUser
+  adminChatAccess: AdminChatAccessContext | null
 }
 
 export function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -89,7 +92,14 @@ export async function createSocketServer(httpServer: HttpServer) {
       )
       const user = await authenticateSessionToken(token)
       if (!user || user.role === 'pending') return next(new Error('unauthorized'))
-      socket.data.user = user
+      const accessToken = socket.handshake.auth.adminChatAccessToken
+      const access = typeof accessToken === 'string'
+        ? await resolveAdminChatSocketAccess(accessToken, user)
+        : null
+      if (accessToken && !access) return next(new Error('admin_chat_access_invalid'))
+      socket.data.user = access?.ownerUser ?? user
+      socket.data.actorUser = user
+      socket.data.adminChatAccess = access
       next()
     } catch (error) {
       next(error instanceof Error ? error : new Error('unauthorized'))
@@ -98,7 +108,8 @@ export async function createSocketServer(httpServer: HttpServer) {
 
   io.on('connection', (socket) => {
     const user = socket.data.user
-    void socket.join(`user:${user.id}`)
+    const adminChatAccess = socket.data.adminChatAccess
+    if (!adminChatAccess) void socket.join(`user:${user.id}`)
 
     socket.on('client.sync', (raw, ack) => {
       runSocketTask('client.sync', async () => {
@@ -111,13 +122,14 @@ export async function createSocketServer(httpServer: HttpServer) {
             .where(and(
               eq(responses.userId, user.id),
               inArray(responses.id, responseIds),
+              adminChatAccess ? eq(chats.id, adminChatAccess.chatId) : undefined,
               isNull(chats.deletedAt),
               accessibleChatCondition(),
             )).then((rows) => rows.map((row) => row.response))
           : []
         const result: SyncResult = {
           accountRevision: current?.revision ?? user.stateRevision,
-          invalidate: current?.revision !== input.accountRevision
+          invalidate: !adminChatAccess && current?.revision !== input.accountRevision
             ? ['chats', 'models', 'usage', 'settings', 'friends', 'pool', 'billing']
             : [],
           snapshots: [],
@@ -139,6 +151,7 @@ export async function createSocketServer(httpServer: HttpServer) {
       runSocketTask('chat.subscribe', async () => {
         const [owned] = await db.select({ id: chats.id }).from(chats).where(and(
           eq(chats.id, chatId),
+          adminChatAccess ? eq(chats.id, adminChatAccess.chatId) : undefined,
           eq(chats.userId, user.id),
           isNull(chats.deletedAt),
           accessibleChatCondition(),
@@ -159,6 +172,7 @@ export async function createSocketServer(httpServer: HttpServer) {
           .where(and(
             eq(responses.id, responseId),
             eq(responses.userId, user.id),
+            adminChatAccess ? eq(chats.id, adminChatAccess.chatId) : undefined,
             isNull(chats.deletedAt),
             accessibleChatCondition(),
           )).limit(1)
@@ -189,7 +203,7 @@ export async function createSocketServer(httpServer: HttpServer) {
       if (responseId) void socket.leave(`response:${responseId}`)
     })
     socket.on('admin.usage.subscribe', () => {
-      if (user.role === 'admin') void socket.join('admin:usage')
+      if (!adminChatAccess && user.role === 'admin') void socket.join('admin:usage')
     })
     socket.on('admin.usage.unsubscribe', () => void socket.leave('admin:usage'))
   })
@@ -251,7 +265,7 @@ export async function createSocketServer(httpServer: HttpServer) {
         revision: change.revision,
         ...(change.scopes?.length ? { scopes: change.scopes } : {}),
       })
-      if (change.chatId) io.to(`user:${change.userId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
+      if (change.chatId) io.to(`user:${change.userId}`).to(`chat:${change.chatId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
     }
   })
 

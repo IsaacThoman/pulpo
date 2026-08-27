@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download, FileWarning, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Markdown } from '@/components/chat/Markdown'
 import {
   Dialog,
   DialogClose,
@@ -32,6 +33,7 @@ type PreviewContent =
 function previewLabel(kind: AttachmentPreviewKind): string {
   if (kind === 'pdf') return ui("PDF preview")
   if (kind === 'table') return ui("Table preview")
+  if (kind === 'markdown') return ui("Markdown preview")
   if (kind === 'text') return ui("Text preview")
   return `${kind[0]!.toUpperCase()}${kind.slice(1)} preview`
 }
@@ -88,7 +90,7 @@ function usePreviewContent(
           throw new Error(`This file is too large to preview (${formatBytes(blob.size)}).`)
         }
 
-        if (kind === 'text' || kind === 'table') {
+        if (kind === 'markdown' || kind === 'text' || kind === 'table') {
           const result = formatTextPreview(attachment.name, attachment.mimeType, await blob.text())
           if (!cancelled) setContent({ status: 'ready', url: null, text: result.text, textTruncated: result.truncated })
           return
@@ -121,11 +123,13 @@ function TextPreview({
   text,
   truncated,
   table,
+  markdown,
 }: {
   attachment: Attachment
   text: string
   truncated: boolean
   table: DelimitedPreview | null
+  markdown: boolean
 }) {
   if (table) {
     return (
@@ -154,6 +158,20 @@ function TextPreview({
         </table>
         {(truncated || table.truncated) && (
           <p className="sticky bottom-0 border-t bg-background/95 px-3 py-2 text-xs text-muted-foreground backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
+          </p>
+        )}
+      </div>
+    )
+  }
+
+  if (markdown) {
+    return (
+      <div className="size-full overflow-auto bg-background" data-preview-kind="markdown">
+        <article className="mx-auto min-h-full w-full max-w-4xl p-6 text-sm sm:p-8">
+          <Markdown content={text} />
+        </article>
+        {truncated && (
+          <p className="sticky bottom-0 border-t bg-background/95 px-5 py-2 text-xs text-muted-foreground backdrop-blur"> {ui("Showing the first part of")} {attachment.name}.
           </p>
         )}
       </div>
@@ -203,8 +221,8 @@ function PreviewBody({
       </div>
     )
   }
-  if ((kind === 'text' || kind === 'table') && content.text !== null) {
-    return <TextPreview attachment={attachment} text={content.text} truncated={content.textTruncated} table={table} />
+  if ((kind === 'markdown' || kind === 'text' || kind === 'table') && content.text !== null) {
+    return <TextPreview attachment={attachment} text={content.text} truncated={content.textTruncated} table={table} markdown={kind === 'markdown'} />
   }
   if (!content.url) return null
   if (kind === 'image') {

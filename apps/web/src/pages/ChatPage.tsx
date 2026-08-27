@@ -108,7 +108,7 @@ function Placeholder({
   )
 }
 
-export function ChatPage() {
+export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const { t } = useTranslation()
   const { chatId: routeChatId } = useParams()
   const [params] = useSearchParams()
@@ -122,6 +122,7 @@ export function ChatPage() {
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
   const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
   const instanceReady = useAuth((s) => s.instanceReady)
+  const userRole = useAuth((s) => s.user?.role)
   const networkReady = !isDesktopRuntime() || instanceReady
   const models = useCatalog((state) => state.models)
   const routeModelId = params.get('model')
@@ -177,10 +178,10 @@ export function ChatPage() {
   }, [defaultModelId, models, resetDefaultToken])
 
   useEffect(() => {
-    if (!routeChatId || !chat?.temporary) return
+    if (adminMode || !routeChatId || !chat?.temporary) return
     useChat.getState().abandonTemporaryChat(chat.id)
     navigate('/', { replace: true, state: { resetDefaultModel: crypto.randomUUID() } })
-  }, [chat, navigate, routeChatId])
+  }, [adminMode, chat, navigate, routeChatId])
 
   useEffect(() => {
     if (chatId || routeModelId || !shouldApplyDefaultRef.current) return
@@ -298,7 +299,7 @@ export function ChatPage() {
     setDesktopTemporaryChat(temporaryMode)
     return () => setDesktopTemporaryChat(false)
   }, [setDesktopTemporaryChat, temporaryMode])
-  const showTemporaryControl = !routeChatId && (!chat || chat.temporary)
+  const showTemporaryControl = !adminMode && !routeChatId && (!chat || chat.temporary)
   const expirationEnabled = chat ? chat.expiresAt !== null : effectiveNewChatAutoExpire
   const showExpirationControl = !temporaryMode && (chat
     ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
@@ -311,10 +312,14 @@ export function ChatPage() {
     }
     useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
   }
-  const legacyTemporaryRoute = Boolean(routeChatId && chat?.temporary)
+  const legacyTemporaryRoute = Boolean(!adminMode && routeChatId && chat?.temporary)
 
   if (legacyTemporaryRoute) {
     return <div className="grid h-full place-items-center text-sm text-muted-foreground">{t('chat.openingNewChat')}</div>
+  }
+
+  if (routeChatId && !chat && userRole === 'admin' && !adminMode) {
+    return <div className="grid h-full place-items-center p-6"><div className="max-w-md space-y-3 text-center"><h2 className="text-lg font-semibold">{ui('Chat is not in your account')}</h2><p className="text-sm text-muted-foreground">{ui('If this is a user chat, open the audited administrator access gate.')}</p><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate(`/admin/chats/${routeChatId}`)}>{ui('Open with admin access')}</button></div></div>
   }
 
   return (
@@ -401,7 +406,7 @@ export function ChatPage() {
             <TooltipContent>{temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}</TooltipContent>
           </Tooltip>
           ))}
-          {chat && !chat.temporary && (
+          {!adminMode && chat && !chat.temporary && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button

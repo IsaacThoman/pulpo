@@ -31,6 +31,7 @@ export function AppLayout() {
   const animationSpeed = useSettings((state) => state.animationSpeed)
   const setDesktopSidebarVisible = useDesktopChrome((state) => state.setDesktopSidebarVisible)
   const location = useLocation()
+  const adminChatView = location.pathname.startsWith('/admin/chats/')
   const sidebarCollapsed = collapsed || searchHasQuery
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
   const previousPathRef = useRef(location.pathname)
@@ -137,7 +138,7 @@ export function AppLayout() {
         <DesktopSidebarTitleBar
           collapsed={sidebarCollapsed}
           transitions={sidebarTransitions}
-          visible={!mobile}
+          visible={!mobile && !adminChatView}
           animationSpeed={animationSpeed}
         />
         <div
@@ -147,15 +148,15 @@ export function AppLayout() {
           )}
         >
           <BannerBar />
-          <button
+          {!adminChatView && <button
             className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
             onClick={() => setMobileOpen(true)}
             aria-label={ui("Open sidebar")}
             aria-expanded={mobileOpen}
           >
             <PanelLeftOpen className="size-5" />
-          </button>
-          {mobile && (
+          </button>}
+          {!adminChatView && mobile && (
             <button
               className={`fixed inset-0 z-30 bg-black/55 transition-opacity duration-200 ${
                 mobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
@@ -166,7 +167,7 @@ export function AppLayout() {
               tabIndex={mobileOpen ? 0 : -1}
             />
           )}
-          <Sidebar
+          {!adminChatView && <Sidebar
             collapsed={mobile ? false : sidebarCollapsed}
             mobile={mobile}
             mobileOpen={mobileOpen}
@@ -181,7 +182,7 @@ export function AppLayout() {
               setMobileOpen(false)
               openSettings('general')
             }}
-          />
+          />}
           <main className="app-main min-w-0 flex-1 overflow-hidden">
             <Suspense fallback={<div className="h-full bg-background" aria-label={ui("Loading view")} />}>
               <Outlet />

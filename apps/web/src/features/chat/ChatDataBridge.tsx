@@ -52,6 +52,7 @@ export function ChatDataBridge() {
   const userId = user?.id
   const userRole = user?.role
   const location = useLocation()
+  const adminChatView = location.pathname.startsWith('/admin/chats/')
   const routeChatId = /^\/c\/([^/]+)/.exec(location.pathname)?.[1]
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
@@ -73,12 +74,12 @@ export function ChatDataBridge() {
   const chatsQuery = useQuery({
     queryKey: ['chats', userId],
     queryFn: () => apiRequest<{ data: ServerChat[] }>('/api/chats').then((response) => response.data),
-    enabled: Boolean(networkReady && userId && userRole !== 'pending'),
+    enabled: Boolean(!adminChatView && networkReady && userId && userRole !== 'pending'),
   })
   const foldersQuery = useQuery({
     queryKey: ['folders', userId],
     queryFn: () => apiRequest<{ data: ServerFolder[] }>('/api/folders').then((response) => response.data),
-    enabled: Boolean(networkReady && userId && userRole !== 'pending'),
+    enabled: Boolean(!adminChatView && networkReady && userId && userRole !== 'pending'),
   })
   const chatQuery = useQuery({
     queryKey: ['chat', userId, chatId],
@@ -86,7 +87,7 @@ export function ChatDataBridge() {
       const incoming = await apiRequest<ServerChat>(`/api/chats/${chatId}?format=compact&scope=active`)
       return mergeServerChatDetails(queryClient.getQueryData<ServerChat>(['chat', userId, chatId]), incoming)
     },
-    enabled: Boolean(networkReady && userId && chatId),
+    enabled: Boolean(!adminChatView && networkReady && userId && chatId),
     retry: false,
     refetchOnWindowFocus: false,
   })
@@ -102,7 +103,7 @@ export function ChatDataBridge() {
   useEffect(() => { if (networkReady && userId) void loadCatalog() }, [networkReady, userId, loadCatalog])
 
   useEffect(() => {
-    if (!networkReady || !userId || userRole === 'pending') return
+    if (adminChatView || !networkReady || !userId || userRole === 'pending') return
     const socket: PulpoSocket = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
       path: '/socket.io',
       withCredentials: !isDesktopRuntime(),
@@ -278,7 +279,7 @@ export function ChatDataBridge() {
       socketRef.current = null
       subscribedResponseIds.clear()
     }
-  }, [networkReady, userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
+  }, [adminChatView, networkReady, userId, userRole, currentTabId, applyResponseEvents, applyResponseSnapshot])
 
   useEffect(() => {
     const socket = socketRef.current

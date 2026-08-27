@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { fetchApiBlob } from './api'
 import { isDesktopRuntime, runtimeResourceUrl } from './runtime'
+import { adminChatAccessActive } from '@/features/admin-chat/access'
 
 export interface RuntimeImageResource {
   load(): Promise<string | null>
@@ -17,7 +18,7 @@ export function createRuntimeImageResource(
 
   return {
     async load() {
-      if (typeof source === 'string' && (!authenticated || !isDesktopRuntime())) {
+      if (typeof source === 'string' && (!authenticated || (!isDesktopRuntime() && !adminChatAccessActive()))) {
         return runtimeResourceUrl(source)
       }
       let blob: Blob
@@ -46,7 +47,7 @@ export function useRuntimeImageUrl(
   source: string | Blob | null | undefined,
   options: { authenticated: boolean },
 ): { url: string | null; loading: boolean } {
-  const directUrl = typeof source === 'string' && (!options.authenticated || !isDesktopRuntime())
+  const directUrl = typeof source === 'string' && (!options.authenticated || (!isDesktopRuntime() && !adminChatAccessActive()))
     ? runtimeResourceUrl(source)
     : null
   const needsLoading = Boolean(source && !directUrl)
