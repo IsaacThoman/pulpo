@@ -245,15 +245,28 @@ export async function interceptAgentContextImages<T>(
         content.push(part)
         continue
       }
-      const image = part as { type?: unknown; data?: unknown; mimeType?: unknown }
+      const image = part as {
+        type?: unknown
+        data?: unknown
+        mimeType?: unknown
+        label?: unknown
+        attachmentId?: unknown
+        sourceChecksum?: unknown
+      }
       if (image.type !== 'image' || typeof image.data !== 'string' || typeof image.mimeType !== 'string') {
         content.push(part)
         continue
       }
-      const rendition = await modelImageRendition(Buffer.from(image.data, 'base64'), image.mimeType)
-      const text = await interceptor.intercept(model, { ...rendition, label })
+      const sourceChecksum = typeof image.sourceChecksum === 'string' ? image.sourceChecksum : undefined
+      const rendition = await modelImageRendition(Buffer.from(image.data, 'base64'), image.mimeType, sourceChecksum)
+      const text = await interceptor.intercept(model, {
+        ...rendition,
+        label: typeof image.label === 'string' ? image.label : label,
+        attachmentId: typeof image.attachmentId === 'string' ? image.attachmentId : undefined,
+        sourceChecksum,
+      })
       content.push(text === null
-        ? { ...image, data: rendition.data.toString('base64'), mimeType: rendition.mimeType }
+        ? { type: 'image', data: rendition.data.toString('base64'), mimeType: rendition.mimeType }
         : { type: 'text', text })
     }
     messages.push({ ...record, content })

@@ -54,6 +54,37 @@ describe('model-bound image OCR adapters', () => {
     expect(interceptor.intercept).toHaveBeenCalledTimes(2)
   })
 
+  it('uses attachment metadata for prompt images and removes it before provider submission', async () => {
+    const raw = Buffer.from('attached pixels').toString('base64')
+    const context = { messages: [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Describe this image.' },
+        {
+          type: 'image',
+          data: raw,
+          mimeType: 'image/png',
+          label: 'vacation.png',
+          attachmentId: 'attachment-1',
+          sourceChecksum: 'checksum-1',
+        },
+      ],
+    }] }
+    const intercept = vi.fn().mockResolvedValue(null)
+
+    const transformed = await interceptAgentContextImages(context, disabledModel, { intercept })
+
+    expect(intercept).toHaveBeenCalledWith(disabledModel, expect.objectContaining({
+      data: Buffer.from('attached pixels'),
+      mimeType: 'image/png',
+      label: 'vacation.png',
+      attachmentId: 'attachment-1',
+      sourceChecksum: 'checksum-1',
+    }))
+    expect(transformed.messages[0]!.content[1]).toEqual({ type: 'image', data: raw, mimeType: 'image/png' })
+    expect(context.messages[0]!.content[1]).toHaveProperty('attachmentId', 'attachment-1')
+  })
+
   it('replaces embedded OpenAI data URL images and preserves other parts', async () => {
     const raw = Buffer.from('image bytes')
     const input = [{ role: 'user', content: [
