@@ -16,7 +16,9 @@ export interface PublicGenerationRequest {
   stream: boolean
   background: boolean
   metadata?: Record<string, string>
+  publiclyStored: boolean
   streamIncludeUsage?: boolean
+  ignoredParameters: string[]
   fingerprintValue: unknown
 }
 
@@ -31,38 +33,48 @@ function unsupported(param: string, message = `Parameter ${param} is not support
   throw new AppError(400, 'unsupported_parameter', message, 'invalid_request_error', param)
 }
 
-function rejectUnknown(value: JsonRecord, allowed: ReadonlySet<string>, prefix = ''): void {
-  const key = Object.keys(value).find((candidate) => !allowed.has(candidate))
-  if (key) unsupported(`${prefix}${key}`)
+function ignoredTopLevelParameters(value: JsonRecord, known: ReadonlySet<string>): Set<string> {
+  return new Set(Object.keys(value).filter((candidate) => !known.has(candidate)))
+}
+
+function acceptNoop(
+  value: JsonRecord,
+  param: string,
+  predicate: (candidate: unknown) => boolean,
+  ignored: Set<string>,
+): void {
+  if (!Object.prototype.hasOwnProperty.call(value, param)) return
+  if (!predicate(value[param])) unsupported(param)
+  ignored.add(param)
 }
 
 const chatTopLevelKeys = new Set([
   'model', 'messages', 'stream', 'stream_options', 'max_completion_tokens', 'max_tokens',
   'temperature', 'top_p', 'reasoning_effort', 'service_tier', 'parallel_tool_calls',
   'tools', 'tool_choice', 'response_format', 'n', 'store',
+  'audio', 'functions', 'function_call', 'logprobs', 'top_logprobs', 'stop',
+  'presence_penalty', 'frequency_penalty', 'seed', 'prediction', 'modalities',
+  'web_search_options',
 ])
 
 const chatRequestSchema = z.object({
   model: z.string().min(1),
   messages: z.array(z.unknown()).min(1),
-  stream: z.boolean().default(false),
-  stream_options: z.object({ include_usage: z.boolean().optional() }).strict().optional(),
-  max_completion_tokens: z.number().int().positive().optional(),
-  max_tokens: z.number().int().positive().optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  reasoning_effort: z.string().min(1).optional(),
-  service_tier: z.string().min(1).optional(),
-  parallel_tool_calls: z.boolean().optional(),
-  tools: z.array(z.unknown()).optional(),
-  tool_choice: z.unknown().optional(),
-  response_format: z.unknown().optional(),
-  n: z.number().int().positive().optional(),
-  store: z.boolean().optional(),
+  stream: z.boolean().nullish().transform((value) => value ?? false),
+  stream_options: z.object({ include_usage: z.boolean().optional() }).passthrough().nullish().transform((value) => value ?? undefined),
+  max_completion_tokens: z.number().int().positive().nullish().transform((value) => value ?? undefined),
+  max_tokens: z.number().int().positive().nullish().transform((value) => value ?? undefined),
+  temperature: z.number().min(0).max(2).nullish().transform((value) => value ?? undefined),
+  top_p: z.number().min(0).max(1).nullish().transform((value) => value ?? undefined),
+  reasoning_effort: z.string().min(1).nullish().transform((value) => value ?? undefined),
+  service_tier: z.string().min(1).nullish().transform((value) => value ?? undefined),
+  parallel_tool_calls: z.boolean().nullish().transform((value) => value ?? undefined),
+  tools: z.array(z.unknown()).nullish().transform((value) => value ?? undefined),
+  tool_choice: z.unknown().nullish().transform((value) => value ?? undefined),
+  response_format: z.unknown().nullish().transform((value) => value ?? undefined),
+  n: z.number().int().positive().nullish().transform((value) => value ?? undefined),
+  store: z.boolean().nullish().transform((value) => value ?? undefined),
 }).passthrough()
-
-const textPartKeys = new Set(['type', 'text'])
-const imagePartKeys = new Set(['type', 'image_url'])
 
 function inputContent(content: unknown, path: string, images: boolean): unknown {
   if (typeof content === 'string') return content
@@ -71,15 +83,12 @@ function inputContent(content: unknown, path: string, images: boolean): unknown 
     const part = record(rawPart)
     if (!part || typeof part.type !== 'string') throw new AppError(400, 'validation_error', 'Invalid message content part', 'invalid_request_error', `${path}.${index}`)
     if (part.type === 'text') {
-      rejectUnknown(part, textPartKeys, `${path}.${index}.`)
       if (typeof part.text !== 'string') throw new AppError(400, 'validation_error', 'Text content requires text', 'invalid_request_error', `${path}.${index}.text`)
       return { type: 'input_text', text: part.text }
     }
     if (part.type === 'image_url' && images) {
-      rejectUnknown(part, imagePartKeys, `${path}.${index}.`)
       const image = typeof part.image_url === 'string' ? { url: part.image_url } : record(part.image_url)
       if (!image || typeof image.url !== 'string') throw new AppError(400, 'validation_error', 'Image content requires a URL', 'invalid_request_error', `${path}.${index}.image_url`)
-      rejectUnknown(image, new Set(['url', 'detail']), `${path}.${index}.image_url.`)
       return { type: 'input_image', image_url: image.url, ...(typeof image.detail === 'string' ? { detail: image.detail } : {}) }
     }
     unsupported(`${path}.${index}.type`, `Message content type ${part.type} is not supported`)
@@ -99,12 +108,10 @@ function chatMessages(messages: unknown[]): unknown[] {
     const path = `messages.${index}`
     if (!message || typeof message.role !== 'string') throw new AppError(400, 'validation_error', 'Invalid chat message', 'invalid_request_error', path)
     if (message.role === 'developer' || message.role === 'system' || message.role === 'user') {
-      rejectUnknown(message, new Set(['role', 'content']), `${path}.`)
       output.push({ role: message.role, content: inputContent(message.content, `${path}.content`, message.role === 'user') })
       continue
     }
     if (message.role === 'assistant') {
-      rejectUnknown(message, new Set(['role', 'content', 'tool_calls']), `${path}.`)
       if (message.content !== undefined && message.content !== null) {
         const content = textOnlyContent(message.content, `${path}.content`)
         if (content) output.push({ role: 'assistant', content })
@@ -115,13 +122,11 @@ function chatMessages(messages: unknown[]): unknown[] {
           const toolCall = record(rawToolCall)
           const toolPath = `${path}.tool_calls.${toolIndex}`
           if (!toolCall) throw new AppError(400, 'validation_error', 'Invalid tool call', 'invalid_request_error', toolPath)
-          rejectUnknown(toolCall, new Set(['id', 'type', 'function']), `${toolPath}.`)
           if (toolCall.type !== 'function') unsupported(`${toolPath}.type`, 'Only function tool calls are supported')
           const fn = record(toolCall.function)
           if (typeof toolCall.id !== 'string' || !fn || typeof fn.name !== 'string' || typeof fn.arguments !== 'string') {
             throw new AppError(400, 'validation_error', 'Invalid function tool call', 'invalid_request_error', toolPath)
           }
-          rejectUnknown(fn, new Set(['name', 'arguments']), `${toolPath}.function.`)
           output.push({ type: 'function_call', call_id: toolCall.id, name: fn.name, arguments: fn.arguments })
         }
       }
@@ -131,7 +136,6 @@ function chatMessages(messages: unknown[]): unknown[] {
       continue
     }
     if (message.role === 'tool') {
-      rejectUnknown(message, new Set(['role', 'content', 'tool_call_id']), `${path}.`)
       if (typeof message.tool_call_id !== 'string') {
         throw new AppError(400, 'validation_error', 'Tool messages require content and tool_call_id', 'invalid_request_error', path)
       }
@@ -150,10 +154,8 @@ function chatTools(rawTools: unknown[] | undefined): unknown[] | undefined {
     const path = `tools.${index}`
     if (!tool) throw new AppError(400, 'validation_error', 'Invalid tool', 'invalid_request_error', path)
     if (tool.type !== 'function') unsupported(`${path}.type`, 'Only function tools are supported')
-    rejectUnknown(tool, new Set(['type', 'function']), `${path}.`)
     const fn = record(tool.function)
     if (!fn || typeof fn.name !== 'string') throw new AppError(400, 'validation_error', 'Function tool requires a name', 'invalid_request_error', `${path}.function`)
-    rejectUnknown(fn, new Set(['name', 'description', 'parameters', 'strict']), `${path}.function.`)
     return {
       type: 'function',
       name: fn.name,
@@ -168,11 +170,9 @@ function chatToolChoice(value: unknown): unknown {
   if (value === undefined || typeof value === 'string') return value
   const choice = record(value)
   if (!choice) throw new AppError(400, 'validation_error', 'Invalid tool_choice', 'invalid_request_error', 'tool_choice')
-  rejectUnknown(choice, new Set(['type', 'function']), 'tool_choice.')
   if (choice.type !== 'function') unsupported('tool_choice.type', 'Only function tool choices are supported')
   const fn = record(choice.function)
   if (!fn || typeof fn.name !== 'string') throw new AppError(400, 'validation_error', 'Function tool choice requires a name', 'invalid_request_error', 'tool_choice.function')
-  rejectUnknown(fn, new Set(['name']), 'tool_choice.function.')
   return { type: 'function', name: fn.name }
 }
 
@@ -183,9 +183,14 @@ function responsesTools(rawTools: unknown[] | undefined): unknown[] | undefined 
     const path = `tools.${index}`
     if (!tool) throw new AppError(400, 'validation_error', 'Invalid tool', 'invalid_request_error', path)
     if (tool.type !== 'function') unsupported(`${path}.type`, 'Only function tools are supported')
-    rejectUnknown(tool, new Set(['type', 'name', 'description', 'parameters', 'strict']), `${path}.`)
     if (typeof tool.name !== 'string') throw new AppError(400, 'validation_error', 'Function tool requires a name', 'invalid_request_error', `${path}.name`)
-    return tool
+    return {
+      type: 'function',
+      name: tool.name,
+      ...(typeof tool.description === 'string' ? { description: tool.description } : {}),
+      ...(tool.parameters !== undefined ? { parameters: tool.parameters } : {}),
+      ...(typeof tool.strict === 'boolean' ? { strict: tool.strict } : {}),
+    }
   })
 }
 
@@ -194,9 +199,8 @@ function responsesToolChoice(value: unknown): unknown {
   const choice = record(value)
   if (!choice) throw new AppError(400, 'validation_error', 'Invalid tool_choice', 'invalid_request_error', 'tool_choice')
   if (choice.type !== 'function') unsupported('tool_choice.type', 'Only function tool choices are supported')
-  rejectUnknown(choice, new Set(['type', 'name']), 'tool_choice.')
   if (typeof choice.name !== 'string') throw new AppError(400, 'validation_error', 'Function tool choice requires a name', 'invalid_request_error', 'tool_choice.name')
-  return choice
+  return { type: 'function', name: choice.name }
 }
 
 function rejectDeferredResponseParts(input: unknown): void {
@@ -218,16 +222,13 @@ function responseTextFormat(value: unknown): unknown {
   const format = record(value)
   if (!format || typeof format.type !== 'string') throw new AppError(400, 'validation_error', 'Invalid response_format', 'invalid_request_error', 'response_format')
   if (format.type === 'text' || format.type === 'json_object') {
-    rejectUnknown(format, new Set(['type']), 'response_format.')
     return { format: { type: format.type } }
   }
   if (format.type !== 'json_schema') unsupported('response_format.type')
-  rejectUnknown(format, new Set(['type', 'json_schema']), 'response_format.')
   const schema = record(format.json_schema)
   if (!schema || typeof schema.name !== 'string' || schema.schema === undefined) {
     throw new AppError(400, 'validation_error', 'json_schema requires name and schema', 'invalid_request_error', 'response_format.json_schema')
   }
-  rejectUnknown(schema, new Set(['name', 'description', 'schema', 'strict']), 'response_format.json_schema.')
   return { format: {
     type: 'json_schema', name: schema.name, schema: schema.schema,
     ...(typeof schema.description === 'string' ? { description: schema.description } : {}),
@@ -238,7 +239,19 @@ function responseTextFormat(value: unknown): unknown {
 export function parseChatCompletionRequest(raw: unknown): PublicGenerationRequest {
   const source = record(raw)
   if (!source) throw new AppError(400, 'validation_error', 'Request body must be an object', 'invalid_request_error')
-  rejectUnknown(source, chatTopLevelKeys)
+  const ignored = ignoredTopLevelParameters(source, chatTopLevelKeys)
+  acceptNoop(source, 'audio', (value) => value == null, ignored)
+  acceptNoop(source, 'functions', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  acceptNoop(source, 'function_call', (value) => value == null, ignored)
+  acceptNoop(source, 'logprobs', (value) => value == null || value === false, ignored)
+  acceptNoop(source, 'top_logprobs', (value) => value == null || value === 0, ignored)
+  acceptNoop(source, 'stop', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  acceptNoop(source, 'presence_penalty', (value) => value == null || value === 0, ignored)
+  acceptNoop(source, 'frequency_penalty', (value) => value == null || value === 0, ignored)
+  acceptNoop(source, 'seed', (value) => value == null, ignored)
+  acceptNoop(source, 'prediction', (value) => value == null, ignored)
+  acceptNoop(source, 'modalities', (value) => value == null || (Array.isArray(value) && value.length === 1 && value[0] === 'text'), ignored)
+  acceptNoop(source, 'web_search_options', (value) => value == null, ignored)
   const input = chatRequestSchema.parse(source)
   if (input.max_completion_tokens !== undefined && input.max_tokens !== undefined) {
     throw new AppError(400, 'parameter_conflict', 'Specify only one of max_completion_tokens or max_tokens', 'invalid_request_error', 'max_completion_tokens')
@@ -268,7 +281,9 @@ export function parseChatCompletionRequest(raw: unknown): PublicGenerationReques
     maxOutputTokens: input.max_completion_tokens ?? input.max_tokens,
     stream: input.stream,
     background: false,
+    publiclyStored: true,
     streamIncludeUsage: input.stream_options?.include_usage ?? false,
+    ignoredParameters: [...ignored].sort(),
     fingerprintValue: {
       model: input.model, input: rawInput, parameters,
       maxOutputTokens: input.max_completion_tokens ?? input.max_tokens,
@@ -277,28 +292,40 @@ export function parseChatCompletionRequest(raw: unknown): PublicGenerationReques
   }
 }
 
-const completionTopLevelKeys = new Set(['model', 'prompt', 'stream', 'max_tokens', 'temperature', 'top_p', 'n'])
+const completionTopLevelKeys = new Set([
+  'model', 'prompt', 'stream', 'max_tokens', 'temperature', 'top_p', 'n',
+  'best_of', 'echo', 'suffix', 'logprobs', 'stop', 'presence_penalty', 'frequency_penalty', 'seed',
+])
 const completionRequestSchema = z.object({
   model: z.string().min(1),
   prompt: z.string(),
-  stream: z.boolean().default(false),
-  max_tokens: z.number().int().positive().optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  n: z.number().int().positive().optional(),
+  stream: z.boolean().nullish().transform((value) => value ?? false),
+  max_tokens: z.number().int().positive().nullish().transform((value) => value ?? undefined),
+  temperature: z.number().min(0).max(2).nullish().transform((value) => value ?? undefined),
+  top_p: z.number().min(0).max(1).nullish().transform((value) => value ?? undefined),
+  n: z.number().int().positive().nullish().transform((value) => value ?? undefined),
 }).passthrough()
 
 export function parseCompletionRequest(raw: unknown): PublicGenerationRequest {
   const source = record(raw)
   if (!source) throw new AppError(400, 'validation_error', 'Request body must be an object', 'invalid_request_error')
-  rejectUnknown(source, completionTopLevelKeys)
+  const ignored = ignoredTopLevelParameters(source, completionTopLevelKeys)
+  acceptNoop(source, 'best_of', (value) => value == null || value === 1, ignored)
+  acceptNoop(source, 'echo', (value) => value == null || value === false, ignored)
+  acceptNoop(source, 'suffix', (value) => value == null || value === '', ignored)
+  acceptNoop(source, 'logprobs', (value) => value == null, ignored)
+  acceptNoop(source, 'stop', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  acceptNoop(source, 'presence_penalty', (value) => value == null || value === 0, ignored)
+  acceptNoop(source, 'frequency_penalty', (value) => value == null || value === 0, ignored)
+  acceptNoop(source, 'seed', (value) => value == null, ignored)
   if (Array.isArray(source.prompt)) unsupported('prompt', 'Prompt arrays and token arrays are not supported')
   const input = completionRequestSchema.parse(source)
   if (input.n !== undefined && input.n !== 1) unsupported('n', 'Only n=1 is supported')
   return {
     protocol: 'completions', model: input.model, rawInput: input.prompt, displayInput: input.prompt,
     parameters: Object.fromEntries(Object.entries({ temperature: input.temperature, top_p: input.top_p }).filter(([, value]) => value !== undefined)),
-    maxOutputTokens: input.max_tokens, stream: input.stream, background: false,
+    maxOutputTokens: input.max_tokens, stream: input.stream, background: false, publiclyStored: true,
+    ignoredParameters: [...ignored].sort(),
     fingerprintValue: {
       model: input.model, input: input.prompt,
       parameters: Object.fromEntries(Object.entries({ temperature: input.temperature, top_p: input.top_p }).filter(([, value]) => value !== undefined)),
@@ -310,28 +337,52 @@ export function parseCompletionRequest(raw: unknown): PublicGenerationRequest {
 const responsesTopLevelKeys = new Set([
   'model', 'input', 'stream', 'background', 'max_output_tokens', 'metadata', 'instructions',
   'temperature', 'top_p', 'tools', 'tool_choice', 'parallel_tool_calls', 'reasoning', 'text',
+  'store', 'service_tier', 'context_management', 'conversation', 'include', 'max_tool_calls',
+  'moderation', 'previous_response_id', 'prompt', 'prompt_cache_key', 'prompt_cache_options',
+  'prompt_cache_retention', 'safety_identifier', 'stream_options', 'top_logprobs', 'truncation', 'user',
 ])
 const responsesRequestSchema = z.object({
   model: z.string().min(1),
   input: z.union([z.string(), z.array(z.unknown())]),
-  stream: z.boolean().default(false),
-  background: z.boolean().default(false),
-  max_output_tokens: z.number().int().positive().optional(),
-  metadata: z.record(z.string(), z.string()).optional(),
-  instructions: z.string().optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  top_p: z.number().min(0).max(1).optional(),
-  tools: z.array(z.unknown()).optional(),
-  tool_choice: z.unknown().optional(),
-  parallel_tool_calls: z.boolean().optional(),
-  reasoning: z.unknown().optional(),
-  text: z.unknown().optional(),
+  stream: z.boolean().nullish().transform((value) => value ?? false),
+  background: z.boolean().nullish().transform((value) => value ?? false),
+  max_output_tokens: z.number().int().positive().nullish().transform((value) => value ?? undefined),
+  metadata: z.record(z.string(), z.string()).nullish().transform((value) => value ?? undefined),
+  instructions: z.string().nullish().transform((value) => value ?? undefined),
+  temperature: z.number().min(0).max(2).nullish().transform((value) => value ?? undefined),
+  top_p: z.number().min(0).max(1).nullish().transform((value) => value ?? undefined),
+  tools: z.array(z.unknown()).nullish().transform((value) => value ?? undefined),
+  tool_choice: z.unknown().nullish().transform((value) => value ?? undefined),
+  parallel_tool_calls: z.boolean().nullish().transform((value) => value ?? undefined),
+  reasoning: z.unknown().nullish().transform((value) => value ?? undefined),
+  text: z.unknown().nullish().transform((value) => value ?? undefined),
+  store: z.boolean().nullish().transform((value) => value ?? true),
+  service_tier: z.string().min(1).nullish().transform((value) => value ?? undefined),
 }).passthrough()
 
 export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
   const source = record(raw)
   if (!source) throw new AppError(400, 'validation_error', 'Request body must be an object', 'invalid_request_error')
-  rejectUnknown(source, responsesTopLevelKeys)
+  const ignored = ignoredTopLevelParameters(source, responsesTopLevelKeys)
+  acceptNoop(source, 'context_management', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  acceptNoop(source, 'conversation', (value) => value == null, ignored)
+  acceptNoop(source, 'include', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  acceptNoop(source, 'max_tool_calls', (value) => value == null, ignored)
+  acceptNoop(source, 'moderation', (value) => value == null, ignored)
+  acceptNoop(source, 'previous_response_id', (value) => value == null, ignored)
+  acceptNoop(source, 'prompt', (value) => value == null, ignored)
+  acceptNoop(source, 'prompt_cache_key', (value) => value == null, ignored)
+  acceptNoop(source, 'prompt_cache_options', (value) => value == null, ignored)
+  acceptNoop(source, 'prompt_cache_retention', (value) => value == null, ignored)
+  if (Object.prototype.hasOwnProperty.call(source, 'safety_identifier')) ignored.add('safety_identifier')
+  acceptNoop(source, 'stream_options', (value) => {
+    if (value == null) return true
+    const options = record(value)
+    return Boolean(options) && (options!.include_obfuscation == null || options!.include_obfuscation === false)
+  }, ignored)
+  acceptNoop(source, 'top_logprobs', (value) => value == null, ignored)
+  acceptNoop(source, 'truncation', (value) => value == null || value === 'disabled', ignored)
+  if (Object.prototype.hasOwnProperty.call(source, 'user')) ignored.add('user')
   const input = responsesRequestSchema.parse(source)
   if (input.stream && input.background) throw new AppError(400, 'parameter_conflict', 'Streaming background responses are not supported', 'invalid_request_error', 'background')
   rejectDeferredResponseParts(input.input)
@@ -343,19 +394,21 @@ export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
     parameters: Object.fromEntries(Object.entries({
       instructions: input.instructions, temperature: input.temperature, top_p: input.top_p,
       tools, tool_choice: toolChoice, parallel_tool_calls: input.parallel_tool_calls,
-      reasoning: input.reasoning, text: input.text,
+      reasoning: input.reasoning, text: input.text, service_tier: input.service_tier,
     }).filter(([, value]) => value !== undefined)),
     maxOutputTokens: input.max_output_tokens, stream: input.stream, background: input.background,
     metadata: input.metadata,
+    publiclyStored: input.store,
+    ignoredParameters: [...ignored].sort(),
     fingerprintValue: {
       model: input.model, input: input.input,
       parameters: Object.fromEntries(Object.entries({
         instructions: input.instructions, temperature: input.temperature, top_p: input.top_p,
         tools, tool_choice: toolChoice, parallel_tool_calls: input.parallel_tool_calls,
-        reasoning: input.reasoning, text: input.text,
+        reasoning: input.reasoning, text: input.text, service_tier: input.service_tier,
       }).filter(([, value]) => value !== undefined)),
       maxOutputTokens: input.max_output_tokens, stream: input.stream, background: input.background,
-      metadata: input.metadata,
+      metadata: input.metadata, store: input.store,
     },
   }
 }
@@ -456,6 +509,7 @@ export function serializePublicResponse(row: ResponseRow) {
     incomplete_details: row.incompleteDetails,
     usage: row.usage ? responseUsage(row.usage) : null,
     metadata: row.metadata,
+    store: row.publiclyStored,
   }
 }
 
@@ -517,6 +571,7 @@ export class ResponsesStreamProjector implements StreamProjector {
         id: this.row.id,
         model: this.row.modelId,
         metadata: this.row.metadata,
+        store: this.row.publiclyStored,
         ...(Array.isArray(response.output) ? { output: sanitizeOutputForClient(response.output) } : {}),
       },
     }]

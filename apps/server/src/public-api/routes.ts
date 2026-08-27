@@ -35,15 +35,20 @@ async function accessibleResponse(userId: string, responseId: string) {
     .where(and(
       eq(responses.id, responseId),
       eq(responses.userId, userId),
+      eq(responses.publiclyStored, true),
       isNull(chats.deletedAt),
       accessibleChatCondition(),
     ))
     .limit(1)
-  if (!result?.response) throw notFound('Response')
+  if (!result?.response || !result.response.publiclyStored) throw notFound('Response')
   return result.response
 }
 
 export async function registerPublicApiRoutes(app: FastifyInstance): Promise<void> {
+  const logIgnoredParameters = (request: Parameters<typeof authenticateApiKey>[0], protocol: string, parameters: string[]) => {
+    if (parameters.length) request.log.info({ protocol, ignoredParameters: parameters }, 'Ignored OpenAI-compatible request parameters')
+  }
+
   app.get('/v1/models', async (request) => {
     const key = await authenticateApiKey(request, 'models')
     const rows = await db.select().from(models).where(and(eq(models.enabled, true), eq(models.visible, true)))
@@ -65,6 +70,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
   app.post('/v1/responses', async (request, reply) => {
     const key = await authenticateApiKey(request, 'responses')
     const parsed = parseResponsesRequest(request.body)
+    logIgnoredParameters(request, parsed.protocol, parsed.ignoredParameters)
     await assertApiKeyModelAllowed(key.id, parsed.model)
     return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
   })
@@ -72,6 +78,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
   app.post('/v1/chat/completions', async (request, reply) => {
     const key = await authenticateApiKey(request, 'responses')
     const parsed = parseChatCompletionRequest(request.body)
+    logIgnoredParameters(request, parsed.protocol, parsed.ignoredParameters)
     await assertApiKeyModelAllowed(key.id, parsed.model)
     return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
   })
@@ -79,6 +86,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
   app.post('/v1/completions', async (request, reply) => {
     const key = await authenticateApiKey(request, 'responses')
     const parsed = parseCompletionRequest(request.body)
+    logIgnoredParameters(request, parsed.protocol, parsed.ignoredParameters)
     await assertApiKeyModelAllowed(key.id, parsed.model)
     return executePublicGeneration({ reply, key, request: parsed, idempotencyKey: request.headers['idempotency-key'] as string | undefined })
   })
