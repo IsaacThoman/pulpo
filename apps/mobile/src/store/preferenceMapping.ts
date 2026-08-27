@@ -87,10 +87,14 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
   )
 }
 
-export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
-  const serverKey = key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
+export function serverPreferenceKey(key: keyof Preferences): string | null {
+  return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
     : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
+}
+
+export function preferencePatchForServer<K extends keyof Preferences>(key: K, value: Preferences[K]): Record<string, unknown> | null {
+  const serverKey = serverPreferenceKey(key)
   return serverKey ? { [serverKey]: value } : null
 }

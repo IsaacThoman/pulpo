@@ -19,6 +19,7 @@ import { mergeServerChatDetails, useChat, type ServerChat, type ServerFolder } f
 import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
+import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -60,6 +61,7 @@ export function ChatDataBridge() {
   const replaceSummaries = useChat((state) => state.replaceSummaries)
   const replaceFolders = useChat((state) => state.replaceFolders)
   const setDetailedChat = useChat((state) => state.setDetailedChat)
+  const setAdminAccessRequiredChat = useChat((state) => state.setAdminAccessRequiredChat)
   const applyResponseEvents = useChat((state) => state.applyResponseEvents)
   const applyResponseSnapshot = useChat((state) => state.applyResponseSnapshot)
   const socketRef = useRef<PulpoSocket | null>(null)
@@ -95,6 +97,9 @@ export function ChatDataBridge() {
   useEffect(() => { if (chatsQuery.data) replaceSummaries(chatsQuery.data) }, [chatsQuery.data, replaceSummaries])
   useEffect(() => { if (foldersQuery.data) replaceFolders(foldersQuery.data) }, [foldersQuery.data, replaceFolders])
   useEffect(() => { if (chatQuery.data) setDetailedChat(chatQuery.data) }, [chatQuery.data, setDetailedChat])
+  useEffect(() => {
+    setAdminAccessRequiredChat(adminAccessRequiredChatId(chatId, chatQuery.error))
+  }, [chatId, chatQuery.error, setAdminAccessRequiredChat])
   useEffect(() => {
     if (chatId === activeTemporaryChatId && chatQuery.error instanceof ApiError && chatQuery.error.code === 'temporary_chat_expired') {
       useChat.getState().markTemporaryExpired(chatId)

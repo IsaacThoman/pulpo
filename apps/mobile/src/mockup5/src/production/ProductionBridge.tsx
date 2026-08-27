@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
-import { hydrateEmbeddedResponseSnapshot } from '@pulpo/client-core'
+import { hydrateEmbeddedResponseSnapshot, LatestValueQueue } from '@pulpo/client-core'
 import { useShallow } from 'zustand/react/shallow'
 import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
 import { enqueueCacheWrite } from '../../../data/writeBehind'
@@ -242,6 +242,25 @@ async function offlineCapableMutation<T>(input: {
   }
 }
 
+type SettingsMutationResult = Awaited<ReturnType<typeof mobileApi.updateSettings>> | undefined
+const settingMutations = new LatestValueQueue<string, Record<string, unknown>, SettingsMutationResult>()
+
+function persistLatestSetting(
+  namespace: string,
+  serverKey: string,
+  body: Record<string, unknown>,
+): Promise<SettingsMutationResult> {
+  const entityKey = `setting:${serverKey}`
+  return settingMutations.enqueue(`${namespace}:${serverKey}`, body, (latestBody) => offlineCapableMutation({
+    namespace,
+    entityKey,
+    method: 'PATCH',
+    path: '/api/settings',
+    body: latestBody,
+    request: () => mobileApi.updateSettings(latestBody),
+  }))
+}
+
 export function ProductionBridge({ activeChatId }: { activeChatId: string | null }) {
   const status = useSessionStore((state) => state.status)
   const instanceUrl = useSessionStore((state) => state.instanceUrl)
@@ -335,16 +354,16 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
       renameFolder: (id, name) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'PATCH', path: `/api/folders/${id}`, body: { name }, request: () => updateFolder(id, { name }) }),
       deleteFolder: (id) => offlineCapableMutation({ namespace, entityKey: `folder:${id}`, method: 'DELETE', path: `/api/folders/${id}`, request: () => deleteFolder(id) }),
       setPreference: async (key, value) => {
-        await usePreferencesStore.getState().setPreference(key, value)
+        const persisted = usePreferencesStore.getState().setPreference(key, value)
         const body = preferencePatchForServer(key, value)
-        if (!body) return
+        if (!body) return persisted
         const serverKey = Object.keys(body)[0] ?? String(key)
-        const saved = await offlineCapableMutation({
-          namespace, entityKey: `setting:${serverKey}`, method: 'PATCH', path: '/api/settings', body,
-          request: () => mobileApi.updateSettings(body),
-        })
-        if (saved && (key === 'favoriteModelIds' || key === 'providerOrder' || key === 'generation' || key === 'agentModes')) {
+        const saved = await persistLatestSetting(namespace, serverKey, body)
+        await persisted
+        if (saved) {
           await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
+          const latest = await mobileApi.settings()
+          await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
         }
       },
       toggleFavoriteModel: async (modelId: string, favorite: boolean) => {
@@ -352,16 +371,14 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         const next = favorite
           ? [...current.filter((id) => id !== modelId), modelId]
           : current.filter((id) => id !== modelId)
-        await usePreferencesStore.getState().setPreference('favoriteModelIds', next)
-        const saved = await offlineCapableMutation({
-          namespace,
-          entityKey: 'setting:favoriteModelIds',
-          method: 'PATCH',
-          path: '/api/settings',
-          body: { favoriteModelIds: next },
-          request: () => mobileApi.updateSettings({ favoriteModelIds: next }),
-        })
-        if (saved) await usePreferencesStore.getState().markSynchronizedPreferenceSynced('favoriteModelIds', next)
+        const persisted = usePreferencesStore.getState().setPreference('favoriteModelIds', next)
+        const saved = await persistLatestSetting(namespace, 'favoriteModelIds', { favoriteModelIds: next })
+        await persisted
+        if (saved) {
+          await usePreferencesStore.getState().markSynchronizedPreferenceSynced('favoriteModelIds', next)
+          const latest = await mobileApi.settings()
+          await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
+        }
       },
     })
   }, [namespace])

@@ -20,7 +20,7 @@ export type AutomaticChatExpiration = 'disabled' | '24h' | '7d'
 /** Per-model map of preset id → selected choice id. */
 export type GenerationPrefs = Record<string, string>
 
-interface SettingsState {
+export interface SettingsState {
   ownerUserId: string | null
   theme: Theme
   language: Language

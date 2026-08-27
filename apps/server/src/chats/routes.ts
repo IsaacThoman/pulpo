@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
@@ -510,6 +510,17 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         .from(chats).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).limit(1)
       if (owned && temporaryChatIsExpired(owned, now)) {
         throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
+      }
+      if (user.role === 'admin' && !request.adminChatAccess) {
+        const [foreign] = await db.select({ id: chats.id }).from(chats).where(and(
+          eq(chats.id, id),
+          ne(chats.userId, user.id),
+          isNull(chats.purgeStartedAt),
+          accessibleChatCondition(now),
+        )).limit(1)
+        if (foreign) {
+          throw new AppError(403, 'chat_not_in_account', 'This chat belongs to another account')
+        }
       }
       throw notFound('Chat')
     }
