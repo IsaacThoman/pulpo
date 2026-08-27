@@ -1,11 +1,35 @@
 import { describe, expect, it } from 'vitest'
-import { DESKTOP_ORIGIN, isTrustedRendererUrl, rendererAssetPath, validatedExternalUrl, validatedProtocolUrl } from './security'
+import {
+  DESKTOP_ORIGIN,
+  desktopDevelopmentRequestHeaders,
+  desktopDevelopmentResponseHeaders,
+  isTrustedRendererUrl,
+  rendererAssetPath,
+  validatedExternalUrl,
+  validatedProtocolUrl,
+} from './security'
 
 describe('desktop security helpers', () => {
   it('accepts only trusted renderer origins', () => {
     expect(isTrustedRendererUrl(`${DESKTOP_ORIGIN}/c/one`)).toBe(true)
     expect(isTrustedRendererUrl('http://localhost:5174/', 'http://localhost:5174')).toBe(true)
     expect(isTrustedRendererUrl('https://pulpo.example/')).toBe(false)
+  })
+
+  it('bridges the local renderer through the trusted desktop CORS origin', () => {
+    expect(desktopDevelopmentRequestHeaders({ Origin: 'http://localhost:5174' }, 'http://localhost:5174/')).toEqual({
+      Origin: DESKTOP_ORIGIN,
+    })
+    expect(desktopDevelopmentRequestHeaders({ Origin: 'https://untrusted.example' }, 'http://localhost:5174')).toEqual({
+      Origin: 'https://untrusted.example',
+    })
+    expect(desktopDevelopmentResponseHeaders({
+      'access-control-allow-origin': [DESKTOP_ORIGIN],
+      vary: ['Origin'],
+    }, 'http://localhost:5174/')).toEqual({
+      'access-control-allow-origin': ['http://localhost:5174'],
+      vary: ['Origin'],
+    })
   })
 
   it('rejects insecure external destinations and credentials', () => {
