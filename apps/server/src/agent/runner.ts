@@ -63,6 +63,7 @@ import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 import { createProviderCostCapture } from './provider-cost.js'
 import { orderedAgentTurnPayloads } from './detailed-payloads.js'
+import { loadAgentPromptImages } from './prompt-images.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -208,7 +209,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     }) : []
   })
   const attachmentRows = attachmentIds.length
-    ? await db.select({ id: attachments.id, originalName: attachments.originalName, mimeType: attachments.mimeType, sizeBytes: attachments.sizeBytes })
+    ? await db.select({
+      id: attachments.id,
+      originalName: attachments.originalName,
+      mimeType: attachments.mimeType,
+      sizeBytes: attachments.sizeBytes,
+      objectKey: attachments.objectKey,
+      checksum: attachments.checksum,
+    })
       .from(attachments).where(and(eq(attachments.userId, record.response.userId), inArray(attachments.id, attachmentIds), eq(attachments.status, 'ready')))
     : []
   const attachmentsById = new Map(attachmentRows.map((attachment) => [attachment.id, attachment]))
@@ -371,11 +379,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     active.model.compactionThresholdTokens,
     active.model.contextWindow,
   )
-  const estimateCompactionTokens = (messages: AgentMessage[], extraContext: unknown[] = []) => estimateAgentContextTokens({
+  const estimateCompactionTokens = (messages: AgentMessage[], extraMessages: AgentMessage[] = []) => estimateAgentContextTokens({
     systemPrompt: agentSystemPrompt,
-    messages: extraContext.length
-      ? [...messages, { role: 'user', content: extraContext.map((item) => typeof item === 'string' ? item : JSON.stringify(item)).join('\n'), timestamp: Date.now() } as AgentMessage]
-      : messages,
+    messages: [...messages, ...extraMessages],
     tools: agent?.state.tools,
   } as Context)
   const compactAgentContext = async (
@@ -383,10 +389,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     thresholdTokens: number,
     phase: CompactionItem['phase'],
     beforeAgentTurn?: number,
-    extraContext: unknown[] = [],
+    extraMessages: AgentMessage[] = [],
     options: { force?: boolean; retainedTurns?: number; estimatedTokens?: number } = {},
   ): Promise<AgentMessage[]> => {
-    const estimatedTokens = options.estimatedTokens ?? estimateCompactionTokens(messages, extraContext)
+    const estimatedTokens = options.estimatedTokens ?? estimateCompactionTokens(messages, extraMessages)
     const retainedTurnCount = options.retainedTurns ?? active.model.compactionRetainedTurns
     const split = splitAgentContext(messages, retainedTurnCount)
     if (!shouldCompactAgentContext({
@@ -795,21 +801,27 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   try {
     await emit('pulpo.agent.started', { runId })
     const initialPrompt = buildAgentUserPrompt(record.response.input, attachedFiles) || 'How can I help?'
+    const promptImages = await loadAgentPromptImages(attachedFiles)
+    const initialMessage: AgentMessage = {
+      role: 'user',
+      content: [{ type: 'text', text: initialPrompt }, ...promptImages],
+      timestamp: Date.now(),
+    }
     if (!existingRun) {
       resumedMessages = await compactAgentContext(
         resumedMessages,
         compactionThreshold(),
         'pre_response',
         undefined,
-        [initialPrompt],
-        { estimatedTokens: estimateCompactionTokens(resumedMessages, [initialPrompt]) },
+        [initialMessage],
+        { estimatedTokens: estimateCompactionTokens(resumedMessages, [initialMessage]) },
       )
       agent.state.messages = resumedMessages
       agent.state.model = active.piModel
       skipMessageCount = resumedMessages.length
     }
     if (existingRun && resumedMessages.length > parentMessages.length) await agent.continue()
-    else await agent.prompt(initialPrompt)
+    else await agent.prompt(initialMessage)
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
     while (last?.role === 'assistant' && last.stopReason === 'error') {
