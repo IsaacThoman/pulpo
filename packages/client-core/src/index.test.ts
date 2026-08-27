@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   attachmentValidationError,
   hydrateEmbeddedResponseSnapshot,
+  LatestValueQueue,
   lineageFromLeaf,
   mergeCachedResponseDetails,
   mergeRevisionInvalidation,
@@ -12,6 +13,54 @@ import {
   responseLineageDetailsAvailable,
   resolvePresetActions,
 } from './index.js'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise })
+  return { promise, resolve }
+}
+
+describe('latest value queue', () => {
+  it('serializes a key and drops superseded values behind the active write', async () => {
+    const first = deferred<number>()
+    const writes: number[] = []
+    const queue = new LatestValueQueue<string, number, number>()
+    const write = vi.fn(async (value: number) => {
+      writes.push(value)
+      if (value === 1) return first.promise
+      return value
+    })
+
+    const one = queue.enqueue('theme', 1, write)
+    const two = queue.enqueue('theme', 2, write)
+    const three = queue.enqueue('theme', 3, write)
+    expect(writes).toEqual([1])
+
+    first.resolve(1)
+    await expect(Promise.all([one, two, three])).resolves.toEqual([3, 3, 3])
+    expect(writes).toEqual([1, 3])
+  })
+
+  it('does not serialize unrelated keys', async () => {
+    const first = deferred<string>()
+    const writes: string[] = []
+    const queue = new LatestValueQueue<string, string, string>()
+
+    const theme = queue.enqueue('theme', 'dark', async (value) => {
+      writes.push(value)
+      return first.promise
+    })
+    const language = queue.enqueue('language', 'es', async (value) => {
+      writes.push(value)
+      return value
+    })
+
+    await expect(language).resolves.toBe('es')
+    expect(writes).toEqual(['dark', 'es'])
+    first.resolve('dark')
+    await expect(theme).resolves.toBe('dark')
+  })
+})
 
 describe('client core', () => {
   it('hydrates compact embedded snapshots from the canonical response output', () => {
