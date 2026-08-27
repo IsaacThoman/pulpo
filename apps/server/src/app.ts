@@ -19,6 +19,7 @@ import { registerUsageRoutes } from './usage/routes.js'
 import { registerAdminRoutes } from './admin/routes.js'
 import { registerAdminSettingsRoutes } from './admin/settings-routes.js'
 import { registerAdminUsageRoutes } from './admin/usage-routes.js'
+import { registerAdminChatAccess } from './admin/chat-access.js'
 import { registerMessageRoutes } from './messages/routes.js'
 import { registerAttachmentRoutes } from './attachments/routes.js'
 import { ensureBuiltinCatalog } from './catalog/defaults.js'
@@ -65,6 +66,7 @@ export async function buildApp() {
   await app.register(multipart, { limits: { fileSize: 20 * 1024 * 1024 * 1024, files: 1 } })
 
   app.decorateRequest('user', null)
+  app.decorateRequest('adminChatAccess', null)
   app.decorateRequest('apiKeyId', null)
   app.decorateRequest('managementTokenId', null)
   app.decorateRequest('managementScopes', null)
@@ -123,6 +125,7 @@ export async function buildApp() {
   await registerInviteCodeRoutes(app)
   await registerCatalogRoutes(app)
   await registerCatalogIconRoutes(app)
+  await registerAdminChatAccess(app)
   await registerChatRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)

@@ -1,3 +1,5 @@
+import { adminChatAccessHeaders } from '@/features/admin-chat/access'
+
 export interface ApiErrorBody {
   error?: {
     message?: string
@@ -33,6 +35,7 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
 
 export function authenticatedFetch(input: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers)
+  for (const [key, value] of Object.entries(adminChatAccessHeaders(input))) headers.set(key, value)
   for (const [key, value] of Object.entries(runtimeAuthorizationHeaders(input))) headers.set(key, value)
   return fetch(runtimeApiUrl(input), {
     ...init,
@@ -46,6 +49,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   const formBody = typeof FormData !== 'undefined' && options.body instanceof FormData
   if (options.body !== undefined && !formBody) headers.set('content-type', 'application/json')
   if (options.idempotencyKey) headers.set('idempotency-key', options.idempotencyKey)
+  for (const [key, value] of Object.entries(adminChatAccessHeaders(path))) headers.set(key, value)
   for (const [key, value] of Object.entries(runtimeAuthorizationHeaders(path))) headers.set(key, value)
   const response = await authenticatedFetch(path, {
     ...options,

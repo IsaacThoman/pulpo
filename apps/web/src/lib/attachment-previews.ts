@@ -1,6 +1,6 @@
 import { attachmentKind } from './attachments'
 
-export type AttachmentPreviewKind = 'image' | 'pdf' | 'text' | 'table' | 'audio' | 'video'
+export type AttachmentPreviewKind = 'image' | 'pdf' | 'markdown' | 'text' | 'table' | 'audio' | 'video'
 
 export const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 export const MAX_MEDIA_PREVIEW_BYTES = 100 * 1024 * 1024
@@ -26,6 +26,7 @@ export function attachmentPreviewKind(name: string, mimeType: string): Attachmen
   if (kind === 'audio') return 'audio'
   if (kind === 'video') return 'video'
   if (mime === 'text/csv' || mime === 'text/tab-separated-values' || ext === 'csv' || ext === 'tsv') return 'table'
+  if (ext === 'md' || mime === 'text/markdown') return 'markdown'
   if (
     mime.startsWith('text/') || mime.includes('javascript') || mime.includes('json')
     || mime.includes('yaml') || mime === 'application/xml' || mime.endsWith('+xml')
@@ -35,7 +36,7 @@ export function attachmentPreviewKind(name: string, mimeType: string): Attachmen
 }
 
 export function previewSizeLimit(kind: AttachmentPreviewKind): number {
-  return kind === 'text' || kind === 'table' ? MAX_TEXT_PREVIEW_BYTES : MAX_MEDIA_PREVIEW_BYTES
+  return kind === 'markdown' || kind === 'text' || kind === 'table' ? MAX_TEXT_PREVIEW_BYTES : MAX_MEDIA_PREVIEW_BYTES
 }
 
 export function formatTextPreview(name: string, mimeType: string, text: string): { text: string; truncated: boolean } {

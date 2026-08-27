@@ -1,4 +1,0 @@
-ALTER TABLE "episodic_memory_generations" DROP CONSTRAINT "episodic_memory_generations_progress_check";--> statement-breakpoint
-ALTER TABLE "episodic_memory_generations" ADD COLUMN "download_total_bytes" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE "episodic_memory_generations" ADD COLUMN "download_completed_bytes" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE "episodic_memory_generations" ADD CONSTRAINT "episodic_memory_generations_progress_check" CHECK ("episodic_memory_generations"."download_total_bytes" >= 0 and "episodic_memory_generations"."download_completed_bytes" >= 0 and "episodic_memory_generations"."total_items" >= 0 and "episodic_memory_generations"."completed_items" >= 0 and "episodic_memory_generations"."failed_items" >= 0);

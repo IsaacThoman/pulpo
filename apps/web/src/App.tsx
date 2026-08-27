@@ -31,6 +31,8 @@ const AdminUsageLayout = lazy(() => import('@/pages/admin/AdminUsageLayout').the
 const AdminWorkspacesPage = lazy(() => import('@/pages/admin/AdminWorkspacesPage').then((module) => ({ default: module.AdminWorkspacesPage })))
 const AdminSettingsPage = lazy(() => import('@/pages/admin/settings/AdminSettingsPage').then((module) => ({ default: module.AdminSettingsPage })))
 const AdminBillingPage = lazy(() => import('@/pages/admin/AdminBillingPage').then((module) => ({ default: module.AdminBillingPage })))
+const AdminChatsPage = lazy(() => import('@/pages/admin/AdminChatsPage').then((module) => ({ default: module.AdminChatsPage })))
+const AdminChatPage = lazy(() => import('@/pages/admin/AdminChatPage').then((module) => ({ default: module.AdminChatPage })))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage').then((module) => ({ default: module.LoginPage })))
 const LoginOptionsPage = lazy(() => import('@/pages/auth/LoginOptionsPage').then((module) => ({ default: module.LoginOptionsPage })))
 const SetupPage = lazy(() => import('@/pages/auth/SetupPage').then((module) => ({ default: module.SetupPage })))
@@ -116,6 +118,8 @@ export default function App() {
               <Route path="admin" element={<LocalizedRoute><AdminLayout /></LocalizedRoute>}>
                 <Route index element={<Navigate to="users" replace />} />
                 <Route path="users" element={<LocalizedRoute><AdminUsersPage /></LocalizedRoute>} />
+                <Route path="chats" element={<LocalizedRoute><AdminChatsPage /></LocalizedRoute>} />
+                <Route path="chats/:chatId" element={<LocalizedRoute><AdminChatPage /></LocalizedRoute>} />
                 <Route path="providers" element={<LocalizedRoute><AdminProvidersPage /></LocalizedRoute>} />
                 <Route path="labs" element={<LocalizedRoute><AdminLabsPage /></LocalizedRoute>} />
                 <Route path="icons" element={<LocalizedRoute><AdminIconsPage /></LocalizedRoute>} />
