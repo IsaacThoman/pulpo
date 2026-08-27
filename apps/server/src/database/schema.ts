@@ -27,7 +27,7 @@ export const responseStatusEnum = pgEnum('response_status', [
 ])
 export const executionModeEnum = pgEnum('execution_mode', ['stream', 'background'])
 export const attachmentStatusEnum = pgEnum('attachment_status', ['pending', 'ready', 'failed', 'deleted'])
-export const apiKeyStatusEnum = pgEnum('api_key_status', ['active', 'revoked'])
+export const apiKeyStatusEnum = pgEnum('api_key_status', ['active', 'disabled'])
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'settled', 'released'])
 export const workspaceLeaseStatusEnum = pgEnum('workspace_lease_status', ['provisioning', 'ready', 'expired', 'failed', 'released'])
 export const agentRunStatusEnum = pgEnum('agent_run_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
@@ -706,7 +706,7 @@ export const apiKeys = pgTable('api_keys', {
   monthlyBudgetMicros: bigint('monthly_budget_micros', { mode: 'number' }),
   lifetimeBudgetMicros: bigint('lifetime_budget_micros', { mode: 'number' }),
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
-  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  disabledAt: timestamp('disabled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('api_key_prefix_unique').on(table.prefix)])
 

@@ -134,7 +134,7 @@ export function ApiKeysPage() {
   const apiKeysEnabled = useAuth((state) => state.apiKeysEnabled)
   const keys = useApiKeys((s) => s.keys)
   const createKey = useApiKeys((s) => s.createKey)
-  const revokeKey = useApiKeys((s) => s.revokeKey)
+  const setKeyEnabled = useApiKeys((s) => s.setKeyEnabled)
   const deleteKey = useApiKeys((s) => s.deleteKey)
   const load = useApiKeys((s) => s.load)
   const models = useCatalog((state) => state.models)
@@ -150,7 +150,7 @@ export function ApiKeysPage() {
   const [secret, setSecret] = useState<string | null>(null)
   const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [confirmRevoke, setConfirmRevoke] = useState<ApiKey | null>(null)
+  const [confirmDisable, setConfirmDisable] = useState<ApiKey | null>(null)
   const [usageDocsOpen, setUsageDocsOpen] = useState(false)
 
   useEffect(() => { void load() }, [load])
@@ -217,8 +217,10 @@ export function ApiKeysPage() {
           onClick={() => navigator.clipboard?.writeText(key.prefix).catch(() => {})}
         >
           <Copy /> {ui("Copy prefix")} </DropdownMenuItem>
-        {!key.revoked && (
-          <DropdownMenuItem onClick={() => setConfirmRevoke(key)}> {ui("Revoke")} </DropdownMenuItem>
+        {key.disabled ? (
+          <DropdownMenuItem onClick={() => void setKeyEnabled(key.id, true).catch(() => {})}> {ui("Enable")} </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => setConfirmDisable(key)}> {ui("Disable")} </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={() => void deleteKey(key.id)}>
@@ -265,12 +267,12 @@ export function ApiKeysPage() {
             </p>
           )}
           {filtered.map((key) => (
-            <div key={key.id} className={cn('p-4', key.revoked && 'opacity-50')}>
+            <div key={key.id} className={cn('p-4', key.disabled && 'opacity-50')}>
               <div className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="truncate font-medium">{key.name}</span>
-                    {key.revoked && <Badge variant="destructive" className="h-5 shrink-0 px-1.5 text-[10px]">{ui("revoked")}</Badge>}
+                    {key.disabled && <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">{ui("disabled")}</Badge>}
                   </div>
                   <div className="mt-0.5 truncate font-mono text-xs text-muted-foreground">{maskKey(key.prefix)}</div>
                 </div>
@@ -330,15 +332,15 @@ export function ApiKeysPage() {
               {filtered.map((k) => (
                 <tr
                   key={k.id}
-                  className={cn(k.revoked && 'opacity-50')}
+                  className={cn(k.disabled && 'opacity-50')}
                 >
                   <td className="px-3 py-2">
                     <div className="flex items-center gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-medium">{k.name}</span>
-                          {k.revoked && (
-                            <Badge variant="destructive" className="h-5 px-1.5 text-[10px]"> {ui("revoked")} </Badge>
+                          {k.disabled && (
+                            <Badge variant="secondary" className="h-5 px-1.5 text-[10px]"> {ui("disabled")} </Badge>
                           )}
                         </div>
                         <div className="mt-0.5 font-mono text-xs text-muted-foreground">
@@ -614,22 +616,21 @@ export function ApiKeysPage() {
         </DialogContent>
       </Dialog>
 
-      {/* revoke confirm */}
-      <Dialog open={!!confirmRevoke} onOpenChange={(v) => !v && setConfirmRevoke(null)}>
+      {/* disable confirm */}
+      <Dialog open={!!confirmDisable} onOpenChange={(v) => !v && setConfirmDisable(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{ui("Revoke “")}{confirmRevoke?.name}”?</DialogTitle>
-            <DialogDescription> {ui("Requests using this key will start failing immediately. This cannot be undone.")} </DialogDescription>
+            <DialogTitle>{ui("Disable “")}{confirmDisable?.name}”?</DialogTitle>
+            <DialogDescription> {ui("Requests using this key will start failing immediately. You can enable it again later.")} </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmRevoke(null)}> {ui("Cancel")} </Button>
+            <Button variant="outline" onClick={() => setConfirmDisable(null)}> {ui("Cancel")} </Button>
             <Button
-              variant="destructive"
               onClick={() => {
-                if (confirmRevoke) void revokeKey(confirmRevoke.id)
-                setConfirmRevoke(null)
+                if (confirmDisable) void setKeyEnabled(confirmDisable.id, false).catch(() => {})
+                setConfirmDisable(null)
               }}
-            > {ui("Revoke key")} </Button>
+            > {ui("Disable key")} </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

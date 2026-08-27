@@ -1292,6 +1292,10 @@ export const createApiKeySchema = z.object({
   lifetimeBudgetMicros: z.number().int().positive().nullable().default(null),
 })
 
+export const updateApiKeySchema = z.object({
+  enabled: z.boolean(),
+})
+
 export const chatSummarySchema = z.object({
   id: idSchema,
   title: z.string(),
