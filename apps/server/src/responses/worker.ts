@@ -38,7 +38,7 @@ import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
-import { backgroundRequestParameter } from './upstream-request.js'
+import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
 import {
   GenerationAttemptError,
@@ -279,6 +279,7 @@ async function processGenerationAttempt(
   })
   if (record.response.executionMode === 'background' && record.response.openaiResponseId) {
     const openaiResponseId = record.response.openaiResponseId
+    const recoveryInclude = responseIncludeParameter(record.response.parameters)
     const compactionItems = (record.response.output as unknown[]).filter((item) => (item as { type?: string }).type === 'pulpo_compaction')
     await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, updatedAt: new Date() }).where(eq(responses.id, responseId))
     try {
@@ -286,6 +287,7 @@ async function processGenerationAttempt(
         const resumed = await client.responses.retrieve(openaiResponseId, {
           stream: true,
           starting_after: record.response.upstreamSequence,
+          ...recoveryInclude as { include?: never },
         })
         let localSequence = record.response.lastSequence
         let recoveredOutput = record.response.output as unknown[]
@@ -316,7 +318,7 @@ async function processGenerationAttempt(
           await releaseBudget(responseId)
           return
         }
-        const recovered = await client.responses.retrieve(openaiResponseId)
+        const recovered = await client.responses.retrieve(openaiResponseId, recoveryInclude as { include?: never })
         if (recovered.status && ['queued', 'in_progress'].includes(recovered.status)) {
           await new Promise((resolve) => setTimeout(resolve, 2_000))
           continue
@@ -452,12 +454,12 @@ async function processGenerationAttempt(
     })
     const upstreamPayload = {
       ...(parameters as Record<string, never>),
+      ...promptCacheKeyParameter(requestLog.apiKeyId ? parameters : {}, cacheOptions.promptCacheKey),
       model: record.model.upstreamModelId,
       input: input as never,
       stream: true as const,
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
-      ...(cacheOptions.promptCacheKey ? { prompt_cache_key: cacheOptions.promptCacheKey } : {}),
     }
     const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
     if (parseLoggingSettings(loggingRow?.value).logDetailedPayloads) await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))

@@ -104,6 +104,22 @@ describe('public OpenAI-compatible routes', () => {
     }, 'Ignored OpenAI-compatible request parameters')
   })
 
+  it('queues supported encrypted context without logging it as discarded', async () => {
+    const handler = (await handlers()).get('POST /v1/responses')!
+    await expect(handler(request({ body: {
+      model: 'm', input: 'hi', include: ['reasoning.encrypted_content'], future_client_option: true,
+    } }), {} as FastifyReply)).resolves.toEqual({ ok: true })
+
+    expect(mocks.executePublicGeneration).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({
+        parameters: expect.objectContaining({ include: ['reasoning.encrypted_content'] }),
+      }),
+    }))
+    expect(mocks.logInfo).toHaveBeenCalledWith({
+      protocol: 'responses', ignoredParameters: ['future_client_option'],
+    }, 'Ignored OpenAI-compatible request parameters')
+  })
+
   it('does not expose Responses created with store=false through retrieval', async () => {
     mocks.selectRows = [{ response: { publiclyStored: false } }]
     const handler = (await handlers()).get('GET /v1/responses/:id')!

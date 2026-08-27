@@ -61,7 +61,12 @@ describe('public generation execution', () => {
       idempotencyKey: 'retry-1',
       request: {
         protocol: 'responses', model: 'model-1', rawInput: 'hello', displayInput: 'hello',
-        parameters: {}, maxOutputTokens: 20, stream: false, background: true,
+        parameters: {
+          include: ['reasoning.encrypted_content'],
+          prompt_cache_key: 'raw-cache-key',
+          safety_identifier: 'raw-safety-id',
+        },
+        maxOutputTokens: 20, stream: false, background: true,
         metadata: { trace: '1' }, publiclyStored: false, ignoredParameters: [],
         fingerprintValue: { model: 'model-1', input: 'hello' },
       },
@@ -71,8 +76,16 @@ describe('public generation execution', () => {
       ownerUserId: 'user-1', apiKeyId: 'key-1', idempotencyKey: 'retry-1',
       idempotencyScope: 'api:key-1:responses', metadata: { trace: '1' }, rawInput: 'hello',
       publiclyStored: false,
+      parameters: {
+        include: ['reasoning.encrypted_content'],
+        prompt_cache_key: expect.stringMatching(/^pulpo_pc_/),
+        safety_identifier: expect.stringMatching(/^pulpo_si_/),
+      },
       input: expect.objectContaining({ modelId: 'model-1', executionMode: 'background', maxOutputTokens: 20 }),
     }))
+    const persistedParameters = mocks.createResponse.mock.calls[0]![0].parameters as Record<string, unknown>
+    expect(persistedParameters.prompt_cache_key).not.toBe('raw-cache-key')
+    expect(persistedParameters.safety_identifier).not.toBe('raw-safety-id')
     expect(response.code).toHaveBeenCalledWith(202)
     expect(mocks.insertedChats).toHaveLength(1)
   })
