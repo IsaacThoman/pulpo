@@ -20,10 +20,19 @@ export function resolveChatExpiryMenuAction(
   return { kind: 'enable', label: `Expire in ${automaticChatExpiration}` }
 }
 
+export type ChatExpirationPeriod = '24h' | '7d'
+
 export type ChatLandingBadge =
   | { kind: 'temporary' }
-  | { kind: 'expiration'; period: '24h' | '7d' }
+  | { kind: 'expiration'; period: ChatExpirationPeriod }
   | null
+
+export function retainChatLandingExpirationPeriod(
+  badge: ChatLandingBadge,
+  previousPeriod: ChatExpirationPeriod | null,
+): ChatExpirationPeriod | null {
+  return badge?.kind === 'expiration' ? badge.period : previousPeriod
+}
 
 export function resolveChatLandingBadge(
   temporary: boolean,

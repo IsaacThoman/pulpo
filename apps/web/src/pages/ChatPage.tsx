@@ -16,7 +16,12 @@ import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
-import { resolveChatLandingBadge, type ChatLandingBadge } from '@/lib/chat-expiration'
+import {
+  resolveChatLandingBadge,
+  retainChatLandingExpirationPeriod,
+  type ChatExpirationPeriod,
+  type ChatLandingBadge,
+} from '@/lib/chat-expiration'
 import type { Message } from '@/lib/types'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
@@ -70,6 +75,12 @@ function Placeholder({
 }) {
   const { t } = useTranslation()
   const model = getCatalogModel(modelId)
+  const activeExpirationPeriod = badge?.kind === 'expiration' ? badge.period : null
+  const [lastExpirationPeriod, setLastExpirationPeriod] = useState<ChatExpirationPeriod | null>(activeExpirationPeriod)
+  useEffect(() => {
+    if (activeExpirationPeriod) setLastExpirationPeriod(activeExpirationPeriod)
+  }, [activeExpirationPeriod])
+  const expirationPeriod = retainChatLandingExpirationPeriod(badge, lastExpirationPeriod)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
       <div className="relative flex items-center gap-3">
@@ -91,7 +102,7 @@ function Placeholder({
           className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-600 dark:text-teal-400"
         >
           <Hourglass className="size-3.5" />
-          {t('chat.expiresIn', { period: badge?.kind === 'expiration' ? badge.period : '' })}
+          {expirationPeriod ? t('chat.expiresIn', { period: expirationPeriod }) : null}
         </div>
         <ModelIcon model={model} className="size-12" boxed={false} />
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
