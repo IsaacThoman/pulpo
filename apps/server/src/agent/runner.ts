@@ -58,7 +58,7 @@ import {
   isSlowCompletion,
   markModelSticky,
 } from '../responses/fallback-policy.js'
-import { assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { agentStreamEventHasSubstantiveOutput, assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 import { createProviderCostCapture } from './provider-cost.js'
@@ -549,8 +549,16 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await snapshotIfDue()
     return stored
   }
-  const abortTimer = setTimeout(() => agent.abort(), settings.responseTimeoutSeconds * 1000)
-  const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) agent.abort() }), 500)
+  let agentAbortReason: 'response_timeout' | 'cancellation' | 'turn_limit' | undefined
+  const abortTimer = setTimeout(() => {
+    agentAbortReason ??= 'response_timeout'
+    agent.abort()
+  }, settings.responseTimeoutSeconds * 1000)
+  const cancellationTimer = setInterval(() => void isCancellationRequested(responseId).then((cancelled) => {
+    if (!cancelled) return
+    agentAbortReason ??= 'cancellation'
+    agent.abort()
+  }), 500)
   const initialParameters = resolveAgentModelParameters(active.model, record.response.parameters)
   let firstTokenTimeout: FirstTokenTimeout | undefined
   agent = new Agent({
@@ -645,7 +653,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   agent.subscribe(async (event) => {
     if (event.type === 'turn_start') {
       modelTurns += 1
-      if (modelTurns > settings.maxModelTurns) agent.abort()
+      if (modelTurns > settings.maxModelTurns) {
+        agentAbortReason ??= 'turn_limit'
+        agent.abort()
+      }
       if (modelTurns > 1) await resizeBudgetReservation({
         responseId,
         accruedCostMicros: accruedCostMicros + accruedWebToolCostMicros + sidecarCostMicros + workspaceHoldMicrosAmount,
@@ -666,10 +677,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       await db.update(requestLogs).set({ status: 'in_progress', currentModelId: active.model.id, currentRetryAttempt, currentTurnNumber: modelTurns, fallbackUsed: activeIndex > 0, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     } else if (event.type === 'message_update') {
       const update = event.assistantMessageEvent
-      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') {
+      const substantiveOutput = agentStreamEventHasSubstantiveOutput(update)
+      if (substantiveOutput) {
         firstTokenTimeout?.clear()
+        turnOutputStarted.add(modelTurns)
       }
-      if (update.type === 'text_delta' || update.type === 'thinking_delta' || update.type === 'toolcall_delta') turnOutputStarted.add(modelTurns)
       if (update.type === 'text_delta') await emit('response.output_text.delta', {
         delta: update.delta,
         item_id: `agent:${modelTurns}:${update.contentIndex}:message`,
@@ -709,8 +721,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const failed = message.stopReason === 'error' || message.stopReason === 'aborted'
       if (!failed) currentRetryAttempt = 1
       if (!failed || outputStarted) lastResponder = { runtime: completedRuntime.runtime, pricing }
+      const cancellationRequested = message.stopReason === 'aborted'
+        && (agentAbortReason === 'cancellation' || await isCancellationRequested(responseId))
       const errorCategory = failed
-        ? message.stopReason === 'aborted' ? 'cancellation' : classifyGenerationError(new Error(message.errorMessage || 'Agent model turn failed'))
+        ? cancellationRequested ? 'cancellation' : classifyGenerationError(new Error(message.errorMessage || 'Agent model turn failed'))
         : undefined
       await db.update(generationAttempts).set({
         status: failed ? 'failed' : 'completed', upstreamResponseId: message.responseId, errorCategory, errorMessage: message.errorMessage,
@@ -824,7 +838,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     else await agent.prompt(initialMessage)
     let last = agent.state.messages.at(-1)
     let overflowRetried = false
-    while (last?.role === 'assistant' && last.stopReason === 'error') {
+    while (last?.role === 'assistant' && (last.stopReason === 'error' || last.stopReason === 'aborted')) {
       const failedTurnNumber = modelTurns
       const failedRuntime = turnRuntime.get(failedTurnNumber) ?? { runtime: active, index: activeIndex }
       const outputStarted = turnOutputStarted.has(failedTurnNumber) || assistantMessageHasOutput(last)
@@ -854,7 +868,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         last = agent.state.messages.at(-1)
         continue
       }
-      const cancellationRequested = await isCancellationRequested(responseId)
+      const cancellationRequested = await isCancellationRequested(responseId) || agentAbortReason !== undefined
       const retryAttempt = nextAgentRetryAttempt({
         message: last,
         currentAttempt: turnRetryAttempts.get(failedTurnNumber) ?? 1,
@@ -866,7 +880,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         if (failedRuntime.runtime.model.retryDelaySeconds > 0) {
           await new Promise((resolve) => setTimeout(resolve, failedRuntime.runtime.model.retryDelaySeconds * 1_000))
         }
-        if (await isCancellationRequested(responseId)) break
+        if (await isCancellationRequested(responseId) || agentAbortReason !== undefined) break
         currentRetryAttempt = retryAttempt
         agent.state.messages = agent.state.messages.slice(0, -1)
         await db.update(requestLogs).set({ retryCount: sql`${requestLogs.retryCount} + 1`, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
