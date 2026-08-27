@@ -60,19 +60,18 @@ services:
       retries: 6
       start_period: 30s
     labels:
-      # Do not rely on Coolify's disposable preview-domain metadata for edge
-      # routing. SERVICE_NAME_WEB is deployment-scoped (for example,
-      # web-pr-319), so the router and service names remain unique when several
-      # previews share the same Traefik instance. Coolify supplies the HTTP
-      # router; adding an HTTP-to-HTTPS redirect here would loop when
-      # Cloudflare connects to the origin over HTTP.
+      # Namespace the custom Traefik objects by Coolify resource as well as
+      # service. Dev and production both use SERVICE_NAME_WEB=web; without the
+      # resource UUID Traefik merges their backends and sends traffic across
+      # environments. Coolify supplies the HTTP router; adding an HTTP-to-HTTPS
+      # redirect here would loop when Cloudflare connects over HTTP.
       - traefik.enable=true
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.entryPoints=https"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.rule=Host(`${SERVICE_FQDN_WEB:-localhost}`) && PathPrefix(`/`)"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.service=${SERVICE_NAME_WEB:-pulpo-web}"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.${SERVICE_NAME_WEB:-pulpo-web}-https.tls=true"
-      - "traefik.http.services.${SERVICE_NAME_WEB:-pulpo-web}.loadbalancer.server.port=80"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}-https.entryPoints=https"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}-https.rule=Host(`${SERVICE_FQDN_WEB:-localhost}`) && PathPrefix(`/`)"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}-https.service=${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}-https.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}-https.tls=true"
+      - "traefik.http.services.${COOLIFY_RESOURCE_UUID:-pulpo}-${SERVICE_NAME_WEB:-web}.loadbalancer.server.port=80"
     restart: unless-stopped
 
   api:
