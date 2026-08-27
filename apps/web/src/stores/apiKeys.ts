@@ -6,7 +6,7 @@ interface ServerApiKey {
   id: string
   name: string
   prefix: string
-  status: 'active' | 'revoked'
+  status: 'active' | 'disabled'
   scopes: ApiKey['scopes']
   allowedModels: string[]
   monthlyBudgetMicros: number | null
@@ -30,7 +30,7 @@ function fromServer(key: ServerApiKey): ApiKey {
     totalBudget: key.lifetimeBudgetMicros === null ? null : key.lifetimeBudgetMicros / 1_000_000,
     spentThisMonth: key.spentThisMonthMicros / 1_000_000,
     spentTotal: key.spentLifetimeMicros / 1_000_000,
-    revoked: key.status === 'revoked',
+    disabled: key.status === 'disabled',
   }
 }
 
@@ -39,7 +39,7 @@ interface ApiKeysState {
   loading: boolean
   load: () => Promise<void>
   createKey: (input: Pick<ApiKey, 'name' | 'scopes' | 'allowedModels' | 'monthlyBudget' | 'totalBudget'>) => Promise<{ key: ApiKey; secret: string }>
-  revokeKey: (id: string) => Promise<void>
+  setKeyEnabled: (id: string, enabled: boolean) => Promise<void>
   deleteKey: (id: string) => Promise<void>
 }
 
@@ -69,9 +69,15 @@ export const useApiKeys = create<ApiKeysState>()((set, get) => ({
     await get().load()
     return { key: get().keys.find((key) => key.id === response.id)!, secret: response.secret }
   },
-  revokeKey: async (id) => {
-    set({ keys: get().keys.map((key) => key.id === id ? { ...key, revoked: true } : key) })
-    await apiRequest(`/api/api-keys/${id}/revoke`, { method: 'POST' })
+  setKeyEnabled: async (id, enabled) => {
+    const previousKeys = get().keys
+    set({ keys: previousKeys.map((key) => key.id === id ? { ...key, disabled: !enabled } : key) })
+    try {
+      await apiRequest(`/api/api-keys/${id}`, { method: 'PATCH', body: { enabled } })
+    } catch (error) {
+      set({ keys: previousKeys })
+      throw error
+    }
   },
   deleteKey: async (id) => {
     set({ keys: get().keys.filter((key) => key.id !== id) })
