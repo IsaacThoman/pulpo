@@ -132,6 +132,17 @@ describe('user-owned operational records', () => {
     expect(migration).toContain('responses_user_scope_idempotency_unique')
   })
 
+  it('repairs compatibility columns skipped by previously deployed migration order', () => {
+    const migration = readFileSync(new URL('../../drizzle/0049_repair_openai_compatibility_drift.sql', import.meta.url), 'utf8')
+
+    expect(migration).toContain('DROP INDEX IF EXISTS "responses_user_idempotency_unique"')
+    for (const column of ['metadata', 'incomplete_details', 'idempotency_scope', 'idempotency_fingerprint']) {
+      expect(migration).toContain(`ADD COLUMN IF NOT EXISTS "${column}"`)
+    }
+    expect(migration).toContain("'api:' || COALESCE(\"log\".\"api_key_id\"::text, 'legacy') || ':responses'")
+    expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "responses_user_scope_idempotency_unique"')
+  })
+
   it('uses Stripe billing identifiers and keeps platform and processing fees separate', () => {
     const accountConfig = getTableConfig(billingAccounts)
     const checkoutConfig = getTableConfig(billingCheckouts)

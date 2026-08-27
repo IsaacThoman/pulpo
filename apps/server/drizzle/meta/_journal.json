@@ -344,6 +344,13 @@
       "when": 1787858313612,
       "tag": "0048_wild_mathemanic",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787860727157,
+      "tag": "0049_repair_openai_compatibility_drift",
+      "breakpoints": true
     }
   ]
 }
