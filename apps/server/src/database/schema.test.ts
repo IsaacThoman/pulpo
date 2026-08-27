@@ -202,4 +202,12 @@ describe('user-owned operational records', () => {
       'user_id', 'chat_id', 'query', 'prompt', 'excerpt', 'content',
     ]))
   })
+
+  it('keeps the renumbered episodic-memory migration compatible with existing preview databases', () => {
+    const migration = readFileSync(new URL('../../drizzle/0047_melted_pixie.sql', import.meta.url), 'utf8')
+
+    expect(migration.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(4)
+    expect(migration.match(/EXCEPTION WHEN duplicate_object THEN NULL/g)).toHaveLength(7)
+    expect(migration.match(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS/g)).toHaveLength(10)
+  })
 })

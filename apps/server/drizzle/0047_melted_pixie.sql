@@ -1,6 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 --> statement-breakpoint
-CREATE TABLE "chat_turn_embeddings" (
+CREATE TABLE IF NOT EXISTS "chat_turn_embeddings" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"generation_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE "chat_turn_embeddings" (
 	CONSTRAINT "chat_turn_embeddings_status_check" CHECK ("chat_turn_embeddings"."status" in ('pending', 'ready', 'failed'))
 );
 --> statement-breakpoint
-CREATE TABLE "episodic_memory_generations" (
+CREATE TABLE IF NOT EXISTS "episodic_memory_generations" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"profile" text NOT NULL,
 	"model" text NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE "episodic_memory_generations" (
 	CONSTRAINT "episodic_memory_generations_progress_check" CHECK ("episodic_memory_generations"."download_total_bytes" >= 0 and "episodic_memory_generations"."download_completed_bytes" >= 0 and "episodic_memory_generations"."total_items" >= 0 and "episodic_memory_generations"."completed_items" >= 0 and "episodic_memory_generations"."failed_items" >= 0)
 );
 --> statement-breakpoint
-CREATE TABLE "episodic_memory_metric_buckets" (
+CREATE TABLE IF NOT EXISTS "episodic_memory_metric_buckets" (
 	"bucket_start" timestamp with time zone NOT NULL,
 	"metric" text NOT NULL,
 	"event_count" bigint DEFAULT 0 NOT NULL,
@@ -73,7 +73,7 @@ CREATE TABLE "episodic_memory_metric_buckets" (
 	CONSTRAINT "episodic_memory_metric_buckets_counts_check" CHECK ("episodic_memory_metric_buckets"."event_count" >= 0 and "episodic_memory_metric_buckets"."error_count" >= 0 and "episodic_memory_metric_buckets"."fallback_count" >= 0 and "episodic_memory_metric_buckets"."recalled_count" >= 0 and "episodic_memory_metric_buckets"."abstained_count" >= 0 and "episodic_memory_metric_buckets"."item_count" >= 0 and "episodic_memory_metric_buckets"."duration_sum_ms" >= 0)
 );
 --> statement-breakpoint
-CREATE TABLE "saved_memory_embeddings" (
+CREATE TABLE IF NOT EXISTS "saved_memory_embeddings" (
 	"id" uuid PRIMARY KEY NOT NULL,
 	"generation_id" uuid NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -90,20 +90,41 @@ CREATE TABLE "saved_memory_embeddings" (
 	CONSTRAINT "saved_memory_embeddings_status_check" CHECK ("saved_memory_embeddings"."status" in ('pending', 'ready', 'failed'))
 );
 --> statement-breakpoint
-ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_generation_id_episodic_memory_generations_id_fk" FOREIGN KEY ("generation_id") REFERENCES "public"."episodic_memory_generations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_chat_id_chats_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."chats"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_response_id_responses_id_fk" FOREIGN KEY ("response_id") REFERENCES "public"."responses"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "saved_memory_embeddings" ADD CONSTRAINT "saved_memory_embeddings_generation_id_episodic_memory_generations_id_fk" FOREIGN KEY ("generation_id") REFERENCES "public"."episodic_memory_generations"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "saved_memory_embeddings" ADD CONSTRAINT "saved_memory_embeddings_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "saved_memory_embeddings" ADD CONSTRAINT "saved_memory_embeddings_memory_id_memories_id_fk" FOREIGN KEY ("memory_id") REFERENCES "public"."memories"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-CREATE UNIQUE INDEX "chat_turn_embeddings_generation_response_unique" ON "chat_turn_embeddings" USING btree ("generation_id","response_id");--> statement-breakpoint
-CREATE INDEX "chat_turn_embeddings_user_generation_idx" ON "chat_turn_embeddings" USING btree ("user_id","generation_id");--> statement-breakpoint
-CREATE INDEX "chat_turn_embeddings_chat_idx" ON "chat_turn_embeddings" USING btree ("chat_id");--> statement-breakpoint
-CREATE INDEX "chat_turn_embeddings_search_idx" ON "chat_turn_embeddings" USING gin ("search_vector");--> statement-breakpoint
-CREATE UNIQUE INDEX "episodic_memory_generations_active_unique" ON "episodic_memory_generations" USING btree ("active") WHERE "episodic_memory_generations"."active" = true;--> statement-breakpoint
-CREATE INDEX "episodic_memory_generations_status_idx" ON "episodic_memory_generations" USING btree ("status","created_at");--> statement-breakpoint
-CREATE INDEX "episodic_memory_metric_buckets_metric_time_idx" ON "episodic_memory_metric_buckets" USING btree ("metric","bucket_start");--> statement-breakpoint
-CREATE UNIQUE INDEX "saved_memory_embeddings_generation_memory_unique" ON "saved_memory_embeddings" USING btree ("generation_id","memory_id");--> statement-breakpoint
-CREATE INDEX "saved_memory_embeddings_user_generation_idx" ON "saved_memory_embeddings" USING btree ("user_id","generation_id");--> statement-breakpoint
-CREATE INDEX "saved_memory_embeddings_search_idx" ON "saved_memory_embeddings" USING gin ("search_vector");
+DO $$ BEGIN
+	ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_generation_id_episodic_memory_generations_id_fk" FOREIGN KEY ("generation_id") REFERENCES "public"."episodic_memory_generations"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_chat_id_chats_id_fk" FOREIGN KEY ("chat_id") REFERENCES "public"."chats"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "chat_turn_embeddings" ADD CONSTRAINT "chat_turn_embeddings_response_id_responses_id_fk" FOREIGN KEY ("response_id") REFERENCES "public"."responses"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "saved_memory_embeddings" ADD CONSTRAINT "saved_memory_embeddings_generation_id_episodic_memory_generations_id_fk" FOREIGN KEY ("generation_id") REFERENCES "public"."episodic_memory_generations"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "saved_memory_embeddings" ADD CONSTRAINT "saved_memory_embeddings_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+	ALTER TABLE "saved_memory_embeddings" ADD CONSTRAINT "saved_memory_embeddings_memory_id_memories_id_fk" FOREIGN KEY ("memory_id") REFERENCES "public"."memories"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "chat_turn_embeddings_generation_response_unique" ON "chat_turn_embeddings" USING btree ("generation_id","response_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_turn_embeddings_user_generation_idx" ON "chat_turn_embeddings" USING btree ("user_id","generation_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_turn_embeddings_chat_idx" ON "chat_turn_embeddings" USING btree ("chat_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "chat_turn_embeddings_search_idx" ON "chat_turn_embeddings" USING gin ("search_vector");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "episodic_memory_generations_active_unique" ON "episodic_memory_generations" USING btree ("active") WHERE "episodic_memory_generations"."active" = true;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "episodic_memory_generations_status_idx" ON "episodic_memory_generations" USING btree ("status","created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "episodic_memory_metric_buckets_metric_time_idx" ON "episodic_memory_metric_buckets" USING btree ("metric","bucket_start");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "saved_memory_embeddings_generation_memory_unique" ON "saved_memory_embeddings" USING btree ("generation_id","memory_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "saved_memory_embeddings_user_generation_idx" ON "saved_memory_embeddings" USING btree ("user_id","generation_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "saved_memory_embeddings_search_idx" ON "saved_memory_embeddings" USING gin ("search_vector");
