@@ -48,7 +48,7 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
-import { resolveAgentModelParameters } from './model-parameters.js'
+import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
 import {
   MAX_MODEL_CHAIN_LENGTH,
@@ -623,7 +623,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           ...options,
           apiKey: active.apiKey,
           reasoning: resolvedParameters.reasoning,
-          samplingParams: { ...options?.samplingParams, ...resolvedParameters.parameters },
+          samplingParams: agentSamplingParameters(active.provider.baseUrl, {
+            ...options?.samplingParams,
+            ...resolvedParameters.parameters,
+          }),
           maxTokens: active.model.maxOutputTokens,
           timeoutMs: active.provider.requestTimeoutMs,
           maxRetries: 0,
