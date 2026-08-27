@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentThinkingLevel, resolveAgentModelParameters } from './model-parameters.js'
+import { agentSamplingParameters, agentThinkingLevel, resolveAgentModelParameters } from './model-parameters.js'
 
 describe('agent model parameters', () => {
   it('uses the configured Responses reasoning effort', () => {
@@ -25,5 +25,18 @@ describe('agent model parameters', () => {
 
     expect(flex).toEqual({ parameters: { reasoning: { effort: 'high' }, service_tier: 'flex' }, reasoning: 'high' })
     expect(standard).toEqual({ parameters: { service_tier: 'default', reasoning: { effort: 'high' } }, reasoning: 'high' })
+  })
+
+  it('omits encrypted-reasoning includes for strict OpenAI-compatible proxies', () => {
+    expect(agentSamplingParameters('https://pulpo.baby/v1', { service_tier: 'flex' })).toEqual({
+      service_tier: 'flex',
+      include: undefined,
+    })
+    expect(agentSamplingParameters('https://api.openai.com/v1', { service_tier: 'flex' })).toEqual({
+      service_tier: 'flex',
+    })
+    expect(agentSamplingParameters('https://example.openai.azure.com/openai', { service_tier: 'flex' })).toEqual({
+      service_tier: 'flex',
+    })
   })
 })
