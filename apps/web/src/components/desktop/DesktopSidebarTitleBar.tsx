@@ -70,33 +70,35 @@ export function DesktopSidebarTitleBar({
         data-animation-active={showAboveSidebar ? undefined : 'true'}
         className={cn(
           'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
-          showAboveSidebar ? 'z-[42]' : 'z-[41]',
+          windows ? 'z-40' : showAboveSidebar ? 'z-[42]' : 'z-[41]',
         )}
       >
-        <div className="desktop-sidebar-titlebar-base absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
-        <div
-          className={cn(
-            'desktop-sidebar-titlebar-expanded absolute inset-y-0 left-[52px] z-10 bg-sidebar motion-reduce:transition-none',
-            transitions && 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-            collapsed ? 'w-0' : 'w-[212px]',
-          )}
-        >
-          <div
-            className={cn(
-              'desktop-sidebar-titlebar-expanded-border absolute inset-y-0 right-0 border-r border-sidebar-border motion-reduce:transition-none',
-              transitions && 'transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-              collapsed ? 'opacity-0' : 'opacity-100',
-            )}
-          />
-        </div>
         {!windows && (
-          <div
-            className={cn(
-              'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
-              transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-              collapsed ? 'translate-y-0' : '-translate-y-[54px]',
-            )}
-          />
+          <>
+            <div className="desktop-sidebar-titlebar-base absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
+            <div
+              className={cn(
+                'desktop-sidebar-titlebar-expanded absolute inset-y-0 left-[52px] z-10 bg-sidebar motion-reduce:transition-none',
+                transitions && 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+                collapsed ? 'w-0' : 'w-[212px]',
+              )}
+            >
+              <div
+                className={cn(
+                  'desktop-sidebar-titlebar-expanded-border absolute inset-y-0 right-0 border-r border-sidebar-border motion-reduce:transition-none',
+                  transitions && 'transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+                  collapsed ? 'opacity-0' : 'opacity-100',
+                )}
+              />
+            </div>
+            <div
+              className={cn(
+                'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
+                transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+                collapsed ? 'translate-y-0' : '-translate-y-[54px]',
+              )}
+            />
+          </>
         )}
       </div>
       <div

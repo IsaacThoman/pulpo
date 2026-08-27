@@ -279,6 +279,11 @@ html[data-desktop="true"] .desktop-titlebar {
   background: var(--background);
 }
 
+html[data-desktop-os="win32"] .desktop-titlebar,
+html[data-desktop-os="win32"] .desktop-sidebar-titlebar {
+  right: 138px;
+}
+
 html[data-desktop="true"] {
   --desktop-temporary-chat-background: color-mix(
     in oklab,
@@ -453,6 +458,12 @@ html[data-desktop-os="win32"] .desktop-actions-titlebar-slot[data-collapsed="tru
 
 html[data-desktop-os="win32"] .desktop-actions-titlebar-slot {
   right: 150px;
+}
+
+html[data-desktop-os="win32"] .desktop-window-controls,
+html[data-desktop-os="win32"] .desktop-window-controls button {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {

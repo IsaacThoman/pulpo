@@ -28,7 +28,7 @@ function DesktopWindowControls() {
   if (!windows || !controls) return null
 
   return (
-    <div className="desktop-window-controls desktop-no-drag fixed right-0 top-0 z-[60] flex h-[38px]">
+    <div className="desktop-window-controls desktop-no-drag pointer-events-auto fixed right-0 top-0 z-[60] flex h-[38px]">
       <button
         type="button"
         aria-label={ui("Minimize")}
