@@ -16,6 +16,12 @@ import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
+import {
+  resolveConfiguredChatExpirationPeriod,
+  resolveChatLandingBadge,
+  type ChatExpirationPeriod,
+  type ChatLandingBadge,
+} from '@/lib/chat-expiration'
 import type { Message } from '@/lib/types'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
@@ -60,12 +66,14 @@ function Placeholder({
   modelId,
   suggestions,
   onPick,
-  showTemporaryLabel = false,
+  badge,
+  expirationPeriod,
 }: {
   modelId: string
   suggestions: SuggestedPrompt[]
   onPick: (message: string) => void
-  showTemporaryLabel?: boolean
+  badge: ChatLandingBadge
+  expirationPeriod: ChatExpirationPeriod | null
 }) {
   const { t } = useTranslation()
   const model = getCatalogModel(modelId)
@@ -73,12 +81,24 @@ function Placeholder({
     <div className="flex h-full flex-col items-center justify-center px-4">
       <div className="relative flex items-center gap-3">
         <div
-          aria-hidden={!showTemporaryLabel}
-          data-visible={showTemporaryLabel}
-          className="temporary-label-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-violet-700 dark:text-violet-300"
+          aria-hidden={badge?.kind !== 'temporary'}
+          aria-label={t('chat.temporaryChatLabel')}
+          data-visible={badge?.kind === 'temporary'}
+          role="status"
+          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-violet-700 dark:text-violet-300"
         >
           <Ghost className="size-3.5" />
           {t('chat.temporary')}
+        </div>
+        <div
+          aria-hidden={badge?.kind !== 'expiration'}
+          aria-label={badge?.kind === 'expiration' && expirationPeriod ? t('chat.expirationBadgeLabel', { period: expirationPeriod }) : undefined}
+          data-visible={badge?.kind === 'expiration'}
+          role="status"
+          className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-600 dark:text-teal-400"
+        >
+          <Hourglass className="size-3.5" />
+          {expirationPeriod ? t('chat.expiresIn', { period: expirationPeriod }) : null}
         </div>
         <ModelIcon model={model} className="size-12" boxed={false} />
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
@@ -96,7 +116,7 @@ function Placeholder({
               onClick={() => onPick(s.message ?? '')}
               className={cn(
                 'cursor-pointer rounded-xl border bg-card px-4 py-3 text-left text-sm text-foreground/90 transition-colors hover:bg-accent',
-                showTemporaryLabel && 'border-dashed !border-violet-500/50 bg-violet-100/80 hover:bg-violet-200/80 dark:!border-violet-600/30 dark:bg-violet-950/30 dark:hover:bg-violet-900/40',
+                badge?.kind === 'temporary' && 'border-dashed !border-violet-500/50 bg-violet-100/80 hover:bg-violet-200/80 dark:!border-violet-600/30 dark:bg-violet-950/30 dark:hover:bg-violet-900/40',
               )}
             >
               {s.label}
@@ -304,7 +324,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const showExpirationControl = !temporaryMode && (chat
     ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
     : !routeChatId && automaticChatExpiration !== 'disabled')
-  const expirationPeriodLabel = automaticChatExpiration === 'disabled' ? null : automaticChatExpiration
+  const expirationPeriodLabel = resolveConfiguredChatExpirationPeriod(automaticChatExpiration)
+  const landingBadge = resolveChatLandingBadge(temporaryMode, effectiveNewChatAutoExpire, automaticChatExpiration)
   const toggleExpiration = () => {
     if (chat) {
       useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
@@ -437,7 +458,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               modelId={modelId}
               suggestions={suggestions}
               onPick={sendSuggestion}
-              showTemporaryLabel={temporaryMode}
+              badge={landingBadge}
+              expirationPeriod={expirationPeriodLabel}
             />
           </div>
           <div

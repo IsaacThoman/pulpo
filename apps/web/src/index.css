@@ -216,7 +216,7 @@ body {
   animation: fade-in-up 0.25s ease-out both;
 }
 
-.temporary-label-transition {
+.chat-landing-badge-transition {
   opacity: 0;
   transform: translateY(6px) scale(0.98);
   transition:
@@ -224,7 +224,7 @@ body {
     transform 240ms cubic-bezier(0.4, 0, 1, 1);
 }
 
-.temporary-label-transition[data-visible='true'] {
+.chat-landing-badge-transition[data-visible='true'] {
   opacity: 1;
   transform: translateY(0) scale(1);
   transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
@@ -232,7 +232,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .temporary-label-transition {
+  .chat-landing-badge-transition {
     transition: none;
   }
 }
