@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { DesktopSidebarTitleBar } from './DesktopSidebarTitleBar'
 
-function installDesktopWindow(): void {
+function installDesktopWindow(os: 'darwin' | 'win32' = 'darwin'): void {
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
-    value: { pulpoDesktop: { platform: 'desktop' }, location: { origin: 'https://desktop.pulpo.invalid' } },
+    value: { pulpoDesktop: { platform: 'desktop', os }, location: { origin: 'https://desktop.pulpo.invalid' } },
   })
 }
 
@@ -64,10 +64,32 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-[43]')
   })
 
+  it('keeps Windows drag and portal layers without rendering surfaces above the sidebar', () => {
+    installDesktopWindow('win32')
+    const markup = renderToStaticMarkup(
+      <DesktopSidebarTitleBar collapsed transitions visible />,
+    )
+
+    expect(markup).not.toContain('desktop-sidebar-titlebar-collapsed')
+    expect(markup).not.toContain('desktop-sidebar-titlebar-base')
+    expect(markup).not.toContain('desktop-sidebar-titlebar-expanded')
+    expect(markup).toContain('desktop-sidebar-titlebar')
+    expect(markup).toContain('z-40')
+    expect(markup).toContain('desktop-model-titlebar-slot')
+    expect(markup).toContain('desktop-actions-titlebar-slot')
+    expect(markup).not.toContain('data-position-animation-active')
+  })
+
   it('stays out of mobile layouts', () => {
     installDesktopWindow()
     expect(renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed={false} transitions visible={false} />,
+    )).toBe('')
+  })
+
+  it('stays out of non-desktop rendering environments', () => {
+    expect(renderToStaticMarkup(
+      <DesktopSidebarTitleBar collapsed={false} transitions visible />,
     )).toBe('')
   })
 })

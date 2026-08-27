@@ -72,6 +72,7 @@ describe('desktop title bar', () => {
     const maximize = screen.getByRole('button', { name: 'Maximize' })
     const close = screen.getByRole('button', { name: 'Close' })
     expect(minimize.parentElement?.className).toContain('desktop-no-drag')
+    expect(minimize.parentElement?.className).toContain('pointer-events-auto')
 
     fireEvent.click(minimize)
     fireEvent.click(close)
