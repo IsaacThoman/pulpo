@@ -54,10 +54,13 @@ export function timelineActivityIsActive(
 
 export function completedActivityLabel(steps: TimelineStep[], durationMs?: number): string {
   const recall = steps.find((step) => step.kind === 'recall')
-  if (recall?.kind === 'recall') return recalledChatLabel(recall.recall.sources.length)
+  const hasReasoning = steps.some((step) => step.kind === 'reasoning' && Boolean(step.text))
+  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
+  if (recall?.kind === 'recall' && !hasReasoning && !worked) {
+    return recalledChatLabel(recall.recall.sources.length)
+  }
   const resolvedDurationMs = durationMs ?? activityDurationMs(steps)
   const seconds = resolvedDurationMs === undefined ? null : Math.max(0, Math.round(resolvedDurationMs / 1000))
-  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
   return `${worked ? 'Worked' : 'Thought'}${seconds === null ? '' : ` for ${seconds}s`}`
 }
 

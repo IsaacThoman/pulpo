@@ -169,6 +169,48 @@ describe('recalled chat activity', () => {
     expect(markup).toContain('Recalled from 2 chats')
     expect(markup).not.toContain('Recalled from 2 chats.')
   })
+
+  it('keeps thought and work as the summary when recall accompanies other activity', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const recall = {
+      id: 'response-1:recall', type: 'pulpo_recall' as const, status: 'completed',
+      sources: [{
+        chat_id: '00000000-0000-4000-8000-000000000001',
+        response_id: '00000000-0000-4000-8000-000000000002',
+        title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+        excerpt: 'Use a parallel index generation during model changes.',
+      }],
+    }
+    const worked = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        outputItems: [
+          recall,
+          { type: 'pulpo_tool', id: 'tool-1', tool: 'web_search', status: 'completed', output: 'result' },
+          { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] },
+        ],
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+    const thought = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        outputItems: [
+          recall,
+          { type: 'reasoning', status: 'completed', summary: [{ type: 'summary_text', text: 'Checked the recalled context' }] },
+          { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] },
+        ],
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(worked).toContain('Worked')
+    expect(worked).not.toContain('Recalled from 1 chat')
+    expect(thought).toContain('Thought')
+    expect(thought).not.toContain('Recalled from 1 chat')
+  })
 })
 
 describe('Spanish activity summaries', () => {

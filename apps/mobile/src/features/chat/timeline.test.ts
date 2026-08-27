@@ -102,7 +102,12 @@ describe('buildMessageTimeline', () => {
 
     expect(activity).toMatchObject({ kind: 'activity', steps: [{ kind: 'recall' }, { kind: 'tool' }] })
     if (activity?.kind !== 'activity') throw new Error('Expected recall activity')
-    expect(completedActivityLabel(activity.steps)).toBe('Recalled from 1 chat')
+    expect(completedActivityLabel(activity.steps)).toBe('Worked')
+    expect(completedActivityLabel([activity.steps[0]!])).toBe('Recalled from 1 chat')
+    expect(completedActivityLabel([
+      activity.steps[0]!,
+      { kind: 'reasoning', text: 'Checked recalled context', active: false },
+    ])).toBe('Thought')
     expect(recalledChatLabel(2)).toBe('Recalled from 2 chats')
   })
 

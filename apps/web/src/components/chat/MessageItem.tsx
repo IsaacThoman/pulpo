@@ -443,6 +443,7 @@ function ActivityBlock({
   const needsWorkspaceActions = isWaiting && showWorkspaceActions
   const hasTools = tools.length > 0
   const hasWorkspace = Boolean(workspace)
+  const hasOtherActivity = hasReasoning || hasTools || hasWorkspace
   const runningTool = tools.find((tool) => tool.status === 'running')
 
   const label = (() => {
@@ -457,7 +458,7 @@ function ActivityBlock({
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
-    if (recall) {
+    if (recall && !hasOtherActivity) {
       const count = recall.sources.length
       return count === 1
         ? ui('Recalled from {{count}} chat', { count })
@@ -486,7 +487,7 @@ function ActivityBlock({
     }
     if (active && hasTools) return <Wrench className="size-3.5 shrink-0 animate-pulse" />
     if (active) return <Brain className="size-3.5 shrink-0 animate-pulse" />
-    if (recall) return <History className="size-3.5 shrink-0" />
+    if (recall && !hasOtherActivity) return <History className="size-3.5 shrink-0" />
     if (hasTools) return <Wrench className="size-3.5 shrink-0" />
     if (hasWorkspace && !hasReasoning) return <Server className="size-3.5 shrink-0" />
     return <Brain className="size-3.5 shrink-0" />
