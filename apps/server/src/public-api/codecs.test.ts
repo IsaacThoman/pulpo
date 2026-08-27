@@ -288,6 +288,17 @@ describe('Responses request codec', () => {
     expect(serializePublicResponse(responseRow({ publiclyStored: false })).store).toBe(false)
   })
 
+  it('accepts the encrypted-reasoning include requested by stateless agent clients', () => {
+    const parsed = parseResponsesRequest({
+      model: 'm', input: 'hi', store: false, include: ['reasoning.encrypted_content'],
+    })
+
+    expect(parsed.ignoredParameters).toContain('include')
+    expectUnsupported(() => parseResponsesRequest({
+      model: 'm', input: 'hi', include: ['message.output_text.logprobs'],
+    }), 'include')
+  })
+
   it('defaults Responses storage on and rejects unsupported behavior-changing values', () => {
     expect(parseResponsesRequest({ model: 'm', input: 'hi' }).publiclyStored).toBe(true)
     expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', previous_response_id: 'resp_1' }), 'previous_response_id')

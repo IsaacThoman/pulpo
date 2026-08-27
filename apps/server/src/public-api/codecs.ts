@@ -366,7 +366,9 @@ export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
   const ignored = ignoredTopLevelParameters(source, responsesTopLevelKeys)
   acceptNoop(source, 'context_management', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
   acceptNoop(source, 'conversation', (value) => value == null, ignored)
-  acceptNoop(source, 'include', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
+  acceptNoop(source, 'include', (value) => value == null || (Array.isArray(value) && value.every((item) => (
+    item === 'reasoning.encrypted_content'
+  ))), ignored)
   acceptNoop(source, 'max_tool_calls', (value) => value == null, ignored)
   acceptNoop(source, 'moderation', (value) => value == null, ignored)
   acceptNoop(source, 'previous_response_id', (value) => value == null, ignored)
