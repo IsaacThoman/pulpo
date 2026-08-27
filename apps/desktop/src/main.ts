@@ -150,7 +150,7 @@ function initializeDesktopUpdater(): void {
       },
       updateInterval: '1 hour',
       logger: log,
-      notifyUser: true,
+      notifyUser: false,
     }),
     onStateChanged: publishUpdateState,
     onManualCheckResult: showManualUpdateCheckResult,
