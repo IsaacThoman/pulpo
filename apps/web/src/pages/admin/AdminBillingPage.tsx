@@ -89,6 +89,8 @@ interface Dashboard {
 interface BillingSettings {
   eightWeeklyLimitMicros: number
   fatWeeklyLimitMicros: number
+  eightFiveHourLimitMicros: number
+  fatFiveHourLimitMicros: number
   babyStorageLimitBytes: number
   eightStorageLimitBytes: number
   fatStorageLimitBytes: number
@@ -102,6 +104,8 @@ export function AdminBillingPage() {
   const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const [eightLimit, setEightLimit] = useState('3.00')
   const [fatLimit, setFatLimit] = useState('4.00')
+  const [eightFiveHourLimit, setEightFiveHourLimit] = useState('1.00')
+  const [fatFiveHourLimit, setFatFiveHourLimit] = useState('1.00')
   const [babyStorage, setBabyStorage] = useState('5')
   const [eightStorage, setEightStorage] = useState('25')
   const [fatStorage, setFatStorage] = useState('100')
@@ -121,6 +125,8 @@ export function AdminBillingPage() {
     if (!settingsQuery.data) return
     setEightLimit((settingsQuery.data.eightWeeklyLimitMicros / 1_000_000).toFixed(2))
     setFatLimit((settingsQuery.data.fatWeeklyLimitMicros / 1_000_000).toFixed(2))
+    setEightFiveHourLimit((settingsQuery.data.eightFiveHourLimitMicros / 1_000_000).toFixed(2))
+    setFatFiveHourLimit((settingsQuery.data.fatFiveHourLimitMicros / 1_000_000).toFixed(2))
     setBabyStorage(String(settingsQuery.data.babyStorageLimitBytes / (1024 ** 3)))
     setEightStorage(String(settingsQuery.data.eightStorageLimitBytes / (1024 ** 3)))
     setFatStorage(String(settingsQuery.data.fatStorageLimitBytes / (1024 ** 3)))
@@ -135,6 +141,8 @@ export function AdminBillingPage() {
         body: {
           eightWeeklyLimitMicros: Math.round(Number(eightLimit) * 1_000_000),
           fatWeeklyLimitMicros: Math.round(Number(fatLimit) * 1_000_000),
+          eightFiveHourLimitMicros: Math.round(Number(eightFiveHourLimit) * 1_000_000),
+          fatFiveHourLimitMicros: Math.round(Number(fatFiveHourLimit) * 1_000_000),
           babyStorageLimitBytes: Math.round(Number(babyStorage) * 1024 ** 3),
           eightStorageLimitBytes: Math.round(Number(eightStorage) * 1024 ** 3),
           fatStorageLimitBytes: Math.round(Number(fatStorage) * 1024 ** 3),
@@ -180,7 +188,7 @@ export function AdminBillingPage() {
   const totals = data?.totals
   const stripeMode = data?.stripe?.mode
   const chart = data?.trend.map((row) => ({ day: row.day.slice(5, 10), collected: row.totalCents / 100 })) ?? []
-  const limitsAreValid = [eightLimit, fatLimit, babyStorage, eightStorage, fatStorage]
+  const limitsAreValid = [eightLimit, fatLimit, eightFiveHourLimit, fatFiveHourLimit, babyStorage, eightStorage, fatStorage]
     .every((value) => Number.isFinite(Number(value)) && Number(value) >= 0)
   const attention = (totals?.holds ?? 0) + (totals?.pastDue ?? 0) + (totals?.failedWebhooks ?? 0)
   const stats = [
@@ -282,9 +290,15 @@ export function AdminBillingPage() {
         >
           <div className="space-y-3 px-3 py-3">
             <p className="text-xs text-muted-foreground">{ui("USD values are internal. Users only see the percentage remaining.")}</p>
+            <p className="text-xs font-medium">{ui("Weekly limits")}</p>
             <div className="flex flex-wrap items-end gap-3">
               <LimitInput label={ui("Pulpo Eight")} value={eightLimit} onChange={setEightLimit} />
               <LimitInput label={ui("Le Pulpo Fat")} value={fatLimit} onChange={setFatLimit} />
+            </div>
+            <p className="pt-1 text-xs font-medium">{ui("5-hour limits")}</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <LimitInput label={ui("Pulpo Eight")} value={eightFiveHourLimit} onChange={setEightFiveHourLimit} />
+              <LimitInput label={ui("Le Pulpo Fat")} value={fatFiveHourLimit} onChange={setFatFiveHourLimit} />
             </div>
             <p className="pt-1 text-xs text-muted-foreground">{ui("File storage allowances apply immediately to users without an override.")}</p>
             <div className="flex flex-wrap items-end gap-3">

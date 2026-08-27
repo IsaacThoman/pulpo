@@ -25,6 +25,8 @@ import { refreshStorageLimit } from './storage-entitlements.js'
 const settingsPatchSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  eightFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  fatFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
@@ -234,6 +236,11 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
         weeklySpentMicros: entitlements.weeklySpentMicros,
         weeklyRemainingMicros: Math.max(0, entitlements.weeklyLimitMicros - entitlements.weeklySpentMicros),
         weeklyLimitOverridden: entitlements.weeklyLimitOverridden,
+        fiveHourLimitMicros: entitlements.fiveHourLimitMicros,
+        fiveHourSpentMicros: entitlements.fiveHourSpentMicros,
+        fiveHourRemainingMicros: entitlements.fiveHourRemainingMicros,
+        fiveHourResetAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
+        fiveHourLimitOverridden: entitlements.fiveHourLimitOverridden,
         storageLimitBytes: entitlements.storageLimitBytes,
         storageLimitOverridden: entitlements.storageLimitOverridden,
         hold: entitlements.onHold ? account ?? null : null,
@@ -264,6 +271,30 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
     })
     await notifyBillingChange(id)
     return { weeklyLimitMicros }
+  })
+
+  app.patch('/api/admin/billing/users/:id/five-hour-limit', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { fiveHourLimitMicros } = z.object({
+      fiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).nullable(),
+    }).parse(request.body)
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1)
+    if (!user) throw new AppError(404, 'user_not_found', 'User not found')
+    await db.transaction(async (tx) => {
+      await tx.insert(billingAccounts).values({ userId: id, fiveHourLimitOverrideMicros: fiveHourLimitMicros })
+        .onConflictDoUpdate({
+          target: billingAccounts.userId,
+          set: { fiveHourLimitOverrideMicros: fiveHourLimitMicros, updatedAt: new Date() },
+        })
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id,
+        action: fiveHourLimitMicros === null ? 'billing.five_hour_limit.reset' : 'billing.five_hour_limit.update',
+        targetType: 'user', targetId: id, metadata: { fiveHourLimitMicros },
+      })
+    })
+    await notifyBillingChange(id)
+    return { fiveHourLimitMicros }
   })
 
   app.patch('/api/admin/billing/users/:id/storage-limit', async (request) => {

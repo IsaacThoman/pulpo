@@ -1114,6 +1114,12 @@ const esUi: Record<string, string> = {
   "Highest workspace and file limits": "Los límites más altos de espacios de trabajo y archivos",
   "Pay as you go": "Pago por uso",
   "Share platform credits with your pool": "Comparte créditos de la plataforma con tu Pool",
+  "5-hour usage": "Uso de 5 horas",
+  "5-hour limit": "Límite de 5 horas",
+  "5-hour limits": "Límites de 5 horas",
+  "Edit 5-hour limit": "Editar límite de 5 horas",
+  "Starts on first use": "Comienza con el primer uso",
+  "Weekly limits": "Límites semanales",
 }
 
 export default esUi
