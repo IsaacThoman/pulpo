@@ -28,8 +28,8 @@ describe('billing plan calculations', () => {
   })
 
   it('reserves weekly allowance before account credit', () => {
-    expect(splitReservationMicros(3_000_000, 2_000_000)).toEqual({ weeklyMicros: 2_000_000, balanceMicros: 1_000_000 })
-    expect(splitReservationMicros(500_000, 2_000_000)).toEqual({ weeklyMicros: 500_000, balanceMicros: 0 })
+    expect(splitReservationMicros(3_000_000, 2_000_000, 1_000_000)).toEqual({ weeklyMicros: 1_000_000, fiveHourMicros: 1_000_000, balanceMicros: 2_000_000 })
+    expect(splitReservationMicros(500_000, 2_000_000, 1_000_000)).toEqual({ weeklyMicros: 500_000, fiveHourMicros: 500_000, balanceMicros: 0 })
   })
 
   it('returns a private remaining percentage and hides zero limits', () => {

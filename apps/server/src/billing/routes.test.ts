@@ -4,6 +4,7 @@ import { registerAdminBillingRoutes } from './admin-routes.js'
 import {
   availableBillingBalanceMicros,
   billingLimitPercentage,
+  fiveHourSummaryPercentages,
   registerBillingRoutes,
   resolvedCheckoutStatus,
   selectSummarySubscription,
@@ -79,5 +80,22 @@ describe('billing summary reservation balances', () => {
     expect(billingLimitPercentage(250_000, 2_000_000)).toBe(12.5)
     expect(billingLimitPercentage(3_000_000, 2_000_000)).toBe(100)
     expect(billingLimitPercentage(1, 0)).toBe(0)
+  })
+
+  it('clamps five-hour availability to the lower weekly dollar remainder', () => {
+    expect(fiveHourSummaryPercentages({
+      weeklyLimitMicros: 10_000_000,
+      weeklySpentMicros: 9_000_000,
+      weeklyRemainingMicros: 1_000_000,
+      fiveHourLimitMicros: 5_000_000,
+      fiveHourSpentMicros: 0,
+      fiveHourPendingMicros: 0,
+      fiveHourRemainingMicros: 5_000_000,
+    })).toEqual({
+      remainingPercentage: 20,
+      availableBarPercentage: 20,
+      pendingMicros: 0,
+      pendingBarPercentage: 0,
+    })
   })
 })

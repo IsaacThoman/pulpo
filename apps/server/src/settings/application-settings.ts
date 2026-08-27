@@ -24,10 +24,14 @@ export const DEFAULT_EIGHT_STORAGE_LIMIT_BYTES = 25 * 1024 * 1024 * 1024
 export const DEFAULT_FAT_STORAGE_LIMIT_BYTES = 100 * 1024 * 1024 * 1024
 export const DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS = 3_000_000
 export const DEFAULT_FAT_WEEKLY_LIMIT_MICROS = 4_000_000
+export const DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS = 1_000_000
+export const DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS = 1_000_000
 
 export const billingSettingsSchema = z.object({
   eightWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_WEEKLY_LIMIT_MICROS),
   fatWeeklyLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_WEEKLY_LIMIT_MICROS),
+  eightFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS),
+  fatFiveHourLimitMicros: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS),
   babyStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_BABY_STORAGE_LIMIT_BYTES),
   eightStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_EIGHT_STORAGE_LIMIT_BYTES),
   fatStorageLimitBytes: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(DEFAULT_FAT_STORAGE_LIMIT_BYTES),

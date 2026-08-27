@@ -11,6 +11,7 @@ import {
   creditLedger,
   dailyUsageRollups,
   exportJobs,
+  fiveHourUsagePeriods,
   friendships,
   inviteCodes,
   twoFactorRecoveryCodes,
@@ -50,6 +51,7 @@ describe('user-owned operational records', () => {
     ['passkey ceremonies', passkeyCeremonies],
     ['mobile passkey authorization codes', mobilePasskeyAuthCodes],
     ['weekly usage periods', weeklyUsagePeriods],
+    ['five-hour usage periods', fiveHourUsagePeriods],
   ])('deletes %s when their user is deleted', (_name, table) => {
     const userForeignKey = getTableConfig(table as PgTable).foreignKeys.find((foreignKey) =>
       foreignKey.getName().endsWith('_user_id_users_id_fk'),
@@ -120,6 +122,13 @@ describe('user-owned operational records', () => {
     expect(migration).not.toContain('request_logs')
     expect(migration).not.toContain('usage_events')
     expect(migration).not.toContain('credit_ledger')
+  })
+
+  it('grandfathers existing subscription reservations before enforcing five-hour parity', () => {
+    const migration = readFileSync(new URL('../../drizzle/0048_bouncy_leader.sql', import.meta.url), 'utf8')
+    expect(migration).toContain('"five_hour_reserved_micros" = "weekly_reserved_micros"')
+    expect(migration).toContain('CURRENT_TIMESTAMP')
+    expect(migration.indexOf('UPDATE "budget_reservations"')).toBeLessThan(migration.indexOf('reservation_five_hour_match_check'))
   })
 
   it('backfills existing API requests into Responses-protocol idempotency scopes', () => {

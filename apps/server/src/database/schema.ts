@@ -746,9 +746,12 @@ export const budgetReservations = pgTable('budget_reservations', {
   amountMicros: bigint('amount_micros', { mode: 'number' }).notNull(),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
   weeklyReservedMicros: bigint('weekly_reserved_micros', { mode: 'number' }).notNull().default(0),
+  fiveHourPeriodStart: timestamp('five_hour_period_start', { withTimezone: true }),
+  fiveHourReservedMicros: bigint('five_hour_reserved_micros', { mode: 'number' }).notNull().default(0),
   balanceReservedMicros: bigint('balance_reserved_micros', { mode: 'number' }).notNull().default(0),
   settledAmountMicros: bigint('settled_amount_micros', { mode: 'number' }),
   settledWeeklyMicros: bigint('settled_weekly_micros', { mode: 'number' }),
+  settledFiveHourMicros: bigint('settled_five_hour_micros', { mode: 'number' }),
   settledBalanceMicros: bigint('settled_balance_micros', { mode: 'number' }),
   status: reservationStatusEnum('status').notNull().default('pending'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -757,6 +760,7 @@ export const budgetReservations = pgTable('budget_reservations', {
   uniqueIndex('reservation_response_unique').on(table.responseId),
   index('reservation_user_status_idx').on(table.userId, table.status),
   check('reservation_source_split_check', sql`${table.weeklyReservedMicros} >= 0 and ${table.balanceReservedMicros} >= 0 and ${table.weeklyReservedMicros} + ${table.balanceReservedMicros} = ${table.amountMicros}`),
+  check('reservation_five_hour_match_check', sql`${table.fiveHourReservedMicros} >= 0 and ${table.fiveHourReservedMicros} = ${table.weeklyReservedMicros}`),
 ])
 
 export const budgetReservationFunders = pgTable('budget_reservation_funders', {
@@ -795,9 +799,11 @@ export const usageEvents = pgTable('usage_events', {
   reasoningTokens: integer('reasoning_tokens').notNull().default(0),
   costMicros: bigint('cost_micros', { mode: 'number' }).notNull(),
   weeklyCostMicros: bigint('weekly_cost_micros', { mode: 'number' }).notNull().default(0),
+  fiveHourCostMicros: bigint('five_hour_cost_micros', { mode: 'number' }).notNull().default(0),
   balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),
   poolBalanceAfterMicros: bigint('pool_balance_after_micros', { mode: 'number' }),
   weeklyPeriodStart: timestamp('weekly_period_start', { withTimezone: true }),
+  fiveHourPeriodStart: timestamp('five_hour_period_start', { withTimezone: true }),
   latencyMs: integer('latency_ms').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [uniqueIndex('usage_response_unique').on(table.responseId), index('usage_user_created_idx').on(table.userId, table.createdAt)])
@@ -806,6 +812,7 @@ export const billingAccounts = pgTable('billing_accounts', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   stripeCustomerId: text('stripe_customer_id'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
+  fiveHourLimitOverrideMicros: bigint('five_hour_limit_override_micros', { mode: 'number' }),
   storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
   holdAt: timestamp('hold_at', { withTimezone: true }),
   holdReason: text('hold_reason'),
@@ -816,6 +823,7 @@ export const billingAccounts = pgTable('billing_accounts', {
 }, (table) => [
   uniqueIndex('billing_accounts_stripe_customer_unique').on(table.stripeCustomerId),
   check('billing_accounts_weekly_override_check', sql`${table.weeklyLimitOverrideMicros} is null or ${table.weeklyLimitOverrideMicros} >= 0`),
+  check('billing_accounts_five_hour_override_check', sql`${table.fiveHourLimitOverrideMicros} is null or ${table.fiveHourLimitOverrideMicros} >= 0`),
   check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),
 ])
 
@@ -908,6 +916,17 @@ export const weeklyUsagePeriods = pgTable('weekly_usage_periods', {
 }, (table) => [
   primaryKey({ columns: [table.userId, table.periodStart] }),
   check('weekly_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
+])
+
+export const fiveHourUsagePeriods = pgTable('five_hour_usage_periods', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  spentMicros: bigint('spent_micros', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.periodStart] }),
+  index('five_hour_usage_periods_active_idx').on(table.userId, table.periodStart),
+  check('five_hour_usage_periods_spent_check', sql`${table.spentMicros} >= 0`),
 ])
 
 export const dailyUsageRollups = pgTable('daily_usage_rollups', {

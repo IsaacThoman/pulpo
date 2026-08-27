@@ -2,30 +2,39 @@ import { splitReservationMicros } from './plans.js'
 
 export interface FundingAllocation {
   weeklyMicros: number
+  fiveHourMicros: number
   balanceMicros: number
 }
 
-export function allocateReservationMicros(amountMicros: number, weeklyAvailableMicros: number): FundingAllocation {
-  return splitReservationMicros(amountMicros, weeklyAvailableMicros)
+export function allocateReservationMicros(amountMicros: number, weeklyAvailableMicros: number, fiveHourAvailableMicros: number): FundingAllocation {
+  return splitReservationMicros(amountMicros, weeklyAvailableMicros, fiveHourAvailableMicros)
 }
 
 export function allocateResizedReservationMicros(input: {
   amountMicros: number
   weeklyRemainingMicros: number
   currentWeeklyReservedMicros: number
-  reservationPeriodStart: Date | null
-  currentPeriodStart: Date
+  reservationWeeklyPeriodStart: Date | null
+  currentWeeklyPeriodStart: Date
+  fiveHourRemainingMicros: number
+  currentFiveHourReservedMicros: number
+  reservationFiveHourPeriodStart: Date | null
+  currentFiveHourPeriodStart: Date | null
 }): FundingAllocation {
-  const sameWeek = input.reservationPeriodStart?.getTime() === input.currentPeriodStart.getTime()
+  const sameWeek = input.reservationWeeklyPeriodStart?.getTime() === input.currentWeeklyPeriodStart.getTime()
   const weeklyAvailableMicros = sameWeek
     ? input.weeklyRemainingMicros + input.currentWeeklyReservedMicros
     : input.currentWeeklyReservedMicros
-  return allocateReservationMicros(input.amountMicros, weeklyAvailableMicros)
+  const sameFiveHourPeriod = input.reservationFiveHourPeriodStart?.getTime() === input.currentFiveHourPeriodStart?.getTime()
+  const fiveHourAvailableMicros = sameFiveHourPeriod
+    ? input.fiveHourRemainingMicros + input.currentFiveHourReservedMicros
+    : input.currentFiveHourReservedMicros
+  return allocateReservationMicros(input.amountMicros, weeklyAvailableMicros, fiveHourAvailableMicros)
 }
 
-export function allocateSettlementMicros(costMicros: number, weeklyReservedMicros: number): FundingAllocation {
-  const weeklyMicros = Math.min(costMicros, weeklyReservedMicros)
-  return { weeklyMicros, balanceMicros: costMicros - weeklyMicros }
+export function allocateSettlementMicros(costMicros: number, weeklyReservedMicros: number, fiveHourReservedMicros: number): FundingAllocation {
+  const coveredMicros = Math.min(costMicros, weeklyReservedMicros, fiveHourReservedMicros)
+  return { weeklyMicros: coveredMicros, fiveHourMicros: coveredMicros, balanceMicros: costMicros - coveredMicros }
 }
 
 export function availableAccountBalanceMicros(input: {
