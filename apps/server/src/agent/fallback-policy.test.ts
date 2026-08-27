@@ -1,8 +1,12 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'vitest'
-import { assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { agentStreamEventHasSubstantiveOutput, assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 
-function failed(content: AssistantMessage['content'] = [], errorMessage = '429 resource unavailable'): AssistantMessage {
+function failed(
+  content: AssistantMessage['content'] = [],
+  errorMessage = '429 resource unavailable',
+  stopReason: AssistantMessage['stopReason'] = 'error',
+): AssistantMessage {
   return {
     role: 'assistant',
     content,
@@ -10,7 +14,7 @@ function failed(content: AssistantMessage['content'] = [], errorMessage = '429 r
     provider: 'openai',
     model: 'gpt-flex',
     usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-    stopReason: 'error',
+    stopReason,
     errorMessage,
     timestamp: Date.now(),
   }
@@ -23,10 +27,28 @@ describe('Agent fallback policy', () => {
     expect(nextAgentRetryAttempt({ message, currentAttempt: 3, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBeUndefined()
   })
 
+  it('retries no-output stream termination and timeout aborts', () => {
+    const ended = failed([], 'OpenAI Responses stream ended before a terminal response event')
+    const aborted = failed([], 'Request aborted', 'aborted')
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+  })
+
   it('does not retry after output or cancellation', () => {
     const message = failed([], 'Provider overloaded')
     expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
     expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+    const aborted = failed([], 'Request aborted', 'aborted')
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxRetries: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+  })
+
+  it('ignores empty stream deltas when deciding whether output started', () => {
+    expect(agentStreamEventHasSubstantiveOutput({ type: 'text_delta', delta: '' })).toBe(false)
+    expect(agentStreamEventHasSubstantiveOutput({ type: 'thinking_delta', delta: '' })).toBe(false)
+    expect(agentStreamEventHasSubstantiveOutput({ type: 'toolcall_delta', delta: '' })).toBe(false)
+    expect(agentStreamEventHasSubstantiveOutput({ type: 'text_delta', delta: 'partial' })).toBe(true)
+    expect(agentStreamEventHasSubstantiveOutput({ type: 'toolcall_start' })).toBe(true)
   })
   it('starts directly on the first non-sticky fallback model', async () => {
     const sticky = new Set(['flex', 'flex-backup'])
