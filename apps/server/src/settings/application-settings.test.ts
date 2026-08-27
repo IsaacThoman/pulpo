@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_CASUAL_INSTRUCTIONS, DEFAULT_OCR_SYSTEM_PROMPT } from '@pulpo/contracts'
-import { DEFAULT_BALANCE_MICROS, DEFAULT_BABY_STORAGE_LIMIT_BYTES, DEFAULT_EIGHT_STORAGE_LIMIT_BYTES, DEFAULT_FAT_STORAGE_LIMIT_BYTES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings } from './application-settings.js'
+import { DEFAULT_BALANCE_MICROS, DEFAULT_BABY_STORAGE_LIMIT_BYTES, DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS, DEFAULT_EIGHT_STORAGE_LIMIT_BYTES, DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS, DEFAULT_FAT_STORAGE_LIMIT_BYTES, DEFAULT_MAX_ATTACHMENT_BYTES, DEFAULT_STORAGE_LIMIT_BYTES, DEFAULT_SUGGESTED_PROMPTS, DEFAULT_TITLE_PROMPT, parseAgentSettings, parseAuthSettings, parseBillingSettings, parseDictationSettings, parseInterfaceSettings, parseOcrSettings, parsePersonalizationSettings, parseWebToolsSettings, publicDictationSettings, publicWebToolsSettings } from './application-settings.js'
 
 describe('dictation application settings', () => {
   it('is disabled by default and redacts its API key', () => {
@@ -34,6 +34,8 @@ describe('billing application settings', () => {
     expect(settings.babyStorageLimitBytes).toBe(DEFAULT_BABY_STORAGE_LIMIT_BYTES)
     expect(settings.eightStorageLimitBytes).toBe(DEFAULT_EIGHT_STORAGE_LIMIT_BYTES)
     expect(settings.fatStorageLimitBytes).toBe(DEFAULT_FAT_STORAGE_LIMIT_BYTES)
+    expect(settings.eightFiveHourLimitMicros).toBe(DEFAULT_EIGHT_FIVE_HOUR_LIMIT_MICROS)
+    expect(settings.fatFiveHourLimitMicros).toBe(DEFAULT_FAT_FIVE_HOUR_LIMIT_MICROS)
   })
 })
 

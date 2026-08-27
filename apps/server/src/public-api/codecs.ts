@@ -341,6 +341,41 @@ const responsesTopLevelKeys = new Set([
   'moderation', 'previous_response_id', 'prompt', 'prompt_cache_key', 'prompt_cache_options',
   'prompt_cache_retention', 'safety_identifier', 'stream_options', 'top_logprobs', 'truncation', 'user',
 ])
+
+const supportedResponseIncludes = new Set([
+  'message.output_text.logprobs',
+  'reasoning.encrypted_content',
+])
+
+function responseIncludes(source: JsonRecord, ignored: Set<string>): string[] | undefined {
+  if (!Object.prototype.hasOwnProperty.call(source, 'include')) return undefined
+  const value = source.include
+  if (value == null || (Array.isArray(value) && value.length === 0)) {
+    ignored.add('include')
+    return undefined
+  }
+  if (!Array.isArray(value)) {
+    throw new AppError(400, 'validation_error', 'include must be an array', 'invalid_request_error', 'include')
+  }
+  const normalized = new Set<string>()
+  for (const candidate of value) {
+    if (typeof candidate !== 'string' || !supportedResponseIncludes.has(candidate)) {
+      unsupported('include', `Include value ${String(candidate)} is not supported`)
+    }
+    normalized.add(candidate)
+  }
+  return [...normalized].sort()
+}
+
+const promptCacheOptionsSchema = z.object({
+  mode: z.enum(['implicit', 'explicit']).optional(),
+  ttl: z.literal('30m').optional(),
+})
+
+const responseStreamOptionsSchema = z.object({
+  include_obfuscation: z.boolean().optional(),
+})
+
 const responsesRequestSchema = z.object({
   model: z.string().min(1),
   input: z.union([z.string(), z.array(z.unknown())]),
@@ -358,6 +393,14 @@ const responsesRequestSchema = z.object({
   text: z.unknown().nullish().transform((value) => value ?? undefined),
   store: z.boolean().nullish().transform((value) => value ?? true),
   service_tier: z.string().min(1).nullish().transform((value) => value ?? undefined),
+  prompt_cache_key: z.string().min(1).nullish().transform((value) => value ?? undefined),
+  prompt_cache_options: promptCacheOptionsSchema.nullish().transform((value) => value ?? undefined),
+  prompt_cache_retention: z.enum(['in_memory', '24h']).nullish().transform((value) => value ?? undefined),
+  safety_identifier: z.string().min(1).max(64).nullish().transform((value) => value ?? undefined),
+  stream_options: responseStreamOptionsSchema.nullish().transform((value) => value ?? undefined),
+  top_logprobs: z.number().int().min(0).max(20).nullish().transform((value) => value ?? undefined),
+  truncation: z.enum(['auto', 'disabled']).nullish().transform((value) => value ?? undefined),
+  user: z.string().min(1).nullish().transform((value) => value ?? undefined),
 }).passthrough()
 
 export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
@@ -366,49 +409,52 @@ export function parseResponsesRequest(raw: unknown): PublicGenerationRequest {
   const ignored = ignoredTopLevelParameters(source, responsesTopLevelKeys)
   acceptNoop(source, 'context_management', (value) => value == null || (Array.isArray(value) && value.length === 0), ignored)
   acceptNoop(source, 'conversation', (value) => value == null, ignored)
-  acceptNoop(source, 'include', (value) => value == null || (Array.isArray(value) && value.every((item) => (
-    item === 'reasoning.encrypted_content'
-  ))), ignored)
+  const include = responseIncludes(source, ignored)
   acceptNoop(source, 'max_tool_calls', (value) => value == null, ignored)
   acceptNoop(source, 'moderation', (value) => value == null, ignored)
   acceptNoop(source, 'previous_response_id', (value) => value == null, ignored)
   acceptNoop(source, 'prompt', (value) => value == null, ignored)
-  acceptNoop(source, 'prompt_cache_key', (value) => value == null, ignored)
-  acceptNoop(source, 'prompt_cache_options', (value) => value == null, ignored)
-  acceptNoop(source, 'prompt_cache_retention', (value) => value == null, ignored)
-  if (Object.prototype.hasOwnProperty.call(source, 'safety_identifier')) ignored.add('safety_identifier')
-  acceptNoop(source, 'stream_options', (value) => {
-    if (value == null) return true
-    const options = record(value)
-    return Boolean(options) && (options!.include_obfuscation == null || options!.include_obfuscation === false)
-  }, ignored)
-  acceptNoop(source, 'top_logprobs', (value) => value == null, ignored)
-  acceptNoop(source, 'truncation', (value) => value == null || value === 'disabled', ignored)
-  if (Object.prototype.hasOwnProperty.call(source, 'user')) ignored.add('user')
   const input = responsesRequestSchema.parse(source)
   if (input.stream && input.background) throw new AppError(400, 'parameter_conflict', 'Streaming background responses are not supported', 'invalid_request_error', 'background')
   rejectDeferredResponseParts(input.input)
   const tools = responsesTools(input.tools)
   const toolChoice = responsesToolChoice(input.tool_choice)
+  const promptCacheOptions = input.prompt_cache_options && Object.keys(input.prompt_cache_options).length
+    ? input.prompt_cache_options
+    : undefined
+  if (input.prompt_cache_options && !promptCacheOptions) ignored.add('prompt_cache_options')
+  let streamOptions = input.stream_options?.include_obfuscation === undefined
+    ? undefined
+    : { include_obfuscation: input.stream_options.include_obfuscation }
+  if (streamOptions && !input.stream) {
+    if (streamOptions.include_obfuscation) throw new AppError(400, 'parameter_conflict', 'stream_options requires stream=true', 'invalid_request_error', 'stream_options')
+    streamOptions = undefined
+  }
+  if (input.stream_options && !streamOptions) ignored.add('stream_options')
+  const promptCacheKey = input.prompt_cache_key ?? input.user
+  const safetyIdentifier = input.safety_identifier ?? input.user
+  if (input.user && input.prompt_cache_key && input.safety_identifier) ignored.add('user')
+  const parameters = Object.fromEntries(Object.entries({
+    instructions: input.instructions, temperature: input.temperature, top_p: input.top_p,
+    tools, tool_choice: toolChoice, parallel_tool_calls: input.parallel_tool_calls,
+    reasoning: input.reasoning, text: input.text, service_tier: input.service_tier,
+    include, prompt_cache_key: promptCacheKey, prompt_cache_options: promptCacheOptions,
+    prompt_cache_retention: input.prompt_cache_retention, safety_identifier: safetyIdentifier,
+    stream_options: streamOptions, top_logprobs: input.top_logprobs,
+    truncation: input.truncation === 'auto' ? input.truncation : undefined,
+  }).filter(([, value]) => value !== undefined))
+  if (input.truncation === 'disabled') ignored.add('truncation')
   return {
     protocol: 'responses', model: input.model, rawInput: input.input,
     displayInput: typeof input.input === 'string' ? input.input : '[structured input]',
-    parameters: Object.fromEntries(Object.entries({
-      instructions: input.instructions, temperature: input.temperature, top_p: input.top_p,
-      tools, tool_choice: toolChoice, parallel_tool_calls: input.parallel_tool_calls,
-      reasoning: input.reasoning, text: input.text, service_tier: input.service_tier,
-    }).filter(([, value]) => value !== undefined)),
+    parameters,
     maxOutputTokens: input.max_output_tokens, stream: input.stream, background: input.background,
     metadata: input.metadata,
     publiclyStored: input.store,
     ignoredParameters: [...ignored].sort(),
     fingerprintValue: {
       model: input.model, input: input.input,
-      parameters: Object.fromEntries(Object.entries({
-        instructions: input.instructions, temperature: input.temperature, top_p: input.top_p,
-        tools, tool_choice: toolChoice, parallel_tool_calls: input.parallel_tool_calls,
-        reasoning: input.reasoning, text: input.text, service_tier: input.service_tier,
-      }).filter(([, value]) => value !== undefined)),
+      parameters,
       maxOutputTokens: input.max_output_tokens, stream: input.stream, background: input.background,
       metadata: input.metadata, store: input.store,
     },

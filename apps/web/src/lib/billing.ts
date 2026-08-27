@@ -18,6 +18,13 @@ export interface BillingSummary {
     pendingBarPercentage: number
     resetsAt: string
   } | null
+  fiveHour: {
+    remainingPercentage: number
+    availableBarPercentage: number
+    pendingMicros: number
+    pendingBarPercentage: number
+    resetsAt: string | null
+  } | null
   onHold: boolean
   subscription: {
     plan: 'eight' | 'fat'

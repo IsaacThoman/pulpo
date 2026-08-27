@@ -63,6 +63,29 @@ export function billingLimitPercentage(amountMicros: number, limitMicros: number
   return Math.max(0, Math.min(100, (amountMicros / limitMicros) * 100))
 }
 
+export function fiveHourSummaryPercentages(input: {
+  fiveHourLimitMicros: number
+  fiveHourSpentMicros: number
+  fiveHourPendingMicros: number
+  fiveHourRemainingMicros: number
+  weeklyLimitMicros: number
+  weeklySpentMicros: number
+  weeklyRemainingMicros: number
+}): { remainingPercentage: number; availableBarPercentage: number; pendingMicros: number; pendingBarPercentage: number } {
+  const availableMicros = Math.min(input.fiveHourRemainingMicros, input.weeklyRemainingMicros)
+  const pendingMicros = Math.min(
+    input.fiveHourPendingMicros,
+    Math.max(0, input.fiveHourLimitMicros - input.fiveHourSpentMicros),
+    Math.max(0, input.weeklyLimitMicros - input.weeklySpentMicros),
+  )
+  return {
+    remainingPercentage: Math.round(billingLimitPercentage(availableMicros, input.fiveHourLimitMicros)),
+    availableBarPercentage: billingLimitPercentage(availableMicros, input.fiveHourLimitMicros),
+    pendingMicros,
+    pendingBarPercentage: billingLimitPercentage(pendingMicros, input.fiveHourLimitMicros),
+  }
+}
+
 export async function registerBillingRoutes(app: FastifyInstance): Promise<void> {
   const config = getConfig()
   if (!config.PULPO_BILLING_ENABLED) return
@@ -90,6 +113,9 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
       }),
     ])
     const subscription = selectSummarySubscription(subscriptions, entitlements.plan)
+    const fiveHour = entitlements.fiveHourRemainingPercentage === null
+      ? null
+      : fiveHourSummaryPercentages(entitlements)
     return {
       plan: entitlements.plan,
       balanceMicros: user.balanceMicros,
@@ -105,6 +131,10 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         pendingBarPercentage: billingLimitPercentage(entitlements.weeklyPendingMicros, entitlements.weeklyLimitMicros),
         resetsAt: entitlements.weeklyResetAt.toISOString(),
       },
+      fiveHour: fiveHour ? {
+        ...fiveHour,
+        resetsAt: entitlements.fiveHourResetAt?.toISOString() ?? null,
+      } : null,
       onHold: entitlements.onHold,
       subscription: subscription ? {
         plan: subscription.plan === 'fat' ? 'fat' : 'eight',

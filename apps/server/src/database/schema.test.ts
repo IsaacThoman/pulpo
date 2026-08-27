@@ -11,6 +11,7 @@ import {
   creditLedger,
   dailyUsageRollups,
   exportJobs,
+  fiveHourUsagePeriods,
   friendships,
   inviteCodes,
   twoFactorRecoveryCodes,
@@ -54,6 +55,7 @@ describe('user-owned operational records', () => {
     ['passkey ceremonies', passkeyCeremonies],
     ['mobile passkey authorization codes', mobilePasskeyAuthCodes],
     ['weekly usage periods', weeklyUsagePeriods],
+    ['five-hour usage periods', fiveHourUsagePeriods],
   ])('deletes %s when their user is deleted', (_name, table) => {
     const userForeignKey = getTableConfig(table as PgTable).foreignKeys.find((foreignKey) =>
       foreignKey.getName().endsWith('_user_id_users_id_fk'),
@@ -126,6 +128,13 @@ describe('user-owned operational records', () => {
     expect(migration).not.toContain('credit_ledger')
   })
 
+  it('grandfathers existing subscription reservations before enforcing five-hour parity', () => {
+    const migration = readFileSync(new URL('../../drizzle/0048_bouncy_leader.sql', import.meta.url), 'utf8')
+    expect(migration).toContain('"five_hour_reserved_micros" = "weekly_reserved_micros"')
+    expect(migration).toContain('CURRENT_TIMESTAMP')
+    expect(migration.indexOf('UPDATE "budget_reservations"')).toBeLessThan(migration.indexOf('reservation_five_hour_match_check'))
+  })
+
   it('backfills existing API requests into Responses-protocol idempotency scopes', () => {
     const migration = readFileSync(new URL('../../drizzle/0045_openai_completions_compatibility.sql', import.meta.url), 'utf8')
     expect(migration).toContain("'api:' || COALESCE(\"log\".\"api_key_id\"::text, 'legacy') || ':responses'")
@@ -133,7 +142,7 @@ describe('user-owned operational records', () => {
   })
 
   it('repairs compatibility columns skipped by previously deployed migration order', () => {
-    const migration = readFileSync(new URL('../../drizzle/0049_repair_openai_compatibility_drift.sql', import.meta.url), 'utf8')
+    const migration = readFileSync(new URL('../../drizzle/0050_repair_openai_compatibility_drift.sql', import.meta.url), 'utf8')
 
     expect(migration).toContain('DROP INDEX IF EXISTS "responses_user_idempotency_unique"')
     for (const column of ['metadata', 'incomplete_details', 'idempotency_scope', 'idempotency_fingerprint']) {
@@ -224,7 +233,7 @@ describe('user-owned operational records', () => {
   })
 
   it('keeps the renumbered episodic-memory migration compatible with existing preview databases', () => {
-    const migration = readFileSync(new URL('../../drizzle/0048_wild_mathemanic.sql', import.meta.url), 'utf8')
+    const migration = readFileSync(new URL('../../drizzle/0049_episodic_memory.sql', import.meta.url), 'utf8')
 
     expect(migration.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(4)
     expect(migration.match(/EXCEPTION WHEN duplicate_object THEN NULL/g)).toHaveLength(7)

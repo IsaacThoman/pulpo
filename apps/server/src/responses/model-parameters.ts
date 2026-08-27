@@ -1,5 +1,11 @@
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
-export const PUBLIC_API_PROTOCOL_PARAMETERS = new Set(['instructions'])
+export const PUBLIC_API_PROTOCOL_PARAMETERS = new Set([
+  'include',
+  'instructions',
+  'prompt_cache_key',
+  'safety_identifier',
+  'stream_options',
+])
 
 export type ModelParameterContext = {
   publicApi?: boolean

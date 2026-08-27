@@ -35,6 +35,7 @@ function supportsEncryptedReasoningInclude(baseUrl: string): boolean {
   }
 }
 
+/** Avoid the Agents SDK's encrypted-reasoning projection on strict compatible proxies. */
 export function agentSamplingParameters(
   baseUrl: string,
   parameters: Record<string, unknown>,

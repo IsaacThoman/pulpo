@@ -6,6 +6,7 @@ import {
   budgetReservations,
   budgetReservationFunders,
   creditLedger,
+  fiveHourUsagePeriods,
   modelPricingVersions,
   responses,
   usageEvents,
@@ -77,7 +78,10 @@ export async function reserveBudget(input: {
     if (!user || user.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
     const entitlements = await loadBillingEntitlements(tx, input.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros)
+    const allocation = allocateReservationMicros(amount, entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
+    const fiveHourPeriodStart = allocation.fiveHourMicros > 0
+      ? entitlements.fiveHourPeriodStart ?? new Date()
+      : null
     const pendingByUser = await pendingFundingByUser(tx, participantIds)
     const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, participantIds))
     const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
@@ -125,6 +129,8 @@ export async function reserveBudget(input: {
       amountMicros: amount,
       weeklyPeriodStart: allocation.weeklyMicros > 0 ? entitlements.weeklyPeriodStart : null,
       weeklyReservedMicros: allocation.weeklyMicros,
+      fiveHourPeriodStart,
+      fiveHourReservedMicros: allocation.fiveHourMicros,
       balanceReservedMicros: allocation.balanceMicros,
     })
     if (funding.size) await tx.insert(budgetReservationFunders).values([...funding].map(([userId, reservedMicros]) => ({ reservationId, userId, reservedMicros })))
@@ -154,7 +160,10 @@ export async function chargeMeteredUsage(input: {
     if (!caller || caller.blocked) throw new AppError(403, 'account_blocked', 'The account cannot make requests')
     const entitlements = await loadBillingEntitlements(tx, input.userId)
     if (entitlements.onHold) throw new AppError(403, 'billing_hold', 'Billing access is temporarily on hold')
-    const allocation = allocateReservationMicros(input.costMicros, entitlements.weeklyRemainingMicros)
+    const allocation = allocateReservationMicros(input.costMicros, entitlements.weeklyRemainingMicros, entitlements.fiveHourRemainingMicros)
+    const fiveHourPeriodStart = allocation.fiveHourMicros > 0
+      ? entitlements.fiveHourPeriodStart ?? new Date()
+      : null
     const pendingByUser = await pendingFundingByUser(tx, participantIds)
     const holdRows = await tx.select({ userId: billingAccounts.userId, holdAt: billingAccounts.holdAt, holdClearedAt: billingAccounts.holdClearedAt }).from(billingAccounts).where(inArray(billingAccounts.userId, participantIds))
     const held = new Set(holdRows.filter((row) => row.holdAt && !row.holdClearedAt).map((row) => row.userId))
@@ -175,12 +184,12 @@ export async function chargeMeteredUsage(input: {
       if (updated) ownChanges.push(updated)
       await tx.insert(creditLedger).values({
         id: newId(), userId: fundingUser.id, responseId: null, type: input.type, amountMicros: -debit, balanceAfterMicros: balanceAfter,
-        metadata: { ...input.metadata, totalCostMicros: input.costMicros, weeklyCostMicros: allocation.weeklyMicros, balanceCostMicros: debit, callerUserId: input.userId, poolId: membership?.pool.id ?? null },
+        metadata: { ...input.metadata, totalCostMicros: input.costMicros, weeklyCostMicros: allocation.weeklyMicros, fiveHourCostMicros: allocation.fiveHourMicros, balanceCostMicros: debit, callerUserId: input.userId, poolId: membership?.pool.id ?? null },
       })
     }
     if (allocation.balanceMicros === 0) await tx.insert(creditLedger).values({
       id: newId(), userId: caller.id, responseId: null, type: input.type, amountMicros: 0, balanceAfterMicros: caller.balanceMicros,
-      metadata: { ...input.metadata, totalCostMicros: input.costMicros, weeklyCostMicros: allocation.weeklyMicros, balanceCostMicros: 0, poolId: membership?.pool.id ?? null },
+      metadata: { ...input.metadata, totalCostMicros: input.costMicros, weeklyCostMicros: allocation.weeklyMicros, fiveHourCostMicros: allocation.fiveHourMicros, balanceCostMicros: 0, poolId: membership?.pool.id ?? null },
     })
     if (allocation.weeklyMicros > 0) {
       await tx.insert(weeklyUsagePeriods).values({
@@ -188,6 +197,14 @@ export async function chargeMeteredUsage(input: {
       }).onConflictDoUpdate({
         target: [weeklyUsagePeriods.userId, weeklyUsagePeriods.periodStart],
         set: { spentMicros: sql`${weeklyUsagePeriods.spentMicros} + ${allocation.weeklyMicros}`, updatedAt: new Date() },
+      })
+    }
+    if (allocation.fiveHourMicros > 0 && fiveHourPeriodStart) {
+      await tx.insert(fiveHourUsagePeriods).values({
+        userId: caller.id, periodStart: fiveHourPeriodStart, spentMicros: allocation.fiveHourMicros,
+      }).onConflictDoUpdate({
+        target: [fiveHourUsagePeriods.userId, fiveHourUsagePeriods.periodStart],
+        set: { spentMicros: sql`${fiveHourUsagePeriods.spentMicros} + ${allocation.fiveHourMicros}`, updatedAt: new Date() },
       })
     }
     if (!ownChanges.some((change) => change.userId === caller.id)) {
@@ -243,8 +260,9 @@ export async function settleBudget(input: {
     const fundingUsers = funderIds.length ? await tx.select().from(users).where(inArray(users.id, funderIds)).orderBy(users.id).for('update') : []
     const user = fundingUsers.find((row) => row.id === reservation.userId) ?? (await tx.select().from(users).where(eq(users.id, reservation.userId)).limit(1))[0]
     if (!user) throw new AppError(409, 'user_missing', 'User is missing')
-    const allocation = allocateSettlementMicros(cost, reservation.weeklyReservedMicros)
+    const allocation = allocateSettlementMicros(cost, reservation.weeklyReservedMicros, reservation.fiveHourReservedMicros)
     const weeklyCost = allocation.weeklyMicros
+    const fiveHourCost = allocation.fiveHourMicros
     const balanceCost = allocation.balanceMicros
     const callerReserved = funders.find((row) => row.userId === reservation.userId)?.reservedMicros ?? 0
     const settledFunding = new Map<string, number>()
@@ -267,13 +285,13 @@ export async function settleBudget(input: {
       await tx.insert(creditLedger).values({
         id: newId(), userId: fundingUser.id, responseId: response.id, type: 'usage', amountMicros: -debit,
         balanceAfterMicros: balanceAfter,
-        metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, weeklyCostMicros: weeklyCost, balanceCostMicros: debit, callerUserId: reservation.userId, poolId: reservation.poolId },
+        metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, weeklyCostMicros: weeklyCost, fiveHourCostMicros: fiveHourCost, balanceCostMicros: debit, callerUserId: reservation.userId, poolId: reservation.poolId },
       })
     }
     if (balanceCost === 0) await tx.insert(creditLedger).values({
       id: newId(), userId: user.id, responseId: response.id, type: 'usage', amountMicros: 0,
       balanceAfterMicros: user.balanceMicros,
-      metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, weeklyCostMicros: weeklyCost, balanceCostMicros: 0, poolId: reservation.poolId },
+      metadata: { reservationMicros: reservation.amountMicros, totalCostMicros: cost, weeklyCostMicros: weeklyCost, fiveHourCostMicros: fiveHourCost, balanceCostMicros: 0, poolId: reservation.poolId },
     })
     if (!ownChanges.some((change) => change.userId === user.id)) {
       const [updatedCaller] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` }).where(eq(users.id, user.id)).returning({ userId: users.id, revision: users.stateRevision })
@@ -283,6 +301,7 @@ export async function settleBudget(input: {
       status: 'settled',
       settledAmountMicros: cost,
       settledWeeklyMicros: weeklyCost,
+      settledFiveHourMicros: fiveHourCost,
       settledBalanceMicros: balanceCost,
       settledAt: new Date(),
     }).where(eq(budgetReservations.id, reservation.id))
@@ -296,6 +315,19 @@ export async function settleBudget(input: {
         target: [weeklyUsagePeriods.userId, weeklyUsagePeriods.periodStart],
         set: {
           spentMicros: sql`${weeklyUsagePeriods.spentMicros} + ${weeklyCost}`,
+          updatedAt: new Date(),
+        },
+      })
+    }
+    if (fiveHourCost > 0 && reservation.fiveHourPeriodStart) {
+      await tx.insert(fiveHourUsagePeriods).values({
+        userId: user.id,
+        periodStart: reservation.fiveHourPeriodStart,
+        spentMicros: fiveHourCost,
+      }).onConflictDoUpdate({
+        target: [fiveHourUsagePeriods.userId, fiveHourUsagePeriods.periodStart],
+        set: {
+          spentMicros: sql`${fiveHourUsagePeriods.spentMicros} + ${fiveHourCost}`,
           updatedAt: new Date(),
         },
       })
@@ -319,9 +351,11 @@ export async function settleBudget(input: {
       reasoningTokens: input.usage.reasoningTokens,
       costMicros: cost,
       weeklyCostMicros: weeklyCost,
+      fiveHourCostMicros: fiveHourCost,
       balanceCostMicros: balanceCost,
       poolBalanceAfterMicros: reservation.poolId ? Number(poolSnapshot?.total ?? 0) : null,
       weeklyPeriodStart: reservation.weeklyPeriodStart,
+      fiveHourPeriodStart: reservation.fiveHourPeriodStart,
       latencyMs: input.latencyMs,
     }).onConflictDoNothing()
     const peers = await friendPeerIds(tx, user.id, { acceptedOnly: true })
@@ -384,15 +418,21 @@ export async function resizeBudgetReservation(input: {
       amountMicros: amount,
       weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
       currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
-      reservationPeriodStart: reservation.weeklyPeriodStart,
-      currentPeriodStart: entitlements.weeklyPeriodStart,
+      reservationWeeklyPeriodStart: reservation.weeklyPeriodStart,
+      currentWeeklyPeriodStart: entitlements.weeklyPeriodStart,
+      fiveHourRemainingMicros: entitlements.fiveHourRemainingMicros,
+      currentFiveHourReservedMicros: reservation.fiveHourReservedMicros,
+      reservationFiveHourPeriodStart: reservation.fiveHourPeriodStart,
+      currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
     })
     await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the next agent turn')
     await tx.update(budgetReservations).set({
       amountMicros: amount,
       weeklyReservedMicros: allocation.weeklyMicros,
+      fiveHourReservedMicros: allocation.fiveHourMicros,
       balanceReservedMicros: allocation.balanceMicros,
       weeklyPeriodStart: allocation.weeklyMicros > 0 ? (reservation.weeklyPeriodStart ?? entitlements.weeklyPeriodStart) : null,
+      fiveHourPeriodStart: allocation.fiveHourMicros > 0 ? (reservation.fiveHourPeriodStart ?? entitlements.fiveHourPeriodStart ?? new Date()) : null,
     }).where(eq(budgetReservations.id, reservation.id))
   })
 }
@@ -410,15 +450,21 @@ export async function extendBudgetReservationFixedCost(responseId: string, addit
       amountMicros: amount,
       weeklyRemainingMicros: entitlements.weeklyRemainingMicros,
       currentWeeklyReservedMicros: reservation.weeklyReservedMicros,
-      reservationPeriodStart: reservation.weeklyPeriodStart,
-      currentPeriodStart: entitlements.weeklyPeriodStart,
+      reservationWeeklyPeriodStart: reservation.weeklyPeriodStart,
+      currentWeeklyPeriodStart: entitlements.weeklyPeriodStart,
+      fiveHourRemainingMicros: entitlements.fiveHourRemainingMicros,
+      currentFiveHourReservedMicros: reservation.fiveHourReservedMicros,
+      reservationFiveHourPeriodStart: reservation.fiveHourPeriodStart,
+      currentFiveHourPeriodStart: entitlements.fiveHourPeriodStart,
     })
     await replaceReservationFunding(tx, reservation, allocation.balanceMicros, 'Insufficient balance for the requested web tool')
     await tx.update(budgetReservations).set({
       amountMicros: amount,
       weeklyReservedMicros: allocation.weeklyMicros,
+      fiveHourReservedMicros: allocation.fiveHourMicros,
       balanceReservedMicros: allocation.balanceMicros,
       weeklyPeriodStart: allocation.weeklyMicros > 0 ? (reservation.weeklyPeriodStart ?? entitlements.weeklyPeriodStart) : null,
+      fiveHourPeriodStart: allocation.fiveHourMicros > 0 ? (reservation.fiveHourPeriodStart ?? entitlements.fiveHourPeriodStart ?? new Date()) : null,
     }).where(eq(budgetReservations.id, reservation.id))
   })
 }

@@ -14,6 +14,7 @@ export const PLAN_MONTHLY_CREDIT_MICROS: Record<PaidBillingPlan, number> = {
 
 export const MIN_TOP_UP_CENTS = 500
 export const MAX_TOP_UP_CENTS = 50_000
+export const FIVE_HOURS_MS = 5 * 60 * 60 * 1_000
 
 export function chargeCentsForCredits(creditCents: number): number {
   if (!Number.isSafeInteger(creditCents) || creditCents < MIN_TOP_UP_CENTS || creditCents > MAX_TOP_UP_CENTS) {
@@ -33,18 +34,27 @@ export function utcWeekEnd(value = new Date()): Date {
   return new Date(utcWeekStart(value).getTime() + 7 * 24 * 60 * 60 * 1_000)
 }
 
+export function fiveHourEnd(periodStart: Date): Date {
+  return new Date(periodStart.getTime() + FIVE_HOURS_MS)
+}
+
 export function remainingPercentage(limitMicros: number, spentMicros: number): number | null {
   if (limitMicros <= 0) return null
   const remaining = Math.max(0, limitMicros - spentMicros)
   return Math.max(0, Math.min(100, Math.round((remaining / limitMicros) * 100)))
 }
 
-export function splitReservationMicros(amountMicros: number, weeklyAvailableMicros: number): {
+export function splitReservationMicros(amountMicros: number, weeklyAvailableMicros: number, fiveHourAvailableMicros: number): {
   weeklyMicros: number
+  fiveHourMicros: number
   balanceMicros: number
 } {
-  const weeklyMicros = Math.min(Math.max(0, weeklyAvailableMicros), amountMicros)
-  return { weeklyMicros, balanceMicros: amountMicros - weeklyMicros }
+  const coveredMicros = Math.min(
+    Math.max(0, weeklyAvailableMicros),
+    Math.max(0, fiveHourAvailableMicros),
+    amountMicros,
+  )
+  return { weeklyMicros: coveredMicros, fiveHourMicros: coveredMicros, balanceMicros: amountMicros - coveredMicros }
 }
 
 export function isPaidPlan(value: unknown): value is PaidBillingPlan {
