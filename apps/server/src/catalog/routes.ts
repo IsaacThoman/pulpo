@@ -233,6 +233,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         cacheAffinityScope: input.cacheAffinityScope,
         cacheIsolationMode: input.cacheIsolationMode,
         cacheIsolationScope: input.cacheIsolationScope,
+        toolResultImageMode: input.toolResultImageMode,
       })
       await tx.insert(auditEvents).values({
         id: newId(), actorUserId: admin.id, action: 'provider.create', targetType: 'provider', targetId: id,
@@ -257,6 +258,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       cacheAffinityScope: body.cacheAffinityScope,
       cacheIsolationMode: body.cacheIsolationMode,
       cacheIsolationScope: body.cacheIsolationScope,
+      toolResultImageMode: body.toolResultImageMode,
       enabled: body.enabled,
       updatedAt: new Date(),
     }).where(eq(providerConnections.id, id)).returning()

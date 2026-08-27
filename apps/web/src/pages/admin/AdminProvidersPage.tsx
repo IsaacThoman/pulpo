@@ -13,6 +13,7 @@ import { SensitiveRevealDialog, type SensitiveRevealCredentials } from '@/compon
 type CacheAffinityMode = 'none' | 'openai_prompt_cache_key' | 'fireworks_session_affinity'
 type CacheIsolationMode = 'none' | 'fireworks_prompt_cache_isolation'
 type CacheScope = 'agent_run' | 'chat' | 'user'
+type ToolResultImageMode = 'native' | 'user_message'
 
 interface AdminProvider {
   id: string
@@ -24,6 +25,7 @@ interface AdminProvider {
   cacheAffinityScope: CacheScope
   cacheIsolationMode: CacheIsolationMode
   cacheIsolationScope: CacheScope
+  toolResultImageMode: ToolResultImageMode
   lastHealthStatus?: string | null
 }
 import {
@@ -46,6 +48,7 @@ type Draft = {
   cacheAffinityScope: CacheScope
   cacheIsolationMode: CacheIsolationMode
   cacheIsolationScope: CacheScope
+  toolResultImageMode: ToolResultImageMode
 }
 
 const emptyDraft = (): Draft => ({
@@ -58,6 +61,7 @@ const emptyDraft = (): Draft => ({
   cacheAffinityScope: 'chat',
   cacheIsolationMode: 'none',
   cacheIsolationScope: 'user',
+  toolResultImageMode: 'native',
 })
 
 export function AdminProvidersPage() {
@@ -98,6 +102,7 @@ export function AdminProvidersPage() {
       cacheAffinityScope: p.cacheAffinityScope,
       cacheIsolationMode: p.cacheIsolationMode,
       cacheIsolationScope: p.cacheIsolationScope,
+      toolResultImageMode: p.toolResultImageMode,
     })
   }
 
@@ -145,6 +150,7 @@ export function AdminProvidersPage() {
           cacheAffinityScope: draft.cacheAffinityScope,
           cacheIsolationMode: draft.cacheIsolationMode,
           cacheIsolationScope: draft.cacheIsolationScope,
+          toolResultImageMode: draft.toolResultImageMode,
           ...providerApiKeyPatch(draft),
         },
       })
@@ -156,6 +162,7 @@ export function AdminProvidersPage() {
           cacheAffinityScope: draft.cacheAffinityScope,
           cacheIsolationMode: draft.cacheIsolationMode,
           cacheIsolationScope: draft.cacheIsolationScope,
+          toolResultImageMode: draft.toolResultImageMode,
         },
       })
     }
@@ -321,6 +328,17 @@ export function AdminProvidersPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>{ui("Tool-result images")}</Label>
+                <Select value={draft.toolResultImageMode} onValueChange={(toolResultImageMode: ToolResultImageMode) => setDraft({ ...draft, toolResultImageMode })}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="native">{ui("Native tool result")}</SelectItem>
+                    <SelectItem value="user_message">{ui("User message compatibility")}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">{ui("Use user-message compatibility only for providers that reject images returned by tools.")}</p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="prov-url">{ui("Provider base URL")}</Label>
