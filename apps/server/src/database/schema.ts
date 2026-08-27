@@ -259,6 +259,7 @@ export const providerConnections = pgTable('provider_connections', {
   cacheAffinityScope: text('cache_affinity_scope').notNull().default('chat'),
   cacheIsolationMode: text('cache_isolation_mode').notNull().default('none'),
   cacheIsolationScope: text('cache_isolation_scope').notNull().default('user'),
+  toolResultImageMode: text('tool_result_image_mode').notNull().default('native'),
   enabled: boolean('enabled').notNull().default(true),
   lastHealthStatus: text('last_health_status'),
   lastHealthAt: timestamp('last_health_at', { withTimezone: true }),
