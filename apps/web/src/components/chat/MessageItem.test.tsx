@@ -139,8 +139,35 @@ describe('recalled chat activity', () => {
       activeModelId="model-1"
     />)
 
-    expect(markup).toContain('Recalled from 1 chats.')
+    expect(markup).toContain('Recalled from 1 chat')
+    expect(markup).not.toContain('Recalled from 1 chat.')
     expect(markup).not.toContain('pulpo recall')
+  })
+
+  it('uses the plural label for multiple recalled sources', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const source = {
+      response_id: '00000000-0000-4000-8000-000000000002',
+      title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+      excerpt: 'Use a parallel index generation during model changes.',
+    }
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        outputItems: [{
+          id: 'response-1:recall', type: 'pulpo_recall', status: 'completed',
+          sources: [
+            { ...source, chat_id: '00000000-0000-4000-8000-000000000001' },
+            { ...source, chat_id: '00000000-0000-4000-8000-000000000003' },
+          ],
+        }, { type: 'message', content: [{ type: 'output_text', text: 'Answer' }] }],
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('Recalled from 2 chats')
+    expect(markup).not.toContain('Recalled from 2 chats.')
   })
 })
 

@@ -209,6 +209,7 @@ import {
   type HistoryChatSummary,
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
+import { recalledChatLabel } from '../features/chat/recall-label';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
 import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
@@ -2664,7 +2665,7 @@ function workLabel(steps: TimelineStep[], active: boolean, durationMs?: number):
   if (runningTool?.kind === 'tool') return toolActivityPresentation(runningTool.tool.tool).label;
   if (active) return steps.some((step) => step.kind === 'tool') ? 'Working…' : 'Thinking…';
   const recall = steps.find((step) => step.kind === 'recall');
-  if (recall?.kind === 'recall') return `Recalled from ${recall.recall.sources.length} chats.`;
+  if (recall?.kind === 'recall') return recalledChatLabel(recall.recall.sources.length);
   return completedActivityLabel(steps, durationMs);
 }
 

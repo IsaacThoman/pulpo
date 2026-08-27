@@ -1,4 +1,5 @@
 import type { CompactionItem, RecallItem } from '@pulpo/contracts'
+import { recalledChatLabel } from './recall-label'
 
 export type ToolItem = {
   type: 'pulpo_tool'
@@ -53,7 +54,7 @@ export function timelineActivityIsActive(
 
 export function completedActivityLabel(steps: TimelineStep[], durationMs?: number): string {
   const recall = steps.find((step) => step.kind === 'recall')
-  if (recall?.kind === 'recall') return `Recalled from ${recall.recall.sources.length} chats.`
+  if (recall?.kind === 'recall') return recalledChatLabel(recall.recall.sources.length)
   const resolvedDurationMs = durationMs ?? activityDurationMs(steps)
   const seconds = resolvedDurationMs === undefined ? null : Math.max(0, Math.round(resolvedDurationMs / 1000))
   const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')

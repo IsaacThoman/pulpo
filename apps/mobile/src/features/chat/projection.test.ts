@@ -62,7 +62,7 @@ describe('projectChat branch variants', () => {
 
     const assistant = projectChat(chat, {}).find((message) => message.role === 'assistant')
     expect(assistant?.activity).toMatchObject([{
-      kind: 'recall', title: 'Recalled from 1 chats.', detail: expect.stringContaining('Earlier architecture chat'),
+      kind: 'recall', title: 'Recalled from 1 chat', detail: expect.stringContaining('Earlier architecture chat'),
     }])
     expect(assistant?.outputItems[0]).toEqual(recall)
   })

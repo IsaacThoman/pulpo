@@ -1,6 +1,7 @@
 import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-core'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
+import { recalledChatLabel } from './recall-label'
 
 export interface DisplayAttachment {
   id: string
@@ -111,7 +112,7 @@ function activities(output: unknown[]): ActivityItem[] {
       return [{
         id: value.id ?? `recall-${index}`,
         kind: 'recall',
-        title: `Recalled from ${sources.length} chats.`,
+        title: recalledChatLabel(sources.length),
         detail: sources.map((source) => [source.title, source.updated_at, source.excerpt].filter(Boolean).join('\n')).join('\n\n'),
         status: 'completed',
       }]

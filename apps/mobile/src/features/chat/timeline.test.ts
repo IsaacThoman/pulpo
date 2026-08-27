@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { recalledChatLabel } from './recall-label'
 import { buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
 
 describe('buildMessageTimeline', () => {
@@ -101,7 +102,8 @@ describe('buildMessageTimeline', () => {
 
     expect(activity).toMatchObject({ kind: 'activity', steps: [{ kind: 'recall' }, { kind: 'tool' }] })
     if (activity?.kind !== 'activity') throw new Error('Expected recall activity')
-    expect(completedActivityLabel(activity.steps)).toBe('Recalled from 1 chats.')
+    expect(completedActivityLabel(activity.steps)).toBe('Recalled from 1 chat')
+    expect(recalledChatLabel(2)).toBe('Recalled from 2 chats')
   })
 
   it('keeps work visible when reasoning is hidden', () => {

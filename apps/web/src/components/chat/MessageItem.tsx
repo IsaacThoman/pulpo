@@ -457,7 +457,12 @@ function ActivityBlock({
     if (runningTool) return toolActivityPresentation(runningTool.tool).label
     if (active && hasTools) return ui("Working…")
     if (active) return ui("Thinking…")
-    if (recall) return ui('Recalled from {{count}} chats.', { count: recall.sources.length })
+    if (recall) {
+      const count = recall.sources.length
+      return count === 1
+        ? ui('Recalled from {{count}} chat', { count })
+        : ui('Recalled from {{count}} chats', { count })
+    }
     if (showDuration && durationMs !== undefined) {
       const duration = formatSecondsLabel(durationMs)
       return hasTools || hasWorkspace
