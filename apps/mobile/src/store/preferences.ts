@@ -1,7 +1,8 @@
 import { Appearance } from 'react-native'
 import { create } from 'zustand'
+import { LatestValueQueue } from '@pulpo/client-core'
 import { getValue, setValue } from '../data/database'
-import { defaultPreferences as defaults, type Preferences } from './preferenceMapping'
+import { defaultPreferences as defaults, serverPreferenceKey, type Preferences } from './preferenceMapping'
 
 export type { AutomaticChatExpirationPreference, Preferences, TextSizePreference, ThemePreference, TrashRetentionPreference } from './preferenceMapping'
 export { preferencePatchForServer, preferencesFromServer } from './preferenceMapping'
@@ -12,10 +13,11 @@ interface PreferenceState extends Preferences {
   modelPreferencesDirty: boolean
   generationPreferenceDirty: boolean
   agentModesPreferenceDirty: boolean
+  pendingServerPreferenceKeys: Array<keyof Preferences>
   hydrate: () => Promise<void>
   setPreference: <K extends keyof Preferences>(key: K, value: Preferences[K]) => Promise<void>
   applyServerPreferences: (patch: Partial<Preferences>) => Promise<void>
-  markSynchronizedPreferenceSynced: <K extends 'favoriteModelIds' | 'providerOrder' | 'generation' | 'agentModes'>(key: K, value: Preferences[K]) => Promise<void>
+  markSynchronizedPreferenceSynced: <K extends keyof Preferences>(key: K, value: Preferences[K]) => Promise<void>
   resetSynchronizedPreferences: (namespace: string) => Promise<void>
 }
 
@@ -24,6 +26,13 @@ type StoredPreferences = Partial<Preferences> & {
   modelPreferencesDirty?: boolean
   generationPreferenceDirty?: boolean
   agentModesPreferenceDirty?: boolean
+  pendingServerPreferenceKeys?: Array<keyof Preferences>
+}
+
+const preferencePersistence = new LatestValueQueue<'global', StoredPreferences, void>()
+
+function persistPreferences(snapshot: StoredPreferences): Promise<void> {
+  return preferencePersistence.enqueue('global', snapshot, (latest) => setValue('global', 'preferences', latest))
 }
 
 function persistedSnapshot(state: PreferenceState): StoredPreferences {
@@ -34,6 +43,7 @@ function persistedSnapshot(state: PreferenceState): StoredPreferences {
     modelPreferencesDirty: state.modelPreferencesDirty,
     generationPreferenceDirty: state.generationPreferenceDirty,
     agentModesPreferenceDirty: state.agentModesPreferenceDirty,
+    pendingServerPreferenceKeys: state.pendingServerPreferenceKeys,
   }
 }
 
@@ -56,6 +66,16 @@ function sameAgentModes(left: Preferences['agentModes'], right: Preferences['age
     && modelIds.every((modelId) => left[modelId] === right[modelId])
 }
 
+function samePreference<K extends keyof Preferences>(key: K, left: Preferences[K], right: Preferences[K]): boolean {
+  if (key === 'generation') {
+    return sameGenerationPreferences(left as Preferences['generation'], right as Preferences['generation'])
+  }
+  if (key === 'agentModes') {
+    return sameAgentModes(left as Preferences['agentModes'], right as Preferences['agentModes'])
+  }
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   ...defaults,
   hydrated: false,
@@ -63,6 +83,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   modelPreferencesDirty: false,
   generationPreferenceDirty: false,
   agentModesPreferenceDirty: false,
+  pendingServerPreferenceKeys: [],
   hydrate: async () => {
     try {
       const stored = await getValue<StoredPreferences>('global', 'preferences')
@@ -78,6 +99,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
         modelPreferencesDirty: stored?.modelPreferencesDirty ?? false,
         generationPreferenceDirty: stored?.generationPreferenceDirty ?? false,
         agentModesPreferenceDirty: stored?.agentModesPreferenceDirty ?? false,
+        pendingServerPreferenceKeys: stored?.pendingServerPreferenceKeys ?? [],
         hydrated: true,
       })
     } catch {
@@ -89,12 +111,17 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
     const synchronizedModelPreference = key === 'favoriteModelIds' || key === 'providerOrder'
     const synchronizedGenerationPreference = key === 'generation'
     const synchronizedAgentModesPreference = key === 'agentModes'
+    const synchronizedWithServer = serverPreferenceKey(key) !== null
+    const pendingServerPreferenceKeys = synchronizedWithServer
+      ? [...new Set([...get().pendingServerPreferenceKeys, key])]
+      : get().pendingServerPreferenceKeys
     const next = {
       ...get(),
       [key]: value,
       modelPreferencesDirty: synchronizedModelPreference || get().modelPreferencesDirty,
       generationPreferenceDirty: synchronizedGenerationPreference || get().generationPreferenceDirty,
       agentModesPreferenceDirty: synchronizedAgentModesPreference || get().agentModesPreferenceDirty,
+      pendingServerPreferenceKeys,
     }
     if (key === 'theme') Appearance.setColorScheme(value === 'system' ? 'unspecified' : value as 'light' | 'dark')
     set((state) => ({
@@ -103,8 +130,11 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       modelPreferencesDirty: synchronizedModelPreference || state.modelPreferencesDirty,
       generationPreferenceDirty: synchronizedGenerationPreference || state.generationPreferenceDirty,
       agentModesPreferenceDirty: synchronizedAgentModesPreference || state.agentModesPreferenceDirty,
+      pendingServerPreferenceKeys: synchronizedWithServer
+        ? [...new Set([...state.pendingServerPreferenceKeys, key])]
+        : state.pendingServerPreferenceKeys,
     }))
-    await setValue('global', 'preferences', persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(next))
   },
   applyServerPreferences: async (patch) => {
     const current = get()
@@ -119,6 +149,13 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
     const agentModesMatch = patch.agentModes === undefined || sameAgentModes(patch.agentModes, current.agentModes)
     const acceptsAgentModes = !current.agentModesPreferenceDirty || agentModesMatch
     const safePatch = { ...patch }
+    const pendingServerPreferenceKeys = current.pendingServerPreferenceKeys.filter((key) => {
+      const remote = patch[key]
+      if (remote === undefined) return true
+      if (samePreference(key, current[key], remote as Preferences[typeof key])) return false
+      delete safePatch[key]
+      return true
+    })
     if (!acceptsSynchronized) {
       delete safePatch.favoriteModelIds
       delete safePatch.providerOrder
@@ -131,26 +168,27 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       modelPreferencesDirty: acceptsSynchronized ? false : current.modelPreferencesDirty,
       generationPreferenceDirty: acceptsGeneration ? false : current.generationPreferenceDirty,
       agentModesPreferenceDirty: acceptsAgentModes ? false : current.agentModesPreferenceDirty,
+      pendingServerPreferenceKeys,
     }
     set(next)
-    await setValue('global', 'preferences', persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(next))
   },
   markSynchronizedPreferenceSynced: async (key, value) => {
     const current = get()
-    const matches = key === 'generation'
-      ? sameGenerationPreferences(current.generation, value as Preferences['generation'])
-      : key === 'agentModes'
-        ? sameAgentModes(current.agentModes, value as Preferences['agentModes'])
-        : JSON.stringify(current[key]) === JSON.stringify(value)
+    const matches = samePreference(key, current[key], value)
     if (!matches) return
-    const synced = key === 'generation'
-      ? { generationPreferenceDirty: false }
-      : key === 'agentModes'
-        ? { agentModesPreferenceDirty: false }
-        : { modelPreferencesDirty: false }
+    const pendingServerPreferenceKeys = current.pendingServerPreferenceKeys.filter((candidate) => candidate !== key)
+    const synced = {
+      pendingServerPreferenceKeys,
+      ...(key === 'generation' ? { generationPreferenceDirty: false } : {}),
+      ...(key === 'agentModes' ? { agentModesPreferenceDirty: false } : {}),
+      ...(key === 'favoriteModelIds' || key === 'providerOrder'
+        ? { modelPreferencesDirty: pendingServerPreferenceKeys.some((candidate) => candidate === 'favoriteModelIds' || candidate === 'providerOrder') }
+        : {}),
+    }
     const next = { ...current, ...synced }
     set(synced)
-    await setValue('global', 'preferences', persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(next))
   },
   resetSynchronizedPreferences: async (namespace) => {
     const reset = {
@@ -162,9 +200,10 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       modelPreferencesDirty: false,
       generationPreferenceDirty: false,
       agentModesPreferenceDirty: false,
+      pendingServerPreferenceKeys: [],
     }
     const next = { ...get(), ...reset }
     set(reset)
-    await setValue('global', 'preferences', persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(next))
   },
 }))
