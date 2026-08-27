@@ -64,14 +64,17 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-[43]')
   })
 
-  it('keeps Windows title-bar portals without rendering the collapsed surface', () => {
+  it('keeps Windows drag and portal layers without rendering surfaces above the sidebar', () => {
     installDesktopWindow('win32')
     const markup = renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed transitions visible />,
     )
 
     expect(markup).not.toContain('desktop-sidebar-titlebar-collapsed')
-    expect(markup).toContain('desktop-sidebar-titlebar-base')
+    expect(markup).not.toContain('desktop-sidebar-titlebar-base')
+    expect(markup).not.toContain('desktop-sidebar-titlebar-expanded')
+    expect(markup).toContain('desktop-sidebar-titlebar')
+    expect(markup).toContain('z-40')
     expect(markup).toContain('desktop-model-titlebar-slot')
     expect(markup).toContain('desktop-actions-titlebar-slot')
     expect(markup).not.toContain('data-position-animation-active')
