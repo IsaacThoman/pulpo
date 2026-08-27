@@ -60,17 +60,29 @@ describe('server configuration', () => {
       POSTGRES_HOST: 'postgres',
       REDIS_URL: 'redis://redis:6379',
       S3_ENDPOINT: 'http://seaweed-s3:8333',
+      PULPO_OLLAMA_URL: 'http://ollama:11434',
+      SERVICE_NAME_OLLAMA: 'ollama-pr-48',
     })).toMatchObject({
       POSTGRES_HOST: 'postgres-pr-48',
       REDIS_URL: 'redis://redis-pr-48:6379',
       S3_ENDPOINT: 'http://seaweed-s3-pr-48:8333',
+      PULPO_OLLAMA_URL: 'http://ollama-pr-48:11434',
     })
 
     expect(parseConfig({ COOLIFY_BRANCH: 'main' })).toMatchObject({
       POSTGRES_HOST: 'localhost',
       REDIS_URL: 'redis://localhost:6379',
       S3_ENDPOINT: 'http://localhost:8333',
+      PULPO_OLLAMA_URL: 'http://localhost:11434',
     })
+  })
+
+  it('preserves an explicit external Ollama URL in Coolify previews', () => {
+    expect(parseConfig({
+      COOLIFY_BRANCH: 'pull/48/head',
+      SERVICE_NAME_OLLAMA: 'ollama-pr-48',
+      PULPO_OLLAMA_URL: 'https://ollama.example.com',
+    }).PULPO_OLLAMA_URL).toBe('https://ollama.example.com')
   })
 
   it('resolves an explicit workspace instance id before deployment metadata', () => {

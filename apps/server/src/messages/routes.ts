@@ -15,6 +15,7 @@ import { toPublicBranchActivation } from '../chats/public.js'
 import { accessibleChatCondition, temporaryChatIsExpired } from '../chats/temporary.js'
 import { assistantEditInheritedValues } from './assistant-edit.js'
 import { resolveBranchGenerationSettings } from './generation-selection.js'
+import { scheduleChatIndex } from '../episodic-memory/queue.js'
 
 async function ownedResponse(userId: string, id: string) {
   const responseId = id.endsWith(':input') ? id.slice(0, -6) : id
@@ -105,6 +106,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       },
     })
     await bumpRevision(user.id, original.chatId)
+    await scheduleChatIndex(original.chatId, user.id, 'message-regenerate')
     reply.code(202)
     return { response: toSnapshot(created) }
   })
@@ -152,6 +154,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         },
       })
       await bumpRevision(user.id, original.chatId)
+      await scheduleChatIndex(original.chatId, user.id, 'user-message-edit')
       reply.code(202)
       return { response: toSnapshot(created) }
     }
@@ -203,6 +206,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       }
     })
     await bumpRevision(user.id, original.chatId)
+    await scheduleChatIndex(original.chatId, user.id, 'assistant-message-edit')
     const [created] = await db.select().from(responses).where(eq(responses.id, createdId)).limit(1)
     if (!created) throw new AppError(500, 'assistant_edit_failed', 'The edited response could not be saved')
     reply.code(201)
@@ -231,6 +235,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
     }
     await bumpRevision(user.id, selected.chatId)
+    await scheduleChatIndex(selected.chatId, user.id, 'branch-activation')
     return toPublicBranchActivation(turns, leafId)
   })
 
@@ -256,6 +261,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       accessibleChatCondition(now),
     ))
     await bumpRevision(user.id, original.chatId)
+    await scheduleChatIndex(original.chatId, user.id, 'message-deletion')
     reply.code(204).send()
   })
 }

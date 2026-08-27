@@ -457,6 +457,23 @@ export const compactionItemSchema = z.object({
 })
 export type CompactionItem = z.infer<typeof compactionItemSchema>
 
+export const recallSourceSchema = z.object({
+  chat_id: idSchema,
+  response_id: idSchema,
+  title: z.string(),
+  updated_at: isoDateSchema,
+  excerpt: z.string(),
+})
+export type RecallSource = z.infer<typeof recallSourceSchema>
+
+export const recallItemSchema = z.object({
+  id: z.string().min(1),
+  type: z.literal('pulpo_recall'),
+  status: z.literal('completed'),
+  sources: z.array(recallSourceSchema).max(5),
+})
+export type RecallItem = z.infer<typeof recallItemSchema>
+
 export const responseSnapshotSchema = z.object({
   responseId: idSchema,
   status: responseStatusSchema,
@@ -583,6 +600,9 @@ function upsertOutputItem(
 
 function applyAgentEventOutput(output: unknown[], event: ResponseEvent): unknown[] {
   const payload = event.payload as Record<string, unknown>
+  if (event.type === 'pulpo.recall.completed' && typeof payload.id === 'string') {
+    return upsertOutputItem(output, (item) => item.type === 'pulpo_recall' && item.id === payload.id, payload)
+  }
   if (event.type.startsWith('pulpo.agent.workspace.')) {
     return upsertOutputItem(output, (item) => item.type === 'pulpo_workspace', payload)
   }
@@ -935,6 +955,129 @@ export const agentSettingsSchema = z.object({
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
+export const episodicMemoryProfileSchema = z.enum(['embeddinggemma', 'qwen3-embedding'])
+export type EpisodicMemoryProfile = z.infer<typeof episodicMemoryProfileSchema>
+export const episodicMemoryRecallModeSchema = z.enum(['conservative', 'balanced', 'eager'])
+export type EpisodicMemoryRecallMode = z.infer<typeof episodicMemoryRecallModeSchema>
+export const episodicMemorySettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  profile: episodicMemoryProfileSchema.default('embeddinggemma'),
+  recallMode: episodicMemoryRecallModeSchema.default('balanced'),
+})
+export type EpisodicMemorySettings = z.infer<typeof episodicMemorySettingsSchema>
+
+export const episodicMemoryModelProfileSchema = z.object({
+  id: episodicMemoryProfileSchema,
+  label: z.string(),
+  model: z.string(),
+  dimension: z.number().int().positive(),
+  approximateSizeBytes: z.number().int().positive(),
+})
+export type EpisodicMemoryModelProfile = z.infer<typeof episodicMemoryModelProfileSchema>
+
+export const episodicMemoryGenerationSchema = z.object({
+  id: idSchema,
+  profile: episodicMemoryProfileSchema,
+  model: z.string(),
+  modelDigest: z.string().nullable(),
+  dimension: z.number().int().positive(),
+  status: z.enum(['pending', 'pulling', 'indexing', 'ready', 'failed', 'cancelled']),
+  totalItems: z.number().int().nonnegative(),
+  completedItems: z.number().int().nonnegative(),
+  failedItems: z.number().int().nonnegative(),
+  error: z.string().nullable(),
+  active: z.boolean(),
+  downloadTotalBytes: z.number().nonnegative(),
+  downloadCompletedBytes: z.number().nonnegative(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+export type EpisodicMemoryGeneration = z.infer<typeof episodicMemoryGenerationSchema>
+
+export const episodicMemoryStatisticsRangeSchema = z.enum(['24h', '7d', '30d'])
+export type EpisodicMemoryStatisticsRange = z.infer<typeof episodicMemoryStatisticsRangeSchema>
+
+const episodicMemoryLatencySchema = z.object({
+  averageMs: z.number().nonnegative(),
+  p50Ms: z.number().nonnegative(),
+  p95Ms: z.number().nonnegative(),
+})
+
+const episodicMemoryOperationStatisticsSchema = z.object({
+  events: z.number().int().nonnegative(),
+  errors: z.number().int().nonnegative(),
+  errorRate: z.number().min(0).max(1),
+  items: z.number().int().nonnegative(),
+  latency: episodicMemoryLatencySchema,
+})
+
+export const episodicMemoryStatisticsSchema = z.object({
+  range: episodicMemoryStatisticsRangeSchema,
+  from: z.string(),
+  to: z.string(),
+  current: z.object({
+    indexedChats: z.number().int().nonnegative(),
+    indexedChunks: z.number().int().nonnegative(),
+    indexedFacts: z.number().int().nonnegative(),
+    indexedUsers: z.number().int().nonnegative(),
+    pendingItems: z.number().int().nonnegative(),
+    failedItems: z.number().int().nonnegative(),
+    coverage: z.number().min(0).max(1),
+    storageBytes: z.number().nonnegative(),
+    lastIndexedAt: z.string().nullable(),
+    queue: z.object({
+      available: z.boolean(),
+      pending: z.number().int().nonnegative(),
+      active: z.number().int().nonnegative(),
+      failed: z.number().int().nonnegative(),
+      oldestJobAgeMs: z.number().nonnegative(),
+    }),
+  }),
+  summary: z.object({
+    recall: episodicMemoryOperationStatisticsSchema.extend({
+      recalled: z.number().int().nonnegative(),
+      abstained: z.number().int().nonnegative(),
+      recallRate: z.number().min(0).max(1),
+      abstentionRate: z.number().min(0).max(1),
+    }),
+    retrieval: episodicMemoryOperationStatisticsSchema.extend({
+      fallbacks: z.number().int().nonnegative(),
+      fallbackRate: z.number().min(0).max(1),
+    }),
+    databaseSearch: episodicMemoryOperationStatisticsSchema,
+    embedding: episodicMemoryOperationStatisticsSchema,
+    indexing: episodicMemoryOperationStatisticsSchema.extend({
+      itemsPerHour: z.number().nonnegative(),
+    }),
+    agentSearch: episodicMemoryOperationStatisticsSchema,
+    agentRead: episodicMemoryOperationStatisticsSchema,
+    totalErrorRate: z.number().min(0).max(1),
+  }),
+  series: z.array(z.object({
+    bucketStart: z.string(),
+    recallRequests: z.number().int().nonnegative(),
+    recalled: z.number().int().nonnegative(),
+    errors: z.number().int().nonnegative(),
+    p95RecallLatencyMs: z.number().nonnegative(),
+  })),
+})
+export type EpisodicMemoryStatistics = z.infer<typeof episodicMemoryStatisticsSchema>
+
+export const episodicMemoryAdminStatusSchema = z.object({
+  settings: episodicMemorySettingsSchema,
+  profiles: z.array(episodicMemoryModelProfileSchema),
+  ollama: z.object({
+    healthy: z.boolean(),
+    version: z.string().nullable(),
+    error: z.string().nullable(),
+    installedModels: z.array(z.object({ name: z.string(), digest: z.string(), size: z.number().nonnegative() })),
+  }),
+  activeGeneration: episodicMemoryGenerationSchema.nullable(),
+  buildingGeneration: episodicMemoryGenerationSchema.nullable(),
+  statistics: episodicMemoryStatisticsSchema,
+})
+export type EpisodicMemoryAdminStatus = z.infer<typeof episodicMemoryAdminStatusSchema>
+
 export const webToolProviderSchema = z.enum(['kagi', 'firecrawl'])
 export type WebToolProvider = z.infer<typeof webToolProviderSchema>
 
@@ -1202,6 +1345,7 @@ export const managementInstanceSettingsSchema = z.object({
   personalization: personalizationSettingsSchema.default(() => personalizationSettingsSchema.parse({})),
   ocr: instanceOcrSettingsSchema.default(() => instanceOcrSettingsSchema.parse({})),
   agent: agentSettingsSchema.default(() => agentSettingsSchema.parse({})),
+  episodicMemory: episodicMemorySettingsSchema.default(() => episodicMemorySettingsSchema.parse({})),
   webTools: managementWebToolsSettingsSchema.default(() => managementWebToolsSettingsSchema.parse({})),
   logging: loggingSettingsSchema.default(() => loggingSettingsSchema.parse({})),
 })

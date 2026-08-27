@@ -24,6 +24,8 @@ import {
 import { advanceMessageQueue, createQueuedMessage, deleteQueuedMessage, listQueuedMessages, reorderQueuedMessage, updateQueuedMessage } from './message-queue.js'
 import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired, scheduleNormalChatExpiry } from './expiration.js'
 import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
+import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
+import { createChatExportPayload } from './export-format.js'
 
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
   if (!enabled) return null
@@ -128,7 +130,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       ))
       : []
     return reply.type('application/json').header('content-disposition', 'attachment; filename="pulpo-chats.json"')
-      .send({ format: 'pulpo-chat-export', version: 2, exportedAt: new Date().toISOString(), chats: chatRows, responses: responseRows })
+      .send(createChatExportPayload(chatRows, responseRows))
   })
 
   app.post('/api/chats/import', async (request) => {
@@ -219,6 +221,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       }
     })
     await bumpRevision(user.id)
+    if (imported) await scheduleUserIndex(user.id, 'chat-import')
     return { imported, duplicates, warnings }
   })
 
@@ -241,6 +244,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       })
     }
     await bumpRevision(user.id)
+    await scheduleUserIndex(user.id, 'delete-all-chats')
     reply.code(204).send()
   })
 
@@ -454,6 +458,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       }
     })
     await bumpRevision(user.id, chatId)
+    await scheduleChatIndex(chatId, user.id, 'chat-duplicate')
     reply.code(201)
     return { ...source, id: chatId, title: title.slice(0, 200), pinned: false, temporary: false, activeResponseId, activeBranchLeafId, expiresAt: null, createdAt: now, updatedAt: now }
   })
@@ -582,6 +587,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       await scheduleNormalChatExpiry({ chatId: updated.id, userId: user.id, expiresAt: updated.expiresAt })
     }
     await bumpRevision(user.id, id)
+    if (patch.autoExpire !== undefined) await scheduleChatIndex(id, user.id, 'chat-expiration-change')
     return updated
   })
 
@@ -605,6 +611,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       })
     }
     await bumpRevision(user.id, id)
+    await scheduleChatIndex(id, user.id, 'chat-trash')
     reply.code(204).send()
   })
 
@@ -620,6 +627,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     )).returning()
     if (!recovered) throw notFound('Deleted chat')
     await bumpRevision(user.id, id)
+    await scheduleChatIndex(id, user.id, 'chat-recovery')
     return recovered
   })
 

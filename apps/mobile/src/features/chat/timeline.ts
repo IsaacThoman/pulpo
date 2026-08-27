@@ -1,4 +1,5 @@
-import type { CompactionItem } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem } from '@pulpo/contracts'
+import { recalledChatLabel } from './recall-label'
 
 export type ToolItem = {
   type: 'pulpo_tool'
@@ -27,6 +28,7 @@ export type TimelineStep =
   | { kind: 'tool'; tool: ToolItem }
   | { kind: 'workspace'; workspace: WorkspaceItem }
   | { kind: 'compaction'; compaction: CompactionItem }
+  | { kind: 'recall'; recall: RecallItem }
 
 export type TimelineSegment =
   | { kind: 'activity'; steps: TimelineStep[]; active: boolean }
@@ -51,9 +53,14 @@ export function timelineActivityIsActive(
 }
 
 export function completedActivityLabel(steps: TimelineStep[], durationMs?: number): string {
+  const recall = steps.find((step) => step.kind === 'recall')
+  const hasReasoning = steps.some((step) => step.kind === 'reasoning' && Boolean(step.text))
+  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
+  if (recall?.kind === 'recall' && !hasReasoning && !worked) {
+    return recalledChatLabel(recall.recall.sources.length)
+  }
   const resolvedDurationMs = durationMs ?? activityDurationMs(steps)
   const seconds = resolvedDurationMs === undefined ? null : Math.max(0, Math.round(resolvedDurationMs / 1000))
-  const worked = steps.some((step) => step.kind === 'tool' || step.kind === 'workspace')
   return `${worked ? 'Worked' : 'Thought'}${seconds === null ? '' : ` for ${seconds}s`}`
 }
 
@@ -134,6 +141,11 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
   for (const item of output) {
     const value = item as Record<string, unknown>
     if (value.type === 'pulpo_workspace') continue
+    if (value.type === 'pulpo_recall') {
+      activity ??= { kind: 'activity', steps: [], active: false }
+      activity.steps.push({ kind: 'recall', recall: item as RecallItem })
+      continue
+    }
     if (value.type === 'pulpo_compaction') {
       flush()
       const compaction = item as CompactionItem
@@ -189,6 +201,7 @@ export function buildMessageTimeline(output: unknown[], showReasoning: boolean):
 
 export function activityDurationMs(steps: TimelineStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
+    if (step.kind === 'recall') return []
     if (step.kind === 'reasoning') return step.durationMs === undefined ? [] : [step.durationMs]
     const duration = step.kind === 'tool'
       ? step.tool.durationMs

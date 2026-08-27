@@ -1,6 +1,6 @@
 import OpenAI, { toFile } from 'openai'
 import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
-import { applyResponseEventToSnapshot, type CompactionItem, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
+import { applyResponseEventToSnapshot, type CompactionItem, type RecallItem, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   chats,
@@ -11,7 +11,6 @@ import {
   responseItems,
   responses,
   userPreferences,
-  memories,
   applicationSettings,
   requestLogs,
   generationAttempts,
@@ -40,6 +39,9 @@ import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
+import { responseInputText } from '../messages/input.js'
+import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
+import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -189,6 +191,7 @@ async function contextualInput(
   record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect },
   history: Array<typeof responses.$inferSelect>,
   requestLogId: string,
+  recallItem: RecallItem | null,
   publicApi: boolean,
   onCompactionUpdate: (item: CompactionItem) => Promise<void>,
   onBilledCost: (costMicros: number) => void,
@@ -201,12 +204,14 @@ async function contextualInput(
   const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
   const customInstructions = publicApi ? '' : composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
   const enabledMemories = values.memoryEnabled
-    ? await db.select().from(memories).where(and(eq(memories.userId, record.response.userId), eq(memories.enabled, true)))
+    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
     : []
   const context: unknown[] = []
   if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
   if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
-  if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory.content}`).join('\n')}` })
+  if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory}`).join('\n')}` })
+  const recallContext = recalledChatContext(recallItem)
+  if (recallContext) context.push({ role: 'developer', content: recallContext })
   const existingItem = (record.response.output as unknown[]).find((raw): raw is CompactionItem => {
     const item = raw as Partial<CompactionItem>
     return item.type === 'pulpo_compaction' && item.phase === 'pre_response'
@@ -248,7 +253,7 @@ async function contextualInput(
   })
   if (!compacted.item && existingItem) {
     const updatedAt = new Date()
-    await db.update(responses).set({ output: [], updatedAt }).where(eq(responses.id, record.response.id))
+    await db.update(responses).set({ output: recallItem ? [recallItem] : [], updatedAt }).where(eq(responses.id, record.response.id))
     const [updated] = await db.select().from(responses).where(eq(responses.id, record.response.id)).limit(1)
     if (updated) await publishSnapshot(toSnapshot(updated))
   }
@@ -279,8 +284,10 @@ async function processGenerationAttempt(
   })
   if (record.response.executionMode === 'background' && record.response.openaiResponseId) {
     const openaiResponseId = record.response.openaiResponseId
+    const contextItems = (record.response.output as unknown[]).filter((item) => (
+      ['pulpo_recall', 'pulpo_compaction'].includes((item as { type?: string }).type ?? '')
+    ))
     const recoveryInclude = responseIncludeParameter(record.response.parameters)
-    const compactionItems = (record.response.output as unknown[]).filter((item) => (item as { type?: string }).type === 'pulpo_compaction')
     await db.update(responses).set({ status: 'in_progress', error: null, completedAt: null, updatedAt: new Date() }).where(eq(responses.id, responseId))
     try {
       try {
@@ -298,7 +305,7 @@ async function processGenerationAttempt(
           const event: ResponseEvent = { responseId, sequence: localSequence, type: upstream.type, payload: upstream, emittedAt: new Date().toISOString() }
           await publishResponseEvent(event)
           const upstreamResponse = upstream.response as { output?: unknown[]; usage?: unknown } | undefined
-          recoveredOutput = upstreamResponse?.output ? [...compactionItems, ...upstreamResponse.output] : accumulateEventOutput(recoveredOutput, event)
+          recoveredOutput = upstreamResponse?.output ? [...contextItems, ...upstreamResponse.output] : accumulateEventOutput(recoveredOutput, event)
           recoveredUsage = upstreamResponse?.usage ? normalizeUsage(upstreamResponse.usage) : recoveredUsage
           await db.update(responses).set({
             output: recoveredOutput,
@@ -323,7 +330,7 @@ async function processGenerationAttempt(
           await new Promise((resolve) => setTimeout(resolve, 2_000))
           continue
         }
-        const output = [...compactionItems, ...(recovered.output as unknown[])]
+        const output = [...contextItems, ...(recovered.output as unknown[])]
         const usage = normalizeUsage(recovered.usage)
         const providerCostMicros = record.model.useProviderCost ? providerReportedCostMicros(recovered.usage) : undefined
         let status: typeof responses.$inferSelect.status = recovered.status === 'completed' ? 'completed'
@@ -396,7 +403,28 @@ async function processGenerationAttempt(
     onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
   })
   let sequence = record.response.lastSequence
-  const contextual = await contextualInput(client, record, history, requestLog.id, Boolean(requestLog.apiKeyId), async (item) => {
+  const publicApi = Boolean(requestLog.apiKeyId)
+  const existingRecallItem = publicApi ? null : recallItemFromOutput(record.response.output, responseId)
+  const recallItem = publicApi ? null : existingRecallItem ?? await retrieveAutomaticRecall({
+    responseId,
+    userId: record.response.userId,
+    currentChatId: record.response.chatId,
+    query: responseInputText(record.response.input),
+  })
+  const recallItems = recallItem ? [recallItem] : []
+  if (recallItem && !existingRecallItem) {
+    sequence += 1
+    const emittedAt = new Date().toISOString()
+    await publishResponseEvent({ responseId, sequence, type: 'pulpo.recall.completed', payload: recallItem, emittedAt })
+    await db.update(responses).set({
+      status: 'in_progress',
+      output: recallItems,
+      lastSequence: sequence,
+      startedAt: record.response.startedAt ?? new Date(emittedAt),
+      updatedAt: new Date(emittedAt),
+    }).where(eq(responses.id, responseId))
+  }
+  const contextual = await contextualInput(client, record, history, requestLog.id, recallItem, publicApi, async (item) => {
     sequence += 1
     const emittedAt = new Date().toISOString()
     const publicItem = sanitizeOutputForClient([item])[0]
@@ -404,7 +432,7 @@ async function processGenerationAttempt(
     const updatedAt = new Date(emittedAt)
     await db.update(responses).set({
       status: 'in_progress',
-      output: [item],
+      output: [...recallItems, item],
       lastSequence: sequence,
       startedAt: record.response.startedAt ?? updatedAt,
       updatedAt,
@@ -413,7 +441,8 @@ async function processGenerationAttempt(
     if (updated) await publishSnapshot(toSnapshot(updated))
   }, (costMicros) => { sidecarCostMicros += costMicros })
   const input = await prepareInputFiles(client, record.response.userId, contextual.input, record.model, imageInterceptor)
-  let output: unknown[] = [...contextual.compactionItems]
+  const contextItems: unknown[] = [...recallItems, ...contextual.compactionItems]
+  let output: unknown[] = [...contextItems]
   let outputStarted = generationOutputHasStarted(output)
   let usage: ResponseUsage | null = null
   let providerCostMicros: number | undefined
@@ -497,7 +526,7 @@ async function processGenerationAttempt(
         upstreamResponseId = upstreamResponse.id
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
       }
-      output = upstreamResponse?.output ? [...contextual.compactionItems, ...upstreamResponse.output] : accumulateEventOutput(output, event)
+      output = upstreamResponse?.output ? [...contextItems, ...upstreamResponse.output] : accumulateEventOutput(output, event)
       outputStarted ||= generationEventHasStartedOutput(upstream.type, upstream) || generationOutputHasStarted(output)
       if (upstreamResponse?.usage) {
         usage = normalizeUsage(upstreamResponse.usage)

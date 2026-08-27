@@ -677,7 +677,7 @@ export function SettingsModal({
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <Label className="text-sm font-medium">{ui("Memories")}</Label>
-                        <p className="mt-0.5 text-xs text-muted-foreground"> {ui("Allow Pulpo to remember durable facts from future chats.")} </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground"> {ui("Allow Pulpo to save durable facts and recall relevant context from your eligible chats.")} </p>
                       </div>
                       <Switch
                         checked={s.memoryEnabled}

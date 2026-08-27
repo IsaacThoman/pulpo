@@ -1,6 +1,7 @@
 import { hydrateEmbeddedResponseSnapshot, lineageFromLeaf } from '@pulpo/client-core'
 import { mergeResponseSnapshots, type ResponseSnapshot } from '@pulpo/contracts'
 import type { ServerAttachment, ServerChat, ServerResponse } from '../../types'
+import { recalledChatLabel } from './recall-label'
 
 export interface DisplayAttachment {
   id: string
@@ -12,7 +13,7 @@ export interface DisplayAttachment {
 
 export interface ActivityItem {
   id: string
-  kind: 'tool' | 'workspace' | 'compaction'
+  kind: 'tool' | 'workspace' | 'compaction' | 'recall'
   title: string
   detail: string
   status: string
@@ -103,6 +104,19 @@ function activities(output: unknown[]): ActivityItem[] {
       id: value.id ?? `workspace-${index}`, kind: 'workspace' as const, title: 'Agent workspace',
       detail: value.error ?? value.capacity ?? value.state ?? '', status: value.state ?? 'running', durationMs: value.durationMs,
     }]
+    if (value.type === 'pulpo_recall') {
+      const recall = value as typeof value & {
+        sources?: Array<{ title?: string; updated_at?: string; excerpt?: string }>
+      }
+      const sources = recall.sources ?? []
+      return [{
+        id: value.id ?? `recall-${index}`,
+        kind: 'recall',
+        title: recalledChatLabel(sources.length),
+        detail: sources.map((source) => [source.title, source.updated_at, source.excerpt].filter(Boolean).join('\n')).join('\n\n'),
+        status: 'completed',
+      }]
+    }
     if (value.type === 'pulpo_compaction') {
       const compaction = value as typeof value & {
         summary?: string

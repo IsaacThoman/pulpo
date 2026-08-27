@@ -1,6 +1,6 @@
 # Pulpo software privacy policy
 
-**Effective August 20, 2026**
+**Effective August 27, 2026**
 
 ::: tip Using pulpo.baby?
 This policy covers the Pulpo mobile app and self-hosted Pulpo software. If you use the hosted service at [pulpo.baby](https://pulpo.baby), the [Pulpo hosted service privacy policy](./privacy-hosted) also applies to the information handled by that service.
@@ -30,9 +30,19 @@ To provide their features, Pulpo clients send applicable account and authenticat
 
 If you use a self-hosted or third-party Pulpo instance, its operator—not the developer merely by providing the software—controls that instance’s collection, storage, access, retention, deletion, provider configuration, and security practices. Review the operator’s privacy information before using its service.
 
+## Memories and relevant-chat recall
+
+The Memories setting controls both saved fact memories and relevant-chat recall. Relevant-chat recall operates only when the user has enabled Memories and the instance administrator has enabled episodic memory. When both settings are on, the server automatically creates a searchable index from eligible normal conversations and enabled saved facts, including a backfill of existing eligible content. Temporary conversations, trashed or expired conversations, inactive response branches, reasoning, tool output, workspace data, and raw attachment contents are not indexed.
+
+The default self-hosted Compose deployment generates embeddings through Ollama on the instance’s internal network. It does not send text to the configured AI model provider merely to create an embedding. An operator can override `PULPO_OLLAMA_URL`, including with a service on another host; in that case, eligible text is sent to the endpoint chosen by that operator. If Pulpo recalls a relevant excerpt while answering a request, the excerpt becomes part of the normal model context and may therefore be sent to the AI provider selected for that response.
+
+Turning Memories off cancels outstanding indexing and deletes that user’s chat and saved-memory embedding rows across all model generations. Existing saved fact records are retained, but are no longer used while Memories is off. Turning episodic memory off at the instance level stops indexing and recall but retains the dormant index so it can resume if an administrator re-enables it. Deleting a conversation removes its derived embedding rows with it. Full instance backups include episodic-memory operational data and embeddings; ordinary chat exports contain conversations and responses, not derived embeddings.
+
+The administrator dashboard records hourly aggregate counts, latency histograms, errors, queue health, and index coverage for episodic-memory operations. These operational statistics do not contain prompts, excerpts, chat or user identifiers, or per-user activity.
+
 ## Your choices and deletion
 
-The Pulpo app provides controls to edit certain profile information, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. Requests concerning an account or information held on a server must be directed to that server’s operator.
+The Pulpo app provides controls to edit certain profile information, enable or disable Memories, move individual or all conversations to Trash for deletion under the selected server’s retention settings, change servers, and sign out. Requests concerning an account or information held on a server must be directed to that server’s operator.
 
 For requests involving `pulpo.baby`, see the [hosted service privacy policy](./privacy-hosted). For a different Pulpo instance, contact the organization or person operating that instance.
 

@@ -1,10 +1,10 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
 import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
-import type { CompactionItem, ResponseSnapshot } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, memories, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -47,6 +47,11 @@ import { providerCacheRequestOptions } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
+import { responseInputText } from '../messages/input.js'
+import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
+import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
+import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
+import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -138,13 +143,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow, personalizationRow, loggingRow, preferencesRow] = await Promise.all([
+  const [settingsRow, webToolsRow, personalizationRow, loggingRow, preferencesRow, episodicMemorySettings] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
     db.select({ values: userPreferences.values }).from(userPreferences)
       .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
+    readEpisodicMemorySettings(),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
@@ -155,17 +161,23 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     preferenceValues,
   )
   const enabledMemories = preferenceValues.memoryEnabled
-    ? await db.select({ content: memories.content }).from(memories).where(and(
-      eq(memories.userId, record.response.userId),
-      eq(memories.enabled, true),
-    ))
+    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
     : []
-  const currentAgentSystemPrompt = buildAgentSystemPrompt(
+  const existingRecallItem = recallItemFromOutput(record.response.output, responseId)
+  const recallItem = existingRecallItem ?? await retrieveAutomaticRecall({
+    responseId,
+    userId: record.response.userId,
+    currentChatId: record.response.chatId,
+    query: responseInputText(record.response.input),
+  })
+  const recallContext = recalledChatContext(recallItem)
+  const baseAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
-    enabledMemories.map((memory) => memory.content),
+    enabledMemories,
   )
+  const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(
     eq(responses.chatId, record.response.chatId),
@@ -297,6 +309,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   const compactionItems: CompactionItem[] = (record.response.output as unknown[]).filter((raw): raw is CompactionItem => (
     (raw as { type?: string }).type === 'pulpo_compaction'
   ))
+  const recallItems: RecallItem[] = recallItem ? [recallItem] : []
   let workspaceItem: Record<string, unknown> | undefined
   let workspaceStartedAtMs: number | undefined
   let workspaceReadyAtMs: number | undefined
@@ -318,6 +331,16 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     })
     emissionQueue = emission
     return emission
+  }
+  if (recallItem && !existingRecallItem) {
+    await emit('pulpo.recall.completed', recallItem)
+    await db.update(responses).set({
+      status: 'in_progress',
+      output: streamProjection.output,
+      lastSequence: streamProjection.sequence,
+      startedAt: record.response.startedAt ?? new Date(),
+      updatedAt: new Date(),
+    }).where(eq(responses.id, responseId))
   }
   let agent!: Agent
   const activateFallbackRuntime = async (fromIndex: number): Promise<boolean> => {
@@ -354,6 +377,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         attachmentItems,
         workspaceItem,
         compactionItems,
+        recallItems,
         turnDurationsMs,
         streaming: false,
         terminal: true,
@@ -531,6 +555,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     onProviderAttempts: (operationId, execution) => { webProviderExecutions.set(operationId, execution) },
     reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
   })
+  const episodicMemoryTools = episodicMemorySettings.enabled && preferenceValues.memoryEnabled === true
+    ? createEpisodicMemoryTools({
+        userId: record.response.userId,
+        currentChatId: record.response.chatId,
+        maxOutputBytes: settings.maxToolOutputBytes,
+        onOperationStarted: markToolStarted,
+      })
+    : []
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -566,7 +598,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     initialState: {
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
-      tools: [...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile), ...configuredWebTools],
+      tools: [
+        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
+        ...configuredWebTools,
+        ...episodicMemoryTools,
+      ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
     },

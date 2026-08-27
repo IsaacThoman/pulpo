@@ -26,6 +26,10 @@ import {
   weeklyUsagePeriods,
   poolMembers,
   poolInvitations,
+  chatTurnEmbeddings,
+  savedMemoryEmbeddings,
+  episodicMemoryGenerations,
+  episodicMemoryMetricBuckets,
   queuedMessages,
   requestLogs,
   responses,
@@ -137,6 +141,17 @@ describe('user-owned operational records', () => {
     expect(migration).toContain('responses_user_scope_idempotency_unique')
   })
 
+  it('repairs compatibility columns skipped by previously deployed migration order', () => {
+    const migration = readFileSync(new URL('../../drizzle/0050_repair_openai_compatibility_drift.sql', import.meta.url), 'utf8')
+
+    expect(migration).toContain('DROP INDEX IF EXISTS "responses_user_idempotency_unique"')
+    for (const column of ['metadata', 'incomplete_details', 'idempotency_scope', 'idempotency_fingerprint']) {
+      expect(migration).toContain(`ADD COLUMN IF NOT EXISTS "${column}"`)
+    }
+    expect(migration).toContain("'api:' || COALESCE(\"log\".\"api_key_id\"::text, 'legacy') || ':responses'")
+    expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "responses_user_scope_idempotency_unique"')
+  })
+
   it('uses Stripe billing identifiers and keeps platform and processing fees separate', () => {
     const accountConfig = getTableConfig(billingAccounts)
     const checkoutConfig = getTableConfig(billingCheckouts)
@@ -177,5 +192,51 @@ describe('user-owned operational records', () => {
     expect(config.indexes.map((item) => item.config.name)).toContain('invite_codes_owner_idx')
     const ownerFk = config.foreignKeys.find((foreignKey) => foreignKey.getName() === 'invite_codes_owner_user_id_users_id_fk')
     expect(ownerFk?.onDelete).toBe('cascade')
+  })
+
+  it('stores isolated episodic-memory generations and user-owned vectors', () => {
+    const generationConfig = getTableConfig(episodicMemoryGenerations)
+    const chatConfig = getTableConfig(chatTurnEmbeddings)
+    const memoryConfig = getTableConfig(savedMemoryEmbeddings)
+    expect(generationConfig.indexes.find((item) => item.config.name === 'episodic_memory_generations_active_unique')?.config.unique).toBe(true)
+    expect(generationConfig.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'episodic_memory_generations_profile_check',
+      'episodic_memory_generations_dimension_check',
+      'episodic_memory_generations_status_check',
+    ]))
+    expect(chatConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      'chat_turn_embeddings_generation_response_unique',
+      'chat_turn_embeddings_user_generation_idx',
+      'chat_turn_embeddings_search_idx',
+    ]))
+    expect(memoryConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      'saved_memory_embeddings_generation_memory_unique',
+      'saved_memory_embeddings_user_generation_idx',
+      'saved_memory_embeddings_search_idx',
+    ]))
+    expect(chatConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+    expect(memoryConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+  })
+
+  it('stores only fixed aggregate episodic-memory metrics', () => {
+    const config = getTableConfig(episodicMemoryMetricBuckets)
+    expect(config.primaryKeys).toHaveLength(1)
+    expect(config.primaryKeys[0]!.columns.map((column) => column.name)).toEqual(['bucket_start', 'metric'])
+    expect(config.indexes.map((item) => item.config.name)).toContain('episodic_memory_metric_buckets_metric_time_idx')
+    expect(config.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'episodic_memory_metric_buckets_metric_check',
+      'episodic_memory_metric_buckets_counts_check',
+    ]))
+    expect(config.columns.map((column) => column.name)).not.toEqual(expect.arrayContaining([
+      'user_id', 'chat_id', 'query', 'prompt', 'excerpt', 'content',
+    ]))
+  })
+
+  it('keeps the renumbered episodic-memory migration compatible with existing preview databases', () => {
+    const migration = readFileSync(new URL('../../drizzle/0049_episodic_memory.sql', import.meta.url), 'utf8')
+
+    expect(migration.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(4)
+    expect(migration.match(/EXCEPTION WHEN duplicate_object THEN NULL/g)).toHaveLength(7)
+    expect(migration.match(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS/g)).toHaveLength(10)
   })
 })

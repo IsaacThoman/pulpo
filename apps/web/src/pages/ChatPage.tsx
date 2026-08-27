@@ -490,6 +490,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                   streaming={m.role === 'assistant' && !m.done}
                   activeModelId={modelId}
                   onEditUserMessage={beginMessageEdit}
+                  onOpenChat={(sourceChatId) => navigate(`/c/${sourceChatId}`)}
                   composerEditActive={composerEditActive || Boolean(messageEdit)}
                 />
               ))}

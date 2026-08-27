@@ -38,6 +38,35 @@ function response(input: {
 }
 
 describe('projectChat branch variants', () => {
+  it('projects persisted recalled-chat activity and raw source metadata', () => {
+    const serverResponse = response({
+      id: 'response-recall', text: 'What did we decide?', output: 'We chose a parallel rebuild.',
+      branchIds: ['response-recall'], branchIndex: 0,
+    })
+    const recall = {
+      id: 'response-recall:recall', type: 'pulpo_recall', status: 'completed',
+      sources: [{
+        chat_id: '00000000-0000-4000-8000-000000000001',
+        response_id: '00000000-0000-4000-8000-000000000002',
+        title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+        excerpt: 'Use a parallel index generation during model changes.',
+      }],
+    }
+    serverResponse.output = [recall, ...serverResponse.output]
+    serverResponse.snapshot = { ...serverResponse.snapshot, output: serverResponse.output }
+    const chat = {
+      id: 'chat-1', title: 'Recall', modelId: 'model-1', pinned: false, folderId: null,
+      sortOrder: 0, temporary: false, activeResponseId: serverResponse.id, activeBranchLeafId: serverResponse.id,
+      createdAt: '2026-08-27T00:00:00.000Z', updatedAt: '2026-08-27T00:00:01.000Z', responses: [serverResponse],
+    } satisfies ServerChat
+
+    const assistant = projectChat(chat, {}).find((message) => message.role === 'assistant')
+    expect(assistant?.activity).toMatchObject([{
+      kind: 'recall', title: 'Recalled from 1 chat', detail: expect.stringContaining('Earlier architecture chat'),
+    }])
+    expect(assistant?.outputItems[0]).toEqual(recall)
+  })
+
   it('retains each regenerated assistant branch body', () => {
     const branchIds = ['response-a', 'response-b']
     const responses = [

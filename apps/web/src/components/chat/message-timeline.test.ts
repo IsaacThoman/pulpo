@@ -31,6 +31,18 @@ function tool(id: string, options: { running?: boolean; durationMs?: number } = 
   }
 }
 
+function recall() {
+  return {
+    id: 'response-1:recall', type: 'pulpo_recall', status: 'completed',
+    sources: [{
+      chat_id: '00000000-0000-4000-8000-000000000001',
+      response_id: '00000000-0000-4000-8000-000000000002',
+      title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+      excerpt: 'Use a parallel index generation during model changes.',
+    }],
+  }
+}
+
 function onlyActivity(output: unknown[], showReasoning = true): ActivitySegment {
   const timeline = buildTimeline(output, showReasoning)
   expect(timeline).toHaveLength(1)
@@ -54,6 +66,13 @@ describe('buildTimeline', () => {
       'reasoning',
       'tool',
     ])
+  })
+
+  it('keeps recalled sources in the same activity group as subsequent work', () => {
+    const timeline = buildTimeline([recall(), reasoning('Compare the prior plan.'), tool('read'), message('Answer')], true)
+
+    expect(timeline.map((segment) => segment.kind)).toEqual(['activity', 'text'])
+    expect((timeline[0] as ActivitySegment).steps.map((step) => step.kind)).toEqual(['recall', 'reasoning', 'tool'])
   })
 
   it('ignores whitespace-only and repeated empty message parts', () => {
