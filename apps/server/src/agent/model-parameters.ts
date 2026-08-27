@@ -23,3 +23,24 @@ export function resolveAgentModelParameters(
   const parameters = resolveModelParameters(model, responseParameters)
   return { parameters, reasoning: agentThinkingLevel(parameters, fallbackReasoning) }
 }
+
+function supportsEncryptedReasoningInclude(baseUrl: string): boolean {
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase()
+    return hostname === 'api.openai.com'
+      || hostname.endsWith('.openai.azure.com')
+      || hostname.endsWith('.services.ai.azure.com')
+  } catch {
+    return false
+  }
+}
+
+/** Avoid the Agents SDK's encrypted-reasoning projection on strict compatible proxies. */
+export function agentSamplingParameters(
+  baseUrl: string,
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  return supportsEncryptedReasoningInclude(baseUrl)
+    ? parameters
+    : { ...parameters, include: undefined }
+}
