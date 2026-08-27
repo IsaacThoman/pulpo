@@ -15,6 +15,7 @@ import {
   type PublicGenerationRequest,
 } from './codecs.js'
 import { publicIdempotencyScope, publicRequestFingerprint } from './idempotency.js'
+import { namespacePublicRequestIdentifiers } from './request-identifiers.js'
 
 type ApiKeyIdentity = { id: string; userId: string }
 
@@ -124,6 +125,7 @@ export async function executePublicGeneration(input: {
   idempotencyKey?: string
 }) {
   const fingerprint = publicRequestFingerprint(input.request.fingerprintValue)
+  const parameters = namespacePublicRequestIdentifiers(input.request.parameters, input.key.id)
   const existing = await findIdempotentResponse({
     key: input.key,
     protocol: input.request.protocol,
@@ -161,7 +163,7 @@ export async function executePublicGeneration(input: {
           agentMode: false,
         },
         rawInput: input.request.rawInput,
-        parameters: input.request.parameters,
+        parameters,
       })
       if (created.chatId !== chatId) await db.delete(chats).where(eq(chats.id, chatId))
     } catch (error) {

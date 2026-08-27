@@ -5,7 +5,7 @@ describe('model request parameters', () => {
   it('identifies the exact unsupported public parameter before queueing', () => {
     expect(unsupportedPublicModelParameter(
       { allowedParameters: ['temperature'] },
-      { instructions: 'safe protocol field', temperature: 0.2, tools: [] },
+      { instructions: 'safe protocol field', include: ['reasoning.encrypted_content'], temperature: 0.2, tools: [] },
     )).toBe('tools')
     expect(unsupportedPublicModelParameter(
       { allowedParameters: ['temperature', 'tools'] },
@@ -66,6 +66,23 @@ describe('model request parameters', () => {
       tools,
       tool_choice: 'auto',
     })
+  })
+
+  it('forwards public protocol fields while keeping model behavior allowlisted', () => {
+    const parameters = {
+      include: ['reasoning.encrypted_content'],
+      prompt_cache_key: 'opaque-cache-key',
+      safety_identifier: 'opaque-safety-id',
+      stream_options: { include_obfuscation: false },
+      top_logprobs: 5,
+      truncation: 'auto',
+    }
+
+    expect(unsupportedPublicModelParameter({ allowedParameters: [] }, parameters)).toBe('top_logprobs')
+    expect(resolveModelParameters({
+      allowedParameters: ['top_logprobs', 'truncation'],
+      defaultParameters: {},
+    }, parameters, { publicApi: true })).toEqual(parameters)
   })
 
   it('does not let web responses bypass the model allowlist with tool protocol fields', () => {

@@ -192,10 +192,20 @@ describe('public response serialization', () => {
   it('persists metadata and withholds compaction continuation context', () => {
     const serialized = serializePublicResponse(responseRow({ output: [{
       type: 'pulpo_compaction', summary: 'safe', retained_context: [{ secret: true }], retained_context_turns: [{ secret: true }],
+    }, {
+      id: 'reasoning-1', type: 'reasoning', encrypted_content: 'opaque-ciphertext', summary: [],
+    }, {
+      type: 'message', role: 'assistant', content: [{
+        type: 'output_text', text: 'Hello', logprobs: [{ token: 'Hello', logprob: -0.1 }],
+      }],
     }] }))
     expect(serialized.metadata).toEqual({ trace: 'public' })
     expect(serialized.store).toBe(true)
-    expect(serialized.output).toEqual([{ type: 'pulpo_compaction', summary: 'safe', retained_context: [], retained_context_turns: [] }])
+    expect(serialized.output).toEqual([
+      { type: 'pulpo_compaction', summary: 'safe', retained_context: [], retained_context_turns: [] },
+      { id: 'reasoning-1', type: 'reasoning', encrypted_content: 'opaque-ciphertext', summary: [] },
+      { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Hello', logprobs: [{ token: 'Hello', logprob: -0.1 }] }] },
+    ])
   })
 
   it('maps text, tools, usage, and terminal finish reasons', () => {
@@ -219,9 +229,15 @@ describe('completion streaming projections', () => {
     expect(projector.project(event(1, 'response.created', {
       type: 'response.created', response: { id: 'provider-id', model: 'provider-model', status: 'in_progress', output: [] },
     }))).toMatchObject([{ response: { id: '00000000-0000-4000-8000-000000000001', model: 'model-1', metadata: { trace: 'public' } } }])
-    expect(projector.project(event(2, 'response.completed', {
-      type: 'response.completed', response: { id: 'provider-id', model: 'provider-model', status: 'completed', output: [] },
-    }))).toHaveLength(1)
+    expect(projector.project(event(2, 'response.output_text.delta', {
+      type: 'response.output_text.delta', delta: 'Hi', obfuscation: 'padding',
+    }))).toEqual([{ type: 'response.output_text.delta', delta: 'Hi', obfuscation: 'padding' }])
+    expect(projector.project(event(3, 'response.completed', {
+      type: 'response.completed', response: {
+        id: 'provider-id', model: 'provider-model', status: 'completed',
+        output: [{ id: 'reasoning-1', type: 'reasoning', encrypted_content: 'opaque-ciphertext', summary: [] }],
+      },
+    }))).toMatchObject([{ response: { output: [{ encrypted_content: 'opaque-ciphertext' }] } }])
     expect(projector.finish(responseRow())).toEqual([])
   })
 
@@ -274,24 +290,75 @@ describe('Responses request codec', () => {
     })
   })
 
-  it('honors store, fingerprints its retrieval semantics, and ignores harmless compatibility fields', () => {
+  it('honors store and forwards safe compatibility fields', () => {
     const parsed = parseResponsesRequest({
-      model: 'm', input: 'hi', store: false, service_tier: 'flex', include: [],
-      stream_options: { include_obfuscation: false }, safety_identifier: 'hashed-user', future_option: true,
+      model: 'm', input: 'hi', store: false, service_tier: 'flex', stream: true,
+      include: ['reasoning.encrypted_content', 'message.output_text.logprobs', 'reasoning.encrypted_content'],
+      prompt_cache_key: 'thread-1', prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+      prompt_cache_retention: '24h', stream_options: { include_obfuscation: false },
+      safety_identifier: 'hashed-user', user: 'legacy-user', top_logprobs: 5, truncation: 'auto',
+      future_option: true,
     })
     expect(parsed).toMatchObject({
       publiclyStored: false,
-      parameters: { service_tier: 'flex' },
+      parameters: {
+        service_tier: 'flex',
+        include: ['message.output_text.logprobs', 'reasoning.encrypted_content'],
+        prompt_cache_key: 'thread-1', prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+        prompt_cache_retention: '24h', stream_options: { include_obfuscation: false },
+        safety_identifier: 'hashed-user', top_logprobs: 5, truncation: 'auto',
+      },
       fingerprintValue: { store: false },
     })
-    expect(parsed.ignoredParameters).toEqual(['future_option', 'include', 'safety_identifier', 'stream_options'])
+    expect(parsed.ignoredParameters).toEqual(['future_option', 'user'])
     expect(serializePublicResponse(responseRow({ publiclyStored: false })).store).toBe(false)
+  })
+
+  it('maps deprecated user into missing cache and safety identifiers', () => {
+    expect(parseResponsesRequest({ model: 'm', input: 'hi', user: 'legacy-user' }).parameters).toMatchObject({
+      prompt_cache_key: 'legacy-user',
+      safety_identifier: 'legacy-user',
+    })
+    expect(parseResponsesRequest({
+      model: 'm', input: 'hi', user: 'legacy-user', safety_identifier: 'explicit-safety',
+    }).parameters).toMatchObject({
+      prompt_cache_key: 'legacy-user',
+      safety_identifier: 'explicit-safety',
+    })
+  })
+
+  it('preserves encrypted reasoning input for stateless replay', () => {
+    const input = [{ id: 'reasoning-1', type: 'reasoning', encrypted_content: 'opaque-ciphertext', summary: [] }]
+    expect(parseResponsesRequest({ model: 'm', input, include: ['reasoning.encrypted_content'] }).rawInput).toEqual(input)
+  })
+
+  it('canonicalizes include ordering for idempotent retries', () => {
+    const first = parseResponsesRequest({
+      model: 'm', input: 'hi',
+      include: ['reasoning.encrypted_content', 'message.output_text.logprobs'],
+    })
+    const second = parseResponsesRequest({
+      model: 'm', input: 'hi',
+      include: ['message.output_text.logprobs', 'reasoning.encrypted_content', 'message.output_text.logprobs'],
+    })
+    expect(first.fingerprintValue).toEqual(second.fingerprintValue)
   })
 
   it('defaults Responses storage on and rejects unsupported behavior-changing values', () => {
     expect(parseResponsesRequest({ model: 'm', input: 'hi' }).publiclyStored).toBe(true)
     expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', previous_response_id: 'resp_1' }), 'previous_response_id')
-    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', stream_options: { include_obfuscation: true } }), 'stream_options')
+    expect(() => parseResponsesRequest({ model: 'm', input: 'hi', stream_options: { include_obfuscation: true } }))
+      .toThrowError(expect.objectContaining({ code: 'parameter_conflict', param: 'stream_options' }))
+    expect(parseResponsesRequest({
+      model: 'm', input: 'hi', stream_options: { include_obfuscation: false },
+    }).ignoredParameters).toContain('stream_options')
+    expect(parseResponsesRequest({ model: 'm', input: 'hi', truncation: 'disabled' }).ignoredParameters).toContain('truncation')
+    expect(() => parseResponsesRequest({ model: 'm', input: 'hi', safety_identifier: 'x'.repeat(65) })).toThrow()
+  })
+
+  it('rejects unknown and hosted-tool include projections', () => {
+    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', include: ['future.output'] }), 'include')
+    expectUnsupported(() => parseResponsesRequest({ model: 'm', input: 'hi', include: ['web_search_call.action.sources'] }), 'include')
   })
 
   it('rejects custom tools and deferred audio/file input parts', () => {
