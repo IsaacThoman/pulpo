@@ -7,6 +7,7 @@ import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/applic
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
 import { trackBilledInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
+import { scheduleUserIndex } from '../episodic-memory/queue.js'
 
 export const TITLE_MAX_OUTPUT_TOKENS = 1_024
 export const TITLE_VALIDATION_ATTEMPTS = 3
@@ -187,10 +188,13 @@ export async function runPostResponseTasks(
     const parsed = JSON.parse(memoryResult.result.output_text.replace(/^```json\s*|```$/g, '').trim()) as unknown
     if (!Array.isArray(parsed)) return costMicros
     const existing = new Set((await db.select({ content: memories.content }).from(memories).where(eq(memories.userId, record.response.userId))).map((row) => row.content.toLowerCase()))
+    let inserted = false
     for (const content of parsed.slice(0, 3)) {
       if (typeof content !== 'string' || !content.trim() || existing.has(content.trim().toLowerCase())) continue
       await db.insert(memories).values({ id: newId(), userId: record.response.userId, sourceChatId: record.response.chatId, content: content.trim().slice(0, 2_000) })
+      inserted = true
     }
+    if (inserted) await scheduleUserIndex(record.response.userId, 'saved-memory-extracted')
   } catch { /* malformed task output is non-fatal */ }
   return costMicros
 }

@@ -8,11 +8,13 @@ import { applicationSettings, memories, userPreferences, users } from '../databa
 import { newId } from '../lib/ids.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
-import { maintenanceQueue } from '../jobs.js'
+import { embeddingQueue, maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
 import { normalizedPreferencePatch, preferencesWithModelDefaults } from './model-preferences.js'
 import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../chats/expiration.js'
 import { parseAuthSettings, parsePersonalizationSettings } from './application-settings.js'
+import { deleteUserEpisodicMemory } from '../episodic-memory/indexer.js'
+import { scheduleUserIndex } from '../episodic-memory/queue.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -56,7 +58,11 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('newChatAutoExpire' in patch && !newChatAutoExpireSchema.safeParse(patch.newChatAutoExpire).success) {
       throw new AppError(400, 'invalid_new_chat_expiration', 'Choose whether new chats should expire automatically')
     }
+    if ('memoryEnabled' in patch && typeof patch.memoryEnabled !== 'boolean') {
+      throw new AppError(400, 'invalid_memory_setting', 'Choose whether Memories should be enabled')
+    }
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
+    let previousMemoryEnabled = false
     let saved: typeof userPreferences.$inferSelect | undefined
     let stateRevision: number | undefined
     await db.transaction(async (tx) => {
@@ -65,6 +71,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       const [existing] = await tx.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
       previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
+      previousMemoryEnabled = (existing?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled === true
       const insertValues = preferencesWithModelDefaults(patch)
       const defaults = JSON.stringify(preferencesWithModelDefaults())
       const patchJson = JSON.stringify(patch)
@@ -88,6 +95,16 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
         jobId: `purge-chats-settings-${user.id}-${Date.now()}`,
       })
     }
+    if ('memoryEnabled' in patch && patch.memoryEnabled !== previousMemoryEnabled) {
+      const enabled = patch.memoryEnabled === true
+      if (!enabled) {
+        const jobs = await embeddingQueue.getJobs(['waiting', 'delayed', 'prioritized'])
+        await Promise.all(jobs.filter((job) => 'userId' in job.data && job.data.userId === user.id).map((job) => job.remove()))
+        await deleteUserEpisodicMemory(user.id)
+      } else {
+        await scheduleUserIndex(user.id, 'memory-consent-enabled')
+      }
+    }
     return { values: saved!.values, updatedAt: saved!.updatedAt.toISOString() }
   })
 
@@ -100,6 +117,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     const user = requireUser(request)
     const input = z.object({ content: z.string().trim().min(1).max(2_000), sourceChatId: z.uuid().nullable().default(null) }).parse(request.body)
     const [created] = await db.insert(memories).values({ id: newId(), userId: user.id, ...input }).returning()
+    await scheduleUserIndex(user.id, 'saved-memory-created')
     reply.code(201)
     return created
   })
@@ -109,6 +127,7 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     const { id } = request.params as { id: string }
     const deleted = await db.delete(memories).where(and(eq(memories.id, id), eq(memories.userId, user.id))).returning({ id: memories.id })
     if (!deleted.length) throw notFound('Memory')
+    await scheduleUserIndex(user.id, 'saved-memory-deleted')
     reply.code(204).send()
   })
 }

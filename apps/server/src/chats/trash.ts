@@ -4,6 +4,7 @@ import { attachments, chats, memories, queuedMessages, responses, userPreference
 import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
+import { scheduleChatIndex } from '../episodic-memory/queue.js'
 
 export const trashRetentionValues = ['instant', '24h', '7d', '30d', '90d', 'indefinite'] as const
 export type TrashRetention = typeof trashRetentionValues[number]
@@ -163,6 +164,7 @@ export async function expireNormalChat(
     cancelChatWork([chatId]),
   ])
   await publishExpiredChat(userId, chatId)
+  await scheduleChatIndex(chatId, userId, 'chat-expired')
   const failed = cleanup.find((result): result is PromiseRejectedResult => result.status === 'rejected')
   if (failed) throw failed.reason
   return true

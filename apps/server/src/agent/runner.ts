@@ -4,7 +4,7 @@ import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { agentRuns, applicationSettings, attachments, chats, generationAttempts, memories, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
+import { agentRuns, applicationSettings, attachments, chats, generationAttempts, models, providerConnections, requestLogs, responses, toolExecutions, userPreferences } from '../database/schema.js'
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
@@ -47,6 +47,8 @@ import { providerCacheRequestOptions } from '../responses/provider-cache.js'
 import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
+import { responseInputText } from '../messages/input.js'
+import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -154,16 +156,13 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     preferenceValues,
   )
   const enabledMemories = preferenceValues.memoryEnabled
-    ? await db.select({ content: memories.content }).from(memories).where(and(
-      eq(memories.userId, record.response.userId),
-      eq(memories.enabled, true),
-    ))
+    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
     : []
   const currentAgentSystemPrompt = buildAgentSystemPrompt(
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
-    enabledMemories.map((memory) => memory.content),
+    enabledMemories,
   )
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
   const allHistory = await db.select().from(responses).where(and(

@@ -11,7 +11,6 @@ import {
   responseItems,
   responses,
   userPreferences,
-  memories,
   applicationSettings,
   requestLogs,
   generationAttempts,
@@ -40,6 +39,8 @@ import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter } from './upstream-request.js'
 import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
+import { responseInputText } from '../messages/input.js'
+import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -200,12 +201,12 @@ async function contextualInput(
   const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
   const customInstructions = composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
   const enabledMemories = values.memoryEnabled
-    ? await db.select().from(memories).where(and(eq(memories.userId, record.response.userId), eq(memories.enabled, true)))
+    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
     : []
   const context: unknown[] = []
   if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
   if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
-  if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory.content}`).join('\n')}` })
+  if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory}`).join('\n')}` })
   const existingItem = (record.response.output as unknown[]).find((raw): raw is CompactionItem => {
     const item = raw as Partial<CompactionItem>
     return item.type === 'pulpo_compaction' && item.phase === 'pre_response'

@@ -1,16 +1,52 @@
 import { and, desc, eq, inArray } from 'drizzle-orm'
 import type { EmbeddingJob } from '../jobs.js'
 import { db } from '../database/client.js'
-import { episodicMemoryGenerations } from '../database/schema.js'
+import { auditEvents, episodicMemoryGenerations } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
 import { readEpisodicMemorySettings } from './settings.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
 import { OllamaClient } from './ollama.js'
+import {
+  activeGeneration,
+  buildAndActivateGeneration,
+  deleteUserEpisodicMemory,
+  EpisodicIndexCancelledError,
+  EpisodicUserMemoryDisabledError,
+  reconcileChatGeneration,
+  reconcileUserGeneration,
+} from './indexer.js'
 
 export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
-  if (job.type !== 'reconcile') return
+  if (job.type === 'delete-user') {
+    await deleteUserEpisodicMemory(job.userId)
+    return
+  }
   const settings = await readEpisodicMemorySettings()
   if (!settings.enabled) return
+  if (job.type === 'index-chat') {
+    const generation = await activeGeneration()
+    if (generation) {
+      try {
+        await reconcileChatGeneration(generation, job.chatId, job.userId)
+      } catch (error) {
+        if (!(error instanceof EpisodicUserMemoryDisabledError)) throw error
+        await deleteUserEpisodicMemory(job.userId)
+      }
+    }
+    return
+  }
+  if (job.type === 'index-user') {
+    const generation = await activeGeneration()
+    if (generation) {
+      try {
+        await reconcileUserGeneration(generation, job.userId)
+      } catch (error) {
+        if (!(error instanceof EpisodicUserMemoryDisabledError)) throw error
+        await deleteUserEpisodicMemory(job.userId)
+      }
+    }
+    return
+  }
   const profile = EPISODIC_MEMORY_PROFILES[settings.profile]
 
   const [active] = await db.select().from(episodicMemoryGenerations)
@@ -64,11 +100,21 @@ export async function processEmbeddingJob(job: EmbeddingJob): Promise<void> {
       status: 'indexing',
       updatedAt: new Date(),
     }).where(eq(episodicMemoryGenerations.id, generationId))
-    // The indexing pass reconciles every eligible chat and performs the atomic activation.
+    await buildAndActivateGeneration(generationId, client)
   } catch (error) {
+    if (error instanceof EpisodicIndexCancelledError) {
+      await db.update(episodicMemoryGenerations).set({
+        status: 'cancelled', error: null, completedAt: new Date(), updatedAt: new Date(),
+      }).where(eq(episodicMemoryGenerations.id, generationId))
+      return
+    }
     await db.update(episodicMemoryGenerations).set({
       status: 'failed', error: error instanceof Error ? error.message : String(error), completedAt: new Date(), updatedAt: new Date(),
     }).where(eq(episodicMemoryGenerations.id, generationId))
+    await db.insert(auditEvents).values({
+      id: newId(), action: 'episodic_memory.failure', targetType: 'episodic_memory_generation', targetId: generationId,
+      metadata: { profile: profile.id, error: error instanceof Error ? error.message : String(error) },
+    })
     throw error
   }
 }

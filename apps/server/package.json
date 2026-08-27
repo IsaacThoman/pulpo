@@ -11,6 +11,7 @@
     "start:worker": "node dist/worker.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/database/migrate.ts",
+    "smoke:episodic-memory": "tsx scripts/episodic-memory-smoke.ts",
     "test": "vitest run"
   },
   "dependencies": {
