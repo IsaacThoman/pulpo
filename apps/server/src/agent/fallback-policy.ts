@@ -23,6 +23,12 @@ export function assistantMessageHasOutput(message: AssistantMessage): boolean {
   })
 }
 
+export function agentStreamEventHasSubstantiveOutput(event: { type: string; delta?: unknown }): boolean {
+  if (event.type === 'toolcall_start') return true
+  if (event.type !== 'text_delta' && event.type !== 'thinking_delta' && event.type !== 'toolcall_delta') return false
+  return typeof event.delta === 'string' ? event.delta.length > 0 : event.delta !== undefined && event.delta !== null
+}
+
 export function isContextFallbackExcluded(errorMessage: string): boolean {
   const message = errorMessage.toLowerCase()
   return message.includes('compaction')
@@ -36,7 +42,11 @@ export function canFallbackAgentTurn(input: {
   cancellationRequested: boolean
   contextRetryAttempted: boolean
 }): boolean {
-  if (input.message.stopReason !== 'error' || input.cancellationRequested || input.contextRetryAttempted) return false
+  if (
+    (input.message.stopReason !== 'error' && input.message.stopReason !== 'aborted')
+    || input.cancellationRequested
+    || input.contextRetryAttempted
+  ) return false
   const error = new Error(input.message.errorMessage || 'Agent model turn failed')
   return !isContextFallbackExcluded(error.message)
     && canFallbackAfterGenerationError(error, input.outputStarted || assistantMessageHasOutput(input.message))
