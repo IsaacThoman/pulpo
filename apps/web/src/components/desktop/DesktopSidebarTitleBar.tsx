@@ -98,6 +98,7 @@ export function DesktopSidebarTitleBar({
       </div>
       <div
         data-collapsed={collapsed ? 'true' : undefined}
+        data-position-animation-active={transitions && !showAboveSidebar ? 'true' : undefined}
         id={MODEL_SLOT_ID}
         className={cn(
           'desktop-model-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 z-[43] flex min-w-0 items-center motion-reduce:transition-none',
