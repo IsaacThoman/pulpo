@@ -22,4 +22,29 @@ describe('persisted agent context', () => {
     expect(JSON.stringify(persisted)).toContain('Viewed /tmp/chart.png')
     expect(messages[0]).toHaveProperty('content.1.data', 'sensitive-base64-data')
   })
+
+  it('removes directly attached image bytes and internal attachment metadata', () => {
+    const messages: AgentMessage[] = [{
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Describe this.' },
+        {
+          type: 'image',
+          mimeType: 'image/png',
+          data: 'attached-base64-data',
+          label: 'photo.png',
+          attachmentId: 'attachment-1',
+          sourceChecksum: 'checksum-1',
+        },
+      ],
+      timestamp: Date.now(),
+    } as AgentMessage]
+
+    const persisted = messagesForPersistence(messages)
+
+    expect(JSON.stringify(persisted)).not.toContain('attached-base64-data')
+    expect(JSON.stringify(persisted)).not.toContain('attachment-1')
+    expect(JSON.stringify(persisted)).not.toContain('checksum-1')
+    expect(JSON.stringify(persisted)).toContain('[Image data omitted from persisted context]')
+  })
 })
