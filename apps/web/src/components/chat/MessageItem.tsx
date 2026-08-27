@@ -275,11 +275,14 @@ function workspaceIsFailed(state?: string) {
 
 function workspaceLabel(item: WorkspaceItem): string {
   if (item.state === 'waiting') {
-    return `Waiting for workspace${typeof item.position === 'number' ? ` · queue #${item.position}` : ''}`
+    return typeof item.position === 'number'
+      ? ui('Waiting for workspace · queue #{{position}}', { position: item.position })
+      : ui('Waiting for workspace')
   }
   if (item.state === 'provisioning') return ui("Starting workspace…")
   if (item.state === 'continuing_without_agent') return ui("Continuing without agent tools")
-  if (workspaceIsFailed(item.state)) return `Workspace ${item.state?.replaceAll('_', ' ') ?? 'unavailable'}`
+  if (item.state === 'expired') return ui('Workspace expired')
+  if (item.state === 'unavailable') return ui('Workspace unavailable')
   if (workspaceIsQuiet(item.state)) return ui("Started workspace")
   return ui("Workspace")
 }
@@ -400,9 +403,11 @@ function ActivityBlock({
     if (active) return ui("Thinking…")
     if (showDuration && durationMs !== undefined) {
       const duration = formatSecondsLabel(durationMs)
-      return hasTools || hasWorkspace ? `Worked for ${duration}` : `Thought for ${duration}`
+      return hasTools || hasWorkspace
+        ? ui('Worked for {{duration}}', { duration })
+        : ui('Thought for {{duration}}', { duration })
     }
-    return hasTools || hasWorkspace ? 'Worked' : 'Thought'
+    return hasTools || hasWorkspace ? ui('Worked') : ui('Thought')
   })()
 
   const triggerIcon = (() => {
