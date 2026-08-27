@@ -561,6 +561,7 @@ const esUi: Record<string, string> = {
   "Loading memories…": "Cargando recuerdos...",
   "Loading Pool…": "Cargando Pool...",
   "Loading preview…": "Cargando vista previa…",
+  "Markdown preview": "Vista previa de Markdown",
   "Loading Pulpo…": "Cargando Pulpo...",
   "Loading settled usage…": "Cargando uso liquidado…",
   "Loading shared chat…": "Cargando chat compartido...",
