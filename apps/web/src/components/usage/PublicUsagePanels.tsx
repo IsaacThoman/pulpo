@@ -1,5 +1,6 @@
 import { useEffect, useRef, type UIEvent } from 'react'
-import { BarChart3, MoreHorizontal, Zap } from 'lucide-react'
+import { UNKNOWN_MODEL_ID } from '@pulpo/contracts'
+import { BarChart3, Zap } from 'lucide-react'
 import { getCatalogModel } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { formatUsd } from '@/lib/format'
@@ -25,10 +26,8 @@ export interface PublicTopModel {
 }
 
 function UsageModelIcon({ modelId }: { modelId: string }) {
-  if (modelId === 'other') {
-    return <span className="grid size-4 shrink-0 place-items-center rounded-[2px] bg-muted"><MoreHorizontal className="size-3" /></span>
-  }
-  return <ModelIcon model={getCatalogModel(modelId)} className="size-4 shrink-0 rounded-[2px]" />
+  const iconModelId = modelId === 'other' ? UNKNOWN_MODEL_ID : modelId
+  return <ModelIcon model={getCatalogModel(iconModelId)} className="size-4 shrink-0 rounded-[2px]" />
 }
 
 export function PublicRecentUsagePanel({

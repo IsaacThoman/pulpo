@@ -1,3 +1,4 @@
+import { UNKNOWN_MODEL_ID } from '@pulpo/contracts'
 import { describe, expect, it } from 'vitest'
 import { canonicalUsageModels, decodeUsageCursor, encodeUsageCursor, publicModel, resolveUsageModelAlias } from './public.js'
 import { usageQuerySchema, usageRecordsQuerySchema } from './routes.js'
@@ -23,6 +24,11 @@ describe('friends leaderboard usage', () => {
   it('hides private model metadata', () => {
     expect(publicModel({ visible: false, id: 'secret-model', name: 'Secret', logo: 'secret' }))
       .toEqual({ id: 'other', name: 'Other', logo: null })
+  })
+
+  it('keeps the unknown model placeholder identifiable', () => {
+    expect(publicModel({ visible: false, id: UNKNOWN_MODEL_ID, name: 'unknown model', logo: 'pulpo' }))
+      .toEqual({ id: UNKNOWN_MODEL_ID, name: 'unknown model', logo: 'pulpo' })
   })
 
   it('combines duplicate display names into their most-used model', () => {
