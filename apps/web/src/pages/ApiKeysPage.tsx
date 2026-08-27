@@ -584,7 +584,7 @@ export function ApiKeysPage() {
             <DialogDescription> {ui("This is the only time the full key will be shown.")} </DialogDescription>
           </DialogHeader>
           <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
-            <code className="min-w-0 flex-1 truncate font-mono text-xs">
+            <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs">
               {revealed ? secret : secret?.replace(/(?<=sk-pulpo-)./g, '•')}
             </code>
             <button
