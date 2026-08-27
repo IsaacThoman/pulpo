@@ -1,3 +1,4 @@
+import { UNKNOWN_MODEL_ID } from '@pulpo/contracts'
 import { AppError } from '../lib/errors.js'
 
 export interface UsageCursor {
@@ -27,7 +28,7 @@ export function publicModel(input: {
   name: string
   logo: string | null
 }): { id: string; name: string; logo: string | null } {
-  return input.visible
+  return input.visible || input.id === UNKNOWN_MODEL_ID
     ? { id: input.id, name: input.name, logo: input.logo }
     : { id: 'other', name: 'Other', logo: null }
 }
