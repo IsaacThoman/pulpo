@@ -29,6 +29,7 @@ const configSchema = z.object({
   POSTGRES_PASSWORD: z.string().default('pulpo'),
   POSTGRES_DATABASE: z.string().min(1).default('pulpo'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
+  PULPO_OLLAMA_URL: z.url().default('http://localhost:11434'),
   SESSION_COOKIE_NAME: z.string().min(1).default('pulpo_session'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   ENCRYPTION_KEY: z.string().min(32).default('development-only-key-change-me-000000'),

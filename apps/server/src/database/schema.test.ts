@@ -24,6 +24,9 @@ import {
   weeklyUsagePeriods,
   poolMembers,
   poolInvitations,
+  chatTurnEmbeddings,
+  savedMemoryEmbeddings,
+  episodicMemoryGenerations,
 } from './schema.js'
 
 describe('user-owned operational records', () => {
@@ -125,5 +128,29 @@ describe('user-owned operational records', () => {
     expect(config.indexes.map((item) => item.config.name)).toContain('invite_codes_owner_idx')
     const ownerFk = config.foreignKeys.find((foreignKey) => foreignKey.getName() === 'invite_codes_owner_user_id_users_id_fk')
     expect(ownerFk?.onDelete).toBe('cascade')
+  })
+
+  it('stores isolated episodic-memory generations and user-owned vectors', () => {
+    const generationConfig = getTableConfig(episodicMemoryGenerations)
+    const chatConfig = getTableConfig(chatTurnEmbeddings)
+    const memoryConfig = getTableConfig(savedMemoryEmbeddings)
+    expect(generationConfig.indexes.find((item) => item.config.name === 'episodic_memory_generations_active_unique')?.config.unique).toBe(true)
+    expect(generationConfig.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'episodic_memory_generations_profile_check',
+      'episodic_memory_generations_dimension_check',
+      'episodic_memory_generations_status_check',
+    ]))
+    expect(chatConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      'chat_turn_embeddings_generation_response_unique',
+      'chat_turn_embeddings_user_generation_idx',
+      'chat_turn_embeddings_search_idx',
+    ]))
+    expect(memoryConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      'saved_memory_embeddings_generation_memory_unique',
+      'saved_memory_embeddings_user_generation_idx',
+      'saved_memory_embeddings_search_idx',
+    ]))
+    expect(chatConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+    expect(memoryConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
   })
 })

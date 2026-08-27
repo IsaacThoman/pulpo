@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   doublePrecision,
   index,
   integer,
@@ -15,6 +16,14 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+
+const halfvec = customType<{ data: number[]; driverData: string }>({
+  dataType: () => 'halfvec',
+  toDriver: (value) => `[${value.join(',')}]`,
+  fromDriver: (value) => value.slice(1, -1).split(',').filter(Boolean).map(Number),
+})
+
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -691,6 +700,75 @@ export const memories = pgTable('memories', {
   enabled: boolean('enabled').notNull().default(true),
   ...timestamps,
 })
+
+export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {
+  id: uuid('id').primaryKey(),
+  profile: text('profile').notNull(),
+  model: text('model').notNull(),
+  modelDigest: text('model_digest'),
+  dimension: integer('dimension').notNull(),
+  status: text('status').notNull().default('pending'),
+  active: boolean('active').notNull().default(false),
+  downloadTotalBytes: bigint('download_total_bytes', { mode: 'number' }).notNull().default(0),
+  downloadCompletedBytes: bigint('download_completed_bytes', { mode: 'number' }).notNull().default(0),
+  totalItems: integer('total_items').notNull().default(0),
+  completedItems: integer('completed_items').notNull().default(0),
+  failedItems: integer('failed_items').notNull().default(0),
+  error: text('error'),
+  cancelRequestedAt: timestamp('cancel_requested_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('episodic_memory_generations_active_unique').on(table.active).where(sql`${table.active} = true`),
+  index('episodic_memory_generations_status_idx').on(table.status, table.createdAt),
+  check('episodic_memory_generations_profile_check', sql`${table.profile} in ('embeddinggemma', 'qwen3-embedding')`),
+  check('episodic_memory_generations_dimension_check', sql`${table.dimension} in (768, 1024)`),
+  check('episodic_memory_generations_status_check', sql`${table.status} in ('pending', 'pulling', 'indexing', 'ready', 'failed', 'cancelled')`),
+  check('episodic_memory_generations_progress_check', sql`${table.downloadTotalBytes} >= 0 and ${table.downloadCompletedBytes} >= 0 and ${table.totalItems} >= 0 and ${table.completedItems} >= 0 and ${table.failedItems} >= 0`),
+])
+
+export const chatTurnEmbeddings = pgTable('chat_turn_embeddings', {
+  id: uuid('id').primaryKey(),
+  generationId: uuid('generation_id').notNull().references(() => episodicMemoryGenerations.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
+  responseId: uuid('response_id').notNull().references(() => responses.id, { onDelete: 'cascade' }),
+  contentHash: text('content_hash').notNull(),
+  chunkText: text('chunk_text').notNull(),
+  searchVector: tsvector('search_vector').notNull().generatedAlwaysAs(sql`to_tsvector('simple', coalesce("chunk_text", ''))`),
+  embedding: halfvec('embedding'),
+  status: text('status').notNull().default('pending'),
+  error: text('error'),
+  indexedAt: timestamp('indexed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('chat_turn_embeddings_generation_response_unique').on(table.generationId, table.responseId),
+  index('chat_turn_embeddings_user_generation_idx').on(table.userId, table.generationId),
+  index('chat_turn_embeddings_chat_idx').on(table.chatId),
+  index('chat_turn_embeddings_search_idx').using('gin', table.searchVector),
+  check('chat_turn_embeddings_status_check', sql`${table.status} in ('pending', 'ready', 'failed')`),
+])
+
+export const savedMemoryEmbeddings = pgTable('saved_memory_embeddings', {
+  id: uuid('id').primaryKey(),
+  generationId: uuid('generation_id').notNull().references(() => episodicMemoryGenerations.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  memoryId: uuid('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
+  contentHash: text('content_hash').notNull(),
+  contentText: text('content_text').notNull(),
+  searchVector: tsvector('search_vector').notNull().generatedAlwaysAs(sql`to_tsvector('simple', coalesce("content_text", ''))`),
+  embedding: halfvec('embedding'),
+  status: text('status').notNull().default('pending'),
+  error: text('error'),
+  indexedAt: timestamp('indexed_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('saved_memory_embeddings_generation_memory_unique').on(table.generationId, table.memoryId),
+  index('saved_memory_embeddings_user_generation_idx').on(table.userId, table.generationId),
+  index('saved_memory_embeddings_search_idx').using('gin', table.searchVector),
+  check('saved_memory_embeddings_status_check', sql`${table.status} in ('pending', 'ready', 'failed')`),
+])
 
 export const apiKeys = pgTable('api_keys', {
   id: uuid('id').primaryKey(),

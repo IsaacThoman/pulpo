@@ -3,7 +3,7 @@ import { and, inArray, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
-import { generationQueue, maintenanceQueue, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { generationQueue, maintenanceQueue, type EmbeddingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
@@ -13,6 +13,7 @@ import { accessibleChatCondition } from './chats/temporary.js'
 import { advanceMessageQueue, recoverMessageQueues } from './chats/message-queue.js'
 import { isTerminalResponseStatus } from './chats/message-queue-policy.js'
 import { reconcileStripeBilling } from './billing/reconciliation.js'
+import { processEmbeddingJob } from './episodic-memory/processor.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -93,6 +94,10 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
   if (job.data.type === 'billing-reconcile') await reconcileStripeBilling()
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
+const embeddingWorker = new Worker<EmbeddingJob>('episodic-memory', async (job) => {
+  await processEmbeddingJob(job.data)
+}, { connection: { url: config.REDIS_URL }, concurrency: 2 })
+
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
 if (config.PULPO_BILLING_ENABLED) {
@@ -129,6 +134,7 @@ const shutdown = async (signal: string) => {
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
   clearInterval(concurrencyRefreshInterval)
   await generationWorker.close()
+  await embeddingWorker.close()
   await maintenanceWorker.close()
   process.exit(0)
 }

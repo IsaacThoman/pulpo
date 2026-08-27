@@ -932,6 +932,59 @@ export const agentSettingsSchema = z.object({
 })
 export type AgentSettings = z.infer<typeof agentSettingsSchema>
 
+export const episodicMemoryProfileSchema = z.enum(['embeddinggemma', 'qwen3-embedding'])
+export type EpisodicMemoryProfile = z.infer<typeof episodicMemoryProfileSchema>
+export const episodicMemoryRecallModeSchema = z.enum(['conservative', 'balanced', 'eager'])
+export type EpisodicMemoryRecallMode = z.infer<typeof episodicMemoryRecallModeSchema>
+export const episodicMemorySettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  profile: episodicMemoryProfileSchema.default('embeddinggemma'),
+  recallMode: episodicMemoryRecallModeSchema.default('balanced'),
+})
+export type EpisodicMemorySettings = z.infer<typeof episodicMemorySettingsSchema>
+
+export const episodicMemoryModelProfileSchema = z.object({
+  id: episodicMemoryProfileSchema,
+  label: z.string(),
+  model: z.string(),
+  dimension: z.number().int().positive(),
+  approximateSizeBytes: z.number().int().positive(),
+})
+export type EpisodicMemoryModelProfile = z.infer<typeof episodicMemoryModelProfileSchema>
+
+export const episodicMemoryGenerationSchema = z.object({
+  id: idSchema,
+  profile: episodicMemoryProfileSchema,
+  model: z.string(),
+  modelDigest: z.string().nullable(),
+  dimension: z.number().int().positive(),
+  status: z.enum(['pending', 'pulling', 'indexing', 'ready', 'failed', 'cancelled']),
+  totalItems: z.number().int().nonnegative(),
+  completedItems: z.number().int().nonnegative(),
+  failedItems: z.number().int().nonnegative(),
+  error: z.string().nullable(),
+  active: z.boolean(),
+  downloadTotalBytes: z.number().nonnegative(),
+  downloadCompletedBytes: z.number().nonnegative(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+export type EpisodicMemoryGeneration = z.infer<typeof episodicMemoryGenerationSchema>
+
+export const episodicMemoryAdminStatusSchema = z.object({
+  settings: episodicMemorySettingsSchema,
+  profiles: z.array(episodicMemoryModelProfileSchema),
+  ollama: z.object({
+    healthy: z.boolean(),
+    version: z.string().nullable(),
+    error: z.string().nullable(),
+    installedModels: z.array(z.object({ name: z.string(), digest: z.string(), size: z.number().nonnegative() })),
+  }),
+  activeGeneration: episodicMemoryGenerationSchema.nullable(),
+  buildingGeneration: episodicMemoryGenerationSchema.nullable(),
+})
+export type EpisodicMemoryAdminStatus = z.infer<typeof episodicMemoryAdminStatusSchema>
+
 export const webToolProviderSchema = z.enum(['kagi', 'firecrawl'])
 export type WebToolProvider = z.infer<typeof webToolProviderSchema>
 
@@ -1199,6 +1252,7 @@ export const managementInstanceSettingsSchema = z.object({
   personalization: personalizationSettingsSchema.default(() => personalizationSettingsSchema.parse({})),
   ocr: instanceOcrSettingsSchema.default(() => instanceOcrSettingsSchema.parse({})),
   agent: agentSettingsSchema.default(() => agentSettingsSchema.parse({})),
+  episodicMemory: episodicMemorySettingsSchema.default(() => episodicMemorySettingsSchema.parse({})),
   webTools: managementWebToolsSettingsSchema.default(() => managementWebToolsSettingsSchema.parse({})),
   logging: loggingSettingsSchema.default(() => loggingSettingsSchema.parse({})),
 })

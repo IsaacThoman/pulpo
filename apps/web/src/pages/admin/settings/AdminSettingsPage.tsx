@@ -10,6 +10,7 @@ import {
   Sparkles,
   Ticket,
   Mic,
+  BrainCircuit,
 } from 'lucide-react'
 import { AuthenticationSection, GeneralSection, InterfaceSection } from './sections-general'
 import { DatabaseSection } from './sections-data'
@@ -19,6 +20,7 @@ import { AgentSection } from './sections-agent'
 import { PersonalizationSection } from './sections-personalization'
 import { InviteCodesSection } from './sections-invites'
 import { DictationSection } from './sections-dictation'
+import { EpisodicMemorySection } from './sections-episodic-memory'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/stores/auth'
 import { ui } from '@/i18n/ui'
@@ -31,6 +33,7 @@ const SECTIONS = [
   { id: 'ocr', label: "OCR", icon: FileSearch, component: OcrSection },
   { id: 'dictation', label: "Dictation", icon: Mic, component: DictationSection },
   { id: 'agent', label: "Agent", icon: Bot, component: AgentSection },
+  { id: 'episodic-memory', label: "Episodic Memory", icon: BrainCircuit, component: EpisodicMemorySection },
   { id: 'logging', label: "Logging", icon: ScrollText, component: LoggingSection },
   { id: 'database', label: "Database", icon: Database, component: DatabaseSection },
 ] as const
