@@ -270,9 +270,18 @@ html[data-desktop="true"] .desktop-shell {
   padding-top: 38px;
 }
 
+html[data-desktop-os="win32"] .desktop-shell {
+  padding-top: 0;
+}
+
 html[data-desktop="true"] .desktop-titlebar {
   -webkit-app-region: drag;
   background: var(--background);
+}
+
+html[data-desktop-os="win32"] .desktop-titlebar,
+html[data-desktop-os="win32"] .desktop-sidebar-titlebar {
+  right: 138px;
 }
 
 html[data-desktop="true"] {
@@ -303,6 +312,10 @@ html[data-desktop="true"] .app-main {
 
 html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
   margin-top: -38px;
+}
+
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main {
+  margin-top: 0;
 }
 
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > header {
@@ -342,6 +355,11 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] {
   height: 38px;
 }
 
+html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-collapsed="true"] {
+  left: 64px;
+  height: 48px;
+}
+
 html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true"] {
   left: 84px;
 }
@@ -350,6 +368,12 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .m
   top: 50%;
   left: calc(100% + 4px);
   transform: translateY(-50%);
+}
+
+html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
+  top: 1.75rem;
+  left: 2.25rem;
+  transform: none;
 }
 
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-active="true"][data-collapsed="true"] .model-selector-set-default {
@@ -428,8 +452,18 @@ html[data-desktop="true"] .desktop-actions-titlebar-slot[data-collapsed="true"] 
   height: 38px;
 }
 
+html[data-desktop-os="win32"] .desktop-actions-titlebar-slot[data-collapsed="true"] {
+  height: 48px;
+}
+
 html[data-desktop-os="win32"] .desktop-actions-titlebar-slot {
   right: 150px;
+}
+
+html[data-desktop-os="win32"] .desktop-window-controls,
+html[data-desktop-os="win32"] .desktop-window-controls button {
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
@@ -463,6 +497,10 @@ html[data-desktop="true"] .desktop-sidebar {
   border-right-width: 0;
 }
 
+html[data-desktop-os="win32"] .desktop-sidebar {
+  border-right-width: 1px;
+}
+
 html[data-desktop="true"] .desktop-sidebar::after {
   position: absolute;
   top: 16px;
@@ -471,6 +509,14 @@ html[data-desktop="true"] .desktop-sidebar::after {
   border-right: 1px solid var(--sidebar-border);
   content: '';
   pointer-events: none;
+}
+
+html[data-desktop-os="win32"] .desktop-sidebar::after {
+  display: none;
+}
+
+html[data-desktop-os="win32"] .desktop-sidebar-added-border {
+  display: none;
 }
 
 html[data-desktop="true"] .desktop-no-drag,
