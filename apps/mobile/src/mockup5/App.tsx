@@ -102,6 +102,7 @@ import {
   Bot,
   Brain,
   Ghost,
+  Hourglass,
   Loader2,
   Minimize2,
   Server,
@@ -214,6 +215,7 @@ import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
   resolveChatHeaderControl,
+  resolveChatLandingBadge,
   type ChatHeaderLeadingAction,
   type ChatHeaderTrailingAction,
 } from '../features/chat/headerAction';
@@ -2292,6 +2294,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onSelectModel={selectModel}
             temporary={activePrototypeChat?.temporary ?? newChatTemporary}
             autoExpire={chatAutoExpire}
+            expirationPeriod={automaticChatExpiration}
             showAutoExpirationControl={showAutoExpirationControl}
             expired={Boolean(activePrototypeChat?.expired)}
             savingTemporary={savingTemporaryChatId === activePrototypeChat?.id}
@@ -3217,7 +3220,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 function ChatView({
   messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -3245,6 +3248,7 @@ function ChatView({
   onSaveTemporary: () => void;
   temporary: boolean;
   autoExpire: boolean;
+  expirationPeriod: 'disabled' | '24h' | '7d';
   showAutoExpirationControl: boolean;
   expired: boolean;
   savingTemporary: boolean;
@@ -3311,6 +3315,8 @@ function ChatView({
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const suggestionGridHeight = useSharedValue(0);
   const temporaryProgress = useSharedValue(temporary ? 1 : 0);
+  const landingBadge = resolveChatLandingBadge(temporary, autoExpire, expirationPeriod);
+  const expirationBadgeProgress = useSharedValue(landingBadge?.kind === 'expiration' ? 1 : 0);
   const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
   const syncError = useRealtimeStore((state) => state.syncError);
   const networkState = Network.useNetworkState();
@@ -3382,6 +3388,13 @@ function ChatView({
       { scale: interpolate(temporaryProgress.value, [0, 1], [0.98, 1]) },
     ],
   }));
+  const expirationLabelAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: expirationBadgeProgress.value,
+    transform: [
+      { translateY: interpolate(expirationBadgeProgress.value, [0, 1], [6, 0]) },
+      { scale: interpolate(expirationBadgeProgress.value, [0, 1], [0.98, 1]) },
+    ],
+  }));
 
   const presetLabel = generationSummary(prototypeModel, presetSelections);
   const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
@@ -3404,6 +3417,15 @@ function ChatView({
         duration: temporary ? 320 : 240,
       });
   }, [reduceMotion, temporary, temporaryProgress]);
+
+  useEffect(() => {
+    const target = landingBadge?.kind === 'expiration' ? 1 : 0;
+    expirationBadgeProgress.value = reduceMotion
+      ? target
+      : withTiming(target, {
+        duration: target ? 320 : 240,
+      });
+  }, [expirationBadgeProgress, landingBadge?.kind, reduceMotion]);
 
   useEffect(() => {
     if (!hasGenerationPresets) setPresetPickerOpen(false);
@@ -4109,6 +4131,7 @@ function ChatView({
       <Reanimated.View style={[styles.emptyIdentity, emptyStateAnimatedStyle]}>
         <View style={styles.emptyModelLineWrap}>
           <Reanimated.View
+            accessible={temporary}
             accessibilityElementsHidden={!temporary}
             accessibilityLabel="Temporary chat"
             pointerEvents="none"
@@ -4116,6 +4139,18 @@ function ChatView({
           >
             <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
             <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
+          </Reanimated.View>
+          <Reanimated.View
+            accessible={landingBadge?.kind === 'expiration'}
+            accessibilityElementsHidden={landingBadge?.kind !== 'expiration'}
+            accessibilityLabel={landingBadge?.kind === 'expiration' ? `Chat expires in ${landingBadge.period}` : undefined}
+            pointerEvents="none"
+            style={[styles.temporaryLabel, expirationLabelAnimatedStyle]}
+          >
+            <Hourglass color="#14B8A6" size={14} strokeWidth={2} />
+            <Text style={styles.expirationLabelText}>
+              {`Expires in ${expirationPeriod === 'disabled' ? '' : expirationPeriod}`}
+            </Text>
           </Reanimated.View>
           <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
             <ModelMark model={model} size={48} />
@@ -5058,6 +5093,7 @@ const styles = StyleSheet.create({
   temporaryLabel: { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   temporaryLabelText: { color: '#6d28d9', fontSize: 12, fontWeight: '600' },
   temporaryLabelTextDark: { color: '#c4b5fd' },
+  expirationLabelText: { color: '#14B8A6', fontSize: 12, fontWeight: '600' },
   pulpoMark: { shadowColor: COLORS.accent, shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 6 } },
   emptyModelLine: { flexDirection: 'row', alignItems: 'center', gap: 13 },
   emptyModelLineAccessible: { flexDirection: 'column', width: '100%' },
