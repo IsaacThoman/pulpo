@@ -2,7 +2,7 @@ import { LegalPage } from './LegalPage'
 import { ui } from '@/i18n/ui'
 
 export function PrivacyPage() {
-  return <LegalPage title={ui("Privacy policy")} updated="August 10, 2026">
+  return <LegalPage title={ui("Privacy policy")} updated="August 27, 2026">
     <section>
       <h2>{ui("What Pulpo stores")}</h2>
       <p>{ui("Pulpo stores the account information you provide, including your name, email address, account identifier, and optional two-factor authentication configuration. Authenticator secrets are encrypted and recovery codes are stored as one-way hashes. If you add a passkey, the server stores its name, public key, credential identifier, usage counter, device and backup metadata, transports, and created and last-used dates. Your private passkey remains with your device or passkey provider and is never sent to Pulpo. Pulpo also stores content you choose to create or upload, such as conversations, prompts, generated responses, files, photos, folder organization, model preferences, and public-share settings.")}</p>
@@ -26,6 +26,7 @@ export function PrivacyPage() {
     <section>
       <h2>{ui("Security and changes")}</h2>
       <p>{ui("Pulpo uses HTTPS for production instances, verifies passkey user presence and identity, and keeps native bearer sessions revocable. Adding or deleting a passkey requires your password and existing second factor when enabled, then signs out your other sessions. No system is perfectly secure. This policy may change as the service evolves; material revisions will be posted on this page with a new effective date.")}</p>
+      <p>{ui("Authorized administrators may access and modify an individual conversation when reasonably necessary for support, safety, security, or service operations. This access is limited to the selected conversation, requires administrator two-factor authentication and a recorded reason, expires automatically, and is logged. Model usage initiated by the administrator is charged to the administrator rather than the conversation owner.")}</p>
     </section>
   </LegalPage>
 }

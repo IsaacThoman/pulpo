@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { attachmentValidationError } from '@pulpo/client-core'
 import type { Attachment } from '@/lib/types'
-import { apiRequest } from '@/lib/api'
+import { apiRequest, authenticatedFetch } from '@/lib/api'
 import { isSupportedImageFile, isSupportedImageMime, nonImageAttachmentRestriction } from '@/lib/attachments'
 import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
@@ -192,7 +192,7 @@ async function uploadRecord(localId: string, attempt: number): Promise<void> {
       uploads: { ...state.uploads, [localId]: { ...state.uploads[localId]!, id: reservedId } },
     }))
 
-    const upload = await fetch(created.uploadUrl, {
+    const upload = await authenticatedFetch(created.uploadUrl, {
       method: 'PUT',
       body: file,
       headers: created.uploadHeaders,
