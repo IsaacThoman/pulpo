@@ -21,7 +21,12 @@ import { sanitizeOutputForClient } from './public-output.js'
 import { responseAttachmentIds } from '../messages/input.js'
 
 export interface CreateResponseOptions {
-  userId: string
+  /** Owner of the chat, response, files, memories, and conversation context. */
+  ownerUserId: string
+  /** Account whose billing entitlements fund the generation. Defaults to the owner. */
+  billingUserId?: string
+  /** Administrator responsible for an impersonated action, when applicable. */
+  actorUserId?: string | null
   chatId: string
   apiKeyId?: string | null
   input: CreateChatResponseInput
@@ -72,7 +77,7 @@ export async function createResponse(options: CreateResponseOptions) {
       .from(responses)
       .innerJoin(chats, eq(chats.id, responses.chatId))
       .where(and(
-        eq(responses.userId, options.userId),
+        eq(responses.userId, options.ownerUserId),
         eq(responses.idempotencyKey, options.idempotencyKey),
         isNull(chats.deletedAt),
         accessibleChatCondition(),
@@ -86,7 +91,7 @@ export async function createResponse(options: CreateResponseOptions) {
     .from(chats)
     .where(and(
       eq(chats.id, options.chatId),
-      eq(chats.userId, options.userId),
+      eq(chats.userId, options.ownerUserId),
       isNull(chats.deletedAt),
       accessibleChatCondition(now),
     ))
@@ -94,7 +99,7 @@ export async function createResponse(options: CreateResponseOptions) {
   if (!chat) {
     const [owned] = await db.select({ temporary: chats.temporary, expiresAt: chats.expiresAt })
       .from(chats)
-      .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.userId), isNull(chats.deletedAt)))
+      .where(and(eq(chats.id, options.chatId), eq(chats.userId, options.ownerUserId), isNull(chats.deletedAt)))
       .limit(1)
     if (owned && temporaryChatIsExpired(owned, now)) {
       throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
@@ -127,7 +132,7 @@ export async function createResponse(options: CreateResponseOptions) {
   if (requestedId) {
     const [existingById] = await db.select().from(responses).where(eq(responses.id, requestedId)).limit(1)
     if (existingById) {
-      if (existingById.userId !== options.userId || existingById.chatId !== options.chatId) {
+      if (existingById.userId !== options.ownerUserId || existingById.chatId !== options.chatId) {
         throw new AppError(409, 'response_id_conflict', 'Response id is already in use')
       }
       return existingById
@@ -146,7 +151,7 @@ export async function createResponse(options: CreateResponseOptions) {
   ])]
   if (attachmentIds.length) {
     const ownedAttachments = await db.select().from(attachments).where(and(
-      eq(attachments.userId, options.userId),
+      eq(attachments.userId, options.ownerUserId),
       eq(attachments.status, 'ready'),
       inArray(attachments.id, attachmentIds),
       or(isNull(attachments.chatId), eq(attachments.chatId, chat.id)),
@@ -156,7 +161,7 @@ export async function createResponse(options: CreateResponseOptions) {
       throw new AppError(400, 'attachment_requires_agent', 'Non-image attachments require Agent mode')
     }
     await db.update(attachments).set({ chatId: chat.id, updatedAt: new Date() }).where(and(
-      eq(attachments.userId, options.userId),
+      eq(attachments.userId, options.ownerUserId),
       inArray(attachments.id, attachmentIds),
       isNull(attachments.chatId),
     ))
@@ -173,7 +178,7 @@ export async function createResponse(options: CreateResponseOptions) {
   await db.insert(responses).values({
     id,
     chatId: chat.id,
-    userId: options.userId,
+    userId: options.ownerUserId,
     modelId: model.id,
     previousResponseId: parentResponseId,
     parentResponseId,
@@ -185,7 +190,7 @@ export async function createResponse(options: CreateResponseOptions) {
     presetSelections: resolved.selections,
     parameters: { ...(options.parameters ?? {}), ...resolved.parameters },
     idempotencyKey: options.idempotencyKey,
-    origin: options.apiKeyId ? 'api' : 'web',
+    origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
   })
   const requestLogId = newId()
   const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
@@ -193,8 +198,8 @@ export async function createResponse(options: CreateResponseOptions) {
   const retentionMs: Record<string, number | null> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000, '90d': 7_776_000_000, indefinite: null }
   const ttl = retentionMs[logging.payloadRetention] ?? 604_800_000
   await db.insert(requestLogs).values({
-    id: requestLogId, responseId: id, userId: options.userId, apiKeyId: options.apiKeyId,
-    origin: options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
+    id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
+    origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
     requestPayload: logging.logDetailedPayloads ? { input: storedInput, parameters: { ...(options.parameters ?? {}), ...resolved.parameters }, presetSelections: resolved.selections } : null,
     payloadExpiresAt: logging.logDetailedPayloads && ttl !== null ? new Date(Date.now() + ttl) : null,
   })
@@ -202,7 +207,7 @@ export async function createResponse(options: CreateResponseOptions) {
   try {
     await reserveBudget({
       responseId: id,
-      userId: options.userId,
+      userId: options.billingUserId ?? options.ownerUserId,
       apiKeyId: options.apiKeyId,
       requestInput: storedInput,
       maxOutputTokens,
@@ -231,7 +236,7 @@ export async function createResponse(options: CreateResponseOptions) {
     if (updatedChat?.temporary && updatedChat.expiresAt) {
       await scheduleTemporaryChatExpiry({
         chatId: chat.id,
-        userId: options.userId,
+        userId: options.ownerUserId,
         expiresAt: updatedChat.expiresAt,
       })
     }

@@ -1,6 +1,6 @@
 # Pulpo hosted service privacy policy
 
-**Effective August 20, 2026**
+**Effective August 27, 2026**
 
 This policy describes how Isaac Thoman (**“Pulpo,” “we,” “us,”** or **“our”**) handles information when you use the Pulpo service hosted at [pulpo.baby](https://pulpo.baby) (the **“hosted service”**), whether through the website, the Pulpo mobile app, or another compatible client.
 
@@ -90,6 +90,8 @@ To request deletion of your hosted account, a copy of your information, or help 
 ## Security
 
 We use administrative and technical safeguards designed to protect information, including HTTPS for the production service, one-way password hashing, encryption of configured authentication secrets, revocable sessions, and access controls. No security measure can guarantee absolute protection.
+
+Authorized administrators may access and modify an individual conversation when reasonably necessary for support, safety, security, or service operations. This access is limited to the selected conversation, requires administrator two-factor authentication and a recorded reason, expires automatically, and is logged. Actions taken through this access appear in the conversation and may affect its contents or sharing state; model usage initiated by the administrator is charged to the administrator rather than the conversation owner.
 
 ## International processing
 

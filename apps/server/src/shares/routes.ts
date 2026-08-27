@@ -21,10 +21,12 @@ export async function registerShareRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('onClose', async () => { await redis.quit() })
   app.get('/api/chat-shares', async (request) => {
     const user = requireUser(request)
+    const scopedChatId = request.adminChatAccess?.chatId
     return { data: await db.select({ share: chatShares, title: chats.title }).from(chatShares)
       .innerJoin(chats, eq(chats.id, chatShares.chatId))
       .where(and(
         eq(chatShares.userId, user.id),
+        scopedChatId ? eq(chatShares.chatId, scopedChatId) : undefined,
         isNull(chats.deletedAt),
         accessibleChatCondition(),
       )).orderBy(desc(chatShares.createdAt)) }

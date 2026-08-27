@@ -29,6 +29,7 @@ import { mergeSummaryResponseTracking, reconcileStreamingResponseIds, reindexDet
 import { BranchSelectionIntents } from '@/lib/branch-selection-intents'
 import { reorderList } from '@/lib/model-order'
 import { useAuth } from './auth'
+import { adminChatAccessActive, adminChatAccountKey } from '@/features/admin-chat/access'
 
 const FOLDER_EXPANDED_KEY = 'pulpo-folder-expanded'
 
@@ -406,7 +407,7 @@ function toChat(
   }
 }
 
-function currentUserId(): string | null { return useAuth.getState().user?.id ?? null }
+function currentUserId(): string | null { return adminChatAccountKey() ?? useAuth.getState().user?.id ?? null }
 function chatsKey(): readonly unknown[] { return ['chats', currentUserId()] }
 function chatKey(id: string): readonly unknown[] { return ['chat', currentUserId(), id] }
 
@@ -775,7 +776,7 @@ async function optimisticRequest(
   try {
     return await apiRequest(path, { method, body, idempotencyKey })
   } catch (error) {
-    if (isNetworkError(error) && options.queueOffline !== false) {
+    if (!adminChatAccessActive() && isNetworkError(error) && options.queueOffline !== false) {
       await enqueueMutation({ userId, method, path, body, idempotencyKey })
       return
     }

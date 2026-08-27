@@ -4,7 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
-import { requireUser } from '../auth/service.js'
+import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { createResponse, toSnapshot } from '../responses/service.js'
@@ -330,7 +330,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     }
     try {
       const response = await createResponse({
-        userId: user.id,
+        ownerUserId: user.id,
         chatId: chat.id,
         input: input.response,
         parentResponseId: null,
@@ -497,7 +497,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const [chat] = await db.select().from(chats).where(and(
       eq(chats.id, id),
       eq(chats.userId, user.id),
-      isNull(chats.deletedAt),
+      request.adminChatAccess ? undefined : isNull(chats.deletedAt),
       accessibleChatCondition(now),
     )).limit(1)
     if (!chat) {
@@ -507,6 +507,15 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         throw new AppError(410, 'temporary_chat_expired', 'This temporary chat has expired and cannot be recovered')
       }
       throw notFound('Chat')
+    }
+    if (chat.deletedAt) {
+      return {
+        ...toPublicChat(chat),
+        deletedAt: chat.deletedAt.toISOString(),
+        attachments: [],
+        queuedMessages: [],
+        responses: [],
+      }
     }
     const allTurns = await db.select()
       .from(responses)
@@ -526,6 +535,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const queue = await listQueuedMessages(id, user.id)
     return {
       ...toPublicChat(chat),
+      deletedAt: null,
       attachments: attachmentRows,
       queuedMessages: queue,
       responses: toPublicChatResponses(
@@ -629,7 +639,9 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (!parent) throw new AppError(400, 'invalid_parent_response', 'The selected parent response is unavailable')
     }
     const response = await createResponse({
-      userId: user.id,
+      ownerUserId: user.id,
+      billingUserId: billingUserForRequest(request).id,
+      actorUserId: request.adminChatAccess?.actorUser.id,
       chatId: id,
       input,
       parentResponseId: input.parentResponseId,
@@ -644,7 +656,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
     const input = createQueuedMessageSchema.parse(request.body)
-    const result = await createQueuedMessage(user.id, id, input)
+    const result = await createQueuedMessage(user.id, id, input, {
+      billingUserId: billingUserForRequest(request).id,
+      actorUserId: request.adminChatAccess?.actorUser.id,
+    })
     reply.code(202)
     return result
   })
@@ -653,7 +668,10 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const user = requireUser(request)
     const { id, messageId } = request.params as { id: string; messageId: string }
     const input = updateQueuedMessageSchema.parse(request.body)
-    return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input) }
+    return { queuedMessage: await updateQueuedMessage(user.id, id, messageId, input, {
+      billingUserId: billingUserForRequest(request).id,
+      actorUserId: request.adminChatAccess?.actorUser.id,
+    }) }
   })
 
   app.patch('/api/chats/:id/queued-messages/:messageId/reorder', async (request) => {
@@ -738,6 +756,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/api/folders', async (request) => {
     const user = requireUser(request)
+    if (request.adminChatAccess) {
+      return {
+        data: await db.select({ id: folders.id, name: folders.name })
+          .from(folders).where(eq(folders.userId, user.id)).orderBy(asc(folders.sortOrder), asc(folders.createdAt)),
+      }
+    }
     return {
       data: await db.select().from(folders)
         .where(eq(folders.userId, user.id))

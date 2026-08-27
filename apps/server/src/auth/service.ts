@@ -14,11 +14,21 @@ import { profileAvatarUrl } from '../profile/service.js'
 
 export interface AuthenticatedUser extends User {}
 
+export interface AdminChatAccessContext {
+  accessId: string
+  actorUser: AuthenticatedUser
+  ownerUser: AuthenticatedUser
+  chatId: string
+  reason: string
+  expiresAt: string
+}
+
 const internalAuthenticatedUser = new AsyncLocalStorage<AuthenticatedUser>()
 
 declare module 'fastify' {
   interface FastifyRequest {
     user: AuthenticatedUser | null
+    adminChatAccess: AdminChatAccessContext | null
     apiKeyId: string | null
     rawBody: string | null
   }
@@ -183,9 +193,14 @@ export async function authenticateSessionToken(token: string | undefined): Promi
 
 export function requireUser(request: FastifyRequest): AuthenticatedUser {
   if (!request.user) throw unauthorized()
+  if (request.adminChatAccess) return request.user
   if (request.user.role === 'pending') throw forbidden('Your account is pending approval')
   if (request.user.blocked) throw forbidden('Your account is blocked')
   return request.user
+}
+
+export function billingUserForRequest(request: FastifyRequest): AuthenticatedUser {
+  return request.adminChatAccess?.actorUser ?? requireUser(request)
 }
 
 export function requireAdmin(request: FastifyRequest): AuthenticatedUser {
