@@ -497,6 +497,10 @@ html[data-desktop="true"] .desktop-sidebar {
   border-right-width: 0;
 }
 
+html[data-desktop-os="win32"] .desktop-sidebar {
+  border-right-width: 1px;
+}
+
 html[data-desktop="true"] .desktop-sidebar::after {
   position: absolute;
   top: 16px;
@@ -508,7 +512,7 @@ html[data-desktop="true"] .desktop-sidebar::after {
 }
 
 html[data-desktop-os="win32"] .desktop-sidebar::after {
-  top: 0;
+  display: none;
 }
 
 html[data-desktop-os="win32"] .desktop-sidebar-added-border {
