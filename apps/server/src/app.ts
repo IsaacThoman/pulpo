@@ -5,7 +5,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import multipart from '@fastify/multipart'
 import { ZodError } from 'zod'
-import { getConfig, isAllowedOrigin } from './config.js'
+import { getConfig, isAllowedOrigin, isAllowedRequestOrigin } from './config.js'
 import { AppError } from './lib/errors.js'
 import { authenticateSession } from './auth/service.js'
 import { registerAuthRoutes } from './auth/routes.js'
@@ -82,7 +82,7 @@ export async function buildApp() {
     const hasSession = Boolean(request.cookies[config.SESSION_COOKIE_NAME])
     if (!hasSession) return
     const origin = request.headers.origin
-    if (origin && !isAllowedOrigin(origin, config)) {
+    if (origin && !isAllowedRequestOrigin(origin, request.headers.host, config)) {
       throw new AppError(403, 'origin_mismatch', 'Request origin is not allowed', 'permission_error')
     }
   })

@@ -161,6 +161,18 @@ export function isAllowedOrigin(origin: string, config = getConfig()): boolean {
     && LOOPBACK_HOSTS.has(parsed.hostname)
 }
 
+export function isAllowedRequestOrigin(origin: string, host: string | undefined, config = getConfig()): boolean {
+  if (isAllowedOrigin(origin, config)) return true
+  if (!host) return false
+  try {
+    const parsed = new URL(origin)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false
+    return parsed.host === new URL(`http://${host}`).host
+  } catch {
+    return false
+  }
+}
+
 export function getStorageCorsOrigins(config = getConfig()): string[] {
   const origins = [new URL(config.PUBLIC_URL).origin, 'https://desktop.pulpo.invalid']
   if (config.NODE_ENV === 'development') {
