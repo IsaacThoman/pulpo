@@ -1,3 +1,5 @@
+import type { CompactionItem, RecallItem } from '@pulpo/contracts'
+
 export type ToolItem = {
   type: 'pulpo_tool'
   id?: string
@@ -42,7 +44,12 @@ export type CompactionStep = {
   compaction: CompactionItem
 }
 
-export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep
+export type RecallStep = {
+  kind: 'recall'
+  recall: RecallItem
+}
+
+export type ActivityStep = ReasoningStep | ToolStep | WorkspaceStep | CompactionStep | RecallStep
 
 export type ActivitySegment = {
   kind: 'activity'
@@ -121,6 +128,11 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
   for (const item of outputItems) {
     const type = (item as { type?: string }).type
     if (type === 'pulpo_workspace') continue
+    if (type === 'pulpo_recall') {
+      if (!activity) activity = { kind: 'activity', steps: [], active: false }
+      activity.steps.push({ kind: 'recall', recall: item as RecallItem })
+      continue
+    }
     if (type === 'pulpo_compaction') {
       flushActivity()
       const compaction = item as CompactionItem
@@ -184,4 +196,3 @@ export function buildTimeline(outputItems: unknown[], showReasoning: boolean): T
 
   return segments
 }
-import type { CompactionItem } from '@pulpo/contracts'

@@ -78,7 +78,8 @@ export type ActivityStep =
   | { id: string; kind: 'reasoning'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' }
   | { id: string; kind: 'tool'; title: string; detail: string; output?: string; durationMs: number; status: 'complete' | 'active' | 'failed' }
   | { id: string; kind: 'workspace'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' | 'failed' }
-  | { id: string; kind: 'compaction'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' | 'failed' };
+  | { id: string; kind: 'compaction'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' | 'failed' }
+  | { id: string; kind: 'recall'; title: string; detail: string; durationMs: number; status: 'complete' | 'active' | 'failed' };
 
 export interface ResponseBranch {
   id: string;
@@ -136,6 +137,7 @@ export interface AppPreferences {
   sendWithEnter: boolean;
   streamResponses: boolean;
   showReasoning: boolean;
+  memoryEnabled: boolean;
   haptics: boolean;
   localChatLimit: number;
   attachmentCacheMb: number;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { recalledChatLabel } from './recall-label'
 import { buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive } from './timeline'
 
 describe('buildMessageTimeline', () => {
@@ -85,6 +86,29 @@ describe('buildMessageTimeline', () => {
       { kind: 'activity', steps: [{ kind: 'tool', tool: { id: 'tool-1' } }] },
       { kind: 'text', text: 'Final answer' },
     ])
+  })
+
+  it('groups recalled sources with subsequent work and labels the disclosure', () => {
+    const timeline = buildMessageTimeline([{
+      id: 'response-1:recall', type: 'pulpo_recall', status: 'completed',
+      sources: [{
+        chat_id: '00000000-0000-4000-8000-000000000001',
+        response_id: '00000000-0000-4000-8000-000000000002',
+        title: 'Earlier architecture chat', updated_at: '2026-08-27T00:00:00.000Z',
+        excerpt: 'Use a parallel index generation during model changes.',
+      }],
+    }, { type: 'pulpo_tool', id: 'tool-1', status: 'completed' }, { type: 'message', content: [{ text: 'Answer' }] }], true)
+    const activity = timeline[0]
+
+    expect(activity).toMatchObject({ kind: 'activity', steps: [{ kind: 'recall' }, { kind: 'tool' }] })
+    if (activity?.kind !== 'activity') throw new Error('Expected recall activity')
+    expect(completedActivityLabel(activity.steps)).toBe('Worked')
+    expect(completedActivityLabel([activity.steps[0]!])).toBe('Recalled from 1 chat')
+    expect(completedActivityLabel([
+      activity.steps[0]!,
+      { kind: 'reasoning', text: 'Checked recalled context', active: false },
+    ])).toBe('Thought')
+    expect(recalledChatLabel(2)).toBe('Recalled from 2 chats')
   })
 
   it('keeps work visible when reasoning is hidden', () => {

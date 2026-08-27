@@ -29,6 +29,7 @@ const configSchema = z.object({
   POSTGRES_PASSWORD: z.string().default('pulpo'),
   POSTGRES_DATABASE: z.string().min(1).default('pulpo'),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
+  PULPO_OLLAMA_URL: z.url().default('http://localhost:11434'),
   SESSION_COOKIE_NAME: z.string().min(1).default('pulpo_session'),
   SESSION_TTL_DAYS: z.coerce.number().int().positive().default(30),
   ENCRYPTION_KEY: z.string().min(32).default('development-only-key-change-me-000000'),
@@ -75,12 +76,21 @@ export function getCoolifyPreviewId(environment: NodeJS.ProcessEnv): string | un
 
 export function parseConfig(environment: NodeJS.ProcessEnv): Config {
   const previewId = getCoolifyPreviewId(environment)
+  const configuredOllamaUrl = environment.PULPO_OLLAMA_URL?.trim()
+  const previewOllamaUrl = previewId && (
+    !configuredOllamaUrl
+    || configuredOllamaUrl === 'http://ollama:11434'
+    || configuredOllamaUrl === 'http://localhost:11434'
+  )
+    ? `http://${environment.SERVICE_NAME_OLLAMA?.trim() || `ollama-pr-${previewId}`}:11434`
+    : undefined
   const config = configSchema.parse({
     ...environment,
     ...(previewId ? {
       POSTGRES_HOST: `postgres-pr-${previewId}`,
       REDIS_URL: `redis://redis-pr-${previewId}:6379`,
       S3_ENDPOINT: `http://seaweed-s3-pr-${previewId}:8333`,
+      ...(previewOllamaUrl ? { PULPO_OLLAMA_URL: previewOllamaUrl } : {}),
     } : {}),
   })
   if (config.PULPO_BILLING_ENABLED) {

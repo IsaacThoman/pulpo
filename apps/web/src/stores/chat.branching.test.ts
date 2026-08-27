@@ -241,6 +241,23 @@ describe('chat store branching integration', () => {
     ).toBe(true))
   })
 
+  it('preserves a new chat across a summaries refresh until creation completes', async () => {
+    const id = useChat.getState().sendMessage(null, 'new chat prompt', 'test-model')
+
+    expect(useChat.getState().chats.find((chat) => chat.id === id)).toMatchObject({
+      provisional: true,
+    })
+
+    useChat.getState().replaceSummaries([])
+
+    expect(useChat.getState().chats.some((chat) => chat.id === id)).toBe(true)
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+    requests[0]!.resolve({})
+    await vi.waitFor(() => expect(
+      useChat.getState().chats.find((chat) => chat.id === id)?.provisional,
+    ).toBe(false))
+  })
+
   it('optimistically toggles an existing deadline and rolls back a rejected change', async () => {
     useSettings.setState({ automaticChatExpiration: '7d', newChatAutoExpire: false })
     const initial = detail(responseAId, [response(responseAId, 'completed')])

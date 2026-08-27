@@ -74,6 +74,29 @@ describe('conversation compaction', () => {
     expect(JSON.stringify(effectiveHistoryChunks(failedHistory))).toContain('00000000-0000-4000-8000-000000000021')
   })
 
+  it('never replays recalled history metadata into later provider requests', () => {
+    const chunks = effectiveHistoryChunks([{
+      ...turn('00000000-0000-4000-8000-000000000024'),
+      output: [{
+        id: '00000000-0000-4000-8000-000000000024:recall',
+        type: 'pulpo_recall',
+        status: 'completed',
+        sources: [{
+          chat_id: '00000000-0000-4000-8000-000000000025',
+          response_id: '00000000-0000-4000-8000-000000000026',
+          title: 'Private historical title',
+          updated_at: '2026-08-27T00:00:00.000Z',
+          excerpt: 'Historical context that was relevant to the earlier turn.',
+        }],
+      }, ...turn('ignored', 'visible answer').output],
+    }])
+
+    expect(JSON.stringify(chunks)).toContain('assistant visible answer')
+    expect(JSON.stringify(chunks)).not.toContain('pulpo_recall')
+    expect(JSON.stringify(chunks)).not.toContain('Private historical title')
+    expect(JSON.stringify(chunks)).not.toContain('Historical context')
+  })
+
   it('does nothing when disabled even above the threshold', async () => {
     const invoke = vi.fn(async (_older: unknown[]) => 'unused')
     const history = [turn('00000000-0000-4000-8000-000000000031'), turn('00000000-0000-4000-8000-000000000032')]

@@ -3,6 +3,7 @@ import {
   agentSettingsSchema,
   authSettingsSchema,
   dictationSettingsSchema,
+  episodicMemorySettingsSchema,
   DEFAULT_MAX_ATTACHMENT_BYTES,
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_SUGGESTED_PROMPTS,
@@ -94,6 +95,11 @@ export function parseOcrSettings(value: unknown): z.infer<typeof ocrSettingsSche
 export function parseAgentSettings(value: unknown): z.infer<typeof agentSettingsSchema> {
   const parsed = agentSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : agentSettingsSchema.parse({})
+}
+
+export function parseEpisodicMemorySettings(value: unknown): z.infer<typeof episodicMemorySettingsSchema> {
+  const parsed = episodicMemorySettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : episodicMemorySettingsSchema.parse({})
 }
 
 export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebToolsSettingsSchema> {

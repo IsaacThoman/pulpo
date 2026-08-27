@@ -128,7 +128,7 @@ export function effectiveHistoryChunks(history: HistoryResponse[]): HistoryChunk
         ...(response.status === 'completed' && Array.isArray(response.output)
           ? response.agentMode
             ? agentText ? [{ role: 'assistant', content: agentText }] : []
-            : response.output.filter((item) => (item as { type?: string }).type !== 'pulpo_compaction')
+            : response.output.filter((item) => !['pulpo_compaction', 'pulpo_recall'].includes((item as { type?: string }).type ?? ''))
           : []),
       ],
     })

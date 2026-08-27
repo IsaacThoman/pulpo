@@ -1,0 +1,50 @@
+[
+  {
+    "name": "english lexical and semantic overlap",
+    "profile": "embeddinggemma",
+    "mode": "balanced",
+    "expected": ["travel"],
+    "candidates": [
+      { "key": "travel", "semanticRank": 1, "semanticSimilarity": 0.72, "lexicalRank": 1, "lexicalScore": 0.9, "ageDays": 20 },
+      { "key": "noise", "semanticRank": 2, "semanticSimilarity": 0.22, "ageDays": 1 }
+    ]
+  },
+  {
+    "name": "spanish lexical recall",
+    "profile": "qwen3-embedding",
+    "mode": "balanced",
+    "expected": ["receta"],
+    "candidates": [
+      { "key": "receta", "lexicalRank": 1, "lexicalScore": 0.8, "ageDays": 90 },
+      { "key": "ruido", "semanticRank": 1, "semanticSimilarity": 0.12, "ageDays": 0 }
+    ]
+  },
+  {
+    "name": "cross-language semantic recall",
+    "profile": "embeddinggemma",
+    "mode": "balanced",
+    "expected": ["cross-language"],
+    "candidates": [
+      { "key": "cross-language", "semanticRank": 1, "semanticSimilarity": 0.63, "ageDays": 30 },
+      { "key": "weak", "semanticRank": 2, "semanticSimilarity": 0.3, "ageDays": 0 }
+    ]
+  },
+  {
+    "name": "conservative abstention",
+    "profile": "qwen3-embedding",
+    "mode": "conservative",
+    "expected": [],
+    "candidates": [
+      { "key": "vague", "semanticRank": 1, "semanticSimilarity": 0.55, "ageDays": 0 }
+    ]
+  },
+  {
+    "name": "conservative lexical fallback",
+    "profile": "embeddinggemma",
+    "mode": "conservative",
+    "expected": ["exact-match"],
+    "candidates": [
+      { "key": "exact-match", "lexicalRank": 1, "lexicalScore": 0.9, "ageDays": 1 }
+    ]
+  }
+]

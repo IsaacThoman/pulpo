@@ -15,6 +15,7 @@ import {
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_CASUAL_INSTRUCTIONS,
   mergeResponseSnapshots,
+  episodicMemoryStatisticsSchema,
   managementInfoSchema,
   managementAccountSettingsSchema,
   managementSettingsDocumentSchema,
@@ -37,6 +38,7 @@ import {
   newChatAutoExpireSchema,
   ocrSettingsSchema,
   persistChatResponseSchema,
+  recallItemSchema,
   responseEventSchema,
   secretRevealInputSchema,
   sensitiveActionInputSchema,
@@ -93,6 +95,52 @@ function targetedDelta(type: string, text: string, sequence: number, itemId: str
 }
 
 describe('shared contracts', () => {
+  it('validates aggregate episodic-memory statistics for all dashboard ranges', () => {
+    const operation = {
+      events: 10,
+      errors: 1,
+      errorRate: 0.1,
+      items: 15,
+      latency: { averageMs: 42, p50Ms: 25, p95Ms: 100 },
+    }
+    const statistics = {
+      range: '7d',
+      from: '2026-08-20T00:00:00.000Z',
+      to: '2026-08-27T00:00:00.000Z',
+      current: {
+        indexedChats: 12,
+        indexedChunks: 30,
+        indexedFacts: 4,
+        indexedUsers: 3,
+        pendingItems: 2,
+        failedItems: 1,
+        coverage: 34 / 37,
+        storageBytes: 1_000_000,
+        lastIndexedAt: '2026-08-27T00:00:00.000Z',
+        queue: { available: true, pending: 2, active: 1, failed: 1, oldestJobAgeMs: 4_000 },
+      },
+      summary: {
+        recall: { ...operation, recalled: 6, abstained: 3, recallRate: 0.6, abstentionRate: 0.3 },
+        retrieval: { ...operation, fallbacks: 2, fallbackRate: 0.2 },
+        databaseSearch: operation,
+        embedding: operation,
+        indexing: { ...operation, itemsPerHour: 0.2 },
+        agentSearch: operation,
+        agentRead: operation,
+        totalErrorRate: 0.1,
+      },
+      series: [{
+        bucketStart: '2026-08-27T00:00:00.000Z',
+        recallRequests: 10,
+        recalled: 6,
+        errors: 1,
+        p95RecallLatencyMs: 100,
+      }],
+    }
+    expect(episodicMemoryStatisticsSchema.parse(statistics)).toMatchObject({ range: '7d' })
+    expect(episodicMemoryStatisticsSchema.safeParse({ ...statistics, range: '90d' }).success).toBe(false)
+  })
+
   it('requires an explicit API key enabled state', () => {
     expect(updateApiKeySchema.parse({ enabled: true })).toEqual({ enabled: true })
     expect(updateApiKeySchema.parse({ enabled: false })).toEqual({ enabled: false })
@@ -613,6 +661,32 @@ describe('response snapshot accumulation', () => {
       { type: 'pulpo_attachment', attachment_id: 'file-1' },
     ])
     expect(result.sequence).toBe(7)
+  })
+
+  it('validates and projects recalled-chat events without a full snapshot', () => {
+    const recall = recallItemSchema.parse({
+      id: `${streamingSnapshot.responseId}:recall`,
+      type: 'pulpo_recall',
+      status: 'completed',
+      sources: [{
+        chat_id: '00000000-0000-4000-8000-000000000071',
+        response_id: '00000000-0000-4000-8000-000000000072',
+        title: 'Earlier planning chat',
+        updated_at: '2026-08-27T00:00:00.000Z',
+        excerpt: 'The deployment uses a blue-green model switch.',
+      }],
+    })
+    const result = applyResponseEventToSnapshot(streamingSnapshot, {
+      responseId: streamingSnapshot.responseId,
+      sequence: 1,
+      type: 'pulpo.recall.completed',
+      payload: recall,
+      emittedAt: '2026-08-27T00:00:01.000Z',
+    })
+
+    expect(result.output).toEqual([recall])
+    expect(result.sequence).toBe(1)
+    expect(() => recallItemSchema.parse({ ...recall, sources: Array(6).fill(recall.sources[0]) })).toThrow()
   })
 
   it('accepts terminal output as authoritative', () => {

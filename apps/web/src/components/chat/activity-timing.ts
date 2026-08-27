@@ -3,9 +3,11 @@ type TimedActivityStep =
   | { kind: 'tool'; tool: { durationMs?: number } }
   | { kind: 'workspace'; workspace: { durationMs?: number } }
   | { kind: 'compaction'; compaction: { duration_ms?: number } }
+  | { kind: 'recall' }
 
 export function activityDurationMs(steps: TimedActivityStep[]): number | undefined {
   const durations = steps.flatMap((step) => {
+    if (step.kind === 'recall') return []
     const durationMs = step.kind === 'reasoning'
       ? step.durationMs
       : step.kind === 'tool'

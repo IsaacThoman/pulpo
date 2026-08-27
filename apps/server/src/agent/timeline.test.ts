@@ -2,6 +2,19 @@ import { describe, expect, it } from 'vitest'
 import { buildAgentOutput, type ToolTimelineItem } from './timeline.js'
 
 describe('buildAgentOutput', () => {
+  it('keeps recalled chats before agent work in persisted output', () => {
+    const recall = {
+      id: 'response:recall', type: 'pulpo_recall' as const, status: 'completed' as const,
+      sources: [{
+        chat_id: '10000000-0000-4000-8000-000000000001',
+        response_id: '20000000-0000-4000-8000-000000000001',
+        title: 'Earlier chat', updated_at: '2026-08-27T00:00:00.000Z', excerpt: 'Relevant detail',
+      }],
+    }
+    const output = buildAgentOutput({ messages: [], skipMessageCount: 0, toolItems: new Map(), recallItems: [recall] })
+    expect(output[0]).toEqual(recall)
+  })
+
   it('interleaves reasoning, text, and tools across turns', () => {
     const tools = new Map<string, ToolTimelineItem>([
       ['t1', { id: 't1', type: 'pulpo_tool', tool: 'bash', arguments: { command: 'ping' }, status: 'completed', output: 'ok', durationMs: 1200 }],

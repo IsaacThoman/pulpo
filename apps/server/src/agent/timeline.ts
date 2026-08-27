@@ -1,5 +1,5 @@
 import type { AgentMessage } from '@earendil-works/pi-agent-core'
-import type { CompactionItem } from '@pulpo/contracts'
+import type { CompactionItem, RecallItem } from '@pulpo/contracts'
 
 export type ToolTimelineItem = {
   id: string
@@ -105,6 +105,7 @@ export function buildAgentOutput(options: {
   attachmentItems?: Map<string, AttachmentTimelineItem>
   workspaceItem?: Record<string, unknown>
   compactionItems?: CompactionItem[]
+  recallItems?: RecallItem[]
   /** Model-turn durations keyed by 1-based assistant turn index in this run. */
   turnDurationsMs?: Map<number, number>
   /** Last message is still streaming (use in_progress status). */
@@ -118,11 +119,13 @@ export function buildAgentOutput(options: {
     attachmentItems = new Map(),
     workspaceItem,
     compactionItems = [],
+    recallItems = [],
     turnDurationsMs,
     streaming = false,
     terminal = false,
   } = options
   const output: unknown[] = []
+  output.push(...recallItems)
   output.push(...compactionItems.filter((item) => item.phase === 'pre_response'))
   if (workspaceItem) output.push(workspaceItem)
 

@@ -102,6 +102,7 @@ import {
   Bot,
   Brain,
   Ghost,
+  History,
   Hourglass,
   Loader2,
   Minimize2,
@@ -1805,6 +1806,15 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     animatePanel(false);
   }, [abandonActiveTemporaryChat, animatePanel]);
 
+  const openRecalledChat = useCallback((chatId: string) => {
+    const source = historyChats.find((chat) => chat.id === chatId);
+    if (!source) {
+      Alert.alert('Source unavailable', 'This recalled chat was deleted, trashed, expired, or is no longer accessible.');
+      return;
+    }
+    selectChat(source);
+  }, [historyChats, selectChat]);
+
   const newChat = useCallback((temporaryByDefault = false) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
@@ -2287,6 +2297,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onRegenerate={regenerateMessage}
             onEdit={editMessage}
             onActivateBranch={activateMessageBranch}
+            onOpenChat={openRecalledChat}
             onTogglePanel={togglePanel}
             persistentSidebar={persistentSidebar}
             sidebarVisible={historyVisible}
@@ -2599,6 +2610,7 @@ function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boo
   }
   if (active && tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
   if (active) return <Brain color={COLORS.muted} size={14} />;
+  if (steps.some((step) => step.kind === 'recall')) return <History color={COLORS.muted} size={14} />;
   if (tools.length > 0) return <Wrench color={COLORS.muted} size={14} />;
   if (workspace && !steps.some((step) => step.kind === 'reasoning' && step.text)) return <Server color={COLORS.muted} size={14} />;
   return <Brain color={COLORS.muted} size={14} />;
@@ -2738,10 +2750,34 @@ function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: '
   );
 }
 
-function WorkBlock({ steps, active, durationMs }: {
+function RecallStepContent({ step, onOpenChat }: {
+  step: Extract<TimelineStep, { kind: 'recall' }>;
+  onOpenChat: (chatId: string) => void;
+}) {
+  const chats = usePrototypeStore((state) => state.chats);
+  const availableChatIds = useMemo(() => new Set(chats.filter((chat) => chat.deletedAt === null && !chat.expired && !chat.temporary).map((chat) => chat.id)), [chats]);
+  return <View style={styles.recallSources}>{step.recall.sources.map((source) => {
+    const available = availableChatIds.has(source.chat_id);
+    const date = new Date(source.updated_at);
+    const dateLabel = Number.isNaN(date.getTime()) ? source.updated_at : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date);
+    return <View key={`${source.chat_id}:${source.response_id}`} style={styles.recallSource}>
+      <View style={styles.recallSourceHeader}>
+        <View style={styles.recallSourceIdentity}>
+          <Text numberOfLines={1} style={styles.recallSourceTitle}>{source.title}</Text>
+          <Text style={styles.recallSourceDate}>{dateLabel}</Text>
+        </View>
+        {available ? <Pressable accessibilityLabel={`Open ${source.title}`} accessibilityRole="button" onPress={() => onOpenChat(source.chat_id)}><Text style={styles.recallSourceAction}>Open</Text></Pressable> : <Text style={styles.recallSourceUnavailable}>Source unavailable</Text>}
+      </View>
+      <Text selectable style={styles.recallSourceExcerpt}>{source.excerpt}</Text>
+    </View>;
+  })}</View>;
+}
+
+function WorkBlock({ steps, active, durationMs, onOpenChat }: {
   steps: TimelineStep[];
   active: boolean;
   durationMs?: number;
+  onOpenChat: (chatId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
@@ -2773,6 +2809,9 @@ function WorkBlock({ steps, active, durationMs }: {
             if (step.kind === 'compaction') {
               return <CompactionStepContent key={step.compaction.id} step={step} />;
             }
+            if (step.kind === 'recall') {
+              return <RecallStepContent key={step.recall.id} step={step} onOpenChat={onOpenChat} />;
+            }
             return <ToolStepRow key={step.tool.id ?? `tool:${index}`} step={step} />;
           })}
         </View>
@@ -2782,7 +2821,7 @@ function WorkBlock({ steps, active, durationMs }: {
 }
 
 function otherOutputItems(outputItems?: unknown[]): Array<Record<string, unknown>> {
-  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction']);
+  const known = new Set(['message', 'reasoning', 'pulpo_tool', 'pulpo_workspace', 'pulpo_attachment', 'pulpo_compaction', 'pulpo_recall']);
   return (outputItems ?? []).filter((item): item is Record<string, unknown> => {
     const type = (item as { type?: unknown }).type;
     return typeof type === 'string' && !known.has(type);
@@ -2859,6 +2898,7 @@ const MessageRow = memo(function MessageRow({
   onPreviewImages,
   onRegenerate,
   onActivateBranch,
+  onOpenChat,
   sideRail = false,
   editingLocked = false,
 }: {
@@ -2869,6 +2909,7 @@ const MessageRow = memo(function MessageRow({
   onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
+  onOpenChat: (chatId: string) => void;
   sideRail?: boolean;
   editingLocked?: boolean;
 }) {
@@ -2974,6 +3015,7 @@ const MessageRow = memo(function MessageRow({
                           : undefined)}
                         key={`activity:${index}`}
                         steps={segment.steps}
+                        onOpenChat={onOpenChat}
                       />;
                     }
                     return <SafeMarkdown
@@ -3220,7 +3262,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 
 function ChatView({
   messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -3237,6 +3279,7 @@ function ChatView({
   onEdit: (message: Message, content: string, attachments?: PreparedAttachment[], agentMode?: boolean) => Promise<boolean>;
   onRegenerate: (message: Message) => void;
   onActivateBranch: (message: Message, branchId: string) => Promise<void>;
+  onOpenChat: (chatId: string) => void;
   onStop: () => void;
   onTogglePanel: () => void;
   persistentSidebar: boolean;
@@ -4094,11 +4137,12 @@ function ChatView({
         onActivateBranch={expired
           ? async () => { Alert.alert('Temporary chat expired', 'This conversation is read-only.'); }
           : onActivateBranch}
+        onOpenChat={onOpenChat}
         sideRail={assistantSideRail}
         editingLocked={Boolean(messageEdit)}
       />
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onRegenerate, openFilePreview, openImageViewer]);
+  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -5164,6 +5208,15 @@ const styles = StyleSheet.create({
   compactionTurn: { borderRadius: 8, backgroundColor: COLORS.fill, paddingHorizontal: 9, paddingVertical: 7, gap: 3 },
   compactionRole: { color: COLORS.muted, fontSize: 10, fontWeight: '700', letterSpacing: 0.7, textTransform: 'uppercase' },
   compactionContent: { color: COLORS.textSoft, fontSize: 12, lineHeight: 18 },
+  recallSources: { gap: 8 },
+  recallSource: { borderRadius: 9, backgroundColor: COLORS.fill, paddingHorizontal: 10, paddingVertical: 9, gap: 7 },
+  recallSourceHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  recallSourceIdentity: { flex: 1, minWidth: 0 },
+  recallSourceTitle: { color: COLORS.textSoft, fontSize: 12.5, lineHeight: 17, fontWeight: '600' },
+  recallSourceDate: { color: COLORS.dim, fontSize: 10.5, lineHeight: 15, marginTop: 1 },
+  recallSourceAction: { color: COLORS.accent, fontSize: 11.5, lineHeight: 17, fontWeight: '600' },
+  recallSourceUnavailable: { color: COLORS.dim, fontSize: 10.5, lineHeight: 17 },
+  recallSourceExcerpt: { color: COLORS.muted, fontSize: 12, lineHeight: 18 },
   workToolTrigger: { minHeight: 28, flexDirection: 'row', alignItems: 'center', gap: 6 },
   workToolName: { color: COLORS.textSoft, fontSize: 12, lineHeight: 17, fontWeight: '600' },
   workToolSummary: { color: COLORS.muted, fontSize: 11, lineHeight: 16, fontFamily: COLORS.mono, flex: 1 },

@@ -32,6 +32,7 @@ describe('response output text', () => {
     expect(generationOutputHasStarted([])).toBe(false)
     expect(generationOutputHasStarted([
       { type: 'pulpo_compaction', status: 'completed', summary: 'history summary' },
+      { type: 'pulpo_recall', status: 'completed', sources: [{ title: 'Earlier chat' }] },
       { type: 'message', role: 'assistant', status: 'in_progress', content: [] },
       { type: 'reasoning', status: 'in_progress', summary: [] },
     ])).toBe(false)

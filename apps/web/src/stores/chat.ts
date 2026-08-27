@@ -1435,7 +1435,10 @@ export const useChat = create<ChatState>()((set, get) => ({
           temporary,
           expiresAt: temporary ? timestamp + 48 * 60 * 60 * 1_000 : newChatExpiresAt,
           expired: false,
-          provisional: false,
+          // Keep a new chat in the local summary list until /api/chats/start
+          // completes. A concurrent summaries refresh can otherwise discard it
+          // before the server has persisted the chat.
+          provisional: true,
         }
       return {
         chats: existing ? state.chats.map((chat) => chat.id === id ? updated : chat) : [updated, ...state.chats],

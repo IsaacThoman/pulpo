@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { agentSettingsSchema, dictationSettingsSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
+import { agentSettingsSchema, dictationSettingsSchema, episodicMemorySettingsSchema, episodicMemoryStatisticsRangeSchema, personalizationSettingsSchema, secretRevealInputSchema, webToolProviderSchema, webToolsSettingsSchema } from '@pulpo/contracts'
 import { requireAdmin } from '../auth/service.js'
 import { requireSecretRevealAuth } from '../auth/sensitive-action.js'
 import { db } from '../database/client.js'
@@ -19,6 +19,7 @@ import { assertSafeProviderUrl } from '../lib/url-security.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
 import { refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { publishStateChange } from '../responses/events.js'
+import { cancelEpisodicMemoryBuild, readEpisodicMemoryAdminStatus, requestEpisodicMemoryRebuild, updateEpisodicMemorySettings } from '../episodic-memory/settings.js'
 
 export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/banners', async () => {
@@ -48,7 +49,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.get('/api/admin/settings', async (request) => {
     requireAdmin(request)
     const rows = await db.select().from(applicationSettings)
-    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation'].includes(row.key)).map((row) => [row.key, row.value])) }
+    return { values: Object.fromEntries(rows.filter((row) => !['ocr', 'webTools', 'dictation', 'episodicMemory'].includes(row.key)).map((row) => [row.key, row.value])) }
   })
 
   app.patch('/api/admin/settings', async (request) => {
@@ -85,6 +86,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     if (values.ocr !== undefined) throw new AppError(400, 'dedicated_ocr_endpoint', 'Use /api/admin/settings/ocr for OCR settings')
     if (values.webTools !== undefined) throw new AppError(400, 'dedicated_web_tools_endpoint', 'Use /api/admin/settings/web-tools for web tool settings')
     if (values.dictation !== undefined) throw new AppError(400, 'dedicated_dictation_endpoint', 'Use /api/admin/settings/dictation for dictation settings')
+    if (values.episodicMemory !== undefined) throw new AppError(400, 'dedicated_episodic_memory_endpoint', 'Use /api/admin/settings/episodic-memory for episodic memory settings')
     const changes = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
       let storageRevisions: Array<{ userId: string; revision: number }> = []
@@ -129,6 +131,39 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     } catch (error) {
       return { configured: true, healthy: false, detail: error instanceof Error ? error.message : String(error) }
     }
+  })
+
+  app.get('/api/admin/settings/episodic-memory', async (request) => {
+    requireAdmin(request)
+    const range = episodicMemoryStatisticsRangeSchema.parse((request.query as { range?: unknown }).range ?? '24h')
+    return readEpisodicMemoryAdminStatus(undefined, range)
+  })
+
+  app.patch('/api/admin/settings/episodic-memory', async (request) => {
+    const admin = requireAdmin(request)
+    const settings = episodicMemorySettingsSchema.parse(request.body)
+    const range = episodicMemoryStatisticsRangeSchema.parse((request.query as { range?: unknown }).range ?? '24h')
+    await updateEpisodicMemorySettings(admin.id, settings)
+    return readEpisodicMemoryAdminStatus(undefined, range)
+  })
+
+  app.post('/api/admin/settings/episodic-memory/rebuild', async (request) => {
+    const admin = requireAdmin(request)
+    try {
+      await requestEpisodicMemoryRebuild(admin.id)
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('must be enabled')) {
+        throw new AppError(409, 'episodic_memory_disabled', error.message)
+      }
+      throw error
+    }
+    return { queued: true }
+  })
+
+  app.post('/api/admin/settings/episodic-memory/cancel', async (request) => {
+    const admin = requireAdmin(request)
+    await cancelEpisodicMemoryBuild(admin.id)
+    return { cancelled: true }
   })
 
   app.get('/api/admin/settings/web-tools', async (request) => {
