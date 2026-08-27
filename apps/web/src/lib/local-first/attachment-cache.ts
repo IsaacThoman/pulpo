@@ -1,5 +1,6 @@
 import { apiRequest, fetchApiBlob } from '@/lib/api'
 import { localAccountKey, localDb, type CachedAttachmentRow } from './database'
+import { adminChatAccessActive } from '@/features/admin-chat/access'
 
 export interface AttachmentMetadata {
   id: string
@@ -33,6 +34,7 @@ export async function cacheAttachmentBlob(
   blob: Blob,
   quotaMb: number,
 ): Promise<boolean> {
+  if (adminChatAccessActive()) return false
   const quotaBytes = attachmentQuotaBytes(quotaMb)
   if (quotaBytes === 0 || blob.size > quotaBytes) return false
   const row: CachedAttachmentRow = {
@@ -50,6 +52,7 @@ export async function cacheAttachmentBlob(
 }
 
 export async function getCachedAttachment(userId: string, id: string): Promise<CachedAttachmentRow | undefined> {
+  if (adminChatAccessActive()) return undefined
   const row = await localDb.attachmentBlobs.get(id)
   if (!row || row.userId !== localAccountKey(userId)) return undefined
   await localDb.attachmentBlobs.update(id, { lastAccessed: Date.now() })

@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { editMessageSchema, idSchema } from '@pulpo/contracts'
-import { requireUser } from '../auth/service.js'
+import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import { chats, requestLogs, responses, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
@@ -86,7 +86,9 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const attachmentIds = responseAttachmentIds(original.input)
     const generation = resolveBranchGenerationSettings(original, selection)
     const created = await createResponse({
-      userId: user.id,
+      ownerUserId: user.id,
+      billingUserId: billingUserForRequest(request).id,
+      actorUserId: request.adminChatAccess?.actorUser.id,
       chatId: original.chatId,
       rawInput: original.input,
       parentResponseId: original.parentResponseId,
@@ -132,7 +134,9 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
         throw new AppError(400, 'empty_message', 'Message must include text or attachments')
       }
       const created = await createResponse({
-        userId: user.id,
+        ownerUserId: user.id,
+        billingUserId: billingUserForRequest(request).id,
+        actorUserId: request.adminChatAccess?.actorUser.id,
         chatId: original.chatId,
         rawInput: replaceResponseUserInput(original.input, content, attachmentIds),
         parentResponseId: original.parentResponseId,

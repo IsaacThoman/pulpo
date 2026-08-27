@@ -105,6 +105,7 @@ export async function createQueuedMessage(
   userId: string,
   chatId: string,
   input: CreateQueuedMessageInput,
+  attribution: { billingUserId?: string; actorUserId?: string | null } = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
   await validateQueueInput(userId, chatId, input)
   const id = newId()
@@ -120,6 +121,8 @@ export async function createQueuedMessage(
       id,
       chatId,
       userId,
+      billingUserId: attribution.billingUserId,
+      actorUserId: attribution.actorUserId,
       content: input.input,
       modelId: input.modelId,
       presetSelections: input.presetSelections,
@@ -140,6 +143,7 @@ export async function updateQueuedMessage(
   chatId: string,
   id: string,
   input: UpdateQueuedMessageInput,
+  attribution: { billingUserId?: string; actorUserId?: string | null } = {},
 ): Promise<QueuedMessage | null> {
   await assertAccessibleChat(userId, chatId)
   if (input.action === 'save_edit') {
@@ -181,6 +185,8 @@ export async function updateQueuedMessage(
         presetSelections: input.presetSelections,
         agentMode: input.agentMode,
         attachmentIds: [...new Set(input.attachmentIds)],
+        billingUserId: attribution.billingUserId ?? userId,
+        actorUserId: attribution.actorUserId ?? null,
         status: 'pending',
         error: null,
         updatedAt: new Date(),
@@ -277,7 +283,9 @@ export async function advanceMessageQueue(chatId: string): Promise<void> {
       const [chat] = await db.select({ activeBranchLeafId: chats.activeBranchLeafId, activeResponseId: chats.activeResponseId })
         .from(chats).where(eq(chats.id, chatId)).limit(1)
       await createResponse({
-        userId: claim.userId,
+        ownerUserId: claim.userId,
+        billingUserId: claim.billingUserId ?? claim.userId,
+        actorUserId: claim.actorUserId,
         chatId,
         parentResponseId: chat?.activeBranchLeafId ?? chat?.activeResponseId ?? null,
         input: {

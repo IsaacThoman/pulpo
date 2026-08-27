@@ -151,7 +151,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
       expiresAt: temporaryChatExpiresAt(),
     })
     const created = await createResponse({
-      userId: user.id,
+      ownerUserId: user.id,
       chatId,
       apiKeyId: key.id,
       idempotencyKey,

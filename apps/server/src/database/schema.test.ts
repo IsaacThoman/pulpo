@@ -24,6 +24,8 @@ import {
   weeklyUsagePeriods,
   poolMembers,
   poolInvitations,
+  queuedMessages,
+  requestLogs,
 } from './schema.js'
 
 describe('user-owned operational records', () => {
@@ -83,6 +85,19 @@ describe('user-owned operational records', () => {
   it('allows only nonnegative per-user storage overrides', () => {
     const config = getTableConfig(billingAccounts)
     expect(config.checks.map((constraint) => constraint.name)).toContain('billing_accounts_storage_override_check')
+  })
+
+  it('persists administrator billing and actor attribution for delayed chat work', () => {
+    const queue = getTableConfig(queuedMessages)
+    const logs = getTableConfig(requestLogs)
+
+    expect(queue.columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      'billing_user_id',
+      'actor_user_id',
+    ]))
+    expect(logs.columns.map((column) => column.name)).toContain('actor_user_id')
+    expect(queue.columns.find((column) => column.name === 'billing_user_id')?.notNull).toBe(false)
+    expect(logs.columns.find((column) => column.name === 'actor_user_id')?.notNull).toBe(false)
   })
 
   it('uses Stripe billing identifiers and keeps platform and processing fees separate', () => {

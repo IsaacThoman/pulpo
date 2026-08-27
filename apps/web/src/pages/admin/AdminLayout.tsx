@@ -6,6 +6,7 @@ import { ui } from '@/i18n/ui'
 
 const TABS = [
   { to: '/admin/users', label: "Users", end: false },
+  { to: '/admin/chats', label: "Chats", end: false },
   { to: '/admin/providers', label: "Providers", end: false },
   { to: '/admin/labs', label: "Labs", end: false },
   { to: '/admin/icons', label: "Icons", end: false },
@@ -18,6 +19,7 @@ export function AdminLayout() {
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const billingPage = useMatch('/admin/billing')
   const usersPage = useMatch('/admin/users')
+  const chatViewer = useMatch('/admin/chats/:chatId')
   const widePage = billingPage || usersPage
   const tabs = billingEnabled
     ? [...TABS.slice(0, -1), { to: '/admin/billing', label: "Billing", end: false }, TABS.at(-1)!]
@@ -46,11 +48,11 @@ export function AdminLayout() {
           ))}
         </nav>
       </header>
-      <ScrollArea className="min-h-0 flex-1">
+      {chatViewer ? <div className="min-h-0 flex-1"><Outlet /></div> : <ScrollArea className="min-h-0 flex-1">
         <div className={cn('mx-auto px-5 py-6', widePage ? 'max-w-7xl' : 'max-w-5xl')}>
           <Outlet />
         </div>
-      </ScrollArea>
+      </ScrollArea>}
     </div>
   )
 }
