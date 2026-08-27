@@ -1,8 +1,17 @@
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
-const PUBLIC_API_PROTOCOL_PARAMETERS = new Set(['tools', 'tool_choice'])
+export const PUBLIC_API_PROTOCOL_PARAMETERS = new Set(['instructions'])
 
 export type ModelParameterContext = {
   publicApi?: boolean
+}
+
+export function unsupportedPublicModelParameter(model: { allowedParameters: unknown }, parameters: unknown): string | undefined {
+  const allowed = new Set(
+    Array.isArray(model.allowedParameters)
+      ? model.allowedParameters.filter((key): key is string => typeof key === 'string')
+      : [],
+  )
+  return Object.keys(record(parameters)).find((key) => !allowed.has(key) && !PUBLIC_API_PROTOCOL_PARAMETERS.has(key))
 }
 
 function record(value: unknown): Record<string, unknown> {

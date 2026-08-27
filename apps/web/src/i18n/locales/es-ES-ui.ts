@@ -556,6 +556,7 @@ const esUi: Record<string, string> = {
   "Limit": "Límite",
   "Linked models": "Modelos vinculados",
   "List models": "Listar modelos",
+  "Inference": "Inferencia",
   "Listing files…": "Listando archivos...",
   "Live leases, owners, queue state, and forced cleanup deadlines.": "Asignaciones activas, propietarios, estado de la cola y plazos de limpieza forzada.",
   "Loading active participants…": "Cargando participantes activos...",

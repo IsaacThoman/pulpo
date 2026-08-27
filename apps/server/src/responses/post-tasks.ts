@@ -106,6 +106,7 @@ export async function runPostResponseTasks(
   output: unknown[],
   requestLogId: string,
 ): Promise<number> {
+  if (record.response.origin === 'api') return 0
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
   const task = parseInterfaceSettings(setting?.value)
   const runtime = await resolvePostTaskRuntime(task.localTask, current)
