@@ -47,6 +47,7 @@ import {
   syncRequestSchema,
   syncResultSchema,
   updateChatSchema,
+  updateApiKeySchema,
   updateProviderSchema,
   workspaceContinueWithoutAgentAvailableAtMs,
   type ResponseEvent,
@@ -138,6 +139,12 @@ describe('shared contracts', () => {
     }
     expect(episodicMemoryStatisticsSchema.parse(statistics)).toMatchObject({ range: '7d' })
     expect(episodicMemoryStatisticsSchema.safeParse({ ...statistics, range: '90d' }).success).toBe(false)
+  })
+
+  it('requires an explicit API key enabled state', () => {
+    expect(updateApiKeySchema.parse({ enabled: true })).toEqual({ enabled: true })
+    expect(updateApiKeySchema.parse({ enabled: false })).toEqual({ enabled: false })
+    expect(updateApiKeySchema.safeParse({}).success).toBe(false)
   })
 
   it('validates semantic provider cache configuration', () => {

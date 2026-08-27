@@ -137,7 +137,7 @@ export async function registerAdminRoutes(app: FastifyInstance): Promise<void> {
         await tx.update(managementTokens).set({ revokedAt: new Date() }).where(and(eq(managementTokens.userId, id), isNull(managementTokens.revokedAt)))
       }
       if (!apiKeyOwnerCanSpend(updated!)) {
-        await tx.update(apiKeys).set({ status: 'revoked', revokedAt: new Date() }).where(and(eq(apiKeys.userId, id), ne(apiKeys.status, 'revoked')))
+        await tx.update(apiKeys).set({ status: 'disabled', disabledAt: new Date() }).where(and(eq(apiKeys.userId, id), ne(apiKeys.status, 'disabled')))
       }
       if (password) {
         const passwordHash = await createPasswordHash(password)

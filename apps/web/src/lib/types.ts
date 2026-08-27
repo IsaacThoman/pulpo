@@ -121,7 +121,7 @@ export interface ApiKey {
   totalBudget: number | null // USD lifetime cap
   spentThisMonth: number
   spentTotal: number
-  revoked: boolean
+  disabled: boolean
 }
 
 export interface UsageRecord {

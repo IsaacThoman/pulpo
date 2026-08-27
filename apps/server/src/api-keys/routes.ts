@@ -1,7 +1,7 @@
 import argon2 from 'argon2'
 import { and, eq, gte, sql } from 'drizzle-orm'
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { createApiKeySchema } from '@pulpo/contracts'
+import { createApiKeySchema, updateApiKeySchema } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { apiKeyModelPermissions, apiKeys, applicationSettings, modelPresetChoices, modelPresets, models, usageEvents, users } from '../database/schema.js'
 import { AppError, unauthorized } from '../lib/errors.js'
@@ -119,16 +119,17 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
     return result
   })
 
-  app.post('/api/api-keys/:id/revoke', async (request) => {
+  app.patch('/api/api-keys/:id', async (request) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
+    const { enabled } = updateApiKeySchema.parse(request.body)
     const result = await db
       .update(apiKeys)
-      .set({ status: 'revoked', revokedAt: new Date() })
+      .set({ status: enabled ? 'active' : 'disabled', disabledAt: enabled ? null : new Date() })
       .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, user.id)))
       .returning({ id: apiKeys.id })
     if (!result.length) throw new AppError(404, 'not_found', 'API key not found')
-    return { id, revoked: true }
+    return { id, enabled }
   })
 
   app.delete('/api/api-keys/:id', async (request, reply) => {
