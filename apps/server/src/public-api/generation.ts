@@ -150,6 +150,7 @@ export async function executePublicGeneration(input: {
         idempotencyScope: publicIdempotencyScope(input.key.id, input.request.protocol),
         idempotencyFingerprint: fingerprint,
         metadata: input.request.metadata,
+        publiclyStored: input.request.publiclyStored,
         input: {
           input: input.request.displayInput,
           modelId: input.request.model,

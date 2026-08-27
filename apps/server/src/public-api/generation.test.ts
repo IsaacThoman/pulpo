@@ -35,7 +35,7 @@ const row = {
   origin: 'api', pricingVersionId: null, openaiResponseId: null, previousResponseId: null,
   parentResponseId: null, userMessageId: null, branchReason: 'message', status: 'queued',
   executionMode: 'background', agentMode: false, agentCapacityAction: null, input: [], instructions: null,
-  presetSelections: {}, parameters: {}, metadata: { trace: '1' }, output: [], usage: null, error: null,
+  presetSelections: {}, parameters: {}, metadata: { trace: '1' }, publiclyStored: true, output: [], usage: null, error: null,
   incompleteDetails: null, lastSequence: 0, upstreamSequence: 0, idempotencyKey: null,
   idempotencyScope: 'api:key-1:responses', idempotencyFingerprint: null,
   startedAt: null, completedAt: null, deletedAt: null, createdAt, updatedAt: createdAt,
@@ -62,13 +62,15 @@ describe('public generation execution', () => {
       request: {
         protocol: 'responses', model: 'model-1', rawInput: 'hello', displayInput: 'hello',
         parameters: {}, maxOutputTokens: 20, stream: false, background: true,
-        metadata: { trace: '1' }, fingerprintValue: { model: 'model-1', input: 'hello' },
+        metadata: { trace: '1' }, publiclyStored: false, ignoredParameters: [],
+        fingerprintValue: { model: 'model-1', input: 'hello' },
       },
     })
 
     expect(mocks.createResponse).toHaveBeenCalledWith(expect.objectContaining({
       ownerUserId: 'user-1', apiKeyId: 'key-1', idempotencyKey: 'retry-1',
       idempotencyScope: 'api:key-1:responses', metadata: { trace: '1' }, rawInput: 'hello',
+      publiclyStored: false,
       input: expect.objectContaining({ modelId: 'model-1', executionMode: 'background', maxOutputTokens: 20 }),
     }))
     expect(response.code).toHaveBeenCalledWith(202)
@@ -83,7 +85,7 @@ describe('public generation execution', () => {
       idempotencyKey: 'retry-1',
       request: {
         protocol: 'responses', model: 'model-1', rawInput: 'hello', displayInput: 'hello',
-        parameters: {}, stream: false, background: true,
+        parameters: {}, stream: false, background: true, publiclyStored: true, ignoredParameters: [],
         fingerprintValue: { model: 'model-1', input: 'hello' },
       },
     })).rejects.toMatchObject({ statusCode: 409, code: 'idempotency_conflict' })

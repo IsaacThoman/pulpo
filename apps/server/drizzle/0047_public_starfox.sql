@@ -1,0 +1,1 @@
+ALTER TABLE "responses" ADD COLUMN "publicly_stored" boolean DEFAULT true NOT NULL;

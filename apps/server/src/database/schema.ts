@@ -442,6 +442,7 @@ export const responses = pgTable('responses', {
   presetSelections: jsonb('preset_selections').notNull().default({}),
   parameters: jsonb('parameters').notNull().default({}),
   metadata: jsonb('metadata').$type<Record<string, string>>().notNull().default({}),
+  publiclyStored: boolean('publicly_stored').notNull().default(true),
   output: jsonb('output').notNull().default([]),
   usage: jsonb('usage'),
   error: jsonb('error'),

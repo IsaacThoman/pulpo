@@ -109,12 +109,21 @@ describe('user-owned operational records', () => {
   it('persists public response metadata, incomplete state, and scoped idempotency', () => {
     const config = getTableConfig(responses)
     expect(config.columns.map((column) => column.name)).toEqual(expect.arrayContaining([
-      'metadata', 'incomplete_details', 'idempotency_scope', 'idempotency_fingerprint',
+      'metadata', 'incomplete_details', 'idempotency_scope', 'idempotency_fingerprint', 'publicly_stored',
     ]))
     const index = config.indexes.find((item) => item.config.name === 'responses_user_scope_idempotency_unique')
     expect(index?.config.unique).toBe(true)
     expect(index?.config.columns.map((column) => 'name' in column ? column.name : undefined))
       .toEqual(['user_id', 'idempotency_scope', 'idempotency_key'])
+  })
+
+  it('backfills public response retention without changing accounting records', () => {
+    const migration = readFileSync(new URL('../../drizzle/0047_public_starfox.sql', import.meta.url), 'utf8')
+    expect(migration).toContain('ADD COLUMN "publicly_stored" boolean DEFAULT true NOT NULL')
+    expect(migration).not.toContain('budget_reservations')
+    expect(migration).not.toContain('request_logs')
+    expect(migration).not.toContain('usage_events')
+    expect(migration).not.toContain('credit_ledger')
   })
 
   it('backfills existing API requests into Responses-protocol idempotency scopes', () => {
@@ -204,7 +213,7 @@ describe('user-owned operational records', () => {
   })
 
   it('keeps the renumbered episodic-memory migration compatible with existing preview databases', () => {
-    const migration = readFileSync(new URL('../../drizzle/0047_melted_pixie.sql', import.meta.url), 'utf8')
+    const migration = readFileSync(new URL('../../drizzle/0048_wild_mathemanic.sql', import.meta.url), 'utf8')
 
     expect(migration.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(4)
     expect(migration.match(/EXCEPTION WHEN duplicate_object THEN NULL/g)).toHaveLength(7)
