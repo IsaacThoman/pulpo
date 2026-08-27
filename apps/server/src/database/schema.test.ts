@@ -1,4 +1,5 @@
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   backupJobs,
@@ -26,6 +27,7 @@ import {
   poolInvitations,
   queuedMessages,
   requestLogs,
+  responses,
 } from './schema.js'
 
 describe('user-owned operational records', () => {
@@ -98,6 +100,23 @@ describe('user-owned operational records', () => {
     expect(logs.columns.map((column) => column.name)).toContain('actor_user_id')
     expect(queue.columns.find((column) => column.name === 'billing_user_id')?.notNull).toBe(false)
     expect(logs.columns.find((column) => column.name === 'actor_user_id')?.notNull).toBe(false)
+  })
+
+  it('persists public response metadata, incomplete state, and scoped idempotency', () => {
+    const config = getTableConfig(responses)
+    expect(config.columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      'metadata', 'incomplete_details', 'idempotency_scope', 'idempotency_fingerprint',
+    ]))
+    const index = config.indexes.find((item) => item.config.name === 'responses_user_scope_idempotency_unique')
+    expect(index?.config.unique).toBe(true)
+    expect(index?.config.columns.map((column) => 'name' in column ? column.name : undefined))
+      .toEqual(['user_id', 'idempotency_scope', 'idempotency_key'])
+  })
+
+  it('backfills existing API requests into Responses-protocol idempotency scopes', () => {
+    const migration = readFileSync(new URL('../../drizzle/0045_openai_completions_compatibility.sql', import.meta.url), 'utf8')
+    expect(migration).toContain("'api:' || COALESCE(\"log\".\"api_key_id\"::text, 'legacy') || ':responses'")
+    expect(migration).toContain('responses_user_scope_idempotency_unique')
   })
 
   it('uses Stripe billing identifiers and keeps platform and processing fees separate', () => {

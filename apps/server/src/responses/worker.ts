@@ -189,16 +189,17 @@ async function contextualInput(
   record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect },
   history: Array<typeof responses.$inferSelect>,
   requestLogId: string,
+  publicApi: boolean,
   onCompactionUpdate: (item: CompactionItem) => Promise<void>,
   onBilledCost: (costMicros: number) => void,
 ): Promise<{ input: unknown[]; compactionItems: CompactionItem[] }> {
-  const [[preferences], [personalizationRow]] = await Promise.all([
+  const [[preferences], [personalizationRow]] = publicApi ? [[], []] : await Promise.all([
     db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1),
     db.select({ value: applicationSettings.value }).from(applicationSettings)
       .where(eq(applicationSettings.key, 'personalization')).limit(1),
   ])
   const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
-  const customInstructions = composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
+  const customInstructions = publicApi ? '' : composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
   const enabledMemories = values.memoryEnabled
     ? await db.select().from(memories).where(and(eq(memories.userId, record.response.userId), eq(memories.enabled, true)))
     : []
@@ -333,7 +334,12 @@ async function processGenerationAttempt(
         await persistItems(responseId, output)
         const completedAt = new Date()
         await db.update(responses).set({
-          status, output, usage, completedAt, updatedAt: completedAt,
+          status,
+          output,
+          usage,
+          incompleteDetails: recovered.incomplete_details ?? null,
+          completedAt,
+          updatedAt: completedAt,
           error: outputError
             ? { message: outputError }
             : recovered.error ? { message: recovered.error.message, code: recovered.error.code } : null,
@@ -388,7 +394,7 @@ async function processGenerationAttempt(
     onBilledCost: (costMicros) => { sidecarCostMicros += costMicros },
   })
   let sequence = record.response.lastSequence
-  const contextual = await contextualInput(client, record, history, requestLog.id, async (item) => {
+  const contextual = await contextualInput(client, record, history, requestLog.id, Boolean(requestLog.apiKeyId), async (item) => {
     sequence += 1
     const emittedAt = new Date().toISOString()
     const publicItem = sanitizeOutputForClient([item])[0]
@@ -410,6 +416,9 @@ async function processGenerationAttempt(
   let usage: ResponseUsage | null = null
   let providerCostMicros: number | undefined
   let upstreamResponseId = record.response.openaiResponseId
+  let terminalStatus: typeof responses.$inferSelect.status = 'completed'
+  let incompleteDetails: { reason?: string } | null = null
+  let terminalError: { message: string; code?: string } | null = null
   let lastSnapshotAt = 0
   let lastTelemetryAt = 0
   let pendingEventCount = 0
@@ -474,7 +483,14 @@ async function processGenerationAttempt(
         payload: upstream,
         emittedAt: new Date().toISOString(),
       }
-      const upstreamResponse = upstream.response as { id?: string; output?: unknown[]; usage?: unknown } | undefined
+      const upstreamResponse = upstream.response as {
+        id?: string
+        output?: unknown[]
+        usage?: unknown
+        status?: string
+        incomplete_details?: { reason?: string } | null
+        error?: { message?: string; code?: string } | null
+      } | undefined
       if (upstreamResponse?.id) {
         upstreamResponseId = upstreamResponse.id
         await db.update(responses).set({ openaiResponseId: upstreamResponse.id }).where(eq(responses.id, responseId))
@@ -484,6 +500,17 @@ async function processGenerationAttempt(
       if (upstreamResponse?.usage) {
         usage = normalizeUsage(upstreamResponse.usage)
         if (record.model.useProviderCost) providerCostMicros = providerReportedCostMicros(upstreamResponse.usage)
+      }
+      if (upstreamResponse?.status === 'incomplete') {
+        terminalStatus = 'incomplete'
+        incompleteDetails = upstreamResponse.incomplete_details ?? null
+      } else if (upstreamResponse?.status === 'failed' || upstreamResponse?.status === 'cancelled') {
+        terminalStatus = upstreamResponse.status
+        terminalError = upstreamResponse.error?.message
+          ? { message: upstreamResponse.error.message, ...(upstreamResponse.error.code ? { code: upstreamResponse.error.code } : {}) }
+          : null
+      } else if (upstreamResponse?.status === 'completed') {
+        terminalStatus = 'completed'
       }
       await publishResponseEvent(event)
       pendingEventCount += 1
@@ -505,6 +532,9 @@ async function processGenerationAttempt(
     }
     await flushTelemetry(true)
     if (firstTokenTimer) { clearTimeout(firstTokenTimer); firstTokenTimer = undefined }
+    if (terminalStatus === 'failed' || terminalStatus === 'cancelled') {
+      throw new Error(terminalError?.message ?? `Generation ${terminalStatus}`)
+    }
     if (record.response.origin === 'web') {
       const outputError = browserChatOutputError(output)
       if (outputError) throw new Error(outputError)
@@ -512,12 +542,19 @@ async function processGenerationAttempt(
     await persistItems(responseId, output)
     const completedAt = new Date()
     await db.update(responses).set({
-      status: 'completed', output, usage, error: null, lastSequence: sequence, completedAt, updatedAt: completedAt,
+      status: terminalStatus,
+      output,
+      usage,
+      error: null,
+      incompleteDetails,
+      lastSequence: sequence,
+      completedAt,
+      updatedAt: completedAt,
     }).where(eq(responses.id, responseId))
-    const postTaskCostMicros = await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
+    const postTaskCostMicros = terminalStatus === 'completed' ? await runPostResponseTasks(record, record, output, requestLog.id).catch((error) => {
       console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
       return 0
-    })
+    }) : 0
     await settleWithSidecars({
       responseId,
       usage,

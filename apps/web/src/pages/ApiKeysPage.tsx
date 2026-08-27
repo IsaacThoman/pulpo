@@ -50,18 +50,18 @@ import { useAuth } from '@/stores/auth'
 import { ui, uit } from '@/i18n/ui'
 
 const ALL_SCOPES = [
-  { id: 'responses', label: "Responses" },
+  { id: 'responses', label: "Inference" },
   { id: 'models', label: "List models" },
 ] as const
 
 const API_BASE_URL = `${runtimeInstanceUrl()}/v1`
 
-const CURL_SNIPPET = `curl ${API_BASE_URL}/responses \\
+const CURL_SNIPPET = `curl ${API_BASE_URL}/chat/completions \\
   -H "Authorization: Bearer $PULPO_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "your-model-id",
-    "input": "hello",
+    "messages": [{"role": "user", "content": "hello"}],
     "stream": true
   }'`
 
@@ -72,15 +72,21 @@ const client = new OpenAI({
   apiKey: process.env.PULPO_API_KEY,
 });
 
-const stream = await client.responses.create({
+const stream = await client.chat.completions.create({
   model: "your-model-id",
-  input: "hello",
+  messages: [{ role: "user", content: "hello" }],
   stream: true,
 });
 
 for await (const chunk of stream) {
-  if (chunk.type === "response.output_text.delta") process.stdout.write(chunk.delta);
+  process.stdout.write(chunk.choices[0]?.delta.content ?? "");
 }`
+
+function scopeLabel(scope: string): string {
+  if (scope === 'responses') return ui('Inference')
+  if (scope === 'models') return ui('List models')
+  return scope
+}
 
 function LimitRow({
   amount,
@@ -282,7 +288,7 @@ export function ApiKeysPage() {
                 <div className="min-w-0">
                   <dt className="text-xs text-muted-foreground">{ui("Models")}</dt>
                   <dd className="mt-1 truncate">{modelLabel(key.allowedModels)}</dd>
-                  <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.join(' · ')}</dd>
+                  <dd className="truncate text-[11px] text-muted-foreground/80">{key.scopes.map(scopeLabel).join(' · ')}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-muted-foreground">{ui("Last used")}</dt>
@@ -409,7 +415,10 @@ export function ApiKeysPage() {
                 <div className="grid gap-2 text-sm sm:grid-cols-2">
                   {[
                     ['POST', '/v1/responses'],
+                    ['POST', '/v1/chat/completions'],
+                    ['POST', '/v1/completions'],
                     ['GET', '/v1/models'],
+                    ['GET', '/v1/models/:model'],
                     ['GET', '/v1/responses/:id'],
                   ].map(([method, path]) => (
                     <div

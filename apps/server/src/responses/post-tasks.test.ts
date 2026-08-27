@@ -8,6 +8,7 @@ vi.mock('../chats/title-change.js', () => ({ persistGeneratedChatTitle }))
 import {
   persistGeneratedTitleResult,
   retryInvalidTitleOutput,
+  runPostResponseTasks,
   selectPostTaskRuntime,
   TitleOutputValidationError,
   validateGeneratedTitleResponse,
@@ -22,6 +23,11 @@ afterEach(() => {
 })
 
 describe('post-response task model selection', () => {
+  it('skips UI-only title and memory tasks for API-originated generations', async () => {
+    await expect(runPostResponseTasks({ response: { origin: 'api' } } as never, {} as never, [], 'request-log'))
+      .resolves.toBe(0)
+  })
+
   it('uses a fixed available task model', () => {
     const current = runtime('current-model')
     const selected = runtime('small-task-model')

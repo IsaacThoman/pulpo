@@ -42,9 +42,15 @@ export async function authenticateApiKey(request: FastifyRequest, requiredScope:
 }
 
 export async function assertApiKeyModelAllowed(apiKeyId: string, modelId: string): Promise<void> {
+  if (!(await apiKeyModelAllowed(apiKeyId, modelId))) {
+    throw new AppError(403, 'model_not_allowed', 'This API key cannot use the selected model', 'permission_error')
+  }
+}
+
+async function loadApiKeyModelPermissionContext(apiKeyId: string) {
   const permissions = await db.select({ modelId: apiKeyModelPermissions.modelId }).from(apiKeyModelPermissions).where(eq(apiKeyModelPermissions.apiKeyId, apiKeyId))
   const permittedModelIds = permissions.map((permission) => permission.modelId)
-  if (permittedModelIds.length === 0 || permittedModelIds.includes(modelId)) return
+  if (permittedModelIds.length === 0) return { permittedModelIds, catalog: [], redirects: [] }
   const [catalog, redirectRows] = await Promise.all([
     db.select({ id: models.id, enabled: models.enabled, visible: models.visible, fallbackModelId: models.fallbackModelId }).from(models),
     db.select({ modelId: modelPresets.modelId, action: modelPresetChoices.action })
@@ -56,9 +62,19 @@ export async function assertApiKeyModelAllowed(apiKeyId: string, modelId: string
     const targetModelId = (row.action as { modelId?: unknown }).modelId
     return typeof targetModelId === 'string' ? [{ modelId: row.modelId, targetModelId }] : []
   })
-  if (!modelPermissionAllows(modelId, permittedModelIds, catalog, redirects)) {
-    throw new AppError(403, 'model_not_allowed', 'This API key cannot use the selected model', 'permission_error')
-  }
+  return { permittedModelIds, catalog, redirects }
+}
+
+export async function apiKeyModelAllowed(apiKeyId: string, modelId: string): Promise<boolean> {
+  const context = await loadApiKeyModelPermissionContext(apiKeyId)
+  return context.permittedModelIds.length === 0
+    || modelPermissionAllows(modelId, context.permittedModelIds, context.catalog, context.redirects)
+}
+
+export async function filterApiKeyAllowedModels<T extends { id: string }>(apiKeyId: string, rows: T[]): Promise<T[]> {
+  const context = await loadApiKeyModelPermissionContext(apiKeyId)
+  if (context.permittedModelIds.length === 0) return rows
+  return rows.filter((row) => modelPermissionAllows(row.id, context.permittedModelIds, context.catalog, context.redirects))
 }
 
 export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> {
