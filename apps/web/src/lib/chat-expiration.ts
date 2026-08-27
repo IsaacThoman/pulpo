@@ -27,11 +27,10 @@ export type ChatLandingBadge =
   | { kind: 'expiration'; period: ChatExpirationPeriod }
   | null
 
-export function retainChatLandingExpirationPeriod(
-  badge: ChatLandingBadge,
-  previousPeriod: ChatExpirationPeriod | null,
+export function resolveConfiguredChatExpirationPeriod(
+  automaticChatExpiration: 'disabled' | ChatExpirationPeriod,
 ): ChatExpirationPeriod | null {
-  return badge?.kind === 'expiration' ? badge.period : previousPeriod
+  return automaticChatExpiration === 'disabled' ? null : automaticChatExpiration
 }
 
 export function resolveChatLandingBadge(

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatChatExpiryRemaining,
+  resolveConfiguredChatExpirationPeriod,
   resolveChatExpiryMenuAction,
   resolveChatLandingBadge,
-  retainChatLandingExpirationPeriod,
 } from './chat-expiration'
 
 describe('chat expiration labels', () => {
@@ -36,9 +36,9 @@ describe('chat expiration labels', () => {
     expect(resolveChatLandingBadge(true, true, '7d')).toEqual({ kind: 'temporary' })
   })
 
-  it('retains the expiration period while the badge animates out', () => {
-    expect(retainChatLandingExpirationPeriod({ kind: 'expiration', period: '24h' }, null)).toBe('24h')
-    expect(retainChatLandingExpirationPeriod(null, '24h')).toBe('24h')
-    expect(retainChatLandingExpirationPeriod({ kind: 'temporary' }, '7d')).toBe('7d')
+  it('resolves the badge label period from the account configuration', () => {
+    expect(resolveConfiguredChatExpirationPeriod('24h')).toBe('24h')
+    expect(resolveConfiguredChatExpirationPeriod('7d')).toBe('7d')
+    expect(resolveConfiguredChatExpirationPeriod('disabled')).toBeNull()
   })
 })

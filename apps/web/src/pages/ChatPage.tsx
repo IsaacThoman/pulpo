@@ -17,8 +17,8 @@ import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
 import {
+  resolveConfiguredChatExpirationPeriod,
   resolveChatLandingBadge,
-  retainChatLandingExpirationPeriod,
   type ChatExpirationPeriod,
   type ChatLandingBadge,
 } from '@/lib/chat-expiration'
@@ -67,20 +67,16 @@ function Placeholder({
   suggestions,
   onPick,
   badge,
+  expirationPeriod,
 }: {
   modelId: string
   suggestions: SuggestedPrompt[]
   onPick: (message: string) => void
   badge: ChatLandingBadge
+  expirationPeriod: ChatExpirationPeriod | null
 }) {
   const { t } = useTranslation()
   const model = getCatalogModel(modelId)
-  const activeExpirationPeriod = badge?.kind === 'expiration' ? badge.period : null
-  const [lastExpirationPeriod, setLastExpirationPeriod] = useState<ChatExpirationPeriod | null>(activeExpirationPeriod)
-  useEffect(() => {
-    if (activeExpirationPeriod) setLastExpirationPeriod(activeExpirationPeriod)
-  }, [activeExpirationPeriod])
-  const expirationPeriod = retainChatLandingExpirationPeriod(badge, lastExpirationPeriod)
   return (
     <div className="flex h-full flex-col items-center justify-center px-4">
       <div className="relative flex items-center gap-3">
@@ -96,7 +92,7 @@ function Placeholder({
         </div>
         <div
           aria-hidden={badge?.kind !== 'expiration'}
-          aria-label={badge?.kind === 'expiration' ? t('chat.expirationBadgeLabel', { period: badge.period }) : undefined}
+          aria-label={badge?.kind === 'expiration' && expirationPeriod ? t('chat.expirationBadgeLabel', { period: expirationPeriod }) : undefined}
           data-visible={badge?.kind === 'expiration'}
           role="status"
           className="chat-landing-badge-transition absolute inset-x-0 bottom-full mb-3 flex items-center justify-center gap-1.5 px-2 text-center text-xs font-medium text-teal-600 dark:text-teal-400"
@@ -328,7 +324,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const showExpirationControl = !temporaryMode && (chat
     ? automaticChatExpiration !== 'disabled' || chat.expiresAt !== null
     : !routeChatId && automaticChatExpiration !== 'disabled')
-  const expirationPeriodLabel = automaticChatExpiration === 'disabled' ? null : automaticChatExpiration
+  const expirationPeriodLabel = resolveConfiguredChatExpirationPeriod(automaticChatExpiration)
   const landingBadge = resolveChatLandingBadge(temporaryMode, effectiveNewChatAutoExpire, automaticChatExpiration)
   const toggleExpiration = () => {
     if (chat) {
@@ -463,6 +459,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               suggestions={suggestions}
               onPick={sendSuggestion}
               badge={landingBadge}
+              expirationPeriod={expirationPeriodLabel}
             />
           </div>
           <div
