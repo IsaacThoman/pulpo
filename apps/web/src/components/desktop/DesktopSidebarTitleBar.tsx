@@ -39,6 +39,7 @@ export function DesktopSidebarTitleBar({
 }) {
   const previousCollapsedRef = useRef(collapsed)
   const [animationActive, setAnimationActive] = useState(false)
+  const windows = typeof window !== 'undefined' && window.pulpoDesktop?.os === 'win32'
   const collapsedChanged = previousCollapsedRef.current !== collapsed
   const showAboveSidebar = !transitions || (!collapsedChanged && !animationActive)
 
@@ -88,17 +89,19 @@ export function DesktopSidebarTitleBar({
             )}
           />
         </div>
-        <div
-          className={cn(
-            'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
-            transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-            collapsed ? 'translate-y-0' : '-translate-y-[54px]',
-          )}
-        />
+        {!windows && (
+          <div
+            className={cn(
+              'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
+              transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+              collapsed ? 'translate-y-0' : '-translate-y-[54px]',
+            )}
+          />
+        )}
       </div>
       <div
         data-collapsed={collapsed ? 'true' : undefined}
-        data-position-animation-active={transitions && !showAboveSidebar ? 'true' : undefined}
+        data-position-animation-active={!windows && transitions && !showAboveSidebar ? 'true' : undefined}
         id={MODEL_SLOT_ID}
         className={cn(
           'desktop-model-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 z-[43] flex min-w-0 items-center motion-reduce:transition-none',
