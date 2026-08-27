@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { ui } from '@/i18n/ui'
 
 const EMPTY_CHATS = [] as const
+const MAX_QUERY_LENGTH = 200
 
 export function SearchModal({
   open,
@@ -46,10 +47,13 @@ export function SearchModal({
   useEffect(() => {
     const q = query.trim()
     if (!open || !q) { setRemote([]); return }
+    setRemote([])
     const controller = new AbortController()
     const timer = window.setTimeout(() => {
       void apiRequest<{ data: ServerChat[] }>(`/api/chats/search?q=${encodeURIComponent(q)}`, { signal: controller.signal })
-        .then((result) => setRemote(result.data)).catch(() => undefined)
+        .then((result) => {
+          if (!controller.signal.aborted) setRemote(Array.isArray(result.data) ? result.data : [])
+        }).catch(() => undefined)
     }, 180)
     return () => { window.clearTimeout(timer); controller.abort() }
   }, [open, query])
@@ -76,6 +80,10 @@ export function SearchModal({
     }))]
   }, [chats, query, remote])
 
+  useEffect(() => {
+    setCursor((current) => Math.min(current, Math.max(0, results.length - 1)))
+  }, [results.length])
+
   const go = (idx: number) => {
     const c = results[idx]
     if (!c) return
@@ -92,7 +100,7 @@ export function SearchModal({
             autoFocus
             value={query}
             onChange={(e) => {
-              setQuery(e.target.value)
+              setQuery(e.target.value.slice(0, MAX_QUERY_LENGTH))
               setCursor(0)
             }}
             onKeyDown={(e) => {

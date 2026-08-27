@@ -27,6 +27,10 @@ describe('interface settings', () => {
   it('enables the double Shift search shortcut by default', () => {
     expect(DEFAULT_SETTINGS.doubleShiftSearch).toBe(true)
   })
+
+  it('uses normal animation speed by default', () => {
+    expect(DEFAULT_SETTINGS.animationSpeed).toBe(1)
+  })
 })
 
 describe('language settings', () => {

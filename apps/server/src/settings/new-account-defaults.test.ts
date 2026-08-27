@@ -7,6 +7,7 @@ describe('new-account model defaults', () => {
     const settings = parseAuthSettings({ signupEnabled: false })
     expect(newAccountPreferenceValues(settings)).toEqual({
       defaultModelId: null,
+      animationSpeed: 1,
       agentModes: {},
       instructionPresetSelections: {},
       automaticChatExpiration: '24h',
@@ -26,6 +27,7 @@ describe('new-account model defaults', () => {
     })
     expect(newAccountPreferenceValues(settings)).toEqual({
       defaultModelId: 'model-a',
+      animationSpeed: 1,
       agentModes: {},
       instructionPresetSelections: {},
       automaticChatExpiration: '24h',

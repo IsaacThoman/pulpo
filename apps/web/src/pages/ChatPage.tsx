@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
@@ -21,6 +21,7 @@ import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
+import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -34,6 +35,10 @@ type SuggestedPrompt = {
   label?: string
   message?: string
   translationKey?: (typeof DEFAULT_SUGGESTED_PROMPTS)[number]['translationKey']
+}
+
+function ChatHeaderActions({ children, desktop }: { children: ReactNode; desktop: boolean }) {
+  return desktop ? <DesktopActionsTitleBarSlot>{children}</DesktopActionsTitleBarSlot> : children
 }
 
 function pickSuggestedPrompts(items: SuggestedPrompt[], count: number): SuggestedPrompt[] {
@@ -288,6 +293,7 @@ export function ChatPage() {
   }
 
   const temporaryMode = temporary || Boolean(chat?.temporary)
+  const desktopSidebarVisible = useDesktopChrome((state) => state.desktopSidebarVisible)
   useEffect(() => {
     setDesktopTemporaryChat(temporaryMode)
     return () => setDesktopTemporaryChat(false)
@@ -318,9 +324,16 @@ export function ChatPage() {
     )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
       {/* header */}
       <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
-        <ModelSelector value={modelId} onChange={selectModel} />
+        {desktopSidebarVisible ? (
+          <DesktopModelTitleBarSlot>
+            <ModelSelector value={modelId} onChange={selectModel} />
+          </DesktopModelTitleBarSlot>
+        ) : (
+          <ModelSelector value={modelId} onChange={selectModel} />
+        )}
         <div className="flex-1" />
-        {showExpirationControl && (
+        <ChatHeaderActions desktop={desktopSidebarVisible}>
+          {showExpirationControl && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -342,8 +355,8 @@ export function ChatPage() {
                 : expirationPeriodLabel ? t('chat.expireChatIn', { period: expirationPeriodLabel }) : t('chat.enableChatExpiry')}
             </TooltipContent>
           </Tooltip>
-        )}
-        {showTemporaryControl && (chat?.temporary ? (
+          )}
+          {showTemporaryControl && (chat?.temporary ? (
           <div className="flex items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -387,8 +400,8 @@ export function ChatPage() {
             </TooltipTrigger>
             <TooltipContent>{temporaryMode ? t('chat.disableTemporary') : t('chat.enableTemporary')}</TooltipContent>
           </Tooltip>
-        ))}
-        {chat && !chat.temporary && (
+          ))}
+          {chat && !chat.temporary && (
           <Tooltip>
             <TooltipTrigger asChild>
               <button
@@ -401,7 +414,8 @@ export function ChatPage() {
             </TooltipTrigger>
             <TooltipContent>{t('chat.newChat')}</TooltipContent>
           </Tooltip>
-        )}
+          )}
+        </ChatHeaderActions>
       </header>
 
       {temporaryError && (

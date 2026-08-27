@@ -79,6 +79,45 @@ describe('activityDurationMs', () => {
   })
 })
 
+describe('live tool activity presentation', () => {
+  it('shows a friendly running label and matching icon', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{
+          type: 'pulpo_tool', id: 'tool-1', tool: 'web_fetch', status: 'running',
+          arguments: { url: 'https://example.com' }, output: '',
+        }],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('Fetching a webpage…')
+    expect(markup).toContain('lucide-globe')
+  })
+
+  it('shows generic working copy between tool calls', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        done: false,
+        outputItems: [{
+          type: 'pulpo_tool', id: 'tool-1', tool: 'web_search', status: 'completed', output: 'result',
+        }],
+      })}
+      streaming
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('Working…')
+    expect(markup).not.toContain('Running web_search…')
+  })
+})
+
 describe('workspace continue timing', () => {
   it('shows the action immediately when the server eligibility time has passed', async () => {
     const { MessageItem } = await import('./MessageItem')

@@ -1,5 +1,28 @@
 export const DESKTOP_ORIGIN = 'https://desktop.pulpo.invalid'
 
+export function desktopDevelopmentRequestHeaders(
+  headers: Record<string, string>,
+  developmentOrigin: string,
+): Record<string, string> {
+  const originKey = Object.keys(headers).find((key) => key.toLowerCase() === 'origin')
+  if (!originKey || headers[originKey] !== new URL(developmentOrigin).origin) return headers
+  return { ...headers, [originKey]: DESKTOP_ORIGIN }
+}
+
+export function desktopDevelopmentResponseHeaders(
+  headers: Record<string, string[]>,
+  developmentOrigin: string,
+): Record<string, string[]> {
+  const originKey = Object.keys(headers).find((key) => key.toLowerCase() === 'access-control-allow-origin')
+  if (!originKey || !headers[originKey]?.includes(DESKTOP_ORIGIN)) return headers
+  return {
+    ...headers,
+    [originKey]: headers[originKey].map((value) => value === DESKTOP_ORIGIN
+      ? new URL(developmentOrigin).origin
+      : value),
+  }
+}
+
 export function isTrustedRendererUrl(value: string, developmentOrigin?: string): boolean {
   try {
     const origin = new URL(value).origin

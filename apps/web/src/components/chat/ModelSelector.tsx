@@ -114,7 +114,7 @@ export function ModelSelector({
   }
 
   return (
-    <div className="relative min-w-0">
+    <div className="model-selector relative min-w-0">
       <DropdownMenu
         open={open}
         onOpenChange={(v) => {
@@ -380,7 +380,7 @@ export function ModelSelector({
       {value && value !== defaultModelId && (
         <button
           type="button"
-          className="absolute left-9 top-7 cursor-pointer whitespace-nowrap text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
+          className="model-selector-set-default absolute left-9 top-7 cursor-pointer whitespace-nowrap text-[11px] leading-4 text-muted-foreground transition-colors hover:text-foreground"
           onClick={() => setSetting('defaultModelId', value)}
         > {ui("Set as default")} </button>
       )}

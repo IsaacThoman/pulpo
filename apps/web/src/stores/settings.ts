@@ -1,6 +1,12 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { SidebarPins } from '@pulpo/contracts'
+import {
+  applyAnimationSpeed,
+  DEFAULT_ANIMATION_SPEED,
+  normalizeAnimationSpeed,
+  startAnimationSpeedController,
+} from '@/lib/animation-speed'
 
 export type Theme = 'light' | 'dark' | 'system'
 export const SUPPORTED_LANGUAGES = [
@@ -23,6 +29,7 @@ interface SettingsState {
   streamResponses: boolean
   showReasoning: boolean
   chatWidth: 'full' | 'narrow'
+  animationSpeed: number
   customInstructions: string
   instructionPresetSelections: Record<string, boolean>
   nickname: string
@@ -55,6 +62,7 @@ export const DEFAULT_SETTINGS = {
   streamResponses: true,
   showReasoning: true,
   chatWidth: 'narrow' as const,
+  animationSpeed: DEFAULT_ANIMATION_SPEED,
   customInstructions: '',
   instructionPresetSelections: {},
   nickname: '',
@@ -101,6 +109,7 @@ export const useSettings = create<SettingsState>()(
           ...current,
           ...saved,
           language: normalizeLanguage(saved.language),
+          animationSpeed: normalizeAnimationSpeed(saved.animationSpeed),
         }
       },
     }
@@ -127,9 +136,11 @@ export function applyLanguage(language: Language) {
 // Apply on load + react to system changes
 applyTheme(useSettings.getState().theme)
 applyLanguage(normalizeLanguage(useSettings.getState().language))
+startAnimationSpeedController(useSettings.getState().animationSpeed)
 useSettings.subscribe((state, previous) => {
   if (state.theme !== previous.theme) applyTheme(state.theme)
   if (state.language !== previous.language) applyLanguage(normalizeLanguage(state.language))
+  if (state.animationSpeed !== previous.animationSpeed) applyAnimationSpeed(state.animationSpeed)
 })
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
   if (useSettings.getState().theme === 'system') applyTheme('system')

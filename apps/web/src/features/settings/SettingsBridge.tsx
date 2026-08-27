@@ -9,10 +9,11 @@ import { useAuth } from '@/stores/auth'
 import { useModels } from '@/stores/models'
 import { DEFAULT_SETTINGS, normalizeLanguage, useSettings } from '@/stores/settings'
 import { isDesktopRuntime } from '@/lib/runtime'
+import { normalizeAnimationSpeed } from '@/lib/animation-speed'
 
 const persistedKeys = [
   'theme', 'language', 'sendWithEnter', 'doubleShiftSearch', 'streamResponses', 'showReasoning',
-  'chatWidth', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
+  'chatWidth', 'animationSpeed', 'customInstructions', 'instructionPresetSelections', 'nickname', 'memoryEnabled', 'agentModes',
   'leaderboardVisible', 'leaderboardColor', 'generation',
   'localChatLimit',
   'localAttachmentCacheMb',
@@ -101,6 +102,7 @@ export function SettingsBridge() {
         ...DEFAULT_SETTINGS,
         ...data.values,
         language: normalizeLanguage(data.values.language),
+        animationSpeed: normalizeAnimationSpeed(data.values.animationSpeed),
         ownerUserId: userId,
       })
       const modelPreferences = modelPreferencesSchema.parse(data.values)

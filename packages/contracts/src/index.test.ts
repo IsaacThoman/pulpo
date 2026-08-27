@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyResponseEventToSnapshot,
   adminUsageEventSchema,
+  animationSpeedSchema,
   automaticChatExpirationSchema,
   authSettingsSchema,
   chatSummarySchema,
@@ -374,11 +375,17 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      nickname: '', favoriteModelIds: [], agentModes: {},
+      nickname: '', animationSpeed: 1, favoriteModelIds: [], agentModes: {},
       instructionPresetSelections: {},
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
     expect(managementAccountSettingsSchema.parse({ username: 'pulpo_user', newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
+    expect(animationSpeedSchema.parse(undefined)).toBe(1)
+    expect(animationSpeedSchema.safeParse(0.01).success).toBe(true)
+    expect(animationSpeedSchema.safeParse(5).success).toBe(true)
+    expect(animationSpeedSchema.safeParse(0).success).toBe(false)
+    expect(animationSpeedSchema.safeParse(5.01).success).toBe(false)
+    expect(animationSpeedSchema.safeParse(Number.POSITIVE_INFINITY).success).toBe(false)
     expect(managementAccountSettingsSchema.parse({
       username: 'pulpo_user', agentModes: { 'model-a': false, 'model-b': true },
     }).agentModes)

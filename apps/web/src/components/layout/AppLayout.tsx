@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { PanelLeftOpen } from 'lucide-react'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -15,6 +15,8 @@ import { cn } from '@/lib/utils'
 import { handleDoubleShiftKeyDown, type DoubleShiftState } from '@/lib/double-shift'
 import { ui } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
+import { useDesktopChrome } from '@/stores/desktopChrome'
+import { isDesktopRuntime } from '@/lib/runtime'
 
 export function AppLayout() {
   const [collapsed, setCollapsed] = useState(() => window.matchMedia('(width < 750px)').matches)
@@ -26,6 +28,8 @@ export function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>('general')
   const doubleShiftSearch = useSettings((state) => state.doubleShiftSearch)
+  const animationSpeed = useSettings((state) => state.animationSpeed)
+  const setDesktopSidebarVisible = useDesktopChrome((state) => state.setDesktopSidebarVisible)
   const location = useLocation()
   const sidebarCollapsed = collapsed || searchHasQuery
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
@@ -110,6 +114,12 @@ export function AppLayout() {
     if (!doubleShiftSearch) doubleShiftRef.current.lastPressAt = null
   }, [doubleShiftSearch])
 
+  useLayoutEffect(() => {
+    const desktopSidebarVisible = isDesktopRuntime() && !mobile
+    setDesktopSidebarVisible(desktopSidebarVisible)
+    return () => setDesktopSidebarVisible(false)
+  }, [mobile, setDesktopSidebarVisible])
+
   useEffect(() => {
     if (!mobileOpen) return
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -128,6 +138,7 @@ export function AppLayout() {
           collapsed={sidebarCollapsed}
           transitions={sidebarTransitions}
           visible={!mobile}
+          animationSpeed={animationSpeed}
         />
         <div
           className={cn(
