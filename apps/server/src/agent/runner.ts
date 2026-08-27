@@ -49,6 +49,8 @@ import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
 import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
+import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
+import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -139,13 +141,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow, personalizationRow, loggingRow, preferencesRow] = await Promise.all([
+  const [settingsRow, webToolsRow, personalizationRow, loggingRow, preferencesRow, episodicMemorySettings] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
     db.select({ values: userPreferences.values }).from(userPreferences)
       .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
+    readEpisodicMemorySettings(),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
@@ -529,6 +532,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     onProviderAttempts: (operationId, execution) => { webProviderExecutions.set(operationId, execution) },
     reserveBillableCost: (amountMicros) => extendBudgetReservationFixedCost(responseId, amountMicros),
   })
+  const episodicMemoryTools = episodicMemorySettings.enabled && preferenceValues.memoryEnabled === true
+    ? createEpisodicMemoryTools({
+        userId: record.response.userId,
+        currentChatId: record.response.chatId,
+        maxOutputBytes: settings.maxToolOutputBytes,
+        onOperationStarted: markToolStarted,
+      })
+    : []
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -556,7 +567,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     initialState: {
       systemPrompt: agentSystemPrompt,
       model: active.piModel,
-      tools: [...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile), ...configuredWebTools],
+      tools: [
+        ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
+        ...configuredWebTools,
+        ...episodicMemoryTools,
+      ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
     },

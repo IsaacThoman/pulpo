@@ -16,6 +16,7 @@ import {
 import { processEmbeddingJob } from '../src/episodic-memory/processor.js'
 import { searchEpisodicChats, selectRelevantMemories } from '../src/episodic-memory/retrieval.js'
 import type { OllamaClient } from '../src/episodic-memory/ollama.js'
+import { readEpisodicChatPage } from '../src/episodic-memory/agent-tools.js'
 
 if (process.env.PULPO_EPISODIC_SMOKE !== '1') {
   throw new Error('Set PULPO_EPISODIC_SMOKE=1 and use a disposable database before running this script')
@@ -201,6 +202,21 @@ async function main(): Promise<void> {
   assert(lexical[0]?.chatId === ids.chat, 'lexical fallback did not return the source chat')
   const relevantFacts = await selectRelevantMemories(ids.user, 'What climate does the user garden in?')
   assert(relevantFacts.includes('The user gardens in a cold climate.'), 'durable fact ranking failed')
+  const transcript = await readEpisodicChatPage({
+    userId: ids.user,
+    currentChatId: ids.destinationChat,
+    chatId: ids.chat,
+    maxOutputBytes: 10_000,
+  })
+  assert(transcript?.turns.length === 2, 'read_chat did not return the active lineage')
+  assert(!JSON.stringify(transcript).includes('SECRET'), 'read_chat exposed hidden response content')
+  const excludedCurrent = await readEpisodicChatPage({
+    userId: ids.user,
+    currentChatId: ids.chat,
+    chatId: ids.chat,
+    maxOutputBytes: 10_000,
+  })
+  assert(excludedCurrent === null, 'read_chat did not exclude the current chat')
 
   await db.update(userPreferences).set({ values: { memoryEnabled: false } }).where(eq(userPreferences.userId, ids.user))
   await processEmbeddingJob({ type: 'delete-user', userId: ids.user })

@@ -90,7 +90,7 @@ export async function searchEpisodicChats(input: {
   )).orderBy(desc(episodicMemoryGenerations.createdAt)).limit(1)
   if (!generation) return []
   const mode = input.mode ?? settings.recallMode
-  const limit = Math.max(1, Math.min(10, Math.floor(input.limit ?? 5)))
+  const limit = Math.max(1, Math.min(11, Math.floor(input.limit ?? 5)))
   const common = and(
     eq(chatTurnEmbeddings.generationId, generation.id),
     eq(chatTurnEmbeddings.userId, input.userId),
