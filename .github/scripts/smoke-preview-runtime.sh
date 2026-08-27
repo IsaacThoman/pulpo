@@ -33,6 +33,15 @@ curl --fail --silent --show-error \
     '{email: $email, password: $password}')" \
   "${PREVIEW_URL}/api/auth/login" >/dev/null
 
+episodic_memory_status="$(curl --fail --silent --show-error \
+  --cookie "${cookie_jar}" \
+  "${PREVIEW_URL}/api/admin/settings/episodic-memory")"
+jq -e '.ollama.healthy == true' <<<"${episodic_memory_status}" >/dev/null || {
+  jq -c '.ollama | {healthy, error}' <<<"${episodic_memory_status}" >&2
+  echo 'Preview API cannot reach its Ollama runtime.' >&2
+  exit 1
+}
+
 new_id() {
   node -e 'console.log(crypto.randomUUID())'
 }
@@ -116,4 +125,4 @@ jq -e 'any(.output[]?; .type == "pulpo_tool" and .tool == "bash" and .status == 
   exit 1
 }
 
-echo 'Preview bootstrap, Luna generation, and agent workspace smoke tests passed.'
+echo 'Preview Ollama, bootstrap, Luna generation, and agent workspace smoke tests passed.'

@@ -88,9 +88,9 @@ export function EpisodicMemorySection() {
           ? status.ollama.version ? uit`Ollama ${status.ollama.version} is healthy` : ui('Ollama is healthy')
           : status.ollama.error ?? ui('Ollama is unavailable')}</span>
       </div>
-      <div className="text-sm">{installed
+      {status.ollama.healthy && <div className="text-sm">{installed
         ? uit`${selected.label} installed · ${installed.digest.slice(0, 19)}… · ${bytes(installed.size)}`
-        : uit`${selected.label} is not installed yet`}</div>
+        : uit`${selected.label} is not installed yet`}</div>}
     </Section>
 
     <Section title={ui('Index status')} hint={ui('Download and backfill run on a dedicated queue and never consume response-generation concurrency.')}>

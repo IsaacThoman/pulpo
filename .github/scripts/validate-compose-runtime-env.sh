@@ -47,6 +47,7 @@ for service in api worker; do
       and $env.PULPO_PREVIEW_ADMIN_EMAIL == "preview@example.com"
       and $env.PULPO_PREVIEW_ADMIN_PASSWORD == "preview-admin-password"
       and $env.PULPO_PREVIEW_PROVIDER_API_KEY == "preview-provider-key"
+      and $env.PULPO_OLLAMA_URL == "http://ollama:11434"
   ' <<< "${compose_config}" >/dev/null || {
     echo "Compose did not preserve runtime env-file values for ${service}." >&2
     exit 1
@@ -87,8 +88,28 @@ for service in api worker; do
       and $env.PULPO_INSTANCE_ID == "local-preview"
       and $env.PULPO_BOOTSTRAP_PRESET == "ci-preview"
       and $env.PULPO_PREVIEW_ADMIN_EMAIL == "preview@example.com"
+      and $env.PULPO_OLLAMA_URL == "http://ollama:11434"
   ' <<< "${local_preview_config}" >/dev/null || {
     echo "Compose did not preserve local preview template values for ${service}." >&2
+    exit 1
+  }
+done
+
+ollama_override_config="$(
+  SERVICE_USER_POSTGRES='preview-db-user' \
+    SERVICE_PASSWORD_64_POSTGRES='preview-database-magic-password' \
+    SERVICE_USER_S3='preview-storage-user' \
+    SERVICE_PASSWORD_64_S3='preview-storage-magic-password' \
+    PULPO_OLLAMA_URL='http://external-ollama.example:12000' \
+    PULPO_ENV_FILE="${runtime_env}" \
+    docker compose --env-file .env.example config --format json
+)"
+
+for service in api worker; do
+  jq -e --arg service "${service}" '
+    .services[$service].environment.PULPO_OLLAMA_URL == "http://external-ollama.example:12000"
+  ' <<< "${ollama_override_config}" >/dev/null || {
+    echo "Compose did not preserve an explicit Ollama URL override for ${service}." >&2
     exit 1
   }
 done
