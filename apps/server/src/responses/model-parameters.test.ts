@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { resolveModelParameters } from './model-parameters.js'
+import { resolveModelParameters, unsupportedPublicModelParameter } from './model-parameters.js'
 
 describe('model request parameters', () => {
+  it('identifies the exact unsupported public parameter before queueing', () => {
+    expect(unsupportedPublicModelParameter(
+      { allowedParameters: ['temperature'] },
+      { instructions: 'safe protocol field', temperature: 0.2, tools: [] },
+    )).toBe('tools')
+    expect(unsupportedPublicModelParameter(
+      { allowedParameters: ['temperature', 'tools'] },
+      { instructions: 'safe protocol field', temperature: 0.2, tools: [] },
+    )).toBeUndefined()
+  })
+
   it('applies allowed response parameters over model defaults', () => {
     expect(resolveModelParameters({
       allowedParameters: ['reasoning', 'service_tier', 'temperature'],
@@ -41,11 +52,11 @@ describe('model request parameters', () => {
     })
   })
 
-  it('forwards Responses API tool protocol fields independently of the model allowlist', () => {
+  it('only forwards model-supported tool protocol fields', () => {
     const tools = [{ type: 'function', name: 'bash', description: 'Run a command', parameters: { type: 'object' } }]
 
     expect(resolveModelParameters({
-      allowedParameters: [],
+      allowedParameters: ['tools', 'tool_choice'],
       defaultParameters: {},
     }, {
       tools,

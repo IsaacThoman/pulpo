@@ -1,0 +1,1 @@
+ALTER TABLE "provider_connections" ADD COLUMN "tool_result_image_mode" text DEFAULT 'native' NOT NULL;

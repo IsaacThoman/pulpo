@@ -268,6 +268,7 @@ export const providerConnections = pgTable('provider_connections', {
   cacheAffinityScope: text('cache_affinity_scope').notNull().default('chat'),
   cacheIsolationMode: text('cache_isolation_mode').notNull().default('none'),
   cacheIsolationScope: text('cache_isolation_scope').notNull().default('user'),
+  toolResultImageMode: text('tool_result_image_mode').notNull().default('native'),
   enabled: boolean('enabled').notNull().default(true),
   lastHealthStatus: text('last_health_status'),
   lastHealthAt: timestamp('last_health_at', { withTimezone: true }),
@@ -440,19 +441,23 @@ export const responses = pgTable('responses', {
   instructions: text('instructions'),
   presetSelections: jsonb('preset_selections').notNull().default({}),
   parameters: jsonb('parameters').notNull().default({}),
+  metadata: jsonb('metadata').$type<Record<string, string>>().notNull().default({}),
   output: jsonb('output').notNull().default([]),
   usage: jsonb('usage'),
   error: jsonb('error'),
+  incompleteDetails: jsonb('incomplete_details').$type<{ reason?: string }>(),
   lastSequence: bigint('last_sequence', { mode: 'number' }).notNull().default(0),
   upstreamSequence: bigint('upstream_sequence', { mode: 'number' }).notNull().default(0),
   idempotencyKey: text('idempotency_key'),
+  idempotencyScope: text('idempotency_scope').notNull().default('default'),
+  idempotencyFingerprint: text('idempotency_fingerprint'),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   index('responses_chat_created_idx').on(table.chatId, table.createdAt),
-  uniqueIndex('responses_user_idempotency_unique').on(table.userId, table.idempotencyKey),
+  uniqueIndex('responses_user_scope_idempotency_unique').on(table.userId, table.idempotencyScope, table.idempotencyKey),
 ])
 
 export const queuedMessages = pgTable('queued_messages', {

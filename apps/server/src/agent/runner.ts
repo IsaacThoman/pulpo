@@ -69,6 +69,7 @@ import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-t
 import { createProviderCostCapture } from './provider-cost.js'
 import { orderedAgentTurnPayloads } from './detailed-payloads.js'
 import { loadAgentPromptImages } from './prompt-images.js'
+import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -613,6 +614,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       const thresholdTokens = compactionThreshold()
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      preparedContext = adaptToolResultImagesForProvider(
+        preparedContext as Context,
+        active.provider.toolResultImageMode as ToolResultImageMode,
+      ) as typeof preparedContext
       const estimatedTokens = estimateAgentContextTokens(preparedContext as Context)
       if (estimatedTokens > thresholdTokens && shouldCompactAgentStream(modelTurns)) {
         const originalMessages = context.messages as AgentMessage[]
@@ -627,6 +632,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         if (adoptCompactedContext(originalMessages, compactedMessages)) {
           context = { ...context, messages: compactedMessages as typeof context.messages }
           preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+          preparedContext = adaptToolResultImagesForProvider(
+            preparedContext as Context,
+            active.provider.toolResultImageMode as ToolResultImageMode,
+          ) as typeof preparedContext
         }
       }
       const hardContextLimit = effectiveAgentCompactionThreshold(Number.MAX_SAFE_INTEGER, active.model.contextWindow)

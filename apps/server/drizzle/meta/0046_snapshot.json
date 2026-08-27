@@ -1,6 +1,6 @@
 {
-  "id": "6aacfdb4-6850-4adb-86dd-b904edd3da6f",
-  "prevId": "19ca0b9f-fbaf-4494-8704-0187e356f748",
+  "id": "6d604f3a-8196-4af0-b8c8-18a64e139ed0",
+  "prevId": "6aacfdb4-6850-4adb-86dd-b904edd3da6f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5244,6 +5244,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'user'"
+        },
+        "tool_result_image_mode": {
+          "name": "tool_result_image_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'native'"
         },
         "enabled": {
           "name": "enabled",

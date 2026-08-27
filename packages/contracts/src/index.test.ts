@@ -156,14 +156,20 @@ describe('shared contracts', () => {
       cacheAffinityScope: 'chat',
       cacheIsolationMode: 'fireworks_prompt_cache_isolation',
       cacheIsolationScope: 'user',
+      toolResultImageMode: 'user_message',
     })).toMatchObject({
       cacheAffinityMode: 'fireworks_session_affinity',
       cacheAffinityScope: 'chat',
       cacheIsolationMode: 'fireworks_prompt_cache_isolation',
       cacheIsolationScope: 'user',
+      toolResultImageMode: 'user_message',
     })
     expect(updateProviderSchema.parse({ cacheAffinityMode: 'none' })).toEqual({ cacheAffinityMode: 'none' })
     expect(() => updateProviderSchema.parse({ cacheAffinityMode: 'raw_header' })).toThrow()
+    expect(createProviderSchema.parse({
+      name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiKey: 'secret',
+    }).toolResultImageMode).toBe('native')
+    expect(() => updateProviderSchema.parse({ toolResultImageMode: 'system_message' })).toThrow()
   })
 
   it('defaults missing in-flight response ids in chat summaries', () => {

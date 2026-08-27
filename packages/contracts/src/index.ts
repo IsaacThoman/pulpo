@@ -763,6 +763,7 @@ export const providerCacheIsolationModeSchema = z.enum([
   'fireworks_prompt_cache_isolation',
 ])
 export const providerCacheScopeSchema = z.enum(['agent_run', 'chat', 'user'])
+export const providerToolResultImageModeSchema = z.enum(['native', 'user_message'])
 
 export const createProviderSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -775,6 +776,7 @@ export const createProviderSchema = z.object({
   cacheAffinityScope: providerCacheScopeSchema.default('chat'),
   cacheIsolationMode: providerCacheIsolationModeSchema.default('none'),
   cacheIsolationScope: providerCacheScopeSchema.default('user'),
+  toolResultImageMode: providerToolResultImageModeSchema.default('native'),
 })
 
 export const updateProviderSchema = z.object({
@@ -788,6 +790,7 @@ export const updateProviderSchema = z.object({
   cacheAffinityScope: providerCacheScopeSchema.optional(),
   cacheIsolationMode: providerCacheIsolationModeSchema.optional(),
   cacheIsolationScope: providerCacheScopeSchema.optional(),
+  toolResultImageMode: providerToolResultImageModeSchema.optional(),
   enabled: z.boolean().optional(),
 })
 

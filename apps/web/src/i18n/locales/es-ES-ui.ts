@@ -1,4 +1,8 @@
 const esUi: Record<string, string> = {
+  "Native tool result": "Resultado nativo de herramienta",
+  "Tool-result images": "Imágenes de resultados de herramientas",
+  "Use user-message compatibility only for providers that reject images returned by tools.": "Usa la compatibilidad mediante mensajes de usuario solo con proveedores que rechazan imágenes devueltas por herramientas.",
+  "User message compatibility": "Compatibilidad mediante mensaje de usuario",
   " · {{0}}": "· {{0}}",
   " · You": " · Tú",
   " (disabled)": " (desactivado)",
@@ -616,6 +620,7 @@ const esUi: Record<string, string> = {
   "Limit": "Límite",
   "Linked models": "Modelos vinculados",
   "List models": "Listar modelos",
+  "Inference": "Inferencia",
   "Listing files…": "Listando archivos...",
   "Live leases, owners, queue state, and forced cleanup deadlines.": "Asignaciones activas, propietarios, estado de la cola y plazos de limpieza forzada.",
   "Loading active participants…": "Cargando participantes activos...",
