@@ -254,6 +254,17 @@ export function BillingPage() {
                 {summary.weekly.pendingMicros > 0 && <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-amber-400 dark:bg-amber-500" />{formatBalance(summary.weekly.pendingMicros / 1_000_000)} {ui("reserved")}</div>}
                 <div className="mt-1.5 text-xs text-muted-foreground">{ui("Resets")} {new Date(summary.weekly.resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
               </div>}
+              {summary?.fiveHour && <div className="mt-4">
+                <div className="flex justify-between text-xs text-muted-foreground"><span>{ui("5-hour usage")}</span><span>{summary.fiveHour.remainingPercentage}{ui("% left")}</span></div>
+                <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted">
+                  <div className="h-full bg-emerald-500" style={{ width: `${summary.fiveHour.availableBarPercentage}%` }} />
+                  <div className="h-full bg-amber-400 dark:bg-amber-500" style={{ width: `${summary.fiveHour.pendingBarPercentage}%` }} />
+                </div>
+                {summary.fiveHour.pendingMicros > 0 && <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-amber-400 dark:bg-amber-500" />{formatBalance(summary.fiveHour.pendingMicros / 1_000_000)} {ui("reserved")}</div>}
+                <div className="mt-1.5 text-xs text-muted-foreground">{summary.fiveHour.resetsAt
+                  ? <>{ui("Resets")} {new Date(summary.fiveHour.resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</>
+                  : ui("Starts on first use")}</div>
+              </div>}
               <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
                 {summary?.subscription ? ui("Manage plan") : ui("Compare plans")}
               </Button>

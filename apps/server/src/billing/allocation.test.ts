@@ -10,10 +10,18 @@ import {
 
 describe('billing source allocation', () => {
   it('allocates concurrent reservations against pending weekly funds', () => {
-    const first = allocateReservationMicros(2_500_000, 3_000_000)
-    const second = allocateReservationMicros(2_000_000, 3_000_000 - first.weeklyMicros)
-    expect(first).toEqual({ weeklyMicros: 2_500_000, balanceMicros: 0 })
-    expect(second).toEqual({ weeklyMicros: 500_000, balanceMicros: 1_500_000 })
+    const first = allocateReservationMicros(2_500_000, 3_000_000, 3_000_000)
+    const second = allocateReservationMicros(2_000_000, 3_000_000 - first.weeklyMicros, 3_000_000 - first.fiveHourMicros)
+    expect(first).toEqual({ weeklyMicros: 2_500_000, fiveHourMicros: 2_500_000, balanceMicros: 0 })
+    expect(second).toEqual({ weeklyMicros: 500_000, fiveHourMicros: 500_000, balanceMicros: 1_500_000 })
+  })
+
+  it('falls back to balance when the five-hour allowance is lower than the weekly allowance', () => {
+    expect(allocateReservationMicros(2_000_000, 5_000_000, 750_000)).toEqual({
+      weeklyMicros: 750_000,
+      fiveHourMicros: 750_000,
+      balanceMicros: 1_250_000,
+    })
   })
 
   it('resizes in the same week using the reservation own allocation plus live remaining funds', () => {
@@ -21,9 +29,13 @@ describe('billing source allocation', () => {
       amountMicros: 2_500_000,
       weeklyRemainingMicros: 500_000,
       currentWeeklyReservedMicros: 1_500_000,
-      reservationPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
-      currentPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
-    })).toEqual({ weeklyMicros: 2_000_000, balanceMicros: 500_000 })
+      reservationWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      currentWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      fiveHourRemainingMicros: 500_000,
+      currentFiveHourReservedMicros: 1_500_000,
+      reservationFiveHourPeriodStart: new Date('2026-08-17T10:00:00.000Z'),
+      currentFiveHourPeriodStart: new Date('2026-08-17T10:00:00.000Z'),
+    })).toEqual({ weeklyMicros: 2_000_000, fiveHourMicros: 2_000_000, balanceMicros: 500_000 })
   })
 
   it('keeps a cross-Monday reservation bound to its original weekly allocation', () => {
@@ -31,25 +43,47 @@ describe('billing source allocation', () => {
       amountMicros: 3_000_000,
       weeklyRemainingMicros: 4_000_000,
       currentWeeklyReservedMicros: 1_000_000,
-      reservationPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
-      currentPeriodStart: new Date('2026-08-24T00:00:00.000Z'),
-    })).toEqual({ weeklyMicros: 1_000_000, balanceMicros: 2_000_000 })
+      reservationWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      currentWeeklyPeriodStart: new Date('2026-08-24T00:00:00.000Z'),
+      fiveHourRemainingMicros: 4_000_000,
+      currentFiveHourReservedMicros: 1_000_000,
+      reservationFiveHourPeriodStart: new Date('2026-08-23T23:00:00.000Z'),
+      currentFiveHourPeriodStart: new Date('2026-08-23T23:00:00.000Z'),
+    })).toEqual({ weeklyMicros: 1_000_000, fiveHourMicros: 1_000_000, balanceMicros: 2_000_000 })
+  })
+
+  it('keeps a reservation bound to its original five-hour allocation after that window expires', () => {
+    expect(allocateResizedReservationMicros({
+      amountMicros: 2_000_000,
+      weeklyRemainingMicros: 3_000_000,
+      currentWeeklyReservedMicros: 750_000,
+      reservationWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      currentWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      fiveHourRemainingMicros: 1_000_000,
+      currentFiveHourReservedMicros: 750_000,
+      reservationFiveHourPeriodStart: new Date('2026-08-17T10:00:00.000Z'),
+      currentFiveHourPeriodStart: null,
+    })).toEqual({ weeklyMicros: 750_000, fiveHourMicros: 750_000, balanceMicros: 1_250_000 })
   })
 
   it('preserves an existing reservation through a limit reduction without funding new weekly usage', () => {
-    expect(allocateReservationMicros(500_000, 0)).toEqual({ weeklyMicros: 0, balanceMicros: 500_000 })
+    expect(allocateReservationMicros(500_000, 0, 500_000)).toEqual({ weeklyMicros: 0, fiveHourMicros: 0, balanceMicros: 500_000 })
     expect(allocateResizedReservationMicros({
       amountMicros: 2_000_000,
       weeklyRemainingMicros: 0,
       currentWeeklyReservedMicros: 2_000_000,
-      reservationPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
-      currentPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
-    })).toEqual({ weeklyMicros: 2_000_000, balanceMicros: 0 })
+      reservationWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      currentWeeklyPeriodStart: new Date('2026-08-17T00:00:00.000Z'),
+      fiveHourRemainingMicros: 0,
+      currentFiveHourReservedMicros: 2_000_000,
+      reservationFiveHourPeriodStart: new Date('2026-08-17T10:00:00.000Z'),
+      currentFiveHourPeriodStart: new Date('2026-08-17T15:00:00.000Z'),
+    })).toEqual({ weeklyMicros: 2_000_000, fiveHourMicros: 2_000_000, balanceMicros: 0 })
   })
 
   it('settles weekly funds first and releases the unused reservation remainder', () => {
-    expect(allocateSettlementMicros(1_200_000, 2_000_000)).toEqual({ weeklyMicros: 1_200_000, balanceMicros: 0 })
-    expect(allocateSettlementMicros(2_500_000, 2_000_000)).toEqual({ weeklyMicros: 2_000_000, balanceMicros: 500_000 })
+    expect(allocateSettlementMicros(1_200_000, 2_000_000, 2_000_000)).toEqual({ weeklyMicros: 1_200_000, fiveHourMicros: 1_200_000, balanceMicros: 0 })
+    expect(allocateSettlementMicros(2_500_000, 2_000_000, 2_000_000)).toEqual({ weeklyMicros: 2_000_000, fiveHourMicros: 2_000_000, balanceMicros: 500_000 })
   })
 
   it('accounts for pending balance reservations and restores the current reservation while resizing', () => {
