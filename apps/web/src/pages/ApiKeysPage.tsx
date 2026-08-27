@@ -583,19 +583,19 @@ export function ApiKeysPage() {
             <DialogTitle>{ui("Save your API key")}</DialogTitle>
             <DialogDescription> {ui("This is the only time the full key will be shown.")} </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
-            <code className="flex-1 truncate font-mono text-xs">
+          <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2.5">
+            <code className="min-w-0 flex-1 truncate font-mono text-xs">
               {revealed ? secret : secret?.replace(/(?<=sk-pulpo-)./g, '•')}
             </code>
             <button
-              className="cursor-pointer text-muted-foreground hover:text-foreground"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               onClick={() => setRevealed((v) => !v)}
               aria-label={revealed ? ui("Hide key") : ui("Show key")}
             >
               {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
             <button
-              className="cursor-pointer text-muted-foreground hover:text-foreground"
+              className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground"
               onClick={() => {
                 if (secret) navigator.clipboard?.writeText(secret).catch(() => {})
                 setCopied(true)
