@@ -46,6 +46,10 @@ export const SafeMarkdown = memo(function SafeMarkdown({
 
   if (!markdown) return null
   return <EnrichedMarkdownText
+    // The native renderer can retain its attributed-string colors when its
+    // style prop changes in place. Remount on theme transitions so every text
+    // run is rebuilt from the newly resolved palette.
+    key={theme.isDark ? 'markdown-dark' : 'markdown-light'}
     accessibilityRole="text"
     allowTrailingMargin={false}
     containerStyle={StyleSheet.flatten([

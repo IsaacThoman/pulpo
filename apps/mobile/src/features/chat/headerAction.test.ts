@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextChatStartsTemporary, resolveChatHeaderAction, resolveChatHeaderControl } from './headerAction'
+import { nextChatStartsTemporary, resolveChatHeaderAction, resolveChatHeaderControl, resolveChatLandingBadge } from './headerAction'
 
 describe('resolveChatHeaderAction', () => {
   it('shows the temporary toggle on an empty new chat', () => {
@@ -50,5 +50,13 @@ describe('resolveChatHeaderAction', () => {
       leadingAction: 'none',
       trailingAction: 'ghost',
     })
+  })
+
+  it('resolves the empty-chat badge with temporary mode taking priority', () => {
+    expect(resolveChatLandingBadge(false, true, '24h')).toEqual({ kind: 'expiration', period: '24h' })
+    expect(resolveChatLandingBadge(false, true, '7d')).toEqual({ kind: 'expiration', period: '7d' })
+    expect(resolveChatLandingBadge(false, false, '24h')).toBeNull()
+    expect(resolveChatLandingBadge(false, true, 'disabled')).toBeNull()
+    expect(resolveChatLandingBadge(true, true, '7d')).toEqual({ kind: 'temporary' })
   })
 })

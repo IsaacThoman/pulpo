@@ -19,3 +19,26 @@ export function resolveChatExpiryMenuAction(
   if (automaticChatExpiration === 'disabled') return null
   return { kind: 'enable', label: `Expire in ${automaticChatExpiration}` }
 }
+
+export type ChatExpirationPeriod = '24h' | '7d'
+
+export type ChatLandingBadge =
+  | { kind: 'temporary' }
+  | { kind: 'expiration'; period: ChatExpirationPeriod }
+  | null
+
+export function resolveConfiguredChatExpirationPeriod(
+  automaticChatExpiration: 'disabled' | ChatExpirationPeriod,
+): ChatExpirationPeriod | null {
+  return automaticChatExpiration === 'disabled' ? null : automaticChatExpiration
+}
+
+export function resolveChatLandingBadge(
+  temporary: boolean,
+  expirationEnabled: boolean,
+  automaticChatExpiration: 'disabled' | '24h' | '7d',
+): ChatLandingBadge {
+  if (temporary) return { kind: 'temporary' }
+  if (!expirationEnabled || automaticChatExpiration === 'disabled') return null
+  return { kind: 'expiration', period: automaticChatExpiration }
+}
