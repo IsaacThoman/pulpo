@@ -359,16 +359,24 @@ html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .m
 }
 
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-position-animation-active="true"] .model-selector-set-default {
-  animation: desktop-model-default-reposition 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation: desktop-model-default-swipe 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
-@keyframes desktop-model-default-reposition {
-  0%, 100% {
-    opacity: 1;
+@keyframes desktop-model-default-swipe {
+  0% {
+    clip-path: inset(0 0 0 0);
   }
 
-  35%, 75% {
-    opacity: 0;
+  35% {
+    clip-path: inset(0 0 0 100%);
+  }
+
+  65% {
+    clip-path: inset(0 100% 0 0);
+  }
+
+  100% {
+    clip-path: inset(0 0 0 0);
   }
 }
 
