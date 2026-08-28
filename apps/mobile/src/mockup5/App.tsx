@@ -163,6 +163,7 @@ import { cacheNamespace, cacheOpenedChat, deleteResponseCursor } from '../data/d
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { startComposerAutoFocus } from '../providers/composerAutoFocus';
@@ -3321,6 +3322,7 @@ function ChatView({
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const attachmentUploadError = attachments.find((attachment) => attachment.state === 'failed')?.error;
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
   const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
@@ -3883,7 +3885,7 @@ function ChatView({
         setAttachments((values) => values.map((item) => item.localId === ready.localId ? ready : item));
         return ready;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Upload failed';
+        const message = attachmentUploadErrorMessage(error);
         const failed = settleUploadFailure({
           attempted,
           current: latestAttachmentsRef.current.get(attempted.localId),
@@ -4395,6 +4397,11 @@ function ChatView({
                 onRetry={retryAttachment}
                 onRemove={removeComposerAttachment}
               />
+              {attachmentUploadError ? (
+                <Text accessibilityRole="alert" style={styles.attachmentErrorText}>
+                  {attachmentUploadError}
+                </Text>
+              ) : null}
               {attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent) ? (
                 <Text accessibilityRole="alert" style={styles.attachmentRestrictionText}>
                   {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
@@ -5257,6 +5264,7 @@ const styles = StyleSheet.create({
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
+  attachmentErrorText: { color: COLORS.critical, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
   attachmentStrip: { height: 72, marginBottom: 3 },
   attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 6, paddingRight: 6 },
