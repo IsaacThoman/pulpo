@@ -21,7 +21,9 @@ describe('episodic-memory agent tools', () => {
     const payload = JSON.parse((result.content[0] as { text: string }).text) as { results: unknown[]; pagination: { hasMore: boolean } }
 
     expect(started).toHaveBeenCalledWith('search-1')
-    expect(search).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1', currentChatId: 'current-chat', limit: 11 }))
+    expect(search).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'user-1', currentChatId: 'current-chat', limit: 11, purpose: 'explicit',
+    }))
     expect(payload.results).toHaveLength(10)
     expect(payload.pagination.hasMore).toBe(true)
     expect(recordMetric).toHaveBeenCalledWith(expect.objectContaining({ metric: 'agent_search', items: 10 }))
