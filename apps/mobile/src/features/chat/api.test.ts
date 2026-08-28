@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   fileCopy: vi.fn(),
   fileDelete: vi.fn(),
   fileUpload: vi.fn(),
+  fileSize: 8,
   recordCachedAttachment: vi.fn(),
   removeCachedAttachment: vi.fn(),
 }))
@@ -28,7 +29,7 @@ vi.mock('expo-file-system', () => {
     },
     File: class {
       exists = true
-      size = 8
+      get size() { return mocks.fileSize }
       uri: string
       constructor(...parts: Array<string | { uri: string }>) { this.uri = joinUri(parts) }
       copy = mocks.fileCopy
@@ -79,6 +80,7 @@ beforeEach(() => {
   mocks.fileCopy.mockReset()
   mocks.fileDelete.mockReset()
   mocks.fileUpload.mockReset()
+  mocks.fileSize = 8
   mocks.recordCachedAttachment.mockReset().mockResolvedValue([])
   mocks.removeCachedAttachment.mockReset().mockResolvedValue(null)
 })
@@ -194,9 +196,25 @@ describe('attachment uploads', () => {
   }
 
   it('validates a selected file before creating a remote reservation', async () => {
-    await expect(uploadAttachment({ ...draft, sizeBytes: 0 }, null)).rejects.toThrow()
+    mocks.fileSize = 0
+
+    await expect(uploadAttachment(draft, null)).rejects.toThrow('Attachment is empty')
     expect(mocks.apiRequest).not.toHaveBeenCalled()
     expect(mocks.fileUpload).not.toHaveBeenCalled()
+  })
+
+  it('reserves the copied file size instead of optional provider metadata', async () => {
+    mocks.apiRequest
+      .mockResolvedValueOnce(reservation)
+      .mockResolvedValueOnce({ id: 'reserved-1', mimeType: 'application/octet-stream' })
+    mocks.fileUpload.mockResolvedValueOnce({ status: 204 })
+
+    await uploadAttachment({ ...draft, sizeBytes: 0 }, null)
+
+    expect(mocks.apiRequest).toHaveBeenNthCalledWith(1, '/api/attachments', expect.objectContaining({
+      method: 'POST',
+      body: expect.objectContaining({ sizeBytes: 8 }),
+    }))
   })
 
   it('keeps the MIME type confirmed by the server', async () => {

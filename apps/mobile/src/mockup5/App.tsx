@@ -3872,6 +3872,7 @@ function ChatView({
           patch: {
             mimeType: uploaded.mimeType,
             kind: attachmentKind(attempted.name, uploaded.mimeType),
+            size: uploaded.sizeBytes,
           },
         });
         if (settled.disposition === 'cleanup') {

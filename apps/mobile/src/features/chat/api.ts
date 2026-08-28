@@ -298,9 +298,14 @@ export async function shareChat(id: string): Promise<string> {
 }
 
 export async function uploadAttachment(draft: AttachmentDraft, chatId: string | null): Promise<ServerAttachment> {
+  // Document providers may omit or misreport the picker asset size. Measure the
+  // copied file that will actually be uploaded so the reservation and transfer
+  // agree on the content length.
+  const file = new File(draft.uri)
+  const sizeBytes = file.size
   const maxAttachmentBytes = useSessionStore.getState().config?.limits?.maxAttachmentBytes
   const validation = attachmentValidationError(
-    { name: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
+    { name: draft.name, mimeType: draft.mimeType, sizeBytes },
     maxAttachmentBytes,
   )
   if (validation) throw new Error(validation)
@@ -310,10 +315,9 @@ export async function uploadAttachment(draft: AttachmentDraft, chatId: string | 
     uploadHeaders: Record<string, string>
   }>('/api/attachments', {
     method: 'POST',
-    body: { chatId, originalName: draft.name, mimeType: draft.mimeType, sizeBytes: draft.sizeBytes },
+    body: { chatId, originalName: draft.name, mimeType: draft.mimeType, sizeBytes },
   })
   try {
-    const file = new File(draft.uri)
     const uploadUrl = apiUrl(reservation.uploadUrl)
     const result = await file.upload(uploadUrl, {
       httpMethod: 'PUT',
