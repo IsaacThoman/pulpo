@@ -40,8 +40,8 @@ import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
 import { responseInputText } from '../messages/input.js'
-import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
 import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
+import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
 import {
   GenerationAttemptError,
   MAX_MODEL_CHAIN_LENGTH,
@@ -203,13 +203,13 @@ async function contextualInput(
   ])
   const values = (preferences?.values ?? {}) as { customInstructions?: string; memoryEnabled?: boolean; instructionPresetSelections?: unknown }
   const customInstructions = publicApi ? '' : composeCustomInstructions(parsePersonalizationSettings(personalizationRow?.value), values)
-  const enabledMemories = values.memoryEnabled
-    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
-    : []
+  const memoryContext = values.memoryEnabled
+    ? memoryDocumentContext(await readMemoryDocument(record.response.userId))
+    : ''
   const context: unknown[] = []
   if (record.model.systemPrompt.trim()) context.push({ role: 'developer', content: record.model.systemPrompt.trim() })
   if (customInstructions) context.push({ role: 'developer', content: `User-provided custom instructions:\n${customInstructions}` })
-  if (enabledMemories.length) context.push({ role: 'developer', content: `User-approved memories:\n${enabledMemories.map((memory) => `- ${memory}`).join('\n')}` })
+  if (memoryContext) context.push({ role: 'developer', content: memoryContext })
   const recallContext = recalledChatContext(recallItem)
   if (recallContext) context.push({ role: 'developer', content: recallContext })
   const existingItem = (record.response.output as unknown[]).find((raw): raw is CompactionItem => {

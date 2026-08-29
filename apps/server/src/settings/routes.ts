@@ -1,12 +1,11 @@
-import { and, desc, eq, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { newChatAutoExpireSchema } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { applicationSettings, memories, userPreferences, users } from '../database/schema.js'
-import { newId } from '../lib/ids.js'
-import { AppError, notFound } from '../lib/errors.js'
+import { applicationSettings, userPreferences, users } from '../database/schema.js'
+import { AppError } from '../lib/errors.js'
 import { publishStateChange } from '../responses/events.js'
 import { embeddingQueue, maintenanceQueue } from '../jobs.js'
 import { DEFAULT_TRASH_RETENTION, parseTrashRetention, trashRetentionValues } from '../chats/trash.js'
@@ -15,6 +14,13 @@ import { automaticChatExpirationValues, parseAutomaticChatExpiration } from '../
 import { parseAuthSettings, parsePersonalizationSettings } from './application-settings.js'
 import { deleteUserEpisodicMemory } from '../episodic-memory/indexer.js'
 import { scheduleUserIndex } from '../episodic-memory/queue.js'
+import {
+  listMemoryDocumentRevisions,
+  MemoryDocumentError,
+  readMemoryDocument,
+  restoreMemoryDocumentRevision,
+  updateMemoryDocument,
+} from '../memory-document/service.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -108,26 +114,69 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     return { values: saved!.values, updatedAt: saved!.updatedAt.toISOString() }
   })
 
-  app.get('/api/memories', async (request) => {
+  app.get('/api/memory-document', async (request) => {
     const user = requireUser(request)
-    return { data: await db.select().from(memories).where(eq(memories.userId, user.id)).orderBy(desc(memories.createdAt)) }
+    const document = await readMemoryDocument(user.id)
+    return { ...document, updatedAt: document.updatedAt?.toISOString() ?? null }
   })
 
-  app.post('/api/memories', async (request, reply) => {
+  app.put('/api/memory-document', async (request, reply) => {
     const user = requireUser(request)
-    const input = z.object({ content: z.string().trim().min(1).max(2_000), sourceChatId: z.uuid().nullable().default(null) }).parse(request.body)
-    const [created] = await db.insert(memories).values({ id: newId(), userId: user.id, ...input }).returning()
-    await scheduleUserIndex(user.id, 'saved-memory-created')
-    reply.code(201)
-    return created
+    const input = z.object({
+      content: z.string(),
+      expectedRevision: z.number().int().nonnegative(),
+    }).parse(request.body)
+    try {
+      const document = await updateMemoryDocument({
+        userId: user.id,
+        expectedRevision: input.expectedRevision,
+        content: input.content,
+        editor: 'user',
+        summary: input.content.trim() ? 'Edited in Settings' : 'Cleared in Settings',
+      })
+      return { ...document, updatedAt: document.updatedAt?.toISOString() ?? null }
+    } catch (error) {
+      if (!(error instanceof MemoryDocumentError)) throw error
+      if (error.code === 'memory_document_conflict') {
+        return reply.code(409).send({ error: {
+          message: error.message,
+          type: 'invalid_request_error',
+          code: error.code,
+          param: 'expectedRevision',
+        }, currentRevision: error.currentRevision })
+      }
+      throw new AppError(400, error.code, error.message)
+    }
   })
 
-  app.delete('/api/memories/:id', async (request, reply) => {
+  app.get('/api/memory-document/revisions', async (request) => {
+    const user = requireUser(request)
+    const revisions = await listMemoryDocumentRevisions(user.id)
+    return { data: revisions.map((revision) => ({
+      ...revision,
+      versionCreatedAt: revision.versionCreatedAt.toISOString(),
+      supersededAt: revision.supersededAt.toISOString(),
+    })) }
+  })
+
+  app.post('/api/memory-document/revisions/:id/restore', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const deleted = await db.delete(memories).where(and(eq(memories.id, id), eq(memories.userId, user.id))).returning({ id: memories.id })
-    if (!deleted.length) throw notFound('Memory')
-    await scheduleUserIndex(user.id, 'saved-memory-deleted')
-    reply.code(204).send()
+    const input = z.object({ expectedRevision: z.number().int().nonnegative() }).parse(request.body)
+    try {
+      const document = await restoreMemoryDocumentRevision({ userId: user.id, revisionId: id, expectedRevision: input.expectedRevision })
+      return { ...document, updatedAt: document.updatedAt?.toISOString() ?? null }
+    } catch (error) {
+      if (!(error instanceof MemoryDocumentError)) throw error
+      if (error.code === 'memory_document_conflict') {
+        return reply.code(409).send({ error: {
+          message: error.message,
+          type: 'invalid_request_error',
+          code: error.code,
+          param: 'expectedRevision',
+        }, currentRevision: error.currentRevision })
+      }
+      throw new AppError(error.code === 'memory_document_revision_not_found' ? 404 : 400, error.code, error.message)
+    }
   })
 }

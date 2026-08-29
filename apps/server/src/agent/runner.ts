@@ -48,10 +48,11 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
-import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
 import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
+import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
+import { createMemoryDocumentTool } from '../memory-document/agent-tool.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -160,9 +161,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
-  const enabledMemories = preferenceValues.memoryEnabled
-    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
-    : []
+  const memoryDocument = preferenceValues.memoryEnabled
+    ? await readMemoryDocument(record.response.userId)
+    : null
+  const memoryContext = memoryDocument ? memoryDocumentContext(memoryDocument) : ''
   const existingRecallItem = recallItemFromOutput(record.response.output, responseId)
   const recallItem = existingRecallItem ?? await retrieveAutomaticRecall({
     responseId,
@@ -175,7 +177,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
-    enabledMemories,
+    memoryContext,
   )
   const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
@@ -563,6 +565,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         onOperationStarted: markToolStarted,
       })
     : []
+  const memoryDocumentTools = preferenceValues.memoryEnabled === true
+      ? [createMemoryDocumentTool({
+        userId: record.response.userId,
+        responseId,
+        userMessage: responseInputText(record.response.input),
+        onOperationStarted: markToolStarted,
+      })]
+    : []
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -602,6 +612,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
         ...configuredWebTools,
         ...episodicMemoryTools,
+        ...memoryDocumentTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,

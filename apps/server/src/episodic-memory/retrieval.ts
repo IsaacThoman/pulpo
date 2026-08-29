@@ -1,7 +1,7 @@
 import { and, desc, eq, gt, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { EpisodicMemoryProfile, EpisodicMemoryRecallMode } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { chats, chatTurnEmbeddings, episodicMemoryGenerations, memories, savedMemoryEmbeddings } from '../database/schema.js'
+import { chats, chatTurnEmbeddings, episodicMemoryGenerations } from '../database/schema.js'
 import { activeGeneration, userMemoryIsEnabled } from './indexer.js'
 import { OllamaClient } from './ollama.js'
 import { EPISODIC_MEMORY_PROFILES } from './profiles.js'
@@ -241,55 +241,4 @@ export async function searchEpisodicChats(input: {
     items: results.length,
   })
   return results
-}
-
-async function newestMemories(userId: string): Promise<string[]> {
-  const rows = await db.select({ content: memories.content }).from(memories).where(and(
-    eq(memories.userId, userId), eq(memories.enabled, true),
-  )).orderBy(desc(memories.createdAt)).limit(16)
-  return rows.map((row) => row.content)
-}
-
-export function fitMemoryBudget(contents: string[], maxItems = 8, maxTokens = 500): string[] {
-  const result: string[] = []
-  let remainingCharacters = maxTokens * 4
-  for (const content of contents) {
-    if (result.length >= maxItems || remainingCharacters <= 0) break
-    const normalized = content.replace(/\s+/g, ' ').trim()
-    if (!normalized) continue
-    const value = normalized.length <= remainingCharacters
-      ? normalized
-      : `${normalized.slice(0, Math.max(0, remainingCharacters - 1)).trimEnd()}…`
-    if (value) result.push(value)
-    remainingCharacters -= value.length
-  }
-  return result
-}
-
-export async function selectRelevantMemories(userId: string, query: string, client = new OllamaClient()): Promise<string[]> {
-  if (!await userMemoryIsEnabled(userId)) return []
-  const [settings, generation] = await Promise.all([readEpisodicMemorySettings(), activeGeneration()])
-  if (!settings.enabled || !generation || !query.trim()) return fitMemoryBudget(await newestMemories(userId))
-  try {
-    const profile = EPISODIC_MEMORY_PROFILES[generation.profile as EpisodicMemoryProfile]
-    const [vector] = await measureEpisodicMemoryOperation(
-      'embedding',
-      () => client.embed(profile, query.slice(0, 4_000), AbortSignal.timeout(10_000)),
-      1,
-    )
-    const value = `[${vector!.join(',')}]`
-    const distance = sql<number>`${savedMemoryEmbeddings.embedding} <=> ${value}::halfvec`
-    const rows = await db.select({ content: memories.content }).from(savedMemoryEmbeddings)
-      .innerJoin(memories, eq(memories.id, savedMemoryEmbeddings.memoryId))
-      .where(and(
-        eq(savedMemoryEmbeddings.generationId, generation.id),
-        eq(savedMemoryEmbeddings.userId, userId),
-        eq(savedMemoryEmbeddings.status, 'ready'),
-        isNotNull(savedMemoryEmbeddings.embedding),
-        eq(memories.enabled, true),
-      )).orderBy(distance, desc(memories.createdAt)).limit(16)
-    return fitMemoryBudget(rows.map((row) => row.content))
-  } catch {
-    return fitMemoryBudget(await newestMemories(userId))
-  }
 }

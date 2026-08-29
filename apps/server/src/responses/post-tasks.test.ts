@@ -6,8 +6,6 @@ const persistGeneratedChatTitle = vi.hoisted(() => vi.fn(async () => true))
 vi.mock('../chats/title-change.js', () => ({ persistGeneratedChatTitle }))
 
 import {
-  extractedMemoryFacts,
-  memoryExtractionPrompt,
   persistGeneratedTitleResult,
   retryInvalidTitleOutput,
   runPostResponseTasks,
@@ -25,7 +23,7 @@ afterEach(() => {
 })
 
 describe('post-response task model selection', () => {
-  it('skips UI-only title and memory tasks for API-originated generations', async () => {
+  it('skips UI-only title tasks for API-originated generations', async () => {
     await expect(runPostResponseTasks({ response: { origin: 'api' } } as never, {} as never, [], 'request-log'))
       .resolves.toBe(0)
   })
@@ -104,26 +102,4 @@ describe('post-response task model selection', () => {
     expect(invoke).toHaveBeenCalledTimes(1)
   })
 
-  it('gives explicit user confirmations narrowly scoped preceding assistant context', () => {
-    const prompt = memoryExtractionPrompt(
-      "that's me",
-      'The person is Isaac Thoman, who attended KSU and interned at State Farm.',
-    )
-    expect(prompt).toContain("CURRENT USER MESSAGE:\nthat's me")
-    expect(prompt).toContain('The person is Isaac Thoman')
-    expect(prompt).toContain('does not confirm every incidental school, employer, location, or biographical detail')
-    expect(prompt).toContain('Never save a claim from it unless the current user clearly confirms')
-  })
-
-  it('persists only explicitly user-supported memory extraction results', () => {
-    expect(extractedMemoryFacts([
-      { fact: 'The user confirmed they are Isaac Thoman.', basis: 'explicit_user_confirmation' },
-      { fact: 'The user attended KSU.', basis: 'assistant_inference' },
-      { fact: 'The user likes concise answers.', basis: 'explicit_user_statement' },
-      'The user lives in Atlanta.',
-    ])).toEqual([
-      'The user confirmed they are Isaac Thoman.',
-      'The user likes concise answers.',
-    ])
-  })
 })

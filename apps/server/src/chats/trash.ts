@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, chats, memories, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
+import { attachments, chats, queuedMessages, responses, userPreferences, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
@@ -202,7 +202,6 @@ export async function purgePendingChats(userId?: string): Promise<number> {
       const files = await db.select({ objectKey: attachments.objectKey }).from(attachments)
         .where(eq(attachments.chatId, row.id))
       await Promise.all(files.map((file) => getBlobStore().delete(file.objectKey)))
-      if (row.temporary) await db.delete(memories).where(eq(memories.sourceChatId, row.id))
       await db.delete(chats).where(and(eq(chats.id, row.id), isNotNull(chats.purgeStartedAt)))
       purged += 1
     } catch (error) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import fixtures from './retrieval-fixtures.json' with { type: 'json' }
-import { automaticRecallQueryHasSignal, fitMemoryBudget, fuseRankedCandidates } from './retrieval.js'
+import { automaticRecallQueryHasSignal, fuseRankedCandidates } from './retrieval.js'
 import type { EpisodicMemoryProfile, EpisodicMemoryRecallMode } from '@pulpo/contracts'
 
 describe('episodic retrieval calibration', () => {
@@ -17,12 +17,6 @@ describe('episodic retrieval calibration', () => {
       now,
     )
     expect(ranked.map((candidate) => candidate.key)).toEqual(fixture.expected)
-  })
-
-  it('caps durable facts by count and approximate token budget', () => {
-    const selected = fitMemoryBudget(Array.from({ length: 12 }, (_, index) => `${index} ${'x'.repeat(300)}`))
-    expect(selected).toHaveLength(7)
-    expect(selected.join('').length).toBeLessThanOrEqual(2_000)
   })
 
   it.each([

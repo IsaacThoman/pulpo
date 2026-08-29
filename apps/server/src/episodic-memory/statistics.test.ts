@@ -62,11 +62,10 @@ describe('episodic-memory dashboard statistics', () => {
     mocks.indexRows = [{
       indexedChats: 4,
       indexedChunks: 8,
-      indexedFacts: 2,
       indexedUsers: 3,
       pendingItems: 1,
       failedItems: 1,
-      totalItems: 12,
+      totalItems: 10,
       storageBytes: '1200000',
       lastIndexedAt: '2026-08-27T12:45:00.000Z',
     }]
@@ -78,7 +77,7 @@ describe('episodic-memory dashboard statistics', () => {
     const statistics = await readEpisodicMemoryStatistics('24h', new Date('2026-08-27T13:00:00.000Z'))
     expect(statistics.current).toMatchObject({
       indexedChats: 4,
-      coverage: 10 / 12,
+      coverage: 8 / 10,
       storageBytes: 1_200_000,
       queue: { available: true, pending: 4, active: 1, failed: 4, oldestJobAgeMs: 5_000 },
     })
