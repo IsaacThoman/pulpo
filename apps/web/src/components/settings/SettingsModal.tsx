@@ -47,7 +47,7 @@ import { cn } from '@/lib/utils'
 import { apiRequest, downloadApiFile } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
-import { getCatalogModel, useCatalog } from '@/stores/catalog'
+import { getCatalogModel } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
@@ -185,8 +185,6 @@ export function SettingsModal({
   const navigate = useNavigate()
   const [memories, setMemories] = useState<Memory[]>([])
   const [memoriesLoading, setMemoriesLoading] = useState(false)
-  const models = useCatalog((state) => state.models)
-  const [importFallback, setImportFallback] = useState('')
   const [importResult, setImportResult] = useState('')
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
   const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
@@ -302,9 +300,9 @@ export function SettingsModal({
     return () => window.clearInterval(id)
   }, [open, section, s.trashRetention])
 
-  const chooseImport = (source: 'pulpo' | 'openwebui') => {
+  const chooseImport = () => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
-    input.onchange = () => { const file = input.files?.[0]; if (!file) return; void file.text().then((text) => JSON.parse(text)).then((data) => apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', { method: 'POST', body: { source, data, fallbackModelId: importFallback || undefined } })).then((result) => { setImportResult(`Imported ${result.imported}; ${result.duplicates} duplicate(s).${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`); return queryClient.invalidateQueries({ queryKey: ['chats'] }) }).catch((error) => setImportResult(error instanceof Error ? error.message : 'Import failed')) }
+    input.onchange = () => { const file = input.files?.[0]; if (!file) return; void file.text().then((text) => JSON.parse(text)).then((data) => apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', { method: 'POST', body: { source: 'pulpo', data } })).then((result) => { setImportResult(`Imported ${result.imported}; ${result.duplicates} duplicate(s).${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`); return queryClient.invalidateQueries({ queryKey: ['chats'] }) }).catch((error) => setImportResult(error instanceof Error ? error.message : 'Import failed')) }
     input.click()
   }
 
@@ -823,9 +821,7 @@ export function SettingsModal({
                   <Row label={ui("Export chats")} hint="Download all conversations as JSON.">
                     <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}> {ui("Export")} </Button>
                   </Row>
-                  <Row label={ui("Fallback model")} hint="Used when an imported source model is unavailable."><Select value={importFallback} onValueChange={setImportFallback}><SelectTrigger className="w-44"><SelectValue placeholder={ui("Select if needed")} /></SelectTrigger><SelectContent>{models.filter((model) => model.enabled).map((model) => <SelectItem key={model.id} value={model.id}>{model.name}</SelectItem>)}</SelectContent></Select></Row>
-                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" onClick={() => chooseImport('pulpo')}>{ui("Import")}</Button></Row>
-                  <Row label={ui("Import chats from OpenWebUI")} hint="Preserves history branches, timestamps, titles, and pinned state."><Button variant="outline" size="sm" onClick={() => chooseImport('openwebui')}>{ui("Import OpenWebUI")}</Button></Row>
+                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" onClick={chooseImport}>{ui("Import")}</Button></Row>
                   {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
                   <Separator className="my-3" />
                   <Row

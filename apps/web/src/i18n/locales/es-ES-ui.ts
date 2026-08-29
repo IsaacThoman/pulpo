@@ -557,8 +557,6 @@ const esUi: Record<string, string> = {
   "If you connected the app to another Pulpo instance, contact that instance's operator for account approval, password resets, retention, provider configuration, billing, availability, and data requests.": "Si conectó la aplicación a otra instancia de Pulpo, póngase en contacto con el operador de esa instancia para obtener la aprobación de la cuenta, el restablecimiento de la contraseña, la retención, la configuración del proveedor, la facturación, la disponibilidad y las solicitudes de datos.",
   "Immutable workspace image": "Imagen de espacio de trabajo inmutable",
   "Import": "Importar",
-  "Import chats from OpenWebUI": "Importar chats desde OpenWebUI",
-  "Import OpenWebUI": "Importar OpenWebUI",
   "Import Pulpo chats": "Importar chats de Pulpo",
   "Include first characters": "Incluir los primeros caracteres",
   "Include last characters": "Incluir últimos caracteres",
