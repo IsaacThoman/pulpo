@@ -8,6 +8,7 @@ import { getBlobStore } from '../storage/index.js'
 import { redis } from '../redis.js'
 import { fillMissingUsernames } from '../profile/username.js'
 import {
+  applyFullBackupCompatibilityDefaults,
   FULL_BACKUP_EXPLICIT_COLUMNS,
   FULL_BACKUP_TABLES,
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
@@ -89,7 +90,10 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     const manifest = JSON.parse(Buffer.from(files.get('manifest.json') ?? []).toString()) as { format: string; version: number; blobs: Array<{ entry: string; objectKey: string; checksum: string }> }
     const database = JSON.parse(Buffer.from(files.get('database.json') ?? []).toString()) as Record<string, Array<Record<string, unknown>>>
     if (manifest.format !== 'pulpo-instance-backup' || manifest.version !== 1) throw new Error('Unsupported backup manifest')
-    if (!(database.users ?? []).some((user) => user.role === 'admin')) throw new Error('Backup must contain at least one administrator')
+    const restoredAdmin = (database.users ?? []).find((user) => user.role === 'admin')
+    if (!restoredAdmin) throw new Error('Backup must contain at least one administrator')
+    const restoredAdminId = String(restoredAdmin.id ?? '')
+    if (!restoredAdminId) throw new Error('Backup administrator is missing an id')
     // Backups created before management tokens were introduced remain valid;
     // they restore with no automation credentials.
     database.management_tokens ??= []
@@ -101,11 +105,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     database.user_blocks ??= []
     for (const table of OPTIONAL_TABLES_IN_LEGACY_BACKUPS) database[table] ??= []
     fillMissingUsernames(database.users ?? [])
-    for (const user of database.users ?? []) {
-      user.profile_color ??= null
-      user.avatar_object_key ??= null
-      user.avatar_version ??= 0
-    }
+    applyFullBackupCompatibilityDefaults(database)
     for (const table of FULL_BACKUP_TABLES) if (!Array.isArray(database[table])) throw new Error(`Backup is missing ${table}`)
     for (const [index, blob] of manifest.blobs.entries()) {
       const body = files.get(blob.entry); if (!body || !checksumMatches(body, blob.checksum)) throw new Error(`Blob checksum failed: ${blob.objectKey}`)
@@ -137,7 +137,21 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const rows = database[table]!
         if (rows.length) await insertBackupRows(tx, table, rows)
-        await db.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+        if (table === 'users') {
+          // Truncating users cascades to backup_jobs. Recreate the active job
+          // under an administrator from the restored dataset so progress
+          // updates do not block on the transaction's backup_jobs lock and the
+          // completed restore remains visible after the temporary admin is gone.
+          await tx.insert(backupJobs).values({
+            ...job,
+            userId: restoredAdminId,
+            status: 'in_progress',
+            progress: 40,
+            error: null,
+            updatedAt: new Date(),
+          })
+        }
+        await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
     })
     await redis.flushdb()
