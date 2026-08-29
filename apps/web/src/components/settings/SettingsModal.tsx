@@ -9,6 +9,7 @@ import {
   CreditCard,
   Info,
   KeyRound,
+  Loader2,
   Monitor,
   Moon,
   ShieldCheck,
@@ -62,6 +63,7 @@ import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
+import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
 
 const SECTION_CONFIG = {
@@ -186,6 +188,7 @@ export function SettingsModal({
   const [memories, setMemories] = useState<Memory[]>([])
   const [memoriesLoading, setMemoriesLoading] = useState(false)
   const [importResult, setImportResult] = useState('')
+  const [importing, setImporting] = useState(false)
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
   const [trashRetentionSaving, setTrashRetentionSaving] = useState(false)
   const [trashRetentionError, setTrashRetentionError] = useState('')
@@ -302,7 +305,32 @@ export function SettingsModal({
 
   const chooseImport = () => {
     const input = document.createElement('input'); input.type = 'file'; input.accept = 'application/json,.json'
-    input.onchange = () => { const file = input.files?.[0]; if (!file) return; void file.text().then((text) => JSON.parse(text)).then((data) => apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', { method: 'POST', body: { source: 'pulpo', data } })).then((result) => { setImportResult(`Imported ${result.imported}; ${result.duplicates} duplicate(s).${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`); return queryClient.invalidateQueries({ queryKey: ['chats'] }) }).catch((error) => setImportResult(error instanceof Error ? error.message : 'Import failed')) }
+    input.onchange = () => {
+      const file = input.files?.[0]
+      if (!file) return
+      if (chatImportFileIsTooLarge(file.size)) {
+        setImportResult(ui("Import files must be 100 MiB or smaller."))
+        return
+      }
+      setImporting(true)
+      setImportResult(ui("Reading import file…"))
+      void (async () => {
+        try {
+          const data = JSON.parse(await file.text())
+          setImportResult(ui("Importing chats…"))
+          const result = await apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', {
+            method: 'POST',
+            body: { source: 'pulpo', data },
+          })
+          setImportResult(`Imported ${result.imported}; ${result.duplicates} duplicate(s).${result.warnings.length ? ` ${result.warnings.join(' ')}` : ''}`)
+          await queryClient.invalidateQueries({ queryKey: ['chats'] })
+        } catch (error) {
+          setImportResult(error instanceof Error ? error.message : 'Import failed')
+        } finally {
+          setImporting(false)
+        }
+      })()
+    }
     input.click()
   }
 
@@ -821,8 +849,8 @@ export function SettingsModal({
                   <Row label={ui("Export chats")} hint="Download all conversations as JSON.">
                     <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}> {ui("Export")} </Button>
                   </Row>
-                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" onClick={chooseImport}>{ui("Import")}</Button></Row>
-                  {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">{importResult}</div>}
+                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" disabled={importing} onClick={chooseImport}>{importing && <Loader2 className="animate-spin" aria-hidden />}{importing ? ui("Importing…") : ui("Import")}</Button></Row>
+                  {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground" role="status" aria-live="polite">{importResult}</div>}
                   <Separator className="my-3" />
                   <Row
                     label={ui("Trash all chats")}
