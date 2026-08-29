@@ -126,6 +126,7 @@ import Reanimated, {
   interpolateColor,
   LinearTransition,
   runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -212,7 +213,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -247,11 +248,13 @@ import {
 } from '../responsive';
 
 type ChatScrollViewProps = ScrollViewProps & {
+  blankSpace: SharedValue<number>;
   freezeKeyboardLayout: boolean;
   keyboardOffset: number;
 };
 
 const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps>(({
+  blankSpace,
   freezeKeyboardLayout,
   keyboardOffset,
   ...props
@@ -259,6 +262,7 @@ const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps
   <KeyboardChatScrollView
     {...props}
     automaticallyAdjustContentInsets={false}
+    blankSpace={blankSpace}
     contentInsetAdjustmentBehavior="never"
     freeze={freezeKeyboardLayout}
     keyboardLiftBehavior="whenAtEnd"
@@ -3312,10 +3316,12 @@ function ChatView({
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
   const chatTailPending = useRef(true);
+  const chatViewportHeight = useRef(0);
   const pendingFollowFrame = useRef<number | null>(null);
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
+  const keyboardBlankSpace = useSharedValue(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
@@ -3397,10 +3403,11 @@ function ChatView({
   const renderChatScrollComponent = useCallback((props: ScrollViewProps) => (
     <ChatScrollView
       {...props}
+      blankSpace={keyboardBlankSpace}
       freezeKeyboardLayout={!keyboardLayoutEnabled}
       keyboardOffset={keyboardSafeAreaOffset}
     />
-  ), [keyboardLayoutEnabled, keyboardSafeAreaOffset]);
+  ), [keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
@@ -4106,10 +4113,11 @@ function ChatView({
 
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     measuredContentHeight.current = height;
+    keyboardBlankSpace.value = chatKeyboardBlankSpace(chatViewportHeight.current, height);
     followContentIfNeeded();
     if (!chatTailPending.current) return;
     scheduleTailSettle();
-  }, [followContentIfNeeded, scheduleTailSettle]);
+  }, [followContentIfNeeded, keyboardBlankSpace, scheduleTailSettle]);
 
   useEffect(() => {
     submittedTurnFollowRevision.current += 1;
@@ -4118,9 +4126,10 @@ function ChatView({
     readerInteracting.current = false;
     chatTailPending.current = true;
     measuredContentHeight.current = 0;
+    keyboardBlankSpace.value = 0;
     cancelPendingFollow();
     scheduleTailSettle();
-  }, [cancelPendingFollow, chatId, scheduleTailSettle]);
+  }, [cancelPendingFollow, chatId, keyboardBlankSpace, scheduleTailSettle]);
 
   useEffect(() => () => {
     cancelPendingFollow();
@@ -4356,6 +4365,13 @@ function ChatView({
             </View>
           ) : null}
           onContentSizeChange={handleContentSizeChange}
+          onLayout={(event) => {
+            chatViewportHeight.current = event.nativeEvent.layout.height;
+            keyboardBlankSpace.value = chatKeyboardBlankSpace(
+              chatViewportHeight.current,
+              measuredContentHeight.current,
+            );
+          }}
           onMomentumScrollBegin={beginReaderInteraction}
           onMomentumScrollEnd={endReaderInteraction}
           onScroll={updateBottomProximity}
@@ -5134,7 +5150,7 @@ const styles = StyleSheet.create({
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
-  conversation: { width: '100%', minWidth: 0, flexGrow: 1, paddingBottom: 156 },
+  conversation: { width: '100%', minWidth: 0, paddingBottom: 156 },
   transcriptColumn: { width: '100%', minWidth: 0, maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
   emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
