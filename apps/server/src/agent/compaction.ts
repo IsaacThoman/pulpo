@@ -1,4 +1,4 @@
-import type { AgentMessage } from '@earendil-works/pi-agent-core'
+import type { AgentContext, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { CompactionItem } from '@pulpo/contracts'
 import { COMPACTION_PROMPT } from '../responses/compaction.js'
 
@@ -31,6 +31,26 @@ export function shouldCompactAgentContext(options: {
 
 export function shouldCompactAgentStream(modelTurns: number): boolean {
   return modelTurns > 1
+}
+
+export async function prepareCompactedAgentNextTurn(options: {
+  context: AgentContext
+  completedModelTurns: number
+  estimatedTokens: number
+  thresholdTokens: number
+  willContinue: boolean
+  compact: (messages: AgentMessage[], beforeAgentTurn: number, estimatedTokens: number) => Promise<AgentMessage[]>
+  adopt: (originalMessages: AgentMessage[], compactedMessages: AgentMessage[]) => void
+}): Promise<{ context: AgentContext } | undefined> {
+  const beforeAgentTurn = options.completedModelTurns + 1
+  if (!options.willContinue || options.estimatedTokens <= options.thresholdTokens || !shouldCompactAgentStream(beforeAgentTurn)) return undefined
+
+  const originalMessages = options.context.messages as AgentMessage[]
+  const compactedMessages = await options.compact(originalMessages, beforeAgentTurn, options.estimatedTokens)
+  if (compactedMessages === originalMessages) return undefined
+
+  options.adopt(originalMessages, compactedMessages)
+  return { context: { ...options.context, messages: compactedMessages } }
 }
 
 export function splitAgentContext(messages: AgentMessage[], retainedTurns: number): {

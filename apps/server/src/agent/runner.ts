@@ -35,8 +35,8 @@ import {
   agentCompactionItemId,
   agentCompactionPrompt,
   compactedAgentHandoffMessage,
+  prepareCompactedAgentNextTurn,
   shouldCompactAgentContext,
-  shouldCompactAgentStream,
   splitAgentContext,
 } from './compaction.js'
 import { isInsufficientBalanceError, trackBilledInternalModelCall } from '../responses/model-calls.js'
@@ -606,38 +606,41 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
     },
-    streamFn: async (_model, context, options) => {
-      const cacheOptions = providerCacheRequestOptions(active.provider, {
-        userId: record.response.userId,
-        chatId: record.response.chatId,
-        runId,
-      })
+    prepareNextTurnWithContext: async ({ context, toolResults }) => {
       const thresholdTokens = compactionThreshold()
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
       ) as typeof preparedContext
-      const estimatedTokens = estimateAgentContextTokens(preparedContext as Context)
-      if (estimatedTokens > thresholdTokens && shouldCompactAgentStream(modelTurns)) {
-        const originalMessages = context.messages as AgentMessage[]
-        const compactedMessages = await compactAgentContext(
-          originalMessages,
+      return prepareCompactedAgentNextTurn({
+        context,
+        completedModelTurns: modelTurns,
+        estimatedTokens: estimateAgentContextTokens(preparedContext as Context),
+        thresholdTokens,
+        willContinue: toolResults.length > 0 || agent.hasQueuedMessages(),
+        compact: (messages, beforeAgentTurn, estimatedTokens) => compactAgentContext(
+          messages,
           thresholdTokens,
           'agent_mid_run',
-          modelTurns || undefined,
+          beforeAgentTurn,
           [],
           { force: true, estimatedTokens },
-        )
-        if (adoptCompactedContext(originalMessages, compactedMessages)) {
-          context = { ...context, messages: compactedMessages as typeof context.messages }
-          preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
-          preparedContext = adaptToolResultImagesForProvider(
-            preparedContext as Context,
-            active.provider.toolResultImageMode as ToolResultImageMode,
-          ) as typeof preparedContext
-        }
-      }
+        ),
+        adopt: adoptCompactedContext,
+      })
+    },
+    streamFn: async (_model, context, options) => {
+      const cacheOptions = providerCacheRequestOptions(active.provider, {
+        userId: record.response.userId,
+        chatId: record.response.chatId,
+        runId,
+      })
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      preparedContext = adaptToolResultImagesForProvider(
+        preparedContext as Context,
+        active.provider.toolResultImageMode as ToolResultImageMode,
+      ) as typeof preparedContext
       const hardContextLimit = effectiveAgentCompactionThreshold(Number.MAX_SAFE_INTEGER, active.model.contextWindow)
       if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
         throw new Error('Agent context remains above the model context window after compaction')
