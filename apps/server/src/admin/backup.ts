@@ -5,6 +5,7 @@ import { eq, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { attachments, backupJobs, catalogIcons, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
+import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
 import { fillMissingUsernames } from '../profile/username.js'
 import {
@@ -154,7 +155,10 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
         await tx.update(backupJobs).set({ progress: 40 + Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
       }
     })
-    await redis.flushdb()
+    // BullMQ shares this Redis database. FLUSHDB removes the active restore job
+    // before the worker can acknowledge it, leaving the queue in an error state.
+    // Only invalidate application state derived from the replaced database.
+    await deleteRedisKeysByPattern(redis, 'pulpo:*')
     for (const blob of oldBlobs) await getBlobStore().delete(blob.key).catch(() => undefined)
     await db.update(backupJobs).set({ status: 'completed', progress: 100, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   } catch (error) {
