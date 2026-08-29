@@ -28,6 +28,8 @@ import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.j
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
 
+export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
+
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
   if (!enabled) return null
   const expiresAt = automaticChatExpiresAt(await getAutomaticChatExpiration(userId), now)
@@ -134,7 +136,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .send(createChatExportPayload(chatRows, responseRows))
   })
 
-  app.post('/api/chats/import', async (request) => {
+  app.post('/api/chats/import', CHAT_IMPORT_ROUTE_OPTIONS, async (request) => {
     const user = requireUser(request)
     const body = request.body as { source?: 'pulpo'; data?: unknown }
     if (!body.data || body.source !== 'pulpo') throw new AppError(400, 'invalid_import', 'Choose a valid Pulpo chat export')

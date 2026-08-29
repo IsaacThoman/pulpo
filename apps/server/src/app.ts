@@ -105,6 +105,15 @@ export async function buildApp() {
         param: error.param,
       } })
     }
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 413) {
+      const chatImport = request.url.startsWith('/api/chats/import')
+      return reply.code(413).send({ error: {
+        message: chatImport ? 'Import file is too large' : 'Request body is too large',
+        type: 'invalid_request_error',
+        code: chatImport ? 'import_too_large' : 'payload_too_large',
+        param: null,
+      } })
+    }
     request.log.error({ err: error }, 'Unhandled request error')
     return reply.code(500).send({ error: {
       message: 'Internal server error',
