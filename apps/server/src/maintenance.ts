@@ -11,6 +11,7 @@ import { expireNormalChats, markExpiredChatsForPurge, purgePendingChats } from '
 import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
 import { parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
+import { purgeExpiredMemoryDocumentRevisions } from './memory-document/service.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
 
@@ -120,6 +121,7 @@ export async function runCleanup(): Promise<void> {
     db.select({ id: requestLogs.id }).from(requestLogs).where(lt(requestLogs.payloadExpiresAt, now)),
   ))
   await db.delete(ocrCacheEntries).where(lt(ocrCacheEntries.expiresAt, now))
+  await purgeExpiredMemoryDocumentRevisions(now)
   const expiredExports = await db.select().from(exportJobs).where(lt(exportJobs.expiresAt, now))
   for (const job of expiredExports) if (job.objectKey) await getBlobStore().delete(job.objectKey).catch(() => undefined)
   if (expiredExports.length) await db.delete(exportJobs).where(inArray(exportJobs.id, expiredExports.map((row) => row.id)))

@@ -213,7 +213,6 @@ export function EpisodicStatisticsPanel({
         <div className="text-xs font-medium">{ui('Current index')}</div>
         <StatisticRow label={ui('Indexed chats')} value={count(current.indexedChats)} />
         <StatisticRow label={ui('Chat chunks')} value={count(current.indexedChunks)} />
-        <StatisticRow label={ui('Saved facts')} value={count(current.indexedFacts)} />
         <StatisticRow label={ui('Users indexed')} value={count(current.indexedUsers)} />
         <StatisticRow label={ui('Pending / failed')} value={`${count(current.pendingItems)} / ${count(current.failedItems)}`} />
         <StatisticRow label={ui('Queue active / failed')} value={`${count(current.queue.active)} / ${count(current.queue.failed)}`} />

@@ -45,7 +45,7 @@ import {
 } from '@/stores/settings'
 import { useAuth, type AuthUser } from '@/stores/auth'
 import { cn } from '@/lib/utils'
-import { apiRequest, downloadApiFile } from '@/lib/api'
+import { ApiError, apiRequest, downloadApiFile } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
 import { getCatalogModel } from '@/stores/catalog'
@@ -65,6 +65,7 @@ import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
+import { Markdown } from '@/components/chat/Markdown'
 
 const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
@@ -79,9 +80,23 @@ const SECTION_CONFIG = {
   about: { labelKey: 'settings.sections.about', icon: Info },
 } as const satisfies Record<SettingsSectionId, { labelKey: `settings.sections.${SettingsSectionId}`; icon: typeof User }>
 
-interface Memory {
-  id: string
+interface MemoryDocument {
   content: string
+  revision: number
+  lastEditor: 'user' | 'agent'
+  editSummary: string
+  sourceResponseId: string | null
+  updatedAt: string | null
+}
+
+interface MemoryDocumentRevision {
+  id: string
+  revision: number
+  editor: 'user' | 'agent'
+  editSummary: string
+  sourceResponseId: string | null
+  versionCreatedAt: string
+  supersededAt: string
 }
 
 interface StorageUsage {
@@ -185,8 +200,15 @@ export function SettingsModal({
   const billingEnabled = useAuth((a) => a.billingEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
   const navigate = useNavigate()
-  const [memories, setMemories] = useState<Memory[]>([])
-  const [memoriesLoading, setMemoriesLoading] = useState(false)
+  const [memoryDocument, setMemoryDocument] = useState<MemoryDocument | null>(null)
+  const [memoryDraft, setMemoryDraft] = useState('')
+  const [memoryRevisions, setMemoryRevisions] = useState<MemoryDocumentRevision[]>([])
+  const [memoryLoading, setMemoryLoading] = useState(false)
+  const [memorySaving, setMemorySaving] = useState(false)
+  const [memoryPreview, setMemoryPreview] = useState(false)
+  const [memoryError, setMemoryError] = useState('')
+  const normalizedMemoryDraft = memoryDraft.replace(/\r\n?/g, '\n').trim()
+  const memoryCharacterCount = normalizedMemoryDraft.length
   const [importResult, setImportResult] = useState('')
   const [importing, setImporting] = useState(false)
   const [storageUsage, setStorageUsage] = useState<StorageUsage | null>(null)
@@ -334,12 +356,27 @@ export function SettingsModal({
     input.click()
   }
 
+  const loadMemoryDocument = async () => {
+    setMemoryLoading(true)
+    setMemoryError('')
+    try {
+      const [document, revisions] = await Promise.all([
+        apiRequest<MemoryDocument>('/api/memory-document'),
+        apiRequest<{ data: MemoryDocumentRevision[] }>('/api/memory-document/revisions'),
+      ])
+      setMemoryDocument(document)
+      setMemoryDraft(document.content)
+      setMemoryRevisions(revisions.data)
+    } catch (error) {
+      setMemoryError(error instanceof Error ? error.message : ui('Could not load MEMORY.md.'))
+    } finally {
+      setMemoryLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (!open || section !== 'personalization') return
-    setMemoriesLoading(true)
-    void apiRequest<{ data: Memory[] }>('/api/memories')
-      .then((result) => setMemories(result.data))
-      .finally(() => setMemoriesLoading(false))
+    void loadMemoryDocument()
   }, [open, section])
 
   useEffect(() => {
@@ -347,9 +384,54 @@ export function SettingsModal({
     void apiRequest<StorageUsage>('/api/attachments/usage').then(setStorageUsage)
   }, [open, section])
 
-  const forgetMemory = async (id: string) => {
-    await apiRequest(`/api/memories/${id}`, { method: 'DELETE' })
-    setMemories((items) => items.filter((memory) => memory.id !== id))
+  const saveMemoryDocument = async (content = memoryDraft) => {
+    if (!memoryDocument || content.replace(/\r\n?/g, '\n').trim().length > 16_000) return
+    setMemorySaving(true)
+    setMemoryError('')
+    try {
+      const saved = await apiRequest<MemoryDocument>('/api/memory-document', {
+        method: 'PUT',
+        body: { content, expectedRevision: memoryDocument.revision },
+      })
+      setMemoryDocument(saved)
+      setMemoryDraft(saved.content)
+      const revisions = await apiRequest<{ data: MemoryDocumentRevision[] }>('/api/memory-document/revisions')
+      setMemoryRevisions(revisions.data)
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'memory_document_conflict') {
+        await loadMemoryDocument()
+        setMemoryError(ui('MEMORY.md changed elsewhere. The latest version has been loaded.'))
+      } else {
+        setMemoryError(error instanceof Error ? error.message : ui('Could not save MEMORY.md.'))
+      }
+    } finally {
+      setMemorySaving(false)
+    }
+  }
+
+  const restoreMemoryRevision = async (revision: MemoryDocumentRevision) => {
+    if (!memoryDocument || !confirm(ui('Restore this MEMORY.md revision? Your current version will remain available for 24 hours.'))) return
+    setMemorySaving(true)
+    setMemoryError('')
+    try {
+      const saved = await apiRequest<MemoryDocument>(`/api/memory-document/revisions/${revision.id}/restore`, {
+        method: 'POST',
+        body: { expectedRevision: memoryDocument.revision },
+      })
+      setMemoryDocument(saved)
+      setMemoryDraft(saved.content)
+      const revisions = await apiRequest<{ data: MemoryDocumentRevision[] }>('/api/memory-document/revisions')
+      setMemoryRevisions(revisions.data)
+    } catch (error) {
+      if (error instanceof ApiError && error.code === 'memory_document_conflict') {
+        await loadMemoryDocument()
+        setMemoryError(ui('MEMORY.md changed elsewhere. The latest version has been loaded.'))
+      } else {
+        setMemoryError(error instanceof Error ? error.message : ui('Could not restore MEMORY.md.'))
+      }
+    } finally {
+      setMemorySaving(false)
+    }
   }
 
   const recoverChat = async (id: string) => {
@@ -703,33 +785,88 @@ export function SettingsModal({
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <Label className="text-sm font-medium">{ui("Memories")}</Label>
-                        <p className="mt-0.5 text-xs text-muted-foreground"> {ui("Allow Pulpo to save durable facts and recall relevant context from your eligible chats.")} </p>
+                        <p className="mt-0.5 text-xs text-muted-foreground"> {ui("Include your MEMORY.md profile and recall relevant context from eligible chats.")} </p>
                       </div>
                       <Switch
                         checked={s.memoryEnabled}
                         onCheckedChange={(value) => s.set('memoryEnabled', value)}
                       />
                     </div>
-                    <div className="space-y-1.5">
-                      {memoriesLoading && (
-                        <div className="pt-2 text-sm text-muted-foreground">{ui("Loading memories…")}</div>
-                      )}
-                      {!memoriesLoading && memories.length === 0 && (
-                        <div className="pt-2 text-sm text-muted-foreground">{ui("No saved memories.")}</div>
-                      )}
-                      {memories.map((memory) => (
-                        <div
-                          key={memory.id}
-                          className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
-                        >
-                          <span>{memory.content}</span>
-                          <button
-                            type="button"
-                            onClick={() => void forgetMemory(memory.id)}
-                            className="shrink-0 cursor-pointer text-xs text-muted-foreground hover:text-destructive"
-                          > {ui("forget")} </button>
+                    <div className="mt-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <Label className="text-sm font-medium">{ui('MEMORY.md')}</Label>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{ui('Pulpo includes this user-controlled profile in every eligible conversation. Agent mode can update it when permitted.')}</p>
                         </div>
-                      ))}
+                        <div className="flex rounded-md border p-0.5 text-xs">
+                          <button type="button" onClick={() => setMemoryPreview(false)} className={cn('cursor-pointer rounded px-2 py-1', !memoryPreview && 'bg-accent font-medium')}>{ui('Write')}</button>
+                          <button type="button" onClick={() => setMemoryPreview(true)} className={cn('cursor-pointer rounded px-2 py-1', memoryPreview && 'bg-accent font-medium')}>{ui('Preview')}</button>
+                        </div>
+                      </div>
+                      {memoryLoading ? (
+                        <div className="flex items-center gap-2 rounded-lg border px-3 py-8 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{ui('Loading MEMORY.md…')}</div>
+                      ) : !memoryDocument ? (
+                        <div className="rounded-lg border px-3 py-8 text-sm text-muted-foreground">{ui('Could not load MEMORY.md.')}</div>
+                      ) : memoryPreview ? (
+                        <div className="min-h-52 rounded-lg border bg-muted/20 px-4 py-3 text-sm">
+                          {memoryDraft.trim() ? <Markdown content={memoryDraft} /> : <span className="text-muted-foreground">{ui('MEMORY.md is empty.')}</span>}
+                        </div>
+                      ) : (
+                        <Textarea
+                          value={memoryDraft}
+                          onChange={(event) => setMemoryDraft(event.target.value)}
+                          placeholder={ui('# About me\n\n- My name is…\n\n# Preferences\n\n- I prefer…')}
+                          rows={11}
+                          className="font-mono text-sm"
+                        />
+                      )}
+                      {memoryDocument && (
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className={cn('text-xs', memoryCharacterCount > 16_000 ? 'text-destructive' : 'text-muted-foreground')}>
+                            {memoryCharacterCount.toLocaleString()} / 16,000 {ui('characters')}
+                            {memoryDocument.updatedAt ? ` · ${ui('Updated')} ${timeAgo(new Date(memoryDocument.updatedAt).getTime())}` : ''}
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={memorySaving || !memoryDraft}
+                              onClick={() => {
+                                if (confirm(ui('Clear MEMORY.md? You can restore it for 24 hours.'))) void saveMemoryDocument('')
+                              }}
+                            >{ui('Clear')}</Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={memorySaving || normalizedMemoryDraft === memoryDocument.content || memoryCharacterCount > 16_000}
+                              onClick={() => void saveMemoryDocument()}
+                            >{memorySaving ? <Loader2 className="size-4 animate-spin" /> : ui('Save MEMORY.md')}</Button>
+                          </div>
+                        </div>
+                      )}
+                      {memoryError && <p className="text-xs text-destructive">{memoryError}</p>}
+                      <Separator />
+                      <div>
+                        <div className="text-sm font-medium">{ui('Recent edits')}</div>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{ui('Previous versions remain restorable for 24 hours.')}</p>
+                      </div>
+                      {!memoryLoading && memoryRevisions.length === 0 && (
+                        <div className="text-sm text-muted-foreground">{ui('No recent edits.')}</div>
+                      )}
+                      <div className="space-y-1.5">
+                        {memoryRevisions.map((revision) => (
+                          <div key={revision.id} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2">
+                            <div className="min-w-0">
+                              <div className="truncate text-sm">{revision.editSummary}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())} · {ui('Version')} {revision.revision}
+                              </div>
+                            </div>
+                            <Button type="button" variant="ghost" size="sm" disabled={memorySaving} onClick={() => void restoreMemoryRevision(revision)}>{ui('Restore')}</Button>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>

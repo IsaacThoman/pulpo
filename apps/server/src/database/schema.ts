@@ -701,14 +701,37 @@ export const backupJobs = pgTable('backup_jobs', {
   ...timestamps,
 })
 
-export const memories = pgTable('memories', {
+export const userMemoryDocuments = pgTable('user_memory_documents', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  content: text('content').notNull().default(''),
+  revision: integer('revision').notNull().default(0),
+  lastEditor: text('last_editor').notNull().default('user'),
+  editSummary: text('edit_summary').notNull().default('Created memory document'),
+  sourceResponseId: uuid('source_response_id').references(() => responses.id, { onDelete: 'set null' }),
+  ...timestamps,
+}, (table) => [
+  check('user_memory_documents_content_length_check', sql`char_length(${table.content}) <= 16000`),
+  check('user_memory_documents_revision_check', sql`${table.revision} >= 0`),
+  check('user_memory_documents_editor_check', sql`${table.lastEditor} in ('user', 'agent')`),
+])
+
+export const userMemoryDocumentRevisions = pgTable('user_memory_document_revisions', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  revision: integer('revision').notNull(),
   content: text('content').notNull(),
-  sourceChatId: uuid('source_chat_id').references(() => chats.id, { onDelete: 'set null' }),
-  enabled: boolean('enabled').notNull().default(true),
-  ...timestamps,
-})
+  editor: text('editor').notNull(),
+  editSummary: text('edit_summary').notNull(),
+  sourceResponseId: uuid('source_response_id').references(() => responses.id, { onDelete: 'set null' }),
+  versionCreatedAt: timestamp('version_created_at', { withTimezone: true }).notNull(),
+  supersededAt: timestamp('superseded_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('user_memory_document_revisions_user_revision_unique').on(table.userId, table.revision),
+  index('user_memory_document_revisions_user_superseded_idx').on(table.userId, table.supersededAt),
+  check('user_memory_document_revisions_content_length_check', sql`char_length(${table.content}) <= 16000`),
+  check('user_memory_document_revisions_revision_check', sql`${table.revision} >= 0`),
+  check('user_memory_document_revisions_editor_check', sql`${table.editor} in ('user', 'agent')`),
+])
 
 export const episodicMemoryGenerations = pgTable('episodic_memory_generations', {
   id: uuid('id').primaryKey(),
@@ -757,26 +780,6 @@ export const chatTurnEmbeddings = pgTable('chat_turn_embeddings', {
   index('chat_turn_embeddings_chat_idx').on(table.chatId),
   index('chat_turn_embeddings_search_idx').using('gin', table.searchVector),
   check('chat_turn_embeddings_status_check', sql`${table.status} in ('pending', 'ready', 'failed')`),
-])
-
-export const savedMemoryEmbeddings = pgTable('saved_memory_embeddings', {
-  id: uuid('id').primaryKey(),
-  generationId: uuid('generation_id').notNull().references(() => episodicMemoryGenerations.id, { onDelete: 'cascade' }),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  memoryId: uuid('memory_id').notNull().references(() => memories.id, { onDelete: 'cascade' }),
-  contentHash: text('content_hash').notNull(),
-  contentText: text('content_text').notNull(),
-  searchVector: tsvector('search_vector').notNull().generatedAlwaysAs(sql`to_tsvector('simple', coalesce("content_text", ''))`),
-  embedding: halfvec('embedding'),
-  status: text('status').notNull().default('pending'),
-  error: text('error'),
-  indexedAt: timestamp('indexed_at', { withTimezone: true }),
-  ...timestamps,
-}, (table) => [
-  uniqueIndex('saved_memory_embeddings_generation_memory_unique').on(table.generationId, table.memoryId),
-  index('saved_memory_embeddings_user_generation_idx').on(table.userId, table.generationId),
-  index('saved_memory_embeddings_search_idx').using('gin', table.searchVector),
-  check('saved_memory_embeddings_status_check', sql`${table.status} in ('pending', 'ready', 'failed')`),
 ])
 
 export const episodicMemoryMetricBuckets = pgTable('episodic_memory_metric_buckets', {

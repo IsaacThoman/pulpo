@@ -5,7 +5,6 @@ import {
   chatTurnEmbeddings,
   episodicMemoryGenerations,
   episodicMemoryMetricBuckets,
-  savedMemoryEmbeddings,
 } from '../database/schema.js'
 import { embeddingQueue } from '../jobs.js'
 import { summarizeEpisodicMemoryMetric } from './metrics.js'
@@ -44,7 +43,6 @@ interface IndexStatisticsRow {
   [key: string]: unknown
   indexedChats: number
   indexedChunks: number
-  indexedFacts: number
   indexedUsers: number
   pendingItems: number
   failedItems: number
@@ -57,27 +55,21 @@ async function currentIndexStatistics(): Promise<IndexStatisticsRow> {
   const rows = await db.execute<IndexStatisticsRow>(sql`
     with active_generation as (
       select id from ${episodicMemoryGenerations} where ${episodicMemoryGenerations.active} = true limit 1
-    ), all_items as (
-      select user_id, chat_id, status, indexed_at from ${chatTurnEmbeddings}
-      where generation_id = (select id from active_generation)
-      union all
-      select user_id, null::uuid as chat_id, status, indexed_at from ${savedMemoryEmbeddings}
-      where generation_id = (select id from active_generation)
     )
     select
-      count(distinct chat_id) filter (where chat_id is not null and status = 'ready')::int as "indexedChats",
-      count(*) filter (where chat_id is not null and status = 'ready')::int as "indexedChunks",
-      count(*) filter (where chat_id is null and status = 'ready')::int as "indexedFacts",
+      count(distinct chat_id) filter (where status = 'ready')::int as "indexedChats",
+      count(*) filter (where status = 'ready')::int as "indexedChunks",
       count(distinct user_id) filter (where status = 'ready')::int as "indexedUsers",
       count(*) filter (where status = 'pending')::int as "pendingItems",
       count(*) filter (where status = 'failed')::int as "failedItems",
       count(*)::int as "totalItems",
-      (pg_total_relation_size('chat_turn_embeddings') + pg_total_relation_size('saved_memory_embeddings'))::bigint as "storageBytes",
+      pg_total_relation_size('chat_turn_embeddings')::bigint as "storageBytes",
       max(indexed_at) as "lastIndexedAt"
-    from all_items
+    from ${chatTurnEmbeddings}
+    where generation_id = (select id from active_generation)
   `)
   return rows[0] ?? {
-    indexedChats: 0, indexedChunks: 0, indexedFacts: 0, indexedUsers: 0,
+    indexedChats: 0, indexedChunks: 0, indexedUsers: 0,
     pendingItems: 0, failedItems: 0, totalItems: 0, storageBytes: 0, lastIndexedAt: null,
   }
 }
@@ -103,7 +95,6 @@ export async function readEpisodicMemoryStatistics(
     ...rawIndexStats,
     indexedChats: Number(rawIndexStats.indexedChats),
     indexedChunks: Number(rawIndexStats.indexedChunks),
-    indexedFacts: Number(rawIndexStats.indexedFacts),
     indexedUsers: Number(rawIndexStats.indexedUsers),
     pendingItems: Number(rawIndexStats.pendingItems),
     failedItems: Number(rawIndexStats.failedItems),
@@ -119,7 +110,7 @@ export async function readEpisodicMemoryStatistics(
   const agentRead = summarizeEpisodicMemoryMetric(rows, 'agent_read')
   const allEvents = recall.events + retrieval.events + databaseSearch.events + embedding.events + indexing.events + agentSearch.events + agentRead.events
   const allErrors = recall.errors + retrieval.errors + databaseSearch.errors + embedding.errors + indexing.errors + agentSearch.errors + agentRead.errors
-  const readyItems = indexStats.indexedChunks + indexStats.indexedFacts
+  const readyItems = indexStats.indexedChunks
   const recalled = rows.filter((row) => row.metric === 'automatic_recall').reduce((sum, row) => sum + Number(row.recalledCount), 0)
   const abstained = rows.filter((row) => row.metric === 'automatic_recall').reduce((sum, row) => sum + Number(row.abstainedCount), 0)
   const fallbacks = rows.filter((row) => row.metric === 'retrieval').reduce((sum, row) => sum + Number(row.fallbackCount), 0)
@@ -131,7 +122,6 @@ export async function readEpisodicMemoryStatistics(
     current: {
       indexedChats: indexStats.indexedChats,
       indexedChunks: indexStats.indexedChunks,
-      indexedFacts: indexStats.indexedFacts,
       indexedUsers: indexStats.indexedUsers,
       pendingItems: indexStats.pendingItems,
       failedItems: indexStats.failedItems,

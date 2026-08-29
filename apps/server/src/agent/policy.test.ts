@@ -18,19 +18,19 @@ describe('agent policy', () => {
       .toBe(buildAgentSystemPrompt('Model policy', 'Agent policy'))
   })
 
-  it('appends user-approved memories after account instructions', () => {
+  it('appends MEMORY.md after account instructions', () => {
     const prompt = buildAgentSystemPrompt(
       'Model policy',
       'Agent policy',
       'Prefer TypeScript.',
-      ['The user prefers concise answers.', 'The user works in New York.'],
+      '[MEMORY.md revision 2]\n- The user prefers concise answers.',
     )
-    expect(prompt).toContain('User-approved memories:\n- The user prefers concise answers.\n- The user works in New York.')
-    expect(prompt.indexOf('User-provided custom instructions:')).toBeLessThan(prompt.indexOf('User-approved memories:'))
+    expect(prompt).toContain('[MEMORY.md revision 2]\n- The user prefers concise answers.')
+    expect(prompt.indexOf('User-provided custom instructions:')).toBeLessThan(prompt.indexOf('[MEMORY.md revision 2]'))
   })
 
-  it('omits the memory section when no memories are enabled', () => {
-    expect(buildAgentSystemPrompt('Model policy', 'Agent policy')).not.toContain('User-approved memories:')
+  it('omits MEMORY.md when no document context is supplied', () => {
+    expect(buildAgentSystemPrompt('Model policy', 'Agent policy')).not.toContain('[MEMORY.md revision')
   })
 
   it('creates deterministic workspace paths without traversal', () => {

@@ -18,7 +18,6 @@ const statistics: EpisodicMemoryStatistics = {
   current: {
     indexedChats: 12,
     indexedChunks: 30,
-    indexedFacts: 4,
     indexedUsers: 3,
     pendingItems: 2,
     failedItems: 1,
