@@ -55,7 +55,8 @@ for service in api worker; do
 done
 
 preview_routing_config="$(
-  SERVICE_NAME_WEB='web-pr-319' \
+  COOLIFY_RESOURCE_UUID='preview-resource' \
+    SERVICE_NAME_WEB='web' \
     SERVICE_FQDN_WEB='pulpo-dev-pr-319.deathgrips.org' \
     SERVICE_USER_POSTGRES='preview-db-user' \
     SERVICE_PASSWORD_64_POSTGRES='preview-database-magic-password' \
@@ -68,14 +69,15 @@ preview_routing_config="$(
 jq -e '
   .services.web.labels as $labels
   | $labels["traefik.enable"] == "true"
-    and $labels["traefik.http.routers.web-pr-319-https.entryPoints"] == "https"
-    and $labels["traefik.http.routers.web-pr-319-https.rule"] == "Host(`pulpo-dev-pr-319.deathgrips.org`) && PathPrefix(`/`)"
-    and $labels["traefik.http.routers.web-pr-319-https.service"] == "web-pr-319"
-    and $labels["traefik.http.routers.web-pr-319-https.tls"] == "true"
-    and $labels["traefik.http.routers.web-pr-319-https.tls.certresolver"] == "letsencrypt"
-    and $labels["traefik.http.services.web-pr-319.loadbalancer.server.port"] == "80"
+    and $labels["traefik.http.routers.preview-resource-web-https.entryPoints"] == "https"
+    and $labels["traefik.http.routers.preview-resource-web-https.rule"] == "Host(`pulpo-dev-pr-319.deathgrips.org`) && PathPrefix(`/`)"
+    and $labels["traefik.http.routers.preview-resource-web-https.service"] == "preview-resource-web"
+    and $labels["traefik.http.routers.preview-resource-web-https.tls"] == "true"
+    and $labels["traefik.http.routers.preview-resource-web-https.tls.certresolver"] == "letsencrypt"
+    and $labels["traefik.http.services.preview-resource-web.loadbalancer.server.port"] == "80"
+    and ($labels | has("traefik.http.services.web.loadbalancer.server.port") | not)
 ' <<< "${preview_routing_config}" >/dev/null || {
-  echo 'Compose did not generate an isolated HTTPS router for the preview web service.' >&2
+  echo 'Compose did not namespace the HTTPS router and service by Coolify resource.' >&2
   exit 1
 }
 

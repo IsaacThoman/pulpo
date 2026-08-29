@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, parseConfig } from './config.js'
+import { getStorageCorsOrigins, getWorkspaceInstanceId, isAllowedOrigin, isAllowedRequestOrigin, parseConfig } from './config.js'
 
 describe('server configuration', () => {
   it('keeps billing disabled unless explicitly and completely configured', () => {
@@ -139,6 +139,21 @@ describe('server configuration', () => {
       'https://pulpo.example.com',
       'https://desktop.pulpo.invalid',
     ])
+  })
+
+  it('allows browser mutations from the request host when deployment metadata is stale', () => {
+    const config = parseConfig({
+      NODE_ENV: 'production',
+      PUBLIC_URL: 'https://stale.example.com',
+    })
+
+    expect(isAllowedRequestOrigin('https://pulpo.baby', 'pulpo.baby', config)).toBe(true)
+    expect(isAllowedRequestOrigin('https://pulpo.baby:8443', 'pulpo.baby:8443', config)).toBe(true)
+    expect(isAllowedRequestOrigin('https://pulpo.baby', 'pulpo.baby:8443', config)).toBe(false)
+    expect(isAllowedRequestOrigin('https://pulpo.baby.evil.example', 'pulpo.baby', config)).toBe(false)
+    expect(isAllowedRequestOrigin('ftp://pulpo.baby', 'pulpo.baby', config)).toBe(false)
+    expect(isAllowedRequestOrigin('not an origin', 'pulpo.baby', config)).toBe(false)
+    expect(isAllowedRequestOrigin('https://pulpo.baby', undefined, config)).toBe(false)
   })
 
   it('adds loopback wildcard origins to development object-storage CORS', () => {
