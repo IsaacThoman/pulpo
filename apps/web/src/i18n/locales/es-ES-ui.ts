@@ -1,4 +1,5 @@
 const esUi: Record<string, string> = {
+  "Compaction": "Compactación",
   "Native tool result": "Resultado nativo de herramienta",
   "Tool-result images": "Imágenes de resultados de herramientas",
   "Use user-message compatibility only for providers that reject images returned by tools.": "Usa la compatibilidad mediante mensajes de usuario solo con proveedores que rechazan imágenes devueltas por herramientas.",
