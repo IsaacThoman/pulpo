@@ -278,9 +278,6 @@ function CodexConnectionSettings({ active }: { active: boolean }) {
             <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">{ui("Connected")}</span>
           ) : null}
         </div>
-        <p className="mt-3 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
-          {ui("Personal use only. Codex subscription access is not a supported production API contract and may change upstream. Pulpo still charges for agent workspaces and configured billable tools.")}
-        </p>
         {connected ? (
           <div className="mt-4 flex items-center justify-between gap-3">
             <div className="text-xs text-muted-foreground">
