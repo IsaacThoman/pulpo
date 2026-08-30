@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Model } from '@/lib/types'
-import { findCatalogModel } from './catalog-model'
+import { CODEX_LAB_ID, findCatalogModel, modelSubtitle } from './catalog-model'
 
 const kimi: Model = {
   id: 'kimi-k3', name: 'Kimi K3', providerGroupId: 'moonshot', provider: 'Moonshot', inferenceProvider: 'Fireworks',
@@ -19,5 +19,19 @@ const kimi: Model = {
 describe('catalog model resolution', () => {
   it('maps a hidden redirect target back to its visible parent', () => {
     expect(findCatalogModel([kimi], 'kimi-k3-fast')).toBe(kimi)
+  })
+})
+
+describe('modelSubtitle', () => {
+  it('shows the lab and inference provider when they differ', () => {
+    expect(modelSubtitle(kimi)).toBe('Moonshot · Fireworks')
+  })
+
+  it('shows only the subscription name for managed Codex models', () => {
+    expect(modelSubtitle({
+      providerGroupId: CODEX_LAB_ID,
+      provider: 'Codex',
+      inferenceProvider: 'Codex Subscription',
+    })).toBe('Codex Subscription')
   })
 })

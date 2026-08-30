@@ -16,6 +16,7 @@ import { useSettings } from '@/stores/settings'
 import { apiRequest } from '@/lib/api'
 import { resolveDefaultModelId } from '@/lib/default-model'
 import { newChatLocationState, type NewChatLocationState } from '@/lib/new-chat-navigation'
+import { modelSubtitle } from '@/lib/catalog-model'
 import {
   resolveConfiguredChatExpirationPeriod,
   resolveChatLandingBadge,
@@ -26,7 +27,7 @@ import type { Message } from '@/lib/types'
 import { useDesktopChrome } from '@/stores/desktopChrome'
 import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { ui, uit } from '@/i18n/ui'
+import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
@@ -104,9 +105,7 @@ function Placeholder({
         <h1 className="text-3xl font-semibold tracking-tight">{model.name}</h1>
       </div>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        {model.provider === model.inferenceProvider
-          ? model.provider
-          : uit`${model.provider} · ${model.inferenceProvider}`}
+        {modelSubtitle(model)}
       </p>
       {suggestions.length > 0 && (
         <div className="mt-8 grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
