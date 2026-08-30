@@ -27,6 +27,7 @@ describe('toolActivityPresentation', () => {
     ['attach_file', 'Attaching a file…', Paperclip],
     ['web_search', 'Searching the web…', Search],
     ['web_fetch', 'Fetching a webpage…', Globe],
+    ['update_memory', 'Updating memory…', FilePenLine],
   ])('maps %s to a friendly label and icon', (name, label, icon) => {
     expect(toolActivityPresentation(name)).toEqual({ label, icon })
   })

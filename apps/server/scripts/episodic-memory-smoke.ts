@@ -5,16 +5,15 @@ import {
   chats,
   chatTurnEmbeddings,
   episodicMemoryGenerations,
-  memories,
   models,
   providerConnections,
   responses,
-  savedMemoryEmbeddings,
+  userMemoryDocuments,
   userPreferences,
   users,
 } from '../src/database/schema.js'
 import { processEmbeddingJob } from '../src/episodic-memory/processor.js'
-import { searchEpisodicChats, selectRelevantMemories } from '../src/episodic-memory/retrieval.js'
+import { searchEpisodicChats } from '../src/episodic-memory/retrieval.js'
 import type { OllamaClient } from '../src/episodic-memory/ollama.js'
 import { readEpisodicChatPage } from '../src/episodic-memory/agent-tools.js'
 import { recalledChatContext, retrieveAutomaticRecall } from '../src/episodic-memory/automatic-recall.js'
@@ -32,7 +31,6 @@ const ids = {
   root: '40000000-0000-4000-8000-000000000001',
   originalLeaf: '40000000-0000-4000-8000-000000000002',
   alternateLeaf: '40000000-0000-4000-8000-000000000003',
-  memory: '50000000-0000-4000-8000-000000000001',
 } as const
 
 function visibleOutput(text: string, hidden: string): unknown[] {
@@ -137,11 +135,12 @@ async function resetAndSeed(): Promise<void> {
       createdAt: new Date('2026-08-22T12:00:00.000Z'),
     },
   ])
-  await db.insert(memories).values({
-    id: ids.memory,
+  await db.insert(userMemoryDocuments).values({
     userId: ids.user,
-    sourceChatId: ids.chat,
-    content: 'The user gardens in a cold climate.',
+    content: '# About me\n\n- I garden in a cold climate.',
+    revision: 1,
+    lastEditor: 'user',
+    editSummary: 'Created smoke-test profile',
   })
   await db.insert(applicationSettings).values({
     key: 'episodicMemory',
@@ -159,8 +158,6 @@ async function verifyGeneration(profile: 'embeddinggemma' | 'qwen3-embedding', d
   assert(chunks.length === 2, `expected two active-lineage chunks, received ${chunks.length}`)
   assert(chunks.every((chunk) => chunk.status === 'ready' && chunk.embedding?.length === dimension), 'chat vectors are incomplete')
   assert(chunks.every((chunk) => !chunk.chunkText.includes('SECRET') && !chunk.chunkText.includes('attachment')), 'private response data reached a chunk')
-  const factVectors = await db.select().from(savedMemoryEmbeddings).where(eq(savedMemoryEmbeddings.generationId, active.id))
-  assert(factVectors.length === 1 && factVectors[0]?.embedding?.length === dimension, 'saved-memory vector is incomplete')
 }
 
 async function main(): Promise<void> {
@@ -202,8 +199,6 @@ async function main(): Promise<void> {
     query: 'ceramic glaze',
   }, failingClient)
   assert(lexical[0]?.chatId === ids.chat, 'lexical fallback did not return the source chat')
-  const relevantFacts = await selectRelevantMemories(ids.user, 'What climate does the user garden in?')
-  assert(relevantFacts.includes('The user gardens in a cold climate.'), 'durable fact ranking failed')
   const transcript = await readEpisodicChatPage({
     userId: ids.user,
     currentChatId: ids.destinationChat,
@@ -232,13 +227,12 @@ async function main(): Promise<void> {
 
   await db.update(userPreferences).set({ values: { memoryEnabled: false } }).where(eq(userPreferences.userId, ids.user))
   await processEmbeddingJob({ type: 'delete-user', userId: ids.user })
-  const [chatVectors, factVectors, durableFacts] = await Promise.all([
+  const [chatVectors, memoryDocuments] = await Promise.all([
     db.select().from(chatTurnEmbeddings).where(eq(chatTurnEmbeddings.userId, ids.user)),
-    db.select().from(savedMemoryEmbeddings).where(eq(savedMemoryEmbeddings.userId, ids.user)),
-    db.select().from(memories).where(eq(memories.userId, ids.user)),
+    db.select().from(userMemoryDocuments).where(eq(userMemoryDocuments.userId, ids.user)),
   ])
-  assert(chatVectors.length === 0 && factVectors.length === 0, 'user opt-out did not delete derived vectors')
-  assert(durableFacts.length === 1, 'user opt-out deleted durable fact records')
+  assert(chatVectors.length === 0, 'user opt-out did not delete derived chat vectors')
+  assert(memoryDocuments.length === 1, 'user opt-out deleted MEMORY.md')
 
   console.info(JSON.stringify({
     ok: true,
@@ -247,7 +241,7 @@ async function main(): Promise<void> {
     hybridTopChatId: initial[0]?.chatId,
     lexicalFallbackTopChatId: lexical[0]?.chatId,
     automaticRecallSources: automaticRecall.sources.length,
-    durableFactsRetainedAfterOptOut: durableFacts.length,
+    memoryDocumentsRetainedAfterOptOut: memoryDocuments.length,
   }))
 }
 

@@ -126,6 +126,7 @@ import Reanimated, {
   interpolateColor,
   LinearTransition,
   runOnJS,
+  type SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withDelay,
@@ -163,6 +164,7 @@ import { cacheNamespace, cacheOpenedChat, deleteResponseCursor } from '../data/d
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
+import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { startComposerAutoFocus } from '../providers/composerAutoFocus';
@@ -211,7 +213,7 @@ import {
 } from '../features/chat/history';
 import { activityDurationMs, buildLegacyMessageTimeline, buildMessageTimeline, completedActivityLabel, timelineActivityIsActive, workspaceIsActive, type TimelineStep } from '../features/chat/timeline';
 import { toolActivityPresentation } from '../features/chat/toolActivityPresentation';
-import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
+import { chatKeyboardBlankSpace, isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from '../features/chat/viewport';
 import {
   nextChatStartsTemporary,
   resolveChatHeaderAction,
@@ -246,11 +248,13 @@ import {
 } from '../responsive';
 
 type ChatScrollViewProps = ScrollViewProps & {
+  blankSpace: SharedValue<number>;
   freezeKeyboardLayout: boolean;
   keyboardOffset: number;
 };
 
 const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps>(({
+  blankSpace,
   freezeKeyboardLayout,
   keyboardOffset,
   ...props
@@ -258,6 +262,7 @@ const ChatScrollView = forwardRef<KeyboardChatScrollViewRef, ChatScrollViewProps
   <KeyboardChatScrollView
     {...props}
     automaticallyAdjustContentInsets={false}
+    blankSpace={blankSpace}
     contentInsetAdjustmentBehavior="never"
     freeze={freezeKeyboardLayout}
     keyboardLiftBehavior="whenAtEnd"
@@ -3311,16 +3316,19 @@ function ChatView({
   const shouldAutoFollow = useRef(true);
   const readerInteracting = useRef(false);
   const chatTailPending = useRef(true);
+  const chatViewportHeight = useRef(0);
   const pendingFollowFrame = useRef<number | null>(null);
   const tailSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const submittedTurnFollowRevision = useRef(0);
   const measuredContentHeight = useRef(0);
+  const keyboardBlankSpace = useSharedValue(0);
   const preferredAgentMode = usePreferencesStore((state) => state.agentModes[model.id] ?? true);
   const agentAvailable = usePrototypeStore((state) => state.agentAvailable);
   const canUseAgent = agentAvailable && model.agentEnabled;
   const [agentEnabled, setAgentEnabled] = useState(() => preferredAgentMode && canUseAgent);
   const activeAgentEnabled = canUseAgent && agentEnabled;
   const [attachments, setAttachmentState] = useState<ComposerAttachment[]>([]);
+  const attachmentUploadError = attachments.find((attachment) => attachment.state === 'failed')?.error;
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
   const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
@@ -3395,10 +3403,11 @@ function ChatView({
   const renderChatScrollComponent = useCallback((props: ScrollViewProps) => (
     <ChatScrollView
       {...props}
+      blankSpace={keyboardBlankSpace}
       freezeKeyboardLayout={!keyboardLayoutEnabled}
       keyboardOffset={keyboardSafeAreaOffset}
     />
-  ), [keyboardLayoutEnabled, keyboardSafeAreaOffset]);
+  ), [keyboardBlankSpace, keyboardLayoutEnabled, keyboardSafeAreaOffset]);
   const emptyStateAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{
       translateY: -resolveKeyboardLayoutProgress(keyboardProgress.value, keyboardLayoutEnabled) * (
@@ -3883,7 +3892,7 @@ function ChatView({
         setAttachments((values) => values.map((item) => item.localId === ready.localId ? ready : item));
         return ready;
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Upload failed';
+        const message = attachmentUploadErrorMessage(error);
         const failed = settleUploadFailure({
           attempted,
           current: latestAttachmentsRef.current.get(attempted.localId),
@@ -4104,10 +4113,11 @@ function ChatView({
 
   const handleContentSizeChange = useCallback((_width: number, height: number) => {
     measuredContentHeight.current = height;
+    keyboardBlankSpace.value = chatKeyboardBlankSpace(chatViewportHeight.current, height);
     followContentIfNeeded();
     if (!chatTailPending.current) return;
     scheduleTailSettle();
-  }, [followContentIfNeeded, scheduleTailSettle]);
+  }, [followContentIfNeeded, keyboardBlankSpace, scheduleTailSettle]);
 
   useEffect(() => {
     submittedTurnFollowRevision.current += 1;
@@ -4116,9 +4126,10 @@ function ChatView({
     readerInteracting.current = false;
     chatTailPending.current = true;
     measuredContentHeight.current = 0;
+    keyboardBlankSpace.value = 0;
     cancelPendingFollow();
     scheduleTailSettle();
-  }, [cancelPendingFollow, chatId, scheduleTailSettle]);
+  }, [cancelPendingFollow, chatId, keyboardBlankSpace, scheduleTailSettle]);
 
   useEffect(() => () => {
     cancelPendingFollow();
@@ -4354,6 +4365,13 @@ function ChatView({
             </View>
           ) : null}
           onContentSizeChange={handleContentSizeChange}
+          onLayout={(event) => {
+            chatViewportHeight.current = event.nativeEvent.layout.height;
+            keyboardBlankSpace.value = chatKeyboardBlankSpace(
+              chatViewportHeight.current,
+              measuredContentHeight.current,
+            );
+          }}
           onMomentumScrollBegin={beginReaderInteraction}
           onMomentumScrollEnd={endReaderInteraction}
           onScroll={updateBottomProximity}
@@ -4395,6 +4413,11 @@ function ChatView({
                 onRetry={retryAttachment}
                 onRemove={removeComposerAttachment}
               />
+              {attachmentUploadError ? (
+                <Text accessibilityRole="alert" style={styles.attachmentErrorText}>
+                  {attachmentUploadError}
+                </Text>
+              ) : null}
               {attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent) ? (
                 <Text accessibilityRole="alert" style={styles.attachmentRestrictionText}>
                   {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
@@ -5127,7 +5150,7 @@ const styles = StyleSheet.create({
   temporaryExpiredBanner: { backgroundColor: 'rgba(139,92,246,0.14)' },
   connectionBannerText: { color: COLORS.muted, fontSize: 11.5, fontWeight: '600' },
   chatContent: { width: '100%', maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
-  conversation: { width: '100%', minWidth: 0, flexGrow: 1, paddingBottom: 156 },
+  conversation: { width: '100%', minWidth: 0, paddingBottom: 156 },
   transcriptColumn: { width: '100%', minWidth: 0, maxWidth: CHAT_CONTENT_MAX, alignSelf: 'center' },
   emptyConversation: { flex: 1, justifyContent: 'center', paddingBottom: 156 },
   emptyConversationAccessible: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 220 },
@@ -5257,6 +5280,7 @@ const styles = StyleSheet.create({
   messageEditBannerText: { flex: 1, color: COLORS.text, fontSize: 12, fontWeight: '600' },
   messageEditCancel: { color: COLORS.muted, fontSize: 12, fontWeight: '600', paddingHorizontal: 4, paddingVertical: 2 },
   attachmentRestrictionText: { color: COLORS.warning, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
+  attachmentErrorText: { color: COLORS.critical, fontSize: 11, lineHeight: 15, paddingHorizontal: 6, paddingBottom: 6 },
   attachmentStrip: { height: 72, marginBottom: 3 },
   attachmentStripContent: { gap: 6, paddingHorizontal: 2 },
   attachmentFrame: { paddingTop: 6, paddingRight: 6 },

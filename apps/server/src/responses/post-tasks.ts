@@ -1,13 +1,11 @@
 import { eq } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { applicationSettings, chats, memories, models, providerConnections, responses, userPreferences } from '../database/schema.js'
+import { applicationSettings, models, providerConnections, responses } from '../database/schema.js'
 import { persistGeneratedChatTitle } from '../chats/title-change.js'
-import { newId } from '../lib/ids.js'
 import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/application-settings.js'
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
 import { trackBilledInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
-import { scheduleUserIndex } from '../episodic-memory/queue.js'
 
 export const TITLE_MAX_OUTPUT_TOKENS = 1_024
 export const TITLE_VALIDATION_ATTEMPTS = 3
@@ -112,7 +110,6 @@ export async function runPostResponseTasks(
   const task = parseInterfaceSettings(setting?.value)
   const runtime = await resolvePostTaskRuntime(task.localTask, current)
   const client = createCatalogModelClient(runtime)
-  const inputText = JSON.stringify(record.response.input).slice(0, 8_000)
   let costMicros = 0
   if (task.title !== false && !record.response.parentResponseId) {
     const history = selectTitleHistory(
@@ -160,42 +157,5 @@ export async function runPostResponseTasks(
       if (!(error instanceof TitleUnfundedError)) throw error
     }
   }
-  const [preference] = await db.select().from(userPreferences).where(eq(userPreferences.userId, record.response.userId)).limit(1)
-  const values = (preference?.values ?? {}) as { memoryEnabled?: boolean }
-  if (!values.memoryEnabled) return costMicros
-  const [chat] = await db.select({ temporary: chats.temporary }).from(chats)
-    .where(eq(chats.id, record.response.chatId)).limit(1)
-  if (chat?.temporary) return costMicros
-  const memoryInput = [{ role: 'user' as const, content: `Extract at most 3 durable user facts or preferences worth remembering from this exchange. Return a JSON array of short strings, or [] if there are none.\n\n${inputText}` }]
-  const memoryMaxOutputTokens = Math.min(200, runtime.model.maxOutputTokens)
-  const memoryResult = await trackBilledInternalModelCall({
-    responseId: record.response.id,
-    requestLogId,
-    modelId: runtime.model.id,
-    upstreamModelId: runtime.model.upstreamModelId,
-    purpose: 'memory',
-    requestInput: memoryInput,
-    maxOutputTokens: memoryMaxOutputTokens,
-    invoke: () => client.responses.create({
-      model: runtime.model.upstreamModelId,
-      input: memoryInput,
-      store: false,
-      max_output_tokens: memoryMaxOutputTokens,
-    }),
-  })
-  if ('skipped' in memoryResult) return costMicros
-  costMicros += memoryResult.costMicros
-  try {
-    const parsed = JSON.parse(memoryResult.result.output_text.replace(/^```json\s*|```$/g, '').trim()) as unknown
-    if (!Array.isArray(parsed)) return costMicros
-    const existing = new Set((await db.select({ content: memories.content }).from(memories).where(eq(memories.userId, record.response.userId))).map((row) => row.content.toLowerCase()))
-    let inserted = false
-    for (const content of parsed.slice(0, 3)) {
-      if (typeof content !== 'string' || !content.trim() || existing.has(content.trim().toLowerCase())) continue
-      await db.insert(memories).values({ id: newId(), userId: record.response.userId, sourceChatId: record.response.chatId, content: content.trim().slice(0, 2_000) })
-      inserted = true
-    }
-    if (inserted) await scheduleUserIndex(record.response.userId, 'saved-memory-extracted')
-  } catch { /* malformed task output is non-fatal */ }
   return costMicros
 }

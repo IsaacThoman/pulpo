@@ -26,6 +26,9 @@ import { automaticChatExpiresAt, getAutomaticChatExpiration, normalChatIsExpired
 import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
+import { importedModelIdentity } from './modelIdentity.js'
+
+export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
 
 async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: Date): Promise<Date | null> {
   if (!enabled) return null
@@ -133,16 +136,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .send(createChatExportPayload(chatRows, responseRows))
   })
 
-  app.post('/api/chats/import', async (request) => {
+  app.post('/api/chats/import', CHAT_IMPORT_ROUTE_OPTIONS, async (request) => {
     const user = requireUser(request)
-    const body = request.body as { source?: 'pulpo' | 'openwebui'; data?: unknown; fallbackModelId?: string }
-    if (!body.data || !['pulpo', 'openwebui'].includes(body.source ?? '')) throw new AppError(400, 'invalid_import', 'Choose a valid chat export')
+    const body = request.body as { source?: 'pulpo'; data?: unknown }
+    if (!body.data || body.source !== 'pulpo') throw new AppError(400, 'invalid_import', 'Choose a valid Pulpo chat export')
     const enabled = await db.select({ id: models.id }).from(models).where(eq(models.enabled, true))
     const enabledIds = new Set(enabled.map((model) => model.id))
-    if (body.fallbackModelId && !enabledIds.has(body.fallbackModelId)) throw new AppError(400, 'fallback_model_unavailable', 'The selected fallback model is unavailable')
-    const rawChats = body.source === 'openwebui'
-      ? (Array.isArray(body.data) ? body.data : Array.isArray((body.data as { chats?: unknown[] }).chats) ? (body.data as { chats: unknown[] }).chats : [body.data])
-      : (body.data as { chats?: unknown[] }).chats
+    const rawChats = (body.data as { chats?: unknown[] }).chats
     if (!Array.isArray(rawChats) || rawChats.length > 5_000) throw new AppError(400, 'import_limit', 'The import must contain at most 5,000 chats')
     const warnings: string[] = []
     let imported = 0; let duplicates = 0
@@ -152,71 +152,29 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         const chatValue = (wrapped.chat && typeof wrapped.chat === 'object' ? wrapped.chat : wrapped) as Record<string, unknown>
         const sourceChatId = String(wrapped.id ?? chatValue.id ?? '') || createHash('sha256').update(JSON.stringify(chatValue)).digest('hex')
         const fingerprint = createHash('sha256').update(JSON.stringify(chatValue)).digest('hex')
-        const [existing] = await tx.select().from(chatImportSources).where(and(eq(chatImportSources.userId, user.id), eq(chatImportSources.source, body.source!), eq(chatImportSources.sourceChatId, sourceChatId))).limit(1)
+        const [existing] = await tx.select().from(chatImportSources).where(and(eq(chatImportSources.userId, user.id), eq(chatImportSources.source, 'pulpo'), eq(chatImportSources.sourceChatId, sourceChatId))).limit(1)
         if (existing) { duplicates += 1; continue }
         const chatId = newId()
-        if (body.source === 'openwebui') {
-          const history = (chatValue.history ?? {}) as { messages?: Record<string, Record<string, unknown>>; currentId?: string }
-          const messages = history.messages ?? {}
-          if (Object.keys(messages).length > 50_000) throw new AppError(400, 'import_limit', 'A chat may contain at most 50,000 messages')
-          const sourceModels = new Set(Object.values(messages).map((message) => typeof message.model === 'string' ? message.model : null).filter(Boolean) as string[])
-          const unavailable = [...sourceModels].filter((id) => !enabledIds.has(id))
-          if (unavailable.length && !body.fallbackModelId) throw new AppError(400, 'fallback_model_required', `Choose a fallback model for: ${unavailable.join(', ')}`)
-          const defaultModel = [...sourceModels].find((id) => enabledIds.has(id)) ?? body.fallbackModelId ?? enabled[0]?.id
-          if (!defaultModel) throw new AppError(400, 'model_unavailable', 'No enabled Pulpo model is available')
-          const createdAt = new Date(Number(wrapped.created_at ?? chatValue.created_at ?? Date.now() / 1000) * 1000)
-          await tx.insert(chats).values({ id: chatId, userId: user.id, title: String(chatValue.title ?? 'Imported chat').slice(0, 200), modelId: defaultModel, pinned: Boolean(wrapped.pinned), createdAt, updatedAt: new Date(Number(wrapped.updated_at ?? chatValue.updated_at ?? Date.now() / 1000) * 1000) })
-          const responseByAssistant = new Map<string, string>()
-          const userVariantIds = new Map<string, string>()
-          const assistantMessages = Object.values(messages).filter((message) => message.role === 'assistant').sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0))
-          for (const message of assistantMessages) {
-            const sourceId = String(message.id ?? '')
-            const responseId = newId()
-            let parentSource = typeof message.parentId === 'string' ? message.parentId : null
-            let userMessage: Record<string, unknown> | undefined
-            let sourceUserMessageId: string | null = null
-            while (parentSource) {
-              const parent = messages[parentSource]
-              if (!parent) break
-              if (!userMessage && parent.role === 'user') { userMessage = parent; sourceUserMessageId = parentSource }
-              if (parent.role === 'assistant' && responseByAssistant.has(parentSource)) break
-              parentSource = typeof parent.parentId === 'string' ? parent.parentId : null
-            }
-            const parentResponseId = parentSource ? responseByAssistant.get(parentSource) ?? null : null
-            const modelId = typeof message.model === 'string' && enabledIds.has(message.model) ? message.model : body.fallbackModelId ?? defaultModel
-            const userMessageId = sourceUserMessageId ? userVariantIds.get(sourceUserMessageId) ?? newId() : newId()
-            if (sourceUserMessageId) userVariantIds.set(sourceUserMessageId, userMessageId)
-            const text = typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')
-            const reasoning = typeof message.reasoning_content === 'string' ? message.reasoning_content : typeof message.reasoning === 'string' ? message.reasoning : ''
-            await tx.insert(responses).values({ id: responseId, chatId, userId: user.id, modelId, actualModelId: modelId, parentResponseId, previousResponseId: parentResponseId, userMessageId, branchReason: 'message', status: message.done === false ? 'incomplete' : 'completed', input: [{ role: 'user', content: String(userMessage?.content ?? '') }], output: [...(reasoning ? [{ type: 'reasoning', status: 'completed', summary: [{ type: 'summary_text', text: reasoning }] }] : []), { type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text }] }], createdAt: new Date(Number(message.timestamp ?? Date.now() / 1000) * 1000), completedAt: new Date(Number(message.timestamp ?? Date.now() / 1000) * 1000) })
-            responseByAssistant.set(sourceId, responseId)
-          }
-          const active = history.currentId ? responseByAssistant.get(history.currentId) : [...responseByAssistant.values()].at(-1)
-          if (active) await tx.update(chats).set({ activeResponseId: active, activeBranchLeafId: active }).where(eq(chats.id, chatId))
-          const fileCount = Object.values(messages).reduce((count, message) => count + (Array.isArray(message.files) ? message.files.length : 0), 0)
-          if (fileCount) warnings.push(`${String(chatValue.title ?? 'Chat')}: skipped ${fileCount} unavailable OpenWebUI file reference(s)`)
-        } else {
-          const source = chatValue
-          const allResponses = (body.data as { responses?: Array<Record<string, unknown>> }).responses ?? []
-          const sourceIdValue = String(source.id ?? '')
-          const sourceResponses = allResponses.filter((response) => String(response.chatId ?? response.chat_id ?? '') === sourceIdValue)
-          const sourceModel = String(source.modelId ?? source.model_id ?? '')
-          const modelId = enabledIds.has(sourceModel) ? sourceModel : body.fallbackModelId
-          if (!modelId) throw new AppError(400, 'fallback_model_required', `Choose a fallback model for ${sourceModel || 'an unknown model'}`)
-          await tx.insert(chats).values({ id: chatId, userId: user.id, title: String(source.title ?? 'Imported chat').slice(0, 200), modelId, pinned: Boolean(source.pinned), createdAt: source.createdAt ? new Date(String(source.createdAt)) : new Date(), updatedAt: source.updatedAt ? new Date(String(source.updatedAt)) : new Date() })
-          const ids = new Map(sourceResponses.map((response) => [String(response.id), newId()]))
-          const userVariantIds = new Map<string, string>()
-          for (const response of sourceResponses) {
-            const sourceResponseModel = String(response.modelId ?? response.model_id ?? modelId)
-            const responseModel = enabledIds.has(sourceResponseModel) ? sourceResponseModel : modelId
-            const sourceUserMessageId = String(response.userMessageId ?? response.user_message_id ?? response.id)
-            const userMessageId = userVariantIds.get(sourceUserMessageId) ?? newId(); userVariantIds.set(sourceUserMessageId, userMessageId)
-            await tx.insert(responses).values({ id: ids.get(String(response.id))!, chatId, userId: user.id, modelId: responseModel, actualModelId: responseModel, parentResponseId: ids.get(String(response.parentResponseId ?? response.parent_response_id ?? '')) ?? null, previousResponseId: ids.get(String(response.previousResponseId ?? response.previous_response_id ?? '')) ?? null, userMessageId, branchReason: String(response.branchReason ?? response.branch_reason ?? 'message'), status: (['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'].includes(String(response.status)) ? response.status : 'completed') as typeof responses.$inferInsert.status, input: response.input ?? [], output: response.output ?? [], usage: response.usage, error: response.error, createdAt: response.createdAt ? new Date(String(response.createdAt)) : new Date(), completedAt: response.completedAt ? new Date(String(response.completedAt)) : null })
-          }
-          const active = ids.get(String(source.activeResponseId ?? source.active_response_id ?? '')) ?? [...ids.values()].at(-1)
-          if (active) await tx.update(chats).set({ activeResponseId: active, activeBranchLeafId: active }).where(eq(chats.id, chatId))
+        const source = chatValue
+        const allResponses = (body.data as { responses?: Array<Record<string, unknown>> }).responses ?? []
+        const sourceIdValue = String(source.id ?? '')
+        const sourceResponses = allResponses.filter((response) => String(response.chatId ?? response.chat_id ?? '') === sourceIdValue)
+        const sourceModel = String(source.modelId ?? source.model_id ?? '')
+        const { modelId } = importedModelIdentity(sourceModel, enabledIds)
+        await tx.insert(chats).values({ id: chatId, userId: user.id, title: String(source.title ?? 'Imported chat').slice(0, 200), modelId, pinned: Boolean(source.pinned), createdAt: source.createdAt ? new Date(String(source.createdAt)) : new Date(), updatedAt: source.updatedAt ? new Date(String(source.updatedAt)) : new Date() })
+        const ids = new Map(sourceResponses.map((response) => [String(response.id), newId()]))
+        const userVariantIds = new Map<string, string>()
+        for (const response of sourceResponses) {
+          const sourceResponseModel = String(response.modelId ?? response.model_id ?? sourceModel)
+          const sourceMetadata = response.metadata && typeof response.metadata === 'object' ? response.metadata as Record<string, string> : {}
+          const { modelId: responseModel, metadata } = importedModelIdentity(sourceResponseModel, enabledIds, sourceMetadata)
+          const sourceUserMessageId = String(response.userMessageId ?? response.user_message_id ?? response.id)
+          const userMessageId = userVariantIds.get(sourceUserMessageId) ?? newId(); userVariantIds.set(sourceUserMessageId, userMessageId)
+          await tx.insert(responses).values({ id: ids.get(String(response.id))!, chatId, userId: user.id, modelId: responseModel, actualModelId: responseModel, parentResponseId: ids.get(String(response.parentResponseId ?? response.parent_response_id ?? '')) ?? null, previousResponseId: ids.get(String(response.previousResponseId ?? response.previous_response_id ?? '')) ?? null, userMessageId, branchReason: String(response.branchReason ?? response.branch_reason ?? 'message'), status: (['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'].includes(String(response.status)) ? response.status : 'completed') as typeof responses.$inferInsert.status, input: response.input ?? [], output: response.output ?? [], usage: response.usage, error: response.error, metadata, createdAt: response.createdAt ? new Date(String(response.createdAt)) : new Date(), completedAt: response.completedAt ? new Date(String(response.completedAt)) : null })
         }
-        await tx.insert(chatImportSources).values({ userId: user.id, source: body.source!, sourceChatId, chatId, fingerprint })
+        const active = ids.get(String(source.activeResponseId ?? source.active_response_id ?? '')) ?? [...ids.values()].at(-1)
+        if (active) await tx.update(chats).set({ activeResponseId: active, activeBranchLeafId: active }).where(eq(chats.id, chatId))
+        await tx.insert(chatImportSources).values({ userId: user.id, source: 'pulpo', sourceChatId, chatId, fingerprint })
         imported += 1
       }
     })
