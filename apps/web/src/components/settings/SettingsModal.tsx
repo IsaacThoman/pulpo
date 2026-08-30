@@ -858,7 +858,7 @@ export function SettingsModal({
                             <div className="min-w-0">
                               <div className="truncate text-sm">{revision.editSummary}</div>
                               <div className="text-xs text-muted-foreground">
-                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())} · {ui('Version')} {revision.revision}
+                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())}
                               </div>
                             </div>
                             <Button type="button" variant="ghost" size="sm" disabled={memorySaving} onClick={() => void restoreMemoryRevision(revision)}>{ui('Restore')}</Button>
