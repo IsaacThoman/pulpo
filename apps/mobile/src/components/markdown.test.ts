@@ -14,6 +14,18 @@ describe('beginsWithMarkdownHeading', () => {
 })
 
 describe('normalizeMathDelimiters', () => {
+  it('escapes currency signs so native math parsing leaves prose intact', () => {
+    const markdown = 'Click the **$** dropdown if you want the $ aligned. Enter $100 or \\$200.'
+
+    expect(normalizeMathDelimiters(markdown))
+      .toBe('Click the **\\$** dropdown if you want the \\$ aligned. Enter \\$100 or \\$200.')
+  })
+
+  it('treats bare single-dollar pairs as prose but preserves display math', () => {
+    expect(normalizeMathDelimiters('Bare $x$ and display $$x^2$$.'))
+      .toBe('Bare \\$x\\$ and display $$x^2$$.')
+  })
+
   it('normalizes common inline and block LLM math delimiters', () => {
     expect(normalizeMathDelimiters(String.raw`Inline \(E=mc^2\) and \[x^2 + y^2\]`))
       .toBe('Inline $E=mc^2$ and \n$$x^2 + y^2$$\n')
