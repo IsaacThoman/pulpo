@@ -101,7 +101,7 @@ export async function ensureBuiltinCatalog(): Promise<void> {
     })
     await tx.insert(providerConnections).values({
       id: CODEX_PROVIDER_ID,
-      name: 'Codex subscription',
+      name: 'Codex Subscription',
       type: 'codex_subscription',
       baseUrl: 'https://chatgpt.com/backend-api',
       encryptedApiKey: 'managed-oauth',
@@ -111,7 +111,7 @@ export async function ensureBuiltinCatalog(): Promise<void> {
     }).onConflictDoUpdate({
       target: providerConnections.id,
       set: {
-        name: 'Codex subscription', type: 'codex_subscription', baseUrl: 'https://chatgpt.com/backend-api',
+        name: 'Codex Subscription', type: 'codex_subscription', baseUrl: 'https://chatgpt.com/backend-api',
         encryptedApiKey: 'managed-oauth', cacheAffinityMode: 'prompt_cache_key', cacheAffinityScope: 'chat', enabled: true,
         updatedAt: new Date(),
       },
@@ -125,7 +125,7 @@ export async function ensureBuiltinCatalog(): Promise<void> {
       await tx.insert(models).values({
         id, providerConnectionId: CODEX_PROVIDER_ID, labId: CODEX_LAB_ID, upstreamModelId: upstream.id,
         name: upstream.name, description: 'Use your ChatGPT Plus or Pro Codex subscription.', sortOrder,
-        enabled: true, visible: true, logo: 'codex', agentEnabled: true, defaultParameters: { reasoning: { effort: 'medium' } },
+        enabled: true, visible: true, logo: 'openai', agentEnabled: true, defaultParameters: { reasoning: { effort: 'medium' } },
         contextWindow: upstream.contextWindow, maxOutputTokens: upstream.maxTokens,
         tags: upstream.input.includes('image') ? ['reasoning', 'tools', 'code', 'vision'] : ['reasoning', 'tools', 'code'],
         allowedParameters: ['reasoning'], useProviderCost: false, fallbackModelId: null, maxRetries: 0,
@@ -134,7 +134,7 @@ export async function ensureBuiltinCatalog(): Promise<void> {
         set: {
           providerConnectionId: CODEX_PROVIDER_ID, labId: CODEX_LAB_ID, upstreamModelId: upstream.id,
           name: upstream.name, description: 'Use your ChatGPT Plus or Pro Codex subscription.', sortOrder,
-          enabled: true, visible: true, logo: 'codex', agentEnabled: true,
+          enabled: true, visible: true, logo: 'openai', agentEnabled: true,
           defaultParameters: { reasoning: { effort: 'medium' } },
           contextWindow: upstream.contextWindow, maxOutputTokens: upstream.maxTokens,
           tags: upstream.input.includes('image') ? ['reasoning', 'tools', 'code', 'vision'] : ['reasoning', 'tools', 'code'],

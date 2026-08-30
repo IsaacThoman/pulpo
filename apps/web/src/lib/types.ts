@@ -13,7 +13,7 @@ export interface Model {
   /** Stable catalog lab id used for synchronized provider grouping/order. */
   providerGroupId: string
   provider: string
-  /** Monochrome company/lab mark used in the picker header and provider rail. */
+  /** Monochrome company/lab mark used in the provider rail. */
   labLogo: string
   labCustomIcon?: CatalogIconReference | null
   /** Model/product mark used in chat, favorites, and model lists. */

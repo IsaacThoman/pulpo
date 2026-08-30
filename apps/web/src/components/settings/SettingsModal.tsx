@@ -308,7 +308,7 @@ function CodexConnectionSettings({ active }: { active: boolean }) {
           </div>
         ) : (
           <div className="mt-4">
-            <Button size="sm" disabled={busy} onClick={() => void connect()}>{busy && <Loader2 className="mr-1 size-3.5 animate-spin" />}{terminalError || statusQuery.data?.reauthenticationRequired ? ui("Reconnect Codex") : ui("Connect Codex")}</Button>
+            <Button size="sm" disabled={busy} onClick={() => void connect()}>{terminalError || statusQuery.data?.reauthenticationRequired ? ui("Reconnect Codex") : ui("Connect Codex")}</Button>
           </div>
         )}
         {(error || terminalError || statusQuery.data?.error) && <p className="mt-3 text-xs text-destructive">{error || terminalError || statusQuery.data?.error}</p>}

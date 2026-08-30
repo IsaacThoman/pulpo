@@ -17,7 +17,10 @@ interface SelectableModel {
   enabled?: boolean
 }
 
-export function modelSubtitle(model: { lab: string; provider: string }): string {
+export const CODEX_LAB_ID = '00000000-0000-7000-8000-000000000003'
+
+export function modelSubtitle(model: { providerGroupId?: string; lab: string; provider: string }): string {
+  if (model.providerGroupId === CODEX_LAB_ID) return model.provider
   return model.lab === model.provider ? model.lab : `${model.lab} · ${model.provider}`
 }
 

@@ -14,9 +14,9 @@ import { favoriteIdsMatch, resolveProviderOrder, useModels } from '@/stores/mode
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { ui } from '@/i18n/ui'
+import { CODEX_LAB_ID } from '@/lib/catalog-model'
 
 type DragKind = 'model' | 'provider'
-const CODEX_LAB_ID = '00000000-0000-7000-8000-000000000003'
 
 export function ModelSelector({
   value,
@@ -131,12 +131,7 @@ export function ModelSelector({
       >
       <DropdownMenuTrigger asChild>
         <button className="flex max-w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
-          <ProviderLogo
-            provider={selected.provider}
-            icon={selected.labLogo}
-            customIcon={selected.labCustomIcon}
-            className="size-5 shrink-0"
-          />
+          <ModelIcon model={selected} className="size-5 shrink-0" boxed={false} />
           <span className="min-w-0 truncate">{selected.name}</span>
           <ChevronDown
             className={cn(

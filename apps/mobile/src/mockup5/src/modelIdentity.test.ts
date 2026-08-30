@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { MobileModel } from '../../types'
-import { findDisplayModel, mapModel, modelSubtitle, reconcileComposerModelId, redirectTargetModelIds, resolveDisplayModel } from './modelIdentity'
+import { CODEX_LAB_ID, findDisplayModel, mapModel, modelSubtitle, reconcileComposerModelId, redirectTargetModelIds, resolveDisplayModel } from './modelIdentity'
 
 describe('modelSubtitle', () => {
   it('shows the lab and inference provider when they differ', () => {
@@ -9,6 +9,14 @@ describe('modelSubtitle', () => {
 
   it('does not repeat matching names', () => {
     expect(modelSubtitle({ lab: 'OpenAI', provider: 'OpenAI' })).toBe('OpenAI')
+  })
+
+  it('shows only the subscription name for managed Codex models', () => {
+    expect(modelSubtitle({
+      providerGroupId: CODEX_LAB_ID,
+      lab: 'Codex',
+      provider: 'Codex Subscription',
+    })).toBe('Codex Subscription')
   })
 })
 
