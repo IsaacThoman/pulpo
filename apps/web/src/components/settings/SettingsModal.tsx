@@ -335,11 +335,10 @@ export function SettingsModal({
         return
       }
       setImporting(true)
-      setImportResult(ui("Reading import file…"))
+      setImportResult('')
       void (async () => {
         try {
           const data = JSON.parse(await file.text())
-          setImportResult(ui("Importing chats…"))
           const result = await apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', {
             method: 'POST',
             body: { source: 'pulpo', data },
@@ -984,8 +983,12 @@ export function SettingsModal({
                   <Row label={ui("Export chats")} hint="Download all conversations as JSON.">
                     <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}> {ui("Export")} </Button>
                   </Row>
-                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" disabled={importing} onClick={chooseImport}>{importing && <Loader2 className="animate-spin" aria-hidden />}{importing ? ui("Importing…") : ui("Import")}</Button></Row>
-                  {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground" role="status" aria-live="polite">{importResult}</div>}
+                  <Row label={ui("Import Pulpo chats")}>
+                    <div className="flex items-center justify-end gap-3">
+                      {importResult && <span className="text-right text-xs text-muted-foreground" role="status" aria-live="polite">{importResult}</span>}
+                      <Button variant="outline" size="sm" disabled={importing} onClick={chooseImport}>{importing && <Loader2 className="animate-spin" aria-hidden />}{importing ? ui("Importing…") : ui("Import")}</Button>
+                    </div>
+                  </Row>
                   <Separator className="my-3" />
                   <Row
                     label={ui("Trash all chats")}
