@@ -14,6 +14,7 @@ import { getConfig } from '../config.js'
 import { parseAuthSettings } from '../settings/application-settings.js'
 import { modelPermissionAllows } from './model-permissions.js'
 import { apiKeyOwnerCanSpend } from './access.js'
+import { isCodexModelId } from '../codex/constants.js'
 
 async function assertApiKeysEnabled(): Promise<void> {
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'auth')).limit(1)
@@ -102,6 +103,9 @@ export async function registerApiKeyRoutes(app: FastifyInstance): Promise<void> 
     const user = requireUser(request)
     await assertApiKeysEnabled()
     const input = createApiKeySchema.parse(request.body)
+    if (input.allowedModels.some(isCodexModelId)) {
+      throw new AppError(400, 'codex_ui_only', 'Codex subscription models cannot be assigned to Pulpo API keys')
+    }
     const idempotencyKey = request.headers['idempotency-key'] as string | undefined
     const redisKey = idempotencyKey ? `pulpo:idempotency:api-key:${user.id}:${idempotencyKey}` : null
     if (redisKey) {

@@ -276,6 +276,35 @@ export const providerConnections = pgTable('provider_connections', {
   ...timestamps,
 })
 
+export const userProviderCredentials = pgTable('user_provider_credentials', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  providerId: text('provider_id').notNull(),
+  encryptedCredential: text('encrypted_credential').notNull(),
+  status: text('status').notNull().default('connected'),
+  planType: text('plan_type').notNull().default('unknown'),
+  lastError: text('last_error'),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.userId, table.providerId] }),
+  index('user_provider_credentials_provider_status_idx').on(table.providerId, table.status),
+])
+
+export const codexLoginAttempts = pgTable('codex_login_attempts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('queued'),
+  userCode: text('user_code'),
+  verificationUri: text('verification_uri'),
+  intervalSeconds: integer('interval_seconds'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  error: text('error'),
+  ...timestamps,
+}, (table) => [
+  index('codex_login_attempts_user_status_idx').on(table.userId, table.status),
+  index('codex_login_attempts_expiry_idx').on(table.expiresAt),
+])
+
 export const providerUpstreamModels = pgTable('provider_upstream_models', {
   providerConnectionId: uuid('provider_connection_id').notNull().references(() => providerConnections.id, { onDelete: 'cascade' }),
   modelId: text('model_id').notNull(),

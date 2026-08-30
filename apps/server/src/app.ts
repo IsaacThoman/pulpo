@@ -35,6 +35,7 @@ import { registerBillingRoutes } from './billing/routes.js'
 import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
+import { registerCodexRoutes } from './codex/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -129,6 +130,7 @@ export async function buildApp() {
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
   await registerProfileRoutes(app)
+  await registerCodexRoutes(app)
   await registerFriendRoutes(app)
   await registerPoolRoutes(app)
   await registerInviteCodeRoutes(app)

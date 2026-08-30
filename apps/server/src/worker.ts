@@ -3,7 +3,7 @@ import { and, inArray, isNull, eq } from 'drizzle-orm'
 import { getConfig } from './config.js'
 import { db } from './database/client.js'
 import { applicationSettings, chats, responses } from './database/schema.js'
-import { generationQueue, maintenanceQueue, type EmbeddingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
+import { generationQueue, maintenanceQueue, type CodexLoginJob, type EmbeddingJob, type GenerationJob, type MaintenanceJob } from './jobs.js'
 import { processGeneration } from './responses/worker.js'
 import { createExport, rebuildDailyRollups, runCleanup, scrubPersistedResponseBinaryContext } from './maintenance.js'
 import { createFullBackup, restoreFullBackup } from './admin/backup.js'
@@ -16,6 +16,7 @@ import { reconcileStripeBilling } from './billing/reconciliation.js'
 import { processEmbeddingJob } from './episodic-memory/processor.js'
 import { scheduleChatIndex } from './episodic-memory/queue.js'
 import { readEpisodicMemorySettings, enqueueEpisodicReconciliation } from './episodic-memory/settings.js'
+import { processCodexLogin } from './codex/login.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -101,6 +102,10 @@ const embeddingWorker = new Worker<EmbeddingJob>('episodic-memory', async (job) 
   await processEmbeddingJob(job.data)
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
 
+const codexLoginWorker = new Worker<CodexLoginJob>('codex-login', async (job) => {
+  await processCodexLogin(job.data)
+}, { connection: { url: config.REDIS_URL }, concurrency: 10 })
+
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
 if (config.PULPO_BILLING_ENABLED) {
@@ -138,6 +143,7 @@ const shutdown = async (signal: string) => {
   console.info(JSON.stringify({ level: 'info', service: 'pulpo-worker', event: 'worker.stopping', signal }))
   clearInterval(concurrencyRefreshInterval)
   await generationWorker.close()
+  await codexLoginWorker.close()
   await embeddingWorker.close()
   await maintenanceWorker.close()
   process.exit(0)

@@ -6,6 +6,8 @@ import { DEFAULT_TITLE_PROMPT, parseInterfaceSettings } from '../settings/applic
 import { parseGeneratedTitle, selectTitleHistory } from './title-generation.js'
 import { trackBilledInternalModelCall } from './model-calls.js'
 import { createCatalogModelClient, resolveAvailableCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
+import { CODEX_PROVIDER_ID } from '../codex/constants.js'
+import { createCodexModels } from '../codex/credential-store.js'
 
 export const TITLE_MAX_OUTPUT_TOKENS = 1_024
 export const TITLE_VALIDATION_ATTEMPTS = 3
@@ -109,7 +111,9 @@ export async function runPostResponseTasks(
   const [setting] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'interface')).limit(1)
   const task = parseInterfaceSettings(setting?.value)
   const runtime = await resolvePostTaskRuntime(task.localTask, current)
-  const client = createCatalogModelClient(runtime)
+  const codex = runtime.provider.id === CODEX_PROVIDER_ID ? createCodexModels(record.response.userId) : null
+  const codexModel = codex?.getModel('openai-codex', runtime.model.upstreamModelId)
+  const client = codex ? null : createCatalogModelClient(runtime)
   let costMicros = 0
   if (task.title !== false && !record.response.parentResponseId) {
     const history = selectTitleHistory(
@@ -131,11 +135,27 @@ export async function runPostResponseTasks(
           maxOutputTokens,
           retryAttempt: attempt + 1,
           invoke: async () => {
+            if (codex && codexModel) {
+              const response = await codex.completeSimple(codexModel, {
+                messages: [{ role: 'user', content: prompt, timestamp: Date.now() }],
+              }, {
+                reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, transport: 'auto',
+                sessionId: `pulpo:${record.response.userId}:${record.response.chatId}:title`,
+              })
+              const outputText = response.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n')
+              return {
+                id: response.responseId,
+                usage: {
+                  inputTokens: response.usage.input + response.usage.cacheRead + response.usage.cacheWrite,
+                  cachedInputTokens: response.usage.cacheRead, cacheWriteTokens: response.usage.cacheWrite,
+                  outputTokens: response.usage.output, reasoningTokens: response.usage.reasoning ?? 0, totalTokens: response.usage.totalTokens,
+                },
+                title: validateGeneratedTitleResponse({ output_text: outputText, usage: { outputTokens: response.usage.output } }, maxOutputTokens),
+              }
+            }
+            if (!client) throw new Error('The pinned Pi Codex catalog no longer contains this model')
             const response = await client.responses.create({
-              model: runtime.model.upstreamModelId,
-              input: [{ role: 'user', content: prompt }],
-              store: false,
-              max_output_tokens: maxOutputTokens,
+              model: runtime.model.upstreamModelId, input: [{ role: 'user', content: prompt }], store: false, max_output_tokens: maxOutputTokens,
             })
             return {
               id: response.id,

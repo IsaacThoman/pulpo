@@ -7,6 +7,7 @@ describe('settings dialog sections', () => {
       'general',
       'profile',
       'security',
+      'connections',
       'personalization',
       'interface',
       'billing',
