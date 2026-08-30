@@ -205,7 +205,7 @@ export function SettingsModal({
   const [memoryRevisions, setMemoryRevisions] = useState<MemoryDocumentRevision[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [memorySaving, setMemorySaving] = useState(false)
-  const [memoryPreview, setMemoryPreview] = useState(false)
+  const [memoryPreview, setMemoryPreview] = useState(true)
   const [memoryError, setMemoryError] = useState('')
   const normalizedMemoryDraft = memoryDraft.replace(/\r\n?/g, '\n').trim()
   const memoryCharacterCount = normalizedMemoryDraft.length
