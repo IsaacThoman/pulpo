@@ -1,4 +1,4 @@
-import type { ResponseEvent, ResponseSnapshot, SyncResult } from '@pulpo/contracts'
+import type { ResponseEvent, ResponseSnapshot, StateInvalidationScope, SyncResult } from '@pulpo/contracts'
 
 /** Native Markdown/layout work is expensive; ten visual commits per second remains fluid without reparsing every token. */
 export const REALTIME_RENDER_INTERVAL_MS = 100
@@ -16,6 +16,22 @@ export function syncInvalidationScopes(result: SyncResult): SyncResult['invalida
   const scopes = new Set(result.invalidate)
   if (result.snapshots.some(isTerminalSnapshot)) scopes.add('chats')
   return [...scopes]
+}
+
+export function stateInvalidationQueryKeys(
+  scope: StateInvalidationScope,
+  namespace: string,
+  activeChatId?: string,
+): string[][] {
+  if (scope === 'chats') {
+    return [
+      ['chats', namespace],
+      ['deleted-chats', namespace],
+      ...(activeChatId ? [['chat', namespace, activeChatId]] : []),
+    ]
+  }
+  if (scope === 'models' || scope === 'folders' || scope === 'settings') return [[scope, namespace]]
+  return []
 }
 
 export function groupResponseEvents(events: ResponseEvent[]): ResponseEvent[][] {

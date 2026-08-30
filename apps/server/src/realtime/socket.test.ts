@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { realtimeResourceId, socketSessionToken } from './socket.js'
+import { FULL_STATE_INVALIDATION_SCOPES, realtimeResourceId, socketSessionToken } from './socket.js'
 
 describe('Socket.IO session transport', () => {
   it('prefers an explicit native token and preserves cookie fallback', () => {
@@ -20,5 +20,11 @@ describe('realtimeResourceId', () => {
     expect(realtimeResourceId(id)).toBe(id)
     expect(realtimeResourceId('chat-1785795671000')).toBeUndefined()
     expect(realtimeResourceId(undefined)).toBeUndefined()
+  })
+})
+
+describe('reconnect invalidation', () => {
+  it('refreshes folder metadata after a missed account revision', () => {
+    expect(FULL_STATE_INVALIDATION_SCOPES).toContain('folders')
   })
 })

@@ -26,6 +26,17 @@ interface SocketData {
   adminChatAccess: AdminChatAccessContext | null
 }
 
+export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
+  'chats',
+  'folders',
+  'models',
+  'usage',
+  'settings',
+  'friends',
+  'pool',
+  'billing',
+]
+
 export function cookieValue(header: string | undefined, name: string): string | undefined {
   if (!header) return undefined
   for (const pair of header.split(';')) {
@@ -130,7 +141,7 @@ export async function createSocketServer(httpServer: HttpServer) {
         const result: SyncResult = {
           accountRevision: current?.revision ?? user.stateRevision,
           invalidate: !adminChatAccess && current?.revision !== input.accountRevision
-            ? ['chats', 'models', 'usage', 'settings', 'friends', 'pool', 'billing']
+            ? FULL_STATE_INVALIDATION_SCOPES
             : [],
           snapshots: [],
           events: [],
