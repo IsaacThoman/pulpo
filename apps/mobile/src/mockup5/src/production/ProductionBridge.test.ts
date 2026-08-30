@@ -55,6 +55,7 @@ vi.mock('./optimisticBranches', () => ({
 }))
 
 import { hydrateProductionChatPreview, hydrateProductionScope } from './ProductionBridge'
+import { mergeServerFolders } from './folderMetadata'
 import { createInitialState } from '../initialState'
 import { usePrototypeStore } from '../store/prototypeStore'
 
@@ -100,6 +101,17 @@ beforeEach(() => {
 })
 
 describe('production scope hydration', () => {
+  it('preserves local folder expansion when server metadata refreshes', () => {
+    const folder: ServerFolder = {
+      id: 'folder-1', name: 'Renamed', pinned: true, sortOrder: 2,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z',
+    }
+
+    expect(mergeServerFolders([folder], [{ id: folder.id, name: 'Old name', expanded: false }])).toEqual([
+      { id: folder.id, name: 'Renamed', expanded: false },
+    ])
+  })
+
   it('publishes the cached picker before unrelated chat hydration completes', async () => {
     const pendingChats = deferred<ServerChat[]>()
     const cachedFolder: ServerFolder = {

@@ -1,4 +1,4 @@
-import type { ResponseEvent, ResponseSnapshot, SyncResult } from '@pulpo/contracts'
+import type { ResponseEvent, ResponseSnapshot, StateInvalidationScope, SyncResult } from '@pulpo/contracts'
 
 const DELTA_EVENT_TYPES = new Set([
   'response.output_text.delta',
@@ -13,6 +13,16 @@ export function syncInvalidationScopes(result: SyncResult): SyncResult['invalida
   const scopes = new Set(result.invalidate)
   if (result.snapshots.some(isTerminalSnapshot)) scopes.add('chats')
   return [...scopes]
+}
+
+export function stateInvalidationQueryKeys(scope: StateInvalidationScope, userId: string): string[][] {
+  if (scope === 'friends') {
+    return [['friends', userId], ['friends-pending-count', userId], ['friends-usage', userId]]
+  }
+  if (scope === 'pool') {
+    return [['pool', userId], ['pool-pending-count', userId], ['pool-usage', userId]]
+  }
+  return [[scope, userId]]
 }
 
 export function groupResponseEvents(events: ResponseEvent[]): ResponseEvent[][] {

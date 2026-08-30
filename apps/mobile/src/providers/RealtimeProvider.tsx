@@ -27,6 +27,7 @@ import {
   groupResponseEvents,
   isTerminalSnapshot,
   REALTIME_RENDER_INTERVAL_MS,
+  stateInvalidationQueryKeys,
   syncInvalidationScopes,
   takeContiguousResponseEvents,
 } from './realtimeSync'
@@ -179,12 +180,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       else if (current) rememberCursor(snapshot.responseId, current.sequence)
     }
     const invalidateScope = (scope: SyncResult['invalidate'][number], activeChatId?: string) => {
-      if (scope === 'chats') {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
-        void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
-        if (activeChatId) void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, activeChatId) })
-      } else if (scope === 'models') {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.models(namespace) })
+      for (const queryKey of stateInvalidationQueryKeys(scope, namespace, activeChatId)) {
+        void queryClient.invalidateQueries({ queryKey })
       }
     }
     const flushRevisionInvalidations = () => {
@@ -249,6 +246,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced and was reconciled with the server.`
             : null)
           if (replayed || rejected) invalidateScope('chats', activeChatId)
+          if (replayed || rejected) invalidateScope('folders')
           if (replayed || rejected) void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
         }).catch((error) => {
           useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Offline changes could not be synced.')

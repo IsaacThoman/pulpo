@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
 import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
-import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema } from '@pulpo/contracts'
+import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
@@ -40,12 +40,12 @@ async function requestedNormalChatExpiry(userId: string, enabled: boolean, now: 
 }
 
 export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
-  const bumpRevision = async (userId: string, chatId?: string) => {
+  const bumpRevision = async (userId: string, chatId?: string, scopes?: StateInvalidationScope[]) => {
     const [updated] = await db.update(users)
       .set({ stateRevision: sql`${users.stateRevision} + 1` })
       .where(eq(users.id, userId))
       .returning({ revision: users.stateRevision })
-    if (updated) await publishStateChange({ userId, revision: updated.revision, chatId })
+    if (updated) await publishStateChange({ userId, revision: updated.revision, chatId, scopes })
   }
 
   app.get('/api/chats', async (request) => {
@@ -766,7 +766,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) throw new AppError(409, 'folder_id_conflict', 'Folder identifier is already in use')
       return existing
     }
-    await bumpRevision(user.id)
+    await bumpRevision(user.id, undefined, ['folders'])
     reply.code(201)
     return created
   })
@@ -793,7 +793,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           .where(and(eq(folders.id, folderId), eq(folders.userId, user.id)))
       }
     })
-    await bumpRevision(user.id)
+    await bumpRevision(user.id, undefined, ['folders'])
     return { data: folderIds }
   })
 
@@ -810,7 +810,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: new Date(),
     }).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning()
     if (!updated) throw notFound('Folder')
-    await bumpRevision(user.id)
+    await bumpRevision(user.id, undefined, ['folders'])
     return updated
   })
 
@@ -822,7 +822,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       const deleted = await tx.delete(folders).where(and(eq(folders.id, id), eq(folders.userId, user.id))).returning({ id: folders.id })
       if (!deleted.length) throw notFound('Folder')
     })
-    await bumpRevision(user.id)
+    await bumpRevision(user.id, undefined, ['folders', 'chats'])
     reply.code(204).send()
   })
 }

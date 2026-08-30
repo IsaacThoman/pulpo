@@ -278,14 +278,14 @@ describe('shared contracts', () => {
     expect(result.responseCursors[responseId]).toBe(42)
   })
 
-  it('accepts friends as a reconnect invalidation scope', () => {
+  it('accepts folder metadata as a reconnect invalidation scope', () => {
     const result = syncResultSchema.parse({
       accountRevision: 4,
-      invalidate: ['friends'],
+      invalidate: ['folders'],
       snapshots: [],
       events: [],
     })
-    expect(result.invalidate).toEqual(['friends'])
+    expect(result.invalidate).toEqual(['folders'])
   })
 
   it('accepts generic composer presets', () => {
