@@ -569,7 +569,6 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       ? [createMemoryDocumentTool({
         userId: record.response.userId,
         responseId,
-        userMessage: responseInputText(record.response.input),
         onOperationStarted: markToolStarted,
       })]
     : []
