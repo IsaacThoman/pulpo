@@ -280,12 +280,12 @@ function CodexConnectionSettings({ active }: { active: boolean }) {
         </div>
         {connected ? (
           <div className="mt-4 flex items-center justify-between gap-3">
-            <div className="text-xs text-muted-foreground">
-              {statusQuery.data?.planType && statusQuery.data.planType !== 'unknown'
-                ? `${statusQuery.data.planType.charAt(0).toUpperCase()}${statusQuery.data.planType.slice(1)} plan`
-                : ui("Plan entitlement verified upstream")}
-            </div>
-            <Button variant="outline" size="sm" disabled={busy} onClick={() => void disconnect()}>{ui("Disconnect")}</Button>
+            {statusQuery.data?.planType && statusQuery.data.planType !== 'unknown' ? (
+              <div className="text-xs text-muted-foreground">
+                {`${statusQuery.data.planType.charAt(0).toUpperCase()}${statusQuery.data.planType.slice(1)} plan`}
+              </div>
+            ) : null}
+            <Button className="ml-auto" variant="outline" size="sm" disabled={busy} onClick={() => void disconnect()}>{ui("Disconnect")}</Button>
           </div>
         ) : waiting ? (
           <div className="mt-4 space-y-3">
