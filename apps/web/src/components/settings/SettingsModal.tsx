@@ -205,7 +205,7 @@ export function SettingsModal({
   const [memoryRevisions, setMemoryRevisions] = useState<MemoryDocumentRevision[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [memorySaving, setMemorySaving] = useState(false)
-  const [memoryPreview, setMemoryPreview] = useState(false)
+  const [memoryPreview, setMemoryPreview] = useState(true)
   const [memoryError, setMemoryError] = useState('')
   const normalizedMemoryDraft = memoryDraft.replace(/\r\n?/g, '\n').trim()
   const memoryCharacterCount = normalizedMemoryDraft.length
@@ -409,7 +409,7 @@ export function SettingsModal({
   }
 
   const restoreMemoryRevision = async (revision: MemoryDocumentRevision) => {
-    if (!memoryDocument || !confirm(ui('Restore this MEMORY.md revision? Your current version will remain available for 24 hours.'))) return
+    if (!memoryDocument) return
     setMemorySaving(true)
     setMemoryError('')
     try {
@@ -831,9 +831,7 @@ export function SettingsModal({
                               variant="outline"
                               size="sm"
                               disabled={memorySaving || !memoryDraft}
-                              onClick={() => {
-                                if (confirm(ui('Clear MEMORY.md? You can restore it for 24 hours.'))) void saveMemoryDocument('')
-                              }}
+                              onClick={() => void saveMemoryDocument('')}
                             >{ui('Clear')}</Button>
                             <Button
                               type="button"
@@ -859,7 +857,7 @@ export function SettingsModal({
                             <div className="min-w-0">
                               <div className="truncate text-sm">{revision.editSummary}</div>
                               <div className="text-xs text-muted-foreground">
-                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())} · {ui('Version')} {revision.revision}
+                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())}
                               </div>
                             </div>
                             <Button type="button" variant="ghost" size="sm" disabled={memorySaving} onClick={() => void restoreMemoryRevision(revision)}>{ui('Restore')}</Button>
