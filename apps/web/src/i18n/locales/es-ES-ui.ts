@@ -5,7 +5,6 @@ const esUi: Record<string, string> = {
   "Connections": "Conexiones",
   "Use your personal ChatGPT Plus or Pro Codex limits for model inference.": "Usa los límites de tu suscripción personal a ChatGPT Plus o Pro Codex para la inferencia de modelos.",
   "Connected": "Conectado",
-  "Personal use only. Codex subscription access is not a supported production API contract and may change upstream. Pulpo still charges for agent workspaces and configured billable tools.": "Solo para uso personal. El acceso mediante suscripción a Codex no es un contrato de API de producción compatible y puede cambiar. Pulpo sigue cobrando por los espacios de trabajo del agente y las herramientas facturables configuradas.",
   "Plan entitlement verified upstream": "Derecho del plan verificado por el proveedor",
   "Disconnect": "Desconectar",
   "Enter this code on the verification page": "Introduce este código en la página de verificación",
