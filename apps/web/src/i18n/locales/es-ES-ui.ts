@@ -5,7 +5,6 @@ const esUi: Record<string, string> = {
   "Connections": "Conexiones",
   "Use your personal ChatGPT Plus or Pro Codex limits for model inference.": "Usa los límites de tu suscripción personal a ChatGPT Plus o Pro Codex para la inferencia de modelos.",
   "Connected": "Conectado",
-  "Plan entitlement verified upstream": "Derecho del plan verificado por el proveedor",
   "Disconnect": "Desconectar",
   "Enter this code on the verification page": "Introduce este código en la página de verificación",
   "Requesting a device code…": "Solicitando un código de dispositivo…",
