@@ -216,6 +216,11 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     useChat.getState().setComposerModel(id)
     setModelId(id)
   }
+  const restoreComposerModel = (draftModelId: string) => {
+    const restoredModelId = models.some((candidate) => candidate.id === draftModelId) ? draftModelId : defaultModelId
+    selectModel(restoredModelId)
+    return restoredModelId
+  }
 
   useEffect(() => {
     if (!networkReady) return
@@ -470,7 +475,15 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer key="new" chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer
+              chatId={null}
+              modelId={modelId}
+              temporary={temporaryMode}
+              autoExpire={effectiveNewChatAutoExpire}
+              onRestoreModel={restoreComposerModel}
+              onRestoreAutoExpire={(enabled) => useSettings.getState().set('newChatAutoExpire', enabled)}
+              draftPersistence={!adminMode}
+            />
           </div>
         </>
       ) : (
@@ -508,13 +521,14 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
-                key={chat.id}
                 chatId={chat.id}
                 modelId={modelId}
                 temporary={chat.temporary}
                 messageEdit={messageEdit}
                 onMessageEditComplete={() => setMessageEdit(null)}
                 onEditStateChange={setComposerEditActive}
+                onRestoreModel={restoreComposerModel}
+                draftPersistence={!adminMode}
               />
             )}
           </div>

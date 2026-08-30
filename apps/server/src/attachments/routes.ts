@@ -6,7 +6,7 @@ import { MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { attachments, chats, queuedMessages, responses } from '../database/schema.js'
+import { attachments, chats, composerDraftAttachments, composerDrafts, queuedMessages, responses } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
@@ -196,11 +196,15 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const queueRows = await db.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages).where(
       eq(queuedMessages.userId, user.id),
     )
+    const draftRows = await db.select({ attachmentId: composerDraftAttachments.attachmentId })
+      .from(composerDraftAttachments)
+      .innerJoin(composerDrafts, eq(composerDrafts.id, composerDraftAttachments.draftId))
+      .where(and(eq(composerDrafts.userId, user.id), eq(composerDraftAttachments.attachmentId, id)))
     const referenced = attachmentReferenceIsLive(
       id,
       responseRows.map((row) => row.input),
       queueRows.map((row) => row.attachmentIds),
-    )
+    ) || draftRows.length > 0
     if (referenced) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
     await getBlobStore().delete(attachment.objectKey)
     await db.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))

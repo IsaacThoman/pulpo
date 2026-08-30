@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -52,14 +53,16 @@ import { dictationFilename, insertDictationText, preferredDictationMimeType } fr
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
 import {
-  NEW_CHAT_DRAFT_ID,
-  deleteComposerDraft,
-  loadComposerDraft,
-  rememberRuntimeComposerDraft,
-  runtimeComposerDraft,
-  saveComposerDraft,
-  type PersistedComposerDraft,
-  type PersistedDraftAttachment,
+  deleteLocalComposerDraft,
+  deleteRemoteComposerDraft,
+  detachSyncedDraftAttachments,
+  fetchRemoteComposerDraft,
+  cacheRemoteDraftFile,
+  loadDraftFile,
+  loadLocalComposerDraft,
+  saveLocalComposerDraft,
+  saveRemoteComposerDraft,
+  type LocalComposerDraft,
 } from '@/lib/local-first/composer-drafts'
 
 export interface ComposerMessageEdit {
@@ -69,22 +72,6 @@ export interface ComposerMessageEdit {
 }
 
 const EMPTY_QUEUE: never[] = []
-
-function persistedDraftAttachments(
-  attachmentIds: string[],
-  uploads: Record<string, UploadRecord>,
-): PersistedDraftAttachment[] {
-  return attachmentIds.map((id) => uploads[id]).filter((item): item is UploadRecord => Boolean(item)).map((item) => ({
-    localId: item.localId,
-    serverId: item.id,
-    name: item.name,
-    size: item.size,
-    mimeType: item.mimeType,
-    status: item.status,
-    error: item.error,
-    file: item.file,
-  }))
-}
 
 function downloadComposerAttachment(attachment: UploadRecord): void {
   if (attachment.file) {
@@ -114,6 +101,9 @@ export function Composer({
   messageEdit = null,
   onMessageEditComplete,
   onEditStateChange,
+  onRestoreModel,
+  onRestoreAutoExpire,
+  draftPersistence = true,
 }: {
   chatId: string | null
   modelId: string
@@ -123,15 +113,14 @@ export function Composer({
   messageEdit?: ComposerMessageEdit | null
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
+  onRestoreModel?: (modelId: string) => string
+  onRestoreAutoExpire?: (enabled: boolean) => void
+  draftPersistence?: boolean
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const userId = useAuth((s) => s.user?.id)
-  const draftId = chatId ?? NEW_CHAT_DRAFT_ID
-  const initialRuntimeDraft = userId ? runtimeComposerDraft(userId, draftId) : null
-  const [value, setValue] = useState(initialRuntimeDraft?.content ?? '')
-  const [attachmentIds, setAttachmentIds] = useState<string[]>(initialRuntimeDraft?.attachmentIds ?? [])
-  const [draftHydrated, setDraftHydrated] = useState(Boolean(initialRuntimeDraft))
+  const [value, setValue] = useState('')
+  const [attachmentIds, setAttachmentIds] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
@@ -140,21 +129,26 @@ export function Composer({
   const [editingQueueId, setEditingQueueId] = useState<string | null>(null)
   const [queueDragId, setQueueDragId] = useState<string | null>(null)
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
+  const [draftRetryRevision, setDraftRetryRevision] = useState(0)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
-  const uploadsRef = useRef<Record<string, UploadRecord>>({})
   const preservedDraftRef = useRef<{ value: string; attachmentIds: string[] } | null>(null)
   const activeRecoveryIdRef = useRef<string | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
+  const draftEditorIdRef = useRef(crypto.randomUUID())
+  const hydratedDraftScopeRef = useRef<string | null>(null)
+  const localDraftDirtyRef = useRef(false)
+  const appliedRemoteRevisionRef = useRef(0)
+  const draftSaveGenerationRef = useRef(0)
+  const pendingLocalDraftsRef = useRef(new Map<string, Parameters<typeof saveLocalComposerDraft>[0]>())
+  const submissionPendingRef = useRef(false)
   const queueDragIdRef = useRef<string | null>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const mediaStreamRef = useRef<MediaStream | null>(null)
   const dictationChunksRef = useRef<Blob[]>([])
   const dictationTimerRef = useRef<number | null>(null)
   const dictationAbortRef = useRef<AbortController | null>(null)
-  valueRef.current = value
   attachmentIdsRef.current = attachmentIds
 
   const streamingResponseId = useChat((s) => {
@@ -177,7 +171,6 @@ export function Composer({
   const uploads = useUploadOutbox((s) => s.uploads)
   const addUploadFiles = useUploadOutbox((s) => s.addFiles)
   const addExistingAttachments = useUploadOutbox((s) => s.addExistingAttachments)
-  const restoreDraftAttachments = useUploadOutbox((s) => s.restoreDraftAttachments)
   const removeUpload = useUploadOutbox((s) => s.removeUpload)
   const releaseDraftUploads = useUploadOutbox((s) => s.releaseDraftUploads)
   const consumeUploads = useUploadOutbox((s) => s.consumeUploads)
@@ -201,9 +194,24 @@ export function Composer({
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
+  const userId = useAuth((s) => s.user?.id)
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
-  uploadsRef.current = uploads
+  const syncDrafts = useSettings((s) => s.syncDrafts)
+  const draftScope = chatId ?? 'new'
+  const draftHydrationKey = userId ? `${userId}:${draftScope}` : `anonymous:${draftScope}`
+  const remoteDraftQuery = useQuery({
+    queryKey: ['drafts', userId, draftScope],
+    queryFn: () => fetchRemoteComposerDraft(draftScope),
+    enabled: Boolean(userId && syncDrafts && !temporary && draftPersistence),
+    retry: false,
+    refetchOnWindowFocus: true,
+  })
+  useEffect(() => {
+    const retry = () => setDraftRetryRevision((revision) => revision + 1)
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, [])
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
   const selections = resolveSelections(options, generation[modelId])
@@ -225,6 +233,35 @@ export function Composer({
   const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
   const hasDraft = value.trim().length > 0 || attachments.length > 0
   const editingExisting = Boolean(messageEdit || editingQueueId)
+  if (userId && draftPersistence && hydratedDraftScopeRef.current === draftHydrationKey && !temporary && !editingExisting && !recovery && !submissionPendingRef.current) {
+    pendingLocalDraftsRef.current.set(draftHydrationKey, {
+      userId,
+      scope: draftScope,
+      content: value,
+      modelId,
+      presetSelections: selections,
+      agentMode: activeAgentMode && canUseAgent,
+      ...(!chatId ? { autoExpire } : {}),
+      uploads: attachments,
+      editorId: draftEditorIdRef.current,
+      dirty: syncDrafts,
+    })
+  } else {
+    pendingLocalDraftsRef.current.delete(draftHydrationKey)
+  }
+  const flushLocalDraft = useCallback((key: string) => {
+    const snapshot = pendingLocalDraftsRef.current.get(key)
+    if (!snapshot) return
+    if (snapshot.content.length === 0 && snapshot.uploads.length === 0) {
+      void deleteLocalComposerDraft(snapshot.userId, snapshot.scope).catch(() => undefined)
+      return
+    }
+    void saveLocalComposerDraft({
+      ...snapshot,
+      dirty: localDraftDirtyRef.current,
+      serverRevision: appliedRemoteRevisionRef.current || undefined,
+    }).catch(() => undefined)
+  }, [])
   const canSend = desktopCanMutate && dictationState === 'idle' && canSubmitComposerDraft({
     modelId,
     hasText: value.trim().length > 0,
@@ -236,6 +273,32 @@ export function Composer({
     editingExisting,
   })
 
+  useEffect(() => {
+    const flush = () => flushLocalDraft(draftHydrationKey)
+    const flushWhenHidden = () => { if (document.visibilityState === 'hidden') flush() }
+    window.addEventListener('blur', flush)
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', flushWhenHidden)
+    return () => {
+      window.removeEventListener('blur', flush)
+      window.removeEventListener('pagehide', flush)
+      document.removeEventListener('visibilitychange', flushWhenHidden)
+      flush()
+    }
+  }, [draftHydrationKey, flushLocalDraft])
+
+  useEffect(() => {
+    ref.current?.focus()
+  }, [chatId])
+
+  useEffect(() => {
+    onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
+  }, [editingQueueId, messageEdit, onEditStateChange, recovery])
+
+  useEffect(() => () => {
+    releaseDraftUploads(preservedDraftRef.current?.attachmentIds ?? [])
+  }, [releaseDraftUploads])
+
   const autosize = useCallback(() => {
     const el = ref.current
     if (!el) return
@@ -243,59 +306,162 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
 
-  const focusAtEnd = useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    el.focus()
-    const end = el.value.length
-    el.setSelectionRange(end, end)
-  }, [])
-
-  useEffect(() => {
-    focusAtEnd()
-  }, [chatId, focusAtEnd])
-
-  useEffect(() => {
-    onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
-  }, [editingQueueId, messageEdit, onEditStateChange, recovery])
-
-  useEffect(() => {
-    if (!userId || initialRuntimeDraft) return
-    let cancelled = false
-    void loadComposerDraft(userId, draftId).then((draft) => {
-      if (cancelled) return
-      if (draft) {
-        const ids = restoreDraftAttachments(draft.attachments, { chatId, temporary })
-        valueRef.current = draft.content
-        attachmentIdsRef.current = ids
-        setValue(draft.content)
-        setAttachmentIds(ids)
-        requestAnimationFrame(() => {
-          autosize()
-          focusAtEnd()
-        })
+  const materializeLocalAttachments = useCallback(async (draft: Pick<LocalComposerDraft, 'attachments'>) => {
+    const nextIds: string[] = []
+    for (const attachment of draft.attachments) {
+      if (attachment.serverId) {
+        nextIds.push(...addExistingAttachments([{
+          id: attachment.serverId,
+          name: attachment.name,
+          size: attachment.sizeBytes,
+          mimeType: attachment.mimeType,
+          type: isSupportedImageMime(attachment.mimeType) ? 'image' : 'file',
+        }], { chatId, temporary }))
+        continue
       }
-      setDraftHydrated(true)
-    }).catch(() => setDraftHydrated(true))
-    return () => { cancelled = true }
-  }, [autosize, chatId, draftId, focusAtEnd, initialRuntimeDraft, restoreDraftAttachments, temporary, userId])
-
-  useEffect(() => {
-    if (!userId) return undefined
-    return () => {
-      const preserved = preservedDraftRef.current
-      const content = preserved?.value ?? valueRef.current
-      const ids = preserved?.attachmentIds ?? attachmentIdsRef.current
-      const attachments = persistedDraftAttachments(ids, uploadsRef.current)
-      rememberRuntimeComposerDraft(userId, draftId, { content, attachmentIds: ids, attachments })
-      void saveComposerDraft(userId, draftId, { content, attachments })
-
-      if (preserved) {
-        const retained = new Set(ids)
-        releaseDraftUploads(attachmentIdsRef.current.filter((id) => !retained.has(id)))
-      }
+      if (!userId) continue
+      const file = await loadDraftFile(userId, attachment.localId)
+      if (file) nextIds.push(...addUploadFiles([file], { chatId, temporary }))
     }
-  }, [draftId, releaseDraftUploads, userId])
+    return nextIds
+  }, [addExistingAttachments, addUploadFiles, chatId, temporary, userId])
+
+  const applyDraft = useCallback(async (draft: LocalComposerDraft) => {
+    consumeUploads(attachmentIdsRef.current)
+    const restoredModelId = onRestoreModel?.(draft.modelId) ?? draft.modelId
+    if (!chatId && draft.autoExpire !== undefined) onRestoreAutoExpire?.(draft.autoExpire)
+    if (restoredModelId) {
+      const restoredModel = getCatalogModel(restoredModelId)
+      const restoredOptions = chatOptionsFor(restoredModel, useModelConfig.getState().overrides)
+      useSettings.getState().setGeneration(restoredModelId, resolveSelections(restoredOptions, draft.presetSelections))
+      useSettings.getState().setAgentMode(restoredModelId, draft.agentMode && useCatalog.getState().agentAvailable && Boolean(restoredModel.agentEnabled))
+    }
+    setValue(draft.content)
+    const ids = await materializeLocalAttachments(draft)
+    setAttachmentIds(ids)
+    requestAnimationFrame(autosize)
+  }, [autosize, chatId, consumeUploads, materializeLocalAttachments, onRestoreAutoExpire, onRestoreModel])
+
+  useEffect(() => {
+    let cancelled = false
+    hydratedDraftScopeRef.current = null
+    localDraftDirtyRef.current = false
+    appliedRemoteRevisionRef.current = 0
+    if (!userId || !draftPersistence || temporary) {
+      hydratedDraftScopeRef.current = draftHydrationKey
+      return
+    }
+    void loadLocalComposerDraft(userId, draftScope).then(async (draft) => {
+      if (cancelled) return
+      if (draft && !syncDrafts) draft = await detachSyncedDraftAttachments(userId, draftScope)
+      if (draft) {
+        localDraftDirtyRef.current = draft.dirty
+        appliedRemoteRevisionRef.current = draft.serverRevision ?? 0
+        await applyDraft(draft)
+      } else {
+        consumeUploads(attachmentIdsRef.current)
+        setValue('')
+        setAttachmentIds([])
+      }
+      if (!cancelled) hydratedDraftScopeRef.current = draftHydrationKey
+    })
+    return () => { cancelled = true }
+  }, [applyDraft, consumeUploads, draftHydrationKey, draftPersistence, draftScope, syncDrafts, temporary, userId])
+
+  useEffect(() => {
+    if (!remoteDraftQuery.isSuccess || hydratedDraftScopeRef.current !== draftHydrationKey || localDraftDirtyRef.current) return
+    const remote = remoteDraftQuery.data
+    if (!remote) {
+      if (!userId || appliedRemoteRevisionRef.current === 0) return
+      appliedRemoteRevisionRef.current = 0
+      void deleteLocalComposerDraft(userId, draftScope)
+      consumeUploads(attachmentIdsRef.current)
+      setValue('')
+      setAttachmentIds([])
+      return
+    }
+    if (remote.revision <= appliedRemoteRevisionRef.current) return
+    appliedRemoteRevisionRef.current = remote.revision
+    const local: LocalComposerDraft = {
+      content: remote.content,
+      modelId: remote.modelId,
+      presetSelections: remote.presetSelections,
+      agentMode: remote.agentMode,
+      autoExpire: remote.autoExpire,
+      attachments: remote.attachments.map((attachment) => ({
+        localId: crypto.randomUUID(),
+        serverId: attachment.id,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      })),
+      editorId: remote.editorId,
+      serverRevision: remote.revision,
+      serverUpdatedAt: remote.updatedAt,
+      dirty: false,
+      updatedAt: Date.parse(remote.updatedAt),
+    }
+    void Promise.all(remote.attachments.map((attachment, index) => userId
+      ? cacheRemoteDraftFile(userId, local.attachments[index]!.localId, attachment)
+      : Promise.resolve())).then(() => applyDraft(local)).then(() => {
+      if (!userId) return
+      return saveLocalComposerDraft({
+      userId,
+      scope: draftScope,
+      content: local.content,
+      modelId: local.modelId,
+      presetSelections: local.presetSelections,
+      agentMode: local.agentMode,
+      autoExpire: local.autoExpire,
+      uploads: local.attachments.map((attachment) => ({
+        localId: attachment.localId,
+        id: attachment.serverId,
+        name: attachment.name,
+        size: attachment.sizeBytes,
+        mimeType: attachment.mimeType,
+        previewUrl: null,
+        status: 'ready',
+        chatId,
+        temporary: false,
+        managed: false,
+        attempt: 0,
+      })),
+      editorId: local.editorId,
+      dirty: false,
+      serverRevision: local.serverRevision,
+        serverUpdatedAt: local.serverUpdatedAt,
+      })
+    })
+  }, [applyDraft, chatId, consumeUploads, draftHydrationKey, draftScope, remoteDraftQuery.data, remoteDraftQuery.isSuccess, userId])
+
+  const previousSyncDraftsRef = useRef(syncDrafts)
+  useEffect(() => {
+    const disabled = previousSyncDraftsRef.current && !syncDrafts
+    previousSyncDraftsRef.current = syncDrafts
+    if (!disabled || !userId || temporary || hydratedDraftScopeRef.current !== draftHydrationKey) return
+    void detachSyncedDraftAttachments(userId, draftScope).then((draft) => {
+      if (!draft) return
+      localDraftDirtyRef.current = false
+      appliedRemoteRevisionRef.current = 0
+      return applyDraft(draft)
+    })
+  }, [applyDraft, draftHydrationKey, draftScope, syncDrafts, temporary, userId])
+
+  const temporaryDraftCleanupScopeRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!temporary) {
+      temporaryDraftCleanupScopeRef.current = null
+      return
+    }
+    if (!userId || !draftPersistence || temporaryDraftCleanupScopeRef.current === draftScope) return
+    temporaryDraftCleanupScopeRef.current = draftScope
+    void detachSyncedDraftAttachments(userId, draftScope).then(async (draft) => {
+      // Recreate attachment uploads as temporary before removing their durable draft assets.
+      if (draft) await applyDraft(draft)
+      await deleteLocalComposerDraft(userId, draftScope)
+      if (syncDrafts) await deleteRemoteComposerDraft(draftScope).catch(() => undefined)
+    })
+  }, [applyDraft, draftPersistence, draftScope, syncDrafts, temporary, userId])
 
   const releaseMicrophone = useCallback(() => {
     if (dictationTimerRef.current !== null) window.clearTimeout(dictationTimerRef.current)
@@ -450,28 +616,76 @@ export function Composer({
 
   const clearDraft = (release = true) => {
     if (release) releaseDraftUploads(attachmentIds)
-    valueRef.current = ''
-    attachmentIdsRef.current = []
     setValue('')
     setAttachmentIds([])
-    if (userId) void deleteComposerDraft(userId, draftId)
     requestAnimationFrame(() => {
       if (ref.current) ref.current.style.height = 'auto'
     })
   }
 
   useEffect(() => {
-    if (!userId || !draftHydrated || editingExisting || recovery) return
-    const draft: PersistedComposerDraft = {
-      content: value,
-      attachments: persistedDraftAttachments(attachmentIds, uploads),
+    if (!userId || !draftPersistence || hydratedDraftScopeRef.current !== draftHydrationKey) return
+    if (temporary) {
+      return
     }
-    rememberRuntimeComposerDraft(userId, draftId, { ...draft, attachmentIds })
-    const timeout = window.setTimeout(() => {
-      void saveComposerDraft(userId, draftId, draft)
-    }, 150)
-    return () => window.clearTimeout(timeout)
-  }, [attachmentIds, draftHydrated, draftId, editingExisting, recovery, uploads, userId, value])
+    if (editingExisting || recovery || submissionPendingRef.current) return
+    if (value.length > 0 || attachments.length > 0) localDraftDirtyRef.current = syncDrafts
+    const generation = ++draftSaveGenerationRef.current
+    const timer = window.setTimeout(() => {
+      if (value.length === 0 && attachments.length === 0) {
+        localDraftDirtyRef.current = false
+        appliedRemoteRevisionRef.current = 0
+        void deleteLocalComposerDraft(userId, draftScope)
+        if (syncDrafts) void deleteRemoteComposerDraft(draftScope).catch(() => undefined)
+        return
+      }
+      const hasPendingAttachments = attachments.some((attachment) => attachment.status !== 'ready' || !attachment.id)
+      localDraftDirtyRef.current = syncDrafts
+      void saveLocalComposerDraft({
+        userId,
+        scope: draftScope,
+        content: value,
+        modelId,
+        presetSelections: selections,
+        agentMode: activeAgentMode && canUseAgent,
+        ...(!chatId ? { autoExpire } : {}),
+        uploads: attachments,
+        editorId: draftEditorIdRef.current,
+        dirty: syncDrafts,
+        serverRevision: appliedRemoteRevisionRef.current || undefined,
+      })
+      const readyIds = attachments.flatMap((attachment) => attachment.status === 'ready' && attachment.id ? [attachment.id] : [])
+      if (!syncDrafts || (value.length === 0 && readyIds.length === 0)) return
+      void saveRemoteComposerDraft(draftScope, {
+        content: value,
+        modelId,
+        presetSelections: selections,
+        agentMode: activeAgentMode && canUseAgent,
+        ...(!chatId ? { autoExpire } : {}),
+        attachmentIds: readyIds,
+        editorId: draftEditorIdRef.current,
+      }).then((remote) => {
+        if (draftSaveGenerationRef.current !== generation) return
+        appliedRemoteRevisionRef.current = remote.revision
+        localDraftDirtyRef.current = hasPendingAttachments
+        return saveLocalComposerDraft({
+          userId,
+          scope: draftScope,
+          content: value,
+          modelId,
+          presetSelections: selections,
+          agentMode: activeAgentMode && canUseAgent,
+          ...(!chatId ? { autoExpire } : {}),
+          uploads: attachments,
+          editorId: draftEditorIdRef.current,
+          dirty: hasPendingAttachments,
+          serverRevision: remote.revision,
+          serverUpdatedAt: remote.updatedAt,
+        })
+      }).catch(() => undefined)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [activeAgentMode, attachments, autoExpire, canUseAgent, chatId, draftHydrationKey, draftPersistence, draftRetryRevision, draftScope, editingExisting, modelId, recovery, selections, syncDrafts, temporary, userId, value])
 
   const restorePreservedDraft = useCallback(() => {
     const preserved = preservedDraftRef.current
@@ -518,6 +732,7 @@ export function Composer({
 
   useEffect(() => {
     if (recovery && !activeRecoveryIdRef.current && !messageEdit && !editingQueueId) {
+      submissionPendingRef.current = false
       preserveComposerDraft(recovery.chatId, { value, attachmentIds })
       activeRecoveryIdRef.current = recovery.id
       setValue(recovery.content)
@@ -615,6 +830,7 @@ export function Composer({
       autoExpire,
       attachmentIds,
     })
+    submissionPendingRef.current = true
     if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
     clearDraft(false)
   }

@@ -12,6 +12,8 @@ import {
   createModelSchema,
   createProviderSchema,
   createChatResponseSchema,
+  composerDraftInputSchema,
+  composerDraftSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_CASUAL_INSTRUCTIONS,
   mergeResponseSnapshots,
@@ -286,6 +288,42 @@ describe('shared contracts', () => {
       events: [],
     })
     expect(result.invalidate).toEqual(['folders'])
+  })
+
+  it('accepts draft synchronization as a reconnect invalidation scope', () => {
+    const result = syncResultSchema.parse({
+      accountRevision: 4,
+      invalidate: ['drafts'],
+      snapshots: [],
+      events: [],
+    })
+    expect(result.invalidate).toEqual(['drafts'])
+  })
+
+  it('validates complete composer drafts without trimming their content', () => {
+    const attachmentId = crypto.randomUUID()
+    const input = composerDraftInputSchema.parse({
+      content: '  unfinished\n',
+      modelId: 'model-1',
+      presetSelections: { reasoning: 'high' },
+      agentMode: true,
+      autoExpire: true,
+      attachmentIds: [attachmentId],
+      editorId: 'tab-1',
+    })
+    expect(input.content).toBe('  unfinished\n')
+    expect(composerDraftInputSchema.safeParse({ ...input, attachmentIds: [attachmentId, attachmentId] }).success).toBe(false)
+    expect(composerDraftInputSchema.safeParse({ ...input, content: '', attachmentIds: [] }).success).toBe(false)
+    expect(composerDraftInputSchema.safeParse({ ...input, content: 'x'.repeat(1_000_001) }).success).toBe(false)
+  })
+
+  it('accepts new-chat and thread draft response scopes', () => {
+    const base = {
+      content: 'draft', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      editorId: 'ios-1', attachments: [], revision: 1, updatedAt: new Date().toISOString(),
+    }
+    expect(composerDraftSchema.parse({ ...base, scope: 'new' }).scope).toBe('new')
+    expect(composerDraftSchema.parse({ ...base, scope: crypto.randomUUID() }).scope).not.toBe('new')
   })
 
   it('accepts generic composer presets', () => {
