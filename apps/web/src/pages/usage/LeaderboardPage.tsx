@@ -35,8 +35,8 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: LBMetric; label: string }[] = [
-  { id: 'cost', label: "USD" },
   { id: 'tokens', label: "Tokens" },
+  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
   { id: 'balance', label: "Balance" },
 ]
@@ -146,7 +146,7 @@ function LeaderboardTip({
 
 export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'pool' | 'instance' }) {
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<LBMetric>('cost')
+  const [metric, setMetric] = useState<LBMetric>('tokens')
   const animationSpeed = useSettings((state) => state.animationSpeed)
   const animationDuration = scaledAnimationDuration(DEFAULT_CHART_ANIMATION_DURATION_MS, animationSpeed)
   const instanceMode = scope === 'instance'
