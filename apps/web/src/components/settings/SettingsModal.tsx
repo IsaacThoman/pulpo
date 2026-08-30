@@ -410,7 +410,7 @@ export function SettingsModal({
   }
 
   const restoreMemoryRevision = async (revision: MemoryDocumentRevision) => {
-    if (!memoryDocument || !confirm(ui('Restore this MEMORY.md revision? Your current version will remain available for 24 hours.'))) return
+    if (!memoryDocument) return
     setMemorySaving(true)
     setMemoryError('')
     try {
@@ -832,9 +832,7 @@ export function SettingsModal({
                               variant="outline"
                               size="sm"
                               disabled={memorySaving || !memoryDraft}
-                              onClick={() => {
-                                if (confirm(ui('Clear MEMORY.md? You can restore it for 24 hours.'))) void saveMemoryDocument('')
-                              }}
+                              onClick={() => void saveMemoryDocument('')}
                             >{ui('Clear')}</Button>
                             <Button
                               type="button"
