@@ -3,6 +3,26 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Markdown } from './Markdown'
 
 describe('Markdown responsive containment', () => {
+  it('renders currency signs as prose instead of pairing them as inline math', () => {
+    const markup = renderToStaticMarkup(
+      <Markdown content={'Click the **$** dropdown, or choose Accounting if you want the $ aligned. A bare $100 is also currency.'} />,
+    )
+
+    expect(markup).toContain('<strong class="font-semibold">$</strong>')
+    expect(markup).toContain('the $ aligned')
+    expect(markup).toContain('bare $100')
+    expect(markup).not.toContain('class="katex"')
+  })
+
+  it('still renders explicit inline and display math delimiters', () => {
+    const markup = renderToStaticMarkup(
+      <Markdown content={String.raw`Inline \(E=mc^2\) and display \[x^2 + y^2\]`} />,
+    )
+
+    expect(markup.match(/class="katex"/g)).toHaveLength(2)
+    expect(markup).toContain('katex-display')
+  })
+
   it.each(['# Heading', '## Heading', '### Heading'])('removes top spacing from an initial heading: %s', (content) => {
     const markup = renderToStaticMarkup(<Markdown content={content} />)
 
