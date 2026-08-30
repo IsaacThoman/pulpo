@@ -7,7 +7,11 @@ import { Check, Copy } from 'lucide-react'
 import 'katex/dist/katex.min.css'
 import { ui } from '@/i18n/ui'
 
-/** Convert \( \) / \[ \] (common in LLM output) to $ / $$ for remark-math. Skip fenced/inline code. */
+/**
+ * Convert explicit LLM math delimiters to dollar syntax for remark-math.
+ * Inline math uses two dollars because single dollars are reserved for normal
+ * prose (especially currency). Skip fenced/inline code.
+ */
 function normalizeMathDelimiters(content: string): string {
   const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
   return parts
@@ -15,7 +19,7 @@ function normalizeMathDelimiters(content: string): string {
       if (i % 2 === 1) return part
       return part
         .replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_, tex: string) => `\n$$\n${tex.trim()}\n$$\n`)
-        .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_, tex: string) => `$${tex}$`)
+        .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_, tex: string) => `$$${tex}$$`)
     })
     .join('')
 }
@@ -72,7 +76,7 @@ export const Markdown = memo(function Markdown({ content, streaming = false }: {
   return (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }]]}
         components={{
           pre: ({ children }) => <>{children}</>,
