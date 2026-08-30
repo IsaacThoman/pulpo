@@ -205,7 +205,7 @@ export function SettingsModal({
   const [memoryRevisions, setMemoryRevisions] = useState<MemoryDocumentRevision[]>([])
   const [memoryLoading, setMemoryLoading] = useState(false)
   const [memorySaving, setMemorySaving] = useState(false)
-  const [memoryPreview, setMemoryPreview] = useState(false)
+  const [memoryPreview, setMemoryPreview] = useState(true)
   const [memoryError, setMemoryError] = useState('')
   const normalizedMemoryDraft = memoryDraft.replace(/\r\n?/g, '\n').trim()
   const memoryCharacterCount = normalizedMemoryDraft.length
@@ -335,11 +335,10 @@ export function SettingsModal({
         return
       }
       setImporting(true)
-      setImportResult(ui("Reading import file…"))
+      setImportResult('')
       void (async () => {
         try {
           const data = JSON.parse(await file.text())
-          setImportResult(ui("Importing chats…"))
           const result = await apiRequest<{ imported: number; duplicates: number; warnings: string[] }>('/api/chats/import', {
             method: 'POST',
             body: { source: 'pulpo', data },
@@ -410,7 +409,7 @@ export function SettingsModal({
   }
 
   const restoreMemoryRevision = async (revision: MemoryDocumentRevision) => {
-    if (!memoryDocument || !confirm(ui('Restore this MEMORY.md revision? Your current version will remain available for 24 hours.'))) return
+    if (!memoryDocument) return
     setMemorySaving(true)
     setMemoryError('')
     try {
@@ -832,9 +831,7 @@ export function SettingsModal({
                               variant="outline"
                               size="sm"
                               disabled={memorySaving || !memoryDraft}
-                              onClick={() => {
-                                if (confirm(ui('Clear MEMORY.md? You can restore it for 24 hours.'))) void saveMemoryDocument('')
-                              }}
+                              onClick={() => void saveMemoryDocument('')}
                             >{ui('Clear')}</Button>
                             <Button
                               type="button"
@@ -860,7 +857,7 @@ export function SettingsModal({
                             <div className="min-w-0">
                               <div className="truncate text-sm">{revision.editSummary}</div>
                               <div className="text-xs text-muted-foreground">
-                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())} · {ui('Version')} {revision.revision}
+                                {revision.editor === 'agent' ? ui('Agent') : ui('You')} · {formatDateTime(new Date(revision.supersededAt).getTime())}
                               </div>
                             </div>
                             <Button type="button" variant="ghost" size="sm" disabled={memorySaving} onClick={() => void restoreMemoryRevision(revision)}>{ui('Restore')}</Button>
@@ -986,8 +983,12 @@ export function SettingsModal({
                   <Row label={ui("Export chats")} hint="Download all conversations as JSON.">
                     <Button variant="outline" size="sm" onClick={() => void downloadApiFile('/api/chats/export', 'pulpo-chats.json')}> {ui("Export")} </Button>
                   </Row>
-                  <Row label={ui("Import Pulpo chats")}><Button variant="outline" size="sm" disabled={importing} onClick={chooseImport}>{importing && <Loader2 className="animate-spin" aria-hidden />}{importing ? ui("Importing…") : ui("Import")}</Button></Row>
-                  {importResult && <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground" role="status" aria-live="polite">{importResult}</div>}
+                  <Row label={ui("Import Pulpo chats")}>
+                    <div className="flex items-center justify-end gap-3">
+                      {importResult && <span className="text-right text-xs text-muted-foreground" role="status" aria-live="polite">{importResult}</span>}
+                      <Button variant="outline" size="sm" disabled={importing} onClick={chooseImport}>{importing && <Loader2 className="animate-spin" aria-hidden />}{importing ? ui("Importing…") : ui("Import")}</Button>
+                    </div>
+                  </Row>
                   <Separator className="my-3" />
                   <Row
                     label={ui("Trash all chats")}

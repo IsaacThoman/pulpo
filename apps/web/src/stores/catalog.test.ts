@@ -15,4 +15,14 @@ describe('deleted model display', () => {
       enabled: false,
     })
   })
+
+  it('uses the Pulpo icon for an unknown model ID', () => {
+    expect(getCatalogModel('glm-5.3-flash')).toMatchObject({
+      id: 'glm-5.3-flash',
+      name: 'glm-5.3-flash',
+      modelLogo: 'pulpo',
+      labLogo: 'pulpo',
+      enabled: false,
+    })
+  })
 })

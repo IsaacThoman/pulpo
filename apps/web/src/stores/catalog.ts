@@ -101,6 +101,8 @@ export function getCatalogModel(id: string): Model {
     ...emptyModel(),
     id,
     name: id,
+    labLogo: 'pulpo',
+    modelLogo: 'pulpo',
     description: ui("This model is not available in the current catalog."),
   }
 }
