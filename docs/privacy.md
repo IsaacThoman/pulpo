@@ -32,7 +32,7 @@ If you use a self-hosted or third-party Pulpo instance, its operator—not the d
 
 ## Memories and relevant-chat recall
 
-The Memories setting controls both the user’s editable `MEMORY.md` profile and relevant-chat recall. When Memories is enabled, the complete profile is included in eligible normal and Agent conversations. Agent mode can update it for direct remember, change, or forget requests and for explicit identity or preference confirmations. Every superseded version remains restorable for 24 hours. The document is limited to 16,000 characters and is not embedded.
+The Memories setting controls both the user’s editable `MEMORY.md` profile and relevant-chat recall. When Memories is enabled, the complete profile is included in eligible normal and Agent conversations. Agent mode maintains it as useful context for future conversations. Every superseded version remains restorable for 24 hours. The document is limited to 16,000 characters and is not embedded.
 
 Relevant-chat recall operates only when the user has enabled Memories and the instance administrator has enabled episodic memory. When both settings are on, the server automatically creates a searchable index from eligible normal conversations, including a backfill of existing eligible content. Temporary conversations, trashed or expired conversations, inactive response branches, reasoning, tool output, workspace data, and raw attachment contents are not indexed.
 

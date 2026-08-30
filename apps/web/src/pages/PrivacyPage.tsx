@@ -13,7 +13,7 @@ export function PrivacyPage() {
     </section>
     <section>
       <h2>{ui("Memories and relevant-chat recall")}</h2>
-      <p>{ui("When Memories is enabled, Pulpo includes your editable MEMORY.md profile in eligible conversations. Agent mode may update it for direct memory requests and explicit identity or preference confirmations; prior versions remain restorable for 24 hours. When the instance's episodic-memory feature is also enabled, Pulpo indexes eligible normal chats using the instance's Ollama embedding service. Temporary, trashed, and expired chats are excluded. Turning Memories off stops MEMORY.md use and deletes your derived chat embeddings while retaining the document. Ordinary chat exports do not include MEMORY.md or derived embeddings.")}</p>
+      <p>{ui("When Memories is enabled, Pulpo includes your editable MEMORY.md profile in eligible conversations. Agent mode maintains it as useful context for future conversations; prior versions remain restorable for 24 hours. When the instance's episodic-memory feature is also enabled, Pulpo indexes eligible normal chats using the instance's Ollama embedding service. Temporary, trashed, and expired chats are excluded. Turning Memories off stops MEMORY.md use and deletes your derived chat embeddings while retaining the document. Ordinary chat exports do not include MEMORY.md or derived embeddings.")}</p>
     </section>
     <section>
       <h2>{ui("Data on your device")}</h2>
