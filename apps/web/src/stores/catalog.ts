@@ -70,8 +70,7 @@ export const useCatalog = create<CatalogState>()(persist((set) => ({
   load: async () => {
     try {
       const response = await apiRequest<{ data: ServerModel[]; agentAvailable?: boolean }>('/api/models')
-      if (response.data.length) set({ models: response.data.map(fromServer), agentAvailable: response.agentAvailable ?? false, loaded: true })
-      else set({ loaded: true })
+      set({ models: response.data.map(fromServer), agentAvailable: response.agentAvailable ?? false, loaded: true })
     } catch {
       // Persisted catalog remains available while offline.
     }

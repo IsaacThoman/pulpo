@@ -1,13 +1,18 @@
 import { createHash } from 'node:crypto'
-import { gzipSync, gunzipSync } from 'node:zlib'
+import { createReadStream } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, chats, queuedMessages, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
 import { fillMissingUsernames } from '../profile/username.js'
+import { markExpiredChatsForPurge, purgePendingChats } from '../chats/trash.js'
 import {
   applyFullBackupCompatibilityDefaults,
   FULL_BACKUP_EXPLICIT_COLUMNS,
@@ -15,23 +20,11 @@ import {
   OPTIONAL_TABLES_IN_LEGACY_BACKUPS,
   type FullBackupTable,
 } from './backup-format.js'
+import { checksumMatches, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
+import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
-const checksumMatches = (value: Uint8Array, expected: string) => {
-  const hash = createHash('sha256').update(value)
-  return [hash.copy().digest('hex'), hash.copy().digest('base64url'), hash.digest('base64')].includes(expected)
-}
-
-async function tarBytes(entries: Array<{ name: string; body: Uint8Array }>): Promise<Uint8Array> {
-  const pack = tar.pack(); const chunks: Buffer[] = []
-  pack.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
-  const done = new Promise<void>((resolve, reject) => { pack.on('end', resolve); pack.on('error', reject) })
-  for (const entry of entries) await new Promise<void>((resolve, reject) => pack.entry({ name: entry.name, size: entry.body.byteLength, mode: 0o600 }, Buffer.from(entry.body), (error) => error ? reject(error) : resolve()))
-  pack.finalize(); await done
-  return gzipSync(Buffer.concat(chunks))
-}
-
 async function untarBytes(value: Uint8Array): Promise<Map<string, Uint8Array>> {
   const extract = tar.extract(); const files = new Map<string, Uint8Array>()
   const done = new Promise<void>((resolve, reject) => { extract.on('finish', resolve); extract.on('error', reject) })
@@ -43,18 +36,41 @@ export async function createFullBackup(jobId: string): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
   if (!job) return
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+  const objectKey = `backups/${job.userId}/${job.id}.tar.gz`
+  let temporaryDirectory: string | undefined
+  let uploaded = false
   try {
-    const database: Record<string, unknown[]> = {}
-    for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
-      const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
-      database[table] = [...await db.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))] as unknown[]
-      await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    try {
+      await markExpiredChatsForPurge(new Date())
+      await purgePendingChats()
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: 'warn', service: 'pulpo-worker', event: 'backup.preflight_chat_cleanup_failed', jobId,
+        error: error instanceof Error ? error.message : String(error),
+      }))
     }
-    const attachmentBlobRows = await db.select({ objectKey: attachments.objectKey, checksum: attachments.checksum }).from(attachments).where(eq(attachments.status, 'ready'))
-    const avatarBlobRows = await db.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`)
-    const iconRows = await db.select().from(catalogIcons)
+    temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
+    const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
+    const { database: rawDatabase, avatarBlobRows, iconRows, temporaryQueuedAttachmentRows } = await db.transaction(async (tx) => {
+      const database: Record<string, unknown[]> = {}
+      for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
+        const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
+        database[table] = [...await tx.execute(sql.raw(`select ${columns?.join(', ') ?? '*'} from ${table}`))] as unknown[]
+        await db.update(backupJobs).set({ progress: Math.round(((index + 1) / FULL_BACKUP_TABLES.length) * 55), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+      }
+      return {
+        database,
+        avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
+        iconRows: await tx.select().from(catalogIcons),
+        temporaryQueuedAttachmentRows: await tx.select({ attachmentIds: queuedMessages.attachmentIds })
+          .from(queuedMessages).innerJoin(chats, eq(chats.id, queuedMessages.chatId)).where(eq(chats.temporary, true)),
+      }
+    }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+    const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase, {
+      temporaryQueuedAttachmentIds: temporaryQueuedAttachmentRows.flatMap((row) => row.attachmentIds),
+    })
     const blobRows = [
-      ...attachmentBlobRows,
+      ...attachmentBlobs,
       ...avatarBlobRows.map((avatar) => ({ objectKey: avatar.objectKey!, checksum: null })),
       ...iconRows.flatMap((icon) => [
         { objectKey: icon.originalObjectKey, checksum: icon.originalChecksum },
@@ -62,22 +78,30 @@ export async function createFullBackup(jobId: string): Promise<void> {
         { objectKey: icon.monochromeDarkObjectKey, checksum: icon.monochromeDarkChecksum },
       ]),
     ]
-    const entries: Array<{ name: string; body: Uint8Array }> = []
-    const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
-    for (const [index, blob] of blobRows.entries()) {
-      const body = await getBlobStore().get(blob.objectKey)
-      const entry = `blobs/${Buffer.from(blob.objectKey).toString('base64url')}`
-      entries.push({ name: entry, body }); blobs.push({ entry, objectKey: blob.objectKey, checksum: blob.checksum ?? checksum(body) })
-      await db.update(backupJobs).set({ progress: 55 + Math.round(((index + 1) / Math.max(blobRows.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    async function* archiveEntries(): AsyncGenerator<BackupArchiveEntry> {
+      const blobs: Array<{ entry: string; objectKey: string; checksum: string }> = []
+      yield { name: 'database.json', body: Buffer.from(json(database)) }
+      for (const [index, blob] of blobRows.entries()) {
+        const body = await getBlobStore().get(blob.objectKey)
+        const entry = `blobs/${Buffer.from(blob.objectKey).toString('base64url')}`
+        blobs.push({ entry, objectKey: blob.objectKey, checksum: blob.checksum ?? checksum(body) })
+        yield { name: entry, body }
+        await db.update(backupJobs).set({ progress: 55 + Math.round(((index + 1) / Math.max(blobRows.length, 1)) * 35), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+      }
+      const manifest = { format: 'pulpo-instance-backup', version: 1, createdAt: new Date().toISOString(), tables: FULL_BACKUP_TABLES, blobs }
+      yield { name: 'manifest.json', body: Buffer.from(json(manifest)) }
     }
-    const manifest = { format: 'pulpo-instance-backup', version: 1, createdAt: new Date().toISOString(), tables: FULL_BACKUP_TABLES, blobs }
-    entries.unshift({ name: 'manifest.json', body: Buffer.from(json(manifest)) }, { name: 'database.json', body: Buffer.from(json(database)) })
-    const archive = await tarBytes(entries)
-    const objectKey = `backups/${job.userId}/${job.id}.tar.gz`
-    await getBlobStore().put(objectKey, archive, { contentType: 'application/gzip', contentLength: archive.byteLength, contentDisposition: 'attachment' })
-    await db.update(backupJobs).set({ status: 'completed', progress: 100, objectKey, expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    const { sizeBytes: archiveSizeBytes, checksum: archiveChecksum } = await writeBackupArchive(archivePath, archiveEntries())
+    await getBlobStore().putStream(objectKey, createReadStream(archivePath), {
+      contentType: 'application/gzip', contentLength: archiveSizeBytes, contentDisposition: 'attachment',
+    })
+    uploaded = true
+    await db.update(backupJobs).set({ status: 'completed', progress: 100, objectKey, archiveSizeBytes, archiveChecksum, expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   } catch (error) {
+    if (uploaded) await getBlobStore().delete(objectKey).catch(() => undefined)
     await db.update(backupJobs).set({ status: 'failed', error: error instanceof Error ? error.message : 'Backup failed', updatedAt: new Date() }).where(eq(backupJobs.id, jobId)); throw error
+  } finally {
+    if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
   }
 }
 
@@ -87,7 +111,10 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   const stagedKeys: string[] = []
   try {
-    const files = await untarBytes(await getBlobStore().get(job.objectKey))
+    const archive = await getBlobStore().get(job.objectKey)
+    if (job.archiveSizeBytes !== null && archive.byteLength !== job.archiveSizeBytes) throw new Error('Backup archive size mismatch')
+    if (job.archiveChecksum && !checksumMatches(archive, job.archiveChecksum)) throw new Error('Backup archive checksum failed')
+    const files = await untarBytes(archive)
     const manifest = JSON.parse(Buffer.from(files.get('manifest.json') ?? []).toString()) as { format: string; version: number; blobs: Array<{ entry: string; objectKey: string; checksum: string }> }
     const database = JSON.parse(Buffer.from(files.get('database.json') ?? []).toString()) as Record<string, Array<Record<string, unknown>>>
     if (manifest.format !== 'pulpo-instance-backup' || manifest.version !== 1) throw new Error('Unsupported backup manifest')
@@ -160,10 +187,10 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
     // Only invalidate application state derived from the replaced database.
     await deleteRedisKeysByPattern(redis, 'pulpo:*')
     for (const blob of oldBlobs) await getBlobStore().delete(blob.key).catch(() => undefined)
-    await db.update(backupJobs).set({ status: 'completed', progress: 100, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    await db.update(backupJobs).set({ status: 'completed', progress: 100, expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
   } catch (error) {
     for (const key of stagedKeys) await getBlobStore().delete(key).catch(() => undefined)
-    await db.update(backupJobs).set({ status: 'failed', error: error instanceof Error ? error.message : 'Restore failed', updatedAt: new Date() }).where(eq(backupJobs.id, jobId)); throw error
+    await db.update(backupJobs).set({ status: 'failed', error: error instanceof Error ? error.message : 'Restore failed', expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId)); throw error
   }
 }
 

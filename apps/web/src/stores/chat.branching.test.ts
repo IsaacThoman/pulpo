@@ -210,6 +210,18 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('preserves local folder expansion when server metadata refreshes', () => {
+    useChat.setState({
+      folders: [{ id: 'folder-1', name: 'Old name', pinned: false, expanded: false, sortOrder: 0 }],
+    })
+
+    useChat.getState().replaceFolders([{ id: 'folder-1', name: 'Renamed', pinned: true, sortOrder: 2 }])
+
+    expect(useChat.getState().folders).toEqual([
+      { id: 'folder-1', name: 'Renamed', pinned: true, expanded: false, sortOrder: 2 },
+    ])
+  })
+
   it('persists the new-chat expiration choice independently from the duration', () => {
     useSettings.setState({ automaticChatExpiration: '24h', newChatAutoExpire: true })
 

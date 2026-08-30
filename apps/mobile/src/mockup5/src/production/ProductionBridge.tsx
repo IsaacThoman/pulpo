@@ -20,6 +20,7 @@ import { warmModelCatalogIcons } from './AiIconAssets'
 import { usePrototypeStore } from '../store/prototypeStore'
 import { configureProductionActions } from './productionActions'
 import { reuseProjectedMessages } from './messageReuse'
+import { mergeServerFolders } from './folderMetadata'
 import {
   acknowledgeOptimisticChatList,
   clearPendingOptimisticResponses,
@@ -453,7 +454,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
             oldChats.get(chat.id)?.detailLoaded,
           )),
         ],
-        folders: folders.data?.map((folder) => ({ id: folder.id, name: folder.name, expanded: state.folders.find((item) => item.id === folder.id)?.expanded ?? true })) ?? state.folders,
+        folders: folders.data ? mergeServerFolders(folders.data, state.folders) : state.folders,
       }
     })
   }, [chats.data, deleted.data, folders.data, namespace])

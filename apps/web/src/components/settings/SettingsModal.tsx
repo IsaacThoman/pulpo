@@ -10,6 +10,9 @@ import {
   Info,
   KeyRound,
   Loader2,
+  Copy,
+  ExternalLink,
+  Plug,
   Monitor,
   Moon,
   ShieldCheck,
@@ -48,7 +51,7 @@ import { cn } from '@/lib/utils'
 import { ApiError, apiRequest, downloadApiFile } from '@/lib/api'
 import { queryClient } from '@/lib/query-client'
 import { useChat } from '@/stores/chat'
-import { getCatalogModel } from '@/stores/catalog'
+import { getCatalogModel, useCatalog } from '@/stores/catalog'
 import { formatBytes } from '@/lib/attachments'
 import { formatDateTime, timeAgo } from '@/lib/format'
 import { clearLocalChats } from '@/lib/local-first/chat-cache'
@@ -71,6 +74,7 @@ const SECTION_CONFIG = {
   general: { labelKey: 'settings.sections.general', icon: SlidersHorizontal },
   profile: { labelKey: 'settings.sections.profile', icon: User },
   security: { labelKey: 'settings.sections.security', icon: ShieldCheck },
+  connections: { labelKey: 'settings.sections.connections', icon: Plug },
   personalization: { labelKey: 'settings.sections.personalization', icon: Sparkles },
   interface: { labelKey: 'settings.sections.interface', icon: Monitor },
   billing: { labelKey: 'settings.sections.billing', icon: CreditCard },
@@ -174,6 +178,138 @@ function ThemePicker() {
           {o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+interface CodexConnectionStatus {
+  connected: boolean
+  reauthenticationRequired: boolean
+  planType: string | null
+  connectedAt: string | null
+  error: string | null
+  activeAttemptId: string | null
+}
+
+interface CodexLoginAttempt {
+  id: string
+  status: 'queued' | 'waiting' | 'completed' | 'failed' | 'cancelled' | 'expired'
+  userCode: string | null
+  verificationUri: string | null
+  intervalSeconds: number | null
+  expiresAt: string | null
+  error: string | null
+}
+
+function CodexConnectionSettings({ active }: { active: boolean }) {
+  const [attemptId, setAttemptId] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const statusQuery = useQuery({
+    queryKey: ['codex-connection'],
+    queryFn: () => apiRequest<CodexConnectionStatus>('/api/account/providers/codex'),
+    enabled: active,
+    refetchInterval: 3_000,
+  })
+  const effectiveAttemptId = attemptId ?? statusQuery.data?.activeAttemptId ?? null
+  const attemptQuery = useQuery({
+    queryKey: ['codex-login-attempt', effectiveAttemptId],
+    queryFn: () => apiRequest<CodexLoginAttempt>(`/api/account/providers/codex/login/${effectiveAttemptId}`),
+    enabled: active && Boolean(effectiveAttemptId),
+    refetchInterval: (query) => {
+      const state = query.state.data?.status
+      return state && ['completed', 'failed', 'cancelled', 'expired'].includes(state) ? false : 1_500
+    },
+  })
+  const attempt = attemptQuery.data
+
+  useEffect(() => {
+    if (attempt?.status !== 'completed') return
+    setAttemptId(null)
+    void statusQuery.refetch()
+    void useCatalog.getState().load()
+  }, [attempt?.status]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const connect = async () => {
+    setBusy(true); setError('')
+    try {
+      const result = await apiRequest<{ attemptId: string }>('/api/account/providers/codex/login', { method: 'POST' })
+      setAttemptId(result.attemptId)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : ui("Could not start Codex sign-in."))
+    } finally { setBusy(false) }
+  }
+  const disconnect = async () => {
+    if (!window.confirm(ui("Disconnect Codex and cancel active Codex generations?"))) return
+    setBusy(true); setError('')
+    try {
+      await apiRequest('/api/account/providers/codex', { method: 'DELETE' })
+      setAttemptId(null)
+      await statusQuery.refetch()
+      await useCatalog.getState().load()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : ui("Could not disconnect Codex."))
+    } finally { setBusy(false) }
+  }
+  const cancel = async () => {
+    if (!effectiveAttemptId) return
+    await apiRequest(`/api/account/providers/codex/login/${effectiveAttemptId}`, { method: 'DELETE' })
+    setAttemptId(null)
+    await statusQuery.refetch()
+  }
+  const connected = statusQuery.data?.connected
+  const waiting = attempt && ['queued', 'waiting'].includes(attempt.status)
+  const terminalError = attempt && ['failed', 'expired'].includes(attempt.status) ? attempt.error : null
+
+  return (
+    <div>
+      <h2 className="text-base font-semibold">{ui("Connections")}</h2>
+      <Separator className="my-3" />
+      <div className="rounded-xl border p-4">
+        <div className="flex items-start gap-3">
+          <img src="/ai-icons/codex.svg" className="mt-0.5 size-6 dark:invert" alt="" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">{ui("Codex")}</div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {ui("Use your personal ChatGPT Plus or Pro Codex limits for model inference.")}
+            </p>
+          </div>
+          {statusQuery.isLoading ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : connected ? (
+            <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">{ui("Connected")}</span>
+          ) : null}
+        </div>
+        {connected ? (
+          <div className="mt-4 flex items-center justify-between gap-3">
+            {statusQuery.data?.planType && statusQuery.data.planType !== 'unknown' ? (
+              <div className="text-xs text-muted-foreground">
+                {`${statusQuery.data.planType.charAt(0).toUpperCase()}${statusQuery.data.planType.slice(1)} plan`}
+              </div>
+            ) : null}
+            <Button className="ml-auto" variant="outline" size="sm" disabled={busy} onClick={() => void disconnect()}>{ui("Disconnect")}</Button>
+          </div>
+        ) : waiting ? (
+          <div className="mt-4 space-y-3">
+            {attempt.userCode ? (
+              <div className="rounded-lg border bg-background p-3">
+                <div className="text-xs text-muted-foreground">{ui("Enter this code on the verification page")}</div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <code className="text-lg font-semibold tracking-wider">{attempt.userCode}</code>
+                  <Button variant="ghost" size="sm" onClick={() => void navigator.clipboard.writeText(attempt.userCode!)}><Copy className="mr-1 size-3.5" />{ui("Copy")}</Button>
+                </div>
+              </div>
+            ) : <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" />{ui("Requesting a device code…")}</div>}
+            <div className="flex flex-wrap gap-2">
+              {attempt.verificationUri && <Button size="sm" onClick={() => window.open(attempt.verificationUri!, '_blank', 'noopener,noreferrer')}><ExternalLink className="mr-1 size-3.5" />{ui("Open verification page")}</Button>}
+              <Button variant="ghost" size="sm" onClick={() => void cancel()}>{ui("Cancel")}</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4">
+            <Button size="sm" disabled={busy} onClick={() => void connect()}>{terminalError || statusQuery.data?.reauthenticationRequired ? ui("Reconnect Codex") : ui("Connect Codex")}</Button>
+          </div>
+        )}
+        {(error || terminalError || statusQuery.data?.error) && <p className="mt-3 text-xs text-destructive">{error || terminalError || statusQuery.data?.error}</p>}
+      </div>
     </div>
   )
 }
@@ -638,6 +774,8 @@ export function SettingsModal({
                   </Row>
                 </div>
               )}
+
+              {section === 'connections' && <CodexConnectionSettings active={open && section === 'connections'} />}
 
               {section === 'profile' && (
                 <div>

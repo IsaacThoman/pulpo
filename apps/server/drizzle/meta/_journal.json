@@ -365,6 +365,20 @@
       "when": 1788035722552,
       "tag": "0051_burly_ulik",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1788054583793,
+      "tag": "0052_simple_reavers",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1788073112809,
+      "tag": "0053_black_black_crow",
+      "breakpoints": true
     }
   ]
 }

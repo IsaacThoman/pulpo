@@ -187,6 +187,7 @@ const enUS = {
       general: 'General',
       profile: 'Profile',
       security: 'Security',
+      connections: 'Connections',
       personalization: 'Personalization',
       interface: 'Interface',
       billing: 'Billing',

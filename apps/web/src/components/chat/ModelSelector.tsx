@@ -14,6 +14,7 @@ import { favoriteIdsMatch, resolveProviderOrder, useModels } from '@/stores/mode
 import { cn } from '@/lib/utils'
 import { useSettings } from '@/stores/settings'
 import { ui } from '@/i18n/ui'
+import { CODEX_LAB_ID } from '@/lib/catalog-model'
 
 type DragKind = 'model' | 'provider'
 
@@ -50,7 +51,8 @@ export function ModelSelector({
   const selected = catalogModels.find((m) => m.id === value) ?? getCatalogModel(value)
 
   const enabled = useMemo(() => catalogModels.filter((m) => m.enabled), [catalogModels])
-  const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.providerGroupId))], [enabled])
+  const codexAvailable = enabled.some((model) => model.providerGroupId === CODEX_LAB_ID)
+  const availableProviders = useMemo(() => [...new Set(enabled.map((model) => model.providerGroupId).filter((id) => id !== CODEX_LAB_ID))], [enabled])
   const providers = useMemo(() => resolveProviderOrder(providerOrder, availableProviders), [providerOrder, availableProviders])
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -129,12 +131,7 @@ export function ModelSelector({
       >
       <DropdownMenuTrigger asChild>
         <button className="flex max-w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
-          <ProviderLogo
-            provider={selected.provider}
-            icon={selected.labLogo}
-            customIcon={selected.labCustomIcon}
-            className="size-5 shrink-0"
-          />
+          <ModelIcon model={selected} className="size-5 shrink-0" boxed={false} />
           <span className="min-w-0 truncate">{selected.name}</span>
           <ChevronDown
             className={cn(
@@ -185,6 +182,27 @@ export function ModelSelector({
               </TooltipTrigger>
               <TooltipContent side="right">{t('chat.favorites')}</TooltipContent>
             </Tooltip>
+
+            {codexAvailable && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => { setProvider(CODEX_LAB_ID); setConfirmReset(false) }}
+                    className={cn(
+                      'group/prov flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-all duration-150',
+                      provider === CODEX_LAB_ID && !searching
+                        ? 'bg-accent text-foreground shadow-sm ring-1 ring-border/60'
+                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                    )}
+                    aria-label={ui("Codex")}
+                  >
+                    <ProviderLogo provider={ui("Codex")} icon="codex" variant={provider === CODEX_LAB_ID && !searching ? 'filled' : 'outline'} className="size-[18px]" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{ui("Codex")}</TooltipContent>
+              </Tooltip>
+            )}
 
             <div className="my-1 h-px w-5 shrink-0 bg-border" />
 

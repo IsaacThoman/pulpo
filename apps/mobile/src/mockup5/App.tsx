@@ -3124,7 +3124,7 @@ const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectM
             title={model.name}
             icon={(
               <SwiftUIImage
-                uiImage={Image.resolveAssetSource(model.labIcon ?? model.icon).uri}
+                uiImage={Image.resolveAssetSource(model.icon).uri}
                 modifiers={[
                   resizable(),
                   frame({ width: 22, height: 22 }),
@@ -4270,7 +4270,7 @@ function ChatView({
                   style={styles.modelTrigger}
                   tintColor={temporary ? colorScheme === 'dark' ? 'rgba(88,28,135,0.32)' : 'rgba(175,82,222,0.16)' : undefined}
                 >
-                  <ModelMark model={model} size={22} logo="lab" />
+                  <ModelMark model={model} size={22} />
                   <Text maxFontSizeMultiplier={1.4} numberOfLines={1} style={styles.modelTriggerText}>{model.name}</Text>
                 </Glass>
               </Pressable>

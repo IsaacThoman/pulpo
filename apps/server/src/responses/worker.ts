@@ -1,5 +1,6 @@
 import OpenAI, { toFile } from 'openai'
-import { and, asc, eq, isNull, ne, sql } from 'drizzle-orm'
+import type { AssistantMessage, Context, Message, ThinkingLevel } from '@earendil-works/pi-ai'
+import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { applyResponseEventToSnapshot, type CompactionItem, type RecallItem, type ResponseEvent, type ResponseUsage } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
@@ -39,7 +40,7 @@ import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
-import { responseInputText } from '../messages/input.js'
+import { responseAttachmentIds, responseInputText } from '../messages/input.js'
 import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
 import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
 import {
@@ -52,6 +53,9 @@ import {
   isSlowCompletion,
   markModelSticky,
 } from './fallback-policy.js'
+import { CODEX_PROVIDER_ID } from '../codex/constants.js'
+import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
+import { agentThinkingLevel } from '../agent/model-parameters.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -260,6 +264,213 @@ async function contextualInput(
   return { input: [...context, ...compacted.conversation, ...(record.response.input as unknown[])], compactionItems: compacted.item ? [compacted.item] : [] }
 }
 
+function codexAssistantText(output: unknown): string {
+  if (!Array.isArray(output)) return ''
+  return output.flatMap((item) => {
+    const content = (item as { content?: unknown[] }).content
+    return Array.isArray(content) ? content.flatMap((part) => {
+      const value = part as { type?: string; text?: string }
+      return value.type === 'output_text' && value.text ? [value.text] : []
+    }) : []
+  }).join('\n')
+}
+
+function codexUsage(message: AssistantMessage): ResponseUsage {
+  return {
+    inputTokens: message.usage.input + message.usage.cacheRead + message.usage.cacheWrite,
+    cachedInputTokens: message.usage.cacheRead,
+    cacheWriteTokens: message.usage.cacheWrite,
+    outputTokens: message.usage.output,
+    reasoningTokens: message.usage.reasoning ?? 0,
+    totalTokens: message.usage.totalTokens,
+  }
+}
+
+async function codexCurrentUserMessage(response: typeof responses.$inferSelect): Promise<Message> {
+  const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = []
+  const text = responseInputText(response.input)
+  if (text) content.push({ type: 'text', text })
+  const attachmentIds = responseAttachmentIds(response.input)
+  if (attachmentIds.length) {
+    const rows = await db.select().from(attachments).where(and(
+      eq(attachments.userId, response.userId), inArray(attachments.id, attachmentIds), eq(attachments.status, 'ready'),
+    ))
+    for (const attachment of rows) {
+      if (!attachment.mimeType.startsWith('image/')) continue
+      const rendition = await modelImageRendition(await getBlobStore().get(attachment.objectKey), attachment.mimeType, attachment.checksum)
+      content.push({ type: 'image', data: rendition.data.toString('base64'), mimeType: rendition.mimeType })
+    }
+  }
+  return { role: 'user', content: content.length === 1 && content[0]?.type === 'text' ? content[0].text : content, timestamp: response.createdAt.getTime() }
+}
+
+async function processCodexGenerationAttempt(
+  record: { response: typeof responses.$inferSelect; model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect },
+  startedAt: number,
+): Promise<void> {
+  const responseId = record.response.id
+  const allHistory = await db.select().from(responses).where(and(
+    eq(responses.chatId, record.response.chatId), ne(responses.id, responseId), isNull(responses.deletedAt),
+  )).orderBy(asc(responses.createdAt), asc(responses.id))
+  const byId = new Map(allHistory.map((turn) => [turn.id, turn]))
+  const lineage: typeof allHistory = []
+  let parentId = record.response.parentResponseId
+  const seen = new Set<string>()
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId)
+    const parent = byId.get(parentId)
+    if (!parent) break
+    lineage.unshift(parent)
+    parentId = parent.parentResponseId
+  }
+  const messages: Message[] = []
+  for (const turn of lineage) {
+    const userText = responseInputText(turn.input)
+    if (userText) messages.push({ role: 'user', content: userText, timestamp: turn.createdAt.getTime() })
+    const assistantText = codexAssistantText(turn.output)
+    if (assistantText) messages.push({
+      role: 'assistant', content: [{ type: 'text', text: assistantText }], api: 'openai-codex-responses',
+      provider: 'openai-codex', model: turn.actualModelId ?? turn.modelId,
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop', timestamp: turn.completedAt?.getTime() ?? turn.updatedAt.getTime(),
+    })
+  }
+  messages.push(await codexCurrentUserMessage(record.response))
+  const context: Context = { systemPrompt: record.model.systemPrompt.trim() || undefined, messages }
+  const codex = createCodexModels(record.response.userId)
+  const piModel = codex.getModel('openai-codex', record.model.upstreamModelId)
+  if (!piModel) throw new Error('The pinned Pi Codex catalog no longer contains this model')
+  const contextItems: unknown[] = []
+  const estimatedTokens = Math.ceil(JSON.stringify(messages).length / 4)
+  if (record.model.compactionEnabled && estimatedTokens > record.model.compactionThresholdTokens && messages.length > 4) {
+    const retainedCount = Math.max(2, record.model.compactionRetainedTurns * 2)
+    const older = messages.slice(0, -retainedCount)
+    const retained = messages.slice(-retainedCount)
+    const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+    if (requestLog && older.length) {
+      const prompt = `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}`
+      const maxOutputTokens = Math.min(2_000, record.model.maxOutputTokens)
+      const billed = await trackBilledInternalModelCall({
+        responseId, requestLogId: requestLog.id, modelId: record.model.id, upstreamModelId: record.model.upstreamModelId,
+        purpose: 'compaction', requestInput: prompt, maxOutputTokens, required: true,
+        invoke: async () => {
+          const result = await codex.completeSimple(piModel, { messages: [{ role: 'user', content: prompt, timestamp: Date.now() }] }, {
+            reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, transport: 'auto',
+            sessionId: `pulpo:${record.response.userId}:${record.response.chatId}:compaction`,
+          })
+          return {
+            id: result.responseId,
+            usage: codexUsage(result),
+            output_text: result.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n'),
+          }
+        },
+      })
+      if (!('skipped' in billed)) {
+        context.messages = [{ role: 'user', content: `Earlier conversation summary:\n${billed.result.output_text}`, timestamp: Date.now() }, ...retained]
+        contextItems.push({
+          id: `compaction_${responseId}`, type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
+          model_id: record.model.id, estimated_tokens: estimatedTokens, threshold_tokens: record.model.compactionThresholdTokens,
+          retained_turns: retained.length, summary: billed.result.output_text, started_at: new Date().toISOString(), duration_ms: 0,
+        })
+      }
+    }
+  }
+  const controller = new AbortController()
+  const cancellationPoll = setInterval(() => {
+    void isCancellationRequested(responseId).then((cancelled) => { if (cancelled) controller.abort() }).catch(() => undefined)
+  }, 500)
+  cancellationPoll.unref()
+  const messageId = `msg_${responseId}`
+  let text = ''
+  let reasoning = ''
+  let sequence = record.response.lastSequence
+  let lastSnapshot = 0
+  const output = () => [
+    ...contextItems,
+    ...(reasoning ? [{ id: `reasoning_${responseId}`, type: 'reasoning', summary: [{ type: 'summary_text', text: reasoning }] }] : []),
+    { id: messageId, type: 'message', role: 'assistant', status: 'in_progress', content: [{ type: 'output_text', text, annotations: [] }] },
+  ]
+  await db.update(responses).set({ status: 'in_progress', startedAt: record.response.startedAt ?? new Date(), output: output(), updatedAt: new Date() })
+    .where(eq(responses.id, responseId))
+  try {
+    const stream = codex.streamSimple(piModel, context, {
+      reasoning: agentThinkingLevel(record.response.parameters as Record<string, unknown>) as ThinkingLevel,
+      maxTokens: record.model.maxOutputTokens,
+      maxRetries: 0,
+      timeoutMs: record.provider.requestTimeoutMs,
+      transport: 'auto',
+      sessionId: `pulpo:${record.response.userId}:${record.response.chatId}`,
+      signal: controller.signal,
+    })
+    let finalMessage: AssistantMessage | undefined
+    for await (const event of stream) {
+      if (event.type === 'text_delta') {
+        text += event.delta
+        sequence += 1
+        await publishResponseEvent({ responseId, sequence, type: 'response.output_text.delta', payload: {
+          type: 'response.output_text.delta', item_id: messageId, output_index: reasoning ? 1 : 0, content_index: 0, delta: event.delta,
+        }, emittedAt: new Date().toISOString() })
+      } else if (event.type === 'thinking_delta') {
+        reasoning += event.delta
+        sequence += 1
+        await publishResponseEvent({ responseId, sequence, type: 'response.reasoning_summary_text.delta', payload: {
+          type: 'response.reasoning_summary_text.delta', item_id: `reasoning_${responseId}`, output_index: 0, summary_index: 0, delta: event.delta,
+        }, emittedAt: new Date().toISOString() })
+      } else if (event.type === 'done') finalMessage = event.message
+      else if (event.type === 'error') throw new Error(event.error.errorMessage ?? 'Codex generation failed')
+      if (Date.now() - lastSnapshot > 250) {
+        await db.update(responses).set({ output: output(), lastSequence: sequence, updatedAt: new Date() }).where(eq(responses.id, responseId))
+        const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+        if (snapshot) await publishSnapshot(toSnapshot(snapshot))
+        lastSnapshot = Date.now()
+      }
+    }
+    if (!finalMessage) finalMessage = await stream.result()
+    const usage = codexUsage(finalMessage)
+    const terminalOutput = output().map((item) => {
+      const value = item as Record<string, unknown>
+      return value.type === 'message' ? { ...value, status: 'completed' } : item
+    })
+    await persistItems(responseId, terminalOutput)
+    const completedAt = new Date()
+    await db.update(responses).set({
+      status: finalMessage.stopReason === 'length' ? 'incomplete' : 'completed', output: terminalOutput, usage,
+      incompleteDetails: finalMessage.stopReason === 'length' ? { reason: 'max_output_tokens' } : null,
+      lastSequence: sequence, openaiResponseId: finalMessage.responseId ?? null, completedAt, updatedAt: completedAt,
+    }).where(eq(responses.id, responseId))
+    const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+    let additionalCostMicros = 0
+    if (requestLog) {
+      try {
+        additionalCostMicros = await runPostResponseTasks(record, record, terminalOutput, requestLog.id)
+      } catch (error) {
+        if (codexErrorRequiresReauthentication(error)) {
+          await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
+        }
+      }
+    }
+    await settleWithSidecars({ responseId, usage, latencyMs: Date.now() - startedAt, providerCostMicros: 0, additionalCostMicros })
+    const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+    if (snapshot) await publishSnapshot(toSnapshot(snapshot))
+  } catch (error) {
+    if (controller.signal.aborted || await isCancellationRequested(responseId)) {
+      const completedAt = new Date()
+      await db.update(responses).set({ status: 'cancelled', output: output(), lastSequence: sequence, completedAt, updatedAt: completedAt })
+        .where(eq(responses.id, responseId))
+      await releaseBudget(responseId)
+      const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
+      if (snapshot) await publishSnapshot(toSnapshot(snapshot))
+      return
+    }
+    if (codexErrorRequiresReauthentication(error)) {
+      await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
+    }
+    throw redactedCodexError(error)
+  } finally {
+    clearInterval(cancellationPoll)
+  }
+}
+
 async function processGenerationAttempt(
   responseId: string,
   modelId: string,
@@ -274,6 +485,10 @@ async function processGenerationAttempt(
     .where(eq(responses.id, responseId))
     .limit(1)
   if (!record || ['completed', 'cancelled'].includes(record.response.status)) return
+  if (record.provider.id === CODEX_PROVIDER_ID) {
+    await processCodexGenerationAttempt(record, startedAt)
+    return
+  }
   const config = getConfig()
   const client = new OpenAI({
     apiKey: decryptSecret(record.provider.encryptedApiKey, config.ENCRYPTION_KEY),

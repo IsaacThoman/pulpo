@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ResponseEvent, ResponseSnapshot, SyncResult } from '@pulpo/contracts'
-import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
+import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 
 function snapshot(status: ResponseSnapshot['status'], responseId: string): ResponseSnapshot {
   return {
@@ -35,6 +35,10 @@ describe('response sync planning', () => {
   it('deduplicates chats when the account revision already requested it', () => {
     expect(syncInvalidationScopes(syncResult([snapshot('completed', 'response')], ['chats', 'models'])))
       .toEqual(['chats', 'models'])
+  })
+
+  it('maps folder invalidations to the account folder query', () => {
+    expect(stateInvalidationQueryKeys('folders', 'user-1')).toEqual([['folders', 'user-1']])
   })
 
   it('groups interleaved events by response without changing their order', () => {

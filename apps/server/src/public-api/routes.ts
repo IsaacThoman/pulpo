@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, ne } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { db } from '../database/client.js'
 import { chats, models, responses } from '../database/schema.js'
@@ -18,6 +18,7 @@ import {
   serializePublicResponse,
 } from './codecs.js'
 import { executePublicGeneration } from './generation.js'
+import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 
 function publicModel(model: typeof models.$inferSelect) {
   return {
@@ -51,7 +52,9 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
 
   app.get('/v1/models', async (request) => {
     const key = await authenticateApiKey(request, 'models')
-    const rows = await db.select().from(models).where(and(eq(models.enabled, true), eq(models.visible, true)))
+    const rows = await db.select().from(models).where(and(
+      eq(models.enabled, true), eq(models.visible, true), ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+    ))
     return { object: 'list', data: (await filterApiKeyAllowedModels(key.id, rows)).map(publicModel) }
   })
 
@@ -62,6 +65,7 @@ export async function registerPublicApiRoutes(app: FastifyInstance): Promise<voi
       eq(models.id, modelId),
       eq(models.enabled, true),
       eq(models.visible, true),
+      ne(models.providerConnectionId, CODEX_PROVIDER_ID),
     )).limit(1)
     if (!model || !(await apiKeyModelAllowed(key.id, model.id))) throw notFound('Model')
     return publicModel(model)
