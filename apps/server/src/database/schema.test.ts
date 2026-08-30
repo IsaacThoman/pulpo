@@ -27,7 +27,8 @@ import {
   poolMembers,
   poolInvitations,
   chatTurnEmbeddings,
-  savedMemoryEmbeddings,
+  userMemoryDocuments,
+  userMemoryDocumentRevisions,
   episodicMemoryGenerations,
   episodicMemoryMetricBuckets,
   queuedMessages,
@@ -56,6 +57,8 @@ describe('user-owned operational records', () => {
     ['mobile passkey authorization codes', mobilePasskeyAuthCodes],
     ['weekly usage periods', weeklyUsagePeriods],
     ['five-hour usage periods', fiveHourUsagePeriods],
+    ['memory documents', userMemoryDocuments],
+    ['memory document revisions', userMemoryDocumentRevisions],
   ])('deletes %s when their user is deleted', (_name, table) => {
     const userForeignKey = getTableConfig(table as PgTable).foreignKeys.find((foreignKey) =>
       foreignKey.getName().endsWith('_user_id_users_id_fk'),
@@ -194,10 +197,9 @@ describe('user-owned operational records', () => {
     expect(ownerFk?.onDelete).toBe('cascade')
   })
 
-  it('stores isolated episodic-memory generations and user-owned vectors', () => {
+  it('stores isolated episodic-memory generations and user-owned chat vectors', () => {
     const generationConfig = getTableConfig(episodicMemoryGenerations)
     const chatConfig = getTableConfig(chatTurnEmbeddings)
-    const memoryConfig = getTableConfig(savedMemoryEmbeddings)
     expect(generationConfig.indexes.find((item) => item.config.name === 'episodic_memory_generations_active_unique')?.config.unique).toBe(true)
     expect(generationConfig.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
       'episodic_memory_generations_profile_check',
@@ -209,13 +211,21 @@ describe('user-owned operational records', () => {
       'chat_turn_embeddings_user_generation_idx',
       'chat_turn_embeddings_search_idx',
     ]))
-    expect(memoryConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
-      'saved_memory_embeddings_generation_memory_unique',
-      'saved_memory_embeddings_user_generation_idx',
-      'saved_memory_embeddings_search_idx',
-    ]))
     expect(chatConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
-    expect(memoryConfig.foreignKeys.every((foreignKey) => foreignKey.onDelete === 'cascade')).toBe(true)
+  })
+
+  it('stores one bounded versioned memory document per user', () => {
+    const documentConfig = getTableConfig(userMemoryDocuments)
+    const revisionConfig = getTableConfig(userMemoryDocumentRevisions)
+    expect(documentConfig.primaryKeys).toHaveLength(0)
+    expect(documentConfig.columns.find((column) => column.name === 'user_id')?.primary).toBe(true)
+    expect(documentConfig.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'user_memory_documents_content_length_check',
+      'user_memory_documents_revision_check',
+      'user_memory_documents_editor_check',
+    ]))
+    expect(revisionConfig.indexes.find((item) => item.config.name === 'user_memory_document_revisions_user_revision_unique')?.config.unique).toBe(true)
+    expect(revisionConfig.indexes.map((item) => item.config.name)).toContain('user_memory_document_revisions_user_superseded_idx')
   })
 
   it('stores only fixed aggregate episodic-memory metrics', () => {
@@ -238,5 +248,15 @@ describe('user-owned operational records', () => {
     expect(migration.match(/CREATE TABLE IF NOT EXISTS/g)).toHaveLength(4)
     expect(migration.match(/EXCEPTION WHEN duplicate_object THEN NULL/g)).toHaveLength(7)
     expect(migration.match(/CREATE (?:UNIQUE )?INDEX IF NOT EXISTS/g)).toHaveLength(10)
+  })
+
+  it('replaces saved facts with bounded versioned memory documents', () => {
+    const migration = readFileSync(new URL('../../drizzle/0051_burly_ulik.sql', import.meta.url), 'utf8')
+    expect(migration).toContain('CREATE TABLE "user_memory_documents"')
+    expect(migration).toContain('CREATE TABLE "user_memory_document_revisions"')
+    expect(migration).toContain('char_length("user_memory_documents"."content") <= 16000')
+    expect(migration.indexOf('DROP TABLE "saved_memory_embeddings"')).toBeLessThan(migration.indexOf('DROP TABLE "memories"'))
+    expect(migration).not.toContain('DROP TABLE "chat_turn_embeddings"')
+    expect(migration).toContain('CREATE INDEX "user_memory_document_revisions_user_superseded_idx"')
   })
 })

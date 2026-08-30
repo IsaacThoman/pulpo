@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { attachmentValidationError } from '@pulpo/client-core'
 import type { Attachment } from '@/lib/types'
 import { apiRequest, authenticatedFetch } from '@/lib/api'
+import { attachmentUploadErrorMessage } from '@/lib/attachment-upload-error'
 import { isSupportedImageFile, isSupportedImageMime, nonImageAttachmentRestriction } from '@/lib/attachments'
 import { cacheAttachmentBlob } from '@/lib/local-first/attachment-cache'
 import { getCatalogModel, useCatalog } from '@/stores/catalog'
@@ -236,7 +237,7 @@ async function uploadRecord(localId: string, attempt: number): Promise<void> {
           ...state.uploads[localId]!,
           id: reservedId ?? state.uploads[localId]!.id,
           status: 'error',
-          error: error instanceof Error ? error.message : 'Upload failed',
+          error: attachmentUploadErrorMessage(error),
         },
       },
     }))

@@ -179,6 +179,7 @@ export function Composer({
   const attachments = attachmentIds.map((id) => uploads[id]).filter((item): item is UploadRecord => Boolean(item))
   const uploading = attachments.some((a) => a.status === 'uploading')
   const uploadFailed = attachments.some((a) => a.status === 'error')
+  const attachmentUploadError = attachments.find((a) => a.status === 'error')?.error
   const hasNonImage = attachments.some((a) => !isSupportedImageMime(a.mimeType))
   const attachmentRestriction = nonImageAttachmentRestriction({
     hasNonImage,
@@ -826,25 +827,28 @@ export function Composer({
         )}
       >
         {attachments.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-3 pt-3">
-            {attachments.map((attachment) => (
-              <PendingAttachmentChip
-                key={attachment.localId}
-                name={attachment.name}
-                size={attachment.size}
-                mimeType={attachment.mimeType}
-                previewUrl={attachment.previewUrl}
-                attachmentId={attachment.id}
-                sourceFile={attachment.file}
-                uploading={attachment.status === 'uploading'}
-                error={attachment.status === 'error' ? attachment.error : null}
-                onDownload={() => downloadComposerAttachment(attachment)}
-                onRetry={attachment.status === 'error' && attachment.file
-                  ? () => retryUpload(attachment.localId)
-                  : undefined}
-                onRemove={() => removeAttachment(attachment.localId)}
-              />
-            ))}
+          <div className="space-y-2 px-3 pt-3">
+            <div className="flex flex-wrap gap-2">
+              {attachments.map((attachment) => (
+                <PendingAttachmentChip
+                  key={attachment.localId}
+                  name={attachment.name}
+                  size={attachment.size}
+                  mimeType={attachment.mimeType}
+                  previewUrl={attachment.previewUrl}
+                  attachmentId={attachment.id}
+                  sourceFile={attachment.file}
+                  uploading={attachment.status === 'uploading'}
+                  error={attachment.status === 'error' ? attachment.error : null}
+                  onDownload={() => downloadComposerAttachment(attachment)}
+                  onRetry={attachment.status === 'error' && attachment.file
+                    ? () => retryUpload(attachment.localId)
+                    : undefined}
+                  onRemove={() => removeAttachment(attachment.localId)}
+                />
+              ))}
+            </div>
+            {attachmentUploadError && <p role="alert" className="px-1 text-xs text-destructive">{attachmentUploadError}</p>}
           </div>
         )}
 

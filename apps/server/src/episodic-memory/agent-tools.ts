@@ -263,6 +263,7 @@ export function createEpisodicMemoryTools(input: {
           currentChatId: input.currentChatId,
           query,
           limit: Math.min(MAX_SEARCH_LIMIT + 1, limit + 1),
+          purpose: 'explicit',
           signal,
         })
         signal?.throwIfAborted()

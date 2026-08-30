@@ -6,6 +6,15 @@ export type ChatViewportMetrics = {
   viewportHeight: number
 }
 
+/** Let unused viewport space absorb the keyboard before moving short transcripts. */
+export function chatKeyboardBlankSpace(
+  viewportHeight: number,
+  contentHeight: number,
+): number {
+  if (viewportHeight <= 0 || contentHeight <= 0) return 0
+  return Math.max(viewportHeight - contentHeight, 0)
+}
+
 /**
  * Treat short transcripts as already at the end and allow a small tolerance for
  * fractional native layout values near the bottom of longer conversations.

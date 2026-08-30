@@ -1018,7 +1018,6 @@ export const episodicMemoryStatisticsSchema = z.object({
   current: z.object({
     indexedChats: z.number().int().nonnegative(),
     indexedChunks: z.number().int().nonnegative(),
-    indexedFacts: z.number().int().nonnegative(),
     indexedUsers: z.number().int().nonnegative(),
     pendingItems: z.number().int().nonnegative(),
     failedItems: z.number().int().nonnegative(),

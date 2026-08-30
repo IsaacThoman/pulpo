@@ -46,5 +46,32 @@
     "candidates": [
       { "key": "exact-match", "lexicalRank": 1, "lexicalScore": 0.9, "ageDays": 1 }
     ]
+  },
+  {
+    "name": "balanced rejects rank-only semantic noise",
+    "profile": "embeddinggemma",
+    "mode": "balanced",
+    "expected": [],
+    "candidates": [
+      { "key": "generic-neighbor", "semanticRank": 1, "semanticSimilarity": 0.55, "ageDays": 0 }
+    ]
+  },
+  {
+    "name": "balanced accepts corroborated hybrid evidence",
+    "profile": "embeddinggemma",
+    "mode": "balanced",
+    "expected": ["hybrid"],
+    "candidates": [
+      { "key": "hybrid", "semanticRank": 3, "semanticSimilarity": 0.54, "lexicalRank": 2, "lexicalScore": 0.05, "ageDays": 40 }
+    ]
+  },
+  {
+    "name": "balanced rejects negligible lexical rank",
+    "profile": "embeddinggemma",
+    "mode": "balanced",
+    "expected": [],
+    "candidates": [
+      { "key": "incidental-word", "lexicalRank": 1, "lexicalScore": 0.005, "ageDays": 0 }
+    ]
   }
 ]

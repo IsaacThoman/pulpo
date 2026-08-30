@@ -30,6 +30,7 @@ const presentations: Record<string, ToolActivityPresentation> = {
   attach_file: { icon: Paperclip, label: 'Attaching a file…' },
   web_search: { icon: Search, label: 'Searching the web…' },
   web_fetch: { icon: Globe, label: 'Fetching a webpage…' },
+  update_memory: { icon: FilePenLine, label: 'Updating memory…' },
 };
 
 export function toolActivityPresentation(name?: string): ToolActivityPresentation {

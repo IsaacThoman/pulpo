@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 describe('post-response task model selection', () => {
-  it('skips UI-only title and memory tasks for API-originated generations', async () => {
+  it('skips UI-only title tasks for API-originated generations', async () => {
     await expect(runPostResponseTasks({ response: { origin: 'api' } } as never, {} as never, [], 'request-log'))
       .resolves.toBe(0)
   })
@@ -101,4 +101,5 @@ describe('post-response task model selection', () => {
     await expect(retryInvalidTitleOutput(invoke)).rejects.toThrow('provider unavailable')
     expect(invoke).toHaveBeenCalledTimes(1)
   })
+
 })

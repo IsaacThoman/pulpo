@@ -5,6 +5,7 @@ import {
   agentCompactionPrompt,
   agentCycles,
   compactedAgentHandoffMessage,
+  prepareCompactedAgentNextTurn,
   shouldCompactAgentContext,
   shouldCompactAgentStream,
   splitAgentContext,
@@ -73,5 +74,62 @@ describe('agent compaction', () => {
     expect(JSON.stringify(handoff)).toContain('Keep editing src/app.ts')
     expect(agentCompactionItemId('resp', 'pre_response')).toBe('resp:compaction:pre_response:0')
     expect(agentCompactionItemId('resp', 'agent_mid_run', 3)).toBe('resp:compaction:agent_mid_run:3')
+  })
+
+  it('replaces the canonical next-turn context after compaction', async () => {
+    const original = [message('user', 'large original context')]
+    const compacted = [message('user', 'compacted handoff')]
+    const adopted: AgentMessage[][] = []
+    const compactCalls: Array<{ messages: AgentMessage[]; beforeAgentTurn: number; estimatedTokens: number }> = []
+
+    const update = await prepareCompactedAgentNextTurn({
+      context: { systemPrompt: 'system', messages: original, tools: [] },
+      completedModelTurns: 1,
+      estimatedTokens: 150_000,
+      thresholdTokens: 100_000,
+      willContinue: true,
+      compact: async (messages, beforeAgentTurn, estimatedTokens) => {
+        compactCalls.push({ messages, beforeAgentTurn, estimatedTokens })
+        return compacted
+      },
+      adopt: (_messages, compactedMessages) => { adopted.push(compactedMessages) },
+    })
+
+    expect(compactCalls).toEqual([{ messages: original, beforeAgentTurn: 2, estimatedTokens: 150_000 }])
+    expect(adopted).toEqual([compacted])
+    expect(update?.context.messages).toEqual(compacted)
+  })
+
+  it('keeps the current next-turn context below the threshold', async () => {
+    const original = [message('user', 'small context')]
+    let compacted = false
+    const update = await prepareCompactedAgentNextTurn({
+      context: { systemPrompt: 'system', messages: original, tools: [] },
+      completedModelTurns: 2,
+      estimatedTokens: 80_000,
+      thresholdTokens: 100_000,
+      willContinue: true,
+      compact: async () => { compacted = true; return [] },
+      adopt: () => undefined,
+    })
+
+    expect(update).toBeUndefined()
+    expect(compacted).toBe(false)
+  })
+
+  it('does not compact after a terminal turn', async () => {
+    let compacted = false
+    const update = await prepareCompactedAgentNextTurn({
+      context: { systemPrompt: 'system', messages: [message('user', 'large context')], tools: [] },
+      completedModelTurns: 3,
+      estimatedTokens: 150_000,
+      thresholdTokens: 100_000,
+      willContinue: false,
+      compact: async () => { compacted = true; return [] },
+      adopt: () => undefined,
+    })
+
+    expect(update).toBeUndefined()
+    expect(compacted).toBe(false)
   })
 })

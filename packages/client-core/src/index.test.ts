@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  attachmentUploadErrorMessage,
   attachmentValidationError,
   hydrateEmbeddedResponseSnapshot,
   LatestValueQueue,
@@ -210,6 +211,19 @@ describe('client core', () => {
       { name: 'disabled.bin', mimeType: 'application/octet-stream', sizeBytes: 1 },
       0,
     )).toBe('Attachment exceeds the 0 MB limit')
+  })
+
+  it('turns attachment upload failures into actionable messages', () => {
+    expect(attachmentUploadErrorMessage({ message: 'Attachment is empty' }))
+      .toBe('Pulpo couldn’t read this file. Save a copy to Files, then select the copy and try again.')
+    expect(attachmentUploadErrorMessage({ message: 'Upload failed (400)' }))
+      .toBe('Pulpo couldn’t verify this file. Save a fresh copy to Files, then try again.')
+    expect(attachmentUploadErrorMessage({ status: 413, code: 'storage_quota_exceeded' }))
+      .toBe('Not enough storage remains for this file. Free some storage and try again.')
+    expect(attachmentUploadErrorMessage({ network: true }))
+      .toBe('Connection lost during upload. Check your connection and try again.')
+    expect(attachmentUploadErrorMessage({ message: 'Attachment exceeds the 25 MB limit' }))
+      .toBe('Attachment exceeds the 25 MB limit')
   })
 
   it('sends management bearer tokens and parses API errors', async () => {

@@ -22,7 +22,7 @@ import { responseAttachmentIds } from '../messages/input.js'
 import { unsupportedPublicModelParameter } from './model-parameters.js'
 
 export interface CreateResponseOptions {
-  /** Owner of the chat, response, files, memories, and conversation context. */
+  /** Owner of the chat, response, files, memory document, and conversation context. */
   ownerUserId: string
   /** Account whose billing entitlements fund the generation. Defaults to the owner. */
   billingUserId?: string

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { isNearChatBottom, resolveKeyboardLayoutProgress, shouldFollowChatContent } from './viewport'
+import {
+  chatKeyboardBlankSpace,
+  isNearChatBottom,
+  resolveKeyboardLayoutProgress,
+  shouldFollowChatContent,
+} from './viewport'
 
 describe('chat viewport following', () => {
   it('follows short transcripts and readers already near the end', () => {
@@ -26,5 +31,16 @@ describe('chat viewport following', () => {
     expect(resolveKeyboardLayoutProgress(1, false)).toBe(0)
     expect(resolveKeyboardLayoutProgress(0.45, false)).toBe(0)
     expect(resolveKeyboardLayoutProgress(0.45, true)).toBe(0.45)
+  })
+
+  it('absorbs keyboard movement into unused space below short transcripts', () => {
+    expect(chatKeyboardBlankSpace(800, 460)).toBe(340)
+    expect(chatKeyboardBlankSpace(800, 800)).toBe(0)
+    expect(chatKeyboardBlankSpace(800, 1200)).toBe(0)
+  })
+
+  it('waits for valid measurements before applying keyboard blank space', () => {
+    expect(chatKeyboardBlankSpace(0, 460)).toBe(0)
+    expect(chatKeyboardBlankSpace(800, 0)).toBe(0)
   })
 })

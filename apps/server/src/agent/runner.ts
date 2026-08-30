@@ -35,8 +35,8 @@ import {
   agentCompactionItemId,
   agentCompactionPrompt,
   compactedAgentHandoffMessage,
+  prepareCompactedAgentNextTurn,
   shouldCompactAgentContext,
-  shouldCompactAgentStream,
   splitAgentContext,
 } from './compaction.js'
 import { isInsufficientBalanceError, trackBilledInternalModelCall } from '../responses/model-calls.js'
@@ -48,10 +48,11 @@ import { agentSnapshotIsDue } from './snapshot-policy.js'
 import { lineageFromLeaf } from '../messages/branching.js'
 import { responseUserAttachmentIds } from '../messages/input.js'
 import { responseInputText } from '../messages/input.js'
-import { selectRelevantMemories } from '../episodic-memory/retrieval.js'
 import { createEpisodicMemoryTools } from '../episodic-memory/agent-tools.js'
 import { readEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { recalledChatContext, recallItemFromOutput, retrieveAutomaticRecall } from '../episodic-memory/automatic-recall.js'
+import { memoryDocumentContext, readMemoryDocument } from '../memory-document/service.js'
+import { createMemoryDocumentTool } from '../memory-document/agent-tool.js'
 import { messagesFromAgentContext, resolveAgentParentMessages, systemPromptFromAgentContext } from './history.js'
 import { agentSamplingParameters, resolveAgentModelParameters } from './model-parameters.js'
 import { redis } from '../redis.js'
@@ -160,9 +161,10 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     parsePersonalizationSettings(personalizationRow?.value),
     preferenceValues,
   )
-  const enabledMemories = preferenceValues.memoryEnabled
-    ? await selectRelevantMemories(record.response.userId, responseInputText(record.response.input))
-    : []
+  const memoryDocument = preferenceValues.memoryEnabled
+    ? await readMemoryDocument(record.response.userId)
+    : null
+  const memoryContext = memoryDocument ? memoryDocumentContext(memoryDocument) : ''
   const existingRecallItem = recallItemFromOutput(record.response.output, responseId)
   const recallItem = existingRecallItem ?? await retrieveAutomaticRecall({
     responseId,
@@ -175,7 +177,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     record.model.systemPrompt,
     record.model.agentInstructions,
     customInstructions,
-    enabledMemories,
+    memoryContext,
   )
   const currentAgentSystemPrompt = [baseAgentSystemPrompt, recallContext].filter(Boolean).join('\n\n')
   if (!settings.enabled || !record.model.agentEnabled) throw new Error('Agent mode is no longer available')
@@ -563,6 +565,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         onOperationStarted: markToolStarted,
       })
     : []
+  const memoryDocumentTools = preferenceValues.memoryEnabled === true
+      ? [createMemoryDocumentTool({
+        userId: record.response.userId,
+        responseId,
+        userMessage: responseInputText(record.response.input),
+        onOperationStarted: markToolStarted,
+      })]
+    : []
   const attachFile = async (operationId: string, path: string, name: string | undefined, signal?: AbortSignal) => {
     const [existing] = await db.select().from(attachments).where(and(
       eq(attachments.sourceResponseId, responseId), eq(attachments.sourceToolCallId, operationId), eq(attachments.status, 'ready'),
@@ -602,9 +612,34 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         ...createWorkspaceTools(manager, settings.commandTimeoutSeconds * 1000, markToolStarted, attachFile),
         ...configuredWebTools,
         ...episodicMemoryTools,
+        ...memoryDocumentTools,
       ],
       messages: resumedMessages,
       thinkingLevel: initialParameters.reasoning,
+    },
+    prepareNextTurnWithContext: async ({ context, toolResults }) => {
+      const thresholdTokens = compactionThreshold()
+      let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
+      preparedContext = adaptToolResultImagesForProvider(
+        preparedContext as Context,
+        active.provider.toolResultImageMode as ToolResultImageMode,
+      ) as typeof preparedContext
+      return prepareCompactedAgentNextTurn({
+        context,
+        completedModelTurns: modelTurns,
+        estimatedTokens: estimateAgentContextTokens(preparedContext as Context),
+        thresholdTokens,
+        willContinue: toolResults.length > 0 || agent.hasQueuedMessages(),
+        compact: (messages, beforeAgentTurn, estimatedTokens) => compactAgentContext(
+          messages,
+          thresholdTokens,
+          'agent_mid_run',
+          beforeAgentTurn,
+          [],
+          { force: true, estimatedTokens },
+        ),
+        adopt: adoptCompactedContext,
+      })
     },
     streamFn: async (_model, context, options) => {
       const cacheOptions = providerCacheRequestOptions(active.provider, {
@@ -612,32 +647,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         chatId: record.response.chatId,
         runId,
       })
-      const thresholdTokens = compactionThreshold()
       let preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
       preparedContext = adaptToolResultImagesForProvider(
         preparedContext as Context,
         active.provider.toolResultImageMode as ToolResultImageMode,
       ) as typeof preparedContext
-      const estimatedTokens = estimateAgentContextTokens(preparedContext as Context)
-      if (estimatedTokens > thresholdTokens && shouldCompactAgentStream(modelTurns)) {
-        const originalMessages = context.messages as AgentMessage[]
-        const compactedMessages = await compactAgentContext(
-          originalMessages,
-          thresholdTokens,
-          'agent_mid_run',
-          modelTurns || undefined,
-          [],
-          { force: true, estimatedTokens },
-        )
-        if (adoptCompactedContext(originalMessages, compactedMessages)) {
-          context = { ...context, messages: compactedMessages as typeof context.messages }
-          preparedContext = await interceptAgentContextImages(context, active.model, imageInterceptor)
-          preparedContext = adaptToolResultImagesForProvider(
-            preparedContext as Context,
-            active.provider.toolResultImageMode as ToolResultImageMode,
-          ) as typeof preparedContext
-        }
-      }
       const hardContextLimit = effectiveAgentCompactionThreshold(Number.MAX_SAFE_INTEGER, active.model.contextWindow)
       if (estimateAgentContextTokens(preparedContext as Context) > hardContextLimit) {
         throw new Error('Agent context remains above the model context window after compaction')

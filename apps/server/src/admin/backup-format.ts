@@ -2,8 +2,8 @@ export const FULL_BACKUP_TABLES = [
   'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections',
   'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
-  'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'memories',
-  'episodic_memory_generations', 'chat_turn_embeddings', 'saved_memory_embeddings', 'episodic_memory_metric_buckets',
+  'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'user_memory_documents', 'user_memory_document_revisions',
+  'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
   'banners', 'request_logs', 'generation_attempts', 'ocr_attempts', 'ocr_cache_entries', 'chat_import_sources',
   'workspace_leases', 'agent_runs', 'tool_executions',
@@ -21,16 +21,13 @@ export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, reado
     'id', 'generation_id', 'user_id', 'chat_id', 'response_id', 'content_hash', 'chunk_text',
     'embedding', 'status', 'error', 'indexed_at', 'created_at', 'updated_at',
   ],
-  saved_memory_embeddings: [
-    'id', 'generation_id', 'user_id', 'memory_id', 'content_hash', 'content_text',
-    'embedding', 'status', 'error', 'indexed_at', 'created_at', 'updated_at',
-  ],
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
+  'user_memory_documents',
+  'user_memory_document_revisions',
   'episodic_memory_generations',
   'chat_turn_embeddings',
-  'saved_memory_embeddings',
   'episodic_memory_metric_buckets',
 ]
 
