@@ -30,3 +30,23 @@ export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
   'chat_turn_embeddings',
   'episodic_memory_metric_buckets',
 ]
+
+/**
+ * PostgreSQL's json_populate_recordset uses null for an absent property rather
+ * than applying the column default. Keep v1 archives forward-compatible when
+ * a later migration adds a required column to an existing backup table.
+ */
+export function applyFullBackupCompatibilityDefaults(database: Record<string, Array<Record<string, unknown>>>): void {
+  for (const user of database.users ?? []) {
+    user.profile_color ??= null
+    user.avatar_object_key ??= null
+    user.avatar_version ??= 0
+  }
+  for (const provider of database.provider_connections ?? []) provider.tool_result_image_mode ??= 'native'
+  for (const response of database.responses ?? []) {
+    response.metadata ??= {}
+    response.idempotency_scope ??= 'default'
+    response.publicly_stored ??= true
+  }
+  for (const event of database.usage_events ?? []) event.five_hour_cost_micros ??= 0
+}

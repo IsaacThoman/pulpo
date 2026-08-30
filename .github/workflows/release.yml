@@ -72,6 +72,10 @@ jobs:
         if: matrix.name == 'Build'
         run: bash .github/scripts/validate-compose-runtime-env.sh
 
+      - name: Validate Coolify deployment boundaries
+        if: matrix.name == 'Build'
+        run: bash .github/scripts/validate-coolify-deployment-boundaries.sh
+
   cli-package:
     name: CLI package / Node ${{ matrix.node }}
     if: >-
@@ -671,10 +675,14 @@ jobs:
 
   deploy-preview:
     name: Deploy Coolify preview
+    # Never use the production application as a preview parent. Coolify preview
+    # cleanup is application-scoped and can remove the parent's live containers.
+    # Changes promoted from dev to main are already exercised by the persistent
+    # development deployment.
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
-      contains(fromJSON('["main", "dev"]'), github.event.pull_request.base.ref) &&
+      github.event.pull_request.base.ref == 'dev' &&
       github.event.pull_request.head.repo.full_name == github.repository
     needs: [checks, cli-package]
     runs-on: ubuntu-24.04
@@ -683,11 +691,11 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ github.event.pull_request.base.ref == 'dev' && vars.COOLIFY_PULPO_DEV_APP_UUID || vars.COOLIFY_PULPO_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
       PULL_REQUEST_SHA: ${{ github.event.pull_request.head.sha }}
       PULL_REQUEST_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-      PREVIEW_URL: ${{ github.event.pull_request.base.ref == 'dev' && format('https://pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) || format('https://pulpo-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
+      PREVIEW_URL: ${{ format('https://pulpo-dev-pr-{0}.deathgrips.org', github.event.pull_request.number) }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -751,7 +759,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action == 'closed' &&
-      contains(fromJSON('["main", "dev"]'), github.event.pull_request.base.ref) &&
+      github.event.pull_request.base.ref == 'dev' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:
@@ -759,7 +767,7 @@ jobs:
     env:
       COOLIFY_URL: ${{ vars.COOLIFY_URL }}
       COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
-      COOLIFY_APP_UUID: ${{ github.event.pull_request.base.ref == 'dev' && vars.COOLIFY_PULPO_DEV_APP_UUID || vars.COOLIFY_PULPO_APP_UUID }}
+      COOLIFY_APP_UUID: ${{ vars.COOLIFY_PULPO_DEV_APP_UUID }}
       PULL_REQUEST_ID: ${{ github.event.pull_request.number }}
     steps:
       - name: Check out repository
