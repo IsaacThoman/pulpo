@@ -190,8 +190,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       const batch = pendingRevision
       pendingRevision = undefined
       if (!batch) return
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
+      if (batch.chatIds.length || batch.accountOnlyRevisions.length) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
+      }
       for (const chatId of batch.chatIds) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) })
       }

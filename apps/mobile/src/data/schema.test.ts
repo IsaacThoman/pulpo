@@ -74,6 +74,11 @@ describe('mobile SQLite schema', () => {
       .get('global', 'preferences')).toEqual({ value: '{"theme":"light"}' })
     expect(database.prepare('SELECT count(*) AS count FROM drafts WHERE namespace = ?')
       .get('two|user')).toEqual({ count: 1 })
+    const columns = database.prepare('PRAGMA table_info(drafts)').all() as Array<{ name: string }>
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      'model_id', 'preset_selections', 'agent_mode', 'auto_expire', 'editor_id',
+      'server_revision', 'server_updated_at', 'dirty',
+    ]))
   })
 
   it('evicts the least-recently used attachment files to the configured quota', () => {

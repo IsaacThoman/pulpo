@@ -215,6 +215,11 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     useChat.getState().setComposerModel(id)
     setModelId(id)
   }
+  const restoreComposerModel = (draftModelId: string) => {
+    const restoredModelId = models.some((candidate) => candidate.id === draftModelId) ? draftModelId : defaultModelId
+    selectModel(restoredModelId)
+    return restoredModelId
+  }
 
   useEffect(() => {
     if (!networkReady) return
@@ -469,7 +474,15 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer
+              chatId={null}
+              modelId={modelId}
+              temporary={temporaryMode}
+              autoExpire={effectiveNewChatAutoExpire}
+              onRestoreModel={restoreComposerModel}
+              onRestoreAutoExpire={(enabled) => useSettings.getState().set('newChatAutoExpire', enabled)}
+              draftPersistence={!adminMode}
+            />
           </div>
         </>
       ) : (
@@ -513,6 +526,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                 messageEdit={messageEdit}
                 onMessageEditComplete={() => setMessageEdit(null)}
                 onEditStateChange={setComposerEditActive}
+                onRestoreModel={restoreComposerModel}
+                draftPersistence={!adminMode}
               />
             )}
           </div>

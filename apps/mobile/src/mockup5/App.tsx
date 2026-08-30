@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Alert,
   Appearance,
+  AppState,
   type ColorValue,
   DynamicColorIOS,
   FlatList,
@@ -96,7 +97,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
@@ -202,6 +203,16 @@ import {
 } from '../features/chat/optimisticAttachmentSend';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
+import {
+  deleteMobileComposerDraft,
+  deleteMobileRemoteDraft,
+  fetchMobileRemoteDraft,
+  loadMobileComposerDraft,
+  prepareMobileTemporaryAttachments,
+  saveMobileComposerDraft,
+  saveMobileRemoteDraft,
+  type MobileComposerDraft,
+} from '../features/chat/composerDrafts';
 import {
   historyChatSections,
   historyChatSummary,
@@ -3381,12 +3392,286 @@ function ChatView({
     syncError,
   });
   const isEmptyConversation = messages.length === 0;
+  const draftUserId = useSessionStore((state) => state.user?.id);
+  const draftInstanceUrl = useSessionStore((state) => state.instanceUrl);
+  const syncDrafts = usePreferencesStore((state) => state.syncDrafts);
+  const draftNamespace = useMemo(
+    () => draftUserId ? cacheNamespace(draftInstanceUrl, draftUserId) : null,
+    [draftInstanceUrl, draftUserId],
+  );
+  const draftScope = chatId ?? 'new';
+  const draftHydrationKey = draftNamespace ? `${draftNamespace}:${draftScope}` : `anonymous:${draftScope}`;
+  const draftEditorIdRef = useRef(`ios-draft-${Crypto.randomUUID()}`);
+  const hydratedDraftScopeRef = useRef<string | null>(null);
+  const localDraftDirtyRef = useRef(false);
+  const appliedRemoteDraftRevisionRef = useRef(0);
+  const previousDraftSyncRef = useRef(syncDrafts);
+  const temporaryDraftCleanupScopeRef = useRef<string | null>(null);
+  const draftSaveGenerationRef = useRef(0);
+  const pendingLocalDraftsRef = useRef(new Map<string, { namespace: string; scope: string; draft: MobileComposerDraft }>());
+  const [, setDraftHydrationTick] = useState(0);
+  const flushMobileDraft = useCallback((key: string) => {
+    const pending = pendingLocalDraftsRef.current.get(key);
+    if (!pending) return;
+    if (pending.draft.content.length === 0 && pending.draft.attachments.length === 0) {
+      void deleteMobileComposerDraft(pending.namespace, pending.scope);
+      return;
+    }
+    void saveMobileComposerDraft(pending.namespace, pending.scope, {
+      ...pending.draft,
+      dirty: localDraftDirtyRef.current,
+      serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
+      updatedAt: Date.now(),
+    });
+  }, []);
+  const remoteDraftQuery = useQuery({
+    queryKey: draftNamespace ? queryKeys.draft(draftNamespace, draftScope) : ['drafts', 'anonymous', draftScope],
+    queryFn: () => fetchMobileRemoteDraft(draftScope),
+    enabled: Boolean(draftNamespace && syncDrafts && !temporary && chatLoaded),
+    retry: false,
+  });
+  useEffect(() => {
+    const disabled = previousDraftSyncRef.current && !syncDrafts;
+    previousDraftSyncRef.current = syncDrafts;
+    if (!disabled) return;
+    appliedRemoteDraftRevisionRef.current = 0;
+    localDraftDirtyRef.current = false;
+    setAttachments((current) => current.flatMap((attachment) => {
+      if (!attachment.serverId) return [attachment];
+      if (!attachment.uri) return [];
+      return [{
+        ...attachment,
+        id: attachment.localId,
+        serverId: undefined,
+        state: 'local' as const,
+        attempt: 0,
+      }];
+    }));
+  }, [setAttachments, syncDrafts]);
+  useEffect(() => {
+    const key = draftHydrationKey;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') flushMobileDraft(key);
+    });
+    return () => {
+      subscription.remove();
+      flushMobileDraft(key);
+    };
+  }, [draftHydrationKey, flushMobileDraft]);
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
     // Re-roll when opening a new empty chat.
     // oxlint-disable-next-line react/exhaustive-deps -- chat identity intentionally re-rolls suggestions
     [chatId, isEmptyConversation, promptConfig],
   );
+
+  const applyMobileDraft = useCallback(async (draft: MobileComposerDraft) => {
+    onChangeInput(draft.content);
+    const selected = models.find((candidate) => candidate.id === draft.modelId);
+    if (selected) onSelectModel(selected);
+    const restoredModel = usePrototypeStore.getState().models.find((candidate) => candidate.id === selected?.id)
+      ?? usePrototypeStore.getState().models.find((candidate) => candidate.id === model.id);
+    if (!chatId && draft.autoExpire !== undefined) onAutoExpirationChange(draft.autoExpire);
+    if (restoredModel) {
+      const preferences = usePreferencesStore.getState();
+      void preferences.setPreference('generation', {
+        ...preferences.generation,
+        [restoredModel.id]: resolveGenerationSelections(restoredModel, draft.presetSelections),
+      });
+    }
+    setAgentEnabled(draft.agentMode && agentAvailable && Boolean(restoredModel?.agentEnabled));
+    const restorableAttachments = draft.attachments.flatMap((attachment): ComposerAttachment[] => {
+      if (attachment.serverId) return [{ ...attachment, id: attachment.serverId, state: 'ready', attempt: 0 }];
+      if (!attachment.uri) return [];
+      return [{ ...attachment, id: attachment.localId, state: 'local', attempt: 0, error: undefined }];
+    });
+    setAttachments(restorableAttachments);
+    draftOwnerRef.current = draft.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }, [agentAvailable, chatId, model.id, models, onAutoExpirationChange, onChangeInput, onSelectModel, setAttachments]);
+
+  useEffect(() => {
+    let cancelled = false;
+    hydratedDraftScopeRef.current = null;
+    localDraftDirtyRef.current = false;
+    appliedRemoteDraftRevisionRef.current = 0;
+    if (!draftNamespace || temporary || !chatLoaded) {
+      hydratedDraftScopeRef.current = draftHydrationKey;
+      setDraftHydrationTick((value) => value + 1);
+      return;
+    }
+    void loadMobileComposerDraft(draftNamespace, draftScope).then(async (draft) => {
+      if (cancelled) return;
+      if (draft) {
+        const restorable = syncDrafts ? draft : {
+          ...draft,
+          dirty: false,
+          serverRevision: undefined,
+          serverUpdatedAt: undefined,
+          attachments: draft.attachments.flatMap((attachment) => attachment.uri ? [{
+            ...attachment,
+            id: attachment.localId,
+            serverId: undefined,
+            state: 'local' as const,
+            attempt: 0,
+          }] : []),
+        };
+        localDraftDirtyRef.current = restorable.dirty;
+        appliedRemoteDraftRevisionRef.current = restorable.serverRevision ?? 0;
+        await applyMobileDraft(restorable);
+      } else {
+        onChangeInput('');
+        setAttachments([]);
+      }
+      if (!cancelled) {
+        hydratedDraftScopeRef.current = draftHydrationKey;
+        setDraftHydrationTick((value) => value + 1);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [applyMobileDraft, chatLoaded, draftHydrationKey, draftNamespace, draftScope, onChangeInput, setAttachments, syncDrafts, temporary]);
+
+  useEffect(() => {
+    if (!draftNamespace || !remoteDraftQuery.isSuccess || hydratedDraftScopeRef.current !== draftHydrationKey || localDraftDirtyRef.current) return;
+    const remote = remoteDraftQuery.data;
+    if (!remote) {
+      if (appliedRemoteDraftRevisionRef.current === 0) return;
+      appliedRemoteDraftRevisionRef.current = 0;
+      void deleteMobileComposerDraft(draftNamespace, draftScope);
+      onChangeInput('');
+      setAttachments([]);
+      return;
+    }
+    if (remote.revision <= appliedRemoteDraftRevisionRef.current) return;
+    appliedRemoteDraftRevisionRef.current = remote.revision;
+    void Promise.all(remote.attachments.map(async (attachment): Promise<ComposerAttachment> => {
+      const file = await downloadAttachment(attachment.id, attachment.name);
+      const localId = `synced:${attachment.id}:${Crypto.randomUUID()}`;
+      return {
+        id: attachment.id,
+        localId,
+        serverId: attachment.id,
+        name: attachment.name,
+        uri: file.uri,
+        mimeType: attachment.mimeType,
+        size: attachment.sizeBytes,
+        kind: attachmentKind(attachment.name, attachment.mimeType),
+        state: 'ready',
+        ownerId: `draft:${draftScope}`,
+        attempt: 0,
+        managed: true,
+      };
+    })).then(async (restoredAttachments) => {
+      const local: MobileComposerDraft = {
+        version: 1,
+        content: remote.content,
+        modelId: remote.modelId,
+        presetSelections: remote.presetSelections,
+        agentMode: remote.agentMode,
+        autoExpire: remote.autoExpire,
+        attachments: restoredAttachments,
+        editorId: remote.editorId,
+        dirty: false,
+        serverRevision: remote.revision,
+        serverUpdatedAt: remote.updatedAt,
+        updatedAt: Date.parse(remote.updatedAt),
+      };
+      await applyMobileDraft(local);
+      await saveMobileComposerDraft(draftNamespace, draftScope, local);
+    }).catch(() => undefined);
+  }, [applyMobileDraft, draftHydrationKey, draftNamespace, draftScope, onChangeInput, remoteDraftQuery.data, remoteDraftQuery.isSuccess, setAttachments]);
+
+  if (draftNamespace && hydratedDraftScopeRef.current === draftHydrationKey && !temporary && !messageEdit && !sending) {
+    pendingLocalDraftsRef.current.set(draftHydrationKey, {
+      namespace: draftNamespace,
+      scope: draftScope,
+      draft: {
+        version: 1,
+        content: input,
+        modelId: model.id,
+        presetSelections,
+        agentMode: activeAgentEnabled,
+        ...(!chatId ? { autoExpire } : {}),
+        attachments,
+        editorId: draftEditorIdRef.current,
+        dirty: syncDrafts,
+        updatedAt: Date.now(),
+      },
+    });
+  } else {
+    pendingLocalDraftsRef.current.delete(draftHydrationKey);
+  }
+
+  useEffect(() => {
+    if (!temporary) {
+      temporaryDraftCleanupScopeRef.current = null;
+      return;
+    }
+    if (!draftNamespace || temporaryDraftCleanupScopeRef.current === draftScope) return;
+    temporaryDraftCleanupScopeRef.current = draftScope;
+    void prepareMobileTemporaryAttachments(attachmentsRef.current).then(async (next) => {
+      setAttachments(next);
+      await deleteMobileComposerDraft(draftNamespace, draftScope);
+      if (syncDrafts) await deleteMobileRemoteDraft(draftScope).catch(() => undefined);
+    });
+  }, [draftNamespace, draftScope, setAttachments, syncDrafts, temporary]);
+
+  useEffect(() => {
+    if (!draftNamespace || hydratedDraftScopeRef.current !== draftHydrationKey) return;
+    if (temporary) {
+      return;
+    }
+    if (messageEdit || sending) return;
+    if (input.length > 0 || attachments.length > 0) localDraftDirtyRef.current = syncDrafts;
+    const generation = ++draftSaveGenerationRef.current;
+    const timer = setTimeout(() => {
+      if (input.length === 0 && attachments.length === 0) {
+        localDraftDirtyRef.current = false;
+        appliedRemoteDraftRevisionRef.current = 0;
+        void deleteMobileComposerDraft(draftNamespace, draftScope);
+        if (syncDrafts) void deleteMobileRemoteDraft(draftScope).catch(() => undefined);
+        return;
+      }
+      const snapshot: MobileComposerDraft = {
+        version: 1,
+        content: input,
+        modelId: model.id,
+        presetSelections,
+        agentMode: activeAgentEnabled,
+        ...(!chatId ? { autoExpire } : {}),
+        attachments,
+        editorId: draftEditorIdRef.current,
+        dirty: syncDrafts,
+        serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
+        updatedAt: Date.now(),
+      };
+      localDraftDirtyRef.current = syncDrafts;
+      void saveMobileComposerDraft(draftNamespace, draftScope, snapshot);
+      const readyAttachmentIds = attachments.flatMap((attachment) => attachment.state === 'ready' && attachment.serverId ? [attachment.serverId] : []);
+      if (!syncDrafts || (input.length === 0 && readyAttachmentIds.length === 0)) return;
+      void saveMobileRemoteDraft(draftScope, {
+        content: input,
+        modelId: model.id,
+        presetSelections,
+        agentMode: activeAgentEnabled,
+        ...(!chatId ? { autoExpire } : {}),
+        attachmentIds: readyAttachmentIds,
+        editorId: draftEditorIdRef.current,
+      }).then((remote) => {
+        if (draftSaveGenerationRef.current !== generation) return;
+        const pending = attachments.some((attachment) => attachment.state !== 'ready' || !attachment.serverId);
+        appliedRemoteDraftRevisionRef.current = remote.revision;
+        localDraftDirtyRef.current = pending;
+        return saveMobileComposerDraft(draftNamespace, draftScope, {
+          ...snapshot,
+          dirty: pending,
+          serverRevision: remote.revision,
+          serverUpdatedAt: remote.updatedAt,
+        });
+      }).catch(() => undefined);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [activeAgentEnabled, attachments, autoExpire, chatId, draftHydrationKey, draftNamespace, draftScope, input, messageEdit, model.id, networkOffline, presetSelections, sending, syncDrafts, temporary]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4000,6 +4285,8 @@ function ChatView({
         restoreSubmittedDraft();
         return;
       }
+      if (draftNamespace) void deleteMobileComposerDraft(draftNamespace, draftScope);
+      if (syncDrafts) void deleteMobileRemoteDraft(draftScope).catch(() => undefined);
       followSnapshot = null;
       for (const attachment of submittedDraft.attachments) {
         latestAttachmentsRef.current.delete(attachment.localId);
@@ -4012,7 +4299,7 @@ function ChatView({
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, draftNamespace, draftScope, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, syncDrafts, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();

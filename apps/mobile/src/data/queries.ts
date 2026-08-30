@@ -25,6 +25,8 @@ export const queryKeys = {
   folders: (namespace: string) => ['folders', namespace] as const,
   models: (namespace: string) => ['models', namespace] as const,
   settings: (namespace: string) => ['settings', namespace] as const,
+  drafts: (namespace: string) => ['drafts', namespace] as const,
+  draft: (namespace: string, scope: string) => ['drafts', namespace, scope] as const,
 }
 
 export function chatsQuery(namespace: string, localChatLimit = 50) {

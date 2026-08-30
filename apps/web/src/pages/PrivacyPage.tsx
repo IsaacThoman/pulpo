@@ -2,7 +2,7 @@ import { LegalPage } from './LegalPage'
 import { ui } from '@/i18n/ui'
 
 export function PrivacyPage() {
-  return <LegalPage title={ui("Privacy policy")} updated="August 27, 2026">
+  return <LegalPage title={ui("Privacy policy")} updated="August 30, 2026">
     <section>
       <h2>{ui("What Pulpo stores")}</h2>
       <p>{ui("Pulpo stores the account information you provide, including your name, email address, account identifier, and optional two-factor authentication configuration. Authenticator secrets are encrypted and recovery codes are stored as one-way hashes. If you add a passkey, the server stores its name, public key, credential identifier, usage counter, device and backup metadata, transports, and created and last-used dates. Your private passkey remains with your device or passkey provider and is never sent to Pulpo. Pulpo also stores content you choose to create or upload, such as conversations, prompts, generated responses, files, photos, folder organization, model preferences, and public-share settings.")}</p>
@@ -18,6 +18,7 @@ export function PrivacyPage() {
     <section>
       <h2>{ui("Data on your device")}</h2>
       <p>{ui("Your bearer session token is stored in iOS Keychain. The app keeps namespaced local copies of preferences, drafts, recent conversations, search documents, response cursors, queued offline-safe changes, and attachment cache metadata in SQLite. Downloaded attachment bytes are kept in the app cache. Signing out, switching instances, and the in-app data controls remove the relevant local data.")}</p>
+      <p>{ui("Unsent messages, composer choices, and draft attachments are stored locally. When draft sync is enabled, non-temporary drafts are also stored by your selected Pulpo server so your signed-in devices can restore them. Temporary drafts are never saved. Turning sync off keeps local drafts and removes their server copies.")}</p>
     </section>
     <section>
       <h2>{ui("Analytics and tracking")}</h2>

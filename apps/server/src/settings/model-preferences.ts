@@ -20,6 +20,7 @@ export function preferencesWithModelDefaults(values?: Record<string, unknown>): 
     animationSpeed: parsedAnimationSpeed.success ? parsedAnimationSpeed.data : animationSpeedSchema.parse(undefined),
     automaticChatExpiration: parsedAutomaticChatExpiration.success ? parsedAutomaticChatExpiration.data : '24h',
     newChatAutoExpire: parsedNewChatAutoExpire.success ? parsedNewChatAutoExpire.data : false,
+    syncDrafts: typeof values?.syncDrafts === 'boolean' ? values.syncDrafts : true,
     sidebarPins: sidebarPinsSchema.parse(values?.sidebarPins ?? {}),
     agentModes: parsedAgentModes.success ? parsedAgentModes.data : {},
     instructionPresetSelections: parsedInstructionPresetSelections.success ? parsedInstructionPresetSelections.data : {},

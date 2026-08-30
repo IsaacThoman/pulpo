@@ -34,6 +34,8 @@ import {
   queuedMessages,
   requestLogs,
   responses,
+  composerDrafts,
+  composerDraftAttachments,
 } from './schema.js'
 
 describe('user-owned operational records', () => {
@@ -59,12 +61,27 @@ describe('user-owned operational records', () => {
     ['five-hour usage periods', fiveHourUsagePeriods],
     ['memory documents', userMemoryDocuments],
     ['memory document revisions', userMemoryDocumentRevisions],
+    ['composer drafts', composerDrafts],
   ])('deletes %s when their user is deleted', (_name, table) => {
     const userForeignKey = getTableConfig(table as PgTable).foreignKeys.find((foreignKey) =>
       foreignKey.getName().endsWith('_user_id_users_id_fk'),
     )
 
     expect(userForeignKey?.onDelete).toBe('cascade')
+  })
+
+  it('normalizes ordered draft attachment references and cascades thread cleanup', () => {
+    const drafts = getTableConfig(composerDrafts)
+    const draftAttachments = getTableConfig(composerDraftAttachments)
+    expect(drafts.indexes.find((index) => index.config.name === 'composer_drafts_user_scope_unique')?.config.unique).toBe(true)
+    expect(drafts.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'composer_drafts_scope_check',
+      'composer_drafts_content_length_check',
+      'composer_drafts_revision_check',
+    ]))
+    expect(drafts.foreignKeys.find((key) => key.getName().includes('chat_id_chats'))?.onDelete).toBe('cascade')
+    expect(draftAttachments.primaryKeys).toHaveLength(1)
+    expect(draftAttachments.indexes.find((index) => index.config.name === 'composer_draft_attachments_position_unique')?.config.unique).toBe(true)
   })
 
   it('enforces normalized friendship pairs and non-self blocks', () => {

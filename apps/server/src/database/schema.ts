@@ -533,6 +533,35 @@ export const attachments = pgTable('attachments', {
   uniqueIndex('attachments_response_tool_unique').on(table.sourceResponseId, table.sourceToolCallId),
 ])
 
+export const composerDrafts = pgTable('composer_drafts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  scope: text('scope').notNull(),
+  content: text('content').notNull().default(''),
+  modelId: text('model_id').notNull(),
+  presetSelections: jsonb('preset_selections').$type<Record<string, string>>().notNull().default({}),
+  agentMode: boolean('agent_mode').notNull().default(false),
+  autoExpire: boolean('auto_expire'),
+  editorId: text('editor_id').notNull(),
+  revision: integer('revision').notNull().default(1),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('composer_drafts_user_scope_unique').on(table.userId, table.scope),
+  check('composer_drafts_scope_check', sql`(${table.scope} = 'new' and ${table.chatId} is null) or (${table.chatId} is not null and ${table.scope} = ${table.chatId}::text)`),
+  check('composer_drafts_content_length_check', sql`char_length(${table.content}) <= 1000000`),
+  check('composer_drafts_revision_check', sql`${table.revision} > 0`),
+])
+
+export const composerDraftAttachments = pgTable('composer_draft_attachments', {
+  draftId: uuid('draft_id').notNull().references(() => composerDrafts.id, { onDelete: 'cascade' }),
+  attachmentId: uuid('attachment_id').notNull().references(() => attachments.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.draftId, table.attachmentId] }),
+  uniqueIndex('composer_draft_attachments_position_unique').on(table.draftId, table.position),
+])
+
 export const workspaceLeases = pgTable('workspace_leases', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),

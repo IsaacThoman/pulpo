@@ -144,8 +144,10 @@ export function ChatDataBridge() {
       const batch = pendingRevision
       pendingRevision = undefined
       if (!batch) return
-      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
-      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
+      if (batch.chatIds.length || batch.accountOnlyRevisions.length) {
+        void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
+        void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
+      }
       for (const changedChatId of batch.chatIds) {
         void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
       }
