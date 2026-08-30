@@ -13,6 +13,8 @@ export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
   if (!attempt || TERMINAL.has(attempt.status)) return
   const controller = new AbortController()
   let expired = false
+  let deviceCodePersistenceFailed = false
+  let deviceCodePersistence: Promise<void> | undefined
   const cancellationPoll = setInterval(() => {
     void db.select({ status: codexLoginAttempts.status, expiresAt: codexLoginAttempts.expiresAt })
       .from(codexLoginAttempts).where(eq(codexLoginAttempts.id, data.attemptId)).limit(1)
@@ -34,12 +36,20 @@ export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
       notify: (event: AuthEvent) => {
         if (event.type !== 'device_code') return
         const expiresAt = new Date(Date.now() + (event.expiresInSeconds ?? 900) * 1_000)
-        void db.update(codexLoginAttempts).set({
-          status: 'waiting', userCode: event.userCode, verificationUri: event.verificationUri,
-          intervalSeconds: event.intervalSeconds ?? 5, expiresAt, updatedAt: new Date(),
-        }).where(and(eq(codexLoginAttempts.id, data.attemptId), eq(codexLoginAttempts.status, 'queued')))
+        deviceCodePersistence = (async () => {
+          const [updated] = await db.update(codexLoginAttempts).set({
+            status: 'waiting', userCode: event.userCode, verificationUri: event.verificationUri,
+            intervalSeconds: event.intervalSeconds ?? 5, expiresAt, updatedAt: new Date(),
+          }).where(and(eq(codexLoginAttempts.id, data.attemptId), eq(codexLoginAttempts.status, 'queued')))
+            .returning({ id: codexLoginAttempts.id })
+          if (!updated) throw new Error('Codex login attempt is no longer queued')
+        })().catch(() => {
+          deviceCodePersistenceFailed = true
+          controller.abort()
+        })
       },
     })
+    await deviceCodePersistence
     const [currentAttempt] = await db.select({ status: codexLoginAttempts.status, expiresAt: codexLoginAttempts.expiresAt })
       .from(codexLoginAttempts).where(eq(codexLoginAttempts.id, data.attemptId)).limit(1)
     if (!currentAttempt || currentAttempt.status === 'cancelled' || currentAttempt.expiresAt && currentAttempt.expiresAt <= new Date()) {
@@ -67,7 +77,9 @@ export async function processCodexLogin(data: CodexLoginJob): Promise<void> {
       .where(eq(codexLoginAttempts.id, data.attemptId)).limit(1)
     await db.update(codexLoginAttempts).set({
       status: current?.status === 'cancelled' ? 'cancelled' : aborted && expired ? 'expired' : 'failed',
-      error: current?.status === 'cancelled' ? null : aborted && expired
+      error: current?.status === 'cancelled' ? null : deviceCodePersistenceFailed
+        ? 'Codex sign-in could not be started. Try connecting again.'
+        : aborted && expired
         ? 'The device code expired. Start a new connection attempt.'
         : 'Codex sign-in could not be completed. Try connecting again.',
       updatedAt: new Date(),
