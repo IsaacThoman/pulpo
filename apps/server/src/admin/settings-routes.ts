@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -410,7 +411,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
     if (confirmation !== 'RESTORE') throw new AppError(400, 'restore_confirmation_required', 'Type RESTORE to confirm replacement')
     const id = newId(); const objectKey = `restore-uploads/${admin.id}/${id}.tar.gz`; const bytes = await part.toBuffer()
     await getBlobStore().put(objectKey, bytes, { contentType: part.mimetype, contentLength: bytes.byteLength })
-    await db.insert(backupJobs).values({ id, userId: admin.id, operation: 'restore', objectKey, originalName: part.filename })
+    await db.insert(backupJobs).values({ id, userId: admin.id, operation: 'restore', objectKey, originalName: part.filename, archiveSizeBytes: bytes.byteLength, archiveChecksum: createHash('sha256').update(bytes).digest('hex') })
     await maintenanceQueue.add('restore', { type: 'restore', payload: { jobId: id } }, { jobId: `restore-${id}` })
     reply.code(202); return { id, status: 'queued' }
   })

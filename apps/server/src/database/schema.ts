@@ -695,11 +695,13 @@ export const backupJobs = pgTable('backup_jobs', {
   status: text('status').notNull().default('queued'),
   progress: integer('progress').notNull().default(0),
   objectKey: text('object_key'),
+  archiveSizeBytes: bigint('archive_size_bytes', { mode: 'number' }),
+  archiveChecksum: text('archive_checksum'),
   originalName: text('original_name'),
   error: text('error'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   ...timestamps,
-})
+}, (table) => [index('backup_jobs_expiry_idx').on(table.expiresAt)])
 
 export const userMemoryDocuments = pgTable('user_memory_documents', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),

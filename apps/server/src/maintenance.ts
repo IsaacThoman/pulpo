@@ -2,7 +2,7 @@ import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
 import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
 import {
-  applicationSettings, attachments, chats, dailyUsageRollups, exportJobs, idempotencyRecords,
+  applicationSettings, attachments, backupJobs, chats, dailyUsageRollups, exportJobs, idempotencyRecords,
   passwordResetTokens, responses, sessions, usageEvents, users,
   requestLogs, ocrAttempts, ocrCacheEntries,
 } from './database/schema.js'
@@ -12,6 +12,7 @@ import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
 import { parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
 import { purgeExpiredMemoryDocumentRevisions } from './memory-document/service.js'
+import { deleteExpiredBackupObjects } from './admin/backup-retention.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
 
@@ -125,6 +126,9 @@ export async function runCleanup(): Promise<void> {
   const expiredExports = await db.select().from(exportJobs).where(lt(exportJobs.expiresAt, now))
   for (const job of expiredExports) if (job.objectKey) await getBlobStore().delete(job.objectKey).catch(() => undefined)
   if (expiredExports.length) await db.delete(exportJobs).where(inArray(exportJobs.id, expiredExports.map((row) => row.id)))
+  const expiredBackups = await db.select().from(backupJobs).where(lt(backupJobs.expiresAt, now))
+  const deletedBackupIds = await deleteExpiredBackupObjects(expiredBackups, (key) => getBlobStore().delete(key))
+  if (deletedBackupIds.length) await db.delete(backupJobs).where(inArray(backupJobs.id, deletedBackupIds))
   await reconcileWorkspaceLeases()
   await purgePendingChats()
 }
