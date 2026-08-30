@@ -3,7 +3,7 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot, LatestValueQueue } from '@pulpo/client-core'
 import { useShallow } from 'zustand/react/shallow'
-import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
+import { cacheNamespace, cachedChats, completeOutboxEntity, detachAllComposerDraftServerReferences, getValue, pruneCachedChatScope } from '../../../data/database'
 import { enqueueCacheWrite } from '../../../data/writeBehind'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, queryKeys, type ModelCatalog } from '../../../data/queries'
 import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
@@ -169,6 +169,7 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
+          syncDrafts: preferences.syncDrafts,
         },
       }
     })
@@ -281,6 +282,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     trashRetention: state.trashRetention,
     automaticChatExpiration: state.automaticChatExpiration,
     newChatAutoExpire: state.newChatAutoExpire,
+    syncDrafts: state.syncDrafts,
     favoriteModelIds: state.favoriteModelIds,
     providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
@@ -297,6 +299,17 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const pickerEnabled = scopeOwned && modelPickerScopeReady
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
   const serverHydrated = useRef(false)
+  const detachedDraftNamespaceRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (preferences.syncDrafts) {
+      detachedDraftNamespaceRef.current = null
+      return
+    }
+    if (!scopeOwned || detachedDraftNamespaceRef.current === namespace) return
+    detachedDraftNamespaceRef.current = namespace
+    void detachAllComposerDraftServerReferences(namespace)
+  }, [namespace, preferences.syncDrafts, scopeOwned])
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
@@ -425,6 +438,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
+          syncDrafts: preferences.syncDrafts,
         },
         defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
         models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,

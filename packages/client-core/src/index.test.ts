@@ -184,6 +184,15 @@ describe('client core', () => {
     })
   })
 
+  it('keeps draft invalidations scoped away from generic account refreshes', () => {
+    expect(mergeRevisionInvalidation(undefined, { revision: 14, scopes: ['drafts'] })).toEqual({
+      revision: 14,
+      chatIds: [],
+      scopes: ['drafts'],
+      accountOnlyRevisions: [],
+    })
+  })
+
   it('resolves preset defaults and filters parameters', async () => {
     const result = await resolvePresetActions('model', {}, async () => ({
       id: 'model', enabled: true, allowedParameters: ['reasoning_effort'],

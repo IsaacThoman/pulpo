@@ -1580,6 +1580,41 @@ export const startChatSchema = z.object({
 })
 export type StartChatInput = z.infer<typeof startChatSchema>
 
+export const composerDraftAttachmentSchema = z.object({
+  id: idSchema,
+  name: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number().int().nonnegative(),
+})
+export type ComposerDraftAttachment = z.infer<typeof composerDraftAttachmentSchema>
+
+const composerDraftBaseFields = {
+  content: z.string().max(1_000_000),
+  modelId: z.string().min(1),
+  presetSelections: z.record(z.string(), z.string()).default({}),
+  agentMode: z.boolean().default(false),
+  autoExpire: z.boolean().optional(),
+  editorId: z.string().min(1).max(128),
+}
+
+export const composerDraftInputSchema = z.object({
+  ...composerDraftBaseFields,
+  attachmentIds: attachmentIdListSchema.default([]),
+}).refine((value) => value.content.length > 0 || value.attachmentIds.length > 0, {
+  message: 'Draft must include text or attachments',
+  path: ['content'],
+})
+export type ComposerDraftInput = z.infer<typeof composerDraftInputSchema>
+
+export const composerDraftSchema = z.object({
+  ...composerDraftBaseFields,
+  scope: z.union([z.literal('new'), idSchema]),
+  attachments: z.array(composerDraftAttachmentSchema),
+  revision: z.number().int().positive(),
+  updatedAt: isoDateSchema,
+})
+export type ComposerDraft = z.infer<typeof composerDraftSchema>
+
 export const syncRequestSchema = z.object({
   tabId: z.string().min(1).max(128),
   accountRevision: z.number().int().nonnegative(),
@@ -1588,7 +1623,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'drafts', 'friends', 'pool', 'billing'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({

@@ -11,6 +11,7 @@ import { useSettings } from '@/stores/settings'
 import { useChat, waitForResponseDispatch } from '@/stores/chat'
 import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
 import { ui } from '@/i18n/ui'
+import { deleteLocalComposerDraft, deleteRemoteComposerDraft } from '@/lib/local-first/composer-drafts'
 
 export type UploadStatus = 'uploading' | 'ready' | 'error'
 
@@ -45,6 +46,7 @@ export interface PendingSubmission {
   placement: 'bubble' | 'queue'
   status: 'waiting' | 'dispatching' | 'recovery'
   recoveryError?: string
+  draftScope: string
 }
 
 interface AddFilesOptions {
@@ -155,6 +157,12 @@ function referencedChatIds(localId: string): string[] {
 
 function scheduleChat(chatId: string): void {
   queueMicrotask(() => void processChat(chatId))
+}
+
+function clearSubmissionDraft(submission: PendingSubmission): void {
+  const userId = useAuth.getState().user?.id
+  if (userId) void deleteLocalComposerDraft(userId, submission.draftScope).catch(() => undefined)
+  if (useSettings.getState().syncDrafts) void deleteRemoteComposerDraft(submission.draftScope).catch(() => undefined)
 }
 
 async function uploadRecord(localId: string, attempt: number): Promise<void> {
@@ -333,7 +341,10 @@ async function processChat(chatId: string): Promise<void> {
           submissions: current.submissions.filter((item) => item.id !== submission.id),
         }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
-        await waitForResponseDispatch(submission.responseId).catch(() => undefined)
+        try {
+          await waitForResponseDispatch(submission.responseId)
+          clearSubmissionDraft(submission)
+        } catch { /* recovery retains the durable draft */ }
         continue
       }
 
@@ -349,6 +360,7 @@ async function processChat(chatId: string): Promise<void> {
           submissions: current.submissions.filter((item) => item.id !== submission.id),
         }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
+        clearSubmissionDraft(submission)
       } catch (error) {
         recoverSubmission(submission, error instanceof Error ? error.message : 'Unable to queue message')
         return
@@ -470,6 +482,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       createdAt,
       placement,
       status: 'waiting',
+      draftScope: draft.chatId ?? 'new',
     }
     if (placement === 'queue') renderSubmissionSurface(submission, records)
     set((state) => ({ submissions: [...state.submissions, submission] }))

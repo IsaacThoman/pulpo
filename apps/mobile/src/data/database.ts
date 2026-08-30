@@ -23,9 +23,27 @@ import { createOperationQueue } from './operationQueue'
 let databasePromise: Promise<SQLite.SQLiteDatabase> | undefined
 const enqueueDatabaseOperation = createOperationQueue()
 
+async function ensureComposerDraftColumns(database: SQLite.SQLiteDatabase): Promise<void> {
+  const columns = new Set((await database.getAllAsync<{ name: string }>('PRAGMA table_info(drafts)')).map((column) => column.name))
+  const additions = [
+    ['model_id', 'TEXT'],
+    ['preset_selections', "TEXT NOT NULL DEFAULT '{}'"],
+    ['agent_mode', 'INTEGER NOT NULL DEFAULT 0'],
+    ['auto_expire', 'INTEGER'],
+    ['editor_id', 'TEXT'],
+    ['server_revision', 'INTEGER'],
+    ['server_updated_at', 'TEXT'],
+    ['dirty', 'INTEGER NOT NULL DEFAULT 1'],
+  ] as const
+  for (const [name, definition] of additions) {
+    if (!columns.has(name)) await database.execAsync(`ALTER TABLE drafts ADD COLUMN ${name} ${definition}`)
+  }
+}
+
 export async function mobileDatabase(): Promise<SQLite.SQLiteDatabase> {
   databasePromise ??= SQLite.openDatabaseAsync('pulpo-mobile.db').then(async (database) => {
     await database.execAsync(MOBILE_SCHEMA)
+    await ensureComposerDraftColumns(database)
     const current = await database.getFirstAsync<{ version: number }>(
       'SELECT version FROM migrations WHERE version = ?', MOBILE_DATABASE_VERSION,
     )
@@ -73,13 +91,24 @@ export async function clearNamespace(namespace: string): Promise<string[]> {
     const files = await database.getAllAsync<{ local_uri: string }>(
       'SELECT local_uri FROM attachment_cache WHERE namespace = ?', namespace,
     )
+    const draftRows = await database.getAllAsync<{ attachments: string }>(
+      'SELECT attachments FROM drafts WHERE namespace = ?', namespace,
+    )
     await database.withTransactionAsync(async () => {
       for (const table of ['kv', 'drafts', 'response_cursors', 'outbox', 'chat_cache', 'chat_access', 'attachment_cache']) {
         await database.runAsync(`DELETE FROM ${table} WHERE namespace = ?`, namespace)
       }
       await database.runAsync('DELETE FROM chat_fts WHERE namespace = ?', namespace)
     })
-    return files.map((file) => file.local_uri)
+    const draftFiles = draftRows.flatMap((row) => {
+      try {
+        return (JSON.parse(row.attachments) as Array<{ uri?: unknown }>).flatMap((attachment) =>
+          typeof attachment.uri === 'string' && attachment.uri.includes('/composer-drafts/') ? [attachment.uri] : [])
+      } catch {
+        return []
+      }
+    })
+    return [...files.map((file) => file.local_uri), ...draftFiles]
   })
 }
 
@@ -195,6 +224,128 @@ export async function loadDraft<T>(namespace: string, chatId: string): Promise<{
       'SELECT body, attachments FROM drafts WHERE namespace = ? AND chat_id = ?', namespace, chatId,
     )
     return row ? { body: row.body, attachments: JSON.parse(row.attachments) as T[] } : null
+  })
+}
+
+export interface StoredComposerDraft<T> {
+  body: string
+  attachments: T[]
+  modelId: string | null
+  presetSelections: Record<string, string>
+  agentMode: boolean
+  autoExpire: boolean | undefined
+  editorId: string | null
+  serverRevision: number | null
+  serverUpdatedAt: string | null
+  dirty: boolean
+  updatedAt: number
+}
+
+export async function saveComposerDraftRecord<T>(
+  namespace: string,
+  scope: string,
+  draft: StoredComposerDraft<T>,
+): Promise<void> {
+  await withDatabase(async (database) => {
+    if (!draft.body && draft.attachments.length === 0) {
+      await database.runAsync('DELETE FROM drafts WHERE namespace = ? AND chat_id = ?', namespace, scope)
+      return
+    }
+    await database.runAsync(
+      `INSERT INTO drafts(
+        namespace, chat_id, body, attachments, model_id, preset_selections, agent_mode,
+        auto_expire, editor_id, server_revision, server_updated_at, dirty, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(namespace, chat_id) DO UPDATE SET
+        body = excluded.body,
+        attachments = excluded.attachments,
+        model_id = excluded.model_id,
+        preset_selections = excluded.preset_selections,
+        agent_mode = excluded.agent_mode,
+        auto_expire = excluded.auto_expire,
+        editor_id = excluded.editor_id,
+        server_revision = excluded.server_revision,
+        server_updated_at = excluded.server_updated_at,
+        dirty = excluded.dirty,
+        updated_at = excluded.updated_at`,
+      namespace,
+      scope,
+      draft.body,
+      JSON.stringify(draft.attachments),
+      draft.modelId,
+      JSON.stringify(draft.presetSelections),
+      draft.agentMode ? 1 : 0,
+      draft.autoExpire === undefined ? null : draft.autoExpire ? 1 : 0,
+      draft.editorId,
+      draft.serverRevision,
+      draft.serverUpdatedAt,
+      draft.dirty ? 1 : 0,
+      draft.updatedAt,
+    )
+  })
+}
+
+export async function loadComposerDraftRecord<T>(namespace: string, scope: string): Promise<StoredComposerDraft<T> | null> {
+  return withDatabase(async (database) => {
+    const row = await database.getFirstAsync<{
+      body: string
+      attachments: string
+      model_id: string | null
+      preset_selections: string
+      agent_mode: number
+      auto_expire: number | null
+      editor_id: string | null
+      server_revision: number | null
+      server_updated_at: string | null
+      dirty: number
+      updated_at: number
+    }>(`SELECT body, attachments, model_id, preset_selections, agent_mode, auto_expire,
+      editor_id, server_revision, server_updated_at, dirty, updated_at
+      FROM drafts WHERE namespace = ? AND chat_id = ?`, namespace, scope)
+    if (!row) return null
+    return {
+      body: row.body,
+      attachments: JSON.parse(row.attachments) as T[],
+      modelId: row.model_id,
+      presetSelections: JSON.parse(row.preset_selections) as Record<string, string>,
+      agentMode: row.agent_mode === 1,
+      autoExpire: row.auto_expire === null ? undefined : row.auto_expire === 1,
+      editorId: row.editor_id,
+      serverRevision: row.server_revision,
+      serverUpdatedAt: row.server_updated_at,
+      dirty: row.dirty === 1,
+      updatedAt: row.updated_at,
+    }
+  })
+}
+
+export async function detachAllComposerDraftServerReferences(namespace: string): Promise<void> {
+  await withDatabase(async (database) => {
+    const rows = await database.getAllAsync<{ chat_id: string; attachments: string }>(
+      'SELECT chat_id, attachments FROM drafts WHERE namespace = ?', namespace,
+    )
+    await database.withTransactionAsync(async () => {
+      for (const row of rows) {
+        let localAttachments: Array<Record<string, unknown>> = []
+        try {
+          localAttachments = (JSON.parse(row.attachments) as Array<Record<string, unknown>>).flatMap((attachment) => {
+            if (typeof attachment.uri !== 'string') return []
+            return [{
+              ...attachment,
+              id: attachment.localId,
+              serverId: undefined,
+              state: 'local',
+              attempt: 0,
+            }]
+          })
+        } catch { /* discard malformed legacy attachment metadata */ }
+        await database.runAsync(
+          `UPDATE drafts SET attachments = ?, server_revision = NULL, server_updated_at = NULL, dirty = 0
+           WHERE namespace = ? AND chat_id = ?`,
+          JSON.stringify(localAttachments), namespace, row.chat_id,
+        )
+      }
+    })
   })
 }
 

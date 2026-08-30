@@ -105,7 +105,7 @@ beforeEach(() => {
     profileColor: null, role: 'user', initials: 'T', balanceMicros: 1_000,
     storageLimitBytes: 1_000, blocked: false, stateRevision: 0, createdAt,
   } })
-  useSettings.setState({ agentModes: { [model.id]: false }, generation: {} })
+  useSettings.setState({ agentModes: { [model.id]: false }, generation: {}, syncDrafts: false })
   useCatalog.setState({ models: [model], loaded: true, agentAvailable: true })
   useChat.setState({
     chats: [{

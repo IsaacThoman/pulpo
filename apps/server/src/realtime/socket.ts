@@ -32,6 +32,7 @@ export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
   'models',
   'usage',
   'settings',
+  'drafts',
   'friends',
   'pool',
   'billing',
