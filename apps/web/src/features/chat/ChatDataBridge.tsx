@@ -17,26 +17,16 @@ import { queryClient } from '@/lib/query-client'
 import { useAuth } from '@/stores/auth'
 import { mergeServerChatDetails, useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
 import { useCatalog } from '@/stores/catalog'
-import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
+import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
 function invalidateStateScope(scope: StateInvalidationScope, userId: string): void {
-  if (scope === 'friends') {
-    void queryClient.invalidateQueries({ queryKey: ['friends', userId] })
-    void queryClient.invalidateQueries({ queryKey: ['friends-pending-count', userId] })
-    void queryClient.invalidateQueries({ queryKey: ['friends-usage', userId] })
-    return
+  for (const queryKey of stateInvalidationQueryKeys(scope, userId)) {
+    void queryClient.invalidateQueries({ queryKey })
   }
-  if (scope === 'pool') {
-    void queryClient.invalidateQueries({ queryKey: ['pool', userId] })
-    void queryClient.invalidateQueries({ queryKey: ['pool-pending-count', userId] })
-    void queryClient.invalidateQueries({ queryKey: ['pool-usage', userId] })
-    return
-  }
-  void queryClient.invalidateQueries({ queryKey: [scope, userId] })
 }
 
 function tabId(): string {
@@ -254,6 +244,7 @@ export function ChatDataBridge() {
       }
       void flushOutbox(userId).then(() => Promise.all([
         queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['folders', userId] }),
         queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
       ]))
     }

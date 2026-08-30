@@ -5,6 +5,7 @@ import {
   groupResponseEvents,
   isTerminalSnapshot,
   REALTIME_RENDER_INTERVAL_MS,
+  stateInvalidationQueryKeys,
   syncInvalidationScopes,
   takeContiguousResponseEvents,
 } from './realtimeSync'
@@ -54,5 +55,11 @@ describe('mobile realtime sync helpers', () => {
     expect(isTerminalSnapshot(snapshot('completed'))).toBe(true)
     const result = { snapshots: [snapshot('completed')], events: [], invalidate: [], accountRevision: 1 } as SyncResult
     expect(syncInvalidationScopes(result)).toContain('chats')
+  })
+
+  it('maps folder invalidations to the account folder query', () => {
+    expect(stateInvalidationQueryKeys('folders', 'instance|user')).toEqual([
+      ['folders', 'instance|user'],
+    ])
   })
 })

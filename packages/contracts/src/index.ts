@@ -1588,7 +1588,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'models', 'usage', 'settings', 'friends', 'pool', 'billing'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({

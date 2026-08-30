@@ -174,12 +174,12 @@ describe('client core', () => {
   })
 
   it('coalesces scoped revisions without treating them as generic account changes', () => {
-    const friends = mergeRevisionInvalidation(undefined, { revision: 12, scopes: ['friends'] })
-    const combined = mergeRevisionInvalidation(friends, { revision: 13, scopes: ['usage', 'friends'] })
+    const folders = mergeRevisionInvalidation(undefined, { revision: 12, scopes: ['folders'] })
+    const combined = mergeRevisionInvalidation(folders, { revision: 13, scopes: ['usage', 'folders'] })
     expect(combined).toEqual({
       revision: 13,
       chatIds: [],
-      scopes: ['friends', 'usage'],
+      scopes: ['folders', 'usage'],
       accountOnlyRevisions: [],
     })
   })
