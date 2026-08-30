@@ -1,6 +1,6 @@
 import { Agent, type AgentMessage } from '@earendil-works/pi-agent-core'
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy'
-import type { AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
+import type { Api, AssistantMessage, Context, Model } from '@earendil-works/pi-ai'
 import type { CompactionItem, RecallItem, ResponseSnapshot } from '@pulpo/contracts'
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
@@ -71,6 +71,8 @@ import { createProviderCostCapture } from './provider-cost.js'
 import { orderedAgentTurnPayloads } from './detailed-payloads.js'
 import { loadAgentPromptImages } from './prompt-images.js'
 import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
+import { CODEX_PROVIDER_ID } from '../codex/constants.js'
+import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -239,12 +241,20 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     const attachment = attachmentsById.get(id)
     return attachment ? [attachment] : []
   })
-  type RuntimeModel = { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect; apiKey: string; piModel: Model<'openai-responses'> }
-  const runtime = (model: typeof models.$inferSelect, provider: typeof providerConnections.$inferSelect): RuntimeModel => ({
-    model, provider,
-    apiKey: decryptSecret(provider.encryptedApiKey, config.ENCRYPTION_KEY),
-    piModel: { id: model.upstreamModelId, name: model.name, api: 'openai-responses', provider: 'openai', baseUrl: provider.baseUrl, reasoning: true, input: ['text', 'image'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: model.contextWindow, maxTokens: model.maxOutputTokens },
-  })
+  const codexModels = createCodexModels(record.response.userId)
+  type RuntimeModel = { model: typeof models.$inferSelect; provider: typeof providerConnections.$inferSelect; apiKey?: string; piModel: Model<Api>; codex: boolean }
+  const runtime = (model: typeof models.$inferSelect, provider: typeof providerConnections.$inferSelect): RuntimeModel => {
+    if (provider.id === CODEX_PROVIDER_ID) {
+      const piModel = codexModels.getModel('openai-codex', model.upstreamModelId)
+      if (!piModel) throw new Error('The pinned Pi Codex catalog no longer contains this model')
+      return { model, provider, piModel, codex: true }
+    }
+    return {
+      model, provider, codex: false,
+      apiKey: decryptSecret(provider.encryptedApiKey, config.ENCRYPTION_KEY),
+      piModel: { id: model.upstreamModelId, name: model.name, api: 'openai-responses', provider: 'openai', baseUrl: provider.baseUrl, reasoning: true, input: ['text', 'image'], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: model.contextWindow, maxTokens: model.maxOutputTokens },
+    }
+  }
   const runtimes = [runtime(record.model, record.provider)]
   const visited = new Set([record.model.id]); let fallbackId = record.model.fallbackModelId
   while (fallbackId && runtimes.length < MAX_MODEL_CHAIN_LENGTH && !visited.has(fallbackId)) {
@@ -456,7 +466,6 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     }
     await updateCompaction(base)
     try {
-      const client = createCatalogModelClient(active)
       const compactionInput = [{ role: 'user' as const, content: `${agentCompactionPrompt(phase)}\n\n${JSON.stringify(older)}` }]
       const maxOutputTokens = Math.min(2_000, active.model.maxOutputTokens)
       const billed = await trackBilledInternalModelCall({
@@ -468,12 +477,29 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         requestInput: compactionInput,
         maxOutputTokens,
         required: true,
-        invoke: () => client.responses.create({
-          model: active.model.upstreamModelId,
-          input: compactionInput,
-          store: false,
-          max_output_tokens: maxOutputTokens,
-        }),
+        invoke: async () => {
+          if (active.codex) {
+            const result = await codexModels.completeSimple(active.piModel, {
+              messages: [{ role: 'user', content: compactionInput[0]!.content, timestamp: Date.now() }],
+            }, {
+              reasoning: 'low', maxTokens: maxOutputTokens, maxRetries: 0, transport: 'auto',
+              sessionId: `pulpo:${record.response.userId}:${record.response.chatId}:compaction`,
+            })
+            return {
+              id: result.responseId,
+              usage: {
+                inputTokens: result.usage.input + result.usage.cacheRead + result.usage.cacheWrite,
+                cachedInputTokens: result.usage.cacheRead, cacheWriteTokens: result.usage.cacheWrite,
+                outputTokens: result.usage.output, reasoningTokens: result.usage.reasoning ?? 0, totalTokens: result.usage.totalTokens,
+              },
+              output_text: result.content.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n'),
+            }
+          }
+          const client = createCatalogModelClient(active as RuntimeModel & { apiKey: string; piModel: Model<'openai-responses'> })
+          return client.responses.create({
+            model: active.model.upstreamModelId, input: compactionInput, store: false, max_output_tokens: maxOutputTokens,
+          })
+        },
       })
       if ('skipped' in billed) throw new Error('Insufficient balance for conversation compaction')
       sidecarCostMicros += billed.costMicros
@@ -665,12 +691,8 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       )
       const providerCostCapture = active.model.useProviderCost ? createProviderCostCapture() : undefined
       if (providerCostCapture) turnProviderCosts.set(modelTurns, providerCostCapture.costMicros)
-      return streams.streamSimple(
-        active.piModel,
-        preparedContext,
-        {
+      const streamOptions = {
           ...options,
-          apiKey: active.apiKey,
           reasoning: resolvedParameters.reasoning,
           samplingParams: agentSamplingParameters(active.provider.baseUrl, {
             ...options?.samplingParams,
@@ -684,14 +706,25 @@ async function runAgentGeneration(responseId: string): Promise<void> {
           headers: cacheOptions.headers,
           fetch: providerCostCapture?.fetch,
           onPayload: detailedPayloadsEnabled
-            ? async (payload, model) => {
+            ? async (payload: unknown, model: Model<Api>) => {
                 const transformed = await options?.onPayload?.(payload, model)
                 turnRequestPayloads.set(modelTurns, transformed ?? payload)
                 return transformed
               }
             : options?.onPayload,
-        },
-      )
+        }
+      if (active.codex) {
+        return codexModels.streamSimple(active.piModel, preparedContext, {
+          ...streamOptions,
+          samplingParams: undefined,
+          transport: 'auto',
+          sessionId: `pulpo:${record.response.userId}:${record.response.chatId}`,
+        })
+      }
+      return streams.streamSimple(active.piModel as Model<'openai-responses'>, preparedContext, {
+        ...streamOptions,
+        apiKey: active.apiKey,
+      })
     },
     toolExecution: 'sequential',
     beforeToolCall: async () => {
@@ -966,8 +999,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await db.update(agentRuns).set({ status: 'completed', context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, modelTurns, toolCalls, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
-    const postTaskCostMicros = await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch((error) => {
-      console.warn(JSON.stringify({ level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId, error: error instanceof Error ? error.message : String(error) }))
+    const postTaskCostMicros = await runPostResponseTasks(record, finalResponder.runtime, completed?.output as unknown[] ?? [], requestLog.id).catch(async (error) => {
+      if (finalResponder.runtime.codex && codexErrorRequiresReauthentication(error)) {
+        await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
+      }
+      console.warn(JSON.stringify({
+        level: 'warn', service: 'pulpo-worker', event: 'post_response_tasks.failed', responseId,
+        error: finalResponder.runtime.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error),
+      }))
       return 0
     })
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
@@ -987,10 +1026,23 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
+    const errorMessage = active.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error)
+    if (active.codex) {
+      agent.state.messages = agent.state.messages.map((message) => (
+        message.role === 'assistant' && message.errorMessage ? { ...message, errorMessage } : message
+      ))
+      for (const [turn, payload] of turnResponsePayloads) {
+        const value = payload as { role?: string; errorMessage?: string }
+        if (value.role === 'assistant' && value.errorMessage) turnResponsePayloads.set(turn, { ...value, errorMessage })
+      }
+    }
+    if (active.codex && codexErrorRequiresReauthentication(error)) {
+      await markCodexReauthenticationRequired(record.response.userId, 'Your Codex connection needs to be renewed.')
+    }
     const cancelled = await isCancellationRequested(responseId)
     const status = cancelled ? 'cancelled' : 'failed'
-    await snapshot(status, error instanceof Error ? error.message : String(error))
-    await db.update(agentRuns).set({ status, error: error instanceof Error ? error.message : String(error), context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
+    await snapshot(status, errorMessage)
+    await db.update(agentRuns).set({ status, error: errorMessage, context: { systemPrompt: agentSystemPrompt, messages: messagesForPersistence(agent.state.messages), billingTurns }, completedAt: new Date(), updatedAt: new Date() }).where(eq(agentRuns.id, runId))
     const finalResponder = lastResponder ?? { runtime: active, pricing: await getActivePricing(active.model.id) }
     await db.update(responses).set({ actualModelId: finalResponder.runtime.model.id, pricingVersionId: finalResponder.pricing.id }).where(eq(responses.id, responseId))
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
@@ -1007,9 +1059,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage: error instanceof Error ? error.message : String(error), durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
     await publishAdminUsage(requestLog.id, true)
-    if (!cancelled) throw error
+    if (!cancelled) throw active.codex ? new Error(errorMessage) : error
   } finally {
     firstTokenTimeout?.clear()
     clearTimeout(abortTimer); clearInterval(cancellationTimer)

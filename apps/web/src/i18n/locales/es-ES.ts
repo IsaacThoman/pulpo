@@ -193,6 +193,7 @@ const esES = {
       general: 'General',
       profile: 'Perfil',
       security: 'Seguridad',
+      connections: 'Conexiones',
       personalization: 'Personalización',
       interface: 'Interfaz',
       billing: 'Facturación',

@@ -15,6 +15,7 @@ import {
   providerHealthChecks,
   providerUpstreamModels,
   applicationSettings,
+  userProviderCredentials,
 } from '../database/schema.js'
 import { getConfig } from '../config.js'
 import { decryptSecret, encryptSecret } from '../lib/crypto.js'
@@ -27,6 +28,7 @@ import { INTERNAL_LAB_ID, INTERNAL_PROVIDER_ID, UNKNOWN_MODEL_ID } from './defau
 import { deleteCatalogModel } from './model-deletion.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
+import { CODEX_LAB_ID, CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID, isCodexModelId, isManagedLabId, isManagedProviderId } from '../codex/constants.js'
 
 type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
@@ -41,10 +43,13 @@ function validateDefaultParameters(value: Record<string, unknown>, allowedParame
 async function validateFallback(modelId: string, fallbackModelId: string | null): Promise<void> {
   if (!fallbackModelId) return
   if (fallbackModelId === modelId) throw new AppError(409, 'fallback_cycle', 'A model cannot fall back to itself')
-  const all = await db.select({ id: models.id, enabled: models.enabled, fallbackModelId: models.fallbackModelId }).from(models)
+  const all = await db.select({
+    id: models.id, enabled: models.enabled, fallbackModelId: models.fallbackModelId, providerConnectionId: models.providerConnectionId,
+  }).from(models)
   const byId = new Map(all.map((model) => [model.id, model]))
   const target = byId.get(fallbackModelId)
   if (!target?.enabled) throw new AppError(409, 'fallback_unavailable', 'Fallback models must exist and be enabled')
+  if (isManagedProviderId(target.providerConnectionId)) throw new AppError(409, 'managed_catalog', 'Managed models cannot be fallback targets')
   const seen = new Set([modelId])
   let cursor: string | null = fallbackModelId
   for (let depth = 0; cursor; depth += 1) {
@@ -91,8 +96,9 @@ async function validatePresets(modelId: string, presets: PresetInput, allowedPar
     if (choice.action.modelId === UNKNOWN_MODEL_ID) {
       throw new AppError(400, 'redirect_model_missing', `Redirect model ${choice.action.modelId} does not exist`)
     }
-    const [target] = await db.select({ id: models.id }).from(models).where(eq(models.id, choice.action.modelId)).limit(1)
+    const [target] = await db.select({ id: models.id, providerConnectionId: models.providerConnectionId }).from(models).where(eq(models.id, choice.action.modelId)).limit(1)
     if (!target && choice.action.modelId !== modelId) throw new AppError(400, 'redirect_model_missing', `Redirect model ${choice.action.modelId} does not exist`)
+    if (target && isManagedProviderId(target.providerConnectionId)) throw new AppError(409, 'managed_catalog', 'Managed models cannot be redirect targets')
     const edges = graph.get(modelId) ?? new Set<string>(); edges.add(choice.action.modelId); graph.set(modelId, edges)
   }
   const visiting = new Set<string>(); const visited = new Set<string>()
@@ -127,7 +133,11 @@ async function replacePresets(tx: Parameters<Parameters<typeof db.transaction>[0
 
 export async function registerCatalogRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/models', async (request) => {
-    requireUser(request)
+    const user = requireUser(request)
+    const [codexCredential] = await db.select({ status: userProviderCredentials.status })
+      .from(userProviderCredentials).where(and(
+        eq(userProviderCredentials.userId, user.id), eq(userProviderCredentials.providerId, CODEX_PI_PROVIDER_ID),
+      )).limit(1)
     const rows = await db
       .select({ model: models, pricing: modelPricingVersions, lab: labs, provider: providerConnections })
       .from(models)
@@ -137,7 +147,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       ))
       .leftJoin(labs, eq(models.labId, labs.id))
       .innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
-      .where(and(eq(models.enabled, true), eq(models.visible, true)))
+      .where(and(
+        eq(models.enabled, true), eq(models.visible, true),
+        codexCredential?.status === 'connected' ? undefined : ne(models.providerConnectionId, CODEX_PROVIDER_ID),
+      ))
       .orderBy(asc(models.sortOrder), asc(models.createdAt))
     const [agentRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1)
     const iconRows = await db.select().from(catalogIcons)
@@ -185,7 +198,9 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
 
   app.get('/api/admin/providers', async (request) => {
     requireAdmin(request)
-    const rows = await db.select().from(providerConnections).where(ne(providerConnections.id, INTERNAL_PROVIDER_ID))
+    const rows = await db.select().from(providerConnections).where(and(
+      ne(providerConnections.id, INTERNAL_PROVIDER_ID), ne(providerConnections.id, CODEX_PROVIDER_ID),
+    ))
     return { data: rows.map(({ encryptedApiKey: _, ...row }) => ({ ...row, hasApiKey: true })) }
   })
 
@@ -194,7 +209,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   }, async (request, reply) => {
     const admin = requireAdmin(request)
     const { id } = z.object({ id: z.uuid() }).parse(request.params)
-    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const [provider] = await db.select({ encryptedApiKey: providerConnections.encryptedApiKey })
       .from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
@@ -246,7 +261,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/providers/:id', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const body = updateProviderSchema.parse(request.body)
     if (body.baseUrl) await assertSafeProviderUrl(body.baseUrl)
     const [updated] = await db.update(providerConnections).set({
@@ -271,7 +286,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/providers/:id/health', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
     await assertSafeProviderUrl(provider.baseUrl)
@@ -299,7 +314,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/admin/providers/:id/models', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const [provider] = await db.select({
       id: providerConnections.id,
       upstreamModelsSyncedAt: providerConnections.upstreamModelsSyncedAt,
@@ -318,7 +333,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.post('/api/admin/providers/:id/models/refresh', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const [provider] = await db.select().from(providerConnections).where(eq(providerConnections.id, id)).limit(1)
     if (!provider) throw notFound('Provider')
     await assertSafeProviderUrl(provider.baseUrl)
@@ -362,7 +377,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/admin/providers/:id', async (request, reply) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_PROVIDER_ID) throw notFound('Provider')
+    if (id === INTERNAL_PROVIDER_ID || isManagedProviderId(id)) throw notFound('Provider')
     const used = await db.select({ id: models.id }).from(models).where(eq(models.providerConnectionId, id)).limit(1)
     if (used.length) throw new AppError(409, 'provider_in_use', 'Delete or move this provider’s models first')
     const deleted = await db.delete(providerConnections).where(eq(providerConnections.id, id)).returning({ id: providerConnections.id })
@@ -373,7 +388,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.get('/api/admin/labs', async (request) => {
     requireAdmin(request)
     const [labRows, modelRows] = await Promise.all([
-      db.select().from(labs).orderBy(labs.createdAt),
+      db.select().from(labs).where(ne(labs.id, CODEX_LAB_ID)).orderBy(labs.createdAt),
       db.select({
         id: models.id,
         labId: models.labId,
@@ -383,7 +398,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         enabled: models.enabled,
         visible: models.visible,
         sortOrder: models.sortOrder,
-      }).from(models).where(ne(models.id, UNKNOWN_MODEL_ID)).orderBy(asc(models.sortOrder), asc(models.createdAt)),
+      }).from(models).where(and(ne(models.id, UNKNOWN_MODEL_ID), ne(models.providerConnectionId, CODEX_PROVIDER_ID))).orderBy(asc(models.sortOrder), asc(models.createdAt)),
     ])
     return { data: labRows.map((lab) => {
       const labModels = modelRows.filter((model) => model.labId === lab.id)
@@ -391,7 +406,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
       ...lab,
       models: labModels,
       modelCount: labModels.length,
-      builtin: lab.id === INTERNAL_LAB_ID,
+      builtin: lab.id === INTERNAL_LAB_ID || lab.id === CODEX_LAB_ID,
       }
     }) }
   })
@@ -412,7 +427,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/labs/:id', async (request) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_LAB_ID) throw new AppError(409, 'builtin_lab', 'The Internal lab cannot be edited')
+    if (id === INTERNAL_LAB_ID || isManagedLabId(id)) throw new AppError(409, 'builtin_lab', 'This managed lab cannot be edited')
     const body = z.object({
       name: z.string().trim().min(1).max(120).optional(),
       logo: z.string().trim().min(1).max(120).optional(),
@@ -427,6 +442,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.put('/api/admin/labs/:id/models/order', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (isManagedLabId(id)) throw new AppError(409, 'builtin_lab', 'This managed lab cannot be reordered')
     const { modelIds } = z.object({ modelIds: z.array(z.string()).max(1_000) }).parse(request.body)
     if (new Set(modelIds).size !== modelIds.length) {
       throw new AppError(400, 'validation_error', 'Model order cannot contain duplicates')
@@ -452,7 +468,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/admin/labs/:id', async (request, reply) => {
     requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === INTERNAL_LAB_ID) throw new AppError(409, 'builtin_lab', 'The Internal lab cannot be deleted')
+    if (id === INTERNAL_LAB_ID || isManagedLabId(id)) throw new AppError(409, 'builtin_lab', 'This managed lab cannot be deleted')
     const deleted = await db.transaction(async (tx) => {
       await tx.update(models).set({ labId: INTERNAL_LAB_ID, updatedAt: new Date() }).where(eq(models.labId, id))
       return tx.delete(labs).where(eq(labs.id, id)).returning({ id: labs.id })
@@ -465,7 +481,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     requireAdmin(request)
     const rows = await db.select({ model: models, pricing: modelPricingVersions }).from(models)
       .leftJoin(modelPricingVersions, and(eq(models.id, modelPricingVersions.modelId), isNull(modelPricingVersions.effectiveTo)))
-      .where(ne(models.id, UNKNOWN_MODEL_ID))
+      .where(and(ne(models.id, UNKNOWN_MODEL_ID), ne(models.providerConnectionId, CODEX_PROVIDER_ID)))
       .orderBy(asc(models.sortOrder), asc(models.createdAt))
     return { data: await Promise.all(rows.map(async ({ model, pricing }) => ({
       ...model,
@@ -489,7 +505,10 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
     const admin = requireAdmin(request)
     const raw = z.object({ presets: chatPresetsSchema.default([]) }).passthrough().parse(request.body)
     const input = createModelSchema.parse(raw)
-    if (input.id === UNKNOWN_MODEL_ID) throw new AppError(409, 'reserved_model', 'This model ID is reserved by Pulpo')
+    if (input.id === UNKNOWN_MODEL_ID || isCodexModelId(input.id)) throw new AppError(409, 'reserved_model', 'This model ID is reserved by Pulpo')
+    if (isManagedProviderId(input.providerConnectionId) || input.labId && isManagedLabId(input.labId)) {
+      throw new AppError(409, 'managed_catalog', 'Managed catalog records cannot be used by admin models')
+    }
     validateDefaultParameters(input.defaultParameters, input.allowedParameters)
     await validateFallback(input.id, input.fallbackModelId)
     if (input.customIconId) await requireCatalogIcon(input.customIconId)
@@ -555,8 +574,11 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/api/admin/models/:id', async (request) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
-    if (id === UNKNOWN_MODEL_ID) throw notFound('Model')
+    if (id === UNKNOWN_MODEL_ID || isCodexModelId(id)) throw notFound('Model')
     const body = request.body as Record<string, unknown>
+    if (body.providerConnectionId === CODEX_PROVIDER_ID || body.labId === CODEX_LAB_ID) {
+      throw new AppError(409, 'managed_catalog', 'Managed catalog records cannot be used by admin models')
+    }
     if (body.customIconId !== undefined && body.customIconId !== null) {
       await requireCatalogIcon(z.uuid().parse(body.customIconId))
     }
@@ -635,6 +657,7 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.delete('/api/admin/models/:id', async (request, reply) => {
     const admin = requireAdmin(request)
     const { id } = request.params as { id: string }
+    if (isCodexModelId(id)) throw notFound('Model')
     await deleteCatalogModel(id, admin.id)
     reply.code(204).send()
   })

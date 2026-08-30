@@ -15,6 +15,7 @@ export const AI_ICONS = [
   { id: 'anthropic', label: 'Anthropic', kind: 'lab', color: false, file: 'anthropic.svg' },
   { id: 'claude', label: 'Claude', kind: 'model', color: false, file: 'claude.svg' },
   { id: 'claude-color', label: 'Claude color', kind: 'model', color: true, file: 'claude-color.svg' },
+  { id: 'codex', label: 'Codex', kind: 'lab', contexts: ['lab', 'model'], color: false, file: 'codex.svg' },
   { id: 'deepseek', label: 'DeepSeek', kind: 'lab', color: false, file: 'deepseek.svg' },
   { id: 'deepseek-color', label: 'DeepSeek color', kind: 'model', color: true, file: 'deepseek-color.svg' },
   { id: 'gemini', label: 'Gemini', kind: 'model', color: false, file: 'gemini.svg' },
@@ -64,6 +65,7 @@ export type AiIconId = (typeof AI_ICONS)[number]['id']
 export const DEFAULT_PROVIDER_ICONS: Record<string, AiIconId> = {
   'moonshot ai': 'moonshot',
   openai: 'openai',
+  codex: 'codex',
   anthropic: 'anthropic',
   deepseek: 'deepseek',
   meta: 'meta',

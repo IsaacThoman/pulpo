@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses } from '../database/schema.js'
+import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
 import { getActivePricing, releaseBudget, reserveBudget } from '../accounting/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -20,6 +20,7 @@ import {
 import { sanitizeOutputForClient } from './public-output.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import { unsupportedPublicModelParameter } from './model-parameters.js'
+import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
 
 export interface CreateResponseOptions {
   /** Owner of the chat, response, files, memory document, and conversation context. */
@@ -126,6 +127,20 @@ export async function createResponse(options: CreateResponseOptions) {
   const resolved = await resolveResponseGeneration(options.input.modelId, options.input.presetSelections)
   const [model] = await db.select().from(models).where(and(eq(models.id, resolved.effectiveModelId), eq(models.enabled, true))).limit(1)
   if (!model) throw new AppError(400, 'model_not_found', 'The selected model is unavailable', 'invalid_request_error', 'model')
+  if (model.providerConnectionId === CODEX_PROVIDER_ID) {
+    if (options.apiKeyId) {
+      throw new AppError(400, 'codex_ui_only', 'Codex subscription models are only available in Pulpo UI clients', 'invalid_request_error', 'model')
+    }
+    if (options.actorUserId) {
+      throw new AppError(403, 'codex_owner_only', 'Codex subscriptions can only be used directly by the connected account owner', 'permission_error', 'model')
+    }
+    const [credential] = await db.select({ status: userProviderCredentials.status }).from(userProviderCredentials).where(and(
+      eq(userProviderCredentials.userId, options.ownerUserId), eq(userProviderCredentials.providerId, CODEX_PI_PROVIDER_ID),
+    )).limit(1)
+    if (credential?.status !== 'connected') {
+      throw new AppError(401, 'codex_reauthentication_required', 'Connect your Codex subscription in Settings to use this model', 'authentication_error', 'model')
+    }
+  }
   if (options.apiKeyId && options.parameters) {
     const rejected = unsupportedPublicModelParameter(model, options.parameters)
     if (rejected) throw new AppError(400, 'parameter_not_allowed', `Parameter ${rejected} is not available for this model`, 'invalid_request_error', rejected)
