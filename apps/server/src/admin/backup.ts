@@ -7,11 +7,12 @@ import { gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
-import { attachments, backupJobs, catalogIcons, users } from '../database/schema.js'
+import { attachments, backupJobs, catalogIcons, chats, queuedMessages, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
 import { deleteRedisKeysByPattern } from '../redis-keys.js'
 import { redis } from '../redis.js'
 import { fillMissingUsernames } from '../profile/username.js'
+import { markExpiredChatsForPurge, purgePendingChats } from '../chats/trash.js'
 import {
   applyFullBackupCompatibilityDefaults,
   FULL_BACKUP_EXPLICIT_COLUMNS,
@@ -20,6 +21,7 @@ import {
   type FullBackupTable,
 } from './backup-format.js'
 import { checksumMatches, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
+import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
@@ -38,9 +40,18 @@ export async function createFullBackup(jobId: string): Promise<void> {
   let temporaryDirectory: string | undefined
   let uploaded = false
   try {
+    try {
+      await markExpiredChatsForPurge(new Date())
+      await purgePendingChats()
+    } catch (error) {
+      console.warn(JSON.stringify({
+        level: 'warn', service: 'pulpo-worker', event: 'backup.preflight_chat_cleanup_failed', jobId,
+        error: error instanceof Error ? error.message : String(error),
+      }))
+    }
     temporaryDirectory = await mkdtemp(join(tmpdir(), 'pulpo-backup-'))
     const archivePath = join(temporaryDirectory, `${job.id}.tar.gz`)
-    const { database, attachmentBlobRows, avatarBlobRows, iconRows } = await db.transaction(async (tx) => {
+    const { database: rawDatabase, avatarBlobRows, iconRows, temporaryQueuedAttachmentRows } = await db.transaction(async (tx) => {
       const database: Record<string, unknown[]> = {}
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const columns = FULL_BACKUP_EXPLICIT_COLUMNS[table]
@@ -49,13 +60,17 @@ export async function createFullBackup(jobId: string): Promise<void> {
       }
       return {
         database,
-        attachmentBlobRows: await tx.select({ objectKey: attachments.objectKey, checksum: attachments.checksum }).from(attachments).where(eq(attachments.status, 'ready')),
         avatarBlobRows: await tx.select({ objectKey: users.avatarObjectKey }).from(users).where(sql`${users.avatarObjectKey} is not null`),
         iconRows: await tx.select().from(catalogIcons),
+        temporaryQueuedAttachmentRows: await tx.select({ attachmentIds: queuedMessages.attachmentIds })
+          .from(queuedMessages).innerJoin(chats, eq(chats.id, queuedMessages.chatId)).where(eq(chats.temporary, true)),
       }
     }, { isolationLevel: 'repeatable read', accessMode: 'read only' })
+    const { database, attachmentBlobs } = projectFullBackup(rawDatabase as FullBackupDatabase, {
+      temporaryQueuedAttachmentIds: temporaryQueuedAttachmentRows.flatMap((row) => row.attachmentIds),
+    })
     const blobRows = [
-      ...attachmentBlobRows,
+      ...attachmentBlobs,
       ...avatarBlobRows.map((avatar) => ({ objectKey: avatar.objectKey!, checksum: null })),
       ...iconRows.flatMap((icon) => [
         { objectKey: icon.originalObjectKey, checksum: icon.originalChecksum },
