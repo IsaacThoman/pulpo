@@ -123,6 +123,10 @@ body {
   .app-main > div > header {
     padding-left: 3rem;
   }
+
+  html[data-desktop="true"] .app-main > div > header {
+    -webkit-app-region: drag;
+  }
 }
 
 /* Thin minimal scrollbars */
