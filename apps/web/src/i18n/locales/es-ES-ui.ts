@@ -31,6 +31,7 @@ const esUi: Record<string, string> = {
   ") — retry on current": ") — Reintentar con el actual",
   "{\"temperature\": 0.7}": "{\"temperature\": 0.7}",
   "{{0}} · {{1}}": "{{0}} · {{1}}",
+  "{{0}} · {{1}}: {{2}} · {{3}}: {{4}}{{5}}": "{{0}} · {{1}}: {{2}} · {{3}}: {{4}}{{5}}",
   "{{0}} {{1}}": "{{0}} {{1}}",
   "{{0}} {{1}} {{2}} sidebar": "{{0}} {{1}} {{2}} barra lateral",
   "{{0}} active days in {{1}}": "{{0}} días activos en {{1}}",

@@ -9,7 +9,7 @@ function renderCost(props: ComponentProps<typeof UsageCostBreakdown>): string {
 }
 
 describe('UsageCostBreakdown', () => {
-  it('labels Codex reference value separately from the Pulpo charge', () => {
+  it('shows one violet combined cost with the breakdown available on hover', () => {
     const markup = renderCost({
       costUsd: 0.05,
       inferenceReferenceUsd: 0.31,
@@ -17,10 +17,11 @@ describe('UsageCostBreakdown', () => {
       personal: true,
     })
     expect(markup).toContain('data-inference-reference-cost')
-    expect(markup).toContain('$0.3100')
-    expect(markup).toContain('API equivalent')
-    expect(markup).toContain('$0.0500')
-    expect(markup).toContain('Pulpo charge')
+    expect(markup).toContain('text-violet-700')
+    expect(markup).toContain('>$0.3600</span>')
+    expect(markup).toContain('aria-label="$0.3600 · API equivalent: $0.3100 · Pulpo charge: $0.0500 · Covered by your subscription · $0.0000 charged to balance"')
+    expect(markup.match(/>\$0\.3100</g)).toBeNull()
+    expect(markup.match(/>\$0\.0500</g)).toBeNull()
   })
 
   it('keeps ordinary provider costs compact', () => {
