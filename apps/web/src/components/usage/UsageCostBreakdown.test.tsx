@@ -19,7 +19,7 @@ describe('UsageCostBreakdown', () => {
     expect(markup).toContain('data-inference-reference-cost')
     expect(markup).toContain('text-violet-700')
     expect(markup).toContain('>$0.3600</span>')
-    expect(markup).toContain('aria-label="$0.3600 · API equivalent: $0.3100 · Pulpo charge: $0.0500 · Covered by your subscription · $0.0000 charged to balance"')
+    expect(markup).toContain('aria-label="$0.3600 · API equivalent: $0.3100 · Pulpo usage: $0.0500 · Covered by your subscription · $0.0000 charged to balance"')
     expect(markup.match(/>\$0\.3100</g)).toBeNull()
     expect(markup.match(/>\$0\.0500</g)).toBeNull()
   })
@@ -31,6 +31,6 @@ describe('UsageCostBreakdown', () => {
       subscriptionCoveredUsd: 0,
     })
     expect(markup).not.toContain('API equivalent')
-    expect(markup).not.toContain('Pulpo charge')
+    expect(markup).not.toContain('Pulpo usage')
   })
 })

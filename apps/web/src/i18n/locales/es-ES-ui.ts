@@ -13,7 +13,7 @@ const esUi: Record<string, string> = {
   "Connect Codex": "Conectar Codex",
   "Codex": "Codex",
   "API equivalent": "Equivalente de API",
-  "Pulpo charge": "Cargo de Pulpo",
+  "Pulpo usage": "Uso de Pulpo",
   "Estimated API-equivalent inference value; not charged by Pulpo": "Valor estimado de inferencia equivalente a la API; Pulpo no lo cobra",
   "Compaction": "Compactación",
   "Native tool result": "Resultado nativo de herramienta",

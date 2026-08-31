@@ -5,10 +5,11 @@ import { activeLocale, ui } from '@/i18n/ui'
 import { UsageCostBreakdown } from './UsageCostBreakdown'
 
 /** Flat divide-x stat strip: calls, tokens, spend, avg/call, estimated water — no cards. */
-export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
+export function StatsRow({ calls, tokens, cost, subscriptionCoveredCost = 0, inferenceReferenceCost = 0 }: {
   calls: number
   tokens: number
   cost: number
+  subscriptionCoveredCost?: number
   inferenceReferenceCost?: number
 }) {
   const combinedCost = cost + inferenceReferenceCost
@@ -20,7 +21,7 @@ export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
       value: <UsageCostBreakdown
         costUsd={cost}
         inferenceReferenceUsd={inferenceReferenceCost}
-        subscriptionCoveredUsd={0}
+        subscriptionCoveredUsd={subscriptionCoveredCost}
         personal
       />,
     },
