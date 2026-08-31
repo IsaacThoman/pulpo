@@ -64,6 +64,17 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-[43]')
   })
 
+  it('marks compact title-bar slots so narrow desktop controls can stay inline', () => {
+    installDesktopWindow()
+    const markup = renderToStaticMarkup(
+      <DesktopSidebarTitleBar collapsed compact transitions visible />,
+    )
+
+    expect(markup.match(/data-compact="true"/g)).toHaveLength(2)
+    expect(markup).toContain('desktop-model-titlebar-slot')
+    expect(markup).toContain('desktop-actions-titlebar-slot')
+  })
+
   it('keeps Windows drag and portal layers without rendering surfaces above the sidebar', () => {
     installDesktopWindow('win32')
     const markup = renderToStaticMarkup(
