@@ -29,6 +29,7 @@ import { useAuth } from '@/stores/auth'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui } from '@/i18n/ui'
 import { DesktopActionsTitleBarSlot, DesktopModelTitleBarSlot } from '@/components/desktop/DesktopSidebarTitleBar'
+import { useDocumentTitle } from '@/lib/document-title'
 
 const DEFAULT_SUGGESTED_PROMPTS = [
   { id: '1', translationKey: 'chat.suggestedPrompts.build' },
@@ -136,6 +137,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const activeTemporaryChatId = useChat((state) => state.activeTemporaryChatId)
   const chatId = routeChatId ?? activeTemporaryChatId ?? undefined
   const chat = useChat((s) => chatId ? s.chats.find((item) => item.id === chatId) ?? null : null)
+  useDocumentTitle(adminMode ? null : chat?.title)
   const adminAccessRequiredChatId = useChat((state) => state.adminAccessRequiredChatId)
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
