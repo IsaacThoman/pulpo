@@ -14,12 +14,7 @@ export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
   const stats = [
     { label: ui("Calls"), value: calls.toLocaleString(activeLocale()) },
     { label: ui("Tokens"), value: tokens.toLocaleString(activeLocale()) },
-    {
-      label: ui("Spend"),
-      value: <span className={inferenceReferenceCost > 0 ? 'text-violet-700 dark:text-violet-300' : undefined}>
-        {formatUsd(combinedCost)}
-      </span>,
-    },
+    { label: ui("Spend"), value: formatUsd(combinedCost) },
     { label: ui("Avg per call"), value: formatUsd(calls > 0 ? combinedCost / calls : 0) },
     {
       label: ui("Estimated water"),
