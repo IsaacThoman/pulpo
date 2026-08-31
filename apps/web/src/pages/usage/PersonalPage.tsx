@@ -30,7 +30,7 @@ const METRICS: { id: Metric; label: string }[] = [
 ]
 
 interface PersonalActivity {
-  summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; inferenceReferenceCostMicros: number; firstUsedAt: string | null }
+  summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; subscriptionCoveredMicros: number; inferenceReferenceCostMicros: number; firstUsedAt: string | null }
   daily: SettledDailyRow[]
   contribution: SettledDailyRow[]
   topModels: Array<{ modelId: string; calls: number; costMicros: number }>
@@ -95,6 +95,7 @@ export function PersonalPage() {
     calls: activity?.summary.calls ?? 0,
     tokens: (activity?.summary.inputTokens ?? 0) + (activity?.summary.outputTokens ?? 0),
     cost: (activity?.summary.costMicros ?? 0) / 1_000_000,
+    subscriptionCoveredCost: (activity?.summary.subscriptionCoveredMicros ?? 0) / 1_000_000,
     inferenceReferenceCost: (activity?.summary.inferenceReferenceCostMicros ?? 0) / 1_000_000,
   }
   const dailyUsage = useMemo(() => toDailyModelUsage(activity?.daily ?? []), [activity?.daily])
@@ -150,6 +151,7 @@ export function PersonalPage() {
           calls={totals.calls}
           tokens={totals.tokens}
           cost={totals.cost}
+          subscriptionCoveredCost={totals.subscriptionCoveredCost}
           inferenceReferenceCost={totals.inferenceReferenceCost}
         />}
       </section>
