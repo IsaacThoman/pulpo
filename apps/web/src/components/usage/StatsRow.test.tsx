@@ -4,7 +4,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { StatsRow } from './StatsRow'
 
 describe('StatsRow', () => {
-  it('shows combined spend in violet without a breakdown tooltip', () => {
+  it('shows combined spend in the default color without a breakdown tooltip', () => {
     const markup = renderToStaticMarkup(
       <TooltipProvider>
         <StatsRow
@@ -16,8 +16,8 @@ describe('StatsRow', () => {
       </TooltipProvider>,
     )
 
-    expect(markup).toContain('>$0.3600</span>')
-    expect(markup).toContain('text-violet-700')
+    expect(markup).toContain('$0.3600')
+    expect(markup).not.toContain('text-violet')
     expect(markup).not.toContain('data-inference-reference-cost')
     expect(markup).not.toContain('API equivalent')
     expect(markup).not.toContain('Pulpo usage')
