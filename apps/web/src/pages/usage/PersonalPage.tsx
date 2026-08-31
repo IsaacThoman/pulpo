@@ -24,8 +24,8 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: Metric; label: string }[] = [
-  { id: 'cost', label: "USD" },
   { id: 'tokens', label: "Tokens" },
+  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
 ]
 
@@ -61,7 +61,7 @@ export function PersonalPage() {
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const userId = authUser?.id
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<Metric>('cost')
+  const [metric, setMetric] = useState<Metric>('tokens')
 
   const activityQuery = useQuery({
     queryKey: ['usage', userId, range, 'activity'],
