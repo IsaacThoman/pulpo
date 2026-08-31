@@ -34,7 +34,8 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
-import { ui, uit, activeLocale } from '@/i18n/ui'
+import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
+import { ui, uit } from '@/i18n/ui'
 
 const CREDIT_AMOUNTS = [10, 25, 50, 100] as const
 
@@ -245,26 +246,7 @@ export function BillingPage() {
                 <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{planSubtitle}</div></div>
                 <PlanBadge plan={summary?.plan ?? 'baby'} />
               </div>
-              {summary?.weekly && <div className="mt-4">
-                <div className="flex justify-between text-xs text-muted-foreground"><span>{ui("Weekly usage")}</span><span>{summary.weekly.remainingPercentage}{ui("% left")}</span></div>
-                <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-emerald-500" style={{ width: `${summary.weekly.availableBarPercentage}%` }} />
-                  <div className="h-full bg-amber-400 dark:bg-amber-500" style={{ width: `${summary.weekly.pendingBarPercentage}%` }} />
-                </div>
-                {summary.weekly.pendingMicros > 0 && <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-amber-400 dark:bg-amber-500" />{formatBalance(summary.weekly.pendingMicros / 1_000_000)} {ui("reserved")}</div>}
-                <div className="mt-1.5 text-xs text-muted-foreground">{ui("Resets")} {new Date(summary.weekly.resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</div>
-              </div>}
-              {summary?.fiveHour && <div className="mt-4">
-                <div className="flex justify-between text-xs text-muted-foreground"><span>{ui("5-hour usage")}</span><span>{summary.fiveHour.remainingPercentage}{ui("% left")}</span></div>
-                <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div className="h-full bg-emerald-500" style={{ width: `${summary.fiveHour.availableBarPercentage}%` }} />
-                  <div className="h-full bg-amber-400 dark:bg-amber-500" style={{ width: `${summary.fiveHour.pendingBarPercentage}%` }} />
-                </div>
-                {summary.fiveHour.pendingMicros > 0 && <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-amber-400 dark:bg-amber-500" />{formatBalance(summary.fiveHour.pendingMicros / 1_000_000)} {ui("reserved")}</div>}
-                <div className="mt-1.5 text-xs text-muted-foreground">{summary.fiveHour.resetsAt
-                  ? <>{ui("Resets")} {new Date(summary.fiveHour.resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</>
-                  : ui("Starts on first use")}</div>
-              </div>}
+              <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
               <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
                 {summary?.subscription ? ui("Manage plan") : ui("Compare plans")}
               </Button>
