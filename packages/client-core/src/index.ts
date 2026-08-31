@@ -21,6 +21,8 @@ import {
   type User,
 } from '@pulpo/contracts'
 
+export { normalizeMathDelimiters, type MathDelimiterOptions } from './markdown.js'
+
 /** Serialize writes per key and retain only the newest value queued behind an active request. */
 export class LatestValueQueue<Key, Value, Result> {
   private readonly entries = new Map<Key, QueueEntry<Value, Result>>()
