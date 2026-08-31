@@ -4,12 +4,18 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { activeLocale, ui } from '@/i18n/ui'
 
 /** Flat divide-x stat strip: calls, tokens, spend, avg/call, estimated water — no cards. */
-export function StatsRow({ calls, tokens, cost }: { calls: number; tokens: number; cost: number }) {
+export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
+  calls: number
+  tokens: number
+  cost: number
+  inferenceReferenceCost?: number
+}) {
+  const combinedCost = cost + inferenceReferenceCost
   const stats = [
     { label: ui("Calls"), value: calls.toLocaleString(activeLocale()) },
     { label: ui("Tokens"), value: tokens.toLocaleString(activeLocale()) },
-    { label: ui("Spend"), value: formatUsd(cost) },
-    { label: ui("Avg per call"), value: formatUsd(calls > 0 ? cost / calls : 0) },
+    { label: ui("Spend"), value: formatUsd(combinedCost) },
+    { label: ui("Avg per call"), value: formatUsd(calls > 0 ? combinedCost / calls : 0) },
     {
       label: ui("Estimated water"),
       value: `${(cost / 23.04).toFixed(4)} Gal`,

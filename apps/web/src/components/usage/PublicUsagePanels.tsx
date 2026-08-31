@@ -5,7 +5,7 @@ import { getCatalogModel } from '@/stores/catalog'
 import { ModelIcon } from '@/components/ModelIcon'
 import { formatUsd } from '@/lib/format'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
-import { SubscriptionCoverageCost } from './SubscriptionCoverageCost'
+import { UsageCostBreakdown } from './UsageCostBreakdown'
 import { ui, activeLocale } from '@/i18n/ui'
 
 export interface PublicUsageRecord {
@@ -16,6 +16,7 @@ export interface PublicUsageRecord {
   inputTokens: number
   outputTokens: number
   costMicros: number
+  inferenceReferenceCostMicros: number
   subscriptionCoveredMicros: number
 }
 
@@ -74,8 +75,8 @@ export function PublicRecentUsagePanel({
             <col className="w-[22%]" />
             <col className="w-[18%]" />
             <col />
-            <col className="w-[12%]" />
-            <col className="w-[12%]" />
+            <col className="w-[18%]" />
+            <col className="w-[18%]" />
           </colgroup>
           <thead>
             <tr className="text-left text-muted-foreground">
@@ -103,8 +104,9 @@ export function PublicRecentUsagePanel({
             <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString(activeLocale())}</td>
             <td className="px-3 py-2 text-right tabular-nums">
-              <SubscriptionCoverageCost
+              <UsageCostBreakdown
                 costUsd={record.costMicros / 1_000_000}
+                inferenceReferenceUsd={record.inferenceReferenceCostMicros / 1_000_000}
                 subscriptionCoveredUsd={record.subscriptionCoveredMicros / 1_000_000}
               />
             </td>

@@ -24,13 +24,13 @@ const RANGES: { id: TimeRange; label: string }[] = [
   { id: 'all', label: "All" },
 ]
 const METRICS: { id: Metric; label: string }[] = [
-  { id: 'cost', label: "USD" },
   { id: 'tokens', label: "Tokens" },
+  { id: 'cost', label: "USD" },
   { id: 'calls', label: "Calls" },
 ]
 
 interface PersonalActivity {
-  summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; firstUsedAt: string | null }
+  summary: { calls: number; inputTokens: number; outputTokens: number; costMicros: number; inferenceReferenceCostMicros: number; firstUsedAt: string | null }
   daily: SettledDailyRow[]
   contribution: SettledDailyRow[]
   topModels: Array<{ modelId: string; calls: number; costMicros: number }>
@@ -46,6 +46,7 @@ interface PersonalRecordRow {
   inputTokens: number
   outputTokens: number
   costMicros: number
+  inferenceReferenceCostMicros: number
   subscriptionCoveredMicros: number
   latencyMs: number
   balanceAfterMicros: number | null
@@ -61,7 +62,7 @@ export function PersonalPage() {
   const billingEnabled = useAuth((state) => state.billingEnabled)
   const userId = authUser?.id
   const [range, setRange] = useState<TimeRange>('30d')
-  const [metric, setMetric] = useState<Metric>('cost')
+  const [metric, setMetric] = useState<Metric>('tokens')
 
   const activityQuery = useQuery({
     queryKey: ['usage', userId, range, 'activity'],
@@ -94,6 +95,7 @@ export function PersonalPage() {
     calls: activity?.summary.calls ?? 0,
     tokens: (activity?.summary.inputTokens ?? 0) + (activity?.summary.outputTokens ?? 0),
     cost: (activity?.summary.costMicros ?? 0) / 1_000_000,
+    inferenceReferenceCost: (activity?.summary.inferenceReferenceCostMicros ?? 0) / 1_000_000,
   }
   const dailyUsage = useMemo(() => toDailyModelUsage(activity?.daily ?? []), [activity?.daily])
   const contributionUsage = useMemo(() => toDailyModelUsage(activity?.contribution ?? []), [activity?.contribution])
@@ -105,6 +107,7 @@ export function PersonalPage() {
     tokensIn: row.inputTokens,
     tokensOut: row.outputTokens,
     cost: row.costMicros / 1_000_000,
+    inferenceReferenceCost: row.inferenceReferenceCostMicros / 1_000_000,
     subscriptionCoveredCost: row.subscriptionCoveredMicros / 1_000_000,
     balanceAfter: row.balanceAfterMicros === null ? null : row.balanceAfterMicros / 1_000_000,
     latencyMs: row.latencyMs,
@@ -143,7 +146,12 @@ export function PersonalPage() {
           </div>
           <ToggleGroup options={RANGES.map((option) => ({ ...option, label: ui(option.label) }))} value={range} onChange={setRange} />
         </div>
-        {!activityQuery.isLoading && !error && <StatsRow calls={totals.calls} tokens={totals.tokens} cost={totals.cost} />}
+        {!activityQuery.isLoading && !error && <StatsRow
+          calls={totals.calls}
+          tokens={totals.tokens}
+          cost={totals.cost}
+          inferenceReferenceCost={totals.inferenceReferenceCost}
+        />}
       </section>
 
       {activityQuery.isLoading || recordsQuery.isLoading ? (
