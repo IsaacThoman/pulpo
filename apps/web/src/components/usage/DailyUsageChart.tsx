@@ -8,18 +8,8 @@ import { ContributionGraph } from './ContributionGraph'
 import { ui, activeLocale } from '@/i18n/ui'
 import { useSettings } from '@/stores/settings'
 import { DEFAULT_CHART_ANIMATION_DURATION_MS, scaledAnimationDuration } from '@/lib/animation-speed'
+import { modelChartColor } from '@/lib/usage-chart-colors'
 
-// Series colors by usage rank (OpenWebUI-Monitor palette)
-const CHART_COLORS = [
-  'hsl(220 70% 55%)',
-  'hsl(160 60% 45%)',
-  'hsl(30 80% 50%)',
-  'hsl(280 60% 55%)',
-  'hsl(340 65% 55%)',
-  'hsl(190 65% 45%)',
-  'hsl(85 45% 45%)',
-  'hsl(15 70% 55%)',
-]
 const OTHER_COLOR = 'hsl(220 15% 45%)'
 const MAX_LEGEND_MODELS = 8
 const MAX_SEGMENTS_PER_DAY = 4
@@ -163,7 +153,7 @@ export function DailyUsageChart({
         .map((id) => ({
           key: id,
           name: modelNames?.[id] ?? getCatalogModel(id).name,
-          color: CHART_COLORS[top.indexOf(id) % CHART_COLORS.length],
+          color: modelChartColor(id),
         })),
     ]
     return { rows, series }
