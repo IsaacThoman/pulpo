@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryDocumentTool } from './agent-tool.js'
+import { MemoryDocumentError } from './service.js'
 
 const document = {
   content: '# About\n- Isaac\n\n# Preferences\n- Verbose answers',
@@ -28,7 +29,6 @@ describe('update_memory Agent tool', () => {
       update,
     })
     const result = await tool.execute('operation', {
-      expected_revision: 4,
       summary: 'Updated answer-length preference',
       edits: [{ operation: 'replace', old_text: '- Verbose answers', new_text: '- Concise answers' }],
     }, new AbortController().signal)
@@ -44,19 +44,39 @@ describe('update_memory Agent tool', () => {
     expect(text).not.toContain('Isaac')
   })
 
-  it('rejects stale revisions before writing', async () => {
+  it('rebases edits onto the latest document after a concurrent update', async () => {
+    const concurrentDocument = {
+      ...document,
+      content: `${document.content}\n\n# Projects\n- Pulpo`,
+      revision: 5,
+    }
+    const read = vi.fn()
+      .mockResolvedValueOnce(document)
+      .mockResolvedValueOnce(concurrentDocument)
     const update = vi.fn()
+      .mockRejectedValueOnce(new MemoryDocumentError('memory_document_conflict', 'MEMORY.md changed', 5))
+      .mockImplementationOnce(async (input) => ({
+        ...concurrentDocument,
+        ...input,
+        revision: 6,
+        lastEditor: 'agent' as const,
+        updatedAt: new Date(),
+      }))
     const tool = createMemoryDocumentTool({
-      userId: 'user', responseId: 'response', read: vi.fn(async () => document), update,
+      userId: 'user', responseId: 'response', read, update,
     })
-    await expect(tool.execute('operation', {
-      expected_revision: 3,
-      summary: 'Remembered project',
-      edits: [{ operation: 'append', text: '- Building Pulpo' }],
-    }, new AbortController().signal)).rejects.toEqual(expect.objectContaining({
-      code: 'memory_document_conflict', currentRevision: 4,
+    const result = await tool.execute('operation', {
+      summary: 'Remembered pet',
+      edits: [{ operation: 'append', text: '- Has a cat named Jamie' }],
+    }, new AbortController().signal)
+
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(update).toHaveBeenNthCalledWith(1, expect.objectContaining({ expectedRevision: 4 }))
+    expect(update).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      expectedRevision: 5,
+      content: expect.stringContaining('# Projects\n- Pulpo\n\n- Has a cat named Jamie'),
     }))
-    expect(update).not.toHaveBeenCalled()
+    expect(JSON.stringify(result)).toContain('Updated MEMORY.md to revision 6')
   })
 
   it('describes MEMORY.md as a model-maintained notebook', () => {
@@ -78,7 +98,6 @@ describe('update_memory Agent tool', () => {
       userId: 'user', responseId: 'response', read: vi.fn(async () => document), update,
     })
     await tool.execute('operation', {
-      expected_revision: 4,
       summary: 'Added project context',
       edits: [{ operation: 'append', text: '- Building Pulpo' }],
     }, new AbortController().signal)

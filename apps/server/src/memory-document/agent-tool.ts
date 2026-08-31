@@ -10,6 +10,7 @@ import {
 
 const UPDATE_MEMORY_DESCRIPTION = `Edit the user's MEMORY.md profile using atomic text operations whenever doing so would improve future conversations.
 Treat MEMORY.md as a concise, model-maintained notebook about the user. Consolidate existing material instead of appending duplicates, and keep it useful rather than exhaustive.`
+const UPDATE_MEMORY_MAX_ATTEMPTS = 3
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -43,7 +44,6 @@ export function createMemoryDocumentTool(input: {
     label: 'update_memory',
     description: UPDATE_MEMORY_DESCRIPTION,
     parameters: Type.Object({
-      expected_revision: Type.Integer({ minimum: 0, description: 'Current MEMORY.md revision shown in the system context.' }),
       summary: Type.String({ minLength: 1, maxLength: 240, description: 'Short user-facing description of the change.' }),
       edits: Type.Array(Type.Union([
         Type.Object({
@@ -66,25 +66,32 @@ export function createMemoryDocumentTool(input: {
       signal?.throwIfAborted()
       await input.onOperationStarted?.(id)
       const args = record(rawArgs)
-      const expectedRevision = Number(args.expected_revision)
-      if (!Number.isInteger(expectedRevision) || expectedRevision < 0) throw new Error('expected_revision must be a non-negative integer')
       if (typeof args.summary !== 'string' || !args.summary.trim()) throw new Error('summary is required')
       if (!Array.isArray(args.edits)) throw new Error('edits must be an array')
       const edits = args.edits.map(parseEdit)
-      const current = await read(input.userId)
-      if (current.revision !== expectedRevision) {
-        throw new MemoryDocumentError('memory_document_conflict', 'MEMORY.md changed; do not overwrite it without the latest revision', current.revision)
+      let current = await read(input.userId)
+      let updated
+      for (let attempt = 1; attempt <= UPDATE_MEMORY_MAX_ATTEMPTS; attempt += 1) {
+        const content = applyMemoryDocumentEdits(current.content, edits)
+        signal?.throwIfAborted()
+        try {
+          updated = await update({
+            userId: input.userId,
+            expectedRevision: current.revision,
+            content,
+            editor: 'agent',
+            summary: args.summary,
+            sourceResponseId: input.responseId,
+          })
+          break
+        } catch (error) {
+          if (!(error instanceof MemoryDocumentError)
+            || error.code !== 'memory_document_conflict'
+            || attempt === UPDATE_MEMORY_MAX_ATTEMPTS) throw error
+          current = await read(input.userId)
+        }
       }
-      const content = applyMemoryDocumentEdits(current.content, edits)
-      signal?.throwIfAborted()
-      const updated = await update({
-        userId: input.userId,
-        expectedRevision,
-        content,
-        editor: 'agent',
-        summary: args.summary,
-        sourceResponseId: input.responseId,
-      })
+      if (!updated) throw new Error('Unable to update MEMORY.md')
       const summary = args.summary.replace(/\s+/g, ' ').trim().slice(0, 240)
       return {
         content: [{ type: 'text' as const, text: `Updated MEMORY.md to revision ${updated.revision}: ${summary}` }],
