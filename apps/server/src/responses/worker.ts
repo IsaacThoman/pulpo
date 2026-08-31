@@ -33,8 +33,10 @@ import { EMPTY_USAGE, providerReportedCostMicros, trackBilledInternalModelCall }
 import { providerCacheRequestOptions } from './provider-cache.js'
 import { createModelImageInterceptor, interceptOpenAIInputImages, type ModelImageInterceptor } from './image-ocr.js'
 import { modelImageRendition } from './model-image.js'
-import { sanitizeOutputForClient } from './public-output.js'
-import { COMPACTION_PROMPT, compactConversation } from './compaction.js'
+import { sanitizeContextForStorage, sanitizeOutputForClient } from './public-output.js'
+import { COMPACTION_PROMPT, compactConversation, retainedEntries } from './compaction.js'
+import { shouldCompactContext } from './compaction-policy.js'
+import { splitCodexConversationExchanges, type CodexConversationExchange } from './codex-compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
 import { resolveModelParameters } from './model-parameters.js'
@@ -57,6 +59,7 @@ import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
 import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
+import { estimateInputTokens } from '../accounting/pricing.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
 
@@ -326,29 +329,55 @@ async function processCodexGenerationAttempt(
     lineage.unshift(parent)
     parentId = parent.parentResponseId
   }
-  const messages: Message[] = []
-  for (const turn of lineage) {
+  const checkpoint = lineage.findLast((turn) => (turn.output as unknown[]).some((raw) => {
+    const item = raw as Partial<CompactionItem>
+    return item.type === 'pulpo_compaction' && item.phase === 'pre_response' && item.status === 'completed'
+  }))
+  const checkpointOutput = Array.isArray(checkpoint?.output) ? checkpoint.output : []
+  const checkpointItem = checkpointOutput.find((raw: unknown) => {
+    const item = raw as Partial<CompactionItem>
+    return item.type === 'pulpo_compaction' && item.phase === 'pre_response' && item.status === 'completed'
+  }) as CompactionItem | undefined
+  const coveredIndex = checkpointItem?.covered_through_response_id
+    ? lineage.findIndex((turn) => turn.id === checkpointItem.covered_through_response_id)
+    : -1
+  const effectiveLineage = coveredIndex >= 0 ? lineage.slice(coveredIndex + 1) : lineage
+  const reusableCheckpoint = coveredIndex >= 0 ? checkpointItem : undefined
+  const priorSummaryMessage: Message | undefined = reusableCheckpoint?.summary
+    ? { role: 'user', content: `Earlier conversation summary:\n${reusableCheckpoint.summary}`, timestamp: checkpoint?.createdAt.getTime() ?? Date.now() }
+    : undefined
+  const exchanges: Array<CodexConversationExchange<Message>> = []
+  for (const turn of effectiveLineage) {
+    const exchange: Message[] = []
     const userText = responseInputText(turn.input)
-    if (userText) messages.push({ role: 'user', content: userText, timestamp: turn.createdAt.getTime() })
+    if (userText) exchange.push({ role: 'user', content: userText, timestamp: turn.createdAt.getTime() })
     const assistantText = codexAssistantText(turn.output)
-    if (assistantText) messages.push({
+    if (assistantText) exchange.push({
       role: 'assistant', content: [{ type: 'text', text: assistantText }], api: 'openai-codex-responses',
       provider: 'openai-codex', model: turn.actualModelId ?? turn.modelId,
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
       stopReason: 'stop', timestamp: turn.completedAt?.getTime() ?? turn.updatedAt.getTime(),
     })
+    if (exchange.length) exchanges.push({ responseId: turn.id, messages: exchange })
   }
-  messages.push(await codexCurrentUserMessage(record.response))
+  const currentMessage = await codexCurrentUserMessage(record.response)
+  const messages = [...(priorSummaryMessage ? [priorSummaryMessage] : []), ...exchanges.flatMap((exchange) => exchange.messages), currentMessage]
   const context: Context = { systemPrompt: record.model.systemPrompt.trim() || undefined, messages }
   const codex = createCodexModels(record.response.userId)
   const piModel = codex.getModel('openai-codex', record.model.upstreamModelId)
   if (!piModel) throw new Error('The pinned Pi Codex catalog no longer contains this model')
   const contextItems: unknown[] = []
-  const estimatedTokens = Math.ceil(JSON.stringify(messages).length / 4)
-  if (record.model.compactionEnabled && estimatedTokens > record.model.compactionThresholdTokens && messages.length > 4) {
-    const retainedCount = Math.max(2, record.model.compactionRetainedTurns * 2)
-    const older = messages.slice(0, -retainedCount)
-    const retained = messages.slice(-retainedCount)
+  const estimatedTokens = estimateInputTokens(context)
+  if (shouldCompactContext({
+    enabled: record.model.compactionEnabled,
+    estimatedTokens,
+    thresholdTokens: record.model.compactionThresholdTokens,
+    unitCount: exchanges.length,
+    retainedUnits: record.model.compactionRetainedTurns,
+  })) {
+    const split = splitCodexConversationExchanges(exchanges, record.model.compactionRetainedTurns)
+    const older = [...(priorSummaryMessage ? [priorSummaryMessage] : []), ...split.older]
+    const retained = split.retained
     const [requestLog] = await db.select({ id: requestLogs.id }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
     if (requestLog && older.length) {
       const prompt = `${COMPACTION_PROMPT}\n\n${JSON.stringify(older)}`
@@ -369,11 +398,19 @@ async function processCodexGenerationAttempt(
         },
       })
       if (!('skipped' in billed)) {
-        context.messages = [{ role: 'user', content: `Earlier conversation summary:\n${billed.result.output_text}`, timestamp: Date.now() }, ...retained]
+        context.messages = [
+          { role: 'user', content: `Earlier conversation summary:\n${billed.result.output_text}`, timestamp: Date.now() },
+          ...retained,
+          currentMessage,
+        ]
         contextItems.push({
           id: `compaction_${responseId}`, type: 'pulpo_compaction', phase: 'pre_response', status: 'completed',
           model_id: record.model.id, estimated_tokens: estimatedTokens, threshold_tokens: record.model.compactionThresholdTokens,
-          retained_turns: retained.length, summary: billed.result.output_text, started_at: new Date().toISOString(), duration_ms: 0,
+          retained_turns: retainedEntries(retained),
+          retained_context: sanitizeContextForStorage(retained),
+          retained_context_turns: sanitizeContextForStorage(split.retainedExchanges) as unknown[][],
+          covered_through_response_id: split.coveredThroughResponseId ?? reusableCheckpoint?.covered_through_response_id,
+          summary: billed.result.output_text, started_at: new Date().toISOString(), duration_ms: 0,
         })
       }
     }

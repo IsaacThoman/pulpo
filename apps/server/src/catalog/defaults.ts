@@ -127,6 +127,7 @@ export async function ensureBuiltinCatalog(): Promise<void> {
         name: upstream.name, description: 'Use your ChatGPT Plus or Pro Codex subscription.', sortOrder,
         enabled: true, visible: true, logo: 'openai', agentEnabled: true, defaultParameters: { reasoning: { effort: 'medium' } },
         contextWindow: upstream.contextWindow, maxOutputTokens: upstream.maxTokens,
+        compactionEnabled: true,
         tags: upstream.input.includes('image') ? ['reasoning', 'tools', 'code', 'vision'] : ['reasoning', 'tools', 'code'],
         allowedParameters: ['reasoning'], useProviderCost: false, fallbackModelId: null, maxRetries: 0,
       }).onConflictDoUpdate({
@@ -137,6 +138,7 @@ export async function ensureBuiltinCatalog(): Promise<void> {
           enabled: true, visible: true, logo: 'openai', agentEnabled: true,
           defaultParameters: { reasoning: { effort: 'medium' } },
           contextWindow: upstream.contextWindow, maxOutputTokens: upstream.maxTokens,
+          compactionEnabled: true,
           tags: upstream.input.includes('image') ? ['reasoning', 'tools', 'code', 'vision'] : ['reasoning', 'tools', 'code'],
           allowedParameters: ['reasoning'], useProviderCost: false, fallbackModelId: null, maxRetries: 0, updatedAt: new Date(),
         },

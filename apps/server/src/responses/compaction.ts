@@ -2,6 +2,7 @@ import type { CompactionItem, CompactionRetainedEntry } from '@pulpo/contracts'
 import { estimateInputTokens } from '../accounting/pricing.js'
 import { sanitizeContextForStorage } from './public-output.js'
 import { assistantOutputText } from './output-text.js'
+import { shouldCompactContext } from './compaction-policy.js'
 
 export const COMPACTION_PROMPT = `Create a handoff summary for another model that will continue this conversation.
 
@@ -153,7 +154,13 @@ export async function compactConversation(options: {
   const conversation = chunks.flatMap((chunk) => chunk.context)
   const estimatedTokens = estimateInputTokens([...options.fixedContext, ...conversation, ...options.currentInput])
   const retainable = chunks.filter((chunk) => chunk.retainable)
-  if (!options.enabled || estimatedTokens <= options.thresholdTokens || retainable.length <= options.retainedTurns) {
+  if (!shouldCompactContext({
+    enabled: options.enabled,
+    estimatedTokens,
+    thresholdTokens: options.thresholdTokens,
+    unitCount: retainable.length,
+    retainedUnits: options.retainedTurns,
+  })) {
     return { conversation }
   }
   if (options.existingItem?.status === 'completed' && options.existingItem.model_id === options.modelId) {
