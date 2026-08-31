@@ -6,6 +6,7 @@ import { AiLogo } from '@/components/ProviderLogo'
 import { Markdown } from '@/components/chat/Markdown'
 import { timeAgo } from '@/lib/format'
 import { ui } from '@/i18n/ui'
+import { useDocumentTitle } from '@/lib/document-title'
 
 interface SharedModel {
   id: string
@@ -109,6 +110,7 @@ export function SharedChatPage() {
   const { token = '' } = useParams()
   const [share, setShare] = useState<SharedChat | null>(null)
   const [error, setError] = useState('')
+  useDocumentTitle(share?.chat.title)
 
   useEffect(() => {
     let cancelled = false
