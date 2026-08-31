@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
-import { formatBalance, formatNumber, formatSecondsLabel, timeAgo } from './format'
+import { formatBalance, formatChartNumber, formatNumber, formatSecondsLabel, timeAgo } from './format'
 
 describe('locale-aware formatting', () => {
   afterEach(async () => {
@@ -13,6 +13,13 @@ describe('locale-aware formatting', () => {
     expect(formatNumber(1_250)).toBe('1,25K')
     expect(formatBalance(12.5)).toContain('12,50')
     expect(formatSecondsLabel(2_000)).toBe('2 segundos')
+  })
+
+  it('uses k, m, and b units for chart values', () => {
+    expect(formatChartNumber(999)).toBe('999')
+    expect(formatChartNumber(12_500)).toBe('12.5k')
+    expect(formatChartNumber(12_500_000)).toBe('12.5m')
+    expect(formatChartNumber(12_500_000_000)).toBe('12.5b')
   })
 })
 

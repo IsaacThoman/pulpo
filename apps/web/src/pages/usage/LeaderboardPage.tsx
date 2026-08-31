@@ -4,7 +4,7 @@ import { BarChart3, Clock } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import { useAuth } from '@/stores/auth'
-import { formatBalance, formatDate, formatUsd } from '@/lib/format'
+import { formatBalance, formatChartNumber, formatDate, formatUsd } from '@/lib/format'
 import type { Metric, MonitorUser, TimeRange } from '@/lib/types'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
@@ -320,9 +320,7 @@ export function LeaderboardPage({ scope = 'friends' }: { scope?: 'friends' | 'po
                       ? formatBalance(v)
                       : metric === 'cost'
                         ? axisMoney(v)
-                        : v >= 1000
-                          ? `${(v / 1000).toFixed(1)}k`
-                          : String(Math.round(v))
+                        : formatChartNumber(v)
                   }
                 />
                 <RTooltip cursor={{ fill: 'var(--muted)', fillOpacity: 0.5 }} content={<LeaderboardTip metric={metric} />} />
