@@ -4,25 +4,9 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import { Check, Copy } from 'lucide-react'
+import { normalizeMathDelimiters } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
 import { ui } from '@/i18n/ui'
-
-/**
- * Convert explicit LLM math delimiters to dollar syntax for remark-math.
- * Inline math uses two dollars because single dollars are reserved for normal
- * prose (especially currency). Skip fenced/inline code.
- */
-function normalizeMathDelimiters(content: string): string {
-  const parts = content.split(/(```[\s\S]*?```|`[^`\n]+`)/g)
-  return parts
-    .map((part, i) => {
-      if (i % 2 === 1) return part
-      return part
-        .replace(/(?<!\\)\\\[([\s\S]*?)(?<!\\)\\\]/g, (_, tex: string) => `\n$$\n${tex.trim()}\n$$\n`)
-        .replace(/(?<!\\)\\\(([\s\S]*?)(?<!\\)\\\)/g, (_, tex: string) => `$$${tex}$$`)
-    })
-    .join('')
-}
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
@@ -71,12 +55,12 @@ function useRenderedContent(content: string, streaming: boolean): string {
 
 export const Markdown = memo(function Markdown({ content, streaming = false }: { content: string; streaming?: boolean }) {
   const rendered = useRenderedContent(content, streaming)
-  const normalized = useMemo(() => normalizeMathDelimiters(rendered), [rendered])
+  const normalized = useMemo(() => normalizeMathDelimiters(rendered, { displayMathStyle: 'multiline' }), [rendered])
 
   return (
     <div className="markdown-content min-w-0 max-w-full [overflow-wrap:anywhere]">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, [remarkMath, { singleDollarTextMath: false }]]}
+        remarkPlugins={[remarkGfm, remarkMath]}
         rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: 'var(--muted-foreground)' }]]}
         components={{
           pre: ({ children }) => <>{children}</>,
