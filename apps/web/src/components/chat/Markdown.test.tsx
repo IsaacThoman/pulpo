@@ -5,13 +5,22 @@ import { Markdown } from './Markdown'
 describe('Markdown responsive containment', () => {
   it('renders currency signs as prose instead of pairing them as inline math', () => {
     const markup = renderToStaticMarkup(
-      <Markdown content={'Click the **$** dropdown, or choose Accounting if you want the $ aligned. A bare $100 is also currency.'} />,
+      <Markdown content={'Click the **$** dropdown, or choose Accounting if you want the $ aligned. Costs are $5 and $10.'} />,
     )
 
     expect(markup).toContain('<strong class="font-semibold">$</strong>')
     expect(markup).toContain('the $ aligned')
-    expect(markup).toContain('bare $100')
+    expect(markup).toContain('Costs are $5 and $10')
     expect(markup).not.toContain('class="katex"')
+  })
+
+  it('renders conventional single-dollar inline math', () => {
+    const markup = renderToStaticMarkup(
+      <Markdown content={String.raw`$F_{AB} = -A_x = 199$ lb and $100.5\sqrt{2} \approx 142.1$ lb`} />,
+    )
+
+    expect(markup.match(/class="katex"/g)).toHaveLength(2)
+    expect(markup).not.toContain('$F_{AB}')
   })
 
   it('still renders explicit inline and display math delimiters', () => {

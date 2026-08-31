@@ -183,12 +183,22 @@ export async function loadUsageActivity(input: {
     current.costMicros += Number(row.costMicros)
     dailyByModel.set(key, current)
   }
-  const topByModel = new Map<string, { modelId: string; calls: number; inputTokens: number; cacheWriteTokens: number; outputTokens: number; costMicros: number }>()
+  const topByModel = new Map<string, { modelId: string; name: string; logo: string | null; calls: number; inputTokens: number; cacheWriteTokens: number; outputTokens: number; costMicros: number }>()
   for (let index = 0; index < topModels.length; index += 1) {
     const row = topModels[index]!
     const resolved = resolvedTopModels[index]!
-    const modelId = displayedModels.get(resolved.modelId)?.id ?? (input.hidePrivateModels ? 'other' : resolved.modelId)
-    const current = topByModel.get(modelId) ?? { modelId, calls: 0, inputTokens: 0, cacheWriteTokens: 0, outputTokens: 0, costMicros: 0 }
+    const displayedModel = displayedModels.get(resolved.modelId)
+    const modelId = displayedModel?.id ?? (input.hidePrivateModels ? 'other' : resolved.modelId)
+    const current = topByModel.get(modelId) ?? {
+      modelId,
+      name: displayedModel?.name ?? resolved.modelName,
+      logo: displayedModel?.logo ?? resolved.modelLogo,
+      calls: 0,
+      inputTokens: 0,
+      cacheWriteTokens: 0,
+      outputTokens: 0,
+      costMicros: 0,
+    }
     current.calls += Number(row.calls)
     current.inputTokens += Number(row.inputTokens)
     current.cacheWriteTokens += Number(row.cacheWriteTokens)
