@@ -4,21 +4,22 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { StatsRow } from './StatsRow'
 
 describe('StatsRow', () => {
-  it('includes aggregate subscription coverage in the combined spend breakdown', () => {
+  it('shows combined spend in violet without a breakdown tooltip', () => {
     const markup = renderToStaticMarkup(
       <TooltipProvider>
         <StatsRow
           calls={2}
           tokens={1_000}
           cost={0.05}
-          subscriptionCoveredCost={0.05}
           inferenceReferenceCost={0.31}
         />
       </TooltipProvider>,
     )
 
     expect(markup).toContain('>$0.3600</span>')
-    expect(markup).toContain('Pulpo usage: $0.0500')
-    expect(markup).toContain('Covered by your subscription · $0.0000 charged to balance')
+    expect(markup).toContain('text-violet-700')
+    expect(markup).not.toContain('data-inference-reference-cost')
+    expect(markup).not.toContain('API equivalent')
+    expect(markup).not.toContain('Pulpo usage')
   })
 })
