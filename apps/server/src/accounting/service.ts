@@ -233,6 +233,7 @@ export async function settleBudget(input: {
   requestCount?: number
   costMicrosOverride?: number
   additionalCostMicros?: number
+  inferenceReferenceCostMicros?: number
 }): Promise<number> {
   const settlement = await db.transaction(async (tx) => {
     const [reservation] = await tx
@@ -350,6 +351,7 @@ export async function settleBudget(input: {
       outputTokens: input.usage.outputTokens,
       reasoningTokens: input.usage.reasoningTokens,
       costMicros: cost,
+      inferenceReferenceCostMicros: Math.max(0, input.inferenceReferenceCostMicros ?? 0),
       weeklyCostMicros: weeklyCost,
       fiveHourCostMicros: fiveHourCost,
       balanceCostMicros: balanceCost,

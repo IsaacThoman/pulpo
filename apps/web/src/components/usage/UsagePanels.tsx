@@ -4,7 +4,7 @@ import type { MonitorUser, UsageRecord } from '@/lib/types'
 import { getCatalogModel } from '@/stores/catalog'
 import { formatBalance, formatUsd, formatUsageTime } from '@/lib/format'
 import { ModelIcon } from '@/components/ModelIcon'
-import { SubscriptionCoverageCost } from './SubscriptionCoverageCost'
+import { UsageCostBreakdown } from './UsageCostBreakdown'
 import { ui, activeLocale } from '@/i18n/ui'
 
 /** Bordered panel with a scrollable, cursor-paginated records table. */
@@ -74,8 +74,8 @@ export function RecentUsagePanel({
                 <col className="w-[22%]" />
                 <col />
                 {showUser && <col className="w-[16%]" />}
-                <col className="w-[12%]" />
-                <col className="w-[12%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
                 {showBalance && <col className="w-[14%]" />}
               </colgroup>
               <thead>
@@ -127,8 +127,9 @@ export function RecentUsagePanel({
                         {(r.tokensIn + r.tokensOut).toLocaleString(activeLocale())}
                       </td>
                       <td className="px-3 py-2 text-right tabular-nums">
-                        <SubscriptionCoverageCost
+                        <UsageCostBreakdown
                           costUsd={r.cost}
+                          inferenceReferenceUsd={r.inferenceReferenceCost}
                           subscriptionCoveredUsd={r.subscriptionCoveredCost}
                           personal
                         />

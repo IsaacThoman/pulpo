@@ -942,6 +942,7 @@ export const usageEvents = pgTable('usage_events', {
   outputTokens: integer('output_tokens').notNull(),
   reasoningTokens: integer('reasoning_tokens').notNull().default(0),
   costMicros: bigint('cost_micros', { mode: 'number' }).notNull(),
+  inferenceReferenceCostMicros: bigint('inference_reference_cost_micros', { mode: 'number' }).notNull().default(0),
   weeklyCostMicros: bigint('weekly_cost_micros', { mode: 'number' }).notNull().default(0),
   fiveHourCostMicros: bigint('five_hour_cost_micros', { mode: 'number' }).notNull().default(0),
   balanceCostMicros: bigint('balance_cost_micros', { mode: 'number' }).notNull().default(0),

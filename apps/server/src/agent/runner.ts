@@ -73,6 +73,8 @@ import { loadAgentPromptImages } from './prompt-images.js'
 import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, safeCodexErrorMessage } from '../codex/credential-store.js'
+import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
+import { agentSettlementAmounts } from './settlement.js'
 
 function toolResultText(result: unknown): string {
   const content = (result as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content
@@ -283,14 +285,33 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   let streamProjection: ResponseSnapshot = toSnapshot(record.response)
   let modelTurns = existingRun?.modelTurns ?? 0; let toolCalls = existingRun?.toolCalls ?? 0
   let usage = persistedUsage ?? emptyUsage
-  const [[previousModelCost], [previousWebToolCost]] = await Promise.all([
+  const [[previousModelCost], [previousWebToolCost], previousModelTurns] = await Promise.all([
     db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
       .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'agent'))),
     db.select({ total: sql<number>`coalesce(sum(${toolExecutions.billedCostMicros}), 0)::bigint` })
       .from(toolExecutions).where(and(eq(toolExecutions.agentRunId, runId), eq(toolExecutions.status, 'completed'))),
+    db.select({
+      modelId: generationAttempts.modelId,
+      inputTokens: generationAttempts.inputTokens,
+      cachedInputTokens: generationAttempts.cachedInputTokens,
+      cacheWriteTokens: generationAttempts.cacheWriteTokens,
+      outputTokens: generationAttempts.outputTokens,
+      reasoningTokens: generationAttempts.reasoningTokens,
+    }).from(generationAttempts).where(and(
+      eq(generationAttempts.requestLogId, requestLog.id),
+      eq(generationAttempts.source, 'agent'),
+    )),
   ])
   let accruedCostMicros = Number(previousModelCost?.total ?? 0)
   let accruedWebToolCostMicros = Number(previousWebToolCost?.total ?? 0)
+  let inferenceReferenceCostMicros = previousModelTurns.reduce((total, turn) => {
+    const turnModel = runtimes.find((candidate) => candidate.model.id === turn.modelId)
+    if (!turnModel?.codex) return total
+    return total + codexInferenceReferenceCostMicros(turnModel.piModel, {
+      ...turn,
+      totalTokens: turn.inputTokens + turn.outputTokens,
+    })
+  }, 0)
   const [previousSidecarCost] = await db.select({ total: sql<number>`coalesce(sum(${generationAttempts.costMicros}), 0)::bigint` })
     .from(generationAttempts).where(and(eq(generationAttempts.requestLogId, requestLog.id), eq(generationAttempts.source, 'tool')))
   sidecarCostMicros += Number(previousSidecarCost?.total ?? 0)
@@ -807,6 +828,9 @@ async function runAgentGeneration(responseId: string): Promise<void> {
         : undefined
       const turnCost = providerTurnCost ?? configuredTurnCost
       accruedCostMicros += turnCost
+      if (completedRuntime.runtime.codex) {
+        inferenceReferenceCostMicros += codexInferenceReferenceCostMicros(completedRuntime.runtime.piModel, turnUsage)
+      }
       billingTurns.push({ modelId: completedRuntime.runtime.model.id, pricingVersionId: pricing.id, usage: turnUsage, costMicros: turnCost })
       const turnDurationMs = Date.now() - (modelTurnStartedAt.get(completedTurnNumber) ?? Date.now())
       turnDurationsMs.set(completedTurnNumber, turnDurationMs)
@@ -1012,14 +1036,22 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0
-    const additionalCostMicros = sidecarCostMicros + postTaskCostMicros + workspaceCostMicros
-    const cost = usage.totalTokens || additionalCostMicros > 0
+    const settlement = agentSettlementAmounts({
+      totalTokens: usage.totalTokens,
+      generationCostMicros: accruedCostMicros,
+      webToolCostMicros: accruedWebToolCostMicros,
+      sidecarCostMicros,
+      postTaskCostMicros,
+      workspaceCostMicros,
+    })
+    const cost = settlement.shouldSettle
       ? await settleBudget({
         responseId,
         usage,
         latencyMs: Date.now() - startedAt,
-        costMicrosOverride: usage.totalTokens ? accruedCostMicros + accruedWebToolCostMicros : 0,
-        additionalCostMicros,
+        costMicrosOverride: settlement.costMicrosOverride,
+        additionalCostMicros: settlement.additionalCostMicros,
+        inferenceReferenceCostMicros,
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
@@ -1048,14 +1080,21 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     workspaceCostMicros = workspaceReadyAtMs !== undefined && settings.billWorkspaces
       ? workspaceUsageMicros(Date.now() - workspaceReadyAtMs, settings.workspacePricePerMinuteMicros)
       : 0
-    const additionalCostMicros = sidecarCostMicros + workspaceCostMicros
-    const cost = usage.totalTokens || additionalCostMicros > 0
+    const settlement = agentSettlementAmounts({
+      totalTokens: usage.totalTokens,
+      generationCostMicros: accruedCostMicros,
+      webToolCostMicros: accruedWebToolCostMicros,
+      sidecarCostMicros,
+      workspaceCostMicros,
+    })
+    const cost = settlement.shouldSettle
       ? await settleBudget({
         responseId,
         usage,
         latencyMs: Date.now() - startedAt,
-        costMicrosOverride: usage.totalTokens ? accruedCostMicros + accruedWebToolCostMicros : 0,
-        additionalCostMicros,
+        costMicrosOverride: settlement.costMicrosOverride,
+        additionalCostMicros: settlement.additionalCostMicros,
+        inferenceReferenceCostMicros,
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
