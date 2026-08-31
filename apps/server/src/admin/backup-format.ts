@@ -48,5 +48,8 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     response.idempotency_scope ??= 'default'
     response.publicly_stored ??= true
   }
-  for (const event of database.usage_events ?? []) event.five_hour_cost_micros ??= 0
+  for (const event of database.usage_events ?? []) {
+    event.five_hour_cost_micros ??= 0
+    event.inference_reference_cost_micros ??= 0
+  }
 }

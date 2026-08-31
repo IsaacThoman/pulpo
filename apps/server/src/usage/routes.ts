@@ -120,6 +120,7 @@ export async function loadUsageActivity(input: {
       cacheWriteTokens: sql<number>`coalesce(sum(${usageEvents.cacheWriteTokens}), 0)::bigint`,
       outputTokens: sql<number>`coalesce(sum(${usageEvents.outputTokens}), 0)::bigint`,
       costMicros: sql<number>`coalesce(sum(${usageEvents.costMicros}), 0)::bigint`,
+      inferenceReferenceCostMicros: sql<number>`coalesce(sum(${usageEvents.inferenceReferenceCostMicros}), 0)::bigint`,
       firstUsedAt: sql<string | null>`min(${usageEvents.createdAt})::text`,
     }).from(usageEvents).innerJoin(users, eq(usageEvents.userId, users.id)).where(rangeWhere),
     db.select({
@@ -200,6 +201,7 @@ export async function loadUsageActivity(input: {
       calls: Number(totals?.calls ?? 0), inputTokens: Number(totals?.inputTokens ?? 0),
       cacheWriteTokens: Number(totals?.cacheWriteTokens ?? 0),
       outputTokens: Number(totals?.outputTokens ?? 0), costMicros: Number(totals?.costMicros ?? 0),
+      inferenceReferenceCostMicros: Number(totals?.inferenceReferenceCostMicros ?? 0),
       firstUsedAt: totals?.firstUsedAt ?? null,
     },
     daily: [...dailyByModel.values()],
@@ -285,6 +287,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         // Presentation follows the user's selected model; cost and pricing fields
         // remain those of the actual responder recorded on the usage event.
         modelId: canonical.get(displayModels[index]!.modelId)?.modelId ?? displayModels[index]!.modelId,
+        inferenceReferenceCostMicros: Number(usage.inferenceReferenceCostMicros),
         subscriptionCoveredMicros: Number(usage.weeklyCostMicros),
         balanceAfterMicros,
       })),
@@ -402,6 +405,7 @@ export async function registerUsageRoutes(app: FastifyInstance): Promise<void> {
         cacheWriteTokens: row.usage.cacheWriteTokens,
         outputTokens: row.usage.outputTokens,
         costMicros: Number(row.usage.costMicros),
+        inferenceReferenceCostMicros: Number(row.usage.inferenceReferenceCostMicros),
         subscriptionCoveredMicros: Number(row.usage.weeklyCostMicros),
       }}),
       nextCursor: rows.length > query.limit && last ? encodeUsageCursor({ createdAt: last.createdAt, id: last.id }) : null,

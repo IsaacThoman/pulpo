@@ -4,11 +4,21 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { activeLocale, ui } from '@/i18n/ui'
 
 /** Flat divide-x stat strip: calls, tokens, spend, avg/call, estimated water — no cards. */
-export function StatsRow({ calls, tokens, cost }: { calls: number; tokens: number; cost: number }) {
+export function StatsRow({ calls, tokens, cost, inferenceReferenceCost = 0 }: {
+  calls: number
+  tokens: number
+  cost: number
+  inferenceReferenceCost?: number
+}) {
   const stats = [
     { label: ui("Calls"), value: calls.toLocaleString(activeLocale()) },
     { label: ui("Tokens"), value: tokens.toLocaleString(activeLocale()) },
     { label: ui("Spend"), value: formatUsd(cost) },
+    ...(inferenceReferenceCost > 0 ? [{
+      label: ui("API equivalent"),
+      value: formatUsd(inferenceReferenceCost),
+      info: ui("Estimated API-equivalent inference value; not charged by Pulpo"),
+    }] : []),
     { label: ui("Avg per call"), value: formatUsd(calls > 0 ? cost / calls : 0) },
     {
       label: ui("Estimated water"),
@@ -17,7 +27,7 @@ export function StatsRow({ calls, tokens, cost }: { calls: number; tokens: numbe
     },
   ]
   return (
-    <div className="grid grid-cols-2 gap-1 sm:grid-cols-5 md:gap-0 md:divide-x">
+    <div className={`grid grid-cols-2 gap-1 ${inferenceReferenceCost > 0 ? 'sm:grid-cols-3 md:grid-cols-6' : 'sm:grid-cols-5'} md:gap-0 md:divide-x`}>
       {stats.map((s) => (
         <div key={s.label} className="p-3 md:first:pl-0 md:last:pr-0">
           <div className="mb-1 flex items-center gap-1 text-xs text-muted-foreground">

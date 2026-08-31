@@ -1,0 +1,1 @@
+ALTER TABLE "usage_events" ADD COLUMN "inference_reference_cost_micros" bigint DEFAULT 0 NOT NULL;

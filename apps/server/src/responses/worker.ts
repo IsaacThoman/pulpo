@@ -55,6 +55,7 @@ import {
 } from './fallback-policy.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
+import { codexInferenceReferenceCostMicros } from '../codex/reference-cost.js'
 import { agentThinkingLevel } from '../agent/model-parameters.js'
 
 type UpstreamEvent = { type: string; [key: string]: unknown }
@@ -95,6 +96,7 @@ async function settleWithSidecars(input: {
   latencyMs: number
   providerCostMicros?: number
   additionalCostMicros: number
+  inferenceReferenceCostMicros?: number
 }): Promise<number> {
   const hasGeneration = Boolean(input.usage && input.usage.totalTokens > 0)
   if (!hasGeneration && input.additionalCostMicros <= 0) {
@@ -107,6 +109,7 @@ async function settleWithSidecars(input: {
     latencyMs: input.latencyMs,
     costMicrosOverride: hasGeneration ? input.providerCostMicros : 0,
     additionalCostMicros: input.additionalCostMicros,
+    inferenceReferenceCostMicros: input.inferenceReferenceCostMicros,
   })
 }
 
@@ -449,7 +452,14 @@ async function processCodexGenerationAttempt(
         }
       }
     }
-    await settleWithSidecars({ responseId, usage, latencyMs: Date.now() - startedAt, providerCostMicros: 0, additionalCostMicros })
+    await settleWithSidecars({
+      responseId,
+      usage,
+      latencyMs: Date.now() - startedAt,
+      providerCostMicros: 0,
+      additionalCostMicros,
+      inferenceReferenceCostMicros: codexInferenceReferenceCostMicros(piModel, usage),
+    })
     const [snapshot] = await db.select().from(responses).where(eq(responses.id, responseId)).limit(1)
     if (snapshot) await publishSnapshot(toSnapshot(snapshot))
   } catch (error) {

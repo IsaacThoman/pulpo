@@ -46,7 +46,10 @@ describe('full backup format', () => {
     expect(database.users[0]).toMatchObject({ profile_color: null, avatar_object_key: null, avatar_version: 0 })
     expect(database.provider_connections[0]).toMatchObject({ tool_result_image_mode: 'native' })
     expect(database.responses[0]).toMatchObject({ metadata: {}, idempotency_scope: 'default', publicly_stored: true })
-    expect(database.usage_events[0]).toMatchObject({ five_hour_cost_micros: 0 })
+    expect(database.usage_events[0]).toMatchObject({
+      five_hour_cost_micros: 0,
+      inference_reference_cost_micros: 0,
+    })
   })
 
   it('preserves values already stored in a newer backup', () => {
@@ -54,7 +57,7 @@ describe('full backup format', () => {
       users: [{ avatar_version: 7 }],
       provider_connections: [{ tool_result_image_mode: 'separate' }],
       responses: [{ metadata: { source: 'api' }, idempotency_scope: 'api:key', publicly_stored: false }],
-      usage_events: [{ five_hour_cost_micros: 42 }],
+      usage_events: [{ five_hour_cost_micros: 42, inference_reference_cost_micros: 84 }],
     }
 
     applyFullBackupCompatibilityDefaults(database)
@@ -63,5 +66,6 @@ describe('full backup format', () => {
     expect(database.provider_connections[0]!.tool_result_image_mode).toBe('separate')
     expect(database.responses[0]).toEqual({ metadata: { source: 'api' }, idempotency_scope: 'api:key', publicly_stored: false })
     expect(database.usage_events[0]!.five_hour_cost_micros).toBe(42)
+    expect(database.usage_events[0]!.inference_reference_cost_micros).toBe(84)
   })
 })
