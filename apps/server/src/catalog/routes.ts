@@ -29,9 +29,30 @@ import { deleteCatalogModel } from './model-deletion.js'
 import { parseAgentSettings } from '../settings/application-settings.js'
 import { catalogIconUrls, requireCatalogIcon } from './icon-service.js'
 import { CODEX_LAB_ID, CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID, isCodexModelId, isManagedLabId, isManagedProviderId } from '../codex/constants.js'
+import {
+  COMPACTION_MIN_THRESHOLD_TOKENS,
+  maximumCompactionThreshold,
+} from '../responses/compaction-policy.js'
 
 type PresetInput = ChatPreset[]
 const RESERVED_PARAMETERS = new Set(['model', 'input', 'stream', 'store', 'metadata'])
+const codexCompactionPatchSchema = z.object({
+  compactionThresholdTokens: z.number().int().min(COMPACTION_MIN_THRESHOLD_TOKENS).optional(),
+  compactionRetainedTurns: z.number().int().min(1).max(32).optional(),
+}).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one compaction setting is required' })
+
+function codexModelSettings(model: typeof models.$inferSelect) {
+  return {
+    id: model.id,
+    name: model.name,
+    upstreamModelId: model.upstreamModelId,
+    contextWindow: model.contextWindow,
+    maxOutputTokens: model.maxOutputTokens,
+    compactionThresholdTokens: model.compactionThresholdTokens,
+    compactionRetainedTurns: model.compactionRetainedTurns,
+    maximumCompactionThresholdTokens: maximumCompactionThreshold(model.contextWindow),
+  }
+}
 
 function validateDefaultParameters(value: Record<string, unknown>, allowedParameters: string[]): void {
   for (const key of Object.keys(value)) {
@@ -499,6 +520,44 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
         })),
       }))),
     }))) }
+  })
+
+  app.get('/api/admin/codex-model-settings', async (request) => {
+    requireAdmin(request)
+    const rows = await db.select().from(models).where(and(
+      eq(models.providerConnectionId, CODEX_PROVIDER_ID),
+      eq(models.enabled, true),
+    )).orderBy(asc(models.sortOrder), asc(models.createdAt))
+    return { data: rows.map(codexModelSettings) }
+  })
+
+  app.patch('/api/admin/codex-model-settings/:modelId', async (request) => {
+    const admin = requireAdmin(request)
+    const { modelId } = z.object({ modelId: z.string().min(1) }).parse(request.params)
+    const body = codexCompactionPatchSchema.parse(request.body)
+    const [current] = await db.select().from(models).where(and(
+      eq(models.id, modelId),
+      eq(models.providerConnectionId, CODEX_PROVIDER_ID),
+    )).limit(1)
+    if (!current) throw notFound('Codex model')
+    const safeMaximum = maximumCompactionThreshold(current.contextWindow)
+    if (body.compactionThresholdTokens !== undefined && body.compactionThresholdTokens > safeMaximum) {
+      throw new AppError(400, 'validation_error', `Compaction threshold cannot exceed ${safeMaximum} tokens for this model`)
+    }
+    const updated = await db.transaction(async (tx) => {
+      const [row] = await tx.update(models).set({
+        compactionEnabled: true,
+        compactionThresholdTokens: body.compactionThresholdTokens,
+        compactionRetainedTurns: body.compactionRetainedTurns,
+        updatedAt: new Date(),
+      }).where(and(eq(models.id, modelId), eq(models.providerConnectionId, CODEX_PROVIDER_ID))).returning()
+      if (!row) throw notFound('Codex model')
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id, action: 'codex_model.compaction.update', targetType: 'model', targetId: modelId,
+      })
+      return row
+    })
+    return codexModelSettings(updated)
   })
 
   app.post('/api/admin/models', async (request, reply) => {

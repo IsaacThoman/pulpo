@@ -31,6 +31,12 @@ import { UpstreamModelField } from '@/components/admin/UpstreamModelField'
 import { useCatalogIcons } from '@/stores/catalogIcons'
 import type { AdminCatalogIcon, CatalogIconReference } from '@/lib/catalog-icons'
 import { ui, uit } from '@/i18n/ui'
+import {
+  compactionContextPercent,
+  managedCodexSettingsPatch,
+  type ManagedCodexModelSettings,
+  validManagedCodexSettings,
+} from './codex-model-settings'
 
 interface AdminModel {
   id: string
@@ -89,11 +95,13 @@ const empty = (providerConnectionId = '', labId: string | null = null): AdminMod
 
 export function AdminModelsPage() {
   const [models, setModels] = useState<AdminModel[]>([])
+  const [codexModels, setCodexModels] = useState<ManagedCodexModelSettings[]>([])
   const [providers, setProviders] = useState<Provider[]>([])
   const [labs, setLabs] = useState<Lab[]>([])
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'all' | 'visible' | 'hidden' | 'enabled' | 'disabled'>('visible')
   const [draft, setDraft] = useState<AdminModel | null>(null)
+  const [codexDraft, setCodexDraft] = useState<ManagedCodexModelSettings | null>(null)
   const [creating, setCreating] = useState(false)
   const [presetEditorValid, setPresetEditorValid] = useState(true)
   const [paramsValid, setParamsValid] = useState(true)
@@ -101,12 +109,13 @@ export function AdminModelsPage() {
   const loadIcons = useCatalogIcons((state) => state.load)
 
   const load = async () => {
-    const [modelResult, providerResult, labResult] = await Promise.all([
+    const [modelResult, codexResult, providerResult, labResult] = await Promise.all([
       apiRequest<{ data: AdminModel[] }>('/api/admin/models'),
+      apiRequest<{ data: ManagedCodexModelSettings[] }>('/api/admin/codex-model-settings'),
       apiRequest<{ data: Provider[] }>('/api/admin/providers'),
       apiRequest<{ data: Lab[] }>('/api/admin/labs'),
     ])
-    setModels(modelResult.data); setProviders(providerResult.data); setLabs(labResult.data)
+    setModels(modelResult.data); setCodexModels(codexResult.data); setProviders(providerResult.data); setLabs(labResult.data)
   }
   useEffect(() => { void Promise.all([load(), loadIcons()]) }, [loadIcons])
   useEffect(() => { setPresetEditorValid(true); setParamsValid(true) }, [draft?.id])
@@ -118,6 +127,16 @@ export function AdminModelsPage() {
     const body = { ...draft, tags: draft.tags, allowedParameters: draft.allowedParameters }
     await apiRequest(creating ? '/api/admin/models' : `/api/admin/models/${draft.id}`, { method: creating ? 'POST' : 'PATCH', body })
     setDraft(null); await Promise.all([load(), useCatalog.getState().load()])
+  }
+
+  const saveCodex = async () => {
+    if (!codexDraft || !validManagedCodexSettings(codexDraft)) return
+    await apiRequest(`/api/admin/codex-model-settings/${encodeURIComponent(codexDraft.id)}`, {
+      method: 'PATCH',
+      body: managedCodexSettingsPatch(codexDraft),
+    })
+    setCodexDraft(null)
+    await load()
   }
 
   const canSave = !!draft?.id && !!draft?.name && !!draft?.upstreamModelId && !!draft.providerConnectionId && !!draft.labId
@@ -204,6 +223,8 @@ export function AdminModelsPage() {
         ))}
       </div>
 
+      <ManagedCodexModelsSection models={codexModels} onEdit={(model) => setCodexDraft({ ...model })} />
+
       <Dialog open={!!draft} onOpenChange={(open) => !open && setDraft(null)}>
         <DialogContent className="flex h-[720px] max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
           <DialogHeader className="shrink-0 border-b px-6 py-4">
@@ -238,7 +259,113 @@ export function AdminModelsPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!codexDraft} onOpenChange={(open) => !open && setCodexDraft(null)}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+          <DialogHeader className="border-b px-6 py-4">
+            <DialogTitle className="flex items-center gap-2.5">
+              <AiLogo icon="codex" className="size-6 rounded-[3px]" />
+              {ui("Codex context management")}
+              <Badge variant="secondary" className="font-normal">{ui("Managed")}</Badge>
+            </DialogTitle>
+          </DialogHeader>
+          {codexDraft && (
+            <ManagedCodexSettingsEditor model={codexDraft} onChange={setCodexDraft} />
+          )}
+          <div className="flex justify-end gap-2 border-t px-6 py-3">
+            <Button variant="outline" onClick={() => setCodexDraft(null)}>{ui("Cancel")}</Button>
+            <Button disabled={!codexDraft || !validManagedCodexSettings(codexDraft)} onClick={() => void saveCodex()}>{ui("Save changes")}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  )
+}
+
+export function ManagedCodexSettingsEditor({
+  model,
+  onChange,
+}: {
+  model: ManagedCodexModelSettings
+  onChange: (model: ManagedCodexModelSettings) => void
+}) {
+  return (
+    <div className="space-y-5 px-6 py-5">
+      <div>
+        <div className="font-medium">{model.name}</div>
+        <div className="mt-0.5 font-mono text-xs text-muted-foreground">{model.upstreamModelId}</div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/20 p-3 text-sm">
+        <div><div className="text-xs text-muted-foreground">{ui("Context window")}</div><div className="mt-1 tabular-nums">{formatNumber(model.contextWindow)} {ui("tokens")}</div></div>
+        <div><div className="text-xs text-muted-foreground">{ui("Max output")}</div><div className="mt-1 tabular-nums">{formatNumber(model.maxOutputTokens)} {ui("tokens")}</div></div>
+      </div>
+      <div className="rounded-lg border bg-muted/20 p-3">
+        <div className="text-sm font-medium">{ui("Automatic context compaction")}</div>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{ui("Pulpo summarizes older context at the configured threshold. Managed Codex models keep compaction enabled to prevent context-limit failures.")}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label={ui("Threshold tokens")}>
+          <Input
+            type="number"
+            min={2000}
+            max={model.maximumCompactionThresholdTokens}
+            className="tabular-nums"
+            value={model.compactionThresholdTokens}
+            onChange={(event) => onChange({ ...model, compactionThresholdTokens: Number(event.target.value) })}
+          />
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {compactionContextPercent(model.compactionThresholdTokens, model.contextWindow)}% {ui("of context")} · {ui("maximum")} {formatNumber(model.maximumCompactionThresholdTokens)}
+          </div>
+        </Field>
+        <Field label={ui("Recent exchanges kept")}>
+          <Input
+            type="number"
+            min={1}
+            max={32}
+            className="tabular-nums"
+            value={model.compactionRetainedTurns}
+            onChange={(event) => onChange({ ...model, compactionRetainedTurns: Number(event.target.value) })}
+          />
+          <div className="mt-1 text-[11px] text-muted-foreground">{ui("Kept verbatim after each summary")}</div>
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+export function ManagedCodexModelsSection({
+  models,
+  onEdit,
+}: {
+  models: ManagedCodexModelSettings[]
+  onEdit: (model: ManagedCodexModelSettings) => void
+}) {
+  if (!models.length) return null
+  return (
+    <section className="space-y-2 pt-3">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-semibold">{ui("Managed Codex models")}</h3>
+        <Badge variant="secondary">{models.length}</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">{ui("Catalog details are managed by Pulpo. Administrators can tune context compaction for each model.")}</p>
+      {models.map((model) => (
+        <Card key={model.id} className="shadow-none">
+          <CardContent className="flex items-center gap-4 px-4 py-3">
+            <AiLogo icon="codex" className="size-8 rounded-[4px]" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{model.name}</span>
+                <Badge variant="outline" className="font-normal">{ui("Managed")}</Badge>
+              </div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                {formatNumber(model.contextWindow)} {ui("ctx")} · {ui("compacts at")} {formatNumber(model.compactionThresholdTokens)} · {ui("keeps")} {model.compactionRetainedTurns} {ui("exchanges")}
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => onEdit(model)}><Pencil className="size-3.5" /> {ui("Context settings")}</Button>
+          </CardContent>
+        </Card>
+      ))}
+    </section>
   )
 }
 
