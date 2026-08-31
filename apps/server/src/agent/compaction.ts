@@ -1,6 +1,7 @@
 import type { AgentContext, AgentMessage } from '@earendil-works/pi-agent-core'
 import type { CompactionItem } from '@pulpo/contracts'
 import { COMPACTION_PROMPT } from '../responses/compaction.js'
+import { shouldCompactContext } from '../responses/compaction-policy.js'
 
 export function agentCycles(messages: AgentMessage[]): AgentMessage[][] {
   const cycles: AgentMessage[][] = []
@@ -24,9 +25,14 @@ export function shouldCompactAgentContext(options: {
   cycleCount: number
   retainedTurns: number
 }): boolean {
-  if (!options.enabled) return false
-  if (!options.force && options.estimatedTokens <= options.thresholdTokens) return false
-  return options.cycleCount > options.retainedTurns
+  return shouldCompactContext({
+    enabled: options.enabled,
+    force: options.force,
+    estimatedTokens: options.estimatedTokens,
+    thresholdTokens: options.thresholdTokens,
+    unitCount: options.cycleCount,
+    retainedUnits: options.retainedTurns,
+  })
 }
 
 export function shouldCompactAgentStream(modelTurns: number): boolean {

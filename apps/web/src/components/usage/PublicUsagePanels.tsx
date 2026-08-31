@@ -22,13 +22,17 @@ export interface PublicUsageRecord {
 
 export interface PublicTopModel {
   modelId: string
+  name: string
+  logo: string | null
   calls: number
   costMicros: number
 }
 
-function UsageModelIcon({ modelId }: { modelId: string }) {
+function UsageModelIcon({ modelId, logo }: { modelId: string; logo: string | null }) {
   const iconModelId = modelId === 'other' ? UNKNOWN_MODEL_ID : modelId
-  return <ModelIcon model={getCatalogModel(iconModelId)} className="size-4 shrink-0 rounded-[2px]" />
+  const catalogModel = getCatalogModel(iconModelId)
+  const model = logo ? { ...catalogModel, modelLogo: logo, modelCustomIcon: null } : catalogModel
+  return <ModelIcon model={model} className="size-4 shrink-0 rounded-[2px]" />
 }
 
 export function PublicRecentUsagePanel({
@@ -101,7 +105,7 @@ export function PublicRecentUsagePanel({
           <tbody className="divide-y">{records.map((record) => <tr key={record.id}>
             <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(record.createdAt).toLocaleString(activeLocale())}</td>
             <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><ProfileAvatar name={record.participant.displayName} avatarUrl={record.participant.avatarUrl} className="size-5" fallbackClassName="text-[8px]" /><span className="truncate">{record.participant.displayName}</span></span></td>
-            <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} /><span className="truncate">{record.model.name}</span></span></td>
+            <td className="px-3 py-2"><span className="flex min-w-0 items-center gap-1.5"><UsageModelIcon modelId={record.model.id} logo={record.model.logo} /><span className="truncate">{record.model.name}</span></span></td>
             <td className="px-3 py-2 text-right tabular-nums">{(record.inputTokens + record.outputTokens).toLocaleString(activeLocale())}</td>
             <td className="px-3 py-2 text-right tabular-nums">
               <UsageCostBreakdown
@@ -125,9 +129,9 @@ export function PublicTopModelsPanel({ models }: { models: PublicTopModel[] }) {
     <div className="flex items-center gap-2 border-b px-3 py-2"><BarChart3 className="size-3" /><h3 className="text-xs font-medium">{ui("Top models")}</h3></div>
     {models.length === 0 ? <div className="p-6 text-center text-xs text-muted-foreground">{ui("No settled usage in this period")}</div> : <div className="max-h-96 divide-y overflow-y-auto">
       {models.map((model, index) => {
-        const name = model.modelId === 'other' ? 'Other' : getCatalogModel(model.modelId).name
+        const name = model.modelId === 'other' ? 'Other' : model.name
         return <div key={model.modelId} className="flex items-center justify-between gap-2 px-3 py-2">
-          <div className="flex min-w-0 flex-1 items-center gap-2"><span className="flex w-4 shrink-0 justify-center text-xs text-muted-foreground">{index + 1}</span><UsageModelIcon modelId={model.modelId} /><div className="min-w-0 flex-1"><p className="truncate text-xs">{name}</p><p className="text-xs text-muted-foreground">{model.calls.toLocaleString(activeLocale())} {ui("calls")}</p></div></div>
+          <div className="flex min-w-0 flex-1 items-center gap-2"><span className="flex w-4 shrink-0 justify-center text-xs text-muted-foreground">{index + 1}</span><UsageModelIcon modelId={model.modelId} logo={model.logo} /><div className="min-w-0 flex-1"><p className="truncate text-xs">{name}</p><p className="text-xs text-muted-foreground">{model.calls.toLocaleString(activeLocale())} {ui("calls")}</p></div></div>
           <span className="shrink-0 text-xs tabular-nums">{formatUsd(model.costMicros / 1_000_000)}</span>
         </div>
       })}

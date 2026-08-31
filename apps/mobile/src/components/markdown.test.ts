@@ -15,15 +15,15 @@ describe('beginsWithMarkdownHeading', () => {
 
 describe('normalizeMathDelimiters', () => {
   it('escapes currency signs so native math parsing leaves prose intact', () => {
-    const markdown = 'Click the **$** dropdown if you want the $ aligned. Enter $100 or \\$200.'
+    const markdown = 'Click the **$** dropdown if you want the $ aligned. Enter $100, $19.99/month, or \\$200.'
 
     expect(normalizeMathDelimiters(markdown))
-      .toBe('Click the **\\$** dropdown if you want the \\$ aligned. Enter \\$100 or \\$200.')
+      .toBe('Click the **\\$** dropdown if you want the \\$ aligned. Enter \\$100, \\$19.99/month, or \\$200.')
   })
 
-  it('treats bare single-dollar pairs as prose but preserves display math', () => {
-    expect(normalizeMathDelimiters('Bare $x$ and display $$x^2$$.'))
-      .toBe('Bare \\$x\\$ and display $$x^2$$.')
+  it('preserves single-dollar inline math and display math', () => {
+    expect(normalizeMathDelimiters('Inline $x$ and display $$x^2$$.'))
+      .toBe('Inline $x$ and display $$x^2$$.')
   })
 
   it('normalizes common inline and block LLM math delimiters', () => {
