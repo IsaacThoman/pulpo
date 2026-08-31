@@ -21,6 +21,15 @@ export function formatNumber(n: number): string {
   return n.toLocaleString(activeLocale())
 }
 
+/** Compact labels for chart axes, with a consistent single decimal place. */
+export function formatChartNumber(n: number): string {
+  const absolute = Math.abs(n)
+  if (absolute >= 1_000_000_000) return `${decimal(n / 1_000_000_000, 1)}b`
+  if (absolute >= 1_000_000) return `${decimal(n / 1_000_000, 1)}m`
+  if (absolute >= 1_000) return `${decimal(n / 1_000, 1)}k`
+  return String(Math.round(n))
+}
+
 export function formatCost(usd: number): string {
   if (usd === 0) return currencyUsd(usd, 2)
   return currencyUsd(usd, usd < 0.01 ? 4 : 2)

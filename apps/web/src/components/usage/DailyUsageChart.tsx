@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip as RTooltip, XAxis, YAxis } from 'recharts'
 import type { DailyModelUsage } from '@/lib/mock'
 import { getCatalogModel } from '@/stores/catalog'
-import { formatUsd } from '@/lib/format'
+import { formatChartNumber, formatUsd } from '@/lib/format'
 import type { Metric } from '@/lib/types'
 import { ContributionGraph } from './ContributionGraph'
 import { ui, activeLocale } from '@/i18n/ui'
@@ -219,9 +219,7 @@ export function DailyUsageChart({
                 tickFormatter={(v: number) =>
                   metric === 'cost'
                     ? axisCost(v)
-                    : v >= 1000
-                      ? `${(v / 1000).toFixed(1)}k`
-                      : String(Math.round(v))
+                    : formatChartNumber(v)
                 }
               />
               <RTooltip
