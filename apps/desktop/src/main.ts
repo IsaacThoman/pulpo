@@ -26,7 +26,7 @@ import {
   validatedExternalUrl,
   validatedProtocolUrl,
 } from './security'
-import { loadWindowState, saveWindowState } from './window-state'
+import { loadWindowState, MINIMUM_WINDOW_WIDTH, saveWindowState } from './window-state'
 import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
 import { desktopUpdatesSupported } from './update-support'
 
@@ -311,7 +311,7 @@ async function createMainWindow(): Promise<void> {
   const preload = path.join(__dirname, 'preload.js')
   const window = new BrowserWindow({
     ...state,
-    minWidth: 800,
+    minWidth: MINIMUM_WINDOW_WIDTH,
     minHeight: 600,
     show: false,
     title: 'Pulpo',

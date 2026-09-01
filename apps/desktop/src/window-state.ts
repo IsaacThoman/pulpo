@@ -11,6 +11,7 @@ interface WindowState {
 }
 
 const DEFAULT_STATE: WindowState = { width: 1280, height: 820 }
+export const MINIMUM_WINDOW_WIDTH = 400
 
 function statePath(): string {
   return path.join(app.getPath('userData'), 'window-state.json')
@@ -29,7 +30,7 @@ function isVisible(state: WindowState): boolean {
 export async function loadWindowState(): Promise<WindowState> {
   try {
     const parsed = JSON.parse(await readFile(statePath(), 'utf8')) as WindowState
-    if (parsed.width < 800 || parsed.height < 600 || !isVisible(parsed)) return DEFAULT_STATE
+    if (parsed.width < MINIMUM_WINDOW_WIDTH || parsed.height < 600 || !isVisible(parsed)) return DEFAULT_STATE
     return parsed
   } catch {
     return DEFAULT_STATE
