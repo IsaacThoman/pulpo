@@ -573,7 +573,7 @@ export const composerDrafts = pgTable('composer_drafts', {
   agentMode: boolean('agent_mode').notNull().default(false),
   autoExpire: boolean('auto_expire'),
   editorId: text('editor_id').notNull(),
-  revision: integer('revision').notNull().default(1),
+  revision: bigint('revision', { mode: 'number' }).notNull(),
   ...timestamps,
 }, (table) => [
   uniqueIndex('composer_drafts_user_scope_unique').on(table.userId, table.scope),

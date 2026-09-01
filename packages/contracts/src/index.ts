@@ -1647,6 +1647,9 @@ export const startChatSchema = z.object({
 })
 export type StartChatInput = z.infer<typeof startChatSchema>
 
+export const composerDraftScopeSchema = z.union([z.literal('new'), idSchema])
+export type ComposerDraftScope = z.infer<typeof composerDraftScopeSchema>
+
 export const composerDraftAttachmentSchema = z.object({
   id: idSchema,
   name: z.string(),
@@ -1657,8 +1660,8 @@ export type ComposerDraftAttachment = z.infer<typeof composerDraftAttachmentSche
 
 const composerDraftBaseFields = {
   content: z.string().max(1_000_000),
-  modelId: z.string().min(1),
-  presetSelections: z.record(z.string(), z.string()).default({}),
+  modelId: z.string().min(1).max(256),
+  presetSelections: z.record(z.string().min(1).max(128), z.string().min(1).max(128)).default({}),
   agentMode: z.boolean().default(false),
   autoExpire: z.boolean().optional(),
   editorId: z.string().min(1).max(128),
@@ -1673,14 +1676,35 @@ export const composerDraftInputSchema = z.object({
 })
 export type ComposerDraftInput = z.infer<typeof composerDraftInputSchema>
 
+export const composerDraftDeleteInputSchema = z.object({
+  editorId: z.string().min(1).max(128),
+})
+export type ComposerDraftDeleteInput = z.infer<typeof composerDraftDeleteInputSchema>
+
 export const composerDraftSchema = z.object({
   ...composerDraftBaseFields,
-  scope: z.union([z.literal('new'), idSchema]),
+  scope: composerDraftScopeSchema,
   attachments: z.array(composerDraftAttachmentSchema),
   revision: z.number().int().positive(),
   updatedAt: isoDateSchema,
 })
 export type ComposerDraft = z.infer<typeof composerDraftSchema>
+
+export const composerDraftChangeSchema = z.object({
+  scope: composerDraftScopeSchema,
+  revision: z.number().int().positive(),
+  editorId: z.string().min(1).max(128),
+  draft: composerDraftSchema.nullable(),
+  reason: z.enum(['saved', 'deleted', 'sent', 'chat_deleted', 'chat_expired']).default('saved'),
+})
+export type ComposerDraftChange = z.infer<typeof composerDraftChangeSchema>
+
+export const composerDraftsClearedSchema = z.object({
+  revision: z.number().int().positive(),
+  editorId: z.string().min(1).max(128),
+  reason: z.literal('sync_disabled'),
+})
+export type ComposerDraftsCleared = z.infer<typeof composerDraftsClearedSchema>
 
 export const syncRequestSchema = z.object({
   tabId: z.string().min(1).max(128),
@@ -1717,6 +1741,8 @@ export interface ServerToClientEvents {
   'response.completed': (input: { responseId: string; chatId: string; preview: string }) => void
   'chat.changed': (input: { chatId: string; revision: number }) => void
   'account.revision': (input: { revision: number; scopes?: StateInvalidationScope[] }) => void
+  'composer.draft.changed': (input: ComposerDraftChange) => void
+  'composer.drafts.cleared': (input: ComposerDraftsCleared) => void
   'usage.changed': (input: { balanceMicros: number; spentThisMonthMicros: number }) => void
   'sync.result': (result: SyncResult) => void
   'admin.usage.upsert': (event: z.infer<typeof adminUsageEventSchema>) => void

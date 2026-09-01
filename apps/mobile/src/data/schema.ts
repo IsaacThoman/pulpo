@@ -1,4 +1,4 @@
-export const MOBILE_DATABASE_VERSION = 4
+export const MOBILE_DATABASE_VERSION = 5
 
 export const MOBILE_SCHEMA = `
 PRAGMA journal_mode = WAL;
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS drafts (
   server_revision INTEGER,
   server_updated_at TEXT,
   dirty INTEGER NOT NULL DEFAULT 1,
+  deleted INTEGER NOT NULL DEFAULT 0,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (namespace, chat_id)
 );

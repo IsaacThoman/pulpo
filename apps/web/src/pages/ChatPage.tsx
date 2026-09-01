@@ -143,6 +143,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
   const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
+  const [newChatAutoExpireOverride, setNewChatAutoExpireOverride] = useState<boolean | undefined>()
   const instanceReady = useAuth((s) => s.instanceReady)
   const userRole = useAuth((s) => s.user?.role)
   const networkReady = !isDesktopRuntime() || instanceReady
@@ -268,7 +269,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }
 
   const isEmpty = !chat
-  const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
+  const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled'
+    && (newChatAutoExpireOverride ?? newChatAutoExpire)
   const suggestions = useMemo(
     () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
       if (!prompt.translationKey) return prompt
@@ -338,7 +340,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
       return
     }
-    useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
+    setNewChatAutoExpireOverride(!expirationEnabled)
   }
   const legacyTemporaryRoute = Boolean(!adminMode && routeChatId && chat?.temporary)
 
@@ -481,7 +483,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               temporary={temporaryMode}
               autoExpire={effectiveNewChatAutoExpire}
               onRestoreModel={restoreComposerModel}
-              onRestoreAutoExpire={(enabled) => useSettings.getState().set('newChatAutoExpire', enabled)}
+              onRestoreAutoExpire={setNewChatAutoExpireOverride}
               draftPersistence={!adminMode}
             />
           </div>
