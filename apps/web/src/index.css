@@ -548,6 +548,14 @@ html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .deskto
   pointer-events: auto;
 }
 
+html[data-desktop="true"] .desktop-compact-titlebar-drag-strip {
+  -webkit-app-region: drag;
+}
+
+html[data-desktop-os="win32"] .desktop-compact-titlebar-drag-strip {
+  right: 138px;
+}
+
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {
   left: 0;
 }

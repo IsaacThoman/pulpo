@@ -105,6 +105,12 @@ export function DesktopSidebarTitleBar({
           </>
         )}
       </div>
+      {compact && (
+        <div
+          aria-hidden="true"
+          className="desktop-compact-titlebar-drag-strip pointer-events-auto fixed inset-x-0 top-0 z-[44] h-4 select-none"
+        />
+      )}
       <div
         data-collapsed={collapsed ? 'true' : undefined}
         data-compact={compact ? 'true' : undefined}
