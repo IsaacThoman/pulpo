@@ -1,13 +1,15 @@
 import type { ComposerDraft, ComposerDraftChange, ComposerDraftInput, ComposerDraftsCleared } from '@pulpo/contracts'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
-import { mobileApi } from '../../api/client'
+import { ApiError, mobileApi } from '../../api/client'
 import {
   composerDraftScopes,
   detachAllComposerDraftServerReferences,
+  getValue,
   loadComposerDraftRecord,
   saveComposerDraftRecord,
   saveDraft,
+  setValue,
 } from '../../data/database'
 import { downloadAttachment } from './api'
 
@@ -365,7 +367,16 @@ export async function flushDirtyMobileComposerDrafts(namespace: string): Promise
         serverRevision: remote.revision,
         serverUpdatedAt: remote.updatedAt,
       })
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        await saveMobileComposerTombstone({
+          namespace,
+          scope,
+          editorId: local.editorId,
+          dirty: false,
+          serverRevision: local.serverRevision,
+        })
+      }
       // Keep the durable dirty record for the next reconnect.
     }
   }
@@ -378,4 +389,14 @@ export async function enableMobileComposerDraftSync(namespace: string): Promise<
     await saveMobileComposerDraft(namespace, scope, { ...local, dirty: true })
   }
   await flushDirtyMobileComposerDrafts(namespace)
+  await setValue(namespace, 'draft-sync-enable-pending', false)
+}
+
+export async function markMobileComposerDraftSyncEnablePending(namespace: string): Promise<void> {
+  await setValue(namespace, 'draft-sync-enable-pending', true)
+}
+
+export async function resumeMobileComposerDraftSyncEnable(namespace: string): Promise<void> {
+  if (!(await getValue<boolean>(namespace, 'draft-sync-enable-pending'))) return
+  await enableMobileComposerDraftSync(namespace)
 }

@@ -4,6 +4,7 @@ import {
   MOBILE_SCHEMA,
   attachmentEvictionPlan,
   cacheNamespace,
+  missingMobileDraftColumnMigrations,
   orderOutbox,
   outboxRetryDelay,
   type AttachmentCacheRecord,
@@ -25,20 +26,7 @@ const enqueueDatabaseOperation = createOperationQueue()
 
 async function ensureComposerDraftColumns(database: SQLite.SQLiteDatabase): Promise<void> {
   const columns = new Set((await database.getAllAsync<{ name: string }>('PRAGMA table_info(drafts)')).map((column) => column.name))
-  const additions = [
-    ['model_id', 'TEXT'],
-    ['preset_selections', "TEXT NOT NULL DEFAULT '{}'"],
-    ['agent_mode', 'INTEGER NOT NULL DEFAULT 0'],
-    ['auto_expire', 'INTEGER'],
-    ['editor_id', 'TEXT'],
-    ['server_revision', 'INTEGER'],
-    ['server_updated_at', 'TEXT'],
-    ['dirty', 'INTEGER NOT NULL DEFAULT 1'],
-    ['deleted', 'INTEGER NOT NULL DEFAULT 0'],
-  ] as const
-  for (const [name, definition] of additions) {
-    if (!columns.has(name)) await database.execAsync(`ALTER TABLE drafts ADD COLUMN ${name} ${definition}`)
-  }
+  for (const statement of missingMobileDraftColumnMigrations(columns)) await database.execAsync(statement)
 }
 
 export async function mobileDatabase(): Promise<SQLite.SQLiteDatabase> {

@@ -218,7 +218,12 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     setModelId(id)
   }
   const restoreComposerModel = (draftModelId: string) => {
-    const restoredModelId = models.some((candidate) => candidate.id === draftModelId) ? draftModelId : defaultModelId
+    const fallbackModelId = chatModelId && models.some((candidate) => candidate.id === chatModelId)
+      ? chatModelId
+      : resolveDefaultModelId(models, defaultModelId)
+    const restoredModelId = models.some((candidate) => candidate.id === draftModelId)
+      ? draftModelId
+      : fallbackModelId
     selectModel(restoredModelId)
     return restoredModelId
   }

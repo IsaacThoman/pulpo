@@ -1,5 +1,5 @@
 import type { ComposerDraft, ComposerDraftChange, ComposerDraftInput, ComposerDraftsCleared } from '@pulpo/contracts'
-import { apiRequest } from '@/lib/api'
+import { apiRequest, ApiError } from '@/lib/api'
 import { fetchApiBlob } from '@/lib/api'
 import { localAccountKey, localDb, type DraftRow } from './database'
 import type { UploadRecord } from '@/stores/upload-outbox'
@@ -20,6 +20,10 @@ function rowId(userId: string, scope: string): string {
 
 function blobId(userId: string, localId: string): string {
   return `${localAccountKey(userId)}:draft-blob:${localId}`
+}
+
+function enableMarkerKey(userId: string): string {
+  return `${localAccountKey(userId)}:draft-sync-enable-pending`
 }
 
 export async function loadLocalComposerDraft(userId: string, scope: string): Promise<LocalComposerDraft | null> {
@@ -141,10 +145,10 @@ export async function saveLocalComposerDraft(input: {
       attachments,
       editorId: input.editorId,
       serverRevision: input.serverRevision,
-    serverUpdatedAt: input.serverUpdatedAt,
-    dirty: input.dirty,
-    deleted: false,
-    updatedAt: Date.now(),
+      serverUpdatedAt: input.serverUpdatedAt,
+      dirty: input.dirty,
+      deleted: false,
+      updatedAt: Date.now(),
     })
   })
 }
@@ -339,7 +343,16 @@ export async function flushDirtyWebComposerDrafts(userId: string): Promise<void>
         serverRevision: remote.revision,
         serverUpdatedAt: remote.updatedAt,
       })
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        await saveLocalComposerTombstone({
+          userId,
+          scope: draft.chatId,
+          editorId: draft.editorId,
+          dirty: false,
+          serverRevision: draft.serverRevision,
+        })
+      }
       // The durable dirty snapshot is retried on the next reconnect/focus.
     }
   }
@@ -350,4 +363,14 @@ export async function enableWebComposerDraftSync(userId: string): Promise<void> 
   await localDb.drafts.where('userId').equals(accountKey).filter((draft) =>
     !draft.deleted && (draft.content.length > 0 || draft.attachments.length > 0)).modify({ dirty: true })
   await flushDirtyWebComposerDrafts(userId)
+  await localDb.kv.delete(enableMarkerKey(userId))
+}
+
+export async function markWebComposerDraftSyncEnablePending(userId: string): Promise<void> {
+  await localDb.kv.put({ key: enableMarkerKey(userId), value: true, updatedAt: Date.now() })
+}
+
+export async function resumeWebComposerDraftSyncEnable(userId: string): Promise<void> {
+  if (!(await localDb.kv.get(enableMarkerKey(userId)))) return
+  await enableWebComposerDraftSync(userId)
 }

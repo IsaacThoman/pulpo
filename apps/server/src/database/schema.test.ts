@@ -84,6 +84,14 @@ describe('user-owned operational records', () => {
     expect(draftAttachments.indexes.find((index) => index.config.name === 'composer_draft_attachments_position_unique')?.config.unique).toBe(true)
   })
 
+  it('creates composer drafts after the current migration history with account-wide revisions', () => {
+    const migration = readFileSync(new URL('../../drizzle/0055_chunky_dagger.sql', import.meta.url), 'utf8')
+    expect(migration).toContain('CREATE TABLE "composer_drafts"')
+    expect(migration).toContain('"revision" bigint NOT NULL')
+    expect(migration).toContain('composer_draft_attachments_position_unique')
+    expect(migration).toContain('ON DELETE cascade')
+  })
+
   it('enforces normalized friendship pairs and non-self blocks', () => {
     const friendshipConfig = getTableConfig(friendships)
     const blockConfig = getTableConfig(userBlocks)

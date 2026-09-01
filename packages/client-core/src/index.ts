@@ -23,6 +23,13 @@ import {
 
 export { normalizeMathDelimiters, type MathDelimiterOptions } from './markdown.js'
 
+export const COMPOSER_DRAFT_SAVE_DEBOUNCE_MS = 250
+
+export function scheduleComposerDraftSave(callback: () => void): () => void {
+  const timer = setTimeout(callback, COMPOSER_DRAFT_SAVE_DEBOUNCE_MS)
+  return () => clearTimeout(timer)
+}
+
 /** Serialize writes per key and retain only the newest value queued behind an active request. */
 export class LatestValueQueue<Key, Value, Result> {
   private readonly entries = new Map<Key, QueueEntry<Value, Result>>()

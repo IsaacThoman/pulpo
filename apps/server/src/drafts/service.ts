@@ -22,13 +22,19 @@ export async function publishComposerDraftsCleared(userId: string, event: Compos
   await redis.publish('pulpo:composer-drafts', JSON.stringify({ userId, type: 'cleared', payload: event }))
 }
 
-export async function readComposerDraft(userId: string, scope: string): Promise<ComposerDraft | null> {
-  const [draft] = await db.select().from(composerDrafts).where(and(
+type DraftReader = Pick<typeof db, 'select'>
+
+export async function readComposerDraft(
+  userId: string,
+  scope: string,
+  reader: DraftReader = db,
+): Promise<ComposerDraft | null> {
+  const [draft] = await reader.select().from(composerDrafts).where(and(
     eq(composerDrafts.userId, userId),
     eq(composerDrafts.scope, scope),
   )).limit(1)
   if (!draft) return null
-  const rows = await db.select({ attachment: attachments })
+  const rows = await reader.select({ attachment: attachments })
     .from(composerDraftAttachments)
     .innerJoin(attachments, eq(attachments.id, composerDraftAttachments.attachmentId))
     .where(eq(composerDraftAttachments.draftId, draft.id))
@@ -55,38 +61,46 @@ export async function readComposerDraft(userId: string, scope: string): Promise<
 export async function cleanupUnreferencedDraftAttachments(userId: string, attachmentIds: string[]): Promise<void> {
   const ids = [...new Set(attachmentIds)]
   if (!ids.length) return
-  const [draftRows, responseRows, queueRows, candidates] = await Promise.all([
-    db.select({ attachmentId: composerDraftAttachments.attachmentId })
-      .from(composerDraftAttachments)
-      .innerJoin(composerDrafts, eq(composerDrafts.id, composerDraftAttachments.draftId))
-      .where(and(eq(composerDrafts.userId, userId), inArray(composerDraftAttachments.attachmentId, ids))),
-    db.select({ input: responses.input }).from(responses).where(and(
-      eq(responses.userId, userId),
-      isNull(responses.deletedAt),
-    )),
-    db.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages).where(eq(queuedMessages.userId, userId)),
-    db.select().from(attachments).where(and(
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
+    // Draft saves lock the same rows. Whichever operation wins determines
+    // whether the blob is retained or the later save is rejected as deleted.
+    const candidates = await tx.select().from(attachments).where(and(
       eq(attachments.userId, userId),
       eq(attachments.origin, 'user'),
       eq(attachments.status, 'ready'),
       inArray(attachments.id, ids),
-    )),
-  ])
-  const draftReferences = new Set(draftRows.map((row) => row.attachmentId))
-  for (const attachment of candidates) {
-    if (draftReferences.has(attachment.id)) continue
-    if (attachmentReferenceIsLive(
-      attachment.id,
-      responseRows.map((row) => row.input),
-      queueRows.map((row) => row.attachmentIds),
-    )) continue
-    try {
-      await getBlobStore().delete(attachment.objectKey)
-      await db.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, attachment.id))
-    } catch {
-      // Cleanup is best-effort. A later explicit removal or maintenance pass can retry.
+    )).orderBy(asc(attachments.id)).for('update')
+    if (!candidates.length) return
+    const [draftRows, responseRows, queueRows] = await Promise.all([
+      tx.select({ attachmentId: composerDraftAttachments.attachmentId })
+      .from(composerDraftAttachments)
+      .innerJoin(composerDrafts, eq(composerDrafts.id, composerDraftAttachments.draftId))
+      .where(and(eq(composerDrafts.userId, userId), inArray(composerDraftAttachments.attachmentId, ids))),
+      tx.select({ input: responses.input }).from(responses).where(and(
+        eq(responses.userId, userId),
+        isNull(responses.deletedAt),
+      )),
+      tx.select({ attachmentIds: queuedMessages.attachmentIds }).from(queuedMessages)
+        .where(eq(queuedMessages.userId, userId)),
+    ])
+    const draftReferences = new Set(draftRows.map((row) => row.attachmentId))
+    for (const attachment of candidates) {
+      if (draftReferences.has(attachment.id)) continue
+      if (attachmentReferenceIsLive(
+        attachment.id,
+        responseRows.map((row) => row.input),
+        queueRows.map((row) => row.attachmentIds),
+      )) continue
+      try {
+        await getBlobStore().delete(attachment.objectKey)
+        await tx.update(attachments).set({ status: 'deleted', updatedAt: new Date() })
+          .where(eq(attachments.id, attachment.id))
+      } catch {
+        // Cleanup is best-effort. A later explicit removal or maintenance pass can retry.
+      }
     }
-  }
+  })
 }
 
 export async function deleteComposerDraft(input: {
@@ -173,22 +187,17 @@ export async function deleteAllComposerDrafts(
   revision: number,
   editorId = 'server:settings',
 ): Promise<void> {
-  const drafts = await db.select({ id: composerDrafts.id, scope: composerDrafts.scope })
-    .from(composerDrafts).where(eq(composerDrafts.userId, userId))
-  const rows = await db.select({ attachmentId: composerDraftAttachments.attachmentId })
-    .from(composerDraftAttachments)
-    .innerJoin(composerDrafts, eq(composerDrafts.id, composerDraftAttachments.draftId))
-    .where(eq(composerDrafts.userId, userId))
-  await db.delete(composerDrafts).where(eq(composerDrafts.userId, userId))
-  await Promise.all([
-    ...drafts.map((draft) => publishComposerDraftChange(userId, {
-      scope: draft.scope === 'new' ? 'new' : draft.scope,
-      revision,
-      editorId,
-      draft: null,
-      reason: 'deleted',
-    })),
-    publishComposerDraftsCleared(userId, { revision, editorId, reason: 'sync_disabled' }),
-  ])
+  let rows: Array<{ attachmentId: string }> = []
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${userId}))`)
+    rows = await tx.select({ attachmentId: composerDraftAttachments.attachmentId })
+      .from(composerDraftAttachments)
+      .innerJoin(composerDrafts, eq(composerDrafts.id, composerDraftAttachments.draftId))
+      .where(eq(composerDrafts.userId, userId))
+    await tx.delete(composerDrafts).where(eq(composerDrafts.userId, userId))
+  })
+  // A bulk clear intentionally does not emit per-scope tombstones: clients
+  // detach their server references while retaining each available local draft.
+  await publishComposerDraftsCleared(userId, { revision, editorId, reason: 'sync_disabled' })
   await cleanupUnreferencedDraftAttachments(userId, rows.map((row) => row.attachmentId))
 }

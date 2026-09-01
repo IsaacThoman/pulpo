@@ -29,6 +29,7 @@ import {
   applyMobileComposerDraftChange,
   applyMobileComposerDraftsCleared,
   flushDirtyMobileComposerDrafts,
+  resumeMobileComposerDraftSyncEnable,
 } from '../features/chat/composerDrafts'
 import {
   coalesceResponseEvents,
@@ -252,7 +253,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             afterSequence: Math.max(cursors[responseId] ?? 0, subscription.afterSequence),
           })
         }
-        void replayOutbox(namespace).then(({ replayed, rejected }) => {
+        void replayOutbox(namespace).then(async ({ replayed, rejected }) => {
+          if (usePreferencesStore.getState().syncDrafts) {
+            await resumeMobileComposerDraftSyncEnable(namespace)
+          }
           useRealtimeStore.getState().setSyncError(rejected
             ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced and was reconciled with the server.`
             : null)

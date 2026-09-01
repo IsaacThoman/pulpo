@@ -98,6 +98,7 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { scheduleComposerDraftSave } from '@pulpo/client-core';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
@@ -3555,7 +3556,7 @@ function ChatView({
     agentOverrideModelRef.current = null;
     setAgentEnabled(preferredAgentMode && canUseAgent);
     requestAnimationFrame(() => { suppressMobileDraftSaveRef.current = false; });
-  }, [applyMobileDraft, draftNamespace, draftScope, messageEdit, onChangeInput, sending, setAttachments]);
+  }, [applyMobileDraft, canUseAgent, draftNamespace, draftScope, messageEdit, onChangeInput, preferredAgentMode, sending, setAttachments]);
 
   useEffect(() => subscribeMobileComposerDrafts((change) => {
     if (change.type === 'cleared') {
@@ -3689,7 +3690,7 @@ function ChatView({
     if (messageEdit || sending) return;
     if (input.length > 0 || attachments.length > 0) localDraftDirtyRef.current = syncDrafts;
     const generation = ++draftSaveGenerationRef.current;
-    const timer = setTimeout(() => {
+    return scheduleComposerDraftSave(() => {
       if (input.length === 0 && attachments.length === 0) {
         localDraftDirtyRef.current = syncDrafts;
         if (syncDrafts) {
@@ -3755,8 +3756,7 @@ function ChatView({
           serverUpdatedAt: remote.updatedAt,
         });
       }).catch(() => undefined);
-    }, 250);
-    return () => clearTimeout(timer);
+    });
   }, [activeAgentEnabled, attachments, autoExpire, chatId, draftHydrationKey, draftNamespace, draftScope, input, messageEdit, model.id, networkOffline, presetSelections, sending, syncDrafts, temporary]);
 
   useEffect(() => {
@@ -4364,17 +4364,29 @@ function ChatView({
         return;
       }
       if (draftNamespace && syncDrafts) {
-        void saveMobileComposerTombstone({
-          namespace: draftNamespace,
-          scope: draftScope,
-          editorId: draftEditorIdRef.current,
-          dirty: true,
-          serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
-        });
+        const editorId = draftEditorIdRef.current;
+        void (async () => {
+          await saveMobileComposerTombstone({
+            namespace: draftNamespace,
+            scope: draftScope,
+            editorId,
+            dirty: true,
+            serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
+          });
+          const revision = await deleteMobileRemoteDraft(draftScope, editorId);
+          const current = await loadMobileComposerDraft(draftNamespace, draftScope);
+          if (!current?.deleted || current.editorId !== editorId) return;
+          await saveMobileComposerTombstone({
+            namespace: draftNamespace,
+            scope: draftScope,
+            editorId,
+            dirty: false,
+            serverRevision: revision,
+          });
+        })().catch(() => undefined);
       } else if (draftNamespace) {
         void deleteMobileComposerDraft(draftNamespace, draftScope);
       }
-      if (syncDrafts) void deleteMobileRemoteDraft(draftScope, draftEditorIdRef.current).catch(() => undefined);
       followSnapshot = null;
       for (const attachment of submittedDraft.attachments) {
         latestAttachmentsRef.current.delete(attachment.localId);

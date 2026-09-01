@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
 import type { ComposerDraftChange } from '@pulpo/contracts'
+import { scheduleComposerDraftSave } from '@pulpo/client-core'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -700,7 +701,7 @@ export function Composer({
     if (editingExisting || recovery || submissionPendingRef.current) return
     if (value.length > 0 || attachments.length > 0) localDraftDirtyRef.current = syncDrafts
     const generation = ++draftSaveGenerationRef.current
-    const timer = window.setTimeout(() => {
+    return scheduleComposerDraftSave(() => {
       if (value.length === 0 && attachments.length === 0) {
         localDraftDirtyRef.current = syncDrafts
         if (syncDrafts) {
@@ -772,8 +773,7 @@ export function Composer({
           serverUpdatedAt: remote.updatedAt,
         })
       }).catch(() => undefined)
-    }, 250)
-    return () => window.clearTimeout(timer)
+    })
   }, [activeAgentMode, attachments, autoExpire, canUseAgent, chatId, draftHydrationKey, draftPersistence, draftRetryRevision, draftScope, editingExisting, modelId, recovery, selections, syncDrafts, temporary, userId, value])
 
   const restorePreservedDraft = useCallback(() => {

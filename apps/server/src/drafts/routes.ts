@@ -1,6 +1,11 @@
-import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
+import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
-import { composerDraftDeleteInputSchema, composerDraftInputSchema, type ComposerDraft } from '@pulpo/contracts'
+import {
+  composerDraftDeleteInputSchema,
+  composerDraftInputSchema,
+  composerDraftScopeSchema,
+  type ComposerDraft,
+} from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
 import {
@@ -22,6 +27,7 @@ import {
   readComposerDraft,
 } from './service.js'
 import { resolveResponseGeneration } from '../responses/service.js'
+import { accessibleChatCondition } from '../chats/temporary.js'
 
 export function draftSyncEnabled(values: unknown): boolean {
   return !(values && typeof values === 'object' && 'syncDrafts' in values && values.syncDrafts === false)
@@ -29,19 +35,25 @@ export function draftSyncEnabled(values: unknown): boolean {
 
 export function parseComposerDraftScope(raw: string): { scope: string; chatId: string | null } {
   if (raw === 'new') return { scope: raw, chatId: null }
-  const parsed = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw)
-  if (!parsed) throw new AppError(400, 'invalid_draft_scope', 'Choose a valid draft scope')
-  return { scope: raw, chatId: raw }
+  const parsed = composerDraftScopeSchema.safeParse(raw)
+  if (!parsed.success || parsed.data === 'new') {
+    throw new AppError(400, 'invalid_draft_scope', 'Choose a valid draft scope')
+  }
+  return { scope: parsed.data, chatId: parsed.data }
 }
 
-async function assertDraftChat(userId: string, chatId: string | null): Promise<void> {
+type DraftRouteReader = Pick<typeof db, 'select'>
+
+async function assertDraftChat(userId: string, chatId: string | null, reader: DraftRouteReader = db): Promise<void> {
   if (!chatId) return
-  const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
+  const [chat] = await reader.select({ id: chats.id }).from(chats).where(and(
     eq(chats.id, chatId),
     eq(chats.userId, userId),
     eq(chats.temporary, false),
     isNull(chats.deletedAt),
-  )).limit(1)
+    isNull(chats.purgeStartedAt),
+    accessibleChatCondition(),
+  )).for('share').limit(1)
   if (!chat) throw notFound('Chat')
 }
 
@@ -49,16 +61,19 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
   app.get('/api/composer-drafts/:scope', async (request) => {
     const user = requireUser(request)
     const { scope, chatId } = parseComposerDraftScope((request.params as { scope: string }).scope)
-    const [preferences] = await db.select({ values: userPreferences.values }).from(userPreferences)
-      .where(eq(userPreferences.userId, user.id)).limit(1)
-    if (!draftSyncEnabled(preferences?.values)) {
-      const [account] = await db.select({ revision: users.stateRevision }).from(users).where(eq(users.id, user.id)).limit(1)
-      return { draft: null, revision: account?.revision ?? user.stateRevision }
-    }
-    await assertDraftChat(user.id, chatId)
-    const draft = await readComposerDraft(user.id, scope)
-    const [account] = await db.select({ revision: users.stateRevision }).from(users).where(eq(users.id, user.id)).limit(1)
-    return { draft, revision: Math.max(account?.revision ?? user.stateRevision, draft?.revision ?? 0) }
+    return db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${user.id}))`)
+      await assertDraftChat(user.id, chatId, tx)
+      const [preferences] = await tx.select({ values: userPreferences.values }).from(userPreferences)
+        .where(eq(userPreferences.userId, user.id)).limit(1)
+      const [account] = await tx.select({ revision: users.stateRevision }).from(users)
+        .where(eq(users.id, user.id)).limit(1)
+      if (!draftSyncEnabled(preferences?.values)) {
+        return { draft: null, revision: account?.revision ?? user.stateRevision }
+      }
+      const draft = await readComposerDraft(user.id, scope, tx)
+      return { draft, revision: Math.max(account?.revision ?? user.stateRevision, draft?.revision ?? 0) }
+    }, { isolationLevel: 'repeatable read' })
   })
 
   app.put('/api/composer-drafts/:scope', async (request) => {
@@ -81,25 +96,26 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
       .where(eq(userPreferences.userId, user.id)).limit(1)
     if (!draftSyncEnabled(preferences?.values)) throw new AppError(409, 'draft_sync_disabled', 'Draft sync is disabled')
 
-    const owned = input.attachmentIds.length ? await db.select().from(attachments).where(and(
-      eq(attachments.userId, user.id),
-      eq(attachments.status, 'ready'),
-      inArray(attachments.id, input.attachmentIds),
-      chatId ? or(isNull(attachments.chatId), eq(attachments.chatId, chatId)) : isNull(attachments.chatId),
-    )) : []
-    if (owned.length !== input.attachmentIds.length) {
-      throw new AppError(400, 'attachment_not_ready', 'One or more draft attachments are unavailable')
-    }
-
+    let owned: Array<typeof attachments.$inferSelect> = []
     let removedAttachmentIds: string[] = []
     let canonical: ComposerDraft | null = null
     await db.transaction(async (tx) => {
       // Serialize cloud draft writes with this account's sync-setting changes.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${user.id}))`)
+      await assertDraftChat(user.id, chatId, tx)
       const [lockedPreferences] = await tx.select({ values: userPreferences.values }).from(userPreferences)
         .where(eq(userPreferences.userId, user.id)).limit(1)
       if (!draftSyncEnabled(lockedPreferences?.values)) {
         throw new AppError(409, 'draft_sync_disabled', 'Draft sync is disabled')
+      }
+      owned = input.attachmentIds.length ? await tx.select().from(attachments).where(and(
+        eq(attachments.userId, user.id),
+        eq(attachments.status, 'ready'),
+        inArray(attachments.id, input.attachmentIds),
+        chatId ? or(isNull(attachments.chatId), eq(attachments.chatId, chatId)) : isNull(attachments.chatId),
+      )).orderBy(asc(attachments.id)).for('update') : []
+      if (owned.length !== input.attachmentIds.length) {
+        throw new AppError(400, 'attachment_not_ready', 'One or more draft attachments are unavailable')
       }
       const [existing] = await tx.select().from(composerDrafts).where(and(
         eq(composerDrafts.userId, user.id),

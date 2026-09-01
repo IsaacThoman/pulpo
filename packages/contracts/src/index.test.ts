@@ -13,6 +13,9 @@ import {
   createProviderSchema,
   createChatResponseSchema,
   composerDraftInputSchema,
+  composerDraftChangeSchema,
+  composerDraftDeleteInputSchema,
+  composerDraftsClearedSchema,
   composerDraftSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_CASUAL_INSTRUCTIONS,
@@ -324,6 +327,23 @@ describe('shared contracts', () => {
     }
     expect(composerDraftSchema.parse({ ...base, scope: 'new' }).scope).toBe('new')
     expect(composerDraftSchema.parse({ ...base, scope: crypto.randomUUID() }).scope).not.toBe('new')
+  })
+
+  it('validates complete realtime draft changes and deletion tombstones', () => {
+    const draft = composerDraftSchema.parse({
+      content: 'draft', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      editorId: 'web-1', attachments: [], revision: 7, updatedAt: new Date().toISOString(), scope: 'new',
+    })
+    expect(composerDraftChangeSchema.parse({
+      scope: 'new', revision: 7, editorId: 'web-1', draft, reason: 'saved',
+    }).draft).toEqual(draft)
+    expect(composerDraftChangeSchema.parse({
+      scope: 'new', revision: 8, editorId: 'ios-1', draft: null, reason: 'deleted',
+    }).draft).toBeNull()
+    expect(composerDraftDeleteInputSchema.parse({ editorId: 'ios-1' })).toEqual({ editorId: 'ios-1' })
+    expect(composerDraftsClearedSchema.parse({
+      revision: 9, editorId: 'server:settings', reason: 'sync_disabled',
+    }).revision).toBe(9)
   })
 
   it('accepts generic composer presets', () => {

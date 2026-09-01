@@ -26,6 +26,7 @@ import {
   applyWebComposerDraftChange,
   applyWebComposerDraftsCleared,
   flushDirtyWebComposerDrafts,
+  resumeWebComposerDraftSyncEnable,
 } from '@/lib/local-first/composer-drafts'
 import { useSettings } from '@/stores/settings'
 
@@ -202,7 +203,7 @@ export function ChatDataBridge() {
       }
     }
     const applySync = (result: SyncResult) => {
-      revisionRef.current = result.accountRevision
+      revisionRef.current = Math.max(revisionRef.current, result.accountRevision)
       for (const events of groupResponseEvents(result.events)) {
         for (const event of events) queueEvent(event)
         flushEventBatches(events[0]?.responseId)
@@ -253,11 +254,14 @@ export function ChatDataBridge() {
         socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
         subscribedResponseIds.add(responseId)
       }
-      void flushOutbox(userId).then(() => Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
-        queryClient.invalidateQueries({ queryKey: ['folders', userId] }),
-        queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
-      ]))
+      void flushOutbox(userId).then(async () => {
+        if (useSettings.getState().syncDrafts) await resumeWebComposerDraftSyncEnable(userId)
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
+          queryClient.invalidateQueries({ queryKey: ['folders', userId] }),
+          queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
+        ])
+      })
     }
 
     socket.on('connect', sync)

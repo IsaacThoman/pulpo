@@ -11,7 +11,12 @@ import { useSettings } from '@/stores/settings'
 import { useChat, waitForResponseDispatch } from '@/stores/chat'
 import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
 import { ui } from '@/i18n/ui'
-import { deleteLocalComposerDraft, deleteRemoteComposerDraft, saveLocalComposerTombstone } from '@/lib/local-first/composer-drafts'
+import {
+  deleteLocalComposerDraft,
+  deleteRemoteComposerDraft,
+  loadLocalComposerDraft,
+  saveLocalComposerTombstone,
+} from '@/lib/local-first/composer-drafts'
 
 export type UploadStatus = 'uploading' | 'ready' | 'error'
 
@@ -164,16 +169,30 @@ function clearSubmissionDraft(submission: PendingSubmission): void {
   const syncDrafts = useSettings.getState().syncDrafts
   const editorId = `web-submission:${submission.id}`
   if (userId && syncDrafts) {
-    void saveLocalComposerTombstone({
-      userId,
-      scope: submission.draftScope,
-      editorId,
-      dirty: true,
-    }).catch(() => undefined)
+    void (async () => {
+      const existing = await loadLocalComposerDraft(userId, submission.draftScope)
+      await saveLocalComposerTombstone({
+        userId,
+        scope: submission.draftScope,
+        editorId,
+        dirty: true,
+        serverRevision: existing?.serverRevision,
+      })
+      const revision = await deleteRemoteComposerDraft(submission.draftScope, editorId)
+      const current = await loadLocalComposerDraft(userId, submission.draftScope)
+      if (!current?.deleted || current.editorId !== editorId) return
+      await saveLocalComposerTombstone({
+        userId,
+        scope: submission.draftScope,
+        editorId,
+        dirty: false,
+        serverRevision: revision,
+      })
+    })().catch(() => undefined)
   } else if (userId) {
     void deleteLocalComposerDraft(userId, submission.draftScope).catch(() => undefined)
   }
-  if (syncDrafts) void deleteRemoteComposerDraft(submission.draftScope, editorId).catch(() => undefined)
+  if (syncDrafts && !userId) void deleteRemoteComposerDraft(submission.draftScope, editorId).catch(() => undefined)
 }
 
 async function uploadRecord(localId: string, attempt: number): Promise<void> {
