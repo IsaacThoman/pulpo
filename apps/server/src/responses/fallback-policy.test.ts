@@ -12,6 +12,8 @@ import {
 
 const policy = {
   id: 'gpt-flex',
+  fallbackModelId: 'gpt-standard',
+  maxRetries: 3,
   stickyFallbackSeconds: 3_600,
   slowStickyEnabled: true,
   slowStickyMinTokensPerSecond: 20,

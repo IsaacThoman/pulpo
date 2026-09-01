@@ -1,5 +1,14 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { canFallbackAfterGenerationError } from '../responses/fallback-policy.js'
+import { canFallbackAfterGenerationError, fallbackModelAttemptLimit, primaryModelAttemptLimit } from '../responses/fallback-policy.js'
+
+type RetryChainModel = { fallbackModelId: string | null; maxRetries: number }
+
+export function agentModelAttemptLimit(models: RetryChainModel[], index: number): number {
+  const current = models[index]
+  if (!current) return 1
+  if (index === 0) return primaryModelAttemptLimit(current)
+  return fallbackModelAttemptLimit(models[index - 1] ?? current)
+}
 
 export async function resolveStickyFallbackIndex(
   modelIds: string[],
@@ -55,11 +64,11 @@ export function canFallbackAgentTurn(input: {
 export function nextAgentRetryAttempt(input: {
   message: AssistantMessage
   currentAttempt: number
-  maxRetries: number
+  maxAttempts: number
   outputStarted: boolean
   cancellationRequested: boolean
 }): number | undefined {
-  if (input.currentAttempt > input.maxRetries) return undefined
+  if (input.currentAttempt >= input.maxAttempts) return undefined
   return canFallbackAgentTurn({
     message: input.message,
     outputStarted: input.outputStarted,

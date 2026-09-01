@@ -607,7 +607,7 @@ function ModelEditorBody({
               </Select>
             </Field>
             <div className="grid grid-cols-3 gap-3">
-              <Field label={ui("Max retries")}>
+              <Field label={draft.fallbackModelId ? ui("Fallback attempts") : ui("Max retries")}>
                 <Input type="number" min={1} max={10} className="tabular-nums" value={draft.maxRetries || 1} onChange={(e) => setDraft({ ...draft, maxRetries: Number(e.target.value) })} />
               </Field>
               <Field label={ui("Retry delay (sec)")}>
@@ -668,7 +668,7 @@ function ModelEditorBody({
                 </Field>
               </div>
             </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground"> {ui("If “Same model” is selected, retries use the current model. Sticky block temporarily routes to fallback without attempting the primary. First-token timeout applies to streamed requests only. Slow sticky blocking requires sticky block &gt; 0.")} </p>
+            <p className="text-[11px] leading-relaxed text-muted-foreground"> {ui("With a fallback model, the primary is attempted once and this count controls fallback attempts. Each fallback model can continue to its own configured fallback. If “Same model” is selected, this count controls retries of the current model. Sticky block temporarily routes to fallback without attempting the primary. First-token timeout applies to streamed requests only. Slow sticky blocking requires sticky block &gt; 0.")} </p>
           </div>
         )}
       </div>

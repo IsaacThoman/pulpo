@@ -11,10 +11,22 @@ export type GenerationErrorCategory =
 
 export type FallbackPolicyModel = {
   id: string
+  fallbackModelId: string | null
+  maxRetries: number
   stickyFallbackSeconds: number
   slowStickyEnabled: boolean
   slowStickyMinTokensPerSecond: number
   slowStickyMinCompletionSeconds: number
+}
+
+type AttemptPolicyModel = Pick<FallbackPolicyModel, 'fallbackModelId' | 'maxRetries'>
+
+export function primaryModelAttemptLimit(model: AttemptPolicyModel): number {
+  return model.fallbackModelId ? 1 : model.maxRetries + 1
+}
+
+export function fallbackModelAttemptLimit(source: Pick<AttemptPolicyModel, 'maxRetries'>): number {
+  return Math.max(1, source.maxRetries)
 }
 
 type StickyStore = {

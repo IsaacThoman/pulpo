@@ -1,6 +1,6 @@
 import type { AssistantMessage } from '@earendil-works/pi-ai'
 import { describe, expect, it } from 'vitest'
-import { agentStreamEventHasSubstantiveOutput, assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { agentModelAttemptLimit, agentStreamEventHasSubstantiveOutput, assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 
 function failed(
   content: AssistantMessage['content'] = [],
@@ -21,26 +21,38 @@ function failed(
 }
 
 describe('Agent fallback policy', () => {
-  it('advances explicit retry attempts only while retries remain', () => {
+  it('advances attempts only while the active model attempt budget remains', () => {
     const message = failed([], 'Provider overloaded')
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 3, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 2, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBeUndefined()
+  })
+
+  it('assigns attempts to fallback models recursively', () => {
+    const chain = [
+      { fallbackModelId: 'standard', maxRetries: 3 },
+      { fallbackModelId: 'backup', maxRetries: 2 },
+      { fallbackModelId: null, maxRetries: 1 },
+    ]
+    expect(agentModelAttemptLimit(chain, 0)).toBe(1)
+    expect(agentModelAttemptLimit(chain, 1)).toBe(3)
+    expect(agentModelAttemptLimit(chain, 2)).toBe(2)
+    expect(agentModelAttemptLimit([{ fallbackModelId: null, maxRetries: 3 }], 0)).toBe(4)
   })
 
   it('retries no-output stream termination and timeout aborts', () => {
     const ended = failed([], 'OpenAI Responses stream ended before a terminal response event')
     const aborted = failed([], 'Request aborted', 'aborted')
-    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
-    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: ended, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: false })).toBe(2)
   })
 
   it('does not retry after output or cancellation', () => {
     const message = failed([], 'Provider overloaded')
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
-    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
     const aborted = failed([], 'Request aborted', 'aborted')
-    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxRetries: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
-    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxRetries: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: true, cancellationRequested: false })).toBeUndefined()
+    expect(nextAgentRetryAttempt({ message: aborted, currentAttempt: 1, maxAttempts: 2, outputStarted: false, cancellationRequested: true })).toBeUndefined()
   })
 
   it('ignores empty stream deltas when deciding whether output started', () => {
