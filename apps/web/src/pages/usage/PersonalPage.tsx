@@ -9,11 +9,13 @@ import type { Metric, TimeRange, UsageRecord } from '@/lib/types'
 import { flattenUsagePages, usageQueryParams } from '@/lib/usage-query'
 import { toDailyModelUsage, type SettledDailyRow } from '@/lib/leaderboard-usage'
 import { apiRequest } from '@/lib/api'
+import { fetchBillingSummary } from '@/lib/billing'
 import { ToggleGroup } from '@/components/usage/ToggleGroup'
 import { StatsRow } from '@/components/usage/StatsRow'
 import { DailyUsageChart } from '@/components/usage/DailyUsageChart'
 import { RecentUsagePanel, TopModelsPanel } from '@/components/usage/UsagePanels'
 import { Button } from '@/components/ui/button'
+import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
 import { ui } from '@/i18n/ui'
 
 const RANGES: { id: TimeRange; label: string }[] = [
@@ -71,6 +73,13 @@ export function PersonalPage() {
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
+  const billingQuery = useQuery({
+    queryKey: ['billing', userId],
+    queryFn: fetchBillingSummary,
+    enabled: Boolean(userId && billingEnabled),
+    staleTime: 5_000,
+    refetchOnWindowFocus: 'always',
+  })
   const recordsQuery = useInfiniteQuery({
     queryKey: ['usage', userId, range, 'records'],
     enabled: Boolean(userId),
@@ -124,15 +133,23 @@ export function PersonalPage() {
             {me.email} {ui("· Joined")} {formatDate(me.joinedAt)}
           </div>
         </div>
-        <div className="text-right">
-          <div className="mb-1 text-xs text-muted-foreground">{activity?.balanceKind === 'pool' ? ui("Balance (pooled)") : ui("Balance")}</div>
-          <div className="text-2xl font-medium text-emerald-600 dark:text-emerald-400">
-            {formatBalance(me.balance)}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-6">
+          <SubscriptionUsageBars
+            compact
+            className="w-full sm:w-60 sm:border-r sm:pr-6"
+            weekly={billingQuery.data?.weekly ?? null}
+            fiveHour={billingQuery.data?.fiveHour ?? null}
+          />
+          <div className="text-right">
+            <div className="mb-1 text-xs text-muted-foreground">{activity?.balanceKind === 'pool' ? ui("Balance (pooled)") : ui("Balance")}</div>
+            <div className="text-2xl font-medium text-emerald-600 dark:text-emerald-400">
+              {formatBalance(me.balance)}
+            </div>
+            {billingEnabled && <Link
+              to="/billing?topup=1"
+              className="mt-1 inline-block text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+            > {ui("Add credits")} </Link>}
           </div>
-          {billingEnabled && <Link
-            to="/billing?topup=1"
-            className="mt-1 inline-block text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          > {ui("Add credits")} </Link>}
         </div>
       </div>
 

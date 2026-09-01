@@ -1,8 +1,10 @@
 # Pulpo hosted service privacy policy
 
-**Effective August 27, 2026**
+**Effective August 31, 2026**
 
 This policy describes how Isaac Thoman (**“Pulpo,” “we,” “us,”** or **“our”**) handles information when you use the Pulpo service hosted at [pulpo.baby](https://pulpo.baby) (the **“hosted service”**), whether through the website, the Pulpo mobile app, or another compatible client.
+
+This policy also covers visits to [help.pulpo.baby](https://help.pulpo.baby). Cloudflare and GitHub may process IP addresses, request information, and related technical records when delivering and protecting the documentation site.
 
 For the mobile app and Pulpo software generally, including use with a self-hosted server, see the [Pulpo software privacy policy](./privacy).
 
@@ -62,7 +64,8 @@ We use information to:
 We disclose information only as needed for the hosted service or as required by law. Recipients may include:
 
 - **AI model and tool providers.** Prompts, conversation context, attachments, tool inputs, and related instructions may be sent to providers selected for your request. Those providers process the information under their own terms and privacy policies.
-- **Infrastructure providers.** Hosting, database, object-storage, email-delivery, security, and similar vendors may process information while providing infrastructure to us.
+- **Network delivery and security.** Cloudflare provides DNS, reverse-proxy, traffic-protection, and secure-tunnel connectivity for the hosted service. Requests and responses pass through Cloudflare's network so Cloudflare can route, protect, and deliver the service. In doing so, Cloudflare may process information such as IP addresses, request headers, URLs, traffic-routing data, security signals, and the content transmitted in requests and responses. Cloudflare handles this information under our agreement with it and its [privacy policy](https://www.cloudflare.com/privacypolicy/).
+- **Other infrastructure providers.** Hosting, database, object-storage, email-delivery, backup, and similar vendors may process information while providing infrastructure to us.
 - **Payment processing.** Stripe processes hosted-service checkouts, subscriptions, payments, and refunds. Its handling of payment information is governed by its own privacy policy.
 - **People you choose to share with.** If you create a public sharing link or use a collaborative feature, the information you select may be accessible to the recipients or, for a public link, anyone who obtains that link.
 - **Legal and safety disclosures.** We may preserve or disclose information when reasonably necessary to comply with law, legal process, or valid governmental requests; protect users, Pulpo, or the public; or investigate fraud, abuse, or security incidents.
