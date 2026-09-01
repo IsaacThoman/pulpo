@@ -17,13 +17,13 @@ export function SubscriptionUsageBars({ weekly, fiveHour, compact = false, class
 
   return (
     <div className={cn(compact ? 'space-y-2.5' : 'space-y-4', className)}>
-      {weekly && <SubscriptionUsageBar label={ui("Weekly usage")} limit={weekly} compact={compact} />}
+      {weekly && <SubscriptionUsageBar label={ui("Weekly usage")} limit={weekly} compact={compact} showResetDate />}
       {fiveHour && <SubscriptionUsageBar label={ui("5-hour usage")} limit={fiveHour} compact={compact} />}
     </div>
   )
 }
 
-function SubscriptionUsageBar({ label, limit, compact }: { label: string; limit: UsageLimit; compact: boolean }) {
+function SubscriptionUsageBar({ label, limit, compact, showResetDate = false }: { label: string; limit: UsageLimit; compact: boolean; showResetDate?: boolean }) {
   return (
     <div>
       <div className="flex justify-between gap-4 text-xs text-muted-foreground">
@@ -45,7 +45,9 @@ function SubscriptionUsageBar({ label, limit, compact }: { label: string; limit:
       {!compact && <>
         {limit.pendingMicros > 0 && <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><span className="size-1.5 rounded-full bg-amber-400 dark:bg-amber-500" />{formatBalance(limit.pendingMicros / 1_000_000)} {ui("reserved")}</div>}
         <div className="mt-1.5 text-xs text-muted-foreground">{limit.resetsAt
-          ? <>{ui("Resets")} {new Date(limit.resetsAt).toLocaleString(activeLocale(), { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</>
+          ? <>{ui("Resets")} {new Date(limit.resetsAt).toLocaleString(activeLocale(), showResetDate
+            ? { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }
+            : { hour: 'numeric', minute: '2-digit' })}</>
           : ui("Starts on first use")}</div>
       </>}
     </div>
