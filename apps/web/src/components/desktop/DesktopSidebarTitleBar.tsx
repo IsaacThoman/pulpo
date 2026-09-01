@@ -78,17 +78,17 @@ export function DesktopSidebarTitleBar({
       >
         {!windows && (
           <>
-            <div className="desktop-sidebar-titlebar-base absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
+            <div className="desktop-sidebar-titlebar-base pointer-events-none absolute inset-y-0 left-0 z-10 w-[52px] bg-sidebar" />
             <div
               className={cn(
-                'desktop-sidebar-titlebar-expanded absolute inset-y-0 left-[52px] z-10 bg-sidebar motion-reduce:transition-none',
+                'desktop-sidebar-titlebar-expanded pointer-events-none absolute inset-y-0 left-[52px] z-10 bg-sidebar motion-reduce:transition-none',
                 transitions && 'transition-[width] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
                 collapsed ? 'w-0' : 'w-[212px]',
               )}
             >
               <div
                 className={cn(
-                  'desktop-sidebar-titlebar-expanded-border absolute inset-y-0 right-0 border-r border-sidebar-border motion-reduce:transition-none',
+                  'desktop-sidebar-titlebar-expanded-border pointer-events-none absolute inset-y-0 right-0 border-r border-sidebar-border motion-reduce:transition-none',
                   transitions && 'transition-opacity duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
                   collapsed ? 'opacity-0' : 'opacity-100',
                 )}
@@ -96,20 +96,14 @@ export function DesktopSidebarTitleBar({
             </div>
             <div
               className={cn(
-                'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
+                'desktop-sidebar-titlebar-collapsed pointer-events-none absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
                 transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-                collapsed ? 'translate-y-0' : '-translate-y-[54px]',
+                !collapsed && '-translate-y-[54px]',
               )}
             />
           </>
         )}
       </div>
-      {compact && (
-        <div
-          aria-hidden="true"
-          className="desktop-compact-titlebar-drag-region pointer-events-auto fixed inset-x-0 top-0 z-[42] h-[38px]"
-        />
-      )}
       <div
         data-collapsed={collapsed ? 'true' : undefined}
         data-compact={compact ? 'true' : undefined}

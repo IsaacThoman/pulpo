@@ -59,6 +59,7 @@ export function AppLayout() {
       if (query.matches) setCollapsed(true)
       else setMobileOpen(false)
     }
+    update()
     query.addEventListener('change', update)
     return () => query.removeEventListener('change', update)
   }, [])

@@ -50,7 +50,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-0')
     expect(markup).toContain('w-full')
     expect(markup).toContain('bg-sidebar')
-    expect(markup).toContain('translate-y-0')
+    expect(markup).not.toContain('translate-y-0')
     expect(markup).toContain('desktop-sidebar-titlebar-base')
     expect(markup).toContain('w-0')
     expect(markup).toContain('opacity-0')
@@ -64,7 +64,7 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-[43]')
   })
 
-  it('keeps compact controls left-aligned and exposes a full title bar drag region', () => {
+  it('keeps compact chrome pointer-transparent so the focused title bar can drag', () => {
     installDesktopWindow()
     const markup = renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed compact transitions visible />,
@@ -72,20 +72,11 @@ describe('desktop sidebar title bar', () => {
 
     expect(markup.match(/data-compact="true"/g)).toHaveLength(3)
     expect(markup).toContain('desktop-sidebar-titlebar pointer-events-none')
-    expect(markup).toContain('desktop-compact-titlebar-drag-region')
-    expect(markup).toContain('h-[38px]')
+    expect(markup).toContain('desktop-sidebar-titlebar-collapsed pointer-events-none')
+    expect(markup).not.toContain('translate-y-0')
     expect(markup).toContain('desktop-model-titlebar-slot')
     expect(markup).toContain('w-fit')
-    expect(markup).not.toContain('transition-[left,height]')
-    expect(markup).toContain('desktop-actions-titlebar-slot')
-  })
-
-  it('does not cover regular desktop title bars with the compact drag region', () => {
-    installDesktopWindow()
-    const markup = renderToStaticMarkup(
-      <DesktopSidebarTitleBar collapsed transitions visible />,
-    )
-
+    expect(markup).not.toContain('desktop-titlebar-drag-region')
     expect(markup).not.toContain('desktop-compact-titlebar-drag-region')
   })
 
