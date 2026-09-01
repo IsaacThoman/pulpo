@@ -51,9 +51,11 @@ import {
   canFallbackAfterGenerationError,
   classifyGenerationError,
   completionTokensPerSecond,
+  fallbackModelAttemptLimit,
   isModelSticky,
   isSlowCompletion,
   markModelSticky,
+  primaryModelAttemptLimit,
 } from './fallback-policy.js'
 import { CODEX_PROVIDER_ID } from '../codex/constants.js'
 import { codexErrorRequiresReauthentication, createCodexModels, markCodexReauthenticationRequired, redactedCodexError } from '../codex/credential-store.js'
@@ -915,19 +917,24 @@ export async function processGeneration(responseId: string): Promise<void> {
   const logging = parseLoggingSettings(loggingRow?.value)
   let model: typeof models.$inferSelect | undefined = base.model
   let fallbackFrom: string | null = null
+  let attemptLimit = primaryModelAttemptLimit(base.model)
+  let retryDelaySeconds = base.model.retryDelaySeconds
   let lastError: unknown
   const visited = new Set<string>()
 
   while (model && visited.size < MAX_MODEL_CHAIN_LENGTH && !visited.has(model.id)) {
     visited.add(model.id)
     if (await isModelSticky(redis, model.id) && model.fallbackModelId) {
+      const source = model
       fallbackFrom = model.id
       ;[model] = await db.select().from(models).where(and(eq(models.id, model.fallbackModelId), eq(models.enabled, true))).limit(1)
+      attemptLimit = fallbackModelAttemptLimit(source)
+      retryDelaySeconds = source.retryDelaySeconds
       await db.update(requestLogs).set({ stickyFallbackUsed: true, fallbackUsed: true, currentModelId: model?.id ?? null, updatedAt: new Date() }).where(eq(requestLogs.id, base.log.id))
       await publishAdminUsage(base.log.id, true)
       continue
     }
-    for (let attempt = 0; attempt <= model.maxRetries; attempt += 1) {
+    for (let attempt = 0; attempt < attemptLimit; attempt += 1) {
       const attemptId = newId()
       const attemptStarted = Date.now()
       await db.insert(generationAttempts).values({ id: attemptId, requestLogId: base.log.id, modelId: model.id, upstreamModelId: model.upstreamModelId, source: base.log.origin, purpose: 'generation', retryAttempt: attempt + 1, fallbackFromModelId: fallbackFrom })
@@ -967,14 +974,17 @@ export async function processGeneration(responseId: string): Promise<void> {
         const category = classifyGenerationError(error)
         await db.update(generationAttempts).set({ status: 'failed', errorCategory: category, errorMessage: error instanceof Error ? error.message : String(error), durationMs: Date.now() - attemptStarted, completedAt: new Date() }).where(eq(generationAttempts.id, attemptId))
         if (!canFallbackAfterGenerationError(error)) { model = undefined; break }
-        if (attempt < model.maxRetries && model.retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, model!.retryDelaySeconds * 1000))
+        if (attempt + 1 < attemptLimit && retryDelaySeconds > 0) await new Promise((resolve) => setTimeout(resolve, retryDelaySeconds * 1000))
       }
     }
     if (!model) break
     await markModelSticky(redis, model, classifyGenerationError(lastError))
+    const source = model
     fallbackFrom = model.id
     if (!model.fallbackModelId) { model = undefined; break }
     ;[model] = await db.select().from(models).where(and(eq(models.id, model.fallbackModelId), eq(models.enabled, true))).limit(1)
+    attemptLimit = fallbackModelAttemptLimit(source)
+    retryDelaySeconds = source.retryDelaySeconds
     await db.update(requestLogs).set({ fallbackUsed: true, currentModelId: model?.id ?? null, updatedAt: new Date() }).where(eq(requestLogs.id, base.log.id))
     await publishAdminUsage(base.log.id, true)
   }

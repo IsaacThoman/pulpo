@@ -64,7 +64,7 @@ import {
   isSlowCompletion,
   markModelSticky,
 } from '../responses/fallback-policy.js'
-import { agentStreamEventHasSubstantiveOutput, assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
+import { agentModelAttemptLimit, agentStreamEventHasSubstantiveOutput, assistantMessageHasOutput, canFallbackAgentTurn, nextAgentRetryAttempt, resolveStickyFallbackIndex } from './fallback-policy.js'
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 import { createProviderCostCapture } from './provider-cost.js'
@@ -990,13 +990,14 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       const retryAttempt = nextAgentRetryAttempt({
         message: last,
         currentAttempt: turnRetryAttempts.get(failedTurnNumber) ?? 1,
-        maxRetries: failedRuntime.runtime.model.maxRetries,
+        maxAttempts: agentModelAttemptLimit(runtimes.map((candidate) => candidate.model), failedRuntime.index),
         outputStarted,
         cancellationRequested,
       })
       if (retryAttempt !== undefined && !overflowRetried) {
-        if (failedRuntime.runtime.model.retryDelaySeconds > 0) {
-          await new Promise((resolve) => setTimeout(resolve, failedRuntime.runtime.model.retryDelaySeconds * 1_000))
+        const retryPolicy = failedRuntime.index > 0 ? runtimes[failedRuntime.index - 1]!.model : failedRuntime.runtime.model
+        if (retryPolicy.retryDelaySeconds > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryPolicy.retryDelaySeconds * 1_000))
         }
         if (await isCancellationRequested(responseId) || agentAbortReason !== undefined) break
         currentRetryAttempt = retryAttempt
