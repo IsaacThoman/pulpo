@@ -669,7 +669,8 @@ export function Sidebar({
   const toggleFolder = useChat((s) => s.toggleFolder)
   const user = useAuth((s) => s.user)
   const instanceReady = useAuth((s) => s.instanceReady)
-  const networkReady = !isDesktopRuntime() || instanceReady
+  const desktop = isDesktopRuntime()
+  const networkReady = !desktop || instanceReady
   const pendingFriendsQuery = useQuery({
     queryKey: ['friends-pending-count', user?.id],
     queryFn: () => apiRequest<{ count: number }>('/api/friends/pending-count'),
@@ -950,7 +951,10 @@ export function Sidebar({
         'flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
         mobile
           ? cn(
-              'fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl',
+              'fixed left-0 z-40 w-[min(82vw,320px)] shadow-2xl',
+              desktop
+                ? 'desktop-compact-sidebar bottom-0 top-[38px] h-auto'
+                : 'inset-y-0',
               transitions && 'transition-transform duration-200 ease-out'
             )
           : cn(

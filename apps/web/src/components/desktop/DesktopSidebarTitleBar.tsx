@@ -28,11 +28,13 @@ export function DesktopActionsTitleBarSlot({ children }: { children: ReactNode }
 
 export function DesktopSidebarTitleBar({
   collapsed,
+  compact = false,
   transitions,
   visible,
   animationSpeed = DEFAULT_ANIMATION_SPEED,
 }: {
   collapsed: boolean
+  compact?: boolean
   transitions: boolean
   visible: boolean
   animationSpeed?: number
@@ -67,9 +69,11 @@ export function DesktopSidebarTitleBar({
       <div
         aria-hidden="true"
         data-collapsed={collapsed ? 'true' : undefined}
+        data-compact={compact ? 'true' : undefined}
         data-animation-active={showAboveSidebar ? undefined : 'true'}
         className={cn(
-          'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
+          'desktop-sidebar-titlebar fixed inset-x-0 top-0 h-[38px]',
+          compact ? 'pointer-events-auto' : 'pointer-events-none',
           windows ? 'z-40' : showAboveSidebar ? 'z-[42]' : 'z-[41]',
         )}
       >
@@ -101,8 +105,15 @@ export function DesktopSidebarTitleBar({
           </>
         )}
       </div>
+      {compact && (
+        <div
+          aria-hidden="true"
+          className="desktop-compact-titlebar-drag-strip pointer-events-auto fixed inset-x-0 top-0 z-[44] h-4 select-none"
+        />
+      )}
       <div
         data-collapsed={collapsed ? 'true' : undefined}
+        data-compact={compact ? 'true' : undefined}
         data-position-animation-active={!windows && transitions && !showAboveSidebar ? 'true' : undefined}
         id={MODEL_SLOT_ID}
         className={cn(
@@ -112,6 +123,7 @@ export function DesktopSidebarTitleBar({
       />
       <div
         data-collapsed={collapsed ? 'true' : undefined}
+        data-compact={compact ? 'true' : undefined}
         id={ACTIONS_SLOT_ID}
         className={cn(
           'desktop-actions-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 right-3 z-[43] flex items-center gap-1 motion-reduce:transition-none',

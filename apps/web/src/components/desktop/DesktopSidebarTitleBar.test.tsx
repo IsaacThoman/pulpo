@@ -64,6 +64,31 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-[43]')
   })
 
+  it('marks the compact surface and slots for straight narrow-window chrome', () => {
+    installDesktopWindow()
+    const markup = renderToStaticMarkup(
+      <DesktopSidebarTitleBar collapsed compact transitions visible />,
+    )
+
+    expect(markup.match(/data-compact="true"/g)).toHaveLength(3)
+    expect(markup).toContain('desktop-sidebar-titlebar-collapsed')
+    expect(markup).toContain('desktop-compact-titlebar-drag-strip')
+    expect(markup).toContain('h-4')
+    expect(markup).toContain('desktop-model-titlebar-slot')
+    expect(markup).toContain('desktop-actions-titlebar-slot')
+    expect(markup).toContain('pointer-events-auto')
+    expect(markup).not.toContain('desktop-sidebar-titlebar pointer-events-none')
+  })
+
+  it('does not cover regular desktop title bars with the compact drag strip', () => {
+    installDesktopWindow()
+    const markup = renderToStaticMarkup(
+      <DesktopSidebarTitleBar collapsed transitions visible />,
+    )
+
+    expect(markup).not.toContain('desktop-compact-titlebar-drag-strip')
+  })
+
   it('keeps Windows drag and portal layers without rendering surfaces above the sidebar', () => {
     installDesktopWindow('win32')
     const markup = renderToStaticMarkup(

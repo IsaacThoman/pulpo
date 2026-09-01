@@ -364,6 +364,52 @@ html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-collapsed="true
   left: 84px;
 }
 
+html[data-desktop="true"] .mobile-sidebar-opener {
+  position: fixed;
+  top: 3px;
+  left: 12px;
+  z-index: 45;
+}
+
+html[data-desktop-os="darwin"] .mobile-sidebar-opener {
+  left: 84px;
+}
+
+html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] {
+  right: auto;
+  left: 52px;
+  width: max-content;
+  max-width: calc(100vw - 168px);
+}
+
+html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"] {
+  left: 124px;
+  max-width: calc(100vw - 240px);
+}
+
+html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-compact="true"] {
+  max-width: calc(100vw - 312px);
+}
+
+@media (width < 750px) {
+  html[data-desktop="true"] .app-main {
+    z-index: 0;
+  }
+
+  html[data-desktop="true"] .desktop-chat-header {
+    height: 0;
+    padding: 0;
+  }
+
+  html[data-desktop-os="win32"] .desktop-chat-header {
+    height: 3rem;
+  }
+}
+
+html[data-desktop-os="win32"] .desktop-compact-sidebar {
+  top: 48px;
+}
+
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
   top: 50%;
   left: calc(100% + 4px);
@@ -491,6 +537,27 @@ html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
   border-top: 1px solid var(--sidebar-border);
   content: '';
   pointer-events: none;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::before {
+  display: none;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed {
+  -webkit-app-region: drag;
+  pointer-events: auto;
+}
+
+html[data-desktop="true"] .desktop-compact-titlebar-drag-strip {
+  -webkit-app-region: drag;
+}
+
+html[data-desktop-os="win32"] .desktop-compact-titlebar-drag-strip {
+  right: 138px;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {
+  left: 0;
 }
 
 html[data-desktop="true"] .desktop-sidebar {

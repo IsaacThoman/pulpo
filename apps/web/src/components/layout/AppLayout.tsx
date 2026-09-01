@@ -34,6 +34,7 @@ export function AppLayout() {
   const adminChatView = location.pathname.startsWith('/admin/chats/')
   const sidebarCollapsed = collapsed || searchHasQuery
   const mainUsesDesktopTitleBar = !mobile && !sidebarCollapsed
+  const desktopTitleBarVisible = isDesktopRuntime() && !adminChatView
   const previousPathRef = useRef(location.pathname)
   const doubleShiftRef = useRef<DoubleShiftState>({ lastPressAt: null })
   const openSettings = useCallback((section: SettingsSectionId = 'general') => {
@@ -116,10 +117,9 @@ export function AppLayout() {
   }, [doubleShiftSearch])
 
   useLayoutEffect(() => {
-    const desktopSidebarVisible = isDesktopRuntime() && !mobile
-    setDesktopSidebarVisible(desktopSidebarVisible)
+    setDesktopSidebarVisible(desktopTitleBarVisible)
     return () => setDesktopSidebarVisible(false)
-  }, [mobile, setDesktopSidebarVisible])
+  }, [desktopTitleBarVisible, setDesktopSidebarVisible])
 
   useEffect(() => {
     if (!mobileOpen) return
@@ -137,8 +137,9 @@ export function AppLayout() {
         <SettingsBridge />
         <DesktopSidebarTitleBar
           collapsed={sidebarCollapsed}
+          compact={mobile}
           transitions={sidebarTransitions}
-          visible={!mobile && !adminChatView}
+          visible={desktopTitleBarVisible}
           animationSpeed={animationSpeed}
         />
         <div
@@ -148,7 +149,7 @@ export function AppLayout() {
           )}
         >
           <BannerBar />
-          {!adminChatView && <button
+          {!adminChatView && !mobileOpen && <button
             className="mobile-sidebar-opener absolute left-2 top-2 z-20 size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-accent"
             onClick={() => setMobileOpen(true)}
             aria-label={ui("Open sidebar")}
