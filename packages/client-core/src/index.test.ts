@@ -12,6 +12,7 @@ import {
   PulpoManagementClient,
   reconcileResponseEvents,
   responseLineageDetailsAvailable,
+  resolveComposerDraftPersistenceAction,
   resolvePresetActions,
   scheduleComposerDraftSave,
 } from './index.js'
@@ -34,6 +35,12 @@ describe('composer draft debounce', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('does not turn a pristine empty composer into a remote deletion', () => {
+    expect(resolveComposerDraftPersistenceAction({ hasContent: false, hadDraft: false })).toBe('none')
+    expect(resolveComposerDraftPersistenceAction({ hasContent: true, hadDraft: false })).toBe('save')
+    expect(resolveComposerDraftPersistenceAction({ hasContent: false, hadDraft: true })).toBe('delete')
   })
 })
 

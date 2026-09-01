@@ -98,7 +98,7 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { scheduleComposerDraftSave } from '@pulpo/client-core';
+import { resolveComposerDraftPersistenceAction, scheduleComposerDraftSave } from '@pulpo/client-core';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
@@ -3415,6 +3415,7 @@ function ChatView({
   const draftEditorIdRef = useRef(`ios-draft-${Crypto.randomUUID()}`);
   const hydratedDraftScopeRef = useRef<string | null>(null);
   const localDraftDirtyRef = useRef(false);
+  const hadDraftRef = useRef(false);
   const appliedRemoteDraftRevisionRef = useRef(0);
   const previousDraftSyncRef = useRef(syncDrafts);
   const temporaryDraftCleanupScopeRef = useRef<string | null>(null);
@@ -3491,6 +3492,7 @@ function ChatView({
   const applyMobileDraft = useCallback(async (draft: MobileComposerDraft) => {
     suppressMobileDraftSaveRef.current = true;
     draftSaveGenerationRef.current += 1;
+    hadDraftRef.current = draft.content.length > 0 || draft.attachments.length > 0;
     onChangeInput(draft.content);
     const selected = models.find((candidate) => candidate.id === draft.modelId);
     if (selected) onSelectModel(selected);
@@ -3544,6 +3546,7 @@ function ChatView({
     }
     suppressMobileDraftSaveRef.current = true;
     draftSaveGenerationRef.current += 1;
+    hadDraftRef.current = false;
     for (const attachment of attachmentsRef.current) {
       const cleanupId = cleanupServerIdOnRemoval(attachment);
       if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
@@ -3564,6 +3567,7 @@ function ChatView({
       localDraftDirtyRef.current = false;
       if (!draftNamespace) return;
       void loadMobileComposerDraft(draftNamespace, draftScope).then((draft) => {
+        hadDraftRef.current = Boolean(draft && !draft.deleted && (draft.content.length > 0 || draft.attachments.length > 0));
         if (draft && !draft.deleted) void applyMobileDraft(draft);
       });
       return;
@@ -3588,6 +3592,7 @@ function ChatView({
     let cancelled = false;
     hydratedDraftScopeRef.current = null;
     localDraftDirtyRef.current = false;
+    hadDraftRef.current = false;
     appliedRemoteDraftRevisionRef.current = 0;
     deferredRemoteDraftRevisionRef.current = 0;
     setDraftPresetOverride(null);
@@ -3688,10 +3693,18 @@ function ChatView({
       return;
     }
     if (messageEdit || sending) return;
-    if (input.length > 0 || attachments.length > 0) localDraftDirtyRef.current = syncDrafts;
+    const persistenceAction = resolveComposerDraftPersistenceAction({
+      hasContent: input.length > 0 || attachments.length > 0,
+      hadDraft: hadDraftRef.current,
+    });
+    if (persistenceAction === 'none') return;
+    if (persistenceAction === 'save') {
+      hadDraftRef.current = true;
+      localDraftDirtyRef.current = syncDrafts;
+    }
     const generation = ++draftSaveGenerationRef.current;
     return scheduleComposerDraftSave(() => {
-      if (input.length === 0 && attachments.length === 0) {
+      if (persistenceAction === 'delete') {
         localDraftDirtyRef.current = syncDrafts;
         if (syncDrafts) {
           void saveMobileComposerTombstone({
@@ -3703,6 +3716,7 @@ function ChatView({
           });
           void deleteMobileRemoteDraft(draftScope, draftEditorIdRef.current).then((revision) => {
             if (draftSaveGenerationRef.current !== generation) return;
+            hadDraftRef.current = false;
             appliedRemoteDraftRevisionRef.current = Math.max(appliedRemoteDraftRevisionRef.current, revision);
             localDraftDirtyRef.current = false;
             return saveMobileComposerTombstone({
@@ -3714,6 +3728,7 @@ function ChatView({
             });
           }).catch(() => undefined);
         } else {
+          hadDraftRef.current = false;
           void deleteMobileComposerDraft(draftNamespace, draftScope);
         }
         return;
@@ -4363,6 +4378,7 @@ function ChatView({
         restoreSubmittedDraft();
         return;
       }
+      hadDraftRef.current = false;
       if (draftNamespace && syncDrafts) {
         const editorId = draftEditorIdRef.current;
         void (async () => {

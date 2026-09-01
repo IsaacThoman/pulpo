@@ -30,6 +30,21 @@ export function scheduleComposerDraftSave(callback: () => void): () => void {
   return () => clearTimeout(timer)
 }
 
+export type ComposerDraftPersistenceAction = 'save' | 'delete' | 'none'
+
+/**
+ * An empty composer is not necessarily a user-authored deletion. Freshly
+ * mounted composers must stay inert until they have hydrated or held a draft;
+ * otherwise an idle client can erase another device's active draft.
+ */
+export function resolveComposerDraftPersistenceAction(input: {
+  hasContent: boolean
+  hadDraft: boolean
+}): ComposerDraftPersistenceAction {
+  if (input.hasContent) return 'save'
+  return input.hadDraft ? 'delete' : 'none'
+}
+
 /** Serialize writes per key and retain only the newest value queued behind an active request. */
 export class LatestValueQueue<Key, Value, Result> {
   private readonly entries = new Map<Key, QueueEntry<Value, Result>>()

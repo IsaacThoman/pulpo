@@ -58,11 +58,14 @@ vi.mock('../../data/database', () => ({
 import {
   applyMobileComposerDraftChange,
   deleteMobileComposerDraft,
+  deleteMobileRemoteDraft,
   loadMobileComposerDraft,
   saveMobileComposerDraft,
+  saveMobileRemoteDraft,
   type MobileDraftAttachment,
   type MobileComposerDraft,
 } from './composerDrafts'
+import { mobileApi } from '../../api/client'
 
 const namespace = 'https://example.test|user'
 
@@ -100,6 +103,8 @@ describe('mobile composer draft realtime reconciliation', () => {
     mocks.rows.clear()
     mocks.values.clear()
     mocks.files.clear()
+    vi.mocked(mobileApi.saveComposerDraft).mockReset()
+    vi.mocked(mobileApi.deleteComposerDraft).mockReset()
   })
 
   it('overwrites dirty SQLite state when a newer remote editor arrives', async () => {
@@ -150,5 +155,25 @@ describe('mobile composer draft realtime reconciliation', () => {
     await deleteMobileComposerDraft(namespace, 'new')
     expect(mocks.files.has(stored!.attachments[0]!.uri)).toBe(false)
     await expect(loadMobileComposerDraft(namespace, 'new')).resolves.toBeNull()
+  })
+
+  it('keeps a newer save behind an in-flight deletion for the same scope', async () => {
+    let finishDelete!: (value: { revision: number }) => void
+    vi.mocked(mobileApi.deleteComposerDraft).mockReturnValue(new Promise((resolve) => { finishDelete = resolve }))
+    vi.mocked(mobileApi.saveComposerDraft).mockResolvedValue({ draft: remote(10, 'ios-local', 'new text') })
+
+    const deletion = deleteMobileRemoteDraft('new', 'ios-local')
+    const saving = saveMobileRemoteDraft('new', {
+      content: 'new text', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      autoExpire: false, attachmentIds: [], editorId: 'ios-local',
+    })
+    await vi.waitFor(() => expect(mobileApi.deleteComposerDraft).toHaveBeenCalledOnce())
+    expect(mobileApi.saveComposerDraft).not.toHaveBeenCalled()
+
+    finishDelete({ revision: 9 })
+    await expect(deletion).resolves.toBe(9)
+    await expect(saving).resolves.toMatchObject({ content: 'new text', revision: 10 })
+    expect(vi.mocked(mobileApi.deleteComposerDraft).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(mobileApi.saveComposerDraft).mock.invocationCallOrder[0]!)
   })
 })

@@ -1,15 +1,32 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Dexie from 'dexie'
 import type { ComposerDraft, ComposerDraftChange, ComposerDraftsCleared } from '@pulpo/contracts'
 import { localDb } from './database'
+
+const apiMocks = vi.hoisted(() => ({ apiRequest: vi.fn(), fetchApiBlob: vi.fn() }))
+
+vi.mock('@/lib/api', () => ({
+  apiRequest: apiMocks.apiRequest,
+  fetchApiBlob: apiMocks.fetchApiBlob,
+  ApiError: class ApiError extends Error {
+    status: number
+    constructor(status: number) {
+      super('API error')
+      this.status = status
+    }
+  },
+}))
+
 import {
   applyWebComposerDraftChange,
   applyWebComposerDraftsCleared,
+  deleteRemoteComposerDraft,
   loadLocalComposerDraft,
   saveLocalComposerDraft,
   saveLocalComposerTombstone,
+  saveRemoteComposerDraft,
 } from './composer-drafts'
 
 const userId = 'draft-test-user'
@@ -57,6 +74,8 @@ async function saveLocal(content: string, editorId: string, revision: number, di
 
 describe('web composer draft realtime reconciliation', () => {
   beforeEach(async () => {
+    apiMocks.apiRequest.mockReset()
+    apiMocks.fetchApiBlob.mockReset()
     await localDb.delete()
     await localDb.open()
   })
@@ -180,5 +199,25 @@ describe('web composer draft realtime reconciliation', () => {
       userId, scope: 'new', editorId: 'local-editor', dirty: true,
     })
     expect(await localDb.draftAttachmentBlobs.count()).toBe(0)
+  })
+
+  it('keeps a newer save behind an in-flight deletion for the same scope', async () => {
+    let finishDelete!: (value: { revision: number }) => void
+    apiMocks.apiRequest.mockImplementation((_path: string, options?: { method?: string }) => {
+      if (options?.method === 'DELETE') return new Promise((resolve) => { finishDelete = resolve })
+      return Promise.resolve({ draft: remote(10, 'web-local', 'new text') })
+    })
+
+    const deletion = deleteRemoteComposerDraft('new', 'web-local')
+    const saving = saveRemoteComposerDraft('new', {
+      content: 'new text', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      autoExpire: false, attachmentIds: [], editorId: 'web-local',
+    })
+    await vi.waitFor(() => expect(apiMocks.apiRequest).toHaveBeenCalledTimes(1))
+
+    finishDelete({ revision: 9 })
+    await expect(deletion).resolves.toBe(9)
+    await expect(saving).resolves.toMatchObject({ content: 'new text', revision: 10 })
+    expect(apiMocks.apiRequest.mock.calls.map(([, options]) => options?.method)).toEqual(['DELETE', 'PUT'])
   })
 })
