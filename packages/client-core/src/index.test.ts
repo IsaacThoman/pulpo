@@ -13,7 +13,29 @@ import {
   reconcileResponseEvents,
   responseLineageDetailsAvailable,
   resolvePresetActions,
+  scheduleComposerDraftSave,
 } from './index.js'
+
+describe('composer draft debounce', () => {
+  it('waits 250 ms and supports cancellation', () => {
+    vi.useFakeTimers()
+    try {
+      const saved = vi.fn()
+      scheduleComposerDraftSave(saved)
+      vi.advanceTimersByTime(249)
+      expect(saved).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(saved).toHaveBeenCalledOnce()
+
+      const cancelled = vi.fn()
+      scheduleComposerDraftSave(cancelled)()
+      vi.advanceTimersByTime(250)
+      expect(cancelled).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
 
 function deferred<T>() {
   let resolve!: (value: T) => void

@@ -4,7 +4,11 @@ import { modelPreferencesSchema } from '@pulpo/contracts'
 import { LatestValueQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
-import { detachAllSyncedDraftAttachments, enableWebComposerDraftSync } from '@/lib/local-first/composer-drafts'
+import {
+  detachAllSyncedDraftAttachments,
+  enableWebComposerDraftSync,
+  markWebComposerDraftSyncEnablePending,
+} from '@/lib/local-first/composer-drafts'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
@@ -125,6 +129,9 @@ export function SettingsBridge() {
 
   useEffect(() => {
     if (syncDrafts) {
+      if (userId && detachedDraftNamespaceRef.current === userId) {
+        void markWebComposerDraftSyncEnablePending(userId)
+      }
       detachedDraftNamespaceRef.current = null
       return
     }

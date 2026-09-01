@@ -50,6 +50,16 @@ describe('temporary chat backup projection', () => {
         { id: 'attachment-generated-temp', chat_id: null, source_response_id: 'response-active-temp', status: 'ready', object_key: 'generated-temp-file', checksum: 'generated-temp-checksum' },
         { id: 'attachment-queued-temp', chat_id: null, source_response_id: null, status: 'ready', object_key: 'queued-temp-file', checksum: 'queued-temp-checksum' },
       ],
+      composer_drafts: [
+        { id: 'draft-normal', chat_id: 'chat-normal', scope: 'chat-normal' },
+        { id: 'draft-new', chat_id: null, scope: 'new' },
+        { id: 'draft-temp', chat_id: 'chat-active-temp', scope: 'chat-active-temp' },
+      ],
+      composer_draft_attachments: [
+        { draft_id: 'draft-normal', attachment_id: 'attachment-normal', position: 0 },
+        { draft_id: 'draft-new', attachment_id: 'attachment-user', position: 0 },
+        { draft_id: 'draft-temp', attachment_id: 'attachment-active-temp', position: 0 },
+      ],
       user_memory_documents: [{ user_id: 'user', source_response_id: 'response-active-temp', content: 'durable memory' }],
       user_memory_document_revisions: [
         { id: 'memory-normal', source_response_id: 'response-normal' },
@@ -116,6 +126,11 @@ describe('temporary chat backup projection', () => {
     expect(rowIds(result.database.response_content_parts)).toEqual(['part-normal'])
     expect(rowIds(result.database.chat_shares)).toEqual(['share-normal'])
     expect(rowIds(result.database.attachments)).toEqual(['attachment-normal', 'attachment-user'])
+    expect(rowIds(result.database.composer_drafts)).toEqual(['draft-normal', 'draft-new'])
+    expect(result.database.composer_draft_attachments).toEqual([
+      { draft_id: 'draft-normal', attachment_id: 'attachment-normal', position: 0 },
+      { draft_id: 'draft-new', attachment_id: 'attachment-user', position: 0 },
+    ])
     expect(rowIds(result.database.chat_turn_embeddings)).toEqual(['embedding-normal'])
     expect(result.database.chat_import_sources).toEqual([{ source_chat_id: 'source-normal', chat_id: 'chat-normal' }])
     expect(result.database.workspace_leases).toEqual([

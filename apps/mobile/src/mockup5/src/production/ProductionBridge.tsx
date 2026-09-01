@@ -10,7 +10,10 @@ import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
 import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
 import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
-import { enableMobileComposerDraftSync } from '../../../features/chat/composerDrafts'
+import {
+  enableMobileComposerDraftSync,
+  markMobileComposerDraftSyncEnablePending,
+} from '../../../features/chat/composerDrafts'
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
 import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
 import { useSessionStore } from '../../../store/session'
@@ -304,6 +307,9 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
 
   useEffect(() => {
     if (preferences.syncDrafts) {
+      if (detachedDraftNamespaceRef.current === namespace) {
+        void markMobileComposerDraftSyncEnablePending(namespace)
+      }
       detachedDraftNamespaceRef.current = null
       return
     }

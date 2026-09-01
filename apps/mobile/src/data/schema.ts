@@ -1,5 +1,23 @@
 export const MOBILE_DATABASE_VERSION = 5
 
+export const MOBILE_DRAFT_COLUMN_ADDITIONS = [
+  ['model_id', 'TEXT'],
+  ['preset_selections', "TEXT NOT NULL DEFAULT '{}'"],
+  ['agent_mode', 'INTEGER NOT NULL DEFAULT 0'],
+  ['auto_expire', 'INTEGER'],
+  ['editor_id', 'TEXT'],
+  ['server_revision', 'INTEGER'],
+  ['server_updated_at', 'TEXT'],
+  ['dirty', 'INTEGER NOT NULL DEFAULT 1'],
+  ['deleted', 'INTEGER NOT NULL DEFAULT 0'],
+] as const
+
+export function missingMobileDraftColumnMigrations(existingColumns: Iterable<string>): string[] {
+  const existing = new Set(existingColumns)
+  return MOBILE_DRAFT_COLUMN_ADDITIONS.flatMap(([name, definition]) =>
+    existing.has(name) ? [] : [`ALTER TABLE drafts ADD COLUMN ${name} ${definition}`])
+}
+
 export const MOBILE_SCHEMA = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;

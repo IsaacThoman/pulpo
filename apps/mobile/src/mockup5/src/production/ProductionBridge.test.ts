@@ -16,6 +16,7 @@ vi.mock('../../../data/database', () => ({
   cacheNamespace: (instanceUrl: string, userId: string) => `${instanceUrl}|${userId}`,
   cachedChats: mocks.cachedChats,
   completeOutboxEntity: vi.fn(async () => undefined),
+  detachAllComposerDraftServerReferences: vi.fn(async () => undefined),
   getValue: mocks.getValue,
   pruneCachedChatScope: vi.fn(async () => undefined),
 }))
@@ -34,6 +35,10 @@ vi.mock('../../../features/chat/projection', () => ({ projectChat: vi.fn(() => [
 vi.mock('../../../features/chat/api', () => ({
   createFolder: vi.fn(), deleteFolder: vi.fn(), permanentlyDeleteChat: vi.fn(), restoreChat: vi.fn(),
   trashChat: vi.fn(), updateChat: vi.fn(), updateFolder: vi.fn(),
+}))
+vi.mock('../../../features/chat/composerDrafts', () => ({
+  enableMobileComposerDraftSync: vi.fn(async () => undefined),
+  markMobileComposerDraftSyncEnablePending: vi.fn(async () => undefined),
 }))
 vi.mock('../../../providers/realtimeStore', () => {
   const store = Object.assign(vi.fn(), { getState: () => ({ snapshots: {} }) })
