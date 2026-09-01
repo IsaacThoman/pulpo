@@ -379,8 +379,10 @@ html[data-desktop-os="darwin"] .mobile-sidebar-opener {
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] {
   right: auto;
   left: 52px;
-  width: max-content;
+  width: fit-content;
   max-width: calc(100vw - 168px);
+  height: 38px;
+  justify-content: flex-start;
 }
 
 html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"] {
@@ -389,7 +391,21 @@ html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"]
 }
 
 html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-compact="true"] {
+  left: 64px;
+  height: 48px;
   max-width: calc(100vw - 312px);
+}
+
+html[data-desktop="true"] .desktop-compact-titlebar-drag-region {
+  -webkit-app-region: drag;
+  background: var(--sidebar);
+}
+
+html[data-desktop-os="win32"] .desktop-compact-titlebar-drag-region {
+  top: 0;
+  right: 138px;
+  height: 48px;
+  background: var(--background);
 }
 
 @media (width < 750px) {

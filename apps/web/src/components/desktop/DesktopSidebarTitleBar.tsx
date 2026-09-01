@@ -104,14 +104,21 @@ export function DesktopSidebarTitleBar({
           </>
         )}
       </div>
+      {compact && (
+        <div
+          aria-hidden="true"
+          className="desktop-compact-titlebar-drag-region pointer-events-auto fixed inset-x-0 top-0 z-[42] h-[38px]"
+        />
+      )}
       <div
         data-collapsed={collapsed ? 'true' : undefined}
         data-compact={compact ? 'true' : undefined}
         data-position-animation-active={!windows && transitions && !showAboveSidebar ? 'true' : undefined}
         id={MODEL_SLOT_ID}
         className={cn(
-          'desktop-model-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 z-[43] flex min-w-0 select-none items-center motion-reduce:transition-none',
-          transitions && 'transition-[left,height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
+          'desktop-model-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 z-[43] flex select-none items-center motion-reduce:transition-none',
+          compact ? 'w-fit' : 'min-w-0',
+          transitions && !compact && 'transition-[left,height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         )}
       />
       <div
@@ -119,7 +126,7 @@ export function DesktopSidebarTitleBar({
         data-compact={compact ? 'true' : undefined}
         id={ACTIONS_SLOT_ID}
         className={cn(
-          'desktop-actions-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 right-3 z-[43] flex select-none items-center gap-1 motion-reduce:transition-none',
+          'desktop-actions-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 right-3 z-[43] flex w-fit select-none items-center gap-1 motion-reduce:transition-none',
           transitions && 'transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         )}
       />
