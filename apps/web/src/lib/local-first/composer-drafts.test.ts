@@ -23,6 +23,7 @@ import {
   applyWebComposerDraftChange,
   applyWebComposerDraftsCleared,
   deleteRemoteComposerDraft,
+  flushDirtyWebComposerDrafts,
   loadLocalComposerDraft,
   saveLocalComposerDraft,
   saveLocalComposerTombstone,
@@ -125,12 +126,50 @@ describe('web composer draft realtime reconciliation', () => {
     })
   })
 
+  it('serializes concurrent inbound revisions so the newest snapshot wins', async () => {
+    await Promise.all([
+      applyWebComposerDraftChange(userId, change(remote(21, 'remote-a', 'older'), 21, 'remote-a')),
+      applyWebComposerDraftChange(userId, change(remote(22, 'remote-a', 'newest'), 22, 'remote-a')),
+    ])
+    await expect(loadLocalComposerDraft(userId, 'new')).resolves.toMatchObject({
+      content: 'newest', serverRevision: 22,
+    })
+  })
+
   it('suppresses self echoes without discarding typing that followed the request', async () => {
     await saveLocal('typing continued', 'same-editor', 10)
 
     await applyWebComposerDraftChange(userId, change(remote(11, 'same-editor', 'older submitted text'), 11, 'same-editor'))
     await expect(loadLocalComposerDraft(userId, 'new')).resolves.toMatchObject({
       content: 'typing continued', serverRevision: 11, dirty: true,
+    })
+  })
+
+  it('marks an acknowledged projection clean while a local attachment is pending', async () => {
+    const file = new File(['uploading'], 'pending.txt', { type: 'text/plain' })
+    await saveLocalComposerDraft({
+      userId,
+      scope: 'new',
+      content: 'saved text',
+      modelId: 'model-1',
+      presetSelections: {},
+      agentMode: false,
+      autoExpire: false,
+      uploads: [{
+        localId: 'pending-file', name: file.name, size: file.size, mimeType: file.type,
+        previewUrl: null, status: 'uploading', file, chatId: null, temporary: false,
+        managed: true, attempt: 1,
+      }],
+      editorId: 'same-editor',
+      dirty: true,
+    })
+    apiMocks.apiRequest.mockResolvedValue({ draft: remote(12, 'same-editor', 'saved text') })
+
+    await flushDirtyWebComposerDrafts(userId)
+
+    await expect(loadLocalComposerDraft(userId, 'new')).resolves.toMatchObject({
+      content: 'saved text', dirty: false, serverRevision: 12,
+      attachments: [{ localId: 'pending-file' }],
     })
   })
 

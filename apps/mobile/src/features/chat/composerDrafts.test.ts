@@ -59,6 +59,7 @@ import {
   applyMobileComposerDraftChange,
   deleteMobileComposerDraft,
   deleteMobileRemoteDraft,
+  flushDirtyMobileComposerDrafts,
   loadMobileComposerDraft,
   saveMobileComposerDraft,
   saveMobileRemoteDraft,
@@ -127,12 +128,44 @@ describe('mobile composer draft realtime reconciliation', () => {
     })
   })
 
+  it('serializes concurrent inbound revisions so the newest snapshot wins', async () => {
+    await Promise.all([
+      applyMobileComposerDraftChange(namespace, event(remote(21, 'remote-a', 'older'), 21, 'remote-a')),
+      applyMobileComposerDraftChange(namespace, event(remote(22, 'remote-a', 'newest'), 22, 'remote-a')),
+    ])
+    await expect(loadMobileComposerDraft(namespace, 'new')).resolves.toMatchObject({
+      content: 'newest', serverRevision: 22,
+    })
+  })
+
   it('persists remote deletion tombstones', async () => {
     await saveMobileComposerDraft(namespace, 'new', local('remove me', 'ios-local', 7))
 
     await applyMobileComposerDraftChange(namespace, event(null, 8))
     await expect(loadMobileComposerDraft(namespace, 'new')).resolves.toMatchObject({
       content: '', attachments: [], serverRevision: 8, dirty: false, deleted: true,
+    })
+  })
+
+  it('marks an acknowledged projection clean while a local attachment is pending', async () => {
+    const sourceUri = 'file:///picked/pending.txt'
+    mocks.files.set(sourceUri, 'uploading')
+    await saveMobileComposerDraft(namespace, 'new', {
+      ...local('saved text', 'ios-local', 0),
+      serverRevision: undefined,
+      attachments: [{
+        id: 'pending-file', localId: 'pending-file', name: 'pending.txt', uri: sourceUri,
+        mimeType: 'text/plain', size: 9, kind: 'file', state: 'uploading', ownerId: 'draft:new',
+        attempt: 1, managed: true,
+      }],
+    })
+    vi.mocked(mobileApi.saveComposerDraft).mockResolvedValue({ draft: remote(9, 'ios-local', 'saved text') })
+
+    await flushDirtyMobileComposerDrafts(namespace)
+
+    await expect(loadMobileComposerDraft(namespace, 'new')).resolves.toMatchObject({
+      content: 'saved text', dirty: false, serverRevision: 9,
+      attachments: [{ localId: 'pending-file' }],
     })
   })
 
