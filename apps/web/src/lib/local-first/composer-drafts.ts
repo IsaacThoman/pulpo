@@ -1,4 +1,5 @@
 import type { ComposerDraft, ComposerDraftChange, ComposerDraftInput, ComposerDraftsCleared } from '@pulpo/contracts'
+import { LatestTaskQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { fetchApiBlob } from '@/lib/api'
 import { localAccountKey, localDb, type DraftRow } from './database'
@@ -14,17 +15,42 @@ export interface RemoteComposerDraftSnapshot {
 export const WEB_COMPOSER_DRAFT_CHANGED_EVENT = 'pulpo:composer-draft-changed'
 export const WEB_COMPOSER_DRAFTS_CLEARED_EVENT = 'pulpo:composer-drafts-cleared'
 
-const remoteMutationTails = new Map<string, Promise<void>>()
+type RemoteDraftMutation =
+  | { type: 'save'; input: ComposerDraftInput }
+  | { type: 'delete'; editorId: string }
+type RemoteDraftMutationResult =
+  | { type: 'save'; draft: ComposerDraft }
+  | { type: 'delete'; revision: number }
 
-function serializeRemoteMutation<T>(scope: string, mutate: () => Promise<T>): Promise<T> {
-  const previous = remoteMutationTails.get(scope) ?? Promise.resolve()
-  const result = previous.catch(() => undefined).then(mutate)
+const remoteMutationQueue = new LatestTaskQueue<string, RemoteDraftMutation, RemoteDraftMutationResult>()
+const localReconciliationTails = new Map<string, Promise<void>>()
+
+function serializeLocalReconciliation<T>(key: string, reconcile: () => Promise<T>): Promise<T> {
+  const previous = localReconciliationTails.get(key) ?? Promise.resolve()
+  const result = previous.catch(() => undefined).then(reconcile)
   const tail = result.then(() => undefined, () => undefined)
-  remoteMutationTails.set(scope, tail)
+  localReconciliationTails.set(key, tail)
   void tail.then(() => {
-    if (remoteMutationTails.get(scope) === tail) remoteMutationTails.delete(scope)
+    if (localReconciliationTails.get(key) === tail) localReconciliationTails.delete(key)
   })
   return result
+}
+
+function mutateRemoteDraft(scope: string, mutation: RemoteDraftMutation): Promise<RemoteDraftMutationResult> {
+  return remoteMutationQueue.enqueue(scope, mutation, async (latest) => {
+    if (latest.type === 'save') {
+      const result = await apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, {
+        method: 'PUT',
+        body: latest.input,
+      })
+      return { type: 'save', draft: result.draft }
+    }
+    const result = await apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
+      method: 'DELETE',
+      body: { editorId: latest.editorId },
+    })
+    return { type: 'delete', revision: result.revision }
+  })
 }
 
 function rowId(userId: string, scope: string): string {
@@ -209,19 +235,15 @@ export async function fetchRemoteComposerDraft(scope: string): Promise<RemoteCom
 }
 
 export async function saveRemoteComposerDraft(scope: string, input: ComposerDraftInput): Promise<ComposerDraft> {
-  return serializeRemoteMutation(scope, () =>
-    apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, { method: 'PUT', body: input })
-      .then((result) => result.draft))
+  const result = await mutateRemoteDraft(scope, { type: 'save', input })
+  if (result.type !== 'save') throw new Error('Composer draft save was superseded by a deletion')
+  return result.draft
 }
 
 export async function deleteRemoteComposerDraft(scope: string, editorId: string): Promise<number> {
-  return serializeRemoteMutation(scope, async () => {
-    const result = await apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
-      method: 'DELETE',
-      body: { editorId },
-    })
-    return result.revision
-  })
+  const result = await mutateRemoteDraft(scope, { type: 'delete', editorId })
+  if (result.type !== 'delete') throw new Error('Composer draft deletion was superseded by a save')
+  return result.revision
 }
 
 function remoteUploads(draft: ComposerDraft, existing?: DraftRow): UploadRecord[] {
@@ -277,34 +299,36 @@ function dispatchDraftEvent(name: string, detail: unknown): void {
 }
 
 export async function applyWebComposerDraftChange(userId: string, event: ComposerDraftChange): Promise<boolean> {
-  const existing = await localDb.drafts.get(rowId(userId, event.scope))
-  if ((existing?.serverRevision ?? 0) >= event.revision) return false
-  const selfEvent = existing?.editorId === event.editorId
-  if (selfEvent && existing) {
-    if (event.draft && localMatchesRemote(existing, event.draft)) {
-      await localDb.drafts.update(existing.id, {
-        serverRevision: event.revision,
-        serverUpdatedAt: event.draft.updatedAt,
-        dirty: false,
-      })
-    } else if (!event.draft && existing.deleted) {
-      await localDb.drafts.update(existing.id, { serverRevision: event.revision, dirty: false })
+  return serializeLocalReconciliation(`${localAccountKey(userId)}:${event.scope}`, async () => {
+    const existing = await localDb.drafts.get(rowId(userId, event.scope))
+    if ((existing?.serverRevision ?? 0) >= event.revision) return false
+    const selfEvent = existing?.editorId === event.editorId && existing.dirty
+    if (selfEvent && existing) {
+      if (event.draft && localMatchesRemote(existing, event.draft)) {
+        await localDb.drafts.update(existing.id, {
+          serverRevision: event.revision,
+          serverUpdatedAt: event.draft.updatedAt,
+          dirty: false,
+        })
+      } else if (!event.draft && existing.deleted) {
+        await localDb.drafts.update(existing.id, { serverRevision: event.revision, dirty: false })
+      } else {
+        await localDb.drafts.update(existing.id, { serverRevision: event.revision })
+      }
+    } else if (event.draft) {
+      await persistRemoteDraft(userId, event.draft)
     } else {
-      await localDb.drafts.update(existing.id, { serverRevision: event.revision })
+      await saveLocalComposerTombstone({
+        userId,
+        scope: event.scope,
+        editorId: event.editorId,
+        dirty: false,
+        serverRevision: event.revision,
+      })
     }
-  } else if (event.draft) {
-    await persistRemoteDraft(userId, event.draft)
-  } else {
-    await saveLocalComposerTombstone({
-      userId,
-      scope: event.scope,
-      editorId: event.editorId,
-      dirty: false,
-      serverRevision: event.revision,
-    })
-  }
-  dispatchDraftEvent(WEB_COMPOSER_DRAFT_CHANGED_EVENT, event)
-  return true
+    dispatchDraftEvent(WEB_COMPOSER_DRAFT_CHANGED_EVENT, event)
+    return true
+  })
 }
 
 export async function applyWebComposerDraftsCleared(userId: string, event: ComposerDraftsCleared): Promise<void> {
@@ -318,14 +342,16 @@ export async function reconcileWebComposerDraftSnapshot(
   snapshot: RemoteComposerDraftSnapshot,
   editorId: string,
 ): Promise<void> {
-  const existing = await localDb.drafts.get(rowId(userId, scope))
-  if (existing?.dirty) return
-  if (snapshot.draft) {
-    if ((existing?.serverRevision ?? 0) < snapshot.draft.revision) await persistRemoteDraft(userId, snapshot.draft)
-    return
-  }
-  if ((existing?.serverRevision ?? 0) >= snapshot.revision) return
-  await saveLocalComposerTombstone({ userId, scope, editorId, dirty: false, serverRevision: snapshot.revision })
+  await serializeLocalReconciliation(`${localAccountKey(userId)}:${scope}`, async () => {
+    const existing = await localDb.drafts.get(rowId(userId, scope))
+    if (existing?.dirty) return
+    if (snapshot.draft) {
+      if ((existing?.serverRevision ?? 0) < snapshot.draft.revision) await persistRemoteDraft(userId, snapshot.draft)
+      return
+    }
+    if ((existing?.serverRevision ?? 0) >= snapshot.revision) return
+    await saveLocalComposerTombstone({ userId, scope, editorId, dirty: false, serverRevision: snapshot.revision })
+  })
 }
 
 export async function flushDirtyWebComposerDrafts(userId: string): Promise<void> {
@@ -355,7 +381,9 @@ export async function flushDirtyWebComposerDrafts(userId: string): Promise<void>
       const current = await localDb.drafts.get(draft.id)
       if (!current?.dirty || current.updatedAt !== draft.updatedAt) continue
       await localDb.drafts.update(draft.id, {
-        dirty: current.attachments.some((attachment) => !attachment.serverId),
+        // The text/controls/ready-attachment projection was acknowledged.
+        // A pending attachment becoming ready will dirty the next snapshot.
+        dirty: false,
         serverRevision: remote.revision,
         serverUpdatedAt: remote.updatedAt,
       })

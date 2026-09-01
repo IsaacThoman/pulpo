@@ -2,9 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   attachmentUploadErrorMessage,
   attachmentValidationError,
+  composerDraftAttachmentKey,
+  composerDraftSemanticFingerprint,
+  ComposerDraftMutationTracker,
   hydrateEmbeddedResponseSnapshot,
   LatestValueQueue,
+  LatestTaskQueue,
   lineageFromLeaf,
+  liveStateInvalidationScopes,
   mergeCachedResponseDetails,
   mergeRevisionInvalidation,
   normalizeInstanceUrl,
@@ -41,6 +46,60 @@ describe('composer draft debounce', () => {
     expect(resolveComposerDraftPersistenceAction({ hasContent: false, hadDraft: false })).toBe('none')
     expect(resolveComposerDraftPersistenceAction({ hasContent: true, hadDraft: false })).toBe('save')
     expect(resolveComposerDraftPersistenceAction({ hasContent: false, hadDraft: true })).toBe('delete')
+  })
+
+  it('uses direct draft events without dropping other live invalidations', () => {
+    expect(liveStateInvalidationScopes(['drafts'])).toEqual([])
+    expect(liveStateInvalidationScopes(['settings', 'drafts', 'chats'])).toEqual(['settings', 'chats'])
+  })
+
+  it('suppresses every render of an async application without hiding a later local edit', () => {
+    const tracker = new ComposerDraftMutationTracker()
+    const application = tracker.beginApplication()
+    expect(tracker.shouldSuppressSave()).toBe(true)
+    expect(tracker.consumeSettledApplication()).toBe(false)
+    expect(tracker.settle(application)).toBe(true)
+    expect(tracker.shouldSuppressSave()).toBe(true)
+    expect(tracker.consumeSettledApplication()).toBe(true)
+    expect(tracker.shouldSuppressSave()).toBe(false)
+
+    const stale = tracker.beginApplication()
+    tracker.markLocalEdit()
+    expect(tracker.isCurrent(stale)).toBe(false)
+    expect(tracker.settle(stale)).toBe(false)
+    expect(tracker.shouldSuppressSave()).toBe(false)
+  })
+
+  it('matches remote applications by semantic draft state', () => {
+    const fingerprint = composerDraftSemanticFingerprint({
+      content: 'draft',
+      attachmentKeys: [composerDraftAttachmentKey({
+        serverId: 'attachment-one',
+        name: 'ignored.txt',
+        mimeType: 'text/plain',
+      })],
+      modelId: 'model-one',
+      presetSelections: { tone: 'brief', effort: 'high' },
+      agentMode: true,
+      autoExpire: false,
+    })
+    expect(fingerprint).toBe(composerDraftSemanticFingerprint({
+      content: 'draft',
+      attachmentKeys: ['server:attachment-one'],
+      modelId: 'model-one',
+      presetSelections: { effort: 'high', tone: 'brief' },
+      agentMode: true,
+      autoExpire: false,
+    }))
+
+    const tracker = new ComposerDraftMutationTracker()
+    const application = tracker.beginApplication()
+    expect(tracker.hasUnsettledApplication()).toBe(true)
+    expect(tracker.shouldSuppressSave(fingerprint)).toBe(false)
+    expect(tracker.settle(application, fingerprint)).toBe(true)
+    expect(tracker.hasUnsettledApplication()).toBe(false)
+    expect(tracker.shouldSuppressSave(fingerprint)).toBe(true)
+    expect(tracker.shouldSuppressSave(`${fingerprint}:local-edit`)).toBe(false)
   })
 })
 
@@ -89,6 +148,26 @@ describe('latest value queue', () => {
     expect(writes).toEqual(['dark', 'es'])
     first.resolve('dark')
     await expect(theme).resolves.toBe('dark')
+  })
+})
+
+describe('latest task queue', () => {
+  it('keeps the active result and runs only the newest queued mutation', async () => {
+    const first = deferred<number>()
+    const writes: number[] = []
+    const queue = new LatestTaskQueue<string, number, number>()
+    const write = async (value: number) => {
+      writes.push(value)
+      return value === 1 ? first.promise : value
+    }
+    const one = queue.enqueue('draft', 1, write)
+    const two = queue.enqueue('draft', 2, write)
+    const three = queue.enqueue('draft', 3, write)
+    await expect(two).rejects.toThrow('superseded')
+    first.resolve(1)
+    await expect(one).resolves.toBe(1)
+    await expect(three).resolves.toBe(3)
+    expect(writes).toEqual([1, 3])
   })
 })
 

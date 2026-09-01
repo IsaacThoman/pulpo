@@ -11,7 +11,7 @@ import type {
   StateInvalidationScope,
   SyncResult,
 } from '@pulpo/contracts'
-import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
+import { liveStateInvalidationScopes, mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { localDb } from '@/lib/local-first/database'
 import { flushOutbox } from '@/lib/local-first/outbox'
@@ -29,6 +29,7 @@ import {
   resumeWebComposerDraftSyncEnable,
 } from '@/lib/local-first/composer-drafts'
 import { useSettings } from '@/stores/settings'
+import { webRealtimeClientId } from '@/lib/realtime-client-id'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -36,14 +37,6 @@ function invalidateStateScope(scope: StateInvalidationScope, userId: string): vo
   for (const queryKey of stateInvalidationQueryKeys(scope, userId)) {
     void queryClient.invalidateQueries({ queryKey })
   }
-}
-
-function tabId(): string {
-  const existing = sessionStorage.getItem('pulpo-tab-id')
-  if (existing) return existing
-  const created = crypto.randomUUID()
-  sessionStorage.setItem('pulpo-tab-id', created)
-  return created
 }
 
 export function ChatDataBridge() {
@@ -67,7 +60,7 @@ export function ChatDataBridge() {
   const subscribedResponseIdsRef = useRef(new Set<string>())
   const loadCatalog = useCatalog((state) => state.load)
   const revisionRef = useRef(user?.stateRevision ?? 0)
-  const currentTabId = useMemo(tabId, [])
+  const currentTabId = useMemo(webRealtimeClientId, [])
   const networkReady = !isDesktopRuntime() || instanceReady
   const activeChatIdRef = useRef(chatId)
   activeChatIdRef.current = chatId
@@ -271,11 +264,25 @@ export function ChatDataBridge() {
       queueRevisionInvalidation({ revision, chatId: changedChatId })
     })
     socket.on('account.revision', ({ revision, scopes }) => {
-      queueRevisionInvalidation({ revision, scopes })
+      revisionRef.current = Math.max(revisionRef.current, revision)
+      if (!scopes) {
+        queueRevisionInvalidation({ revision })
+        return
+      }
+      const nonDraftScopes = liveStateInvalidationScopes(scopes)
+      if (nonDraftScopes.length) queueRevisionInvalidation({ revision, scopes: nonDraftScopes })
     })
     socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
       revisionRef.current = Math.max(revisionRef.current, event.revision)
-      void applyWebComposerDraftChange(userId, event)
+      void applyWebComposerDraftChange(userId, event).then((applied) => {
+        if (!applied) return
+        queryClient.setQueryData<{ draft: ComposerDraftChange['draft']; revision: number }>(
+          ['drafts', userId, event.scope],
+          (current) => current && current.revision >= event.revision
+            ? current
+            : { draft: event.draft, revision: event.revision },
+        )
+      })
     })
     socket.on('composer.drafts.cleared', (event: ComposerDraftsCleared) => {
       revisionRef.current = Math.max(revisionRef.current, event.revision)

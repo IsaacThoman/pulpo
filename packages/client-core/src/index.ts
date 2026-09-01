@@ -45,6 +45,103 @@ export function resolveComposerDraftPersistenceAction(input: {
   return input.hadDraft ? 'delete' : 'none'
 }
 
+/** Draft sockets carry their canonical payload, so live revision events must not refetch it. */
+export function liveStateInvalidationScopes(scopes: StateInvalidationScope[]): StateInvalidationScope[] {
+  return scopes.filter((scope) => scope !== 'drafts')
+}
+
+export interface ComposerDraftSemanticState {
+  content: string
+  attachmentKeys: readonly string[]
+  modelId: string
+  presetSelections: Readonly<Record<string, string>>
+  agentMode: boolean
+  autoExpire?: boolean
+}
+
+/** Stable across local attachment IDs and object insertion order. */
+export function composerDraftSemanticFingerprint(state: ComposerDraftSemanticState): string {
+  return JSON.stringify([
+    state.content,
+    state.attachmentKeys,
+    state.modelId,
+    Object.entries(state.presetSelections).sort(([left], [right]) => left.localeCompare(right)),
+    state.agentMode,
+    state.autoExpire ?? null,
+  ])
+}
+
+export function composerDraftAttachmentKey(attachment: {
+  serverId?: string
+  name: string
+  mimeType: string
+  sizeBytes?: number
+}): string {
+  return attachment.serverId
+    ? `server:${attachment.serverId}`
+    : `local:${attachment.name}\u0000${attachment.mimeType}\u0000${attachment.sizeBytes ?? 0}`
+}
+
+export interface ComposerDraftApplicationToken {
+  epoch: number
+  settled: boolean
+  fingerprint?: string
+}
+
+/**
+ * Distinguishes user-authored mutations from async draft hydration. React may
+ * render several times while attachments and controls are restored, so a
+ * one-frame boolean is not sufficient to prevent the restored state from
+ * being echoed back as a new local save.
+ */
+export class ComposerDraftMutationTracker {
+  private localEpoch = 0
+  private application: ComposerDraftApplicationToken | null = null
+
+  markLocalEdit(): void {
+    this.localEpoch += 1
+    this.application = null
+  }
+
+  beginApplication(): ComposerDraftApplicationToken {
+    const token = { epoch: this.localEpoch, settled: false }
+    this.application = token
+    return token
+  }
+
+  isCurrent(token: ComposerDraftApplicationToken): boolean {
+    return this.application === token && token.epoch === this.localEpoch
+  }
+
+  settle(token: ComposerDraftApplicationToken, fingerprint?: string): boolean {
+    if (!this.isCurrent(token)) return false
+    token.settled = true
+    token.fingerprint = fingerprint
+    return true
+  }
+
+  cancelApplication(token: ComposerDraftApplicationToken): void {
+    if (this.application === token) this.application = null
+  }
+
+  hasUnsettledApplication(): boolean {
+    return this.application !== null && !this.application.settled
+  }
+
+  shouldSuppressSave(fingerprint?: string): boolean {
+    if (!this.application) return false
+    if (!this.application.settled) return fingerprint === undefined
+    if (!this.application.fingerprint || fingerprint === undefined) return true
+    return this.application.fingerprint === fingerprint
+  }
+
+  consumeSettledApplication(): boolean {
+    if (!this.application?.settled) return false
+    this.application = null
+    return true
+  }
+}
+
 /** Serialize writes per key and retain only the newest value queued behind an active request. */
 export class LatestValueQueue<Key, Value, Result> {
   private readonly entries = new Map<Key, QueueEntry<Value, Result>>()
@@ -85,6 +182,52 @@ export class LatestValueQueue<Key, Value, Result> {
       if (this.entries.get(key) === entry) this.entries.delete(key)
     }
   }
+}
+
+/** Serialize mutations per key while rejecting queued values replaced before they start. */
+export class LatestTaskQueue<Key, Value, Result> {
+  private readonly entries = new Map<Key, LatestTaskEntry<Value, Result>>()
+
+  enqueue(key: Key, value: Value, write: (value: Value) => Promise<Result>): Promise<Result> {
+    return new Promise<Result>((resolve, reject) => {
+      const task = { value, write, resolve, reject }
+      const entry = this.entries.get(key)
+      if (entry) {
+        entry.next?.reject(new Error('Queued mutation was superseded by a newer value'))
+        entry.next = task
+        return
+      }
+      const created: LatestTaskEntry<Value, Result> = { active: task }
+      this.entries.set(key, created)
+      void this.run(key, created)
+    })
+  }
+
+  private async run(key: Key, entry: LatestTaskEntry<Value, Result>): Promise<void> {
+    while (entry.active) {
+      const current = entry.active
+      try {
+        current.resolve(await current.write(current.value))
+      } catch (error) {
+        current.reject(error)
+      }
+      entry.active = entry.next
+      entry.next = undefined
+    }
+    if (this.entries.get(key) === entry) this.entries.delete(key)
+  }
+}
+
+interface LatestTask<Value, Result> {
+  value: Value
+  write: (value: Value) => Promise<Result>
+  resolve: (result: Result) => void
+  reject: (error: unknown) => void
+}
+
+interface LatestTaskEntry<Value, Result> {
+  active?: LatestTask<Value, Result>
+  next?: LatestTask<Value, Result>
 }
 
 interface QueueEntry<Value, Result> {

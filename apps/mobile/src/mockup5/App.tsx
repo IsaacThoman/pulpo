@@ -98,7 +98,13 @@ import { SymbolView } from 'expo-symbols';
 import { DarkTheme as NavigationDarkTheme, DefaultTheme as NavigationLightTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { resolveComposerDraftPersistenceAction, scheduleComposerDraftSave } from '@pulpo/client-core';
+import {
+  composerDraftAttachmentKey,
+  composerDraftSemanticFingerprint,
+  ComposerDraftMutationTracker,
+  resolveComposerDraftPersistenceAction,
+  scheduleComposerDraftSave,
+} from '@pulpo/client-core';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
   Bot,
@@ -3392,6 +3398,8 @@ function ChatView({
   const expirationBadgeProgress = useSharedValue(landingBadge?.kind === 'expiration' ? 1 : 0);
   const realtimeConnectionPhase = useRealtimeStore((state) => state.connectionPhase);
   const syncError = useRealtimeStore((state) => state.syncError);
+  const realtimeClientId = useRealtimeStore((state) => state.clientId);
+  const realtimeClientNamespace = useRealtimeStore((state) => state.clientNamespace);
   const networkState = Network.useNetworkState();
   const networkOffline = networkState.isConnected === false || networkState.isInternetReachable === false;
   const connectionState = networkOffline
@@ -3412,7 +3420,9 @@ function ChatView({
   );
   const draftScope = chatId ?? 'new';
   const draftHydrationKey = draftNamespace ? `${draftNamespace}:${draftScope}` : `anonymous:${draftScope}`;
-  const draftEditorIdRef = useRef(`ios-draft-${Crypto.randomUUID()}`);
+  const draftEditorId = realtimeClientNamespace === draftNamespace ? realtimeClientId : null;
+  const draftEditorIdRef = useRef('');
+  draftEditorIdRef.current = draftEditorId ?? '';
   const hydratedDraftScopeRef = useRef<string | null>(null);
   const localDraftDirtyRef = useRef(false);
   const hadDraftRef = useRef(false);
@@ -3420,10 +3430,37 @@ function ChatView({
   const previousDraftSyncRef = useRef(syncDrafts);
   const temporaryDraftCleanupScopeRef = useRef<string | null>(null);
   const draftSaveGenerationRef = useRef(0);
-  const suppressMobileDraftSaveRef = useRef(false);
+  const draftMutationTrackerRef = useRef(new ComposerDraftMutationTracker());
   const deferredRemoteDraftRevisionRef = useRef(0);
   const pendingLocalDraftsRef = useRef(new Map<string, { namespace: string; scope: string; draft: MobileComposerDraft }>());
   const [, setDraftHydrationTick] = useState(0);
+  const [draftApplicationRevision, setDraftApplicationRevision] = useState(0);
+  const markLocalDraftEdit = useCallback(() => {
+    draftMutationTrackerRef.current.markLocalEdit();
+    draftSaveGenerationRef.current += 1;
+    localDraftDirtyRef.current = syncDrafts;
+  }, [syncDrafts]);
+  const draftFingerprint = composerDraftSemanticFingerprint({
+    content: input,
+    attachmentKeys: attachments.map((attachment) => composerDraftAttachmentKey({
+      serverId: attachment.serverId,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+      sizeBytes: attachment.size,
+    })),
+    modelId: model.id,
+    presetSelections,
+    agentMode: activeAgentEnabled,
+    ...(!chatId ? { autoExpire } : {}),
+  });
+  const previousDraftControlsRef = useRef({ modelId: model.id, autoExpire });
+  useEffect(() => {
+    const previous = previousDraftControlsRef.current;
+    previousDraftControlsRef.current = { modelId: model.id, autoExpire };
+    if (previous.modelId === model.id && previous.autoExpire === autoExpire) return;
+    if (draftMutationTrackerRef.current.shouldSuppressSave(draftFingerprint)) return;
+    if (hydratedDraftScopeRef.current === draftHydrationKey) markLocalDraftEdit();
+  }, [autoExpire, draftFingerprint, draftHydrationKey, markLocalDraftEdit, model.id]);
   const flushMobileDraft = useCallback((key: string) => {
     const pending = pendingLocalDraftsRef.current.get(key);
     if (!pending) return;
@@ -3489,8 +3526,10 @@ function ChatView({
     [chatId, isEmptyConversation, promptConfig],
   );
 
-  const applyMobileDraft = useCallback(async (draft: MobileComposerDraft) => {
-    suppressMobileDraftSaveRef.current = true;
+  const applyMobileDraft = useCallback(async (
+    draft: MobileComposerDraft,
+    application = draftMutationTrackerRef.current.beginApplication(),
+  ) => {
     draftSaveGenerationRef.current += 1;
     hadDraftRef.current = draft.content.length > 0 || draft.attachments.length > 0;
     onChangeInput(draft.content);
@@ -3498,15 +3537,19 @@ function ChatView({
     if (selected) onSelectModel(selected);
     const restoredModel = usePrototypeStore.getState().models.find((candidate) => candidate.id === selected?.id)
       ?? usePrototypeStore.getState().models.find((candidate) => candidate.id === model.id);
+    const restoredSelections = restoredModel
+      ? resolveGenerationSelections(restoredModel, draft.presetSelections)
+      : presetSelections;
+    const restoredAgentMode = draft.agentMode && agentAvailable && Boolean(restoredModel?.agentEnabled);
     if (!chatId && draft.autoExpire !== undefined) setDraftAutoExpireOverride(draft.autoExpire);
     if (restoredModel) {
       setDraftPresetOverride({
         modelId: restoredModel.id,
-        selections: resolveGenerationSelections(restoredModel, draft.presetSelections),
+        selections: restoredSelections,
       });
     }
     agentOverrideModelRef.current = restoredModel?.id ?? model.id;
-    setAgentEnabled(draft.agentMode && agentAvailable && Boolean(restoredModel?.agentEnabled));
+    setAgentEnabled(restoredAgentMode);
     const restorableAttachments = draft.attachments.flatMap((attachment): ComposerAttachment[] => {
       if (attachment.serverId) return [{ ...attachment, id: attachment.serverId, state: 'ready', attempt: 0 }];
       if (!attachment.uri) return [];
@@ -3521,14 +3564,29 @@ function ChatView({
     }
     setAttachments(restorableAttachments);
     draftOwnerRef.current = draft.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
+    const appliedFingerprint = composerDraftSemanticFingerprint({
+      content: draft.content,
+      attachmentKeys: restorableAttachments.map((attachment) => composerDraftAttachmentKey({
+        serverId: attachment.serverId,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.size,
+      })),
+      modelId: restoredModel?.id ?? model.id,
+      presetSelections: restoredSelections,
+      agentMode: restoredAgentMode,
+      ...(!chatId ? { autoExpire: draft.autoExpire ?? autoExpire } : {}),
+    });
+    if (!draftMutationTrackerRef.current.settle(application, appliedFingerprint)) return false;
+    setDraftApplicationRevision((revision) => revision + 1);
     requestAnimationFrame(() => {
       composerInputRef.current?.focus();
       composerInputRef.current?.setNativeProps({
         selection: { start: draft.content.length, end: draft.content.length },
       });
-      suppressMobileDraftSaveRef.current = false;
     });
-  }, [agentAvailable, chatId, model.id, models, onChangeInput, onSelectModel, setAttachments]);
+    return true;
+  }, [agentAvailable, autoExpire, chatId, model.id, models, onChangeInput, onSelectModel, presetSelections, setAttachments]);
 
   const applyStoredMobileRemoteDraft = useCallback(async (revision: number) => {
     if (!draftNamespace || revision <= appliedRemoteDraftRevisionRef.current) return;
@@ -3536,15 +3594,19 @@ function ChatView({
       deferredRemoteDraftRevisionRef.current = Math.max(deferredRemoteDraftRevisionRef.current, revision);
       return;
     }
+    const application = draftMutationTrackerRef.current.beginApplication();
     const local = await loadMobileComposerDraft(draftNamespace, draftScope);
-    if (!local || (local.serverRevision ?? 0) < revision) return;
+    if (!draftMutationTrackerRef.current.isCurrent(application)) return;
+    if (!local || (local.serverRevision ?? 0) < revision) {
+      draftMutationTrackerRef.current.cancelApplication(application);
+      return;
+    }
     appliedRemoteDraftRevisionRef.current = local.serverRevision ?? revision;
     localDraftDirtyRef.current = local.dirty;
     if (!local.deleted) {
-      await applyMobileDraft(local);
+      await applyMobileDraft(local, application);
       return;
     }
-    suppressMobileDraftSaveRef.current = true;
     draftSaveGenerationRef.current += 1;
     hadDraftRef.current = false;
     for (const attachment of attachmentsRef.current) {
@@ -3558,7 +3620,9 @@ function ChatView({
     setDraftAutoExpireOverride(null);
     agentOverrideModelRef.current = null;
     setAgentEnabled(preferredAgentMode && canUseAgent);
-    requestAnimationFrame(() => { suppressMobileDraftSaveRef.current = false; });
+    if (draftMutationTrackerRef.current.settle(application)) {
+      setDraftApplicationRevision((revision) => revision + 1);
+    }
   }, [applyMobileDraft, canUseAgent, draftNamespace, draftScope, messageEdit, onChangeInput, preferredAgentMode, sending, setAttachments]);
 
   useEffect(() => subscribeMobileComposerDrafts((change) => {
@@ -3589,6 +3653,7 @@ function ChatView({
   }, [applyStoredMobileRemoteDraft, messageEdit, sending]);
 
   useEffect(() => {
+    if (hydratedDraftScopeRef.current === draftHydrationKey) return;
     let cancelled = false;
     hydratedDraftScopeRef.current = null;
     localDraftDirtyRef.current = false;
@@ -3597,13 +3662,15 @@ function ChatView({
     deferredRemoteDraftRevisionRef.current = 0;
     setDraftPresetOverride(null);
     setDraftAutoExpireOverride(null);
-    if (!draftNamespace || temporary || !chatLoaded) {
+    if (!draftNamespace || !draftEditorId || temporary || !chatLoaded) {
+      if (draftNamespace && !draftEditorId) return;
       hydratedDraftScopeRef.current = draftHydrationKey;
       setDraftHydrationTick((value) => value + 1);
       return;
     }
+    const application = draftMutationTrackerRef.current.beginApplication();
     void loadMobileComposerDraft(draftNamespace, draftScope).then(async (draft) => {
-      if (cancelled) return;
+      if (cancelled || !draftMutationTrackerRef.current.isCurrent(application)) return;
       if (draft && !draft.deleted) {
         const restorable = syncDrafts ? draft : {
           ...draft,
@@ -3620,7 +3687,7 @@ function ChatView({
         };
         localDraftDirtyRef.current = restorable.dirty;
         appliedRemoteDraftRevisionRef.current = restorable.serverRevision ?? 0;
-        await applyMobileDraft(restorable);
+        await applyMobileDraft(restorable, application);
       } else {
         if (draft) {
           localDraftDirtyRef.current = draft.dirty;
@@ -3628,6 +3695,9 @@ function ChatView({
         }
         onChangeInput('');
         setAttachments([]);
+        if (draftMutationTrackerRef.current.settle(application)) {
+          setDraftApplicationRevision((revision) => revision + 1);
+        }
       }
       if (!cancelled) {
         hydratedDraftScopeRef.current = draftHydrationKey;
@@ -3635,7 +3705,7 @@ function ChatView({
       }
     });
     return () => { cancelled = true; };
-  }, [applyMobileDraft, chatLoaded, draftHydrationKey, draftNamespace, draftScope, onChangeInput, setAttachments, syncDrafts, temporary]);
+  }, [applyMobileDraft, chatLoaded, draftEditorId, draftHydrationKey, draftNamespace, draftScope, onChangeInput, setAttachments, syncDrafts, temporary]);
 
   useEffect(() => {
     if (!draftNamespace || !remoteDraftQuery.isSuccess || hydratedDraftScopeRef.current !== draftHydrationKey || localDraftDirtyRef.current) return;
@@ -3650,7 +3720,7 @@ function ChatView({
     ).then(() => applyStoredMobileRemoteDraft(revision)).catch(() => undefined);
   }, [applyStoredMobileRemoteDraft, draftHydrationKey, draftNamespace, draftScope, remoteDraftQuery.data, remoteDraftQuery.isSuccess]);
 
-  if (draftNamespace && hydratedDraftScopeRef.current === draftHydrationKey && !temporary && !messageEdit && !sending) {
+  if (draftNamespace && draftEditorId && hydratedDraftScopeRef.current === draftHydrationKey && !temporary && !messageEdit && !sending) {
     pendingLocalDraftsRef.current.set(draftHydrationKey, {
       namespace: draftNamespace,
       scope: draftScope,
@@ -3687,8 +3757,9 @@ function ChatView({
   }, [draftNamespace, draftScope, setAttachments, syncDrafts, temporary]);
 
   useEffect(() => {
-    if (!draftNamespace || hydratedDraftScopeRef.current !== draftHydrationKey) return;
-    if (suppressMobileDraftSaveRef.current) return;
+    if (!draftNamespace || !draftEditorId || hydratedDraftScopeRef.current !== draftHydrationKey) return;
+    if (draftMutationTrackerRef.current.hasUnsettledApplication()) markLocalDraftEdit();
+    if (draftMutationTrackerRef.current.shouldSuppressSave(draftFingerprint)) return;
     if (temporary) {
       return;
     }
@@ -3704,16 +3775,18 @@ function ChatView({
     }
     const generation = ++draftSaveGenerationRef.current;
     return scheduleComposerDraftSave(() => {
+      void (async () => {
       if (persistenceAction === 'delete') {
         localDraftDirtyRef.current = syncDrafts;
         if (syncDrafts) {
-          void saveMobileComposerTombstone({
+          await saveMobileComposerTombstone({
             namespace: draftNamespace,
             scope: draftScope,
             editorId: draftEditorIdRef.current,
             dirty: true,
             serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
           });
+          if (draftSaveGenerationRef.current !== generation) return;
           void deleteMobileRemoteDraft(draftScope, draftEditorIdRef.current).then((revision) => {
             if (draftSaveGenerationRef.current !== generation) return;
             hadDraftRef.current = false;
@@ -3748,7 +3821,8 @@ function ChatView({
         updatedAt: Date.now(),
       };
       localDraftDirtyRef.current = syncDrafts;
-      void saveMobileComposerDraft(draftNamespace, draftScope, snapshot);
+      await saveMobileComposerDraft(draftNamespace, draftScope, snapshot);
+      if (draftSaveGenerationRef.current !== generation) return;
       const readyAttachmentIds = attachments.flatMap((attachment) => attachment.state === 'ready' && attachment.serverId ? [attachment.serverId] : []);
       if (!syncDrafts || (input.length === 0 && readyAttachmentIds.length === 0)) return;
       void saveMobileRemoteDraft(draftScope, {
@@ -3761,18 +3835,22 @@ function ChatView({
         editorId: draftEditorIdRef.current,
       }).then((remote) => {
         if (draftSaveGenerationRef.current !== generation) return;
-        const pending = attachments.some((attachment) => attachment.state !== 'ready' || !attachment.serverId);
         appliedRemoteDraftRevisionRef.current = remote.revision;
-        localDraftDirtyRef.current = pending;
+        localDraftDirtyRef.current = false;
         return saveMobileComposerDraft(draftNamespace, draftScope, {
           ...snapshot,
-          dirty: pending,
+          dirty: false,
           serverRevision: remote.revision,
           serverUpdatedAt: remote.updatedAt,
         });
       }).catch(() => undefined);
+      })().catch(() => undefined);
     });
-  }, [activeAgentEnabled, attachments, autoExpire, chatId, draftHydrationKey, draftNamespace, draftScope, input, messageEdit, model.id, networkOffline, presetSelections, sending, syncDrafts, temporary]);
+  }, [activeAgentEnabled, attachments, autoExpire, chatId, draftEditorId, draftFingerprint, draftHydrationKey, draftNamespace, draftScope, input, markLocalDraftEdit, messageEdit, model.id, networkOffline, presetSelections, sending, syncDrafts, temporary]);
+
+  useEffect(() => {
+    draftMutationTrackerRef.current.consumeSettledApplication();
+  }, [activeAgentEnabled, attachments, autoExpire, draftApplicationRevision, input, model.id, presetSelections]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3878,11 +3956,12 @@ function ChatView({
 
   const toggleAgent = useCallback(() => {
     if (!canUseAgent) return;
+    markLocalDraftEdit();
     const next = !activeAgentEnabled;
     agentOverrideModelRef.current = model.id;
     setAgentEnabled(next);
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, canUseAgent, model.id]);
+  }, [activeAgentEnabled, canUseAgent, markLocalDraftEdit, model.id]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
@@ -4076,6 +4155,7 @@ function ChatView({
     }));
     const result = selectAttachmentBatch(attachments, coordinated);
     if (result.accepted.length) {
+      markLocalDraftEdit();
       setAttachments((current) => [...current, ...result.accepted].slice(0, MAX_COMPOSER_ATTACHMENTS));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
@@ -4085,7 +4165,7 @@ function ChatView({
         `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items. ${result.overflowCount} ${result.overflowCount === 1 ? 'item was' : 'items were'} not added.`,
       );
     }
-  }, [attachments, setAttachments]);
+  }, [attachments, markLocalDraftEdit, setAttachments]);
 
   const pickPhotos = useCallback(async () => {
     try {
@@ -4302,6 +4382,7 @@ function ChatView({
   }, [uploadOne]);
 
   const removeComposerAttachment = useCallback((localId: string) => {
+    markLocalDraftEdit();
     setAttachments((current) => {
       const target = current.find((attachment) => attachment.localId === localId);
       const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
@@ -4310,7 +4391,7 @@ function ChatView({
       return current.filter((attachment) => attachment.localId !== localId);
     });
     Haptics.selectionAsync();
-  }, [messageEdit, setAttachments]);
+  }, [markLocalDraftEdit, messageEdit, setAttachments]);
 
   const submitMessage = useCallback(async () => {
     if (sending) return;
@@ -4690,7 +4771,10 @@ function ChatView({
               trailingAction={headerControl.trailingAction}
               onToggleExpiration={() => {
                 if (chatId) onAutoExpirationChange(!autoExpire);
-                else setDraftAutoExpireOverride(!autoExpire);
+                else {
+                  markLocalDraftEdit();
+                  setDraftAutoExpireOverride(!autoExpire);
+                }
                 Haptics.selectionAsync();
               }}
               onToggleTemporary={() => {
@@ -4834,7 +4918,7 @@ function ChatView({
                 multiline
                 maxLength={1_000_000}
                 onChangeText={(value) => {
-                  suppressMobileDraftSaveRef.current = false;
+                  markLocalDraftEdit();
                   onChangeInput(value);
                 }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
@@ -4874,10 +4958,13 @@ function ChatView({
                               key={choice.id}
                               label={choice.label}
                               systemImage={choice.id === presetSelections[preset.id] ? 'checkmark' : undefined}
-                              onPress={() => setDraftPresetOverride({
-                                modelId: model.id,
-                                selections: { ...presetSelections, [preset.id]: choice.id },
-                              })}
+                              onPress={() => {
+                                markLocalDraftEdit();
+                                setDraftPresetOverride({
+                                  modelId: model.id,
+                                  selections: { ...presetSelections, [preset.id]: choice.id },
+                                });
+                              }}
                             />
                           ))}
                         </SwiftUISection>
@@ -4966,10 +5053,13 @@ function ChatView({
         selections={presetSelections}
         visible={presetPickerOpen}
         onClose={() => setPresetPickerOpen(false)}
-        onSelect={(presetId, choiceId) => setDraftPresetOverride({
-          modelId: model.id,
-          selections: { ...presetSelections, [presetId]: choiceId },
-        })}
+        onSelect={(presetId, choiceId) => {
+          markLocalDraftEdit();
+          setDraftPresetOverride({
+            modelId: model.id,
+            selections: { ...presetSelections, [presetId]: choiceId },
+          });
+        }}
       />
       <AttachmentImageViewer
         initialIndex={imageViewer?.initialIndex ?? 0}
