@@ -72,8 +72,7 @@ export function DesktopSidebarTitleBar({
         data-compact={compact ? 'true' : undefined}
         data-animation-active={showAboveSidebar ? undefined : 'true'}
         className={cn(
-          'desktop-sidebar-titlebar fixed inset-x-0 top-0 h-[38px]',
-          compact ? 'pointer-events-auto' : 'pointer-events-none',
+          'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
           windows ? 'z-40' : showAboveSidebar ? 'z-[42]' : 'z-[41]',
         )}
       >
@@ -105,19 +104,13 @@ export function DesktopSidebarTitleBar({
           </>
         )}
       </div>
-      {compact && (
-        <div
-          aria-hidden="true"
-          className="desktop-compact-titlebar-drag-strip pointer-events-auto fixed inset-x-0 top-0 z-[44] h-4 select-none"
-        />
-      )}
       <div
         data-collapsed={collapsed ? 'true' : undefined}
         data-compact={compact ? 'true' : undefined}
         data-position-animation-active={!windows && transitions && !showAboveSidebar ? 'true' : undefined}
         id={MODEL_SLOT_ID}
         className={cn(
-          'desktop-model-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 z-[43] flex min-w-0 items-center motion-reduce:transition-none',
+          'desktop-model-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 z-[43] flex min-w-0 select-none items-center motion-reduce:transition-none',
           transitions && 'transition-[left,height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         )}
       />
@@ -126,7 +119,7 @@ export function DesktopSidebarTitleBar({
         data-compact={compact ? 'true' : undefined}
         id={ACTIONS_SLOT_ID}
         className={cn(
-          'desktop-actions-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 right-3 z-[43] flex items-center gap-1 motion-reduce:transition-none',
+          'desktop-actions-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 right-3 z-[43] flex select-none items-center gap-1 motion-reduce:transition-none',
           transitions && 'transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         )}
       />

@@ -277,6 +277,7 @@ html[data-desktop-os="win32"] .desktop-shell {
 html[data-desktop="true"] .desktop-titlebar {
   -webkit-app-region: drag;
   background: var(--background);
+  user-select: none;
 }
 
 html[data-desktop-os="win32"] .desktop-titlebar,
@@ -541,19 +542,6 @@ html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
 
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::before {
   display: none;
-}
-
-html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed {
-  -webkit-app-region: drag;
-  pointer-events: auto;
-}
-
-html[data-desktop="true"] .desktop-compact-titlebar-drag-strip {
-  -webkit-app-region: drag;
-}
-
-html[data-desktop-os="win32"] .desktop-compact-titlebar-drag-strip {
-  right: 138px;
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {
