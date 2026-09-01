@@ -72,9 +72,10 @@ export function DesktopSidebarTitleBar({
         data-compact={compact ? 'true' : undefined}
         data-animation-active={showAboveSidebar ? undefined : 'true'}
         className={cn(
-          'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
+          'desktop-sidebar-titlebar fixed inset-x-0 top-0 h-[38px]',
           windows ? 'z-40' : showAboveSidebar ? 'z-[42]' : 'z-[41]',
         )}
+        style={{ WebkitAppRegion: 'drag' }}
       >
         {!windows && (
           <>
@@ -114,6 +115,7 @@ export function DesktopSidebarTitleBar({
           compact ? 'w-fit' : 'min-w-0',
           transitions && !compact && 'transition-[left,height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         )}
+        style={{ WebkitAppRegion: 'no-drag' }}
       />
       <div
         data-collapsed={collapsed ? 'true' : undefined}
@@ -123,6 +125,7 @@ export function DesktopSidebarTitleBar({
           'desktop-actions-titlebar-slot desktop-no-drag pointer-events-auto fixed top-0 right-3 z-[43] flex w-fit select-none items-center gap-1 motion-reduce:transition-none',
           transitions && 'transition-[height] duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
         )}
+        style={{ WebkitAppRegion: 'no-drag' }}
       />
     </>
   )

@@ -342,7 +342,11 @@ html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
   background: var(--desktop-temporary-chat-background);
 }
 
-html[data-desktop="true"] .desktop-sidebar-titlebar,
+html[data-desktop="true"] .desktop-sidebar-titlebar {
+  -webkit-app-region: drag;
+  background: var(--background);
+}
+
 html[data-desktop="true"] .desktop-sidebar-titlebar-base,
 html[data-desktop="true"] .desktop-sidebar-titlebar-expanded,
 html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed {

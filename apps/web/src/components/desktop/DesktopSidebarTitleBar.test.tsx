@@ -64,20 +64,20 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('z-[43]')
   })
 
-  it('keeps compact chrome pointer-transparent so the focused title bar can drag', () => {
+  it('uses the compact title bar itself as the focused drag surface', () => {
     installDesktopWindow()
     const markup = renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed compact transitions visible />,
     )
 
     expect(markup.match(/data-compact="true"/g)).toHaveLength(3)
-    expect(markup).toContain('desktop-sidebar-titlebar pointer-events-none')
+    expect(markup).toContain('desktop-sidebar-titlebar')
+    expect(markup).not.toContain('desktop-sidebar-titlebar pointer-events-none')
     expect(markup).toContain('desktop-sidebar-titlebar-collapsed pointer-events-none')
+    expect(markup).toContain('-webkit-app-region:drag')
+    expect(markup).toContain('-webkit-app-region:no-drag')
     expect(markup).not.toContain('translate-y-0')
-    expect(markup).toContain('desktop-model-titlebar-slot')
     expect(markup).toContain('w-fit')
-    expect(markup).not.toContain('desktop-titlebar-drag-region')
-    expect(markup).not.toContain('desktop-compact-titlebar-drag-region')
   })
 
   it('keeps Windows drag and portal layers without rendering surfaces above the sidebar', () => {
