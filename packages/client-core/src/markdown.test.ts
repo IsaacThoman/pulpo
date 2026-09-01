@@ -15,6 +15,24 @@ describe('normalizeMathDelimiters', () => {
       .toBe('Costs \\$5 today, \\$19.99/month, \\$1,200 total, or \\$5–\\$10. Click the **\\$** dropdown.')
   })
 
+  it('does not pair currency amounts across Markdown emphasis', () => {
+    const markdown = [
+      'Ask why future payments are **$22.92** when the policy displays **$20.67/month**.',
+      'The page represented **$20.67**, while the approved transaction was **$62.84**.',
+      'It showed “Pay now — **$20.67**,” while it charged **$62.84**.',
+    ].join('\n')
+
+    expect(normalizeMathDelimiters(markdown)).toBe([
+      'Ask why future payments are **\\$22.92** when the policy displays **\\$20.67/month**.',
+      'The page represented **\\$20.67**, while the approved transaction was **\\$62.84**.',
+      'It showed “Pay now — **\\$20.67**,” while it charged **\\$62.84**.',
+    ].join('\n'))
+  })
+
+  it('does not mistake numeric math followed by an operator for emphasized currency', () => {
+    expect(normalizeMathDelimiters('$100*x$ and $20_000$')).toBe('$100*x$ and $20_000$')
+  })
+
   it('treats a dollar-delimited number as math but a bare amount as currency', () => {
     expect(normalizeMathDelimiters('$100$ and $100')).toBe('$100$ and \\$100')
   })

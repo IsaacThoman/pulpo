@@ -23,6 +23,15 @@ describe('Markdown responsive containment', () => {
     expect(markup).not.toContain('$F_{AB}')
   })
 
+  it('keeps emphasized currency amounts out of math spans', () => {
+    const content = 'Ask why future payments are **$22.92** when the policy displays **$20.67/month**.'
+    const markup = renderToStaticMarkup(<Markdown content={content} />)
+
+    expect(markup).toContain('<strong class="font-semibold">$22.92</strong>')
+    expect(markup).toContain('<strong class="font-semibold">$20.67/month</strong>')
+    expect(markup).not.toContain('class="katex"')
+  })
+
   it('still renders explicit inline and display math delimiters', () => {
     const markup = renderToStaticMarkup(
       <Markdown content={String.raw`Inline \(E=mc^2\) and display \[x^2 + y^2\]`} />,
