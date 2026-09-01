@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
@@ -212,12 +212,12 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     if (next && next !== modelId) setModelId(next)
   }, [chatId, defaultModelId, modelId, models, routeModelId])
 
-  const selectModel = (id: string) => {
+  const selectModel = useCallback((id: string) => {
     shouldApplyDefaultRef.current = false
     useChat.getState().setComposerModel(id)
     setModelId(id)
-  }
-  const restoreComposerModel = (draftModelId: string) => {
+  }, [])
+  const restoreComposerModel = useCallback((draftModelId: string) => {
     const fallbackModelId = chatModelId && models.some((candidate) => candidate.id === chatModelId)
       ? chatModelId
       : resolveDefaultModelId(models, defaultModelId)
@@ -226,7 +226,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       : fallbackModelId
     selectModel(restoredModelId)
     return restoredModelId
-  }
+  }, [chatModelId, defaultModelId, models, selectModel])
 
   useEffect(() => {
     if (!networkReady) return

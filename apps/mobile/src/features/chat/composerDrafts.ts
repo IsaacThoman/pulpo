@@ -13,6 +13,19 @@ import {
 } from '../../data/database'
 import { downloadAttachment } from './api'
 
+const remoteMutationTails = new Map<string, Promise<void>>()
+
+function serializeRemoteMutation<T>(scope: string, mutate: () => Promise<T>): Promise<T> {
+  const previous = remoteMutationTails.get(scope) ?? Promise.resolve()
+  const result = previous.catch(() => undefined).then(mutate)
+  const tail = result.then(() => undefined, () => undefined)
+  remoteMutationTails.set(scope, tail)
+  void tail.then(() => {
+    if (remoteMutationTails.get(scope) === tail) remoteMutationTails.delete(scope)
+  })
+  return result
+}
+
 export interface MobileDraftAttachment {
   id: string
   localId: string
@@ -191,11 +204,11 @@ export async function fetchMobileRemoteDraft(scope: string): Promise<{ draft: Co
 }
 
 export async function saveMobileRemoteDraft(scope: string, input: ComposerDraftInput): Promise<ComposerDraft> {
-  return mobileApi.saveComposerDraft(scope, input).then((result) => result.draft)
+  return serializeRemoteMutation(scope, () => mobileApi.saveComposerDraft(scope, input).then((result) => result.draft))
 }
 
 export function deleteMobileRemoteDraft(scope: string, editorId: string): Promise<number> {
-  return mobileApi.deleteComposerDraft(scope, editorId).then((result) => result.revision)
+  return serializeRemoteMutation(scope, () => mobileApi.deleteComposerDraft(scope, editorId).then((result) => result.revision))
 }
 
 type MobileDraftEvent =

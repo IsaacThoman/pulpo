@@ -14,6 +14,19 @@ export interface RemoteComposerDraftSnapshot {
 export const WEB_COMPOSER_DRAFT_CHANGED_EVENT = 'pulpo:composer-draft-changed'
 export const WEB_COMPOSER_DRAFTS_CLEARED_EVENT = 'pulpo:composer-drafts-cleared'
 
+const remoteMutationTails = new Map<string, Promise<void>>()
+
+function serializeRemoteMutation<T>(scope: string, mutate: () => Promise<T>): Promise<T> {
+  const previous = remoteMutationTails.get(scope) ?? Promise.resolve()
+  const result = previous.catch(() => undefined).then(mutate)
+  const tail = result.then(() => undefined, () => undefined)
+  remoteMutationTails.set(scope, tail)
+  void tail.then(() => {
+    if (remoteMutationTails.get(scope) === tail) remoteMutationTails.delete(scope)
+  })
+  return result
+}
+
 function rowId(userId: string, scope: string): string {
   return `${localAccountKey(userId)}:draft:${scope}`
 }
@@ -196,16 +209,19 @@ export async function fetchRemoteComposerDraft(scope: string): Promise<RemoteCom
 }
 
 export async function saveRemoteComposerDraft(scope: string, input: ComposerDraftInput): Promise<ComposerDraft> {
-  return apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, { method: 'PUT', body: input })
-    .then((result) => result.draft)
+  return serializeRemoteMutation(scope, () =>
+    apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, { method: 'PUT', body: input })
+      .then((result) => result.draft))
 }
 
 export async function deleteRemoteComposerDraft(scope: string, editorId: string): Promise<number> {
-  const result = await apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
-    method: 'DELETE',
-    body: { editorId },
+  return serializeRemoteMutation(scope, async () => {
+    const result = await apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
+      method: 'DELETE',
+      body: { editorId },
+    })
+    return result.revision
   })
-  return result.revision
 }
 
 function remoteUploads(draft: ComposerDraft, existing?: DraftRow): UploadRecord[] {

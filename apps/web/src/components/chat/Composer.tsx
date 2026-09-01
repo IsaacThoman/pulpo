@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
 import type { ComposerDraftChange } from '@pulpo/contracts'
-import { scheduleComposerDraftSave } from '@pulpo/client-core'
+import { resolveComposerDraftPersistenceAction, scheduleComposerDraftSave } from '@pulpo/client-core'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -144,6 +144,7 @@ export function Composer({
   const draftEditorIdRef = useRef(crypto.randomUUID())
   const hydratedDraftScopeRef = useRef<string | null>(null)
   const localDraftDirtyRef = useRef(false)
+  const hadDraftRef = useRef(false)
   const appliedRemoteRevisionRef = useRef(0)
   const draftSaveGenerationRef = useRef(0)
   const suppressDraftSaveRef = useRef(false)
@@ -351,6 +352,7 @@ export function Composer({
   const applyDraft = useCallback(async (draft: LocalComposerDraft) => {
     suppressDraftSaveRef.current = true
     draftSaveGenerationRef.current += 1
+    hadDraftRef.current = draft.content.length > 0 || draft.attachments.length > 0
     releaseDraftUploads(attachmentIdsRef.current)
     const restoredModelId = onRestoreModel?.(draft.modelId) ?? draft.modelId
     if (!chatId && draft.autoExpire !== undefined) onRestoreAutoExpire?.(draft.autoExpire)
@@ -393,6 +395,7 @@ export function Composer({
     }
     suppressDraftSaveRef.current = true
     draftSaveGenerationRef.current += 1
+    hadDraftRef.current = false
     releaseDraftUploads(attachmentIdsRef.current)
     setValue('')
     setAttachmentIds([])
@@ -420,6 +423,7 @@ export function Composer({
       void loadLocalComposerDraft(userId, draftScope).then((draft) => {
         appliedRemoteRevisionRef.current = 0
         localDraftDirtyRef.current = false
+        hadDraftRef.current = Boolean(draft && !draft.deleted && (draft.content.length > 0 || draft.attachments.length > 0))
         if (draft && !draft.deleted) void applyDraft(draft)
       })
     }
@@ -442,6 +446,7 @@ export function Composer({
     let cancelled = false
     hydratedDraftScopeRef.current = null
     localDraftDirtyRef.current = false
+    hadDraftRef.current = false
     appliedRemoteRevisionRef.current = 0
     deferredRemoteRevisionRef.current = 0
     setDraftPresetOverride(null)
@@ -492,6 +497,7 @@ export function Composer({
       } else {
         suppressDraftSaveRef.current = true
         draftSaveGenerationRef.current += 1
+        hadDraftRef.current = false
         releaseDraftUploads(attachmentIdsRef.current)
         setValue('')
         setAttachmentIds([])
@@ -699,10 +705,18 @@ export function Composer({
       return
     }
     if (editingExisting || recovery || submissionPendingRef.current) return
-    if (value.length > 0 || attachments.length > 0) localDraftDirtyRef.current = syncDrafts
+    const persistenceAction = resolveComposerDraftPersistenceAction({
+      hasContent: value.length > 0 || attachments.length > 0,
+      hadDraft: hadDraftRef.current,
+    })
+    if (persistenceAction === 'none') return
+    if (persistenceAction === 'save') {
+      hadDraftRef.current = true
+      localDraftDirtyRef.current = syncDrafts
+    }
     const generation = ++draftSaveGenerationRef.current
     return scheduleComposerDraftSave(() => {
-      if (value.length === 0 && attachments.length === 0) {
+      if (persistenceAction === 'delete') {
         localDraftDirtyRef.current = syncDrafts
         if (syncDrafts) {
           void saveLocalComposerTombstone({
@@ -714,6 +728,7 @@ export function Composer({
           })
           void deleteRemoteComposerDraft(draftScope, draftEditorIdRef.current).then((revision) => {
             if (draftSaveGenerationRef.current !== generation) return
+            hadDraftRef.current = false
             appliedRemoteRevisionRef.current = Math.max(appliedRemoteRevisionRef.current, revision)
             localDraftDirtyRef.current = false
             return saveLocalComposerTombstone({
@@ -725,6 +740,7 @@ export function Composer({
             })
           }).catch(() => undefined)
         } else {
+          hadDraftRef.current = false
           void deleteLocalComposerDraft(userId, draftScope)
         }
         return
