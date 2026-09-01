@@ -4,6 +4,8 @@ import * as Crypto from 'expo-crypto'
 import { useQueryClient } from '@tanstack/react-query'
 import { io } from 'socket.io-client'
 import {
+  type ComposerDraftChange,
+  type ComposerDraftsCleared,
   type ResponseEvent,
   type ResponseSnapshot,
   type SyncResult,
@@ -22,6 +24,12 @@ import { replayOutbox } from '../data/outbox'
 import { queryKeys } from '../data/queries'
 import type { ServerChat } from '../types'
 import { useSessionStore } from '../store/session'
+import { usePreferencesStore } from '../store/preferences'
+import {
+  applyMobileComposerDraftChange,
+  applyMobileComposerDraftsCleared,
+  flushDirtyMobileComposerDrafts,
+} from '../features/chat/composerDrafts'
 import {
   coalesceResponseEvents,
   groupResponseEvents,
@@ -223,6 +231,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const sync = async () => {
       if (!socket.connected || disposed) return
       try {
+        if (usePreferencesStore.getState().syncDrafts) await flushDirtyMobileComposerDrafts(namespace)
         const [tabId, cursors] = await Promise.all([realtimeClientId(namespace), responseCursors(namespace)])
         if (!socket.connected || disposed) return
         const activeChatId = activeChatSubscription()
@@ -295,6 +304,14 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     })
     socket.on('account.revision', ({ revision, scopes }) => {
       queueRevisionInvalidation({ revision, scopes })
+    })
+    socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
+      stateRevision.current = Math.max(stateRevision.current, event.revision)
+      void applyMobileComposerDraftChange(namespace, event)
+    })
+    socket.on('composer.drafts.cleared', (event: ComposerDraftsCleared) => {
+      stateRevision.current = Math.max(stateRevision.current, event.revision)
+      void applyMobileComposerDraftsCleared(namespace, event)
     })
     const appState = AppState.addEventListener('change', (state) => {
       appStateValue = state

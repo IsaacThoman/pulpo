@@ -101,7 +101,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       }).where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
       stateRevision = revision?.revision
     })
-    if (patch.syncDrafts === false) await deleteAllComposerDrafts(user.id)
+    if (patch.syncDrafts === false && stateRevision !== undefined) {
+      await deleteAllComposerDrafts(user.id, stateRevision)
+    }
     if (stateRevision !== undefined) await publishStateChange({
       userId: user.id,
       revision: stateRevision,

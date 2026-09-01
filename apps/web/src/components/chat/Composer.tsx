@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
+import type { ComposerDraftChange } from '@pulpo/contracts'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -57,11 +58,14 @@ import {
   deleteRemoteComposerDraft,
   detachSyncedDraftAttachments,
   fetchRemoteComposerDraft,
-  cacheRemoteDraftFile,
   loadDraftFile,
   loadLocalComposerDraft,
+  reconcileWebComposerDraftSnapshot,
+  saveLocalComposerTombstone,
   saveLocalComposerDraft,
   saveRemoteComposerDraft,
+  WEB_COMPOSER_DRAFT_CHANGED_EVENT,
+  WEB_COMPOSER_DRAFTS_CLEARED_EVENT,
   type LocalComposerDraft,
 } from '@/lib/local-first/composer-drafts'
 
@@ -114,7 +118,7 @@ export function Composer({
   onMessageEditComplete?: (result: 'saved' | 'cancelled') => void
   onEditStateChange?: (active: boolean) => void
   onRestoreModel?: (modelId: string) => string
-  onRestoreAutoExpire?: (enabled: boolean) => void
+  onRestoreAutoExpire?: (enabled?: boolean) => void
   draftPersistence?: boolean
 }) {
   const { t } = useTranslation()
@@ -141,6 +145,8 @@ export function Composer({
   const localDraftDirtyRef = useRef(false)
   const appliedRemoteRevisionRef = useRef(0)
   const draftSaveGenerationRef = useRef(0)
+  const suppressDraftSaveRef = useRef(false)
+  const deferredRemoteRevisionRef = useRef(0)
   const pendingLocalDraftsRef = useRef(new Map<string, Parameters<typeof saveLocalComposerDraft>[0]>())
   const submissionPendingRef = useRef(false)
   const queueDragIdRef = useRef<string | null>(null)
@@ -187,9 +193,9 @@ export function Composer({
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
-  const setPresetChoice = useSettings((s) => s.setPresetChoice)
-  const agentModeEnabled = useSettings((s) => s.agentModes[modelId] ?? true)
-  const setAgentMode = useSettings((s) => s.setAgentMode)
+  const defaultAgentModeEnabled = useSettings((s) => s.agentModes[modelId] ?? true)
+  const [draftPresetOverride, setDraftPresetOverride] = useState<{ modelId: string; selections: Record<string, string> } | null>(null)
+  const [draftAgentOverride, setDraftAgentOverride] = useState<{ modelId: string; enabled: boolean } | null>(null)
   const agentAvailable = useCatalog((s) => s.agentAvailable)
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
@@ -214,7 +220,12 @@ export function Composer({
   }, [])
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
-  const selections = resolveSelections(options, generation[modelId])
+  const selections = resolveSelections(options, draftPresetOverride?.modelId === modelId
+    ? draftPresetOverride.selections
+    : generation[modelId])
+  const agentModeEnabled = draftAgentOverride?.modelId === modelId
+    ? draftAgentOverride.enabled
+    : defaultAgentModeEnabled
   const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
   const [editAgentMode, setEditAgentMode] = useState(false)
@@ -253,7 +264,17 @@ export function Composer({
     const snapshot = pendingLocalDraftsRef.current.get(key)
     if (!snapshot) return
     if (snapshot.content.length === 0 && snapshot.uploads.length === 0) {
-      void deleteLocalComposerDraft(snapshot.userId, snapshot.scope).catch(() => undefined)
+      if (snapshot.dirty) {
+        void saveLocalComposerTombstone({
+          userId: snapshot.userId,
+          scope: snapshot.scope,
+          editorId: snapshot.editorId,
+          dirty: true,
+          serverRevision: appliedRemoteRevisionRef.current || undefined,
+        }).catch(() => undefined)
+      } else {
+        void deleteLocalComposerDraft(snapshot.userId, snapshot.scope).catch(() => undefined)
+      }
       return
     }
     void saveLocalComposerDraft({
@@ -327,26 +348,103 @@ export function Composer({
   }, [addExistingAttachments, addUploadFiles, chatId, temporary, userId])
 
   const applyDraft = useCallback(async (draft: LocalComposerDraft) => {
-    consumeUploads(attachmentIdsRef.current)
+    suppressDraftSaveRef.current = true
+    draftSaveGenerationRef.current += 1
+    releaseDraftUploads(attachmentIdsRef.current)
     const restoredModelId = onRestoreModel?.(draft.modelId) ?? draft.modelId
     if (!chatId && draft.autoExpire !== undefined) onRestoreAutoExpire?.(draft.autoExpire)
     if (restoredModelId) {
       const restoredModel = getCatalogModel(restoredModelId)
       const restoredOptions = chatOptionsFor(restoredModel, useModelConfig.getState().overrides)
-      useSettings.getState().setGeneration(restoredModelId, resolveSelections(restoredOptions, draft.presetSelections))
-      useSettings.getState().setAgentMode(restoredModelId, draft.agentMode && useCatalog.getState().agentAvailable && Boolean(restoredModel.agentEnabled))
+      setDraftPresetOverride({
+        modelId: restoredModelId,
+        selections: resolveSelections(restoredOptions, draft.presetSelections),
+      })
+      setDraftAgentOverride({
+        modelId: restoredModelId,
+        enabled: draft.agentMode && useCatalog.getState().agentAvailable && Boolean(restoredModel.agentEnabled),
+      })
     }
-    setValue(draft.content)
     const ids = await materializeLocalAttachments(draft)
+    setValue(draft.content)
     setAttachmentIds(ids)
-    requestAnimationFrame(autosize)
-  }, [autosize, chatId, consumeUploads, materializeLocalAttachments, onRestoreAutoExpire, onRestoreModel])
+    requestAnimationFrame(() => {
+      autosize()
+      ref.current?.focus()
+      ref.current?.setSelectionRange(draft.content.length, draft.content.length)
+      suppressDraftSaveRef.current = false
+    })
+  }, [autosize, chatId, materializeLocalAttachments, onRestoreAutoExpire, onRestoreModel, releaseDraftUploads])
+
+  const applyStoredRemoteDraft = useCallback(async (revision: number) => {
+    if (!userId || revision <= appliedRemoteRevisionRef.current) return
+    if (editingExisting || recovery) {
+      deferredRemoteRevisionRef.current = Math.max(deferredRemoteRevisionRef.current, revision)
+      return
+    }
+    const local = await loadLocalComposerDraft(userId, draftScope)
+    if (!local || (local.serverRevision ?? 0) < revision) return
+    appliedRemoteRevisionRef.current = local.serverRevision ?? revision
+    localDraftDirtyRef.current = local.dirty
+    if (!local.deleted) {
+      await applyDraft(local)
+      return
+    }
+    suppressDraftSaveRef.current = true
+    draftSaveGenerationRef.current += 1
+    releaseDraftUploads(attachmentIdsRef.current)
+    setValue('')
+    setAttachmentIds([])
+    setDraftPresetOverride(null)
+    setDraftAgentOverride(null)
+    if (!chatId) onRestoreAutoExpire?.(undefined)
+    requestAnimationFrame(() => {
+      if (ref.current) ref.current.style.height = 'auto'
+      suppressDraftSaveRef.current = false
+    })
+  }, [applyDraft, chatId, draftScope, editingExisting, onRestoreAutoExpire, recovery, releaseDraftUploads, userId])
+
+  useEffect(() => {
+    const changed = (raw: Event) => {
+      const event = (raw as CustomEvent<ComposerDraftChange>).detail
+      if (!event || event.scope !== draftScope || event.revision <= appliedRemoteRevisionRef.current) return
+      if (event.editorId === draftEditorIdRef.current) {
+        appliedRemoteRevisionRef.current = event.revision
+        return
+      }
+      void applyStoredRemoteDraft(event.revision)
+    }
+    const cleared = () => {
+      if (!userId) return
+      void loadLocalComposerDraft(userId, draftScope).then((draft) => {
+        appliedRemoteRevisionRef.current = 0
+        localDraftDirtyRef.current = false
+        if (draft && !draft.deleted) void applyDraft(draft)
+      })
+    }
+    window.addEventListener(WEB_COMPOSER_DRAFT_CHANGED_EVENT, changed)
+    window.addEventListener(WEB_COMPOSER_DRAFTS_CLEARED_EVENT, cleared)
+    return () => {
+      window.removeEventListener(WEB_COMPOSER_DRAFT_CHANGED_EVENT, changed)
+      window.removeEventListener(WEB_COMPOSER_DRAFTS_CLEARED_EVENT, cleared)
+    }
+  }, [applyDraft, applyStoredRemoteDraft, draftScope, userId])
+
+  useEffect(() => {
+    if (editingExisting || recovery || deferredRemoteRevisionRef.current === 0) return
+    const revision = deferredRemoteRevisionRef.current
+    deferredRemoteRevisionRef.current = 0
+    void applyStoredRemoteDraft(revision)
+  }, [applyStoredRemoteDraft, editingExisting, recovery])
 
   useEffect(() => {
     let cancelled = false
     hydratedDraftScopeRef.current = null
     localDraftDirtyRef.current = false
     appliedRemoteRevisionRef.current = 0
+    deferredRemoteRevisionRef.current = 0
+    setDraftPresetOverride(null)
+    setDraftAgentOverride(null)
     if (!userId || !draftPersistence || temporary) {
       hydratedDraftScopeRef.current = draftHydrationKey
       return
@@ -354,85 +452,55 @@ export function Composer({
     void loadLocalComposerDraft(userId, draftScope).then(async (draft) => {
       if (cancelled) return
       if (draft && !syncDrafts) draft = await detachSyncedDraftAttachments(userId, draftScope)
-      if (draft) {
+      if (draft && !draft.deleted) {
         localDraftDirtyRef.current = draft.dirty
         appliedRemoteRevisionRef.current = draft.serverRevision ?? 0
         await applyDraft(draft)
       } else {
-        consumeUploads(attachmentIdsRef.current)
+        if (draft) {
+          localDraftDirtyRef.current = draft.dirty
+          appliedRemoteRevisionRef.current = draft.serverRevision ?? 0
+        }
+        releaseDraftUploads(attachmentIdsRef.current)
         setValue('')
         setAttachmentIds([])
+        if (!chatId) onRestoreAutoExpire?.(undefined)
       }
       if (!cancelled) hydratedDraftScopeRef.current = draftHydrationKey
     })
     return () => { cancelled = true }
-  }, [applyDraft, consumeUploads, draftHydrationKey, draftPersistence, draftScope, syncDrafts, temporary, userId])
+  }, [applyDraft, chatId, draftHydrationKey, draftPersistence, draftScope, onRestoreAutoExpire, releaseDraftUploads, syncDrafts, temporary, userId])
 
   useEffect(() => {
     if (!remoteDraftQuery.isSuccess || hydratedDraftScopeRef.current !== draftHydrationKey || localDraftDirtyRef.current) return
-    const remote = remoteDraftQuery.data
-    if (!remote) {
-      if (!userId || appliedRemoteRevisionRef.current === 0) return
-      appliedRemoteRevisionRef.current = 0
-      void deleteLocalComposerDraft(userId, draftScope)
-      consumeUploads(attachmentIdsRef.current)
-      setValue('')
-      setAttachmentIds([])
-      return
-    }
-    if (remote.revision <= appliedRemoteRevisionRef.current) return
-    appliedRemoteRevisionRef.current = remote.revision
-    const local: LocalComposerDraft = {
-      content: remote.content,
-      modelId: remote.modelId,
-      presetSelections: remote.presetSelections,
-      agentMode: remote.agentMode,
-      autoExpire: remote.autoExpire,
-      attachments: remote.attachments.map((attachment) => ({
-        localId: crypto.randomUUID(),
-        serverId: attachment.id,
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-      })),
-      editorId: remote.editorId,
-      serverRevision: remote.revision,
-      serverUpdatedAt: remote.updatedAt,
-      dirty: false,
-      updatedAt: Date.parse(remote.updatedAt),
-    }
-    void Promise.all(remote.attachments.map((attachment, index) => userId
-      ? cacheRemoteDraftFile(userId, local.attachments[index]!.localId, attachment)
-      : Promise.resolve())).then(() => applyDraft(local)).then(() => {
-      if (!userId) return
-      return saveLocalComposerDraft({
-      userId,
-      scope: draftScope,
-      content: local.content,
-      modelId: local.modelId,
-      presetSelections: local.presetSelections,
-      agentMode: local.agentMode,
-      autoExpire: local.autoExpire,
-      uploads: local.attachments.map((attachment) => ({
-        localId: attachment.localId,
-        id: attachment.serverId,
-        name: attachment.name,
-        size: attachment.sizeBytes,
-        mimeType: attachment.mimeType,
-        previewUrl: null,
-        status: 'ready',
-        chatId,
-        temporary: false,
-        managed: false,
-        attempt: 0,
-      })),
-      editorId: local.editorId,
-      dirty: false,
-      serverRevision: local.serverRevision,
-        serverUpdatedAt: local.serverUpdatedAt,
-      })
+    if (!userId) return
+    const snapshot = remoteDraftQuery.data
+    const revision = snapshot.draft?.revision ?? snapshot.revision
+    if (revision <= appliedRemoteRevisionRef.current) return
+    void reconcileWebComposerDraftSnapshot(userId, draftScope, snapshot, draftEditorIdRef.current).then(async () => {
+      const local = await loadLocalComposerDraft(userId, draftScope)
+      if (!local || (local.serverRevision ?? 0) < revision) return
+      appliedRemoteRevisionRef.current = local.serverRevision ?? revision
+      localDraftDirtyRef.current = local.dirty
+      if (editingExisting || recovery) {
+        deferredRemoteRevisionRef.current = Math.max(deferredRemoteRevisionRef.current, revision)
+        return
+      }
+      if (!local.deleted) {
+        await applyDraft(local)
+      } else {
+        suppressDraftSaveRef.current = true
+        draftSaveGenerationRef.current += 1
+        releaseDraftUploads(attachmentIdsRef.current)
+        setValue('')
+        setAttachmentIds([])
+        setDraftPresetOverride(null)
+        setDraftAgentOverride(null)
+        if (!chatId) onRestoreAutoExpire?.(undefined)
+        requestAnimationFrame(() => { suppressDraftSaveRef.current = false })
+      }
     })
-  }, [applyDraft, chatId, consumeUploads, draftHydrationKey, draftScope, remoteDraftQuery.data, remoteDraftQuery.isSuccess, userId])
+  }, [applyDraft, chatId, draftHydrationKey, draftScope, editingExisting, onRestoreAutoExpire, recovery, releaseDraftUploads, remoteDraftQuery.data, remoteDraftQuery.isSuccess, userId])
 
   const previousSyncDraftsRef = useRef(syncDrafts)
   useEffect(() => {
@@ -440,7 +508,7 @@ export function Composer({
     previousSyncDraftsRef.current = syncDrafts
     if (!disabled || !userId || temporary || hydratedDraftScopeRef.current !== draftHydrationKey) return
     void detachSyncedDraftAttachments(userId, draftScope).then((draft) => {
-      if (!draft) return
+      if (!draft || draft.deleted) return
       localDraftDirtyRef.current = false
       appliedRemoteRevisionRef.current = 0
       return applyDraft(draft)
@@ -457,9 +525,9 @@ export function Composer({
     temporaryDraftCleanupScopeRef.current = draftScope
     void detachSyncedDraftAttachments(userId, draftScope).then(async (draft) => {
       // Recreate attachment uploads as temporary before removing their durable draft assets.
-      if (draft) await applyDraft(draft)
+      if (draft && !draft.deleted) await applyDraft(draft)
       await deleteLocalComposerDraft(userId, draftScope)
-      if (syncDrafts) await deleteRemoteComposerDraft(draftScope).catch(() => undefined)
+      if (syncDrafts) await deleteRemoteComposerDraft(draftScope, draftEditorIdRef.current).catch(() => undefined)
     })
   }, [applyDraft, draftPersistence, draftScope, syncDrafts, temporary, userId])
 
@@ -625,6 +693,7 @@ export function Composer({
 
   useEffect(() => {
     if (!userId || !draftPersistence || hydratedDraftScopeRef.current !== draftHydrationKey) return
+    if (suppressDraftSaveRef.current) return
     if (temporary) {
       return
     }
@@ -633,10 +702,30 @@ export function Composer({
     const generation = ++draftSaveGenerationRef.current
     const timer = window.setTimeout(() => {
       if (value.length === 0 && attachments.length === 0) {
-        localDraftDirtyRef.current = false
-        appliedRemoteRevisionRef.current = 0
-        void deleteLocalComposerDraft(userId, draftScope)
-        if (syncDrafts) void deleteRemoteComposerDraft(draftScope).catch(() => undefined)
+        localDraftDirtyRef.current = syncDrafts
+        if (syncDrafts) {
+          void saveLocalComposerTombstone({
+            userId,
+            scope: draftScope,
+            editorId: draftEditorIdRef.current,
+            dirty: true,
+            serverRevision: appliedRemoteRevisionRef.current || undefined,
+          })
+          void deleteRemoteComposerDraft(draftScope, draftEditorIdRef.current).then((revision) => {
+            if (draftSaveGenerationRef.current !== generation) return
+            appliedRemoteRevisionRef.current = Math.max(appliedRemoteRevisionRef.current, revision)
+            localDraftDirtyRef.current = false
+            return saveLocalComposerTombstone({
+              userId,
+              scope: draftScope,
+              editorId: draftEditorIdRef.current,
+              dirty: false,
+              serverRevision: revision,
+            })
+          }).catch(() => undefined)
+        } else {
+          void deleteLocalComposerDraft(userId, draftScope)
+        }
         return
       }
       const hasPendingAttachments = attachments.some((attachment) => attachment.status !== 'ready' || !attachment.id)
@@ -972,7 +1061,7 @@ export function Composer({
               type="button"
               onClick={() => {
                 if (messageEdit) setEditAgentMode(true)
-                else setAgentMode(modelId, true)
+                else setDraftAgentOverride({ modelId, enabled: true })
               }}
               className="shrink-0 cursor-pointer font-medium underline underline-offset-2"
             > {ui("Enable Agent")} </button>
@@ -1164,6 +1253,7 @@ export function Composer({
           ref={ref}
           value={value}
           onChange={(e) => {
+            suppressDraftSaveRef.current = false
             setValue(e.target.value)
             autosize()
           }}
@@ -1249,7 +1339,10 @@ export function Composer({
                     {preset.choices.map((choice) => (
                       <DropdownMenuItem
                         key={choice.id}
-                        onClick={() => setPresetChoice(modelId, preset.id, choice.id)}
+                        onClick={() => setDraftPresetOverride({
+                          modelId,
+                          selections: { ...selections, [preset.id]: choice.id },
+                        })}
                         className="justify-between"
                       >
                         <span className="flex items-center gap-1.5">
@@ -1271,7 +1364,7 @@ export function Composer({
             onClick={() => {
               if (!canUseAgent) return
               if (messageEdit) setEditAgentMode((value) => !value)
-              else setAgentMode(modelId, !agentModeEnabled)
+              else setDraftAgentOverride({ modelId, enabled: !agentModeEnabled })
             }}
             aria-label={activeAgentMode && canUseAgent ? t('chat.disableAgent') : t('chat.enableAgent')}
             aria-pressed={activeAgentMode && canUseAgent}

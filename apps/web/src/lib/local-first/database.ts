@@ -59,6 +59,7 @@ export interface DraftRow {
   serverRevision?: number
   serverUpdatedAt?: string
   dirty: boolean
+  deleted: boolean
   updatedAt: number
 }
 
@@ -128,6 +129,19 @@ class PulpoLocalDatabase extends Dexie {
       drafts: '&id, userId, [userId+chatId], updatedAt',
       attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
       draftAttachmentBlobs: '&id, userId, [userId+localId], updatedAt',
+    })
+    this.version(6).stores({
+      kv: '&key, updatedAt',
+      outbox: '&id, userId, [userId+nextAttemptAt], createdAt',
+      responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
+      drafts: '&id, userId, [userId+chatId], dirty, updatedAt',
+      attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
+      draftAttachmentBlobs: '&id, userId, [userId+localId], updatedAt',
+    }).upgrade(async (transaction) => {
+      await transaction.table<DraftRow>('drafts').toCollection().modify((draft) => {
+        draft.deleted = false
+        draft.dirty ??= true
+      })
     })
   }
 }

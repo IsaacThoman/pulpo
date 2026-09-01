@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { io, type Socket } from 'socket.io-client'
 import type {
   ClientToServerEvents,
+  ComposerDraftChange,
+  ComposerDraftsCleared,
   ResponseEvent,
   ServerToClientEvents,
   StateInvalidationScope,
@@ -20,6 +22,12 @@ import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
+import {
+  applyWebComposerDraftChange,
+  applyWebComposerDraftsCleared,
+  flushDirtyWebComposerDrafts,
+} from '@/lib/local-first/composer-drafts'
+import { useSettings } from '@/stores/settings'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -230,6 +238,7 @@ export function ChatDataBridge() {
       }
     }
     const sync = async () => {
+      if (useSettings.getState().syncDrafts) await flushDirtyWebComposerDrafts(userId)
       const cursors = await localDb.responseCursors.where('tabId').equals(currentTabId).toArray()
       socket.emit('client.sync', {
         tabId: currentTabId,
@@ -259,6 +268,14 @@ export function ChatDataBridge() {
     })
     socket.on('account.revision', ({ revision, scopes }) => {
       queueRevisionInvalidation({ revision, scopes })
+    })
+    socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
+      revisionRef.current = Math.max(revisionRef.current, event.revision)
+      void applyWebComposerDraftChange(userId, event)
+    })
+    socket.on('composer.drafts.cleared', (event: ComposerDraftsCleared) => {
+      revisionRef.current = Math.max(revisionRef.current, event.revision)
+      void applyWebComposerDraftsCleared(userId, event)
     })
     const wake = () => { if (document.visibilityState === 'visible') void sync() }
     const online = () => void sync()

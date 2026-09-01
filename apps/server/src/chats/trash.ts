@@ -5,6 +5,7 @@ import { getBlobStore } from '../storage/index.js'
 import { releaseWorkspaceForChat } from '../agent/controller.js'
 import { publishStateChange, requestCancellation } from '../responses/events.js'
 import { scheduleChatIndex } from '../episodic-memory/queue.js'
+import { deleteComposerDraftsForChats } from '../drafts/service.js'
 
 export const trashRetentionValues = ['instant', '24h', '7d', '30d', '90d', 'indefinite'] as const
 export type TrashRetention = typeof trashRetentionValues[number]
@@ -159,6 +160,7 @@ export async function expireNormalChat(
     .where(normalChatExpiryCondition(chatId, userId, now, expectedExpiresAt))
     .returning({ id: chats.id })
   if (!marked) return false
+  await deleteComposerDraftsForChats(userId, [chatId], 'chat_expired')
   const cleanup = await Promise.allSettled([
     db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, chatId), eq(queuedMessages.userId, userId))),
     cancelChatWork([chatId]),

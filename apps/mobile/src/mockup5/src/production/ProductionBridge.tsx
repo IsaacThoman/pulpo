@@ -10,6 +10,7 @@ import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
 import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
 import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
+import { enableMobileComposerDraftSync } from '../../../features/chat/composerDrafts'
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
 import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
 import { useSessionStore } from '../../../store/session'
@@ -376,6 +377,7 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         await persisted
         if (saved) {
           await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
+          if (key === 'syncDrafts' && value === true) await enableMobileComposerDraftSync(namespace)
           const latest = await mobileApi.settings()
           await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
         }

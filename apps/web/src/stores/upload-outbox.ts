@@ -11,7 +11,7 @@ import { useSettings } from '@/stores/settings'
 import { useChat, waitForResponseDispatch } from '@/stores/chat'
 import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/components/chat/composer-upload-policy'
 import { ui } from '@/i18n/ui'
-import { deleteLocalComposerDraft, deleteRemoteComposerDraft } from '@/lib/local-first/composer-drafts'
+import { deleteLocalComposerDraft, deleteRemoteComposerDraft, saveLocalComposerTombstone } from '@/lib/local-first/composer-drafts'
 
 export type UploadStatus = 'uploading' | 'ready' | 'error'
 
@@ -161,8 +161,19 @@ function scheduleChat(chatId: string): void {
 
 function clearSubmissionDraft(submission: PendingSubmission): void {
   const userId = useAuth.getState().user?.id
-  if (userId) void deleteLocalComposerDraft(userId, submission.draftScope).catch(() => undefined)
-  if (useSettings.getState().syncDrafts) void deleteRemoteComposerDraft(submission.draftScope).catch(() => undefined)
+  const syncDrafts = useSettings.getState().syncDrafts
+  const editorId = `web-submission:${submission.id}`
+  if (userId && syncDrafts) {
+    void saveLocalComposerTombstone({
+      userId,
+      scope: submission.draftScope,
+      editorId,
+      dirty: true,
+    }).catch(() => undefined)
+  } else if (userId) {
+    void deleteLocalComposerDraft(userId, submission.draftScope).catch(() => undefined)
+  }
+  if (syncDrafts) void deleteRemoteComposerDraft(submission.draftScope, editorId).catch(() => undefined)
 }
 
 async function uploadRecord(localId: string, attempt: number): Promise<void> {

@@ -27,6 +27,7 @@ import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
+import { deleteComposerDraftsForChats } from '../drafts/service.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
 
@@ -195,6 +196,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       purgeStartedAt: retention === 'instant' ? now : null,
       updatedAt: now,
     }).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
+    await deleteComposerDraftsForChats(user.id, ids, 'chat_deleted')
     await cancelChatWork(ids)
     if (retention === 'instant' && ids.length) {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
@@ -561,6 +563,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: now,
     }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
+    await deleteComposerDraftsForChats(user.id, [id], 'chat_deleted')
     await db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, id), eq(queuedMessages.userId, user.id)))
     await cancelChatWork([id])
     if (retention === 'instant') {
@@ -594,6 +597,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const deleting = await markChatsForPurge([id], user.id)
     if (!deleting) throw notFound('Deleted chat')
+    await deleteComposerDraftsForChats(user.id, [id], 'chat_deleted')
     await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
       jobId: `purge-chat-${id}-${Date.now()}`,
     })

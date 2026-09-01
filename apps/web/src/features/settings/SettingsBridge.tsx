@@ -4,7 +4,7 @@ import { modelPreferencesSchema } from '@pulpo/contracts'
 import { LatestValueQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
-import { detachAllSyncedDraftAttachments } from '@/lib/local-first/composer-drafts'
+import { detachAllSyncedDraftAttachments, enableWebComposerDraftSync } from '@/lib/local-first/composer-drafts'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
@@ -194,6 +194,9 @@ export function SettingsBridge() {
         const body = settingsSnapshot(pendingKeys)
         void settingsMutations.enqueue(userId, body, (latest) => persistSettings(userId, latest)).then(async (saved) => {
           if (!saved) return
+          if (body.syncDrafts === true && useSettings.getState().syncDrafts) {
+            await enableWebComposerDraftSync(userId)
+          }
           const current = useSettings.getState()
           for (const key of [...pendingKeys]) {
             if (sameSetting(current[key], body[key])) pendingKeys.delete(key)

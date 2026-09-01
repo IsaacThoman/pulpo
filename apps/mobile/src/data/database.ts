@@ -34,6 +34,7 @@ async function ensureComposerDraftColumns(database: SQLite.SQLiteDatabase): Prom
     ['server_revision', 'INTEGER'],
     ['server_updated_at', 'TEXT'],
     ['dirty', 'INTEGER NOT NULL DEFAULT 1'],
+    ['deleted', 'INTEGER NOT NULL DEFAULT 0'],
   ] as const
   for (const [name, definition] of additions) {
     if (!columns.has(name)) await database.execAsync(`ALTER TABLE drafts ADD COLUMN ${name} ${definition}`)
@@ -238,6 +239,7 @@ export interface StoredComposerDraft<T> {
   serverRevision: number | null
   serverUpdatedAt: string | null
   dirty: boolean
+  deleted: boolean
   updatedAt: number
 }
 
@@ -247,15 +249,15 @@ export async function saveComposerDraftRecord<T>(
   draft: StoredComposerDraft<T>,
 ): Promise<void> {
   await withDatabase(async (database) => {
-    if (!draft.body && draft.attachments.length === 0) {
+    if (!draft.deleted && !draft.body && draft.attachments.length === 0) {
       await database.runAsync('DELETE FROM drafts WHERE namespace = ? AND chat_id = ?', namespace, scope)
       return
     }
     await database.runAsync(
       `INSERT INTO drafts(
         namespace, chat_id, body, attachments, model_id, preset_selections, agent_mode,
-        auto_expire, editor_id, server_revision, server_updated_at, dirty, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        auto_expire, editor_id, server_revision, server_updated_at, dirty, deleted, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(namespace, chat_id) DO UPDATE SET
         body = excluded.body,
         attachments = excluded.attachments,
@@ -267,6 +269,7 @@ export async function saveComposerDraftRecord<T>(
         server_revision = excluded.server_revision,
         server_updated_at = excluded.server_updated_at,
         dirty = excluded.dirty,
+        deleted = excluded.deleted,
         updated_at = excluded.updated_at`,
       namespace,
       scope,
@@ -280,6 +283,7 @@ export async function saveComposerDraftRecord<T>(
       draft.serverRevision,
       draft.serverUpdatedAt,
       draft.dirty ? 1 : 0,
+      draft.deleted ? 1 : 0,
       draft.updatedAt,
     )
   })
@@ -298,9 +302,10 @@ export async function loadComposerDraftRecord<T>(namespace: string, scope: strin
       server_revision: number | null
       server_updated_at: string | null
       dirty: number
+      deleted: number
       updated_at: number
     }>(`SELECT body, attachments, model_id, preset_selections, agent_mode, auto_expire,
-      editor_id, server_revision, server_updated_at, dirty, updated_at
+      editor_id, server_revision, server_updated_at, dirty, deleted, updated_at
       FROM drafts WHERE namespace = ? AND chat_id = ?`, namespace, scope)
     if (!row) return null
     return {
@@ -314,8 +319,19 @@ export async function loadComposerDraftRecord<T>(namespace: string, scope: strin
       serverRevision: row.server_revision,
       serverUpdatedAt: row.server_updated_at,
       dirty: row.dirty === 1,
+      deleted: row.deleted === 1,
       updatedAt: row.updated_at,
     }
+  })
+}
+
+export async function composerDraftScopes(namespace: string, dirtyOnly = false): Promise<string[]> {
+  return withDatabase(async (database) => {
+    const rows = await database.getAllAsync<{ chat_id: string }>(
+      `SELECT chat_id FROM drafts WHERE namespace = ?${dirtyOnly ? ' AND dirty = 1' : ''} ORDER BY updated_at, chat_id`,
+      namespace,
+    )
+    return rows.map((row) => row.chat_id)
   })
 }
 
