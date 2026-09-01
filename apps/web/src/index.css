@@ -376,23 +376,38 @@ html[data-desktop-os="darwin"] .mobile-sidebar-opener {
 }
 
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-compact="true"] {
-  right: 116px;
+  right: auto;
   left: 52px;
+  width: max-content;
+  max-width: calc(100vw - 168px);
 }
 
 html[data-desktop-os="darwin"] .desktop-model-titlebar-slot[data-compact="true"] {
   left: 124px;
+  max-width: calc(100vw - 240px);
 }
 
 html[data-desktop-os="win32"] .desktop-model-titlebar-slot[data-compact="true"] {
-  right: 260px;
+  max-width: calc(100vw - 312px);
 }
 
 @media (width < 750px) {
+  html[data-desktop="true"] .app-main {
+    z-index: 0;
+  }
+
   html[data-desktop="true"] .desktop-chat-header {
     height: 0;
     padding: 0;
   }
+
+  html[data-desktop-os="win32"] .desktop-chat-header {
+    height: 3rem;
+  }
+}
+
+html[data-desktop-os="win32"] .desktop-compact-sidebar {
+  top: 48px;
 }
 
 html[data-desktop="true"] .desktop-model-titlebar-slot[data-collapsed="true"] .model-selector-set-default {
@@ -526,6 +541,11 @@ html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
 
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::before {
   display: none;
+}
+
+html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed {
+  -webkit-app-region: drag;
+  pointer-events: auto;
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar[data-compact="true"] .desktop-sidebar-titlebar-collapsed::after {

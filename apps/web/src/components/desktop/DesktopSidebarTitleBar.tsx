@@ -72,7 +72,8 @@ export function DesktopSidebarTitleBar({
         data-compact={compact ? 'true' : undefined}
         data-animation-active={showAboveSidebar ? undefined : 'true'}
         className={cn(
-          'desktop-sidebar-titlebar pointer-events-none fixed inset-x-0 top-0 h-[38px]',
+          'desktop-sidebar-titlebar fixed inset-x-0 top-0 h-[38px]',
+          compact ? 'pointer-events-auto' : 'pointer-events-none',
           windows ? 'z-40' : showAboveSidebar ? 'z-[42]' : 'z-[41]',
         )}
       >
