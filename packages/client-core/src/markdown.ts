@@ -12,9 +12,11 @@ function isCurrencyDollar(content: string, index: number): boolean {
   const amount = /^-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:[kKmMbB])?/.exec(content.slice(index + 1))
   if (!amount) return false
 
-  const next = content[index + 1 + amount[0].length]
+  const remainder = content.slice(index + 1 + amount[0].length)
+  const next = remainder[0]
   if (next === '$') return false
-  return next === undefined || /[\s.,;:!?)}\]/–—-]/.test(next)
+  if (next === undefined || /[\s.,;:!?)}\]/“”‘’'"–—-]/.test(next)) return true
+  return /^[*_~]{1,3}(?=$|[\s.,;:!?)}\]/“”‘’'"–—-])/.test(remainder)
 }
 
 function closingInlineDollar(content: string, opening: number): number {
