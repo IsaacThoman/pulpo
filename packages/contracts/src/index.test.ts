@@ -860,4 +860,35 @@ describe('response snapshot accumulation', () => {
     expect(() => friendSearchResponseSchema.parse({ results: Array(9).fill(result) })).toThrow()
   })
 
+  it('validates encrypted offsite backup settings without exposing an application key', async () => {
+    const { backupSettingsUpdateSchema, publicBackupSettingsSchema } = await import('./index.js')
+    const input = {
+      enabled: true,
+      endpoint: 'https://s3.us-west-004.backblazeb2.com',
+      bucket: 'pulpo-backups',
+      prefix: 'pulpo/production',
+      keyId: 'key-id',
+      applicationKey: 'application-secret',
+      recipient: 'age1gde3ncmahlqd9gg50tanl99r960llztrhfapnmx853s4tjum03uqfssgdh',
+      intervalHours: 24,
+      retentionDays: 30,
+    }
+    expect(backupSettingsUpdateSchema.parse(input)).toMatchObject({ intervalHours: 24, retentionDays: 30 })
+    const publicValue = publicBackupSettingsSchema.parse({
+      ...input,
+      applicationKey: undefined,
+      applicationKeyConfigured: true,
+      recipientType: 'classic',
+      recipientFingerprint: 'fingerprint',
+      nextRunAt: '2026-09-03T00:00:00.000Z',
+      health: 'healthy',
+      lastSuccessfulAt: '2026-09-02T00:00:00.000Z',
+      lastError: null,
+    })
+    expect(publicValue).not.toHaveProperty('applicationKey')
+    expect(() => backupSettingsUpdateSchema.parse({ ...input, intervalHours: 8 })).toThrow()
+    expect(() => backupSettingsUpdateSchema.parse({ ...input, retentionDays: 0 })).toThrow()
+    expect(() => backupSettingsUpdateSchema.parse({ ...input, recipient: 'AGE-SECRET-KEY-1PRIVATE' })).toThrow()
+  })
+
 })

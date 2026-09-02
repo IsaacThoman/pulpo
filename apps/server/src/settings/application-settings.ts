@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   agentSettingsSchema,
   authSettingsSchema,
+  backupIntervalHoursSchema,
   dictationSettingsSchema,
   episodicMemorySettingsSchema,
   DEFAULT_MAX_ATTACHMENT_BYTES,
@@ -67,6 +68,21 @@ export const storedDictationSettingsSchema = dictationSettingsSchema.extend({
   encryptedGroqApiKey: z.string().nullable().default(null),
 })
 
+export const storedBackupSettingsSchema = z.object({
+  enabled: z.boolean().default(false),
+  endpoint: z.string().default(''),
+  bucket: z.string().default(''),
+  prefix: z.string().default('pulpo'),
+  keyId: z.string().default(''),
+  encryptedApplicationKey: z.string().nullable().default(null),
+  recipient: z.string().default(''),
+  intervalHours: backupIntervalHoursSchema.default(24),
+  retentionDays: z.number().int().min(1).max(3_000).default(30),
+  nextRunAt: z.string().datetime().nullable().default(null),
+})
+
+export type StoredBackupSettings = z.infer<typeof storedBackupSettingsSchema>
+
 export type AuthSettings = z.infer<typeof authSettingsSchema>
 export type InterfaceSettings = z.infer<typeof interfaceSettingsSchema>
 export type PersonalizationSettings = z.infer<typeof personalizationSettingsSchema>
@@ -124,6 +140,11 @@ export function parseWebToolsSettings(value: unknown): z.infer<typeof storedWebT
 export function parseDictationSettings(value: unknown): z.infer<typeof storedDictationSettingsSchema> {
   const parsed = storedDictationSettingsSchema.safeParse(value)
   return parsed.success ? parsed.data : storedDictationSettingsSchema.parse({})
+}
+
+export function parseBackupSettings(value: unknown): StoredBackupSettings {
+  const parsed = storedBackupSettingsSchema.safeParse(value)
+  return parsed.success ? parsed.data : storedBackupSettingsSchema.parse({})
 }
 
 export function publicDictationSettings(value: z.infer<typeof storedDictationSettingsSchema>) {
