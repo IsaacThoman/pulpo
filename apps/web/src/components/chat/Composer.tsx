@@ -51,6 +51,16 @@ import { apiRequest } from '@/lib/api'
 import { dictationFilename, insertDictationText, preferredDictationMimeType } from '@/lib/dictation'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { ui, uit } from '@/i18n/ui'
+import {
+  NEW_CHAT_DRAFT_ID,
+  deleteComposerDraft,
+  loadComposerDraft,
+  rememberRuntimeComposerDraft,
+  runtimeComposerDraft,
+  saveComposerDraft,
+  type PersistedComposerDraft,
+  type PersistedDraftAttachment,
+} from '@/lib/local-first/composer-drafts'
 
 export interface ComposerMessageEdit {
   messageId: string
@@ -59,6 +69,22 @@ export interface ComposerMessageEdit {
 }
 
 const EMPTY_QUEUE: never[] = []
+
+function persistedDraftAttachments(
+  attachmentIds: string[],
+  uploads: Record<string, UploadRecord>,
+): PersistedDraftAttachment[] {
+  return attachmentIds.map((id) => uploads[id]).filter((item): item is UploadRecord => Boolean(item)).map((item) => ({
+    localId: item.localId,
+    serverId: item.id,
+    name: item.name,
+    size: item.size,
+    mimeType: item.mimeType,
+    status: item.status,
+    error: item.error,
+    file: item.file,
+  }))
+}
 
 function downloadComposerAttachment(attachment: UploadRecord): void {
   if (attachment.file) {
@@ -100,8 +126,12 @@ export function Composer({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [value, setValue] = useState('')
-  const [attachmentIds, setAttachmentIds] = useState<string[]>([])
+  const userId = useAuth((s) => s.user?.id)
+  const draftId = chatId ?? NEW_CHAT_DRAFT_ID
+  const initialRuntimeDraft = userId ? runtimeComposerDraft(userId, draftId) : null
+  const [value, setValue] = useState(initialRuntimeDraft?.content ?? '')
+  const [attachmentIds, setAttachmentIds] = useState<string[]>(initialRuntimeDraft?.attachmentIds ?? [])
+  const [draftHydrated, setDraftHydrated] = useState(Boolean(initialRuntimeDraft))
   const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [queueError, setQueueError] = useState<string | null>(null)
@@ -112,7 +142,9 @@ export function Composer({
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const valueRef = useRef(value)
   const attachmentIdsRef = useRef(attachmentIds)
+  const uploadsRef = useRef<Record<string, UploadRecord>>({})
   const preservedDraftRef = useRef<{ value: string; attachmentIds: string[] } | null>(null)
   const activeRecoveryIdRef = useRef<string | null>(null)
   const activeMessageEditIdRef = useRef<string | null>(null)
@@ -122,6 +154,7 @@ export function Composer({
   const dictationChunksRef = useRef<Blob[]>([])
   const dictationTimerRef = useRef<number | null>(null)
   const dictationAbortRef = useRef<AbortController | null>(null)
+  valueRef.current = value
   attachmentIdsRef.current = attachmentIds
 
   const streamingResponseId = useChat((s) => {
@@ -144,6 +177,7 @@ export function Composer({
   const uploads = useUploadOutbox((s) => s.uploads)
   const addUploadFiles = useUploadOutbox((s) => s.addFiles)
   const addExistingAttachments = useUploadOutbox((s) => s.addExistingAttachments)
+  const restoreDraftAttachments = useUploadOutbox((s) => s.restoreDraftAttachments)
   const removeUpload = useUploadOutbox((s) => s.removeUpload)
   const releaseDraftUploads = useUploadOutbox((s) => s.releaseDraftUploads)
   const consumeUploads = useUploadOutbox((s) => s.consumeUploads)
@@ -169,6 +203,7 @@ export function Composer({
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
+  uploadsRef.current = uploads
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
   const selections = resolveSelections(options, generation[modelId])
@@ -201,25 +236,66 @@ export function Composer({
     editingExisting,
   })
 
-  useEffect(() => {
-    ref.current?.focus()
-  }, [chatId])
-
-  useEffect(() => {
-    onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
-  }, [editingQueueId, messageEdit, onEditStateChange, recovery])
-
-  useEffect(() => () => {
-    releaseDraftUploads(attachmentIdsRef.current)
-    releaseDraftUploads(preservedDraftRef.current?.attachmentIds ?? [])
-  }, [releaseDraftUploads])
-
   const autosize = useCallback(() => {
     const el = ref.current
     if (!el) return
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
+
+  const focusAtEnd = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+  }, [])
+
+  useEffect(() => {
+    focusAtEnd()
+  }, [chatId, focusAtEnd])
+
+  useEffect(() => {
+    onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
+  }, [editingQueueId, messageEdit, onEditStateChange, recovery])
+
+  useEffect(() => {
+    if (!userId || initialRuntimeDraft) return
+    let cancelled = false
+    void loadComposerDraft(userId, draftId).then((draft) => {
+      if (cancelled) return
+      if (draft) {
+        const ids = restoreDraftAttachments(draft.attachments, { chatId, temporary })
+        valueRef.current = draft.content
+        attachmentIdsRef.current = ids
+        setValue(draft.content)
+        setAttachmentIds(ids)
+        requestAnimationFrame(() => {
+          autosize()
+          focusAtEnd()
+        })
+      }
+      setDraftHydrated(true)
+    }).catch(() => setDraftHydrated(true))
+    return () => { cancelled = true }
+  }, [autosize, chatId, draftId, focusAtEnd, initialRuntimeDraft, restoreDraftAttachments, temporary, userId])
+
+  useEffect(() => {
+    if (!userId) return undefined
+    return () => {
+      const preserved = preservedDraftRef.current
+      const content = preserved?.value ?? valueRef.current
+      const ids = preserved?.attachmentIds ?? attachmentIdsRef.current
+      const attachments = persistedDraftAttachments(ids, uploadsRef.current)
+      rememberRuntimeComposerDraft(userId, draftId, { content, attachmentIds: ids, attachments })
+      void saveComposerDraft(userId, draftId, { content, attachments })
+
+      if (preserved) {
+        const retained = new Set(ids)
+        releaseDraftUploads(attachmentIdsRef.current.filter((id) => !retained.has(id)))
+      }
+    }
+  }, [draftId, releaseDraftUploads, userId])
 
   const releaseMicrophone = useCallback(() => {
     if (dictationTimerRef.current !== null) window.clearTimeout(dictationTimerRef.current)
@@ -374,12 +450,28 @@ export function Composer({
 
   const clearDraft = (release = true) => {
     if (release) releaseDraftUploads(attachmentIds)
+    valueRef.current = ''
+    attachmentIdsRef.current = []
     setValue('')
     setAttachmentIds([])
+    if (userId) void deleteComposerDraft(userId, draftId)
     requestAnimationFrame(() => {
       if (ref.current) ref.current.style.height = 'auto'
     })
   }
+
+  useEffect(() => {
+    if (!userId || !draftHydrated || editingExisting || recovery) return
+    const draft: PersistedComposerDraft = {
+      content: value,
+      attachments: persistedDraftAttachments(attachmentIds, uploads),
+    }
+    rememberRuntimeComposerDraft(userId, draftId, { ...draft, attachmentIds })
+    const timeout = window.setTimeout(() => {
+      void saveComposerDraft(userId, draftId, draft)
+    }, 150)
+    return () => window.clearTimeout(timeout)
+  }, [attachmentIds, draftHydrated, draftId, editingExisting, recovery, uploads, userId, value])
 
   const restorePreservedDraft = useCallback(() => {
     const preserved = preservedDraftRef.current

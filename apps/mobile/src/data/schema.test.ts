@@ -76,6 +76,21 @@ describe('mobile SQLite schema', () => {
       .get('two|user')).toEqual({ count: 1 })
   })
 
+  it('round-trips attachment state independently for chat and new-chat drafts', () => {
+    const database = new DatabaseSync(':memory:')
+    database.exec(MOBILE_SCHEMA)
+    const attachments = JSON.stringify([{ localId: 'local-1', serverId: 'server-1', state: 'ready' }])
+    database.prepare('INSERT INTO drafts(namespace, chat_id, body, attachments, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run('one|user', 'chat-1', 'chat body', attachments, 1)
+    database.prepare('INSERT INTO drafts(namespace, chat_id, body, attachments, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run('one|user', 'new', 'new body', '[]', 2)
+
+    expect(database.prepare('SELECT body, attachments FROM drafts WHERE namespace = ? AND chat_id = ?')
+      .get('one|user', 'chat-1')).toEqual({ body: 'chat body', attachments })
+    expect(database.prepare('SELECT body FROM drafts WHERE namespace = ? AND chat_id = ?')
+      .get('one|user', 'new')).toEqual({ body: 'new body' })
+  })
+
   it('evicts the least-recently used attachment files to the configured quota', () => {
     const records = [
       { attachmentId: 'new', localUri: 'file:///new', sizeBytes: 40, lastAccessed: 30 },
