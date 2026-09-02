@@ -160,7 +160,7 @@ import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionSc
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
-import { cacheNamespace, cacheOpenedChat, deleteResponseCursor } from '../data/database';
+import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
@@ -202,6 +202,12 @@ import {
 } from '../features/chat/optimisticAttachmentSend';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
+import {
+  cacheComposerDraft,
+  cachedComposerDraft,
+  composerDraftScope,
+  deleteCachedComposerDraft,
+} from '../features/chat/composerDraftCache';
 import {
   historyChatSections,
   historyChatSummary,
@@ -470,6 +476,27 @@ type Attachment = {
 };
 type ComposerAttachment = Attachment & CoordinatedUpload;
 type PreparedAttachment = ComposerAttachment & { serverId: string; state: 'ready' };
+type ComposerDraftIdentity = { scope: string; namespace: string | null; draftId: string };
+
+const NEW_CHAT_DRAFT_ID = 'new';
+
+function restoredComposerAttachments(
+  draftId: string,
+  attachments: ComposerAttachment[],
+  latest: ReadonlyMap<string, ComposerAttachment>,
+): ComposerAttachment[] {
+  const ownerId = `draft:${draftId}`;
+  const normalized = attachments.map((attachment) => ({
+    ...attachment,
+    ownerId: attachment.ownerId || ownerId,
+    attempt: Number.isFinite(attachment.attempt) ? attachment.attempt : 0,
+    managed: attachment.managed !== false,
+    state: attachment.serverId
+      ? 'ready' as const
+      : attachment.state === 'uploading' ? 'local' as const : attachment.state,
+  }));
+  return restoreLatestDraft(normalized, latest);
+}
 
 function attachmentKind(name: string, mimeType: string): Attachment['kind'] {
   return isImageAttachment(name, mimeType) ? 'image' : 'file';
@@ -1791,6 +1818,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     discardStoredChat(chat.id);
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    deleteCachedComposerDraft(composerDraftScope(namespace, chat.id));
+    void saveDraft(namespace, chat.id, '', []);
     discardOptimisticChat(namespace, chat.id);
     queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, chat.id), exact: true });
     for (const message of chat.messages) {
@@ -1829,7 +1858,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setNewChatTemporary(temporaryByDefault);
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
-    setInput('');
   }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
 
   const newChatFromHistory = useCallback(() => {
@@ -2288,6 +2316,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             messages={messages}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
             keyboardLayoutEnabled={!panelOpen}
             model={selectedModel}
             models={availableModels}
@@ -3266,12 +3295,13 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
+  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
   chatLoaded: boolean;
+  draftNamespace: string | null;
   keyboardLayoutEnabled: boolean;
   model: Model;
   models: Model[];
@@ -3332,13 +3362,21 @@ function ChatView({
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
   const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
+  const activeDraftRef = useRef<ComposerDraftIdentity | null>(null);
+  const attachmentDraftOwnersRef = useRef(new Map<string, ComposerDraftIdentity>());
   const nativeImagePreviewPendingRef = useRef(false);
   const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
   const setAttachments = useCallback((update: SetStateAction<ComposerAttachment[]>) => {
     setAttachmentState((current) => {
       const next = typeof update === 'function' ? update(current) : update;
       attachmentsRef.current = next;
-      for (const attachment of next) latestAttachmentsRef.current.set(attachment.localId, attachment);
+      for (const attachment of next) {
+        latestAttachmentsRef.current.set(attachment.localId, attachment);
+        const activeDraft = activeDraftRef.current;
+        if (activeDraft && attachment.ownerId.startsWith('draft:')) {
+          attachmentDraftOwnersRef.current.set(attachment.localId, activeDraft);
+        }
+      }
       return next;
     });
   }, []);
@@ -3353,6 +3391,9 @@ function ChatView({
     attachments: ComposerAttachment[];
     agentEnabled: boolean;
   } | null>(null);
+  const inputRef = useRef(input);
+  const hydratedDraftScopeRef = useRef<string | null>(null);
+  const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
   const composerInputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
@@ -3380,6 +3421,7 @@ function ChatView({
     offline: networkOffline,
     syncError,
   });
+  inputRef.current = input;
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3533,13 +3575,88 @@ function ChatView({
     Haptics.selectionAsync();
   }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending]);
 
+  const activeDraftSnapshot = useCallback(() => ({
+    body: preservedComposerRef.current?.input ?? inputRef.current,
+    attachments: [...(preservedComposerRef.current?.attachments ?? attachmentsRef.current)],
+  }), []);
+
+  useEffect(() => {
+    const draftId = chatId ?? NEW_CHAT_DRAFT_ID;
+    const scope = `${draftNamespace ?? 'local'}\u0000${draftId}`;
+    const previous = activeDraftRef.current;
+    if (previous?.scope === scope) return;
+
+    if (previous) {
+      const outgoing = activeDraftSnapshot();
+      for (const attachment of outgoing.attachments) {
+        attachmentDraftOwnersRef.current.set(attachment.localId, previous);
+      }
+      cacheComposerDraft(previous.scope, outgoing);
+      if (previous.namespace) void saveDraft(previous.namespace, previous.draftId, outgoing.body, outgoing.attachments);
+    }
+
+    activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
+    hydratedDraftScopeRef.current = null;
+    draftLoadRevisionRef.current += 1;
+    const revision = draftLoadRevisionRef.current;
+    const runtime = cachedComposerDraft<ComposerAttachment>(scope);
+    if (runtime) {
+      const restored = restoredComposerAttachments(draftId, runtime.attachments, latestAttachmentsRef.current);
+      onChangeInput(runtime.body);
+      inputRef.current = runtime.body;
+      attachmentsRef.current = restored;
+      setAttachments(restored);
+      hydratedDraftScopeRef.current = scope;
+      return;
+    }
+
+    onChangeInput('');
+    inputRef.current = '';
+    attachmentsRef.current = [];
+    setAttachments([]);
+    if (!draftNamespace) {
+      hydratedDraftScopeRef.current = scope;
+      return;
+    }
+    void loadDraft<ComposerAttachment>(draftNamespace, draftId).then((draft) => {
+      if (draftLoadRevisionRef.current !== revision || activeDraftRef.current?.scope !== scope) return;
+      if (inputRef.current || attachmentsRef.current.length > 0) {
+        hydratedDraftScopeRef.current = scope;
+        return;
+      }
+      const restored = restoredComposerAttachments(draftId, draft?.attachments ?? [], latestAttachmentsRef.current);
+      const body = draft?.body ?? '';
+      cacheComposerDraft(scope, { body, attachments: restored });
+      onChangeInput(body);
+      inputRef.current = body;
+      attachmentsRef.current = restored;
+      setAttachments(restored);
+      hydratedDraftScopeRef.current = scope;
+    }).catch(() => {
+      if (activeDraftRef.current?.scope === scope) hydratedDraftScopeRef.current = scope;
+    });
+  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, setAttachments]);
+
+  useEffect(() => {
+    const active = activeDraftRef.current;
+    if (!active || hydratedDraftScopeRef.current !== active.scope || messageEdit) return;
+    const draft = { body: inputRef.current, attachments: [...attachmentsRef.current] };
+    cacheComposerDraft(active.scope, draft);
+    if (!active.namespace) return;
+    const timeout = setTimeout(() => {
+      void saveDraft(active.namespace!, active.draftId, draft.body, draft.attachments);
+    }, 150);
+    return () => clearTimeout(timeout);
+  }, [attachments, input, messageEdit]);
+
   useEffect(() => {
     if (messageEditChatIdRef.current === chatId) return;
     messageEditChatIdRef.current = chatId;
     if (!messageEdit) return;
     cleanupEditUploads(messageEdit, attachments);
-    restoreComposer();
-  }, [attachments, chatId, cleanupEditUploads, messageEdit, restoreComposer]);
+    preservedComposerRef.current = null;
+    setMessageEdit(null);
+  }, [attachments, chatId, cleanupEditUploads, messageEdit]);
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending) return;
@@ -3854,6 +3971,19 @@ function ChatView({
     chatTailPending.current = snapshot.tailPending;
   }, []);
 
+  const persistInactiveDraftAttachment = useCallback((attachment: ComposerAttachment) => {
+    const owner = attachmentDraftOwnersRef.current.get(attachment.localId);
+    if (!owner || owner.scope === activeDraftRef.current?.scope) return;
+    const draft = cachedComposerDraft<ComposerAttachment>(owner.scope);
+    if (!draft?.attachments.some((item) => item.localId === attachment.localId)) return;
+    const updated = {
+      ...draft,
+      attachments: draft.attachments.map((item) => item.localId === attachment.localId ? attachment : item),
+    };
+    cacheComposerDraft(owner.scope, updated);
+    if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);
+  }, []);
+
   const uploadOne = useCallback((attachment: ComposerAttachment): Promise<PreparedAttachment | null> => {
     const current = latestAttachmentsRef.current.get(attachment.localId) ?? attachment;
     if (current.state === 'ready' && current.serverId) return Promise.resolve(current as PreparedAttachment);
@@ -3889,6 +4019,7 @@ function ChatView({
         }
         const ready = settled.item as PreparedAttachment;
         latestAttachmentsRef.current.set(ready.localId, ready);
+        persistInactiveDraftAttachment(ready);
         setAttachments((values) => values.map((item) => item.localId === ready.localId ? ready : item));
         return ready;
       } catch (error) {
@@ -3900,6 +4031,7 @@ function ChatView({
         });
         if (failed) {
           latestAttachmentsRef.current.set(failed.localId, failed);
+          persistInactiveDraftAttachment(failed);
           setAttachments((values) => values.map((item) => item.localId === failed.localId ? failed : item));
         }
         return null;
@@ -3910,7 +4042,7 @@ function ChatView({
     })();
     activeUploadsRef.current.set(attempted.localId, { attempt: attempted.attempt, promise });
     return promise;
-  }, [setAttachments]);
+  }, [persistInactiveDraftAttachment, setAttachments]);
 
   useEffect(() => {
     for (const attachment of attachments) {
@@ -3929,6 +4061,7 @@ function ChatView({
       const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
       if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
       latestAttachmentsRef.current.delete(localId);
+      attachmentDraftOwnersRef.current.delete(localId);
       return current.filter((attachment) => attachment.localId !== localId);
     });
     Haptics.selectionAsync();
@@ -3949,6 +4082,7 @@ function ChatView({
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
       onChangeInput(submittedDraft.input);
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
@@ -3991,6 +4125,7 @@ function ChatView({
         },
       );
       onChangeInput('');
+      inputRef.current = '';
       setAttachments([]);
       draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
       const accepted = await pendingSend;
@@ -4000,10 +4135,17 @@ function ChatView({
         restoreSubmittedDraft();
         return;
       }
+      if (submittedDraftIdentity) {
+        deleteCachedComposerDraft(submittedDraftIdentity.scope);
+        if (submittedDraftIdentity.namespace) {
+          void saveDraft(submittedDraftIdentity.namespace, submittedDraftIdentity.draftId, '', []);
+        }
+      }
       followSnapshot = null;
       for (const attachment of submittedDraft.attachments) {
         latestAttachmentsRef.current.delete(attachment.localId);
         activeUploadsRef.current.delete(attachment.localId);
+        attachmentDraftOwnersRef.current.delete(attachment.localId);
       }
     } catch (error) {
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
