@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
 import tar from 'tar-stream'
-import { eq, sql } from 'drizzle-orm'
+import { eq, ne, sql } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { attachments, backupJobs, catalogIcons, chats, queuedMessages, users } from '../database/schema.js'
 import { getBlobStore } from '../storage/index.js'
@@ -22,6 +22,9 @@ import {
 } from './backup-format.js'
 import { checksumMatches, writeBackupArchive, type BackupArchiveEntry } from './backup-archive.js'
 import { projectFullBackup, type FullBackupDatabase } from './backup-projection.js'
+import { B2BackupStore } from './b2-backup-store.js'
+import { ageRecipientDetails, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
+import { createAgeEncryptionStream } from './backup-encryption.js'
 
 const json = (value: unknown) => JSON.stringify(value, (_, item) => typeof item === 'bigint' ? item.toString() : item)
 const checksum = (value: Uint8Array) => createHash('sha256').update(value).digest('hex')
@@ -32,14 +35,44 @@ async function untarBytes(value: Uint8Array): Promise<Map<string, Uint8Array>> {
   extract.end(gunzipSync(value)); await done; return files
 }
 
-export async function createFullBackup(jobId: string): Promise<void> {
+export async function createFullBackup(jobId: string, finalAttempt = true): Promise<void> {
   const [job] = await db.select().from(backupJobs).where(eq(backupJobs.id, jobId)).limit(1)
   if (!job) return
   await db.update(backupJobs).set({ status: 'in_progress', progress: 1, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
-  const objectKey = `backups/${job.userId}/${job.id}.tar.gz`
+  const offsite = job.destination === 'backblaze_b2'
+  const objectKey = offsite ? job.objectKey : `backups/${job.userId}/${job.id}.tar.gz`
   let temporaryDirectory: string | undefined
   let uploaded = false
+  let offsiteStore: B2BackupStore | undefined
+  let offsiteRecipient: string | undefined
+  let offsiteRecipientFingerprint: string | undefined
   try {
+    if (!objectKey) throw new Error('Backup object key is missing')
+    if (offsite) {
+      const settings = resolveBackupSettings(await readStoredBackupSettings())
+      if (job.storageEndpoint !== settings.endpoint || job.storageBucket !== settings.bucket) {
+        throw new Error('Backblaze destination changed while this backup was queued')
+      }
+      const recipient = ageRecipientDetails(settings.recipient)
+      if (job.recipientFingerprint !== recipient.fingerprint) {
+        throw new Error('Age recipient changed while this backup was queued')
+      }
+      if (!job.lockedUntil) throw new Error('Backup retention date is missing')
+      offsiteStore = new B2BackupStore(settings)
+      offsiteRecipient = settings.recipient
+      offsiteRecipientFingerprint = recipient.fingerprint
+      const existing = await offsiteStore.head(objectKey)
+      if (existing) {
+        if (existing.jobId !== job.id || existing.recipientFingerprint !== recipient.fingerprint) {
+          throw new Error('Backblaze object key is already occupied by another backup')
+        }
+        await db.update(backupJobs).set({
+          status: 'completed', progress: 100, archiveSizeBytes: existing.sizeBytes,
+          completedAt: new Date(), error: null, updatedAt: new Date(),
+        }).where(eq(backupJobs.id, jobId))
+        return
+      }
+    }
     try {
       await markExpiredChatsForPurge(new Date())
       await purgePendingChats()
@@ -92,14 +125,35 @@ export async function createFullBackup(jobId: string): Promise<void> {
       yield { name: 'manifest.json', body: Buffer.from(json(manifest)) }
     }
     const { sizeBytes: archiveSizeBytes, checksum: archiveChecksum } = await writeBackupArchive(archivePath, archiveEntries())
-    await getBlobStore().putStream(objectKey, createReadStream(archivePath), {
-      contentType: 'application/gzip', contentLength: archiveSizeBytes, contentDisposition: 'attachment',
-    })
-    uploaded = true
-    await db.update(backupJobs).set({ status: 'completed', progress: 100, objectKey, archiveSizeBytes, archiveChecksum, expiresAt: new Date(Date.now() + 7 * 86_400_000), updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+    if (offsite) {
+      if (!offsiteStore || !offsiteRecipient || !offsiteRecipientFingerprint || !job.lockedUntil) throw new Error('Offsite backup configuration is unavailable')
+      const inputSize = (await stat(archivePath)).size
+      const encrypted = await createAgeEncryptionStream(createReadStream(archivePath), inputSize, offsiteRecipient)
+      await db.update(backupJobs).set({ progress: 92, updatedAt: new Date() }).where(eq(backupJobs.id, jobId))
+      await offsiteStore.putEncrypted(objectKey, encrypted.body, encrypted.sizeBytes, job.id, offsiteRecipientFingerprint, job.lockedUntil)
+      uploaded = true
+      await db.update(backupJobs).set({
+        status: 'completed', progress: 100, archiveSizeBytes: encrypted.sizeBytes,
+        archiveChecksum: await encrypted.checksum, completedAt: new Date(), error: null, updatedAt: new Date(),
+      }).where(eq(backupJobs.id, jobId))
+    } else {
+      await getBlobStore().putStream(objectKey, createReadStream(archivePath), {
+        contentType: 'application/gzip', contentLength: archiveSizeBytes, contentDisposition: 'attachment',
+      })
+      uploaded = true
+      await db.update(backupJobs).set({
+        status: 'completed', progress: 100, objectKey, archiveSizeBytes, archiveChecksum,
+        expiresAt: new Date(Date.now() + 7 * 86_400_000), completedAt: new Date(), error: null, updatedAt: new Date(),
+      }).where(eq(backupJobs.id, jobId))
+    }
   } catch (error) {
-    if (uploaded) await getBlobStore().delete(objectKey).catch(() => undefined)
-    await db.update(backupJobs).set({ status: 'failed', error: error instanceof Error ? error.message : 'Backup failed', updatedAt: new Date() }).where(eq(backupJobs.id, jobId)); throw error
+    if (uploaded && !offsite && objectKey) await getBlobStore().delete(objectKey).catch(() => undefined)
+    await db.update(backupJobs).set({
+      status: finalAttempt ? 'failed' : 'queued',
+      error: error instanceof Error ? error.message : 'Backup failed',
+      updatedAt: new Date(),
+    }).where(eq(backupJobs.id, jobId))
+    throw error
   } finally {
     if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true }).catch(() => undefined)
   }
@@ -161,6 +215,7 @@ export async function restoreFullBackup(jobId: string): Promise<void> {
       ]),
     ]
     await db.transaction(async (tx) => {
+      await tx.delete(backupJobs).where(ne(backupJobs.id, jobId))
       await tx.execute(sql.raw(`truncate table ${[...FULL_BACKUP_TABLES].reverse().join(', ')} restart identity cascade`))
       for (const [index, table] of FULL_BACKUP_TABLES.entries()) {
         const rows = database[table]!

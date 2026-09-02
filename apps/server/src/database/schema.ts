@@ -719,18 +719,31 @@ export const chatImportSources = pgTable('chat_import_sources', {
 
 export const backupJobs = pgTable('backup_jobs', {
   id: uuid('id').primaryKey(),
-  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
   operation: text('operation').notNull(),
+  destination: text('destination').notNull().default('local'),
+  trigger: text('trigger').notNull().default('manual'),
   status: text('status').notNull().default('queued'),
   progress: integer('progress').notNull().default(0),
   objectKey: text('object_key'),
+  storageEndpoint: text('storage_endpoint'),
+  storageBucket: text('storage_bucket'),
   archiveSizeBytes: bigint('archive_size_bytes', { mode: 'number' }),
   archiveChecksum: text('archive_checksum'),
+  recipientFingerprint: text('recipient_fingerprint'),
+  scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+  lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   originalName: text('original_name'),
   error: text('error'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   ...timestamps,
-}, (table) => [index('backup_jobs_expiry_idx').on(table.expiresAt)])
+}, (table) => [
+  index('backup_jobs_expiry_idx').on(table.expiresAt),
+  index('backup_jobs_lock_expiry_idx').on(table.lockedUntil),
+  uniqueIndex('backup_jobs_scheduled_slot_idx').on(table.destination, table.trigger, table.scheduledFor),
+])
 
 export const userMemoryDocuments = pgTable('user_memory_documents', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),

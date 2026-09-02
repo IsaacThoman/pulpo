@@ -17,6 +17,7 @@ import { processEmbeddingJob } from './episodic-memory/processor.js'
 import { scheduleChatIndex } from './episodic-memory/queue.js'
 import { readEpisodicMemorySettings, enqueueEpisodicReconciliation } from './episodic-memory/settings.js'
 import { processCodexLogin } from './codex/login.js'
+import { reconcileOffsiteBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -70,6 +71,7 @@ concurrencyRefreshInterval.unref()
 const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) => {
   if (job.data.type === 'export') await createExport(String(job.data.payload?.exportId))
   if (job.data.type === 'cleanup') await runCleanup()
+  if (job.data.type === 'backup-schedule') await runOffsiteBackupSchedule()
   if (job.data.type === 'scrub-response-binary-context') await scrubPersistedResponseBinaryContext()
   if (job.data.type === 'purge-chats') {
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
@@ -93,7 +95,10 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     }
   }
   if (job.data.type === 'rollup') await rebuildDailyRollups()
-  if (job.data.type === 'backup') await createFullBackup(String(job.data.payload?.jobId))
+  if (job.data.type === 'backup') {
+    const finalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1)
+    await createFullBackup(String(job.data.payload?.jobId), finalAttempt)
+  }
   if (job.data.type === 'restore') await restoreFullBackup(String(job.data.payload?.jobId))
   if (job.data.type === 'billing-reconcile') await reconcileStripeBilling()
 }, { connection: { url: config.REDIS_URL }, concurrency: 1 })
@@ -107,6 +112,7 @@ const codexLoginWorker = new Worker<CodexLoginJob>('codex-login', async (job) =>
 }, { connection: { url: config.REDIS_URL }, concurrency: 10 })
 
 await maintenanceQueue.upsertJobScheduler('payload-cleanup', { every: 15 * 60 * 1_000 }, { name: 'cleanup', data: { type: 'cleanup' } })
+await maintenanceQueue.upsertJobScheduler('offsite-backup-schedule', { every: 60 * 1_000 }, { name: 'backup-schedule', data: { type: 'backup-schedule' } })
 await maintenanceQueue.upsertJobScheduler('daily-rollup', { pattern: '15 2 * * *' }, { name: 'rollup', data: { type: 'rollup' } })
 if (config.PULPO_BILLING_ENABLED) {
   await maintenanceQueue.upsertJobScheduler('billing-reconcile', { every: 60 * 60 * 1_000 }, {
@@ -119,11 +125,27 @@ await maintenanceQueue.add('startup-response-context-scrub', { type: 'scrub-resp
   attempts: 3,
   removeOnFail: true,
 })
+await reconcileOffsiteBackupJobs()
 
 generationWorker.on('failed', (job, error) => {
   console.error(JSON.stringify({
     level: 'error', service: 'pulpo-worker', event: 'generation.failed',
     responseId: job?.data.responseId, error: error.message,
+  }))
+})
+
+maintenanceWorker.on('completed', (job) => {
+  if (job.data.type !== 'backup') return
+  console.info(JSON.stringify({
+    level: 'info', service: 'pulpo-worker', event: 'backup.completed', jobId: job.data.payload?.jobId,
+  }))
+})
+
+maintenanceWorker.on('failed', (job, error) => {
+  if (job?.data.type !== 'backup') return
+  console.error(JSON.stringify({
+    level: 'error', service: 'pulpo-worker', event: 'backup.failed', jobId: job.data.payload?.jobId,
+    attempt: job.attemptsMade, error: error.message,
   }))
 })
 

@@ -1409,6 +1409,73 @@ export const managementInfoSchema = z.object({
 })
 export type ManagementInfo = z.infer<typeof managementInfoSchema>
 
+export const backupDestinationSchema = z.enum(['local', 'backblaze_b2'])
+export const backupTriggerSchema = z.enum(['manual', 'scheduled'])
+export const backupHealthSchema = z.enum(['unconfigured', 'disabled', 'pending', 'healthy', 'failed'])
+export const backupIntervalHoursSchema = z.union([z.literal(6), z.literal(12), z.literal(24)])
+export const ageRecipientSchema = z.string().trim().max(4_096).refine(
+  (value) => /^age1(?:pq1)?[023456789acdefghjklmnpqrstuvwxyz]+$/.test(value),
+  'Enter a classic or post-quantum age recipient',
+)
+
+export const backupSettingsUpdateSchema = z.object({
+  enabled: z.boolean(),
+  endpoint: z.url(),
+  bucket: z.string().trim().min(6).max(63),
+  prefix: z.string().trim().max(512).default('pulpo'),
+  keyId: z.string().trim().min(1).max(200),
+  applicationKey: z.string().min(1).max(1_024).optional(),
+  recipient: ageRecipientSchema,
+  intervalHours: backupIntervalHoursSchema.default(24),
+  retentionDays: z.number().int().min(1).max(3_000).default(30),
+})
+export type BackupSettingsUpdate = z.infer<typeof backupSettingsUpdateSchema>
+export const backupSettingsTestInputSchema = backupSettingsUpdateSchema
+export const backupSettingsTestResultSchema = z.object({ ok: z.literal(true) })
+export type BackupSettingsTestInput = z.infer<typeof backupSettingsTestInputSchema>
+export type BackupSettingsTestResult = z.infer<typeof backupSettingsTestResultSchema>
+
+export const publicBackupSettingsSchema = backupSettingsUpdateSchema.omit({ applicationKey: true, endpoint: true, bucket: true, keyId: true, recipient: true }).extend({
+  endpoint: z.string(),
+  bucket: z.string(),
+  keyId: z.string(),
+  recipient: z.string(),
+  applicationKeyConfigured: z.boolean(),
+  recipientType: z.enum(['classic', 'post_quantum']).nullable(),
+  recipientFingerprint: z.string().nullable(),
+  nextRunAt: isoDateSchema.nullable(),
+  health: backupHealthSchema,
+  lastSuccessfulAt: isoDateSchema.nullable(),
+  lastError: z.string().nullable(),
+})
+export type PublicBackupSettings = z.infer<typeof publicBackupSettingsSchema>
+
+export const backupJobSchema = z.object({
+  id: idSchema,
+  userId: idSchema.nullable(),
+  operation: z.enum(['backup', 'restore']),
+  destination: backupDestinationSchema,
+  trigger: backupTriggerSchema,
+  status: z.enum(['queued', 'in_progress', 'completed', 'failed']),
+  progress: z.number().int().min(0).max(100),
+  objectKey: z.string().nullable(),
+  storageEndpoint: z.string().nullable(),
+  storageBucket: z.string().nullable(),
+  archiveSizeBytes: z.number().int().nonnegative().nullable(),
+  archiveChecksum: z.string().nullable(),
+  recipientFingerprint: z.string().nullable(),
+  scheduledFor: isoDateSchema.nullable(),
+  lockedUntil: isoDateSchema.nullable(),
+  completedAt: isoDateSchema.nullable(),
+  deletedAt: isoDateSchema.nullable(),
+  originalName: z.string().nullable(),
+  error: z.string().nullable(),
+  expiresAt: isoDateSchema.nullable(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+})
+export type BackupJob = z.infer<typeof backupJobSchema>
+
 export const adminUsageStatusSchema = z.enum(['queued', 'in_progress', 'completed', 'failed', 'cancelled', 'incomplete'])
 export const adminUsageEventSchema = z.object({
   requestId: idSchema,
