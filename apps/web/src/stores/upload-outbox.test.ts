@@ -123,6 +123,27 @@ beforeEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe('upload outbox', () => {
+  it('restores ready and unavailable draft attachments without sharing composer state', () => {
+    const ids = useUploadOutbox.getState().restoreDraftAttachments([
+      {
+        localId: 'ready', serverId: 'server-ready', name: 'ready.pdf', size: 20,
+        mimeType: 'application/pdf', status: 'ready',
+      },
+      {
+        localId: 'missing', name: 'missing.txt', size: 10,
+        mimeType: 'text/plain', status: 'error', error: 'Original file missing',
+      },
+    ], { chatId, temporary: false })
+
+    expect(ids).toEqual(['ready', 'missing'])
+    expect(useUploadOutbox.getState().uploads.ready).toMatchObject({
+      id: 'server-ready', status: 'ready', managed: true, chatId,
+    })
+    expect(useUploadOutbox.getState().uploads.missing).toMatchObject({
+      status: 'error', managed: true, error: 'Original file missing', chatId,
+    })
+  })
+
   it('keeps one optimistic bubble and stages later uploads directly in the queue', async () => {
     useUploadOutbox.setState({ uploads: {
       first: upload('first', 'uploading'),

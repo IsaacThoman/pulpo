@@ -44,6 +44,7 @@ export interface DraftRow {
   userId: string
   chatId: string
   content: string
+  attachments?: unknown[]
   updatedAt: number
 }
 

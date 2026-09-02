@@ -1,5 +1,6 @@
 import { queryClient } from '@/lib/query-client'
 import { localAccountKey, localDb } from './database'
+import { clearRuntimeComposerDrafts } from './composer-drafts'
 
 interface LocallyCachedChat {
   attachments?: Array<{ id: string }>
@@ -12,6 +13,7 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
   if (!ids.length) return
 
   const idSet = new Set(ids)
+  clearRuntimeComposerDrafts(userId, ids)
   const attachmentIds = new Set<string>()
   const responseIds = new Set<string>()
   for (const chatId of ids) {
