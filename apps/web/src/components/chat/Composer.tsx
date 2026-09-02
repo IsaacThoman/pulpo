@@ -243,9 +243,17 @@ export function Composer({
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
 
+  const focusAtEnd = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+  }, [])
+
   useEffect(() => {
-    ref.current?.focus()
-  }, [chatId])
+    focusAtEnd()
+  }, [chatId, focusAtEnd])
 
   useEffect(() => {
     onEditStateChange?.(Boolean(editingQueueId || messageEdit || recovery))
@@ -264,13 +272,13 @@ export function Composer({
         setAttachmentIds(ids)
         requestAnimationFrame(() => {
           autosize()
-          ref.current?.focus()
+          focusAtEnd()
         })
       }
       setDraftHydrated(true)
     }).catch(() => setDraftHydrated(true))
     return () => { cancelled = true }
-  }, [autosize, chatId, draftId, initialRuntimeDraft, restoreDraftAttachments, temporary, userId])
+  }, [autosize, chatId, draftId, focusAtEnd, initialRuntimeDraft, restoreDraftAttachments, temporary, userId])
 
   useEffect(() => {
     if (!userId) return undefined

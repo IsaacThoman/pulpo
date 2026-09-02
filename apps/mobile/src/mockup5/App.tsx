@@ -3422,6 +3422,16 @@ function ChatView({
     syncError,
   });
   inputRef.current = input;
+
+  const focusComposerAtEnd = useCallback((body: string) => {
+    requestAnimationFrame(() => {
+      const composer = composerInputRef.current;
+      if (!composer) return;
+      composer.focus();
+      const end = body.length;
+      composer.setNativeProps({ selection: { start: end, end } });
+    });
+  }, []);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3607,6 +3617,7 @@ function ChatView({
       attachmentsRef.current = restored;
       setAttachments(restored);
       hydratedDraftScopeRef.current = scope;
+      focusComposerAtEnd(runtime.body);
       return;
     }
 
@@ -3632,10 +3643,11 @@ function ChatView({
       attachmentsRef.current = restored;
       setAttachments(restored);
       hydratedDraftScopeRef.current = scope;
+      focusComposerAtEnd(body);
     }).catch(() => {
       if (activeDraftRef.current?.scope === scope) hydratedDraftScopeRef.current = scope;
     });
-  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, setAttachments]);
+  }, [activeDraftSnapshot, chatId, draftNamespace, focusComposerAtEnd, onChangeInput, setAttachments]);
 
   useEffect(() => {
     const active = activeDraftRef.current;
