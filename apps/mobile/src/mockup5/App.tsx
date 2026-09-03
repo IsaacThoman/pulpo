@@ -168,7 +168,7 @@ import { activateBranch as activateServerBranch, cancelResponse, continueWithout
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
-import { startComposerAutoFocus } from '../providers/composerAutoFocus';
+import { startComposerAutoFocus, startComposerFocusRequest, type ComposerFocusAction } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
@@ -1503,6 +1503,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const wideSidebarGestureStart = useSharedValue(1);
   const [panelOpen, setPanelOpen] = useState(false);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
+  const [composerFocusRequest, setComposerFocusRequest] = useState<{ action: ComposerFocusAction; revision: number } | null>(null);
+  const composerFocusRevision = useRef(0);
   const [modelSheet, setModelSheet] = useState(false);
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
@@ -1552,6 +1554,11 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     chatId: string;
     promise: ReturnType<typeof startServerChat>;
   } | null>(null);
+
+  const requestComposerFocus = useCallback((action: ComposerFocusAction) => {
+    composerFocusRevision.current += 1;
+    setComposerFocusRequest({ action, revision: composerFocusRevision.current });
+  }, []);
 
   const trackActiveResponse = useCallback((response: { responseId: string; status: string; sequence: number }) => {
     activeResponseSubscription.current?.();
@@ -1868,8 +1875,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setActiveChatId(chat.id);
     setSelectedModelId(chat.modelId);
     setAssistantStatus('idle');
+    requestComposerFocus('blur');
     animatePanel(false);
-  }, [abandonActiveTemporaryChat, animatePanel]);
+  }, [abandonActiveTemporaryChat, animatePanel, requestComposerFocus]);
 
   const openRecalledChat = useCallback((chatId: string) => {
     const source = historyChats.find((chat) => chat.id === chatId);
@@ -1889,7 +1897,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setNewChatTemporary(temporaryByDefault);
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
-  }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
+    requestComposerFocus('focus');
+  }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels, requestComposerFocus]);
 
   const newChatFromHistory = useCallback(() => {
     newChat();
@@ -2347,6 +2356,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             messages={messages}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            composerFocusRequest={composerFocusRequest}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
             keyboardLayoutEnabled={!panelOpen}
             model={selectedModel}
@@ -3326,12 +3336,13 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
+  messages, chatId, chatLoaded, composerFocusRequest, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
   chatLoaded: boolean;
+  composerFocusRequest: { action: ComposerFocusAction; revision: number } | null;
   draftNamespace: string | null;
   keyboardLayoutEnabled: boolean;
   model: Model;
@@ -3539,6 +3550,16 @@ function ChatView({
     focus: () => composerInputRef.current?.focus(),
     scheduleFrame: requestAnimationFrame,
   }), []);
+
+  useEffect(() => {
+    if (!composerFocusRequest) return undefined;
+    return startComposerFocusRequest(composerFocusRequest.action, {
+      blur: () => composerInputRef.current?.blur(),
+      cancelFrame: cancelAnimationFrame,
+      focus: () => composerInputRef.current?.focus(),
+      scheduleFrame: requestAnimationFrame,
+    });
+  }, [composerFocusRequest]);
 
   useEffect(() => {
     setAgentEnabled(preferredAgentMode && canUseAgent);

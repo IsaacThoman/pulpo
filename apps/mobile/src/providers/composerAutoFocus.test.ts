@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { startComposerAutoFocus } from './composerAutoFocus'
+import { startComposerAutoFocus, startComposerFocusRequest } from './composerAutoFocus'
 
 function createHarness() {
   const frames = new Map<number, () => void>()
@@ -42,5 +42,44 @@ describe('composer auto focus', () => {
 
     expect(harness.focus).not.toHaveBeenCalled()
     expect(harness.cancelFrame).toHaveBeenCalledTimes(2)
+  })
+
+  it('blurs immediately when an existing chat requests focus release', () => {
+    const blur = vi.fn()
+    const focus = vi.fn()
+    const scheduleFrame = vi.fn()
+
+    startComposerFocusRequest('blur', {
+      blur,
+      cancelFrame: vi.fn(),
+      focus,
+      scheduleFrame,
+    })
+
+    expect(blur).toHaveBeenCalledOnce()
+    expect(focus).not.toHaveBeenCalled()
+    expect(scheduleFrame).not.toHaveBeenCalled()
+  })
+
+  it('uses delayed auto-focus when a new chat requests composer focus', () => {
+    const frames: Array<() => void> = []
+    const blur = vi.fn()
+    const focus = vi.fn()
+
+    startComposerFocusRequest('focus', {
+      blur,
+      cancelFrame: vi.fn(),
+      focus,
+      scheduleFrame: (listener) => {
+        frames.push(listener)
+        return frames.length
+      },
+    })
+
+    frames.shift()?.()
+    expect(focus).not.toHaveBeenCalled()
+    frames.shift()?.()
+    expect(focus).toHaveBeenCalledOnce()
+    expect(blur).not.toHaveBeenCalled()
   })
 })
