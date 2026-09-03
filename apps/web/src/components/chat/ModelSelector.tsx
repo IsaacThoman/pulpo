@@ -130,7 +130,7 @@ export function ModelSelector({
         }}
       >
       <DropdownMenuTrigger asChild>
-        <button className="flex max-w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
+        <button className="flex max-w-full min-w-0 cursor-pointer select-none items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-colors hover:bg-accent">
           <ModelIcon model={selected} className="size-5 shrink-0" boxed={false} />
           <span className="min-w-0 truncate">{selected.name}</span>
           <ChevronDown
