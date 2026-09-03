@@ -168,7 +168,7 @@ import { activateBranch as activateServerBranch, cancelResponse, continueWithout
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
-import { startComposerAutoFocus, startComposerFocusRequest, type ComposerFocusAction } from '../providers/composerAutoFocus';
+import { shouldAutoFocusComposer, startComposerAutoFocus, startComposerFocusRequest, type ComposerFocusAction } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
@@ -1620,7 +1620,10 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const animatePanel = useCallback((open: boolean, velocity = 0) => {
     if (persistentSidebar) return;
     setPanelOpen(open);
-    if (open) Keyboard.dismiss();
+    if (open) {
+      Keyboard.dismiss();
+      requestComposerFocus('blur');
+    }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = open ? openOffset : 0;
     slideX.value = reduceMotion ? target : withSpring(target, {
@@ -1630,7 +1633,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       mass: 0.9,
       overshootClamping: true,
     });
-  }, [openOffset, persistentSidebar, reduceMotion, slideX]);
+  }, [openOffset, persistentSidebar, reduceMotion, requestComposerFocus, slideX]);
 
   const animateWideSidebar = useCallback((visible: boolean, velocity = 0) => {
     setWideSidebarVisible(visible);
@@ -3438,6 +3441,7 @@ function ChatView({
   const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
   const composerInputRef = useRef<TextInput>(null);
+  const [manuallyEnabledKeyboardRevision, setManuallyEnabledKeyboardRevision] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
@@ -3464,6 +3468,18 @@ function ChatView({
     syncError,
   });
   inputRef.current = input;
+
+  const composerKeyboardEnabled = composerFocusRequest?.action !== 'blur'
+    || manuallyEnabledKeyboardRevision === composerFocusRequest.revision;
+
+  const enableComposerKeyboardFromTouch = useCallback(() => {
+    if (composerFocusRequest?.action !== 'blur') return;
+    setManuallyEnabledKeyboardRevision(composerFocusRequest.revision);
+    requestAnimationFrame(() => {
+      composerInputRef.current?.blur();
+      requestAnimationFrame(() => composerInputRef.current?.focus());
+    });
+  }, [composerFocusRequest]);
 
   const focusComposerAtEnd = useCallback((body: string) => {
     requestAnimationFrame(() => {
@@ -3545,11 +3561,14 @@ function ChatView({
   const presetLabel = generationSummary(prototypeModel, presetSelections);
   const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
 
-  useEffect(() => startComposerAutoFocus({
-    cancelFrame: cancelAnimationFrame,
-    focus: () => composerInputRef.current?.focus(),
-    scheduleFrame: requestAnimationFrame,
-  }), []);
+  useEffect(() => {
+    if (!shouldAutoFocusComposer(chatId)) return undefined;
+    return startComposerAutoFocus({
+      cancelFrame: cancelAnimationFrame,
+      focus: () => composerInputRef.current?.focus(),
+      scheduleFrame: requestAnimationFrame,
+    });
+  }, [chatId]);
 
   useEffect(() => {
     if (!composerFocusRequest) return undefined;
@@ -4640,8 +4659,10 @@ function ChatView({
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
+                onPressIn={enableComposerKeyboardFromTouch}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
+                showSoftInputOnFocus={composerKeyboardEnabled}
                 style={styles.input}
                 value={input}
               />

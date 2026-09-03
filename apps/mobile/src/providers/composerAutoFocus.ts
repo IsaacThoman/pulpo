@@ -13,6 +13,10 @@ type ComposerFocusRequestDependencies = ComposerAutoFocusDependencies & {
   blur: () => void
 }
 
+export function shouldAutoFocusComposer(chatId: string | null): boolean {
+  return chatId === null
+}
+
 /**
  * Focus after two native frames so the keyboard provider and chat keyboard
  * handlers are attached before iOS begins presenting the keyboard.
@@ -43,22 +47,10 @@ export function startComposerFocusRequest(
   action: ComposerFocusAction,
   dependencies: ComposerFocusRequestDependencies,
 ): () => void {
-  if (action === 'focus') return startComposerAutoFocus(dependencies)
-
-  let active = true
-  let settleFrame: number | null = null
-  dependencies.blur()
-  const navigationFrame = dependencies.scheduleFrame(() => {
-    if (!active) return
+  if (action === 'blur') {
     dependencies.blur()
-    settleFrame = dependencies.scheduleFrame(() => {
-      if (active) dependencies.blur()
-    })
-  })
-
-  return () => {
-    active = false
-    dependencies.cancelFrame(navigationFrame)
-    if (settleFrame !== null) dependencies.cancelFrame(settleFrame)
+    return () => undefined
   }
+
+  return startComposerAutoFocus(dependencies)
 }
