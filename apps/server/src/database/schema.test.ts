@@ -85,7 +85,7 @@ describe('user-owned operational records', () => {
   })
 
   it('creates composer drafts after the current migration history with account-wide revisions', () => {
-    const migration = readFileSync(new URL('../../drizzle/0055_chunky_dagger.sql', import.meta.url), 'utf8')
+    const migration = readFileSync(new URL('../../drizzle/0056_dazzling_firebrand.sql', import.meta.url), 'utf8')
     expect(migration).toContain('CREATE TABLE "composer_drafts"')
     expect(migration).toContain('"revision" bigint NOT NULL')
     expect(migration).toContain('composer_draft_attachments_position_unique')

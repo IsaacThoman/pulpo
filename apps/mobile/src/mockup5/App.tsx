@@ -78,6 +78,7 @@ import {
   foregroundStyle,
   font,
   frame,
+  glassEffect as swiftUIGlassEffect,
   labelStyle,
   menuActionDismissBehavior,
   padding,
@@ -1038,6 +1039,36 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
           {icon === 'ghost'
             ? <Ghost color={selected ? accent : ghostColor} size={size * 0.44} strokeWidth={2} />
             : <Icon name={icon} size={size * 0.44} color={selected ? accent : selectedColor === 'teal' ? '#8E8E93' : COLORS.text} />}
+        </Glass>
+      )}
+    </Pressable>
+  );
+}
+
+function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: () => void }) {
+  const foregroundColor = isDark ? '#1C1C1E' : '#FFFFFF';
+  const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
+  if (Platform.OS === 'ios') {
+    return (
+      <SwiftUIHost colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
+        <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
+          <SwiftUIHStack spacing={7.5} modifiers={[
+            frame({ width: 123.75, height: 48.75 }),
+            swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' }),
+          ]}>
+            <SwiftUIImage systemName="square.and.pencil" size={16.875} modifiers={[foregroundStyle(foregroundColor)]} />
+            <SwiftUIText modifiers={[font({ size: 14.0625, weight: 'semibold' }), foregroundStyle(foregroundColor)]}>New Chat</SwiftUIText>
+          </SwiftUIHStack>
+        </SwiftUIButton>
+      </SwiftUIHost>
+    );
+  }
+  return (
+    <Pressable accessibilityLabel="New Chat" accessibilityRole="button" onPress={onPress}>
+      {({ pressed }) => (
+        <Glass interactive style={[styles.drawerNewChatButtonFallback, pressed && styles.pressed]} tintColor={glassTintColor}>
+          <Icon color={foregroundColor} name="square.and.pencil" size={16.875} />
+          <Text style={[styles.drawerNewChatButtonText, { color: foregroundColor }]}>New Chat</Text>
         </Glass>
       )}
     </Pressable>
@@ -5150,14 +5181,6 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeDrawerAction({ icon, label, value, onPress }: { icon: NativeButtonSystemImage; label: string; value?: string; onPress: () => void }) {
-  return <SwiftUIHost style={styles.nativeDrawerActionHost}>
-    <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(value ? `${label}, ${value}` : label)]}>
-      <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: 46 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon} size={17} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>{label}</SwiftUIText><SwiftUISpacer />{value ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{value}</SwiftUIText> : null}</SwiftUIHStack>
-    </SwiftUIButton>
-  </SwiftUIHost>;
-}
-
 function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
   onCreate: () => void;
@@ -5340,6 +5363,16 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
     };
   });
+  const newChatButtonAnimatedStyle = useAnimatedStyle(() => {
+    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
+    return {
+      opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
+      transform: [
+        { translateY: interpolate(collapseProgress, [0, 1], [0, 12]) },
+        { scale: interpolate(collapseProgress, [0, 1], [1, 0.86]) },
+      ],
+    };
+  });
   const filtered = useMemo(
     () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
     [chats, search],
@@ -5475,10 +5508,6 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeDrawerAction icon="square.and.pencil" label="New chat" onPress={() => { dismissSearch(); onNewChat(); }} /> : <Pressable accessibilityRole="button" onPress={() => { dismissSearch(); onNewChat(); }} style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]}>
-            <Icon name="square.and.pencil" size={17} color={COLORS.textSoft} />
-            <Text style={styles.navText}>New chat</Text>
-          </Pressable>}
           {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
             style={styles.folderContextMenuHost}
             preview={(
@@ -5513,7 +5542,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </Reanimated.View>
 
         <SectionList
-          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 16 }]}
+          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 82 }]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           keyExtractor={(chat) => chat.id}
@@ -5531,6 +5560,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           style={styles.flex}
           onTouchStart={dismissSearch}
         />
+        <Reanimated.View
+          pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'}
+          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }, newChatButtonAnimatedStyle]}
+        >
+          <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
+        </Reanimated.View>
       </SafeAreaView>
     </View>
   );
@@ -5828,7 +5863,6 @@ const styles = StyleSheet.create({
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
   nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
-  nativeDrawerActionHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersDisclosureHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersHeaderHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT },
   nativeFoldersContent: { alignSelf: 'stretch', overflow: 'hidden' },
@@ -5847,6 +5881,10 @@ const styles = StyleSheet.create({
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
   navMeta: { color: COLORS.muted, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
+  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: 123.75, height: 48.75 },
+  drawerNewChatButtonHost: { width: 123.75, height: 48.75 },
+  drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
+  drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
   sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
   chatContextMenuHost: { width: '100%', height: 44 },
   chatRow: { minHeight: 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },

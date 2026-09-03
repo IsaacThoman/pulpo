@@ -1,6 +1,6 @@
 # Pulpo software privacy policy
 
-**Effective August 30, 2026**
+**Effective September 3, 2026**
 
 ::: tip Using pulpo.baby?
 This policy covers the Pulpo mobile app and self-hosted Pulpo software. If you use the hosted service at [pulpo.baby](https://pulpo.baby), the [Pulpo hosted service privacy policy](./privacy-hosted) also applies to the information handled by that service.
