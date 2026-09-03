@@ -3554,7 +3554,11 @@ function ChatView({
   useEffect(() => {
     if (!composerFocusRequest) return undefined;
     return startComposerFocusRequest(composerFocusRequest.action, {
-      blur: () => composerInputRef.current?.blur(),
+      blur: () => {
+        composerInputRef.current?.blur();
+        Keyboard.dismiss();
+        void KeyboardController.dismiss({ animated: false }).catch(() => undefined);
+      },
       cancelFrame: cancelAnimationFrame,
       focus: () => composerInputRef.current?.focus(),
       scheduleFrame: requestAnimationFrame,

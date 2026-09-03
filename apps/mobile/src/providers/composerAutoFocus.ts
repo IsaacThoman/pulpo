@@ -43,10 +43,22 @@ export function startComposerFocusRequest(
   action: ComposerFocusAction,
   dependencies: ComposerFocusRequestDependencies,
 ): () => void {
-  if (action === 'blur') {
-    dependencies.blur()
-    return () => undefined
-  }
+  if (action === 'focus') return startComposerAutoFocus(dependencies)
 
-  return startComposerAutoFocus(dependencies)
+  let active = true
+  let settleFrame: number | null = null
+  dependencies.blur()
+  const navigationFrame = dependencies.scheduleFrame(() => {
+    if (!active) return
+    dependencies.blur()
+    settleFrame = dependencies.scheduleFrame(() => {
+      if (active) dependencies.blur()
+    })
+  })
+
+  return () => {
+    active = false
+    dependencies.cancelFrame(navigationFrame)
+    if (settleFrame !== null) dependencies.cancelFrame(settleFrame)
+  }
 }
