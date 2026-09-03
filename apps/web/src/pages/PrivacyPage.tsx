@@ -31,7 +31,7 @@ export function PrivacyPage() {
     <section>
       <h2>{ui("Security and changes")}</h2>
       <p>{ui("Pulpo uses HTTPS for production instances, verifies passkey user presence and identity, and keeps native bearer sessions revocable. Adding or deleting a passkey requires your password and existing second factor when enabled, then signs out your other sessions. No system is perfectly secure. This policy may change as the service evolves; material revisions will be posted on this page with a new effective date.")}</p>
-      <p>{ui("Authorized administrators may access and modify an individual conversation when reasonably necessary for support, safety, security, or service operations. This access is limited to the selected conversation, requires administrator two-factor authentication and a recorded reason, expires automatically, and is logged. Model usage initiated by the administrator is charged to the administrator rather than the conversation owner.")}</p>
+      <p>{ui("Authorized administrators may access and modify an individual conversation when reasonably necessary for support, safety, security, or service operations. This access is limited to the selected conversation, requires administrator two-factor authentication, and expires automatically. Model usage initiated by the administrator is charged to the administrator rather than the conversation owner.")}</p>
     </section>
   </LegalPage>
 }

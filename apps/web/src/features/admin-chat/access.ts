@@ -2,7 +2,6 @@ export interface AdminChatGrant {
   accessToken: string
   accessId: string
   expiresAt: string
-  reason: string
   chatId: string
   owner: {
     id: string

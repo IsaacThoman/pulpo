@@ -54,4 +54,50 @@ export function applyFullBackupCompatibilityDefaults(database: Record<string, Ar
     event.five_hour_cost_micros ??= 0
     event.inference_reference_cost_micros ??= 0
   }
+  const loggingRow = (database.application_settings ?? []).find((row) => row.key === 'logging')
+  const logging = loggingRow?.value && typeof loggingRow.value === 'object'
+    ? loggingRow.value as Record<string, unknown>
+    : {}
+  const loggingEnabled = logging.logDetailedPayloads === true
+  const retention = typeof logging.payloadRetention === 'string' ? logging.payloadRetention : '7d'
+  const retentionDurationMs: Record<string, number> = {
+    '1h': 3_600_000,
+    '24h': 86_400_000,
+    '7d': 604_800_000,
+    '30d': 2_592_000_000,
+    '90d': 7_776_000_000,
+  }
+  const ocrByRequestLog = new Map<string, Array<Record<string, unknown>>>()
+  for (const attempt of database.ocr_attempts ?? []) {
+    const requestLogId = typeof attempt.request_log_id === 'string' ? attempt.request_log_id : undefined
+    if (!requestLogId) continue
+    const attempts = ocrByRequestLog.get(requestLogId) ?? []
+    attempts.push(attempt)
+    ocrByRequestLog.set(requestLogId, attempts)
+  }
+  const now = Date.now()
+  for (const log of database.request_logs ?? []) {
+    const attempts = typeof log.id === 'string' ? ocrByRequestLog.get(log.id) ?? [] : []
+    const hasPayload = log.request_payload != null || log.response_payload != null
+      || attempts.some((attempt) => attempt.request_payload != null || attempt.response_payload != null)
+    let capture = log.capture_detailed_payloads === true
+      || (log.capture_detailed_payloads == null && loggingEnabled && hasPayload)
+    if (capture && retention !== 'indefinite') {
+      const createdAt = new Date(String(log.created_at)).getTime()
+      const durationMs = retentionDurationMs[retention] ?? retentionDurationMs['7d']!
+      if (Number.isFinite(createdAt)) log.payload_expires_at = new Date(createdAt + durationMs).toISOString()
+      const expiresAt = new Date(String(log.payload_expires_at)).getTime()
+      if (Number.isFinite(expiresAt) && expiresAt <= now) capture = false
+    } else if (capture) log.payload_expires_at = null
+    if (!loggingEnabled || !capture) {
+      capture = false
+      log.request_payload = null
+      log.response_payload = null
+      for (const attempt of attempts) {
+        attempt.request_payload = null
+        attempt.response_payload = null
+      }
+    }
+    log.capture_detailed_payloads = capture
+  }
 }

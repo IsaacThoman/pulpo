@@ -1,6 +1,6 @@
 {
-  "id": "da0d0c4a-a612-45b4-9537-069d2f74fa05",
-  "prevId": "a2315dfe-ba9d-40c4-9425-ce1b1f551587",
+  "id": "124175b7-9c2d-4f77-8da7-6e77808056b0",
+  "prevId": "da0d0c4a-a612-45b4-9537-069d2f74fa05",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2929,6 +2929,252 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.composer_draft_attachments": {
+      "name": "composer_draft_attachments",
+      "schema": "",
+      "columns": {
+        "draft_id": {
+          "name": "draft_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attachment_id": {
+          "name": "attachment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "composer_draft_attachments_position_unique": {
+          "name": "composer_draft_attachments_position_unique",
+          "columns": [
+            {
+              "expression": "draft_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "composer_draft_attachments_draft_id_composer_drafts_id_fk": {
+          "name": "composer_draft_attachments_draft_id_composer_drafts_id_fk",
+          "tableFrom": "composer_draft_attachments",
+          "tableTo": "composer_drafts",
+          "columnsFrom": [
+            "draft_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "composer_draft_attachments_attachment_id_attachments_id_fk": {
+          "name": "composer_draft_attachments_attachment_id_attachments_id_fk",
+          "tableFrom": "composer_draft_attachments",
+          "tableTo": "attachments",
+          "columnsFrom": [
+            "attachment_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "composer_draft_attachments_draft_id_attachment_id_pk": {
+          "name": "composer_draft_attachments_draft_id_attachment_id_pk",
+          "columns": [
+            "draft_id",
+            "attachment_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.composer_drafts": {
+      "name": "composer_drafts",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_id": {
+          "name": "chat_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "model_id": {
+          "name": "model_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "preset_selections": {
+          "name": "preset_selections",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "agent_mode": {
+          "name": "agent_mode",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "auto_expire": {
+          "name": "auto_expire",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "editor_id": {
+          "name": "editor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "composer_drafts_user_scope_unique": {
+          "name": "composer_drafts_user_scope_unique",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "scope",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "composer_drafts_user_id_users_id_fk": {
+          "name": "composer_drafts_user_id_users_id_fk",
+          "tableFrom": "composer_drafts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "composer_drafts_chat_id_chats_id_fk": {
+          "name": "composer_drafts_chat_id_chats_id_fk",
+          "tableFrom": "composer_drafts",
+          "tableTo": "chats",
+          "columnsFrom": [
+            "chat_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "composer_drafts_scope_check": {
+          "name": "composer_drafts_scope_check",
+          "value": "(\"composer_drafts\".\"scope\" = 'new' and \"composer_drafts\".\"chat_id\" is null) or (\"composer_drafts\".\"chat_id\" is not null and \"composer_drafts\".\"scope\" = \"composer_drafts\".\"chat_id\"::text)"
+        },
+        "composer_drafts_content_length_check": {
+          "name": "composer_drafts_content_length_check",
+          "value": "char_length(\"composer_drafts\".\"content\") <= 1000000"
+        },
+        "composer_drafts_revision_check": {
+          "name": "composer_drafts_revision_check",
+          "value": "\"composer_drafts\".\"revision\" > 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.credit_ledger": {

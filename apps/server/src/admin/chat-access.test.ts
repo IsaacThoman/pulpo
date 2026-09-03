@@ -81,7 +81,7 @@ async function createGrant(instance: Awaited<ReturnType<typeof app>>): Promise<s
   const response = await instance.inject({
     method: 'POST',
     url: `/api/admin/chats/${chatId}/access`,
-    payload: { reason: 'Investigating a customer support request', verificationCode: '123456' },
+    payload: { verificationCode: '123456' },
   })
   expect(response.statusCode).toBe(201)
   return response.json().accessToken as string
@@ -98,20 +98,20 @@ beforeEach(() => {
 })
 
 describe('scoped administrator chat access', () => {
-  it('rejects non-admins, missing reasons, accounts without 2FA, and invalid codes', async () => {
+  it('rejects non-admins, missing codes, accounts without 2FA, and invalid codes', async () => {
     const instance = await app()
     mocks.currentUser = owner
-    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { reason: 'A sufficiently long reason', verificationCode: '123456' } })).statusCode).toBe(403)
+    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { verificationCode: '123456' } })).statusCode).toBe(403)
 
     mocks.currentUser = admin
-    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { reason: 'short', verificationCode: '123456' } })).statusCode).toBe(400)
+    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: {} })).statusCode).toBe(400)
 
     mocks.hasTwoFactor.mockResolvedValue(false)
-    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { reason: 'A sufficiently long reason', verificationCode: '123456' } })).statusCode).toBe(403)
+    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { verificationCode: '123456' } })).statusCode).toBe(403)
 
     mocks.hasTwoFactor.mockResolvedValue(true)
     mocks.verifySecondFactor.mockRejectedValue(Object.assign(new Error('Invalid'), { statusCode: 401, code: 'two_factor_code_invalid' }))
-    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { reason: 'A sufficiently long reason', verificationCode: '123456' } })).statusCode).toBe(401)
+    expect((await instance.inject({ method: 'POST', url: `/api/admin/chats/${chatId}/access`, payload: { verificationCode: '123456' } })).statusCode).toBe(401)
 
     expect(JSON.stringify(mocks.auditRows)).not.toContain('123456')
     await instance.close()

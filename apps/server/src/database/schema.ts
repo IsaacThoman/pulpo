@@ -673,6 +673,7 @@ export const requestLogs = pgTable('request_logs', {
   eventCount: integer('event_count').notNull().default(0),
   requestPayload: jsonb('request_payload'),
   responsePayload: jsonb('response_payload'),
+  captureDetailedPayloads: boolean('capture_detailed_payloads').notNull().default(false),
   payloadExpiresAt: timestamp('payload_expires_at', { withTimezone: true }),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
@@ -681,6 +682,7 @@ export const requestLogs = pgTable('request_logs', {
   uniqueIndex('request_logs_response_unique').on(table.responseId),
   index('request_logs_created_idx').on(table.createdAt),
   index('request_logs_status_idx').on(table.status),
+  index('request_logs_payload_expiry_idx').on(table.payloadExpiresAt),
 ])
 
 export const generationAttempts = pgTable('generation_attempts', {
