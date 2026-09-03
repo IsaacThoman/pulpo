@@ -3505,7 +3505,7 @@ function ChatView({
       const end = body.length;
       composer.setNativeProps({ selection: { start: end, end } });
     });
-  }, []);
+  }, [composerInputRef]);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3645,7 +3645,7 @@ function ChatView({
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [onChangeInput, setAttachments]);
+  }, [composerInputRef, onChangeInput, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -3766,7 +3766,7 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, input, messageEdit, onChangeInput, sending, setAttachments]);
+  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, sending, setAttachments]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
     if (message.role === 'user') {
@@ -4243,7 +4243,7 @@ function ChatView({
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, composerInputRef, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();
