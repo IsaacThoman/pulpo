@@ -976,9 +976,9 @@ export function Composer({
           onPaste={onPaste}
           rows={1}
           placeholder={attachments.length ? t('chat.addCaption') : temporary ? t('chat.temporaryMessage') : t('chat.message')}
-          className="max-h-[220px] w-full resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:text-muted-foreground"
+          className="max-h-[220px] w-full resize-none select-text bg-transparent px-4 pt-3.5 text-[15px] leading-6 outline-none placeholder:select-none placeholder:text-muted-foreground"
         />
-        <div className="flex min-w-0 items-center gap-1 px-2.5 pb-2.5">
+        <div className="flex min-w-0 select-none items-center gap-1 px-2.5 pb-2.5">
           <input
             ref={fileInputRef}
             type="file"
