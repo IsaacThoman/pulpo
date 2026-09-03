@@ -25,6 +25,7 @@ import {
   Trash2,
   UsersRound,
   PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
@@ -63,7 +64,7 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
-import { SidebarLogo } from './SidebarLogo'
+import { OnlineUsersMenuStatus } from './OnlineUsersMenuStatus'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -710,7 +711,7 @@ export function Sidebar({
   const drag = useSidebarDrag()
   const openSidebarLabel = t('sidebar.expand')
   const refreshOnlineCount = () => {
-    if (collapsed || !networkReady || !user?.id || user.role === 'pending') return
+    if (!networkReady || !user?.id || user.role === 'pending') return
     void onlineCountQuery.refetch()
   }
   const groupLabels: Record<(typeof GROUP_ORDER)[number], string> = {
@@ -984,16 +985,28 @@ export function Sidebar({
       )}
       {/* header */}
       <div className="flex items-center gap-1 p-2">
-        <SidebarLogo
-          collapsed={collapsed}
-          collapsedTooltipOpen={activeTooltip === openSidebarLabel}
-          onlineCount={onlineCountQuery.data?.count}
-          onlineLoading={onlineCountQuery.isFetching}
-          onlineError={onlineCountQuery.isError}
-          onCollapsedTooltipOpenChange={(open) => setActiveTooltip(open ? openSidebarLabel : null)}
-          onPresenceIntent={refreshOnlineCount}
-          onClick={collapsed ? onToggle : () => go('/')}
-        />
+        <Tooltip
+          open={collapsed && activeTooltip === openSidebarLabel}
+          onOpenChange={(open) => {
+            if (collapsed) setActiveTooltip(open ? openSidebarLabel : null)
+          }}
+        >
+          <TooltipTrigger asChild>
+            <button
+              className="group/logo flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
+              onClick={collapsed ? onToggle : () => go('/')}
+              aria-label={collapsed ? openSidebarLabel : t('sidebar.home')}
+            >
+              <img
+                src="/pulpo-smiley.png"
+                alt="Pulpo"
+                className={cn('size-6', collapsed && 'group-hover/logo:hidden')}
+              />
+              {collapsed && <PanelLeftOpen className="hidden size-4 group-hover/logo:block" />}
+            </button>
+          </TooltipTrigger>
+          {collapsed && <TooltipContent side="right">{openSidebarLabel}</TooltipContent>}
+        </Tooltip>
         <span
           className={cn(
             'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold text-sidebar-foreground transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
@@ -1173,7 +1186,9 @@ export function Sidebar({
 
       {/* user footer */}
       <div className="border-t border-sidebar-border p-2">
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => {
+          if (open) refreshOnlineCount()
+        }}>
           <DropdownMenuTrigger asChild>
             <button
               className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
@@ -1202,6 +1217,12 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
+            <OnlineUsersMenuStatus
+              onlineCount={onlineCountQuery.data?.count}
+              onlineLoading={onlineCountQuery.isFetching}
+              onlineError={onlineCountQuery.isError}
+            />
+            <DropdownMenuSeparator />
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}
