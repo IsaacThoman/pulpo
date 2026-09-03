@@ -8,7 +8,7 @@ import { agentRuns, applicationSettings, attachments, chats, generationAttempts,
 import { decryptSecret } from '../lib/crypto.js'
 import { getConfig } from '../config.js'
 import { newId } from '../lib/ids.js'
-import { parseAgentSettings, parseLoggingSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
+import { parseAgentSettings, parsePersonalizationSettings, parseWebToolsSettings } from '../settings/application-settings.js'
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { isCancellationRequested, publishResponseEvent, publishSnapshot } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
@@ -68,6 +68,7 @@ import { agentModelAttemptLimit, agentStreamEventHasSubstantiveOutput, assistant
 import { projectNextAgentResponseEvent, selectAgentResponseCheckpoint } from './streaming-snapshot.js'
 import { createFirstTokenTimeout, type FirstTokenTimeout } from './first-token-timeout.js'
 import { createProviderCostCapture } from './provider-cost.js'
+import { activeDetailedPayloadCondition, detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { orderedAgentTurnPayloads } from './detailed-payloads.js'
 import { loadAgentPromptImages } from './prompt-images.js'
 import { adaptToolResultImagesForProvider, type ToolResultImageMode } from './tool-result-images.js'
@@ -148,18 +149,16 @@ async function runAgentGeneration(responseId: string): Promise<void> {
     .from(responses).innerJoin(models, eq(responses.modelId, models.id)).innerJoin(providerConnections, eq(models.providerConnectionId, providerConnections.id))
     .where(eq(responses.id, responseId)).limit(1)
   if (!record || !record.response.agentMode || ['completed', 'cancelled'].includes(record.response.status)) return
-  const [settingsRow, webToolsRow, personalizationRow, loggingRow, preferencesRow, episodicMemorySettings] = await Promise.all([
+  const [settingsRow, webToolsRow, personalizationRow, preferencesRow, episodicMemorySettings] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'agent')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'webTools')).limit(1).then((rows) => rows[0]),
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'personalization')).limit(1).then((rows) => rows[0]),
-    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
     db.select({ values: userPreferences.values }).from(userPreferences)
       .where(eq(userPreferences.userId, record.response.userId)).limit(1).then((rows) => rows[0]),
     readEpisodicMemorySettings(),
   ])
   const settings = parseAgentSettings(settingsRow?.value)
   const webToolsSettings = parseWebToolsSettings(webToolsRow?.value)
-  const detailedPayloadsEnabled = parseLoggingSettings(loggingRow?.value).logDetailedPayloads
   const preferenceValues = (preferencesRow?.values ?? {}) as Record<string, unknown>
   const customInstructions = composeCustomInstructions(
     parsePersonalizationSettings(personalizationRow?.value),
@@ -212,6 +211,7 @@ async function runAgentGeneration(responseId: string): Promise<void> {
   await db.insert(agentRuns).values({ id: runId, responseId, status: 'running', context: { systemPrompt: agentSystemPrompt, messages: resumedMessages }, startedAt: new Date() }).onConflictDoUpdate({ target: agentRuns.responseId, set: { status: 'running', updatedAt: new Date() } })
   const [requestLog] = await db.select().from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
+  const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(requestLog)
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
   let sidecarCostMicros = 0
@@ -1056,7 +1056,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status: 'completed', actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    if (detailedPayloadsEnabled) {
+      await db.update(requestLogs).set({ requestPayload: orderedAgentTurnPayloads(turnRequestPayloads), responsePayload: orderedAgentTurnPayloads(turnResponsePayloads), updatedAt: new Date() })
+        .where(activeDetailedPayloadCondition(requestLog.id))
+    }
     await publishAdminUsage(requestLog.id, true)
   } catch (error) {
     const errorMessage = active.codex ? safeCodexErrorMessage(error) : error instanceof Error ? error.message : String(error)
@@ -1099,7 +1103,11 @@ async function runAgentGeneration(responseId: string): Promise<void> {
       })
       : (await releaseBudget(responseId), 0)
     const totalDurationMs = Date.now() - startedAt
-    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, requestPayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnRequestPayloads) : undefined, responsePayload: detailedPayloadsEnabled ? orderedAgentTurnPayloads(turnResponsePayloads) : undefined, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    await db.update(requestLogs).set({ status, actualModelId: finalResponder.runtime.model.id, inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens, cacheWriteTokens: usage.cacheWriteTokens, outputTokens: usage.outputTokens, reasoningTokens: usage.reasoningTokens, costMicros: cost, errorCategory: cancelled ? 'cancellation' : classifyGenerationError(error), errorMessage, durationMs: totalDurationMs, tokensPerSecond: totalDurationMs > 0 ? completionTokensPerSecond(totalDurationMs, usage.outputTokens) : null, completedAt: new Date(), updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    if (detailedPayloadsEnabled) {
+      await db.update(requestLogs).set({ requestPayload: orderedAgentTurnPayloads(turnRequestPayloads), responsePayload: orderedAgentTurnPayloads(turnResponsePayloads), updatedAt: new Date() })
+        .where(activeDetailedPayloadCondition(requestLog.id))
+    }
     await publishAdminUsage(requestLog.id, true)
     if (!cancelled) throw active.codex ? new Error(errorMessage) : error
   } finally {

@@ -25,6 +25,7 @@ import { ageRecipientDetails, backupSettingsAuditMetadata, normalizeBackupPrefix
 import { B2BackupStore } from './b2-backup-store.js'
 import { createOffsiteBackup } from './backup-scheduler.js'
 import { isAgeEncryptedBackup } from './backup-encryption.js'
+import { reconcileDetailedPayloadRetention, type DetailedPayloadLoggingSettings } from '../logging/detailed-payload-retention.js'
 
 function validatedB2Endpoint(value: string): { endpoint: string; region: string } {
   try {
@@ -110,6 +111,7 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
   app.patch('/api/admin/settings', async (request) => {
     const admin = requireAdmin(request)
     const values = z.record(z.string().min(1).max(120), z.unknown()).parse(request.body)
+    let loggingSettings: DetailedPayloadLoggingSettings | undefined
     if (values.publicUrl !== undefined) throw new AppError(400, 'deployment_setting_read_only', 'PUBLIC_URL is managed by the deployment environment')
     if (values.auth !== undefined) {
       const authSettings = authSettingsSchema.parse(values.auth)
@@ -124,7 +126,10 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       }
       values.auth = authSettings
     }
-    if (values.logging !== undefined) values.logging = loggingSettingsSchema.parse(values.logging)
+    if (values.logging !== undefined) {
+      loggingSettings = loggingSettingsSchema.parse(values.logging)
+      values.logging = loggingSettings
+    }
     if (values.interface !== undefined) {
       const interfaceSettings = interfaceSettingsSchema.parse(values.interface)
       values.interface = interfaceSettings
@@ -149,6 +154,9 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       for (const [key, value] of Object.entries(values)) {
         await tx.insert(applicationSettings).values({ key, value, updatedBy: admin.id })
           .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: admin.id, updatedAt: new Date() } })
+      }
+      if (loggingSettings) {
+        await reconcileDetailedPayloadRetention((query) => tx.execute(query), loggingSettings)
       }
       if (values.auth !== undefined) {
         const defaultStorageLimitBytes = authSettingsSchema.parse(values.auth).defaultStorageLimitBytes

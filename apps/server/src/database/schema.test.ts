@@ -111,6 +111,19 @@ describe('user-owned operational records', () => {
     expect(logs.columns.find((column) => column.name === 'actor_user_id')?.notNull).toBe(false)
   })
 
+  it('distinguishes disabled payload capture from indefinite retention', () => {
+    const logs = getTableConfig(requestLogs)
+    const captureColumn = logs.columns.find((column) => column.name === 'capture_detailed_payloads')
+    const expiryIndex = logs.indexes.find((item) => item.config.name === 'request_logs_payload_expiry_idx')
+    const migration = readFileSync(new URL('../../drizzle/0056_curved_captain_cross.sql', import.meta.url), 'utf8')
+
+    expect(captureColumn?.notNull).toBe(true)
+    expect(captureColumn?.hasDefault).toBe(true)
+    expect(expiryIndex).toBeDefined()
+    expect(migration).toContain('SET "capture_detailed_payloads" = true')
+    expect(migration).toContain('SET "capture_detailed_payloads" = false, "request_payload" = NULL, "response_payload" = NULL')
+  })
+
   it('persists public response metadata, incomplete state, and scoped idempotency', () => {
     const config = getTableConfig(responses)
     expect(config.columns.map((column) => column.name)).toEqual(expect.arrayContaining([
