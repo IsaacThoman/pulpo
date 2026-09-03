@@ -297,6 +297,22 @@ export function Composer({
     agentMode: activeAgentMode && canUseAgent,
     ...(!chatId ? { autoExpire } : {}),
   })
+  const draftSnapshotRef = useRef({
+    content: value,
+    modelId,
+    presetSelections: selections,
+    agentMode: activeAgentMode && canUseAgent,
+    autoExpire: chatId ? undefined : autoExpire,
+    uploads: attachments,
+  })
+  draftSnapshotRef.current = {
+    content: value,
+    modelId,
+    presetSelections: selections,
+    agentMode: activeAgentMode && canUseAgent,
+    autoExpire: chatId ? undefined : autoExpire,
+    uploads: attachments,
+  }
   const previousDraftControlsRef = useRef({ modelId, autoExpire })
   useEffect(() => {
     const previous = previousDraftControlsRef.current
@@ -832,8 +848,9 @@ export function Composer({
       return
     }
     if (editingExisting || recovery || submissionPendingRef.current) return
+    const snapshot = draftSnapshotRef.current
     const persistenceAction = resolveComposerDraftPersistenceAction({
-      hasContent: value.length > 0 || attachments.length > 0,
+      hasContent: snapshot.content.length > 0 || snapshot.uploads.length > 0,
       hadDraft: hadDraftRef.current,
     })
     if (persistenceAction === 'none') return
@@ -879,25 +896,25 @@ export function Composer({
       await saveLocalComposerDraft({
         userId,
         scope: draftScope,
-        content: value,
-        modelId,
-        presetSelections: selections,
-        agentMode: activeAgentMode && canUseAgent,
-        ...(!chatId ? { autoExpire } : {}),
-        uploads: attachments,
+        content: snapshot.content,
+        modelId: snapshot.modelId,
+        presetSelections: snapshot.presetSelections,
+        agentMode: snapshot.agentMode,
+        ...(snapshot.autoExpire === undefined ? {} : { autoExpire: snapshot.autoExpire }),
+        uploads: snapshot.uploads,
         editorId: draftEditorIdRef.current,
         dirty: syncDrafts,
         serverRevision: appliedRemoteRevisionRef.current || undefined,
       })
       if (draftSaveGenerationRef.current !== generation) return
-      const readyIds = attachments.flatMap((attachment) => attachment.status === 'ready' && attachment.id ? [attachment.id] : [])
-      if (!syncDrafts || (value.length === 0 && readyIds.length === 0)) return
+      const readyIds = snapshot.uploads.flatMap((attachment) => attachment.status === 'ready' && attachment.id ? [attachment.id] : [])
+      if (!syncDrafts || (snapshot.content.length === 0 && readyIds.length === 0)) return
       void saveRemoteComposerDraft(draftScope, {
-        content: value,
-        modelId,
-        presetSelections: selections,
-        agentMode: activeAgentMode && canUseAgent,
-        ...(!chatId ? { autoExpire } : {}),
+        content: snapshot.content,
+        modelId: snapshot.modelId,
+        presetSelections: snapshot.presetSelections,
+        agentMode: snapshot.agentMode,
+        ...(snapshot.autoExpire === undefined ? {} : { autoExpire: snapshot.autoExpire }),
         attachmentIds: readyIds,
         editorId: draftEditorIdRef.current,
       }).then((remote) => {
@@ -908,12 +925,12 @@ export function Composer({
         return saveLocalComposerDraft({
           userId,
           scope: draftScope,
-          content: value,
-          modelId,
-          presetSelections: selections,
-          agentMode: activeAgentMode && canUseAgent,
-          ...(!chatId ? { autoExpire } : {}),
-          uploads: attachments,
+          content: snapshot.content,
+          modelId: snapshot.modelId,
+          presetSelections: snapshot.presetSelections,
+          agentMode: snapshot.agentMode,
+          ...(snapshot.autoExpire === undefined ? {} : { autoExpire: snapshot.autoExpire }),
+          uploads: snapshot.uploads,
           editorId: draftEditorIdRef.current,
           dirty: false,
           serverRevision: remote.revision,
@@ -922,7 +939,11 @@ export function Composer({
       }).catch(() => undefined)
       })().catch(() => undefined)
     })
-  }, [activeAgentMode, attachments, autoExpire, canUseAgent, chatId, draftFingerprint, draftHydrationKey, draftPersistence, draftRetryRevision, draftScope, editingExisting, modelId, recovery, selections, syncDrafts, temporary, userId, value])
+  // `attachments` and `selections` are fresh render projections. The semantic
+  // fingerprint changes whenever their sendable state changes; depending on
+  // those projections directly turns each acknowledgement render into another
+  // PUT, creating a self-sustaining save loop.
+  }, [draftFingerprint, draftHydrationKey, draftPersistence, draftRetryRevision, draftScope, editingExisting, recovery, syncDrafts, temporary, userId])
 
   useEffect(() => {
     draftMutationTrackerRef.current.consumeSettledApplication()

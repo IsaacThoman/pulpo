@@ -83,7 +83,7 @@ describe('composer draft debounce', () => {
     expect(tracker.shouldSuppressSave()).toBe(false)
   })
 
-  it('matches remote applications by semantic draft state', () => {
+  it('stays stable across equivalent render objects and matches remote applications', () => {
     const fingerprint = composerDraftSemanticFingerprint({
       content: 'draft',
       attachmentKeys: [composerDraftAttachmentKey({
