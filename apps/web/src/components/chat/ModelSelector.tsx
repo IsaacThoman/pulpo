@@ -141,7 +141,7 @@ export function ModelSelector({
           />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-[300px] p-0">
+      <DropdownMenuContent align="start" className="w-[300px] select-none p-0">
         {/* search */}
         <div className="flex items-center gap-2 border-b px-3">
           <Search className="size-4 text-muted-foreground" />
@@ -152,7 +152,7 @@ export function ModelSelector({
               setConfirmReset(false)
             }}
             placeholder={t('chat.searchModels')}
-            className="h-10 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            className="h-10 flex-1 select-text bg-transparent text-sm outline-none placeholder:select-none placeholder:text-muted-foreground"
           />
         </div>
 
