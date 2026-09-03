@@ -483,7 +483,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
             )}
           >
             <Composer
-              key={`new:${temporaryMode ? 'temporary' : 'persistent'}`}
+              key="new"
               chatId={null}
               modelId={modelId}
               temporary={temporaryMode}
@@ -529,7 +529,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
-                key={`${chat.id}:${chat.temporary ? 'temporary' : 'persistent'}`}
+                key={chat.id}
                 chatId={chat.id}
                 modelId={modelId}
                 temporary={chat.temporary}
