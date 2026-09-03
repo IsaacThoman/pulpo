@@ -33,6 +33,7 @@ import {
 } from '../settings/application-settings.js'
 import { preferencesWithModelDefaults } from '../settings/model-preferences.js'
 import { firstUnavailableModelReference, newAccountModelReferenceIds } from '../settings/new-account-defaults.js'
+import { reconcileDetailedPayloadRetention } from '../logging/detailed-payload-retention.js'
 import { getConfig } from '../config.js'
 import {
   bumpAccountRevisions,
@@ -197,6 +198,7 @@ export async function applyManagementSettings(
   const previousTrashRetention = current.account.trashRetention
   const changedPaths = (await planManagementSettings(userId, document, secrets, mode)).changes.map((change) => change.path)
   if (!changedPaths.length) return current
+  const loggingChanged = changedPaths.some((path) => path === 'instance.logging' || path.startsWith('instance.logging.'))
   const publicProfileChanged = changedPaths.some((path) => (
     path === 'account.username' || path === 'account.profileColor'
   ))
@@ -246,6 +248,7 @@ export async function applyManagementSettings(
         await tx.insert(applicationSettings).values({ key, value, updatedBy: actorUserId })
           .onConflictDoUpdate({ target: applicationSettings.key, set: { value, updatedBy: actorUserId, updatedAt: new Date() } })
       }
+      if (loggingChanged) await reconcileDetailedPayloadRetention((query) => tx.execute(query), logging)
       await tx.delete(applicationSettings).where(eq(applicationSettings.key, 'publicUrl'))
     }
     await tx.insert(auditEvents).values({

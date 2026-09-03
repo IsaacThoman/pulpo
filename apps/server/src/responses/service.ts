@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import type { ChatPreset, CreateChatResponseInput, ResponseSnapshot } from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import { applicationSettings, attachments, chats, modelPresetChoices, modelPresets, models, requestLogs, responses, userProviderCredentials } from '../database/schema.js'
@@ -21,6 +21,7 @@ import { sanitizeOutputForClient } from './public-output.js'
 import { responseAttachmentIds } from '../messages/input.js'
 import { unsupportedPublicModelParameter } from './model-parameters.js'
 import { CODEX_PI_PROVIDER_ID, CODEX_PROVIDER_ID } from '../codex/constants.js'
+import { detailedPayloadPolicy } from '../logging/detailed-payload-retention.js'
 
 export interface CreateResponseOptions {
   /** Owner of the chat, response, files, memory document, and conversation context. */
@@ -233,15 +234,17 @@ export async function createResponse(options: CreateResponseOptions) {
     origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web',
   })
   const requestLogId = newId()
-  const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
-  const logging = parseLoggingSettings(loggingRow?.value)
-  const retentionMs: Record<string, number | null> = { '1h': 3_600_000, '24h': 86_400_000, '7d': 604_800_000, '30d': 2_592_000_000, '90d': 7_776_000_000, indefinite: null }
-  const ttl = retentionMs[logging.payloadRetention] ?? 604_800_000
-  await db.insert(requestLogs).values({
-    id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
-    origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
-    requestPayload: logging.logDetailedPayloads ? { input: storedInput, parameters: { ...(options.parameters ?? {}), ...resolved.parameters }, presetSelections: resolved.selections } : null,
-    payloadExpiresAt: logging.logDetailedPayloads && ttl !== null ? new Date(Date.now() + ttl) : null,
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+    const [loggingRow] = await tx.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
+    const logging = parseLoggingSettings(loggingRow?.value)
+    const policy = detailedPayloadPolicy(logging)
+    await tx.insert(requestLogs).values({
+      id: requestLogId, responseId: id, userId: options.ownerUserId, actorUserId: options.actorUserId, apiKeyId: options.apiKeyId,
+      origin: options.actorUserId ? 'admin_chat' : options.apiKeyId ? 'api' : 'web', requestedModelId: options.input.modelId, currentModelId: model.id,
+      ...policy,
+      requestPayload: policy.captureDetailedPayloads ? { input: storedInput, parameters: { ...(options.parameters ?? {}), ...resolved.parameters }, presetSelections: resolved.selections } : null,
+    })
   })
   await publishAdminUsage(requestLogId, true)
   try {
