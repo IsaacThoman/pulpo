@@ -33,7 +33,7 @@ describe('administrator chat identity', () => {
     const scoped = {
       user: owner,
       adminChatAccess: {
-        accessId: 'access', actorUser: actor, ownerUser: owner, chatId: 'chat', reason: 'Support', expiresAt: new Date().toISOString(),
+        accessId: 'access', actorUser: actor, ownerUser: owner, chatId: 'chat', expiresAt: new Date().toISOString(),
       },
     } as unknown as FastifyRequest
 

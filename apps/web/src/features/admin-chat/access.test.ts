@@ -14,7 +14,6 @@ function grant() {
     accessToken: 'secret-access-token-that-must-stay-in-memory',
     accessId: 'access-1',
     expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-    reason: 'Investigating a customer support request',
     chatId,
     owner: {
       id: 'owner-1',

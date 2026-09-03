@@ -19,7 +19,6 @@ export interface AdminChatAccessContext {
   actorUser: AuthenticatedUser
   ownerUser: AuthenticatedUser
   chatId: string
-  reason: string
   expiresAt: string
 }
 

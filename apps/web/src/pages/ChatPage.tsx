@@ -342,7 +342,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }
 
   if (routeChatId && !chat && userRole === 'admin' && !adminMode && adminAccessRequiredChatId === routeChatId) {
-    return <div className="grid h-full place-items-center p-6"><div className="max-w-md space-y-3 text-center"><h2 className="text-lg font-semibold">{ui('Chat is not in your account')}</h2><p className="text-sm text-muted-foreground">{ui('If this is a user chat, open the audited administrator access gate.')}</p><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate(`/admin/chats/${routeChatId}`)}>{ui('Open with admin access')}</button></div></div>
+    return <div className="grid h-full place-items-center p-6"><div className="max-w-md space-y-3 text-center"><h2 className="text-lg font-semibold">{ui('Chat is not in your account')}</h2><p className="text-sm text-muted-foreground">{ui('If this is a user chat, open the administrator access gate.')}</p><button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground" onClick={() => navigate(`/admin/chats/${routeChatId}`)}>{ui('Open with admin access')}</button></div></div>
   }
 
   return (
