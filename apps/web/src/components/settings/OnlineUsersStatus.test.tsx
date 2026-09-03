@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { OnlineUsersMenuStatus } from './OnlineUsersMenuStatus'
+import { OnlineUsersStatus } from './OnlineUsersStatus'
 
-function markup(props: Parameters<typeof OnlineUsersMenuStatus>[0]) {
-  return renderToStaticMarkup(<OnlineUsersMenuStatus {...props} />)
+function markup(props: Parameters<typeof OnlineUsersStatus>[0]) {
+  return renderToStaticMarkup(<OnlineUsersStatus {...props} />)
 }
 
-describe('online users menu status', () => {
+describe('online users status', () => {
   it('renders singular and plural user counts', () => {
     expect(markup({ onlineCount: 1, onlineLoading: false, onlineError: false })).toContain('1 user online')
     expect(markup({ onlineCount: 4, onlineLoading: false, onlineError: false })).toContain('4 users online')
@@ -18,13 +18,12 @@ describe('online users menu status', () => {
     expect(markup({ onlineLoading: false, onlineError: true })).toContain('Online users unavailable')
   })
 
-  it('stays at the top of the account menu and refreshes when the menu opens', () => {
-    const source = readFileSync(new URL('./Sidebar.tsx', import.meta.url), 'utf8')
-    const status = source.indexOf('<OnlineUsersMenuStatus')
-    const firstNavigationItem = source.indexOf("{accountNavItem('usage'", status)
+  it('is rendered in the About settings section', () => {
+    const settings = readFileSync(new URL('./SettingsModal.tsx', import.meta.url), 'utf8')
+    const aboutSection = settings.indexOf("{section === 'about'")
+    const status = settings.indexOf('<OnlineUsersStatus', aboutSection)
 
-    expect(status).toBeGreaterThan(-1)
-    expect(status).toBeLessThan(firstNavigationItem)
-    expect(source).toContain("if (open) refreshOnlineCount()")
+    expect(aboutSection).toBeGreaterThan(-1)
+    expect(status).toBeGreaterThan(aboutSection)
   })
 })

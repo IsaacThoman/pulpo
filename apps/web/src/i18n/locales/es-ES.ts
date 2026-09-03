@@ -174,10 +174,6 @@ const esES = {
     empty: 'Vacía',
     folderOptions: 'Opciones de carpeta',
     home: 'Inicio',
-    checkingOnlineUsers: 'Comprobando usuarios en línea…',
-    onlineUsersUnavailable: 'Usuarios en línea no disponibles',
-    userOnline: '{{count}} usuario en línea',
-    usersOnline: '{{count}} usuarios en línea',
     renameChat: 'Renombrar chat',
     renameFolder: 'Renombrar carpeta',
     sidebar: 'Barra lateral',
@@ -214,6 +210,12 @@ const esES = {
       light: 'Claro',
       dark: 'Oscuro',
       system: 'Sistema',
+    },
+    about: {
+      checkingOnlineUsers: 'Comprobando usuarios en línea…',
+      onlineUsersUnavailable: 'Usuarios en línea no disponibles',
+      userOnline: '{{count}} usuario en línea',
+      usersOnline: '{{count}} usuarios en línea',
     },
   },
 } as const satisfies TranslationShape<typeof enUS>

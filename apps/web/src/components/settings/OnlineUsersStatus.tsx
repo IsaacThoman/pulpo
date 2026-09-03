@@ -1,7 +1,7 @@
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { cn } from '@/lib/utils'
 
-export function OnlineUsersMenuStatus({
+export function OnlineUsersStatus({
   onlineCount,
   onlineLoading,
   onlineError,
@@ -12,15 +12,15 @@ export function OnlineUsersMenuStatus({
 }) {
   const { t } = useTranslation()
   const label = onlineCount !== undefined
-    ? t(onlineCount === 1 ? 'sidebar.userOnline' : 'sidebar.usersOnline', { count: onlineCount })
+    ? t(onlineCount === 1 ? 'settings.about.userOnline' : 'settings.about.usersOnline', { count: onlineCount })
     : onlineLoading
-      ? t('sidebar.checkingOnlineUsers')
+      ? t('settings.about.checkingOnlineUsers')
       : onlineError
-        ? t('sidebar.onlineUsersUnavailable')
-        : t('sidebar.checkingOnlineUsers')
+        ? t('settings.about.onlineUsersUnavailable')
+        : t('settings.about.checkingOnlineUsers')
 
   return (
-    <div role="status" className="flex items-center gap-2 px-2 py-1.5 text-sm text-muted-foreground">
+    <div role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
       <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
         <span className={cn(
           'size-2 rounded-full',

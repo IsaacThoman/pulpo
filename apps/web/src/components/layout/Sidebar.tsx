@@ -64,7 +64,6 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
-import { OnlineUsersMenuStatus } from './OnlineUsersMenuStatus'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -695,12 +694,6 @@ export function Sidebar({
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
-  const onlineCountQuery = useQuery({
-    queryKey: ['online-user-count', user?.id],
-    queryFn: () => apiRequest<{ count: number }>('/api/auth/online-count'),
-    enabled: false,
-    staleTime: 0,
-  })
   const sidebarPins = useSettings((s) => s.sidebarPins)
   const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
@@ -710,10 +703,6 @@ export function Sidebar({
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
   const openSidebarLabel = t('sidebar.expand')
-  const refreshOnlineCount = () => {
-    if (!networkReady || !user?.id || user.role === 'pending') return
-    void onlineCountQuery.refetch()
-  }
   const groupLabels: Record<(typeof GROUP_ORDER)[number], string> = {
     Today: t('sidebar.groups.today'),
     Yesterday: t('sidebar.groups.yesterday'),
@@ -1186,9 +1175,7 @@ export function Sidebar({
 
       {/* user footer */}
       <div className="border-t border-sidebar-border p-2">
-        <DropdownMenu onOpenChange={(open) => {
-          if (open) refreshOnlineCount()
-        }}>
+        <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
               className="relative flex h-10 w-full cursor-pointer items-center gap-2 overflow-hidden rounded-lg text-left hover:bg-sidebar-accent"
@@ -1217,12 +1204,6 @@ export function Sidebar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
-            <OnlineUsersMenuStatus
-              onlineCount={onlineCountQuery.data?.count}
-              onlineLoading={onlineCountQuery.isFetching}
-              onlineError={onlineCountQuery.isError}
-            />
-            <DropdownMenuSeparator />
             {accountNavItem('usage', t('sidebar.usage'), '/usage', <BarChart3 />)}
             {accountNavItem('friends', t('sidebar.friends'), '/friends', <UsersRound />, pendingSocialCount)}
             {apiKeysEnabled && accountNavItem('apiKeys', t('sidebar.apiKeys'), '/api-keys', <KeyRound />)}

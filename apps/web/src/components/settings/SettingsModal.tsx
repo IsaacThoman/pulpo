@@ -66,6 +66,7 @@ import { SETTINGS_SECTION_IDS, type SettingsSectionId } from './settings-dialog'
 import { InstructionPresetButtons } from './InstructionPresetButtons'
 import { DesktopAppVersion } from './DesktopAppVersion'
 import { AnimationSpeedInput } from './AnimationSpeedInput'
+import { OnlineUsersStatus } from './OnlineUsersStatus'
 import { chatImportFileIsTooLarge } from './chat-import'
 import { ui, uit } from '@/i18n/ui'
 import { Markdown } from '@/components/chat/Markdown'
@@ -379,6 +380,12 @@ export function SettingsModal({
     enabled: Boolean(open && section === 'personalization' && user?.id),
   })
   const instructionPresets = personalizationQuery.data?.instructionPresets ?? []
+  const onlineCountQuery = useQuery({
+    queryKey: ['online-user-count', user?.id],
+    queryFn: () => apiRequest<{ count: number }>('/api/auth/online-count'),
+    enabled: Boolean(open && section === 'about' && user?.id && user.role !== 'pending'),
+    staleTime: 0,
+  })
 
   useEffect(() => {
     if (open) setSection(initialSection === 'billing' && !billingEnabled ? 'general' : initialSection)
@@ -1146,6 +1153,11 @@ export function SettingsModal({
                   <h2 className="text-base font-semibold">{ui("About")}</h2>
                   <Separator className="my-3" />
                   <div className="space-y-2 py-3 text-sm">
+                    <OnlineUsersStatus
+                      onlineCount={onlineCountQuery.data?.count}
+                      onlineLoading={onlineCountQuery.isFetching}
+                      onlineError={onlineCountQuery.isError}
+                    />
                     <DesktopAppVersion />
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">{ui("Version")}</span>

@@ -168,10 +168,6 @@ const enUS = {
     empty: 'Empty',
     folderOptions: 'Folder options',
     home: 'Home',
-    checkingOnlineUsers: 'Checking users online…',
-    onlineUsersUnavailable: 'Online users unavailable',
-    userOnline: '{{count}} user online',
-    usersOnline: '{{count}} users online',
     renameChat: 'Rename chat',
     renameFolder: 'Rename folder',
     sidebar: 'Sidebar',
@@ -208,6 +204,12 @@ const enUS = {
       light: 'Light',
       dark: 'Dark',
       system: 'System',
+    },
+    about: {
+      checkingOnlineUsers: 'Checking users online…',
+      onlineUsersUnavailable: 'Online users unavailable',
+      userOnline: '{{count}} user online',
+      usersOnline: '{{count}} users online',
     },
   },
 } as const
