@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData } from '@/lib/local-first/database'
+import { clearRuntimeComposerDrafts } from '@/lib/local-first/composer-drafts'
 import { queryClient } from '@/lib/query-client'
 import { DEFAULT_MAX_ATTACHMENT_BYTES, type MobileConfig, type NativeAuthResponse, type PasskeyCeremony } from '@pulpo/contracts'
 import { authenticateWithPasskey, passkeyErrorMessage } from '@/lib/passkeys'
@@ -356,7 +357,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
       configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
     }
     queryClient.clear()
-    if (userId) await clearLocalUserData(userId)
+    if (userId) {
+      clearRuntimeComposerDrafts(userId)
+      await clearLocalUserData(userId)
+    }
   },
 
   switchInstance: async (value) => {
@@ -408,6 +412,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     await clearDesktopSession()
     configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
     queryClient.clear()
+    clearRuntimeComposerDrafts(userId)
     await clearLocalUserData(userId)
     set({ user: null, checkingSession: false })
   },

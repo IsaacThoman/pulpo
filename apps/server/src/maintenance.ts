@@ -10,9 +10,11 @@ import { getBlobStore } from './storage/index.js'
 import { expireNormalChats, markExpiredChatsForPurge, purgePendingChats } from './chats/trash.js'
 import { sanitizeContextForStorage } from './responses/public-output.js'
 import { persistResponseItems } from './responses/storage.js'
-import { parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
+import { parseBackupSettings, parseWebToolsSettings, publicWebToolsSettings } from './settings/application-settings.js'
 import { purgeExpiredMemoryDocumentRevisions } from './memory-document/service.js'
 import { deleteExpiredBackupObjects } from './admin/backup-retention.js'
+import { deleteUnlockedOffsiteBackups } from './admin/backup-scheduler.js'
+import { backupSettingsForExport } from './admin/backup-settings.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
 
@@ -79,6 +81,9 @@ export async function createExport(exportId: string): Promise<void> {
           const { encryptedCustomApiKey, ...safe } = row.value as Record<string, unknown>
           return [row.key, { ...safe, ...(encryptedCustomApiKey ? { customApiKey: { configured: true } } : {}) }] as const
         }
+        if (row.key === 'backups') {
+          return [row.key, backupSettingsForExport(parseBackupSettings(row.value))] as const
+        }
         return [row.key, row.value] as const
       })
       content = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), settings: Object.fromEntries(safeSettings) }, null, 2)
@@ -129,6 +134,7 @@ export async function runCleanup(): Promise<void> {
   const expiredBackups = await db.select().from(backupJobs).where(lt(backupJobs.expiresAt, now))
   const deletedBackupIds = await deleteExpiredBackupObjects(expiredBackups, (key) => getBlobStore().delete(key))
   if (deletedBackupIds.length) await db.delete(backupJobs).where(inArray(backupJobs.id, deletedBackupIds))
+  await deleteUnlockedOffsiteBackups(now)
   await reconcileWorkspaceLeases()
   await purgePendingChats()
 }

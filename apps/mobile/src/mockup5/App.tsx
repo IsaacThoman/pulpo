@@ -77,6 +77,7 @@ import {
   foregroundStyle,
   font,
   frame,
+  glassEffect as swiftUIGlassEffect,
   labelStyle,
   menuActionDismissBehavior,
   padding,
@@ -160,7 +161,7 @@ import { clearProductionScope, hydrateProductionChatPreview, hydrateProductionSc
 import { productionActions, runProductionAction } from './src/production/productionActions';
 import { applyConfirmedMessageDeletion, cacheOptimisticBranch, cacheOptimisticTurn, discardOptimisticChat, rejectOptimisticTurn } from './src/production/optimisticResponses';
 import { activateOptimisticBranch } from './src/production/optimisticBranches';
-import { cacheNamespace, cacheOpenedChat, deleteResponseCursor } from '../data/database';
+import { cacheNamespace, cacheOpenedChat, deleteResponseCursor, loadDraft, saveDraft } from '../data/database';
 import { queryKeys } from '../data/queries';
 import { enqueueCacheWrite } from '../data/writeBehind';
 import { activateBranch as activateServerBranch, cancelResponse, continueWithoutAgent, deleteMessageCascade as deleteServerMessage, deleteUnreferencedAttachment, downloadAttachment, downloadAttachmentThumbnail, duplicateChat as duplicateServerChat, editMessage as editServerMessage, persistChat as persistServerChat, regenerateResponse as regenerateServerResponse, sendMessage as sendServerMessage, shareAttachment as shareServerAttachment, shareChat as shareServerChat, startChat as startServerChat, uploadAttachment } from '../features/chat/api';
@@ -202,6 +203,12 @@ import {
 } from '../features/chat/optimisticAttachmentSend';
 import { generationSummary, resolveGenerationSelections, type GenerationSelections } from '../features/chat/generationOptions';
 import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResponseId } from '../features/chat/generationControls';
+import {
+  cacheComposerDraft,
+  cachedComposerDraft,
+  composerDraftScope,
+  deleteCachedComposerDraft,
+} from '../features/chat/composerDraftCache';
 import {
   historyChatSections,
   historyChatSummary,
@@ -470,6 +477,27 @@ type Attachment = {
 };
 type ComposerAttachment = Attachment & CoordinatedUpload;
 type PreparedAttachment = ComposerAttachment & { serverId: string; state: 'ready' };
+type ComposerDraftIdentity = { scope: string; namespace: string | null; draftId: string };
+
+const NEW_CHAT_DRAFT_ID = 'new';
+
+function restoredComposerAttachments(
+  draftId: string,
+  attachments: ComposerAttachment[],
+  latest: ReadonlyMap<string, ComposerAttachment>,
+): ComposerAttachment[] {
+  const ownerId = `draft:${draftId}`;
+  const normalized = attachments.map((attachment) => ({
+    ...attachment,
+    ownerId: attachment.ownerId || ownerId,
+    attempt: Number.isFinite(attachment.attempt) ? attachment.attempt : 0,
+    managed: attachment.managed !== false,
+    state: attachment.serverId
+      ? 'ready' as const
+      : attachment.state === 'uploading' ? 'local' as const : attachment.state,
+  }));
+  return restoreLatestDraft(normalized, latest);
+}
 
 function attachmentKind(name: string, mimeType: string): Attachment['kind'] {
   return isImageAttachment(name, mimeType) ? 'image' : 'file';
@@ -1017,6 +1045,36 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
           {icon === 'ghost'
             ? <Ghost color={selected ? accent : ghostColor} size={size * 0.44} strokeWidth={2} />
             : <Icon name={icon} size={size * 0.44} color={selected ? accent : selectedColor === 'teal' ? '#8E8E93' : COLORS.text} />}
+        </Glass>
+      )}
+    </Pressable>
+  );
+}
+
+function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: () => void }) {
+  const foregroundColor = isDark ? '#1C1C1E' : '#FFFFFF';
+  const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
+  if (Platform.OS === 'ios') {
+    return (
+      <SwiftUIHost colorScheme={isDark ? 'dark' : 'light'} style={styles.drawerNewChatButtonHost}>
+        <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), swiftUIAccessibilityLabel('New Chat')]}>
+          <SwiftUIHStack spacing={7.5} modifiers={[
+            frame({ width: 123.75, height: 48.75 }),
+            swiftUIGlassEffect({ glass: { variant: 'regular', interactive: true, tint: glassTintColor }, shape: 'capsule' }),
+          ]}>
+            <SwiftUIImage systemName="square.and.pencil" size={16.875} modifiers={[foregroundStyle(foregroundColor)]} />
+            <SwiftUIText modifiers={[font({ size: 14.0625, weight: 'semibold' }), foregroundStyle(foregroundColor)]}>New Chat</SwiftUIText>
+          </SwiftUIHStack>
+        </SwiftUIButton>
+      </SwiftUIHost>
+    );
+  }
+  return (
+    <Pressable accessibilityLabel="New Chat" accessibilityRole="button" onPress={onPress}>
+      {({ pressed }) => (
+        <Glass interactive style={[styles.drawerNewChatButtonFallback, pressed && styles.pressed]} tintColor={glassTintColor}>
+          <Icon color={foregroundColor} name="square.and.pencil" size={16.875} />
+          <Text style={[styles.drawerNewChatButtonText, { color: foregroundColor }]}>New Chat</Text>
         </Glass>
       )}
     </Pressable>
@@ -1791,6 +1849,8 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     discardStoredChat(chat.id);
     if (!productionUserId) return;
     const namespace = cacheNamespace(productionInstanceUrl, productionUserId);
+    deleteCachedComposerDraft(composerDraftScope(namespace, chat.id));
+    void saveDraft(namespace, chat.id, '', []);
     discardOptimisticChat(namespace, chat.id);
     queryClient.removeQueries({ queryKey: queryKeys.chat(namespace, chat.id), exact: true });
     for (const message of chat.messages) {
@@ -1829,7 +1889,6 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     setNewChatTemporary(temporaryByDefault);
     composerFollowsDefaultModel.current = true;
     setSelectedModelId(reconcileComposerModelId(prototypeModels, '', defaultModelId, true));
-    setInput('');
   }, [abandonActiveTemporaryChat, defaultModelId, prototypeModels]);
 
   const newChatFromHistory = useCallback(() => {
@@ -2288,6 +2347,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             messages={messages}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
+            draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
             keyboardLayoutEnabled={!panelOpen}
             model={selectedModel}
             models={availableModels}
@@ -3266,12 +3326,13 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
+  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
   chatLoaded: boolean;
+  draftNamespace: string | null;
   keyboardLayoutEnabled: boolean;
   model: Model;
   models: Model[];
@@ -3332,13 +3393,21 @@ function ChatView({
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const latestAttachmentsRef = useRef(new Map<string, ComposerAttachment>());
   const activeUploadsRef = useRef(new Map<string, { attempt: number; promise: Promise<PreparedAttachment | null> }>());
+  const activeDraftRef = useRef<ComposerDraftIdentity | null>(null);
+  const attachmentDraftOwnersRef = useRef(new Map<string, ComposerDraftIdentity>());
   const nativeImagePreviewPendingRef = useRef(false);
   const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
   const setAttachments = useCallback((update: SetStateAction<ComposerAttachment[]>) => {
     setAttachmentState((current) => {
       const next = typeof update === 'function' ? update(current) : update;
       attachmentsRef.current = next;
-      for (const attachment of next) latestAttachmentsRef.current.set(attachment.localId, attachment);
+      for (const attachment of next) {
+        latestAttachmentsRef.current.set(attachment.localId, attachment);
+        const activeDraft = activeDraftRef.current;
+        if (activeDraft && attachment.ownerId.startsWith('draft:')) {
+          attachmentDraftOwnersRef.current.set(attachment.localId, activeDraft);
+        }
+      }
       return next;
     });
   }, []);
@@ -3353,6 +3422,9 @@ function ChatView({
     attachments: ComposerAttachment[];
     agentEnabled: boolean;
   } | null>(null);
+  const inputRef = useRef(input);
+  const hydratedDraftScopeRef = useRef<string | null>(null);
+  const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
   const composerInputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
@@ -3380,6 +3452,17 @@ function ChatView({
     offline: networkOffline,
     syncError,
   });
+  inputRef.current = input;
+
+  const focusComposerAtEnd = useCallback((body: string) => {
+    requestAnimationFrame(() => {
+      const composer = composerInputRef.current;
+      if (!composer) return;
+      composer.focus();
+      const end = body.length;
+      composer.setNativeProps({ selection: { start: end, end } });
+    });
+  }, []);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3533,13 +3616,90 @@ function ChatView({
     Haptics.selectionAsync();
   }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending]);
 
+  const activeDraftSnapshot = useCallback(() => ({
+    body: preservedComposerRef.current?.input ?? inputRef.current,
+    attachments: [...(preservedComposerRef.current?.attachments ?? attachmentsRef.current)],
+  }), []);
+
+  useEffect(() => {
+    const draftId = chatId ?? NEW_CHAT_DRAFT_ID;
+    const scope = `${draftNamespace ?? 'local'}\u0000${draftId}`;
+    const previous = activeDraftRef.current;
+    if (previous?.scope === scope) return;
+
+    if (previous) {
+      const outgoing = activeDraftSnapshot();
+      for (const attachment of outgoing.attachments) {
+        attachmentDraftOwnersRef.current.set(attachment.localId, previous);
+      }
+      cacheComposerDraft(previous.scope, outgoing);
+      if (previous.namespace) void saveDraft(previous.namespace, previous.draftId, outgoing.body, outgoing.attachments);
+    }
+
+    activeDraftRef.current = { scope, namespace: draftNamespace, draftId };
+    hydratedDraftScopeRef.current = null;
+    draftLoadRevisionRef.current += 1;
+    const revision = draftLoadRevisionRef.current;
+    const runtime = cachedComposerDraft<ComposerAttachment>(scope);
+    if (runtime) {
+      const restored = restoredComposerAttachments(draftId, runtime.attachments, latestAttachmentsRef.current);
+      onChangeInput(runtime.body);
+      inputRef.current = runtime.body;
+      attachmentsRef.current = restored;
+      setAttachments(restored);
+      hydratedDraftScopeRef.current = scope;
+      focusComposerAtEnd(runtime.body);
+      return;
+    }
+
+    onChangeInput('');
+    inputRef.current = '';
+    attachmentsRef.current = [];
+    setAttachments([]);
+    if (!draftNamespace) {
+      hydratedDraftScopeRef.current = scope;
+      return;
+    }
+    void loadDraft<ComposerAttachment>(draftNamespace, draftId).then((draft) => {
+      if (draftLoadRevisionRef.current !== revision || activeDraftRef.current?.scope !== scope) return;
+      if (inputRef.current || attachmentsRef.current.length > 0) {
+        hydratedDraftScopeRef.current = scope;
+        return;
+      }
+      const restored = restoredComposerAttachments(draftId, draft?.attachments ?? [], latestAttachmentsRef.current);
+      const body = draft?.body ?? '';
+      cacheComposerDraft(scope, { body, attachments: restored });
+      onChangeInput(body);
+      inputRef.current = body;
+      attachmentsRef.current = restored;
+      setAttachments(restored);
+      hydratedDraftScopeRef.current = scope;
+      focusComposerAtEnd(body);
+    }).catch(() => {
+      if (activeDraftRef.current?.scope === scope) hydratedDraftScopeRef.current = scope;
+    });
+  }, [activeDraftSnapshot, chatId, draftNamespace, focusComposerAtEnd, onChangeInput, setAttachments]);
+
+  useEffect(() => {
+    const active = activeDraftRef.current;
+    if (!active || hydratedDraftScopeRef.current !== active.scope || messageEdit) return;
+    const draft = { body: inputRef.current, attachments: [...attachmentsRef.current] };
+    cacheComposerDraft(active.scope, draft);
+    if (!active.namespace) return;
+    const timeout = setTimeout(() => {
+      void saveDraft(active.namespace!, active.draftId, draft.body, draft.attachments);
+    }, 150);
+    return () => clearTimeout(timeout);
+  }, [attachments, input, messageEdit]);
+
   useEffect(() => {
     if (messageEditChatIdRef.current === chatId) return;
     messageEditChatIdRef.current = chatId;
     if (!messageEdit) return;
     cleanupEditUploads(messageEdit, attachments);
-    restoreComposer();
-  }, [attachments, chatId, cleanupEditUploads, messageEdit, restoreComposer]);
+    preservedComposerRef.current = null;
+    setMessageEdit(null);
+  }, [attachments, chatId, cleanupEditUploads, messageEdit]);
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending) return;
@@ -3854,6 +4014,19 @@ function ChatView({
     chatTailPending.current = snapshot.tailPending;
   }, []);
 
+  const persistInactiveDraftAttachment = useCallback((attachment: ComposerAttachment) => {
+    const owner = attachmentDraftOwnersRef.current.get(attachment.localId);
+    if (!owner || owner.scope === activeDraftRef.current?.scope) return;
+    const draft = cachedComposerDraft<ComposerAttachment>(owner.scope);
+    if (!draft?.attachments.some((item) => item.localId === attachment.localId)) return;
+    const updated = {
+      ...draft,
+      attachments: draft.attachments.map((item) => item.localId === attachment.localId ? attachment : item),
+    };
+    cacheComposerDraft(owner.scope, updated);
+    if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);
+  }, []);
+
   const uploadOne = useCallback((attachment: ComposerAttachment): Promise<PreparedAttachment | null> => {
     const current = latestAttachmentsRef.current.get(attachment.localId) ?? attachment;
     if (current.state === 'ready' && current.serverId) return Promise.resolve(current as PreparedAttachment);
@@ -3889,6 +4062,7 @@ function ChatView({
         }
         const ready = settled.item as PreparedAttachment;
         latestAttachmentsRef.current.set(ready.localId, ready);
+        persistInactiveDraftAttachment(ready);
         setAttachments((values) => values.map((item) => item.localId === ready.localId ? ready : item));
         return ready;
       } catch (error) {
@@ -3900,6 +4074,7 @@ function ChatView({
         });
         if (failed) {
           latestAttachmentsRef.current.set(failed.localId, failed);
+          persistInactiveDraftAttachment(failed);
           setAttachments((values) => values.map((item) => item.localId === failed.localId ? failed : item));
         }
         return null;
@@ -3910,7 +4085,7 @@ function ChatView({
     })();
     activeUploadsRef.current.set(attempted.localId, { attempt: attempted.attempt, promise });
     return promise;
-  }, [setAttachments]);
+  }, [persistInactiveDraftAttachment, setAttachments]);
 
   useEffect(() => {
     for (const attachment of attachments) {
@@ -3929,6 +4104,7 @@ function ChatView({
       const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
       if (cleanupId) void deleteUnreferencedAttachment(cleanupId).catch(() => undefined);
       latestAttachmentsRef.current.delete(localId);
+      attachmentDraftOwnersRef.current.delete(localId);
       return current.filter((attachment) => attachment.localId !== localId);
     });
     Haptics.selectionAsync();
@@ -3949,6 +4125,7 @@ function ChatView({
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
       onChangeInput(submittedDraft.input);
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
@@ -3991,6 +4168,7 @@ function ChatView({
         },
       );
       onChangeInput('');
+      inputRef.current = '';
       setAttachments([]);
       draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
       const accepted = await pendingSend;
@@ -4000,10 +4178,17 @@ function ChatView({
         restoreSubmittedDraft();
         return;
       }
+      if (submittedDraftIdentity) {
+        deleteCachedComposerDraft(submittedDraftIdentity.scope);
+        if (submittedDraftIdentity.namespace) {
+          void saveDraft(submittedDraftIdentity.namespace, submittedDraftIdentity.draftId, '', []);
+        }
+      }
       followSnapshot = null;
       for (const attachment of submittedDraft.attachments) {
         latestAttachmentsRef.current.delete(attachment.localId);
         activeUploadsRef.current.delete(attachment.localId);
+        attachmentDraftOwnersRef.current.delete(attachment.localId);
       }
     } catch (error) {
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
@@ -4647,14 +4832,6 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeDrawerAction({ icon, label, value, onPress }: { icon: NativeButtonSystemImage; label: string; value?: string; onPress: () => void }) {
-  return <SwiftUIHost style={styles.nativeDrawerActionHost}>
-    <SwiftUIButton onPress={onPress} modifiers={[buttonStyle('plain'), foregroundStyle('primary'), swiftUIAccessibilityLabel(value ? `${label}, ${value}` : label)]}>
-      <SwiftUIHStack spacing={12} modifiers={[frame({ maxWidth: Infinity, minHeight: 46 }), contentShape(shapes.rectangle())]}><SwiftUIImage systemName={icon} size={17} modifiers={[frame({ width: 20, height: 20 })]} /><SwiftUIText>{label}</SwiftUIText><SwiftUISpacer />{value ? <SwiftUIText modifiers={[foregroundStyle('secondary')]}>{value}</SwiftUIText> : null}</SwiftUIHStack>
-    </SwiftUIButton>
-  </SwiftUIHost>;
-}
-
 function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
   onCreate: () => void;
@@ -4837,6 +5014,16 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       transform: [{ translateY: interpolate(collapseProgress, [0, 1], [0, -DRAWER_ACTION_HEIGHT]) }],
     };
   });
+  const newChatButtonAnimatedStyle = useAnimatedStyle(() => {
+    const collapseProgress = Math.max(keyboardProgress.value, searchQueryProgress.value);
+    return {
+      opacity: interpolate(collapseProgress, [0, 0.72], [1, 0]),
+      transform: [
+        { translateY: interpolate(collapseProgress, [0, 1], [0, 12]) },
+        { scale: interpolate(collapseProgress, [0, 1], [1, 0.86]) },
+      ],
+    };
+  });
   const filtered = useMemo(
     () => chats.filter((chat) => chat.title.toLowerCase().includes(search.toLowerCase())),
     [chats, search],
@@ -4972,10 +5159,6 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeDrawerAction icon="square.and.pencil" label="New chat" onPress={() => { dismissSearch(); onNewChat(); }} /> : <Pressable accessibilityRole="button" onPress={() => { dismissSearch(); onNewChat(); }} style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]}>
-            <Icon name="square.and.pencil" size={17} color={COLORS.textSoft} />
-            <Text style={styles.navText}>New chat</Text>
-          </Pressable>}
           {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <NativeObjectContextMenu
             style={styles.folderContextMenuHost}
             preview={(
@@ -5010,7 +5193,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </Reanimated.View>
 
         <SectionList
-          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 16 }]}
+          contentContainerStyle={[styles.chatList, { paddingBottom: insets.bottom + 82 }]}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           keyExtractor={(chat) => chat.id}
@@ -5028,6 +5211,12 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           style={styles.flex}
           onTouchStart={dismissSearch}
         />
+        <Reanimated.View
+          pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'}
+          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }, newChatButtonAnimatedStyle]}
+        >
+          <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
+        </Reanimated.View>
       </SafeAreaView>
     </View>
   );
@@ -5325,7 +5514,6 @@ const styles = StyleSheet.create({
   profileName: { color: COLORS.text, fontSize: 17, fontWeight: '600', letterSpacing: -0.3 },
   searchBox: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 10, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel, borderWidth: StyleSheet.hairlineWidth, borderColor: COLORS.lineSoft, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
   nativeDrawerSearchHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22, marginTop: 6, borderRadius: 13, backgroundColor: COLORS.panel },
-  nativeDrawerActionHost: { height: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersDisclosureHost: { alignSelf: 'stretch', minHeight: DRAWER_ACTION_HEIGHT, marginHorizontal: 22 },
   nativeFoldersHeaderHost: { alignSelf: 'stretch', height: DRAWER_ACTION_HEIGHT },
   nativeFoldersContent: { alignSelf: 'stretch', overflow: 'hidden' },
@@ -5344,6 +5532,10 @@ const styles = StyleSheet.create({
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
   navMeta: { color: COLORS.muted, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
+  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: 123.75, height: 48.75 },
+  drawerNewChatButtonHost: { width: 123.75, height: 48.75 },
+  drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
+  drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
   sectionLabel: { color: COLORS.muted, fontSize: 11, fontWeight: '600', marginTop: 16, marginBottom: 5, marginHorizontal: 12 },
   chatContextMenuHost: { width: '100%', height: 44 },
   chatRow: { minHeight: 44, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },

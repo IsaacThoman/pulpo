@@ -3,7 +3,10 @@ import { defineConfig } from 'vitepress'
 const sidebar = [
   {
     text: 'Pulpo Docs',
-    items: [{ text: 'Welcome', link: '/' }],
+    items: [
+      { text: 'Welcome', link: '/' },
+      { text: 'Encrypted backups', link: '/backups' },
+    ],
   },
   {
     text: 'Legal',

@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { activeLocale } from '@/i18n/ui'
 import { SubscriptionUsageBars } from './SubscriptionUsageBars'
 
 const weekly = {
@@ -15,7 +16,7 @@ const fiveHour = {
   availableBarPercentage: 35,
   pendingMicros: 50_000,
   pendingBarPercentage: 5,
-  resetsAt: null,
+  resetsAt: '2026-09-02T17:30:00.000Z',
 }
 
 describe('SubscriptionUsageBars', () => {
@@ -29,16 +30,21 @@ describe('SubscriptionUsageBars', () => {
     expect(markup).toContain('role="progressbar"')
     expect(markup).toContain('aria-valuetext="72% left"')
     expect(markup).not.toContain('reserved')
-    expect(markup).not.toContain('Starts on first use')
+    expect(markup).not.toContain('Resets')
   })
 
-  it('keeps reservation and reset details in the full billing variant', () => {
+  it('shows the weekly reset date but only the five-hour reset time in the full billing variant', () => {
     const markup = renderToStaticMarkup(<SubscriptionUsageBars weekly={weekly} fiveHour={fiveHour} />)
+    const locale = activeLocale()
+    const weeklyReset = new Date(weekly.resetsAt).toLocaleString(locale, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    const fiveHourReset = new Date(fiveHour.resetsAt).toLocaleString(locale, { hour: 'numeric', minute: '2-digit' })
+    const fiveHourResetWithDate = new Date(fiveHour.resetsAt).toLocaleString(locale, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
 
     expect(markup).toContain('$0.70')
     expect(markup).toContain('reserved')
-    expect(markup).toContain('Resets')
-    expect(markup).toContain('Starts on first use')
+    expect(markup).toContain(`Resets ${weeklyReset}`)
+    expect(markup).toContain(`Resets ${fiveHourReset}`)
+    expect(markup).not.toContain(fiveHourResetWithDate)
   })
 
   it('renders nothing when the account has no subscription limits', () => {

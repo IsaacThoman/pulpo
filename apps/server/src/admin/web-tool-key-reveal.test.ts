@@ -44,7 +44,7 @@ async function settingsHandlers(): Promise<Map<string, Handler>> {
     handlers.set(`${method} ${url}`, args.at(-1) as Handler)
   }
   const app = {
-    get: route('GET'), post: route('POST'), patch: route('PATCH'), delete: route('DELETE'),
+    get: route('GET'), post: route('POST'), put: route('PUT'), patch: route('PATCH'), delete: route('DELETE'),
   } as unknown as FastifyInstance
   await registerAdminSettingsRoutes(app)
   return handlers
