@@ -393,6 +393,13 @@
       "when": 1788378113168,
       "tag": "0055_glossy_killmonger",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1788451702943,
+      "tag": "0056_curved_captain_cross",
+      "breakpoints": true
     }
   ]
 }

@@ -29,6 +29,7 @@ import {
 import { loadWindowState, saveWindowState } from './window-state'
 import { DesktopUpdater, type ManualUpdateCheckResult } from './updater'
 import { desktopUpdatesSupported } from './update-support'
+import { prepareDesktopDownload } from './downloads'
 
 const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Pulpo.Pulpo'
 
@@ -288,21 +289,7 @@ function configureSession(): void {
     callback(trusted && audioOnly)
   })
   contentsSession.on('will-download', (_event, item, webContents) => {
-    if (!isTrustedRendererUrl(webContents.getURL(), developmentUrl)) {
-      item.cancel()
-      return
-    }
-    item.pause()
-    const saveDialog = mainWindow
-      ? dialog.showSaveDialog(mainWindow, { defaultPath: item.getFilename() })
-      : dialog.showSaveDialog({ defaultPath: item.getFilename() })
-    void saveDialog.then(({ canceled, filePath }) => {
-      if (canceled || !filePath) item.cancel()
-      else {
-        item.setSavePath(filePath)
-        item.resume()
-      }
-    })
+    prepareDesktopDownload(item, isTrustedRendererUrl(webContents.getURL(), developmentUrl))
   })
 }
 

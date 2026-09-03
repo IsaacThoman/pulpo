@@ -23,7 +23,7 @@ export function AdminChatsPage() {
     <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <h2 className="text-xl font-semibold">{ui('Open a user chat')}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">{ui('Access is limited to one chat, requires two-factor authentication, and is audited.')}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{ui('Access is limited to one chat and requires two-factor authentication.')}</p>
       </div>
       <form className="space-y-3 rounded-xl border bg-card p-5" onSubmit={(event) => { event.preventDefault(); open() }}>
         <Label htmlFor="admin-chat-identifier">{ui('Chat UUID or URL')}</Label>

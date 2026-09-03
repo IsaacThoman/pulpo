@@ -947,7 +947,7 @@ export function Sidebar({
       aria-hidden={mobile && !mobileOpen}
       inert={mobile && !mobileOpen}
       className={cn(
-        'flex h-full shrink-0 flex-col overflow-hidden border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
+        'flex h-full shrink-0 select-none flex-col overflow-hidden border-r border-sidebar-border bg-sidebar motion-reduce:transition-none',
         mobile
           ? cn(
               'fixed inset-y-0 left-0 z-40 w-[min(82vw,320px)] shadow-2xl',

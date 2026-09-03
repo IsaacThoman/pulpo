@@ -39,6 +39,9 @@ describe('full backup format', () => {
       provider_connections: [{}],
       responses: [{}],
       usage_events: [{}],
+      request_logs: [{ id: 'log', request_payload: { input: 'secret' } }],
+      ocr_attempts: [{ request_log_id: 'log', request_payload: { image: 'secret' } }],
+      application_settings: [{ key: 'logging', value: { logDetailedPayloads: false, payloadRetention: '7d' } }],
     }
 
     applyFullBackupCompatibilityDefaults(database)
@@ -50,6 +53,12 @@ describe('full backup format', () => {
       five_hour_cost_micros: 0,
       inference_reference_cost_micros: 0,
     })
+    expect(database.request_logs[0]).toMatchObject({
+      capture_detailed_payloads: false,
+      request_payload: null,
+      response_payload: null,
+    })
+    expect(database.ocr_attempts[0]).toMatchObject({ request_payload: null, response_payload: null })
   })
 
   it('preserves values already stored in a newer backup', () => {
@@ -58,6 +67,8 @@ describe('full backup format', () => {
       provider_connections: [{ tool_result_image_mode: 'separate' }],
       responses: [{ metadata: { source: 'api' }, idempotency_scope: 'api:key', publicly_stored: false }],
       usage_events: [{ five_hour_cost_micros: 42, inference_reference_cost_micros: 84 }],
+      request_logs: [{ id: 'log', capture_detailed_payloads: true, payload_expires_at: null }],
+      application_settings: [{ key: 'logging', value: { logDetailedPayloads: true, payloadRetention: 'indefinite' } }],
     }
 
     applyFullBackupCompatibilityDefaults(database)
@@ -67,5 +78,6 @@ describe('full backup format', () => {
     expect(database.responses[0]).toEqual({ metadata: { source: 'api' }, idempotency_scope: 'api:key', publicly_stored: false })
     expect(database.usage_events[0]!.five_hour_cost_micros).toBe(42)
     expect(database.usage_events[0]!.inference_reference_cost_micros).toBe(84)
+    expect(database.request_logs[0]!.capture_detailed_payloads).toBe(true)
   })
 })

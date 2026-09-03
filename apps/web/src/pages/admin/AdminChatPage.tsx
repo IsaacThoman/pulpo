@@ -8,7 +8,6 @@ import { apiRequest, ApiError } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { queryClient } from '@/lib/query-client'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import { useChat, type ServerChat, type ServerFolder } from '@/stores/chat'
@@ -38,7 +37,6 @@ function discardAdminChatOutbox(): void {
 }
 
 function AccessGate({ chatId, notice, onGranted }: { chatId: string; notice?: string | null; onGranted: (grant: AdminChatGrant, chat: AccessResponse['chat']) => void }) {
-  const [reason, setReason] = useState('')
   const [verificationCode, setVerificationCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +44,7 @@ function AccessGate({ chatId, notice, onGranted }: { chatId: string; notice?: st
     setLoading(true); setError(null)
     try {
       const result = await apiRequest<AccessResponse>(`/api/admin/chats/${chatId}/access`, {
-        method: 'POST', body: { reason, verificationCode },
+        method: 'POST', body: { verificationCode },
       })
       const grant: AdminChatGrant = { ...result, chatId, owner: result.owner }
       setAdminChatGrant(grant)
@@ -62,20 +60,16 @@ function AccessGate({ chatId, notice, onGranted }: { chatId: string; notice?: st
       <form className="w-full max-w-xl space-y-5 rounded-xl border bg-card p-6 shadow-sm" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <div>
           <h2 className="text-xl font-semibold">{ui('Open private user chat?')}</h2>
-          <p className="mt-2 text-sm text-muted-foreground">{ui('This chat may contain private user content. Your access and every action will be audited. Changes affect the owner immediately, while generated usage is charged to your administrator account.')}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{ui('This chat may contain private user content. Changes affect the owner immediately, while generated usage is charged to your administrator account.')}</p>
           <p className="mt-2 break-all font-mono text-xs text-muted-foreground">{chatId}</p>
         </div>
         {notice && <p role="status" className="text-sm text-amber-700 dark:text-amber-300">{notice}</p>}
-        <div className="space-y-2">
-          <Label htmlFor="admin-chat-reason">{ui('Support or operational reason')}</Label>
-          <Textarea id="admin-chat-reason" value={reason} minLength={10} maxLength={500} required onChange={(event) => setReason(event.target.value)} placeholder={ui('Describe why access is necessary…')} />
-        </div>
         <div className="space-y-2">
           <Label htmlFor="admin-chat-code">{ui('Authenticator or recovery code')}</Label>
           <Input id="admin-chat-code" value={verificationCode} minLength={6} maxLength={32} required autoComplete="one-time-code" className="font-mono" onChange={(event) => setVerificationCode(event.target.value.toUpperCase())} />
         </div>
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-        <Button type="submit" disabled={loading || reason.trim().length < 10 || verificationCode.trim().length < 6}>
+        <Button type="submit" disabled={loading || verificationCode.trim().length < 6}>
           {loading && <Loader2 className="animate-spin" />}{ui('Confirm and open chat')}
         </Button>
       </form>
@@ -230,8 +224,7 @@ export function AdminChatPage() {
       <div className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2">
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <strong>{ui('Admin chat access')}</strong>
-          <span className="text-muted-foreground">{grant.owner.name} · {grant.owner.email} · {ui('{{minutes}}m', { minutes: expiresIn })}</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={grant.reason}>{grant.reason}</span>
+          <span className="min-w-0 flex-1 truncate text-muted-foreground">{grant.owner.name} · {grant.owner.email} · {ui('{{minutes}}m', { minutes: expiresIn })}</span>
           {!deleted && chat && <>
             {chatStatus?.temporary && <Button size="sm" variant="outline" onClick={() => void apiRequest(`/api/chats/${chatId}/persist`, { method: 'POST' }).then(load)}>{ui('Make permanent')}</Button>}
             <Input aria-label={ui('Chat title')} className="h-8 w-48" value={rename} onChange={(event) => setRename(event.target.value)} onBlur={() => { if (rename.trim() && rename.trim() !== chat.title) void patchChat({ title: rename.trim() }) }} />

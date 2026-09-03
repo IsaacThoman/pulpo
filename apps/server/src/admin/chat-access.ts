@@ -27,7 +27,6 @@ interface StoredGrant {
   actorUserId: string
   ownerUserId: string
   chatId: string
-  reason: string
   expiresAt: string
 }
 
@@ -168,7 +167,6 @@ export async function resolveAdminChatSocketAccess(
     actorUser: actor,
     ownerUser: serializeUser(owner),
     chatId: grant.chatId,
-    reason: grant.reason,
     expiresAt: grant.expiresAt,
   }
 }
@@ -183,12 +181,11 @@ export async function registerAdminChatAccess(app: FastifyInstance): Promise<voi
     }
     const admin = authenticated
     const parsed = z.object({
-      reason: z.string().trim().min(10).max(500),
       verificationCode: z.string().trim().min(6).max(32),
     }).safeParse(request.body)
     if (!parsed.success) {
       await audit({ actorUserId: admin.id, action: 'chat.admin_access.denied', chatId, metadata: { reason: 'invalid_request' } })
-      throw new AppError(400, 'invalid_admin_chat_access_request', 'A reason of 10–500 characters and a verification code are required')
+      throw new AppError(400, 'invalid_admin_chat_access_request', 'A verification code is required')
     }
     const input = parsed.data
     if (!(await hasTwoFactor(admin.id))) {
@@ -217,7 +214,6 @@ export async function registerAdminChatAccess(app: FastifyInstance): Promise<voi
       actorUserId: admin.id,
       ownerUserId: row.owner.id,
       chatId,
-      reason: input.reason,
       expiresAt: expiresAt.toISOString(),
     }
     await redis.set(grantKey(token), JSON.stringify(grant), 'EX', ACCESS_TTL_SECONDS)
@@ -225,14 +221,13 @@ export async function registerAdminChatAccess(app: FastifyInstance): Promise<voi
       actorUserId: admin.id,
       action: 'chat.admin_access.start',
       chatId,
-      metadata: { accessId, ownerUserId: row.owner.id, reason: input.reason, expiresAt: grant.expiresAt },
+      metadata: { accessId, ownerUserId: row.owner.id, expiresAt: grant.expiresAt },
     })
     reply.code(201)
     return {
       accessToken: token,
       accessId,
       expiresAt: grant.expiresAt,
-      reason: grant.reason,
       owner: {
         id: row.owner.id,
         email: row.owner.email,
