@@ -168,7 +168,7 @@ import { activateBranch as activateServerBranch, cancelResponse, continueWithout
 import { attachmentUploadErrorMessage } from '../features/chat/attachmentUploadError';
 import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStore';
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
-import { startComposerAutoFocus } from '../providers/composerAutoFocus';
+import { startComposerFocusTransition } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
 import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
@@ -1504,6 +1504,13 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const [panelOpen, setPanelOpen] = useState(false);
   const [wideSidebarVisible, setWideSidebarVisible] = useState(true);
   const [modelSheet, setModelSheet] = useState(false);
+  const composerInputRef = useRef<TextInput>(null);
+  const [composerFocusSuppressed, setComposerFocusSuppressed] = useState(false);
+  const composerFocusRevision = useRef(0);
+  const [composerFocusRequest, setComposerFocusRequest] = useState<{
+    revision: number;
+    target: 'composer' | 'content';
+  }>({ revision: 0, target: 'composer' });
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
@@ -1610,18 +1617,38 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     navigation.setParams({ chatId: undefined });
   }, [navigation, route.params?.chatId, storedChats]);
 
-  const animatePanel = useCallback((open: boolean, velocity = 0) => {
-    if (persistentSidebar) return;
+  const dismissComposer = useCallback(() => {
+    composerInputRef.current?.blur();
+    Keyboard.dismiss();
+  }, []);
+
+  const finishExistingChatTransition = useCallback(() => {
+    dismissComposer();
+    setComposerFocusSuppressed(false);
+  }, [dismissComposer]);
+
+  const animatePanel = useCallback((open: boolean, velocity = 0, onFinished?: () => void) => {
+    if (persistentSidebar) {
+      onFinished?.();
+      return;
+    }
     setPanelOpen(open);
     if (open) Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const target = open ? openOffset : 0;
-    slideX.value = reduceMotion ? target : withSpring(target, {
+    if (reduceMotion) {
+      slideX.value = target;
+      onFinished?.();
+      return;
+    }
+    slideX.value = withSpring(target, {
       velocity,
       damping: 26,
       stiffness: 240,
       mass: 0.9,
       overshootClamping: true,
+    }, (finished) => {
+      if (finished && onFinished) runOnJS(onFinished)();
     });
   }, [openOffset, persistentSidebar, reduceMotion, slideX]);
 
@@ -1863,13 +1890,17 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const selectChat = useCallback((chat: HistoryChatSummary) => {
     if (thinkingTimer.current) clearTimeout(thinkingTimer.current);
     thinkingTimer.current = null;
+    setComposerFocusSuppressed(true);
+    dismissComposer();
     abandonActiveTemporaryChat();
     composerFollowsDefaultModel.current = false;
     setActiveChatId(chat.id);
     setSelectedModelId(chat.modelId);
     setAssistantStatus('idle');
-    animatePanel(false);
-  }, [abandonActiveTemporaryChat, animatePanel]);
+    composerFocusRevision.current += 1;
+    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'content' });
+    animatePanel(false, 0, finishExistingChatTransition);
+  }, [abandonActiveTemporaryChat, animatePanel, dismissComposer, finishExistingChatTransition]);
 
   const openRecalledChat = useCallback((chatId: string) => {
     const source = historyChats.find((chat) => chat.id === chatId);
@@ -1893,6 +1924,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
 
   const newChatFromHistory = useCallback(() => {
     newChat();
+    setComposerFocusSuppressed(false);
+    composerFocusRevision.current += 1;
+    setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
     animatePanel(false);
   }, [animatePanel, newChat]);
 
@@ -2354,6 +2388,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             prototypeModel={selectedPrototypeModel}
             presetSelections={presetSelections}
             input={input}
+            composerInputRef={composerInputRef}
+            composerFocusSuppressed={composerFocusSuppressed}
+            composerFocusRequest={composerFocusRequest}
             onChangeInput={setInput}
             onSelectPreset={selectPreset}
             onSend={sendMessage}
@@ -2380,6 +2417,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
             onNewChat={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               newChat(nextChatStartsTemporary(Boolean(activePrototypeChat?.temporary)));
+              setComposerFocusSuppressed(false);
+              composerFocusRevision.current += 1;
+              setComposerFocusRequest({ revision: composerFocusRevision.current, target: 'composer' });
             }}
           />
           {/* Tap catcher while the panel is open */}
@@ -3326,7 +3366,7 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, onChangeInput, onSend, assistantStatus,
+  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
@@ -3339,6 +3379,9 @@ function ChatView({
   prototypeModel?: PrototypeModel;
   presetSelections: GenerationSelections;
   input: string;
+  composerInputRef: RefObject<TextInput | null>;
+  composerFocusSuppressed: boolean;
+  composerFocusRequest: { revision: number; target: 'composer' | 'content' };
   onChangeInput: (value: string) => void;
   onSend: (value?: string, attachments?: ComposerAttachment[], options?: SendOptions, prepareAttachments?: PrepareAttachments) => Promise<boolean>;
   assistantStatus: 'idle' | 'thinking' | 'streaming';
@@ -3426,7 +3469,6 @@ function ChatView({
   const hydratedDraftScopeRef = useRef<string | null>(null);
   const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
-  const composerInputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
@@ -3454,15 +3496,16 @@ function ChatView({
   });
   inputRef.current = input;
 
-  const focusComposerAtEnd = useCallback((body: string) => {
+  // Draft hydration owns the selection only. Navigation intent owns focus so
+  // a new chat becoming persisted cannot reopen the keyboard after sending.
+  const placeComposerCursorAtEnd = useCallback((body: string) => {
     requestAnimationFrame(() => {
       const composer = composerInputRef.current;
       if (!composer) return;
-      composer.focus();
       const end = body.length;
       composer.setNativeProps({ selection: { start: end, end } });
     });
-  }, []);
+  }, [composerInputRef]);
   const isEmptyConversation = messages.length === 0;
   const suggestions = useMemo(
     () => promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts, promptConfig.count) : [],
@@ -3534,11 +3577,14 @@ function ChatView({
   const presetLabel = generationSummary(prototypeModel, presetSelections);
   const hasGenerationPresets = Boolean(prototypeModel?.presets.some((preset) => preset.choices.length > 0));
 
-  useEffect(() => startComposerAutoFocus({
+  useEffect(() => startComposerFocusTransition({
+    blur: () => composerInputRef.current?.blur(),
     cancelFrame: cancelAnimationFrame,
+    dismissKeyboard: Keyboard.dismiss,
     focus: () => composerInputRef.current?.focus(),
     scheduleFrame: requestAnimationFrame,
-  }), []);
+    target: composerFocusRequest.target,
+  }), [composerFocusRequest, composerInputRef]);
 
   useEffect(() => {
     setAgentEnabled(preferredAgentMode && canUseAgent);
@@ -3599,7 +3645,7 @@ function ChatView({
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [onChangeInput, setAttachments]);
+  }, [composerInputRef, onChangeInput, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -3648,7 +3694,7 @@ function ChatView({
       attachmentsRef.current = restored;
       setAttachments(restored);
       hydratedDraftScopeRef.current = scope;
-      focusComposerAtEnd(runtime.body);
+      placeComposerCursorAtEnd(runtime.body);
       return;
     }
 
@@ -3674,11 +3720,11 @@ function ChatView({
       attachmentsRef.current = restored;
       setAttachments(restored);
       hydratedDraftScopeRef.current = scope;
-      focusComposerAtEnd(body);
+      placeComposerCursorAtEnd(body);
     }).catch(() => {
       if (activeDraftRef.current?.scope === scope) hydratedDraftScopeRef.current = scope;
     });
-  }, [activeDraftSnapshot, chatId, draftNamespace, focusComposerAtEnd, onChangeInput, setAttachments]);
+  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
   useEffect(() => {
     const active = activeDraftRef.current;
@@ -3720,7 +3766,7 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, input, messageEdit, onChangeInput, sending, setAttachments]);
+  }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, sending, setAttachments]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
     if (message.role === 'user') {
@@ -4197,7 +4243,7 @@ function ChatView({
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
+  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, composerInputRef, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();
@@ -4611,6 +4657,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
+                editable={!composerFocusSuppressed}
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
