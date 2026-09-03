@@ -31,6 +31,7 @@ import { registerCatalogIconRoutes } from './catalog/icon-routes.js'
 import { registerFriendRoutes } from './friends/routes.js'
 import { registerPoolRoutes } from './pools/routes.js'
 import { registerProfileRoutes } from './profile/routes.js'
+import { registerPresenceRoutes } from './presence/routes.js'
 import { registerBillingRoutes } from './billing/routes.js'
 import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
@@ -130,6 +131,7 @@ export async function buildApp() {
   await registerMobileRoutes(app)
   await registerAuthRoutes(app)
   await registerProfileRoutes(app)
+  await registerPresenceRoutes(app)
   await registerCodexRoutes(app)
   await registerFriendRoutes(app)
   await registerPoolRoutes(app)

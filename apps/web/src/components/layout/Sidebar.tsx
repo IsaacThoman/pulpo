@@ -25,7 +25,6 @@ import {
   Trash2,
   UsersRound,
   PanelLeftClose,
-  PanelLeftOpen,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useChat } from '@/stores/chat'
@@ -64,6 +63,7 @@ import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
 import { uit } from '@/i18n/ui'
+import { SidebarLogo } from './SidebarLogo'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -694,6 +694,12 @@ export function Sidebar({
     staleTime: 0,
     refetchOnWindowFocus: 'always',
   })
+  const onlineCountQuery = useQuery({
+    queryKey: ['online-user-count', user?.id],
+    queryFn: () => apiRequest<{ count: number }>('/api/auth/online-count'),
+    enabled: false,
+    staleTime: 0,
+  })
   const sidebarPins = useSettings((s) => s.sidebarPins)
   const setSetting = useSettings((s) => s.set)
   const logout = useAuth((s) => s.logout)
@@ -703,6 +709,10 @@ export function Sidebar({
   const shiftHeld = useShiftHeld()
   const drag = useSidebarDrag()
   const openSidebarLabel = t('sidebar.expand')
+  const refreshOnlineCount = () => {
+    if (collapsed || !networkReady || !user?.id || user.role === 'pending') return
+    void onlineCountQuery.refetch()
+  }
   const groupLabels: Record<(typeof GROUP_ORDER)[number], string> = {
     Today: t('sidebar.groups.today'),
     Yesterday: t('sidebar.groups.yesterday'),
@@ -974,28 +984,16 @@ export function Sidebar({
       )}
       {/* header */}
       <div className="flex items-center gap-1 p-2">
-        <Tooltip
-          open={collapsed && activeTooltip === openSidebarLabel}
-          onOpenChange={(open) => {
-            if (collapsed) setActiveTooltip(open ? openSidebarLabel : null)
-          }}
-        >
-          <TooltipTrigger asChild>
-            <button
-              className="group/logo flex size-8 cursor-pointer items-center justify-center rounded-lg hover:bg-sidebar-accent"
-              onClick={collapsed ? onToggle : () => go('/')}
-              aria-label={collapsed ? openSidebarLabel : t('sidebar.home')}
-            >
-              <img
-                src="/pulpo-smiley.png"
-                alt="Pulpo"
-                className={cn('size-6', collapsed && 'group-hover/logo:hidden')}
-              />
-              {collapsed && <PanelLeftOpen className="hidden size-4 group-hover/logo:block" />}
-            </button>
-          </TooltipTrigger>
-          {collapsed && <TooltipContent side="right">{openSidebarLabel}</TooltipContent>}
-        </Tooltip>
+        <SidebarLogo
+          collapsed={collapsed}
+          collapsedTooltipOpen={activeTooltip === openSidebarLabel}
+          onlineCount={onlineCountQuery.data?.count}
+          onlineLoading={onlineCountQuery.isFetching}
+          onlineError={onlineCountQuery.isError}
+          onCollapsedTooltipOpenChange={(open) => setActiveTooltip(open ? openSidebarLabel : null)}
+          onPresenceIntent={refreshOnlineCount}
+          onClick={collapsed ? onToggle : () => go('/')}
+        />
         <span
           className={cn(
             'min-w-0 flex-1 truncate whitespace-nowrap text-sm font-semibold text-sidebar-foreground transition-[opacity,transform] ease-[cubic-bezier(0.4,0,0.2,1)]',
