@@ -105,6 +105,7 @@ import {
   ComposerDraftMutationTracker,
   resolveComposerDraftPersistenceAction,
   scheduleComposerDraftSave,
+  shouldTrackComposerDraftMutation,
 } from '@pulpo/client-core';
 import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
 import {
@@ -3464,6 +3465,7 @@ function ChatView({
   const temporaryDraftCleanupScopeRef = useRef<string | null>(null);
   const draftSaveGenerationRef = useRef(0);
   const draftMutationTrackerRef = useRef(new ComposerDraftMutationTracker());
+  const draftEditEpochRef = useRef(0);
   const deferredRemoteDraftRevisionRef = useRef(0);
   const pendingLocalDraftsRef = useRef(new Map<string, { namespace: string; scope: string; draft: MobileComposerDraft }>());
   const [draftLifecycleRevision, setDraftHydrationTick] = useState(0);
@@ -3473,9 +3475,21 @@ function ChatView({
     // cannot overwrite the text or leave this scope unable to persist.
     hydratedDraftScopeRef.current = draftHydrationKey;
     draftMutationTrackerRef.current.markLocalEdit();
+    draftEditEpochRef.current += 1;
     draftSaveGenerationRef.current += 1;
     localDraftDirtyRef.current = syncDrafts;
   }, [draftHydrationKey, syncDrafts]);
+  const trackingDraftMutation = shouldTrackComposerDraftMutation({
+    editingMessage: Boolean(messageEdit),
+  });
+  const markActiveDraftEdit = useCallback(() => {
+    if (trackingDraftMutation) markLocalDraftEdit();
+  }, [markLocalDraftEdit, trackingDraftMutation]);
+  const interruptDraftApplication = useCallback(() => {
+    hydratedDraftScopeRef.current = draftHydrationKey;
+    draftMutationTrackerRef.current.interruptApplication();
+    draftSaveGenerationRef.current += 1;
+  }, [draftHydrationKey]);
   const draftFingerprint = composerDraftSemanticFingerprint({
     content: input,
     attachmentKeys: attachments.map((attachment) => composerDraftAttachmentKey({
@@ -3494,9 +3508,10 @@ function ChatView({
     const previous = previousDraftControlsRef.current;
     previousDraftControlsRef.current = { modelId: model.id, autoExpire };
     if (previous.modelId === model.id && previous.autoExpire === autoExpire) return;
+    if (!trackingDraftMutation) return;
     if (draftMutationTrackerRef.current.shouldSuppressSave(draftFingerprint)) return;
     if (hydratedDraftScopeRef.current === draftHydrationKey) markLocalDraftEdit();
-  }, [autoExpire, draftFingerprint, draftHydrationKey, markLocalDraftEdit, model.id]);
+  }, [autoExpire, draftFingerprint, draftHydrationKey, markLocalDraftEdit, model.id, trackingDraftMutation]);
   const flushMobileDraft = useCallback((key: string) => {
     const pending = pendingLocalDraftsRef.current.get(key);
     if (!pending) return;
@@ -3674,6 +3689,9 @@ function ChatView({
     }
     const event = change.event;
     if (event.scope !== draftScope || event.revision <= appliedRemoteDraftRevisionRef.current) return;
+    if (event.editorId !== draftEditorIdRef.current && event.draft) {
+      draftEditEpochRef.current += 1;
+    }
     if (event.editorId === draftEditorIdRef.current) {
       appliedRemoteDraftRevisionRef.current = event.revision;
       if (draftNamespace) {
@@ -4012,12 +4030,12 @@ function ChatView({
 
   const toggleAgent = useCallback(() => {
     if (!canUseAgent) return;
-    markLocalDraftEdit();
+    markActiveDraftEdit();
     const next = !activeAgentEnabled;
     agentOverrideModelRef.current = model.id;
     setAgentEnabled(next);
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, canUseAgent, markLocalDraftEdit, model.id]);
+  }, [activeAgentEnabled, canUseAgent, markActiveDraftEdit, model.id]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
@@ -4056,6 +4074,7 @@ function ChatView({
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending) return;
+    interruptDraftApplication();
     preservedComposerRef.current = { input, attachments, agentEnabled };
     const editOwnerId = `edit:${message.id}:${Crypto.randomUUID()}`;
     draftOwnerRef.current = editOwnerId;
@@ -4073,7 +4092,7 @@ function ChatView({
     })));
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [agentEnabled, attachments, input, messageEdit, onChangeInput, sending, setAttachments]);
+  }, [agentEnabled, attachments, input, interruptDraftApplication, messageEdit, onChangeInput, sending, setAttachments]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
     if (message.role === 'user') {
@@ -4211,7 +4230,7 @@ function ChatView({
     }));
     const result = selectAttachmentBatch(attachments, coordinated);
     if (result.accepted.length) {
-      markLocalDraftEdit();
+      markActiveDraftEdit();
       setAttachments((current) => [...current, ...result.accepted].slice(0, MAX_COMPOSER_ATTACHMENTS));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
@@ -4221,7 +4240,7 @@ function ChatView({
         `You can attach up to ${MAX_COMPOSER_ATTACHMENTS} items. ${result.overflowCount} ${result.overflowCount === 1 ? 'item was' : 'items were'} not added.`,
       );
     }
-  }, [attachments, markLocalDraftEdit, setAttachments]);
+  }, [attachments, markActiveDraftEdit, setAttachments]);
 
   const pickPhotos = useCallback(async () => {
     try {
@@ -4438,7 +4457,7 @@ function ChatView({
   }, [uploadOne]);
 
   const removeComposerAttachment = useCallback((localId: string) => {
-    markLocalDraftEdit();
+    markActiveDraftEdit();
     setAttachments((current) => {
       const target = current.find((attachment) => attachment.localId === localId);
       const cleanupId = target && cleanupServerIdOnRemoval(target, messageEdit?.originalAttachmentIds);
@@ -4447,7 +4466,7 @@ function ChatView({
       return current.filter((attachment) => attachment.localId !== localId);
     });
     Haptics.selectionAsync();
-  }, [markLocalDraftEdit, messageEdit, setAttachments]);
+  }, [markActiveDraftEdit, messageEdit, setAttachments]);
 
   const submitMessage = useCallback(async () => {
     if (sending) return;
@@ -4464,6 +4483,7 @@ function ChatView({
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const submittedDraftEditEpoch = draftEditEpochRef.current;
     const restoreSubmittedDraft = () => {
       onChangeInput(submittedDraft.input);
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
@@ -4512,11 +4532,15 @@ function ChatView({
       if (!accepted) {
         restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
-        restoreSubmittedDraft();
+        if (draftEditEpochRef.current === submittedDraftEditEpoch) restoreSubmittedDraft();
         return;
       }
-      hadDraftRef.current = false;
-      if (draftNamespace && syncDrafts) {
+      const draftUnchangedSinceSubmission = draftEditEpochRef.current === submittedDraftEditEpoch;
+      if (draftUnchangedSinceSubmission) {
+        hadDraftRef.current = false;
+        localDraftDirtyRef.current = false;
+      }
+      if (draftUnchangedSinceSubmission && draftNamespace && syncDrafts) {
         const editorId = draftEditorIdRef.current;
         void (async () => {
           await saveMobileComposerTombstone({
@@ -4537,7 +4561,7 @@ function ChatView({
             serverRevision: revision,
           });
         })().catch(() => undefined);
-      } else if (draftNamespace) {
+      } else if (draftUnchangedSinceSubmission && draftNamespace) {
         void deleteMobileComposerDraft(draftNamespace, draftScope);
       }
       followSnapshot = null;
@@ -4547,7 +4571,7 @@ function ChatView({
       }
     } catch (error) {
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
-      if (!messageEdit) restoreSubmittedDraft();
+      if (!messageEdit && draftEditEpochRef.current === submittedDraftEditEpoch) restoreSubmittedDraft();
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your complete draft was restored. Please try again.');
     } finally {
       setSending(false);
@@ -4828,7 +4852,7 @@ function ChatView({
               onToggleExpiration={() => {
                 if (chatId) onAutoExpirationChange(!autoExpire);
                 else {
-                  markLocalDraftEdit();
+                  markActiveDraftEdit();
                   setDraftAutoExpireOverride(!autoExpire);
                 }
                 Haptics.selectionAsync();
@@ -4974,7 +4998,7 @@ function ChatView({
                 multiline
                 maxLength={1_000_000}
                 onChangeText={(value) => {
-                  markLocalDraftEdit();
+                  markActiveDraftEdit();
                   onChangeInput(value);
                 }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
@@ -5015,7 +5039,7 @@ function ChatView({
                               label={choice.label}
                               systemImage={choice.id === presetSelections[preset.id] ? 'checkmark' : undefined}
                               onPress={() => {
-                                markLocalDraftEdit();
+                                markActiveDraftEdit();
                                 setDraftPresetOverride({
                                   modelId: model.id,
                                   selections: { ...presetSelections, [preset.id]: choice.id },
@@ -5110,7 +5134,7 @@ function ChatView({
         visible={presetPickerOpen}
         onClose={() => setPresetPickerOpen(false)}
         onSelect={(presetId, choiceId) => {
-          markLocalDraftEdit();
+          markActiveDraftEdit();
           setDraftPresetOverride({
             modelId: model.id,
             selections: { ...presetSelections, [presetId]: choiceId },

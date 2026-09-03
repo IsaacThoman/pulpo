@@ -6,6 +6,7 @@ import {
   ComposerDraftMutationTracker,
   resolveComposerDraftPersistenceAction,
   scheduleComposerDraftSave,
+  shouldTrackComposerDraftMutation,
 } from '@pulpo/client-core'
 import { useQuery } from '@tanstack/react-query'
 import { useTranslation } from '@/i18n/useAppTranslation'
@@ -203,6 +204,7 @@ export function Composer({
   const discardSubmission = useUploadOutbox((s) => s.discardSubmission)
   const preserveComposerDraft = useUploadOutbox((s) => s.preserveComposerDraft)
   const takePreservedComposerDraft = useUploadOutbox((s) => s.takePreservedComposerDraft)
+  const retainDraftAfterSubmission = useUploadOutbox((s) => s.retainDraftAfterSubmission)
   const recovery = useUploadOutbox((s) => chatId
     ? s.submissions.find((submission) => submission.chatId === chatId && submission.status === 'recovery') ?? null
     : null)
@@ -226,7 +228,9 @@ export function Composer({
     draftMutationTrackerRef.current.markLocalEdit()
     draftSaveGenerationRef.current += 1
     localDraftDirtyRef.current = syncDrafts
-  }, [draftHydrationKey, syncDrafts])
+    submissionPendingRef.current = false
+    retainDraftAfterSubmission(draftScope)
+  }, [draftHydrationKey, draftScope, retainDraftAfterSubmission, syncDrafts])
   const remoteDraftQuery = useQuery({
     queryKey: ['drafts', userId, draftScope],
     queryFn: () => fetchRemoteComposerDraft(draftScope),
@@ -267,6 +271,19 @@ export function Composer({
   const readyAttachments = attachments.filter((a) => a.status === 'ready' && a.id)
   const hasDraft = value.trim().length > 0 || attachments.length > 0
   const editingExisting = Boolean(messageEdit || editingQueueId)
+  const trackingDraftMutation = shouldTrackComposerDraftMutation({
+    editingMessage: Boolean(messageEdit),
+    editingQueue: Boolean(editingQueueId),
+    recoveringSubmission: Boolean(recovery),
+  })
+  const markActiveDraftEdit = useCallback(() => {
+    if (trackingDraftMutation) markLocalDraftEdit()
+  }, [markLocalDraftEdit, trackingDraftMutation])
+  const interruptDraftApplication = useCallback(() => {
+    hydratedDraftScopeRef.current = draftHydrationKey
+    draftMutationTrackerRef.current.interruptApplication()
+    draftSaveGenerationRef.current += 1
+  }, [draftHydrationKey])
   const draftFingerprint = composerDraftSemanticFingerprint({
     content: value,
     attachmentKeys: attachments.map((attachment) => composerDraftAttachmentKey({
@@ -285,9 +302,10 @@ export function Composer({
     const previous = previousDraftControlsRef.current
     previousDraftControlsRef.current = { modelId, autoExpire }
     if (previous.modelId === modelId && previous.autoExpire === autoExpire) return
+    if (!trackingDraftMutation) return
     if (draftMutationTrackerRef.current.shouldSuppressSave(draftFingerprint)) return
     if (hydratedDraftScopeRef.current === draftHydrationKey) markLocalDraftEdit()
-  }, [autoExpire, draftFingerprint, draftHydrationKey, markLocalDraftEdit, modelId])
+  }, [autoExpire, draftFingerprint, draftHydrationKey, markLocalDraftEdit, modelId, trackingDraftMutation])
   if (userId && draftPersistence && hydratedDraftScopeRef.current === draftHydrationKey
     && !draftMutationTrackerRef.current.hasUnsettledApplication()
     && !temporary && !editingExisting && !recovery && !submissionPendingRef.current) {
@@ -493,6 +511,10 @@ export function Composer({
     const changed = (raw: Event) => {
       const event = (raw as CustomEvent<ComposerDraftChange>).detail
       if (!userId || !event || event.scope !== draftScope || event.revision <= appliedRemoteRevisionRef.current) return
+      if (!event.draft && event.reason === 'sent' && submissionPendingRef.current) {
+        submissionPendingRef.current = false
+        localDraftDirtyRef.current = false
+      }
       if (event.editorId === draftEditorIdRef.current) {
         appliedRemoteRevisionRef.current = event.revision
         void loadLocalComposerDraft(userId, draftScope).then((draft) => {
@@ -662,7 +684,7 @@ export function Composer({
       const start = textarea?.selectionStart ?? value.length
       const end = textarea?.selectionEnd ?? start
       setValue((current) => {
-        markLocalDraftEdit()
+        markActiveDraftEdit()
         const inserted = insertDictationText(current, result.text, start, end)
         requestAnimationFrame(() => {
           autosize()
@@ -677,7 +699,7 @@ export function Composer({
       if (dictationAbortRef.current === controller) dictationAbortRef.current = null
       setDictationState('idle')
     }
-  }, [autosize, markLocalDraftEdit, value.length])
+  }, [autosize, markActiveDraftEdit, value.length])
 
   const stopDictation = useCallback(() => {
     if (dictationTimerRef.current !== null) window.clearTimeout(dictationTimerRef.current)
@@ -739,18 +761,18 @@ export function Composer({
   }, [releaseMicrophone])
 
   const removeAttachment = useCallback((localId: string) => {
-    markLocalDraftEdit()
+    markActiveDraftEdit()
     setAttachmentIds((current) => current.filter((id) => id !== localId))
     removeUpload(localId)
-  }, [markLocalDraftEdit, removeUpload])
+  }, [markActiveDraftEdit, removeUpload])
 
   const uploadFiles = useCallback((incoming: File[]) => {
     if (!incoming.length) return
-    markLocalDraftEdit()
+    markActiveDraftEdit()
     const ids = addUploadFiles(incoming, { chatId, temporary })
     setAttachmentIds((current) => [...current, ...ids])
     if (fileInputRef.current) fileInputRef.current.value = ''
-  }, [addUploadFiles, chatId, markLocalDraftEdit, temporary])
+  }, [addUploadFiles, chatId, markActiveDraftEdit, temporary])
 
   const addFiles = useCallback((list: FileList | File[] | DataTransferItemList | null | undefined) => {
     uploadFiles(collectUploadFiles(list))
@@ -921,6 +943,7 @@ export function Composer({
 
   useEffect(() => {
     if (!messageEdit || editingQueueId || activeMessageEditIdRef.current === messageEdit.messageId) return
+    interruptDraftApplication()
     preservedDraftRef.current = { value, attachmentIds }
     activeMessageEditIdRef.current = messageEdit.messageId
     setValue(messageEdit.content)
@@ -931,7 +954,7 @@ export function Composer({
       autosize()
       ref.current?.focus()
     })
-  }, [addExistingAttachments, agentModeEnabled, attachmentIds, autosize, chatId, editingQueueId, messageEdit, temporary, value])
+  }, [addExistingAttachments, agentModeEnabled, attachmentIds, autosize, chatId, editingQueueId, interruptDraftApplication, messageEdit, temporary, value])
 
   const cancelMessageEdit = useCallback(() => {
     if (!messageEdit) return
@@ -951,6 +974,7 @@ export function Composer({
 
   useEffect(() => {
     if (recovery && !activeRecoveryIdRef.current && !messageEdit && !editingQueueId) {
+      interruptDraftApplication()
       submissionPendingRef.current = false
       preserveComposerDraft(recovery.chatId, { value, attachmentIds })
       activeRecoveryIdRef.current = recovery.id
@@ -971,7 +995,7 @@ export function Composer({
     setValue(preserved.value)
     setAttachmentIds(preserved.attachmentIds)
     requestAnimationFrame(autosize)
-  }, [attachmentIds, autosize, chatId, editingQueueId, messageEdit, preserveComposerDraft, recovery, takePreservedComposerDraft, value])
+  }, [attachmentIds, autosize, chatId, editingQueueId, interruptDraftApplication, messageEdit, preserveComposerDraft, recovery, takePreservedComposerDraft, value])
 
   const queuePayload = () => readyAttachments.map((attachment) => ({
     id: attachment.id!,
@@ -1079,6 +1103,7 @@ export function Composer({
     setQueueError(null)
     try {
       await updateQueuedMessage(chatId, messageId, { action: 'begin_edit' })
+      interruptDraftApplication()
       preservedDraftRef.current = { value, attachmentIds }
       setEditingQueueId(messageId)
       setValue(message.content)
@@ -1190,7 +1215,7 @@ export function Composer({
             <button
               type="button"
               onClick={() => {
-                markLocalDraftEdit()
+                markActiveDraftEdit()
                 if (messageEdit) setEditAgentMode(true)
                 else setDraftAgentOverride({ modelId, enabled: true })
               }}
@@ -1384,7 +1409,7 @@ export function Composer({
           ref={ref}
           value={value}
           onChange={(e) => {
-            markLocalDraftEdit()
+            markActiveDraftEdit()
             setValue(e.target.value)
             autosize()
           }}
@@ -1471,7 +1496,7 @@ export function Composer({
                       <DropdownMenuItem
                         key={choice.id}
                         onClick={() => {
-                          markLocalDraftEdit()
+                          markActiveDraftEdit()
                           setDraftPresetOverride({
                             modelId,
                             selections: { ...selections, [preset.id]: choice.id },
@@ -1499,7 +1524,7 @@ export function Composer({
               if (!canUseAgent) return
               if (messageEdit) setEditAgentMode((value) => !value)
               else {
-                markLocalDraftEdit()
+                markActiveDraftEdit()
                 setDraftAgentOverride({ modelId, enabled: !agentModeEnabled })
               }
             }}

@@ -20,6 +20,7 @@ import {
   resolveComposerDraftPersistenceAction,
   resolvePresetActions,
   scheduleComposerDraftSave,
+  shouldTrackComposerDraftMutation,
 } from './index.js'
 
 describe('composer draft debounce', () => {
@@ -48,6 +49,13 @@ describe('composer draft debounce', () => {
     expect(resolveComposerDraftPersistenceAction({ hasContent: false, hadDraft: true })).toBe('delete')
   })
 
+  it('tracks only mutations to the unsent composer draft', () => {
+    expect(shouldTrackComposerDraftMutation({})).toBe(true)
+    expect(shouldTrackComposerDraftMutation({ editingMessage: true })).toBe(false)
+    expect(shouldTrackComposerDraftMutation({ editingQueue: true })).toBe(false)
+    expect(shouldTrackComposerDraftMutation({ recoveringSubmission: true })).toBe(false)
+  })
+
   it('uses direct draft events without dropping other live invalidations', () => {
     expect(liveStateInvalidationScopes(['drafts'])).toEqual([])
     expect(liveStateInvalidationScopes(['settings', 'drafts', 'chats'])).toEqual(['settings', 'chats'])
@@ -67,6 +75,11 @@ describe('composer draft debounce', () => {
     tracker.markLocalEdit()
     expect(tracker.isCurrent(stale)).toBe(false)
     expect(tracker.settle(stale)).toBe(false)
+    expect(tracker.shouldSuppressSave()).toBe(false)
+
+    const interrupted = tracker.beginApplication()
+    tracker.interruptApplication()
+    expect(tracker.isCurrent(interrupted)).toBe(false)
     expect(tracker.shouldSuppressSave()).toBe(false)
   })
 

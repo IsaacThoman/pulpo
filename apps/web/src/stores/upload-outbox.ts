@@ -52,6 +52,7 @@ export interface PendingSubmission {
   status: 'waiting' | 'dispatching' | 'recovery'
   recoveryError?: string
   draftScope: string
+  clearDraftOnSuccess: boolean
 }
 
 interface AddFilesOptions {
@@ -82,6 +83,7 @@ interface UploadOutboxState {
   addFiles: (files: File[], options: AddFilesOptions) => string[]
   addExistingAttachments: (attachments: Attachment[], options: AddFilesOptions) => string[]
   stageSubmission: (draft: SubmissionDraft) => { chatId: string; submissionId: string }
+  retainDraftAfterSubmission: (scope: string) => void
   resumeSubmission: (submissionId: string, draft: Omit<SubmissionDraft, 'chatId' | 'temporary' | 'autoExpire'>) => void
   returnSubmissionToComposer: (submissionId: string) => void
   discardSubmission: (submissionId: string) => void
@@ -165,6 +167,7 @@ function scheduleChat(chatId: string): void {
 }
 
 function clearSubmissionDraft(submission: PendingSubmission): void {
+  if (!submission.clearDraftOnSuccess) return
   const userId = useAuth.getState().user?.id
   const syncDrafts = useSettings.getState().syncDrafts
   const editorId = `web-submission:${submission.id}`
@@ -367,14 +370,20 @@ async function processChat(chatId: string): Promise<void> {
             agentMode: submission.agentMode,
           },
         )
-        useUploadOutbox.setState((current) => ({
-          submissions: current.submissions.filter((item) => item.id !== submission.id),
-        }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
         try {
           await waitForResponseDispatch(submission.responseId)
-          clearSubmissionDraft(submission)
-        } catch { /* recovery retains the durable draft */ }
+          const completed = useUploadOutbox.getState().submissions.find((item) => item.id === submission.id) ?? submission
+          useUploadOutbox.setState((current) => ({
+            submissions: current.submissions.filter((item) => item.id !== submission.id),
+          }))
+          clearSubmissionDraft(completed)
+        } catch {
+          useUploadOutbox.setState((current) => ({
+            submissions: current.submissions.filter((item) => item.id !== submission.id),
+          }))
+          // A failed dispatch retains the durable draft.
+        }
         continue
       }
 
@@ -386,11 +395,12 @@ async function processChat(chatId: string): Promise<void> {
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
         }, attachments, submission.responseId)
+        const completed = useUploadOutbox.getState().submissions.find((item) => item.id === submission.id) ?? submission
         useUploadOutbox.setState((current) => ({
           submissions: current.submissions.filter((item) => item.id !== submission.id),
         }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
-        clearSubmissionDraft(submission)
+        clearSubmissionDraft(completed)
       } catch (error) {
         recoverSubmission(submission, error instanceof Error ? error.message : 'Unable to queue message')
         return
@@ -513,12 +523,21 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       placement,
       status: 'waiting',
       draftScope: draft.chatId ?? 'new',
+      clearDraftOnSuccess: true,
     }
     if (placement === 'queue') renderSubmissionSurface(submission, records)
     set((state) => ({ submissions: [...state.submissions, submission] }))
     scheduleChat(staged.chatId)
     return { chatId: staged.chatId, submissionId: submission.id }
   },
+
+  retainDraftAfterSubmission: (scope) => set((state) => ({
+    submissions: state.submissions.map((submission) => (
+      submission.draftScope === scope && submission.clearDraftOnSuccess
+        ? { ...submission, clearDraftOnSuccess: false }
+        : submission
+    )),
+  })),
 
   resumeSubmission: (submissionId, draft) => {
     const submission = get().submissions.find((item) => item.id === submissionId)

@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import 'fake-indexeddb/auto'
 import type { Model } from '@/lib/types'
 
 const storage = new Map<string, string>()
@@ -47,6 +48,7 @@ const [
   { useSettings },
   { useCatalog },
   { queryClient },
+  { saveLocalComposerDraft },
 ] = await Promise.all([
   import('./upload-outbox'),
   import('./chat'),
@@ -54,6 +56,7 @@ const [
   import('./settings'),
   import('./catalog'),
   import('@/lib/query-client'),
+  import('@/lib/local-first/composer-drafts'),
 ])
 
 const userId = '00000000-0000-4000-8000-000000000001'
@@ -123,6 +126,35 @@ beforeEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe('upload outbox', () => {
+  it('does not let an older accepted submission clear a draft typed during dispatch', async () => {
+    useSettings.setState({ syncDrafts: true })
+    await saveLocalComposerDraft({
+      userId,
+      scope: chatId,
+      content: 'newer draft',
+      modelId: model.id,
+      presetSelections: {},
+      agentMode: false,
+      uploads: [],
+      editorId: 'test-editor',
+      dirty: true,
+    })
+    const staged = useUploadOutbox.getState().stageSubmission(draft([], 'submitted draft'))
+    await vi.waitFor(() => expect(requests).toHaveLength(1))
+
+    useUploadOutbox.getState().retainDraftAfterSubmission(chatId)
+    expect(useUploadOutbox.getState().submissions[0]).toMatchObject({
+      id: staged.submissionId,
+      status: 'dispatching',
+      clearDraftOnSuccess: false,
+    })
+
+    requests[0]!.resolve({})
+    await vi.waitFor(() => expect(useUploadOutbox.getState().submissions).toHaveLength(0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(requests).toHaveLength(1)
+  })
+
   it('keeps one optimistic bubble and stages later uploads directly in the queue', async () => {
     useUploadOutbox.setState({ uploads: {
       first: upload('first', 'uploading'),

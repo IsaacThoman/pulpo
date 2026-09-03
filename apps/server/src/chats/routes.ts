@@ -27,7 +27,7 @@ import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
-import { deleteComposerDraftsForChats } from '../drafts/service.js'
+import { deleteComposerDraft, deleteComposerDraftsForChats } from '../drafts/service.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
 
@@ -300,6 +300,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       })
+      if (!chat.temporary) {
+        await deleteComposerDraft({
+          userId: user.id,
+          scope: 'new',
+          editorId: 'server:send',
+          reason: 'sent',
+        })
+      }
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
       if (inserted && !chat.temporary && chat.expiresAt) {
         await scheduleNormalChatExpiry({ chatId: chat.id, userId: user.id, expiresAt: chat.expiresAt })
@@ -628,6 +636,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
     })
+    await deleteComposerDraft({
+      userId: user.id,
+      scope: id,
+      editorId: 'server:send',
+      reason: 'sent',
+    })
     await bumpRevision(user.id, id)
     reply.code(202)
     return { response: toSnapshot(response) }
@@ -640,6 +654,12 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const result = await createQueuedMessage(user.id, id, input, {
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
+    })
+    await deleteComposerDraft({
+      userId: user.id,
+      scope: id,
+      editorId: 'server:send',
+      reason: 'sent',
     })
     reply.code(202)
     return result

@@ -45,6 +45,14 @@ export function resolveComposerDraftPersistenceAction(input: {
   return input.hadDraft ? 'delete' : 'none'
 }
 
+export function shouldTrackComposerDraftMutation(input: {
+  editingMessage?: boolean
+  editingQueue?: boolean
+  recoveringSubmission?: boolean
+}): boolean {
+  return !input.editingMessage && !input.editingQueue && !input.recoveringSubmission
+}
+
 /** Draft sockets carry their canonical payload, so live revision events must not refetch it. */
 export function liveStateInvalidationScopes(scopes: StateInvalidationScope[]): StateInvalidationScope[] {
   return scopes.filter((scope) => scope !== 'drafts')
@@ -99,6 +107,12 @@ export class ComposerDraftMutationTracker {
   private application: ComposerDraftApplicationToken | null = null
 
   markLocalEdit(): void {
+    this.localEpoch += 1
+    this.application = null
+  }
+
+  /** Cancel async hydration without treating an unrelated edit as a draft mutation. */
+  interruptApplication(): void {
     this.localEpoch += 1
     this.application = null
   }

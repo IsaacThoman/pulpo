@@ -29,6 +29,7 @@ import {
   resumeWebComposerDraftSyncEnable,
 } from '@/lib/local-first/composer-drafts'
 import { useSettings } from '@/stores/settings'
+import { useUploadOutbox } from '@/stores/upload-outbox'
 import { webRealtimeClientId } from '@/lib/realtime-client-id'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
@@ -274,6 +275,9 @@ export function ChatDataBridge() {
     })
     socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
       revisionRef.current = Math.max(revisionRef.current, event.revision)
+      if (event.editorId !== currentTabId) {
+        useUploadOutbox.getState().retainDraftAfterSubmission(event.scope)
+      }
       void applyWebComposerDraftChange(userId, event).then((applied) => {
         if (!applied) return
         queryClient.setQueryData<{ draft: ComposerDraftChange['draft']; revision: number }>(
