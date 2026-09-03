@@ -80,7 +80,7 @@ function Placeholder({
   const { t } = useTranslation()
   const model = getCatalogModel(modelId)
   return (
-    <div className="flex h-full flex-col items-center justify-center px-4">
+    <div className="flex h-full select-none flex-col items-center justify-center px-4">
       <div className="relative flex items-center gap-3">
         <div
           aria-hidden={badge?.kind !== 'temporary'}
