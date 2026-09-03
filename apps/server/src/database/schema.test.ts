@@ -86,9 +86,12 @@ describe('user-owned operational records', () => {
 
   it('creates composer drafts after the current migration history with account-wide revisions', () => {
     const migration = readFileSync(new URL('../../drizzle/0057_stormy_yellowjacket.sql', import.meta.url), 'utf8')
-    expect(migration).toContain('CREATE TABLE "composer_drafts"')
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "composer_drafts"')
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "composer_draft_attachments"')
     expect(migration).toContain('"revision" bigint NOT NULL')
-    expect(migration).toContain('composer_draft_attachments_position_unique')
+    expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "composer_draft_attachments_position_unique"')
+    expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "composer_drafts_user_scope_unique"')
+    expect(migration.match(/SELECT 1 FROM pg_constraint/g)).toHaveLength(4)
     expect(migration).toContain('ON DELETE cascade')
   })
 
