@@ -270,8 +270,8 @@ export function ChatDataBridge() {
         queueRevisionInvalidation({ revision })
         return
       }
-      const nonDraftScopes = liveStateInvalidationScopes(scopes)
-      if (nonDraftScopes.length) queueRevisionInvalidation({ revision, scopes: nonDraftScopes })
+      const liveScopes = liveStateInvalidationScopes(scopes)
+      if (liveScopes.length) queueRevisionInvalidation({ revision, scopes: liveScopes })
     })
     socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
       revisionRef.current = Math.max(revisionRef.current, event.revision)

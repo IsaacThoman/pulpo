@@ -53,9 +53,16 @@ export function shouldTrackComposerDraftMutation(input: {
   return !input.editingMessage && !input.editingQueue && !input.recoveringSubmission
 }
 
-/** Draft sockets carry their canonical payload, so live revision events must not refetch it. */
+/**
+ * Keep draft query invalidation as a recovery path even though the dedicated
+ * socket event carries the canonical snapshot. Redis channels are ordered
+ * independently, so a client can observe the account revision while missing
+ * the matching draft event; dropping `drafts` here would then make the missed
+ * update invisible on later reconnects because the account revision already
+ * looks current.
+ */
 export function liveStateInvalidationScopes(scopes: StateInvalidationScope[]): StateInvalidationScope[] {
-  return scopes.filter((scope) => scope !== 'drafts')
+  return scopes
 }
 
 export interface ComposerDraftSemanticState {

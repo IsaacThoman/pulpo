@@ -56,9 +56,9 @@ describe('composer draft debounce', () => {
     expect(shouldTrackComposerDraftMutation({ recoveringSubmission: true })).toBe(false)
   })
 
-  it('uses direct draft events without dropping other live invalidations', () => {
-    expect(liveStateInvalidationScopes(['drafts'])).toEqual([])
-    expect(liveStateInvalidationScopes(['settings', 'drafts', 'chats'])).toEqual(['settings', 'chats'])
+  it('keeps draft invalidation as a fallback for a missed canonical event', () => {
+    expect(liveStateInvalidationScopes(['drafts'])).toEqual(['drafts'])
+    expect(liveStateInvalidationScopes(['settings', 'drafts', 'chats'])).toEqual(['settings', 'drafts', 'chats'])
   })
 
   it('suppresses every render of an async application without hiding a later local edit', () => {
