@@ -1,27 +1,33 @@
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
-import * as Crypto from 'expo-crypto'
 import { useQueryClient } from '@tanstack/react-query'
 import { io } from 'socket.io-client'
 import {
+  type ComposerDraftChange,
+  type ComposerDraftsCleared,
   type ResponseEvent,
   type ResponseSnapshot,
   type SyncResult,
 } from '@pulpo/contracts'
-import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
+import { liveStateInvalidationScopes, mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiOrigin } from '../api/client'
 import {
   cacheNamespace,
   deleteResponseCursor,
-  getValue,
   responseCursors,
   saveResponseCursors,
-  setValue,
 } from '../data/database'
 import { replayOutbox } from '../data/outbox'
 import { queryKeys } from '../data/queries'
 import type { ServerChat } from '../types'
 import { useSessionStore } from '../store/session'
+import { usePreferencesStore } from '../store/preferences'
+import {
+  applyMobileComposerDraftChange,
+  applyMobileComposerDraftsCleared,
+  flushDirtyMobileComposerDrafts,
+  resumeMobileComposerDraftSyncEnable,
+} from '../features/chat/composerDrafts'
 import {
   coalesceResponseEvents,
   groupResponseEvents,
@@ -31,6 +37,7 @@ import {
   syncInvalidationScopes,
   takeContiguousResponseEvents,
 } from './realtimeSync'
+import { realtimeClientId } from './realtimeClientId'
 import {
   activeChatSubscription,
   chatSubscriptionIds,
@@ -45,14 +52,6 @@ import {
   phaseAfterDisconnect,
   REALTIME_UNAVAILABLE_MESSAGE,
 } from './realtimeConnection'
-
-async function realtimeClientId(namespace: string): Promise<string> {
-  const existing = await getValue<string>(namespace, 'realtime-client-id')
-  if (existing) return existing
-  const created = `ios-${Crypto.randomUUID()}`
-  await setValue(namespace, 'realtime-client-id', created)
-  return created
-}
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const token = useSessionStore((state) => state.token)
@@ -69,6 +68,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       revisionNamespace.current = namespace
       stateRevision.current = userStateRevision
       useRealtimeStore.getState().resetSnapshots()
+      useRealtimeStore.getState().setClientIdentity(null, null)
       return
     }
     stateRevision.current = Math.max(stateRevision.current, userStateRevision)
@@ -88,6 +88,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const unregisterSocket = registerRealtimeSocket(socket)
 
     let disposed = false
+    void realtimeClientId(namespace).then((clientId) => {
+      if (!disposed) useRealtimeStore.getState().setClientIdentity(namespace, clientId)
+    })
     let silentConnectionAttempt = true
     let appStateValue = AppState.currentState
     let foregroundGraceUntil = Date.now() + FOREGROUND_CONNECTION_GRACE_MS
@@ -190,8 +193,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       const batch = pendingRevision
       pendingRevision = undefined
       if (!batch) return
-      void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
+      if (batch.chatIds.length || batch.accountOnlyRevisions.length) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chats(namespace) })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.deletedChats(namespace) })
+      }
       for (const chatId of batch.chatIds) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.chat(namespace, chatId) })
       }
@@ -221,6 +226,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const sync = async () => {
       if (!socket.connected || disposed) return
       try {
+        if (usePreferencesStore.getState().syncDrafts) await flushDirtyMobileComposerDrafts(namespace)
         const [tabId, cursors] = await Promise.all([realtimeClientId(namespace), responseCursors(namespace)])
         if (!socket.connected || disposed) return
         const activeChatId = activeChatSubscription()
@@ -241,7 +247,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             afterSequence: Math.max(cursors[responseId] ?? 0, subscription.afterSequence),
           })
         }
-        void replayOutbox(namespace).then(({ replayed, rejected }) => {
+        void replayOutbox(namespace).then(async ({ replayed, rejected }) => {
+          if (usePreferencesStore.getState().syncDrafts) {
+            await resumeMobileComposerDraftSyncEnable(namespace)
+          }
           useRealtimeStore.getState().setSyncError(rejected
             ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced and was reconciled with the server.`
             : null)
@@ -292,7 +301,29 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       queueRevisionInvalidation({ chatId, revision })
     })
     socket.on('account.revision', ({ revision, scopes }) => {
-      queueRevisionInvalidation({ revision, scopes })
+      stateRevision.current = Math.max(stateRevision.current, revision)
+      if (!scopes) {
+        queueRevisionInvalidation({ revision })
+        return
+      }
+      const liveScopes = liveStateInvalidationScopes(scopes)
+      if (liveScopes.length) queueRevisionInvalidation({ revision, scopes: liveScopes })
+    })
+    socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
+      stateRevision.current = Math.max(stateRevision.current, event.revision)
+      void applyMobileComposerDraftChange(namespace, event).then((applied) => {
+        if (!applied) return
+        queryClient.setQueryData<{ draft: ComposerDraftChange['draft']; revision: number }>(
+          queryKeys.draft(namespace, event.scope),
+          (current) => current && current.revision >= event.revision
+            ? current
+            : { draft: event.draft, revision: event.revision },
+        )
+      })
+    })
+    socket.on('composer.drafts.cleared', (event: ComposerDraftsCleared) => {
+      stateRevision.current = Math.max(stateRevision.current, event.revision)
+      void applyMobileComposerDraftsCleared(namespace, event)
     })
     const appState = AppState.addEventListener('change', (state) => {
       appStateValue = state
@@ -330,6 +361,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       void flushCursors().catch(() => undefined)
       socket.disconnect()
       unregisterSocket()
+      const identity = useRealtimeStore.getState()
+      if (identity.clientNamespace === namespace) identity.setClientIdentity(null, null)
       useRealtimeStore.getState().setConnectionPhase('idle')
     }
   }, [instanceUrl, namespace, queryClient, token, userId])

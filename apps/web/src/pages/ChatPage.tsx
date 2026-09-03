@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Ghost, Hourglass, Loader2, Save, SquarePen } from 'lucide-react'
@@ -143,6 +143,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
   const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
+  const [newChatAutoExpireOverride, setNewChatAutoExpireOverride] = useState<boolean | undefined>()
   const instanceReady = useAuth((s) => s.instanceReady)
   const userRole = useAuth((s) => s.user?.role)
   const networkReady = !isDesktopRuntime() || instanceReady
@@ -211,11 +212,21 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     if (next && next !== modelId) setModelId(next)
   }, [chatId, defaultModelId, modelId, models, routeModelId])
 
-  const selectModel = (id: string) => {
+  const selectModel = useCallback((id: string) => {
     shouldApplyDefaultRef.current = false
     useChat.getState().setComposerModel(id)
     setModelId(id)
-  }
+  }, [])
+  const restoreComposerModel = useCallback((draftModelId: string) => {
+    const fallbackModelId = chatModelId && models.some((candidate) => candidate.id === chatModelId)
+      ? chatModelId
+      : resolveDefaultModelId(models, defaultModelId)
+    const restoredModelId = models.some((candidate) => candidate.id === draftModelId)
+      ? draftModelId
+      : fallbackModelId
+    selectModel(restoredModelId)
+    return restoredModelId
+  }, [chatModelId, defaultModelId, models, selectModel])
 
   useEffect(() => {
     if (!networkReady) return
@@ -263,7 +274,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   }
 
   const isEmpty = !chat
-  const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled' && newChatAutoExpire
+  const effectiveNewChatAutoExpire = automaticChatExpiration !== 'disabled'
+    && (newChatAutoExpireOverride ?? newChatAutoExpire)
   const suggestions = useMemo(
     () => (promptConfig.enabled ? pickSuggestedPrompts(promptConfig.prompts.map((prompt) => {
       if (!prompt.translationKey) return prompt
@@ -333,7 +345,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
       return
     }
-    useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
+    setNewChatAutoExpireOverride(!expirationEnabled)
   }
   const legacyTemporaryRoute = Boolean(!adminMode && routeChatId && chat?.temporary)
 
@@ -470,7 +482,16 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer key="new" chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer
+              key="new"
+              chatId={null}
+              modelId={modelId}
+              temporary={temporaryMode}
+              autoExpire={effectiveNewChatAutoExpire}
+              onRestoreModel={restoreComposerModel}
+              onRestoreAutoExpire={setNewChatAutoExpireOverride}
+              draftPersistence={!adminMode}
+            />
           </div>
         </>
       ) : (
@@ -515,6 +536,8 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
                 messageEdit={messageEdit}
                 onMessageEditComplete={() => setMessageEdit(null)}
                 onEditStateChange={setComposerEditActive}
+                onRestoreModel={restoreComposerModel}
+                draftPersistence={!adminMode}
               />
             )}
           </div>

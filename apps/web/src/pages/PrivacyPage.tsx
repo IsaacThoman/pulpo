@@ -18,6 +18,7 @@ export function PrivacyPage() {
     <section>
       <h2>{ui("Data on your device")}</h2>
       <p>{ui("Your bearer session token is stored in iOS Keychain. The app keeps namespaced local copies of preferences, drafts, recent conversations, search documents, response cursors, queued offline-safe changes, and attachment cache metadata in SQLite. Downloaded attachment bytes are kept in the app cache. Signing out, switching instances, and the in-app data controls remove the relevant local data.")}</p>
+      <p>{ui("Unsent messages, composer choices, and draft attachments are stored locally. When draft sync is enabled, non-temporary drafts are also stored by your selected Pulpo server so your signed-in devices can restore them. Temporary drafts are never saved. Turning sync off keeps local drafts and removes their server copies.")}</p>
     </section>
     <section>
       <h2>{ui("Analytics and tracking")}</h2>

@@ -400,6 +400,13 @@
       "when": 1788451702943,
       "tag": "0056_curved_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1788454680414,
+      "tag": "0057_stormy_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

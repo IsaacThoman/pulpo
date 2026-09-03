@@ -12,6 +12,11 @@ import {
   createModelSchema,
   createProviderSchema,
   createChatResponseSchema,
+  composerDraftInputSchema,
+  composerDraftChangeSchema,
+  composerDraftDeleteInputSchema,
+  composerDraftsClearedSchema,
+  composerDraftSchema,
   DEFAULT_OCR_SYSTEM_PROMPT,
   DEFAULT_CASUAL_INSTRUCTIONS,
   mergeResponseSnapshots,
@@ -286,6 +291,59 @@ describe('shared contracts', () => {
       events: [],
     })
     expect(result.invalidate).toEqual(['folders'])
+  })
+
+  it('accepts draft synchronization as a reconnect invalidation scope', () => {
+    const result = syncResultSchema.parse({
+      accountRevision: 4,
+      invalidate: ['drafts'],
+      snapshots: [],
+      events: [],
+    })
+    expect(result.invalidate).toEqual(['drafts'])
+  })
+
+  it('validates complete composer drafts without trimming their content', () => {
+    const attachmentId = crypto.randomUUID()
+    const input = composerDraftInputSchema.parse({
+      content: '  unfinished\n',
+      modelId: 'model-1',
+      presetSelections: { reasoning: 'high' },
+      agentMode: true,
+      autoExpire: true,
+      attachmentIds: [attachmentId],
+      editorId: 'tab-1',
+    })
+    expect(input.content).toBe('  unfinished\n')
+    expect(composerDraftInputSchema.safeParse({ ...input, attachmentIds: [attachmentId, attachmentId] }).success).toBe(false)
+    expect(composerDraftInputSchema.safeParse({ ...input, content: '', attachmentIds: [] }).success).toBe(false)
+    expect(composerDraftInputSchema.safeParse({ ...input, content: 'x'.repeat(1_000_001) }).success).toBe(false)
+  })
+
+  it('accepts new-chat and thread draft response scopes', () => {
+    const base = {
+      content: 'draft', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      editorId: 'ios-1', attachments: [], revision: 1, updatedAt: new Date().toISOString(),
+    }
+    expect(composerDraftSchema.parse({ ...base, scope: 'new' }).scope).toBe('new')
+    expect(composerDraftSchema.parse({ ...base, scope: crypto.randomUUID() }).scope).not.toBe('new')
+  })
+
+  it('validates complete realtime draft changes and deletion tombstones', () => {
+    const draft = composerDraftSchema.parse({
+      content: 'draft', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      editorId: 'web-1', attachments: [], revision: 7, updatedAt: new Date().toISOString(), scope: 'new',
+    })
+    expect(composerDraftChangeSchema.parse({
+      scope: 'new', revision: 7, editorId: 'web-1', draft, reason: 'saved',
+    }).draft).toEqual(draft)
+    expect(composerDraftChangeSchema.parse({
+      scope: 'new', revision: 8, editorId: 'ios-1', draft: null, reason: 'deleted',
+    }).draft).toBeNull()
+    expect(composerDraftDeleteInputSchema.parse({ editorId: 'ios-1' })).toEqual({ editorId: 'ios-1' })
+    expect(composerDraftsClearedSchema.parse({
+      revision: 9, editorId: 'server:settings', reason: 'sync_disabled',
+    }).revision).toBe(9)
   })
 
   it('accepts generic composer presets', () => {

@@ -21,6 +21,7 @@ import {
   restoreMemoryDocumentRevision,
   updateMemoryDocument,
 } from '../memory-document/service.js'
+import { deleteAllComposerDrafts } from '../drafts/service.js'
 
 const preferencesSchema = z.record(z.string(), z.unknown())
 
@@ -67,6 +68,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('memoryEnabled' in patch && typeof patch.memoryEnabled !== 'boolean') {
       throw new AppError(400, 'invalid_memory_setting', 'Choose whether Memories should be enabled')
     }
+    if ('syncDrafts' in patch && typeof patch.syncDrafts !== 'boolean') {
+      throw new AppError(400, 'invalid_draft_sync_setting', 'Choose whether drafts should sync across devices')
+    }
     let previousTrashRetention = DEFAULT_TRASH_RETENTION
     let previousMemoryEnabled = false
     let saved: typeof userPreferences.$inferSelect | undefined
@@ -75,6 +79,8 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       // Share the management-settings lock so a stale full-document apply can
       // never overwrite a concurrent account PATCH.
       await tx.execute(sql`select pg_advisory_xact_lock(1886747744)`)
+      // Draft PUTs take the same per-user lock before accepting cloud writes.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${user.id}))`)
       const [existing] = await tx.select().from(userPreferences).where(eq(userPreferences.userId, user.id)).limit(1)
       previousTrashRetention = parseTrashRetention((existing?.values as Record<string, unknown> | undefined)?.trashRetention)
       previousMemoryEnabled = (existing?.values as { memoryEnabled?: unknown } | undefined)?.memoryEnabled === true
@@ -95,7 +101,14 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
       }).where(eq(users.id, user.id)).returning({ revision: users.stateRevision })
       stateRevision = revision?.revision
     })
-    if (stateRevision !== undefined) await publishStateChange({ userId: user.id, revision: stateRevision })
+    if (patch.syncDrafts === false && stateRevision !== undefined) {
+      await deleteAllComposerDrafts(user.id, stateRevision)
+    }
+    if (stateRevision !== undefined) await publishStateChange({
+      userId: user.id,
+      revision: stateRevision,
+      scopes: patch.syncDrafts === false ? ['settings', 'drafts'] : ['settings'],
+    })
     if ('trashRetention' in patch && parseTrashRetention(patch.trashRetention) !== previousTrashRetention) {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
         jobId: `purge-chats-settings-${user.id}-${Date.now()}`,

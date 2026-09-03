@@ -1,6 +1,6 @@
 # Pulpo software privacy policy
 
-**Effective August 27, 2026**
+**Effective September 3, 2026**
 
 ::: tip Using pulpo.baby?
 This policy covers the Pulpo mobile app and self-hosted Pulpo software. If you use the hosted service at [pulpo.baby](https://pulpo.baby), the [Pulpo hosted service privacy policy](./privacy-hosted) also applies to the information handled by that service.
@@ -22,11 +22,13 @@ The mobile app does send information needed to provide its features to the Pulpo
 
 Pulpo stores information on your device or in your browser so the software can work. This may include your login session, server address, preferences, drafts, recent or cached content, and downloaded attachments. Login credentials are stored using the operating system’s secure credential storage when available.
 
+Unsent message drafts, including their composer choices and attachments, are stored locally by default. When **Sync drafts across devices** is enabled, non-temporary drafts and their uploaded attachments are also stored by the selected Pulpo server so they can be restored on your other signed-in devices. Temporary-mode drafts are not saved. Turning draft sync off keeps local drafts and deletes the server copies and otherwise-unreferenced draft attachments.
+
 Signing out removes the login credential and account-specific cached data. Some general preferences and server details may remain until you clear the app or browser data. Information may also remain in backups according to your device or backup provider’s settings.
 
 ## Information handled by a Pulpo server
 
-To provide their features, Pulpo clients send applicable account and authentication requests, conversations, prompts, attachments, preferences, administrative commands, settings, and related service requests to the Pulpo server you select. The server may store this information and may send relevant content to AI model providers, tool providers, or other services configured by the server operator to fulfill your requests.
+To provide their features, Pulpo clients send applicable account and authentication requests, conversations, prompts, attachments, preferences, optionally synchronized drafts, administrative commands, settings, and related service requests to the Pulpo server you select. The server may store this information and may send relevant content to AI model providers, tool providers, or other services configured by the server operator to fulfill your requests.
 
 If you use a self-hosted or third-party Pulpo instance, its operator—not the developer merely by providing the software—controls that instance’s collection, storage, access, retention, deletion, provider configuration, and security practices. Review the operator’s privacy information before using its service.
 

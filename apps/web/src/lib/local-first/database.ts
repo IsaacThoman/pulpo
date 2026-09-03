@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 import { retainedChatQueryHashes } from './chat-cache-policy'
 import { runtimeAccountKey, runtimeInstanceUrl, isDesktopRuntime } from '../runtime'
+import { clearRuntimeComposerDraftPrefix } from './composer-draft-runtime'
 
 const DEFAULT_MAX_LOCAL_CHATS = 50
 function queryCacheKey(): string {
@@ -44,7 +45,33 @@ export interface DraftRow {
   userId: string
   chatId: string
   content: string
-  attachments?: unknown[]
+  modelId: string
+  presetSelections: Record<string, string>
+  agentMode: boolean
+  autoExpire?: boolean
+  attachments: Array<{
+    localId: string
+    serverId?: string
+    name: string
+    mimeType: string
+    sizeBytes: number
+  }>
+  editorId: string
+  serverRevision?: number
+  serverUpdatedAt?: string
+  dirty: boolean
+  deleted: boolean
+  updatedAt: number
+}
+
+export interface DraftAttachmentBlobRow {
+  id: string
+  userId: string
+  localId: string
+  blob: Blob
+  name: string
+  mimeType: string
+  sizeBytes: number
   updatedAt: number
 }
 
@@ -64,6 +91,7 @@ class PulpoLocalDatabase extends Dexie {
   responseCursors!: EntityTable<ResponseCursorRow, 'id'>
   drafts!: EntityTable<DraftRow, 'id'>
   attachmentBlobs!: EntityTable<CachedAttachmentRow, 'id'>
+  draftAttachmentBlobs!: EntityTable<DraftAttachmentBlobRow, 'id'>
 
   constructor() {
     super('pulpo-local-v1')
@@ -94,6 +122,27 @@ class PulpoLocalDatabase extends Dexie {
       responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
       drafts: '&id, userId, [userId+chatId], updatedAt',
       attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
+    })
+    this.version(5).stores({
+      kv: '&key, updatedAt',
+      outbox: '&id, userId, [userId+nextAttemptAt], createdAt',
+      responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
+      drafts: '&id, userId, [userId+chatId], updatedAt',
+      attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
+      draftAttachmentBlobs: '&id, userId, [userId+localId], updatedAt',
+    })
+    this.version(6).stores({
+      kv: '&key, updatedAt',
+      outbox: '&id, userId, [userId+nextAttemptAt], createdAt',
+      responseCursors: '&id, tabId, [tabId+responseId], updatedAt',
+      drafts: '&id, userId, [userId+chatId], dirty, updatedAt',
+      attachmentBlobs: '&id, userId, [userId+lastAccessed], lastAccessed',
+      draftAttachmentBlobs: '&id, userId, [userId+localId], updatedAt',
+    }).upgrade(async (transaction) => {
+      await transaction.table<DraftRow>('drafts').toCollection().modify((draft) => {
+        draft.deleted = false
+        draft.dirty ??= true
+      })
     })
   }
 }
@@ -144,10 +193,12 @@ export const indexedDbPersister: Persister = {
 
 export async function clearLocalUserData(userId: string): Promise<void> {
   const accountKey = localAccountKey(userId)
-  await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, async () => {
+  clearRuntimeComposerDraftPrefix(`${accountKey}:draft:`)
+  await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, localDb.draftAttachmentBlobs, async () => {
     await localDb.outbox.where('userId').equals(accountKey).delete()
     await localDb.drafts.where('userId').equals(accountKey).delete()
     await localDb.attachmentBlobs.where('userId').equals(accountKey).delete()
+    await localDb.draftAttachmentBlobs.where('userId').equals(accountKey).delete()
   })
   await indexedDbPersister.removeClient()
 }

@@ -4,6 +4,8 @@ import { Server } from 'socket.io'
 import { createAdapter } from '@socket.io/redis-streams-adapter'
 import type {
   ClientToServerEvents,
+  ComposerDraftChange,
+  ComposerDraftsCleared,
   ResponseSnapshot,
   ServerToClientEvents,
   StateInvalidationScope,
@@ -32,6 +34,7 @@ export const FULL_STATE_INVALIDATION_SCOPES: StateInvalidationScope[] = [
   'models',
   'usage',
   'settings',
+  'drafts',
   'friends',
   'pool',
   'billing',
@@ -234,7 +237,7 @@ export async function createSocketServer(httpServer: HttpServer) {
     return pending
   }
 
-  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:session-revocations', 'pulpo:admin-usage')
+  await subscriber.subscribe('pulpo:response-events', 'pulpo:response-snapshots', 'pulpo:state-changes', 'pulpo:composer-drafts', 'pulpo:session-revocations', 'pulpo:admin-usage')
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
@@ -257,6 +260,17 @@ export async function createSocketServer(httpServer: HttpServer) {
           })
         }
       })
+    } else if (channel === 'pulpo:composer-drafts') {
+      const event = JSON.parse(message) as {
+        userId: string
+        type: 'change' | 'cleared'
+        payload: ComposerDraftChange | ComposerDraftsCleared
+      }
+      if (event.type === 'change') {
+        io.to(`user:${event.userId}`).emit('composer.draft.changed', event.payload as ComposerDraftChange)
+      } else {
+        io.to(`user:${event.userId}`).emit('composer.drafts.cleared', event.payload as ComposerDraftsCleared)
+      }
     } else if (channel === 'pulpo:session-revocations') {
       const event = JSON.parse(message) as { userId: string }
       const room = io.of('/').adapter.rooms.get(`user:${event.userId}`)

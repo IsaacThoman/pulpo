@@ -1,7 +1,6 @@
 import { Appearance } from 'react-native'
 import * as Device from 'expo-device'
 import { File } from 'expo-file-system'
-import { clearComposerDraftCacheNamespace } from '../features/chat/composerDraftCache'
 import * as SecureStore from 'expo-secure-store'
 import { create } from 'zustand'
 import { normalizeInstanceUrl } from '@pulpo/client-core'
@@ -236,11 +235,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
       setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
     ])
-    if (user) {
-      const namespace = cacheNamespace(instanceUrl, user.id)
-      clearComposerDraftCacheNamespace(namespace)
-      removeCachedFiles(await clearNamespace(namespace))
-    }
+    if (user) removeCachedFiles(await clearNamespace(cacheNamespace(instanceUrl, user.id)))
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ token: null, user: null, status: 'anonymous', error: null })
   },
@@ -264,11 +259,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       SecureStore.deleteItemAsync(SESSION_TOKEN_KEY),
       setValue(GLOBAL_NAMESPACE, ACTIVE_SESSION_NAMESPACE_KEY, null),
     ])
-    if (previous.user) {
-      const namespace = cacheNamespace(previous.instanceUrl, previous.user.id)
-      clearComposerDraftCacheNamespace(namespace)
-      removeCachedFiles(await clearNamespace(namespace))
-    }
+    if (previous.user) removeCachedFiles(await clearNamespace(cacheNamespace(previous.instanceUrl, previous.user.id)))
     await setValue(GLOBAL_NAMESPACE, 'instanceUrl', instanceUrl)
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
     set({ instanceUrl, config, token: null, user: null, status: 'anonymous', error: null })

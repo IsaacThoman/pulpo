@@ -4,6 +4,11 @@ import { modelPreferencesSchema } from '@pulpo/contracts'
 import { LatestValueQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError, isNetworkError } from '@/lib/api'
 import { enforceAttachmentQuota } from '@/lib/local-first/attachment-cache'
+import {
+  detachAllSyncedDraftAttachments,
+  enableWebComposerDraftSync,
+  markWebComposerDraftSyncEnablePending,
+} from '@/lib/local-first/composer-drafts'
 import { enqueueMutation } from '@/lib/local-first/outbox'
 import { localAccountKey, localDb } from '@/lib/local-first/database'
 import { useAuth } from '@/stores/auth'
@@ -21,6 +26,7 @@ const persistedKeys = [
   'trashRetention',
   'automaticChatExpiration',
   'newChatAutoExpire',
+  'syncDrafts',
   'defaultModelId',
   'sidebarPins',
 ] as const
@@ -87,6 +93,8 @@ export function SettingsBridge() {
   const instanceReady = useAuth((state) => state.instanceReady)
   const networkReady = !isDesktopRuntime() || instanceReady
   const attachmentCacheMb = useSettings((state) => state.localAttachmentCacheMb)
+  const syncDrafts = useSettings((state) => state.syncDrafts)
+  const detachedDraftNamespaceRef = useRef<string | null>(null)
   const hydrated = useRef(false)
   const modelsHydrated = useRef(false)
   const modelsDirty = useRef(false)
@@ -118,6 +126,19 @@ export function SettingsBridge() {
   useEffect(() => {
     if (userId) void enforceAttachmentQuota(userId, attachmentCacheMb)
   }, [userId, attachmentCacheMb])
+
+  useEffect(() => {
+    if (syncDrafts) {
+      if (userId && detachedDraftNamespaceRef.current === userId) {
+        void markWebComposerDraftSyncEnablePending(userId)
+      }
+      detachedDraftNamespaceRef.current = null
+      return
+    }
+    if (!userId || detachedDraftNamespaceRef.current === userId) return
+    detachedDraftNamespaceRef.current = userId
+    void detachAllSyncedDraftAttachments(userId)
+  }, [syncDrafts, userId])
 
   const applyRemoteSettings = useCallback((remote: SettingsDocument) => {
     if (!userId) return
@@ -180,6 +201,9 @@ export function SettingsBridge() {
         const body = settingsSnapshot(pendingKeys)
         void settingsMutations.enqueue(userId, body, (latest) => persistSettings(userId, latest)).then(async (saved) => {
           if (!saved) return
+          if (body.syncDrafts === true && useSettings.getState().syncDrafts) {
+            await enableWebComposerDraftSync(userId)
+          }
           const current = useSettings.getState()
           for (const key of [...pendingKeys]) {
             if (sameSetting(current[key], body[key])) pendingKeys.delete(key)
