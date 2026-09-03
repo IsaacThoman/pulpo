@@ -68,6 +68,7 @@ import {
   fetchRemoteComposerDraft,
   loadDraftFile,
   loadLocalComposerDraft,
+  peekRuntimeComposerDraft,
   reconcileWebComposerDraftSnapshot,
   saveLocalComposerTombstone,
   saveLocalComposerDraft,
@@ -131,7 +132,11 @@ export function Composer({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [value, setValue] = useState('')
+  const userId = useAuth((s) => s.user?.id)
+  const draftScope = chatId ?? 'new'
+  const draftHydrationKey = userId ? `${userId}:${draftScope}` : `anonymous:${draftScope}`
+  const initialDraft = userId ? peekRuntimeComposerDraft(userId, draftScope) : null
+  const [value, setValue] = useState(initialDraft && !initialDraft.deleted ? initialDraft.content : '')
   const [attachmentIds, setAttachmentIds] = useState<string[]>([])
   const [dragging, setDragging] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -142,6 +147,7 @@ export function Composer({
   const [queueDragId, setQueueDragId] = useState<string | null>(null)
   const [queueDrop, setQueueDrop] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
   const [draftRetryRevision, setDraftRetryRevision] = useState(0)
+  const [draftDeferredRevision, setDraftDeferredRevision] = useState(0)
   const [draftApplicationRevision, setDraftApplicationRevision] = useState(0)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -151,9 +157,10 @@ export function Composer({
   const activeMessageEditIdRef = useRef<string | null>(null)
   const draftEditorIdRef = useRef(webRealtimeClientId())
   const hydratedDraftScopeRef = useRef<string | null>(null)
-  const localDraftDirtyRef = useRef(false)
-  const hadDraftRef = useRef(false)
-  const appliedRemoteRevisionRef = useRef(0)
+  const localDraftDirtyRef = useRef(initialDraft?.dirty ?? false)
+  const hadDraftRef = useRef(Boolean(initialDraft && !initialDraft.deleted
+    && (initialDraft.content.length > 0 || initialDraft.attachments.length > 0)))
+  const appliedRemoteRevisionRef = useRef(initialDraft?.serverRevision ?? 0)
   const draftSaveGenerationRef = useRef(0)
   const draftMutationTrackerRef = useRef(new ComposerDraftMutationTracker())
   const deferredRemoteRevisionRef = useRef(0)
@@ -209,17 +216,17 @@ export function Composer({
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
   const dictationEnabled = useAuth((s) => s.dictationEnabled)
-  const userId = useAuth((s) => s.user?.id)
   const instanceReady = useAuth((s) => s.instanceReady)
   const desktopCanMutate = !isDesktopRuntime() || instanceReady
   const syncDrafts = useSettings((s) => s.syncDrafts)
-  const draftScope = chatId ?? 'new'
-  const draftHydrationKey = userId ? `${userId}:${draftScope}` : `anonymous:${draftScope}`
   const markLocalDraftEdit = useCallback(() => {
+    // A keystroke wins over in-flight hydration. This also keeps a storage
+    // failure from leaving the scope permanently unable to save.
+    hydratedDraftScopeRef.current = draftHydrationKey
     draftMutationTrackerRef.current.markLocalEdit()
     draftSaveGenerationRef.current += 1
     localDraftDirtyRef.current = syncDrafts
-  }, [syncDrafts])
+  }, [draftHydrationKey, syncDrafts])
   const remoteDraftQuery = useQuery({
     queryKey: ['drafts', userId, draftScope],
     queryFn: () => fetchRemoteComposerDraft(draftScope),
@@ -281,7 +288,9 @@ export function Composer({
     if (draftMutationTrackerRef.current.shouldSuppressSave(draftFingerprint)) return
     if (hydratedDraftScopeRef.current === draftHydrationKey) markLocalDraftEdit()
   }, [autoExpire, draftFingerprint, draftHydrationKey, markLocalDraftEdit, modelId])
-  if (userId && draftPersistence && hydratedDraftScopeRef.current === draftHydrationKey && !temporary && !editingExisting && !recovery && !submissionPendingRef.current) {
+  if (userId && draftPersistence && hydratedDraftScopeRef.current === draftHydrationKey
+    && !draftMutationTrackerRef.current.hasUnsettledApplication()
+    && !temporary && !editingExisting && !recovery && !submissionPendingRef.current) {
     pendingLocalDraftsRef.current.set(draftHydrationKey, {
       userId,
       scope: draftScope,
@@ -447,7 +456,7 @@ export function Composer({
 
   const applyStoredRemoteDraft = useCallback(async (revision: number) => {
     if (!userId || revision <= appliedRemoteRevisionRef.current) return
-    if (editingExisting || recovery) {
+    if (editingExisting || recovery || localDraftDirtyRef.current) {
       deferredRemoteRevisionRef.current = Math.max(deferredRemoteRevisionRef.current, revision)
       return
     }
@@ -483,9 +492,14 @@ export function Composer({
   useEffect(() => {
     const changed = (raw: Event) => {
       const event = (raw as CustomEvent<ComposerDraftChange>).detail
-      if (!event || event.scope !== draftScope || event.revision <= appliedRemoteRevisionRef.current) return
+      if (!userId || !event || event.scope !== draftScope || event.revision <= appliedRemoteRevisionRef.current) return
       if (event.editorId === draftEditorIdRef.current) {
         appliedRemoteRevisionRef.current = event.revision
+        void loadLocalComposerDraft(userId, draftScope).then((draft) => {
+          if (!draft || (draft.serverRevision ?? 0) < event.revision) return
+          localDraftDirtyRef.current = draft.dirty
+          if (!draft.dirty) setDraftDeferredRevision((revision) => revision + 1)
+        })
         return
       }
       void applyStoredRemoteDraft(event.revision)
@@ -512,7 +526,7 @@ export function Composer({
     const revision = deferredRemoteRevisionRef.current
     deferredRemoteRevisionRef.current = 0
     void applyStoredRemoteDraft(revision)
-  }, [applyStoredRemoteDraft, editingExisting, recovery])
+  }, [applyStoredRemoteDraft, draftDeferredRevision, editingExisting, recovery])
 
   useEffect(() => {
     if (hydratedDraftScopeRef.current === draftHydrationKey) return
@@ -536,12 +550,14 @@ export function Composer({
       if (draft && !draft.deleted) {
         localDraftDirtyRef.current = draft.dirty
         appliedRemoteRevisionRef.current = draft.serverRevision ?? 0
+        hydratedDraftScopeRef.current = draftHydrationKey
         await applyDraft(draft, application)
       } else {
         if (draft) {
           localDraftDirtyRef.current = draft.dirty
           appliedRemoteRevisionRef.current = draft.serverRevision ?? 0
         }
+        hydratedDraftScopeRef.current = draftHydrationKey
         releaseDraftUploads(attachmentIdsRef.current)
         setValue('')
         setAttachmentIds([])
@@ -551,6 +567,12 @@ export function Composer({
         }
       }
       if (!cancelled) hydratedDraftScopeRef.current = draftHydrationKey
+    }).catch(() => {
+      if (cancelled || !draftMutationTrackerRef.current.isCurrent(application)) return
+      hydratedDraftScopeRef.current = draftHydrationKey
+      if (draftMutationTrackerRef.current.settle(application)) {
+        setDraftApplicationRevision((current) => current + 1)
+      }
     })
     return () => { cancelled = true }
   }, [applyDraft, chatId, draftHydrationKey, draftPersistence, draftScope, onRestoreAutoExpire, releaseDraftUploads, syncDrafts, temporary, userId])
@@ -783,7 +805,6 @@ export function Composer({
 
   useEffect(() => {
     if (!userId || !draftPersistence || hydratedDraftScopeRef.current !== draftHydrationKey) return
-    if (draftMutationTrackerRef.current.hasUnsettledApplication()) markLocalDraftEdit()
     if (draftMutationTrackerRef.current.shouldSuppressSave(draftFingerprint)) return
     if (temporary) {
       return
@@ -817,6 +838,7 @@ export function Composer({
             hadDraftRef.current = false
             appliedRemoteRevisionRef.current = Math.max(appliedRemoteRevisionRef.current, revision)
             localDraftDirtyRef.current = false
+            setDraftDeferredRevision((current) => current + 1)
             return saveLocalComposerTombstone({
               userId,
               scope: draftScope,
@@ -860,6 +882,7 @@ export function Composer({
         if (draftSaveGenerationRef.current !== generation) return
         appliedRemoteRevisionRef.current = remote.revision
         localDraftDirtyRef.current = false
+        setDraftDeferredRevision((revision) => revision + 1)
         return saveLocalComposerDraft({
           userId,
           scope: draftScope,
@@ -877,7 +900,7 @@ export function Composer({
       }).catch(() => undefined)
       })().catch(() => undefined)
     })
-  }, [activeAgentMode, attachments, autoExpire, canUseAgent, chatId, draftFingerprint, draftHydrationKey, draftPersistence, draftRetryRevision, draftScope, editingExisting, markLocalDraftEdit, modelId, recovery, selections, syncDrafts, temporary, userId, value])
+  }, [activeAgentMode, attachments, autoExpire, canUseAgent, chatId, draftFingerprint, draftHydrationKey, draftPersistence, draftRetryRevision, draftScope, editingExisting, modelId, recovery, selections, syncDrafts, temporary, userId, value])
 
   useEffect(() => {
     draftMutationTrackerRef.current.consumeSettledApplication()

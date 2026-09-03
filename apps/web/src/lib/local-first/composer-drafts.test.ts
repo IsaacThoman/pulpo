@@ -22,6 +22,7 @@ vi.mock('@/lib/api', () => ({
 import {
   applyWebComposerDraftChange,
   applyWebComposerDraftsCleared,
+  clearRuntimeComposerDrafts,
   deleteRemoteComposerDraft,
   flushDirtyWebComposerDrafts,
   loadLocalComposerDraft,
@@ -77,11 +78,13 @@ describe('web composer draft realtime reconciliation', () => {
   beforeEach(async () => {
     apiMocks.apiRequest.mockReset()
     apiMocks.fetchApiBlob.mockReset()
+    clearRuntimeComposerDrafts(userId)
     await localDb.delete()
     await localDb.open()
   })
 
   afterEach(async () => {
+    clearRuntimeComposerDrafts(userId)
     await localDb.delete()
   })
 
@@ -124,6 +127,28 @@ describe('web composer draft realtime reconciliation', () => {
     await expect(loadLocalComposerDraft(userId, 'new')).resolves.toMatchObject({
       content: 'newer local text', serverRevision: 8,
     })
+  })
+
+  it('notifies this tab when another tab already persisted the same socket event', async () => {
+    await saveLocal('shared indexeddb text', 'remote-editor', 9, false)
+    const listener = vi.fn()
+    window.addEventListener('pulpo:composer-draft-changed', listener)
+
+    expect(await applyWebComposerDraftChange(userId, change(remote(9, 'remote-editor', 'shared indexeddb text'), 9))).toBe(true)
+
+    expect(listener).toHaveBeenCalledOnce()
+    window.removeEventListener('pulpo:composer-draft-changed', listener)
+  })
+
+  it('exposes a just-saved snapshot before its IndexedDB write completes', async () => {
+    const get = vi.spyOn(localDb.drafts, 'get')
+    const saved = saveLocal('switch-safe text', 'local-editor', 4)
+
+    await expect(loadLocalComposerDraft(userId, 'new')).resolves.toMatchObject({
+      content: 'switch-safe text', editorId: 'local-editor', dirty: true,
+    })
+    await saved
+    expect(get).toHaveBeenCalled()
   })
 
   it('serializes concurrent inbound revisions so the newest snapshot wins', async () => {

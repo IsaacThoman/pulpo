@@ -95,7 +95,7 @@ describe('composer draft debounce', () => {
     const tracker = new ComposerDraftMutationTracker()
     const application = tracker.beginApplication()
     expect(tracker.hasUnsettledApplication()).toBe(true)
-    expect(tracker.shouldSuppressSave(fingerprint)).toBe(false)
+    expect(tracker.shouldSuppressSave(fingerprint)).toBe(true)
     expect(tracker.settle(application, fingerprint)).toBe(true)
     expect(tracker.hasUnsettledApplication()).toBe(false)
     expect(tracker.shouldSuppressSave(fingerprint)).toBe(true)

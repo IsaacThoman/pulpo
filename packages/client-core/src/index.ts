@@ -130,7 +130,10 @@ export class ComposerDraftMutationTracker {
 
   shouldSuppressSave(fingerprint?: string): boolean {
     if (!this.application) return false
-    if (!this.application.settled) return fingerprint === undefined
+    // State can render several times while attachments and model controls are
+    // being restored. None of those intermediate renders are a local edit.
+    // Actual user input calls markLocalEdit(), which cancels this application.
+    if (!this.application.settled) return true
     if (!this.application.fingerprint || fingerprint === undefined) return true
     return this.application.fingerprint === fingerprint
   }

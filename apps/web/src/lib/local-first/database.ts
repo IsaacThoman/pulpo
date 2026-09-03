@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie'
 import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client'
 import { retainedChatQueryHashes } from './chat-cache-policy'
 import { runtimeAccountKey, runtimeInstanceUrl, isDesktopRuntime } from '../runtime'
+import { clearRuntimeComposerDraftPrefix } from './composer-draft-runtime'
 
 const DEFAULT_MAX_LOCAL_CHATS = 50
 function queryCacheKey(): string {
@@ -192,6 +193,7 @@ export const indexedDbPersister: Persister = {
 
 export async function clearLocalUserData(userId: string): Promise<void> {
   const accountKey = localAccountKey(userId)
+  clearRuntimeComposerDraftPrefix(`${accountKey}:draft:`)
   await localDb.transaction('rw', localDb.outbox, localDb.drafts, localDb.attachmentBlobs, localDb.draftAttachmentBlobs, async () => {
     await localDb.outbox.where('userId').equals(accountKey).delete()
     await localDb.drafts.where('userId').equals(accountKey).delete()

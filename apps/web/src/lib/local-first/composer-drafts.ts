@@ -3,6 +3,11 @@ import { LatestTaskQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { fetchApiBlob } from '@/lib/api'
 import { localAccountKey, localDb, type DraftRow } from './database'
+import {
+  clearRuntimeComposerDraftPrefix,
+  rememberRuntimeComposerDraft,
+  runtimeComposerDraft,
+} from './composer-draft-runtime'
 import type { UploadRecord } from '@/stores/upload-outbox'
 
 export type LocalComposerDraft = Omit<DraftRow, 'id' | 'userId' | 'chatId'>
@@ -57,17 +62,7 @@ function rowId(userId: string, scope: string): string {
   return `${localAccountKey(userId)}:draft:${scope}`
 }
 
-function blobId(userId: string, localId: string): string {
-  return `${localAccountKey(userId)}:draft-blob:${localId}`
-}
-
-function enableMarkerKey(userId: string): string {
-  return `${localAccountKey(userId)}:draft-sync-enable-pending`
-}
-
-export async function loadLocalComposerDraft(userId: string, scope: string): Promise<LocalComposerDraft | null> {
-  const row = await localDb.drafts.get(rowId(userId, scope))
-  if (!row) return null
+function localDraftFromRow(row: DraftRow): LocalComposerDraft {
   return {
     content: row.content ?? '',
     modelId: row.modelId ?? '',
@@ -82,6 +77,49 @@ export async function loadLocalComposerDraft(userId: string, scope: string): Pro
     deleted: row.deleted ?? false,
     updatedAt: row.updatedAt,
   }
+}
+
+function rememberRuntimeDraft(userId: string, scope: string, draft: LocalComposerDraft | null): void {
+  rememberRuntimeComposerDraft(rowId(userId, scope), draft)
+}
+
+export function peekRuntimeComposerDraft(userId: string, scope: string): LocalComposerDraft | null {
+  return runtimeComposerDraft(rowId(userId, scope))
+}
+
+export function clearRuntimeComposerDrafts(userId: string, scopes?: Iterable<string>): void {
+  const prefix = `${localAccountKey(userId)}:draft:`
+  if (!scopes) {
+    clearRuntimeComposerDraftPrefix(prefix)
+    return
+  }
+  for (const scope of scopes) rememberRuntimeComposerDraft(`${prefix}${scope}`, null)
+}
+
+function blobId(userId: string, localId: string): string {
+  return `${localAccountKey(userId)}:draft-blob:${localId}`
+}
+
+function enableMarkerKey(userId: string): string {
+  return `${localAccountKey(userId)}:draft-sync-enable-pending`
+}
+
+export async function loadLocalComposerDraft(userId: string, scope: string): Promise<LocalComposerDraft | null> {
+  const runtime = peekRuntimeComposerDraft(userId, scope)
+  const row = await localDb.drafts.get(rowId(userId, scope))
+  if (!row) return runtime
+  const persisted = localDraftFromRow(row)
+  if (!runtime) {
+    rememberRuntimeDraft(userId, scope, persisted)
+    return persisted
+  }
+  const runtimeRevision = runtime.serverRevision ?? 0
+  const persistedRevision = persisted.serverRevision ?? 0
+  const newest = runtimeRevision === persistedRevision
+    ? runtime.updatedAt >= persisted.updatedAt ? runtime : persisted
+    : runtimeRevision > persistedRevision ? runtime : persisted
+  rememberRuntimeDraft(userId, scope, newest)
+  return newest
 }
 
 export async function loadDraftFile(userId: string, localId: string): Promise<File | null> {
@@ -121,7 +159,10 @@ export async function detachSyncedDraftAttachments(userId: string, scope: string
     }
   }
   await localDb.drafts.update(id, { attachments, dirty: false, serverRevision: undefined, serverUpdatedAt: undefined })
-  return loadLocalComposerDraft(userId, scope)
+  const updated = await localDb.drafts.get(id)
+  const local = updated ? localDraftFromRow(updated) : null
+  rememberRuntimeDraft(userId, scope, local)
+  return local
 }
 
 export async function detachAllSyncedDraftAttachments(userId: string): Promise<void> {
@@ -145,14 +186,30 @@ export async function saveLocalComposerDraft(input: {
   serverUpdatedAt?: string
 }): Promise<void> {
   const accountKey = localAccountKey(input.userId)
-  const existing = await localDb.drafts.get(rowId(input.userId, input.scope))
-  const attachments = input.uploads.map((upload) => ({
+  const updatedAt = Date.now()
+  const runtimeAttachments = input.uploads.map((upload) => ({
     localId: upload.localId,
     ...(upload.id ? { serverId: upload.id } : {}),
     name: upload.name,
     mimeType: upload.mimeType,
     sizeBytes: upload.size,
   }))
+  rememberRuntimeDraft(input.userId, input.scope, {
+    content: input.content,
+    modelId: input.modelId,
+    presetSelections: input.presetSelections,
+    agentMode: input.agentMode,
+    autoExpire: input.autoExpire,
+    attachments: runtimeAttachments,
+    editorId: input.editorId,
+    serverRevision: input.serverRevision,
+    serverUpdatedAt: input.serverUpdatedAt,
+    dirty: input.dirty,
+    deleted: false,
+    updatedAt,
+  })
+  const existing = await localDb.drafts.get(rowId(input.userId, input.scope))
+  const attachments = runtimeAttachments
   const retained = new Set(attachments.map((attachment) => blobId(input.userId, attachment.localId)))
   await localDb.transaction('rw', localDb.drafts, localDb.draftAttachmentBlobs, async () => {
     for (const upload of input.uploads) {
@@ -187,12 +244,13 @@ export async function saveLocalComposerDraft(input: {
       serverUpdatedAt: input.serverUpdatedAt,
       dirty: input.dirty,
       deleted: false,
-      updatedAt: Date.now(),
+      updatedAt,
     })
   })
 }
 
 export async function deleteLocalComposerDraft(userId: string, scope: string): Promise<void> {
+  rememberRuntimeDraft(userId, scope, null)
   const id = rowId(userId, scope)
   const row = await localDb.drafts.get(id)
   await localDb.transaction('rw', localDb.drafts, localDb.draftAttachmentBlobs, async () => {
@@ -208,6 +266,19 @@ export async function saveLocalComposerTombstone(input: {
   dirty: boolean
   serverRevision?: number
 }): Promise<void> {
+  const updatedAt = Date.now()
+  rememberRuntimeDraft(input.userId, input.scope, {
+    content: '',
+    modelId: '',
+    presetSelections: {},
+    agentMode: false,
+    attachments: [],
+    editorId: input.editorId,
+    serverRevision: input.serverRevision,
+    dirty: input.dirty,
+    deleted: true,
+    updatedAt,
+  })
   const id = rowId(input.userId, input.scope)
   const row = await localDb.drafts.get(id)
   await localDb.transaction('rw', localDb.drafts, localDb.draftAttachmentBlobs, async () => {
@@ -225,7 +296,7 @@ export async function saveLocalComposerTombstone(input: {
       serverRevision: input.serverRevision,
       dirty: input.dirty,
       deleted: true,
-      updatedAt: Date.now(),
+      updatedAt,
     })
   })
 }
@@ -301,7 +372,14 @@ function dispatchDraftEvent(name: string, detail: unknown): void {
 export async function applyWebComposerDraftChange(userId: string, event: ComposerDraftChange): Promise<boolean> {
   return serializeLocalReconciliation(`${localAccountKey(userId)}:${event.scope}`, async () => {
     const existing = await localDb.drafts.get(rowId(userId, event.scope))
-    if ((existing?.serverRevision ?? 0) >= event.revision) return false
+    if ((existing?.serverRevision ?? 0) >= event.revision) {
+      if (existing) rememberRuntimeDraft(userId, event.scope, localDraftFromRow(existing))
+      // IndexedDB is shared by tabs but DOM events are not. Another tab may
+      // have persisted this socket event first, so every tab must still notify
+      // its own active composer and query cache.
+      dispatchDraftEvent(WEB_COMPOSER_DRAFT_CHANGED_EVENT, event)
+      return existing?.serverRevision === event.revision
+    }
     const selfEvent = existing?.editorId === event.editorId && existing.dirty
     if (selfEvent && existing) {
       if (event.draft && localMatchesRemote(existing, event.draft)) {
