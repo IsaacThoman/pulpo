@@ -3496,11 +3496,12 @@ function ChatView({
   });
   inputRef.current = input;
 
-  const focusComposerAtEnd = useCallback((body: string) => {
+  // Draft hydration owns the selection only. Navigation intent owns focus so
+  // a new chat becoming persisted cannot reopen the keyboard after sending.
+  const placeComposerCursorAtEnd = useCallback((body: string) => {
     requestAnimationFrame(() => {
       const composer = composerInputRef.current;
       if (!composer) return;
-      composer.focus();
       const end = body.length;
       composer.setNativeProps({ selection: { start: end, end } });
     });
@@ -3693,7 +3694,7 @@ function ChatView({
       attachmentsRef.current = restored;
       setAttachments(restored);
       hydratedDraftScopeRef.current = scope;
-      focusComposerAtEnd(runtime.body);
+      placeComposerCursorAtEnd(runtime.body);
       return;
     }
 
@@ -3719,11 +3720,11 @@ function ChatView({
       attachmentsRef.current = restored;
       setAttachments(restored);
       hydratedDraftScopeRef.current = scope;
-      focusComposerAtEnd(body);
+      placeComposerCursorAtEnd(body);
     }).catch(() => {
       if (activeDraftRef.current?.scope === scope) hydratedDraftScopeRef.current = scope;
     });
-  }, [activeDraftSnapshot, chatId, draftNamespace, focusComposerAtEnd, onChangeInput, setAttachments]);
+  }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
 
   useEffect(() => {
     const active = activeDraftRef.current;
