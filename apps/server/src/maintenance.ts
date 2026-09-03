@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, inArray, lt, lte, sql } from 'drizzle-orm'
 import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
 import {
@@ -121,10 +121,10 @@ export async function runCleanup(): Promise<void> {
   await db.delete(sessions).where(lt(sessions.expiresAt, now))
   await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now))
   await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
-  await db.update(requestLogs).set({ requestPayload: null, responsePayload: null, updatedAt: now }).where(lt(requestLogs.payloadExpiresAt, now))
+  await db.update(requestLogs).set({ captureDetailedPayloads: false, requestPayload: null, responsePayload: null, updatedAt: now }).where(lte(requestLogs.payloadExpiresAt, now))
   await db.update(ocrAttempts).set({ requestPayload: null, responsePayload: null, updatedAt: now }).where(inArray(
     ocrAttempts.requestLogId,
-    db.select({ id: requestLogs.id }).from(requestLogs).where(lt(requestLogs.payloadExpiresAt, now)),
+    db.select({ id: requestLogs.id }).from(requestLogs).where(lte(requestLogs.payloadExpiresAt, now)),
   ))
   await db.delete(ocrCacheEntries).where(lt(ocrCacheEntries.expiresAt, now))
   await purgeExpiredMemoryDocumentRevisions(now)

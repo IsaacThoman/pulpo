@@ -3,9 +3,10 @@ import { and, eq, gt } from 'drizzle-orm'
 import { db } from '../database/client.js'
 import { applicationSettings, models, ocrAttempts, ocrCacheEntries, requestLogs } from '../database/schema.js'
 import { newId } from '../lib/ids.js'
-import { parseLoggingSettings, parseOcrSettings } from '../settings/application-settings.js'
+import { parseOcrSettings } from '../settings/application-settings.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { trackBilledInternalModelCall } from './model-calls.js'
+import { detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 
 export const OCR_MAX_OUTPUT_TOKENS = 4_096
 import { createCatalogModelClient, resolveAvailableCatalogModel, resolveLegacyOcrCatalogModel, type CatalogModelRuntime } from './catalog-model-runtime.js'
@@ -37,13 +38,11 @@ export async function createModelImageInterceptor(
   requestLogId: string,
   options: { allowCache?: boolean; responseId?: string; onBilledCost?: (costMicros: number) => void } = {},
 ): Promise<ModelImageInterceptor> {
-  const [ocrRow, loggingRow, requestLog] = await Promise.all([
+  const [ocrRow, requestLog] = await Promise.all([
     db.select().from(applicationSettings).where(eq(applicationSettings.key, 'ocr')).limit(1).then((rows) => rows[0]),
-    db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1).then((rows) => rows[0]),
     db.select({ ocrStatus: requestLogs.ocrStatus }).from(requestLogs).where(eq(requestLogs.id, requestLogId)).limit(1).then((rows) => rows[0]),
   ])
   const settings = parseOcrSettings(ocrRow?.value)
-  const logging = parseLoggingSettings(loggingRow?.value)
   let status = requestLog?.ocrStatus ?? 'not_requested'
   let runtimePromise: Promise<CatalogModelRuntime> | undefined
   let catalogClient: ReturnType<typeof createCatalogModelClient> | undefined
@@ -126,18 +125,25 @@ export async function createModelImageInterceptor(
             })
           }
         }
-        await db.insert(ocrAttempts).values({
-          id: attemptId,
-          requestLogId,
-          attachmentId: image.attachmentId ?? null,
-          sourceChecksum,
-          providerId,
-          modelId: runtime.model.id,
-          status: 'completed',
-          cached: Boolean(cached),
-          requestPayload: logging.logDetailedPayloads ? { model: runtime.model.upstreamModelId, input: dataUrl(image) } : null,
-          responsePayload: logging.logDetailedPayloads ? rawResponse : null,
-          durationMs: Date.now() - started,
+        await db.transaction(async (tx) => {
+          const [payloadPolicy] = await tx.select({
+            captureDetailedPayloads: requestLogs.captureDetailedPayloads,
+            payloadExpiresAt: requestLogs.payloadExpiresAt,
+          }).from(requestLogs).where(eq(requestLogs.id, requestLogId)).for('update').limit(1)
+          const captureDetailedPayloads = payloadPolicy && detailedPayloadCaptureIsActive(payloadPolicy)
+          await tx.insert(ocrAttempts).values({
+            id: attemptId,
+            requestLogId,
+            attachmentId: image.attachmentId ?? null,
+            sourceChecksum,
+            providerId,
+            modelId: runtime.model.id,
+            status: 'completed',
+            cached: Boolean(cached),
+            requestPayload: captureDetailedPayloads ? { model: runtime.model.upstreamModelId, input: dataUrl(image) } : null,
+            responsePayload: captureDetailedPayloads ? rawResponse : null,
+            durationMs: Date.now() - started,
+          })
         })
         await updateStatus('completed')
         await publishAdminUsage(requestLogId, true)

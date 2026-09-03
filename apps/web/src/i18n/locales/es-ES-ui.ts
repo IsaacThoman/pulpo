@@ -515,7 +515,7 @@ const esUi: Record<string, string> = {
   "Estimated water": "Agua estimada",
   "Every web, API, agent, and built-in model call in real time.": "Cada llamada web, API, agente y modelo integrado en tiempo real.",
   "Every workspace pod currently present in the cluster, including warm capacity and terminating VMs.": "Todos los pods de espacios de trabajo presentes en el clúster, incluidas la capacidad precalentada y las máquinas virtuales en proceso de cierre.",
-  "Exact payload logging may retain prompts, outputs, reasoning, tool data, file references, and OCR image data. Turning it off stops new capture; retained bodies are cleared when their configured retention expires.": "El registro exacto de la carga útil puede retener prompts, resultados, razonamiento, datos de herramientas, referencias de archivos y datos de imágenes de OCR. Desactivarlo detiene la nueva captura; los cuerpos retenidos se borran cuando caduca su retención configurada.",
+  "Exact payload logging may retain prompts, outputs, reasoning, tool data, file references, and OCR image data. Turning it off immediately clears retained bodies. Changing retention reapplies the selected limit from each request's creation time.": "El registro exacto de la carga útil puede retener prompts, resultados, razonamiento, datos de herramientas, referencias de archivos y datos de imágenes de OCR. Desactivarlo borra inmediatamente los cuerpos retenidos. Cambiar la retención vuelve a aplicar el límite seleccionado desde la fecha de creación de cada solicitud.",
   "Execution": "Ejecución",
   "Explain how KV caching speeds up decoding": "Explicar cómo el almacenamiento en caché de KV acelera la decodificación",
   "Export": "Exportar",

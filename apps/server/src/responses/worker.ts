@@ -25,7 +25,7 @@ import { toSnapshot } from './service.js'
 import { getBlobStore } from '../storage/index.js'
 import { publishAdminUsage } from '../admin/usage-events.js'
 import { redis } from '../redis.js'
-import { parseLoggingSettings, parsePersonalizationSettings } from '../settings/application-settings.js'
+import { parsePersonalizationSettings } from '../settings/application-settings.js'
 import { composeCustomInstructions } from '../settings/instruction-presets.js'
 import { processAgentGeneration } from '../agent/runner.js'
 import { runPostResponseTasks } from './post-tasks.js'
@@ -39,6 +39,7 @@ import { shouldCompactContext } from './compaction-policy.js'
 import { splitCodexConversationExchanges, type CodexConversationExchange } from './codex-compaction.js'
 import { temporaryChatIsExpired } from '../chats/temporary.js'
 import { normalChatIsExpired } from '../chats/expiration.js'
+import { activeDetailedPayloadCondition, detailedPayloadCaptureIsActive } from '../logging/detailed-payload-retention.js'
 import { resolveModelParameters } from './model-parameters.js'
 import { backgroundRequestParameter, promptCacheKeyParameter, responseIncludeParameter } from './upstream-request.js'
 import { browserChatOutputError, generationEventHasStartedOutput, generationOutputHasStarted } from './output-text.js'
@@ -656,7 +657,12 @@ async function processGenerationAttempt(
     history.unshift(parent)
     parentId = parent.parentResponseId
   }
-  const [requestLog] = await db.select({ id: requestLogs.id, apiKeyId: requestLogs.apiKeyId }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
+  const [requestLog] = await db.select({
+    id: requestLogs.id,
+    apiKeyId: requestLogs.apiKeyId,
+    captureDetailedPayloads: requestLogs.captureDetailedPayloads,
+    payloadExpiresAt: requestLogs.payloadExpiresAt,
+  }).from(requestLogs).where(eq(requestLogs.responseId, responseId)).limit(1)
   if (!requestLog) throw new Error('Request log is missing')
   const [chatState] = await db.select({ temporary: chats.temporary }).from(chats)
     .where(eq(chats.id, record.response.chatId)).limit(1)
@@ -754,8 +760,10 @@ async function processGenerationAttempt(
       ...backgroundRequestParameter(record.response.executionMode),
       store: false as const,
     }
-    const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
-    if (parseLoggingSettings(loggingRow?.value).logDetailedPayloads) await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() }).where(eq(requestLogs.id, requestLog.id))
+    if (detailedPayloadCaptureIsActive(requestLog)) {
+      await db.update(requestLogs).set({ requestPayload: upstreamPayload, updatedAt: new Date() })
+        .where(activeDetailedPayloadCondition(requestLog.id))
+    }
     const stream = await client.responses.create(upstreamPayload, {
       signal: controller.signal,
       headers: cacheOptions.headers,
@@ -913,8 +921,7 @@ export async function processGeneration(responseId: string): Promise<void> {
     await processAgentGeneration(responseId)
     return
   }
-  const [loggingRow] = await db.select().from(applicationSettings).where(eq(applicationSettings.key, 'logging')).limit(1)
-  const logging = parseLoggingSettings(loggingRow?.value)
+  const detailedPayloadsEnabled = detailedPayloadCaptureIsActive(base.log)
   let model: typeof models.$inferSelect | undefined = base.model
   let fallbackFrom: string | null = null
   let attemptLimit = primaryModelAttemptLimit(base.model)
@@ -962,10 +969,13 @@ export async function processGeneration(responseId: string): Promise<void> {
             outputTokens: usage?.outputTokens ?? 0, reasoningTokens: usage?.reasoningTokens ?? 0,
             costMicros: Number(costRow?.cost ?? 0), durationMs,
             tokensPerSecond: durationMs > 0 ? completionTokensPerSecond(durationMs, usage?.outputTokens ?? 0) : null,
-            responsePayload: logging.logDetailedPayloads ? { output: completed?.output ?? [], usage } : null,
             completedAt: new Date(), updatedAt: new Date(),
           }).where(eq(requestLogs.id, base.log.id))
         })
+        if (detailedPayloadsEnabled) {
+          await db.update(requestLogs).set({ responsePayload: { output: completed?.output ?? [], usage }, updatedAt: new Date() })
+            .where(activeDetailedPayloadCondition(base.log.id))
+        }
         if (isSlowCompletion(model, durationMs, usage?.outputTokens ?? 0)) await markModelSticky(redis, model, 'slow_completion')
         await publishAdminUsage(base.log.id, true)
         return
