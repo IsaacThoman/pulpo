@@ -1,3 +1,5 @@
+import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
+import { bindWebComposerSocket } from '@/lib/local-first/composer-sync'
 import { useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -102,8 +104,9 @@ export function ChatDataBridge() {
     const socket: PulpoSocket = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
       path: '/socket.io',
       withCredentials: !isDesktopRuntime(),
-      auth: isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : undefined,
+      auth: { composerSyncEnabled: useComposerSyncPreference.getState().enabled, ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}) },
     })
+    const unbindComposer = bindWebComposerSocket(userId, socket)
     socketRef.current = socket
     const subscribedResponseIds = subscribedResponseIdsRef.current
 
@@ -271,6 +274,7 @@ export function ChatDataBridge() {
       if (revisionTimer !== undefined) window.clearTimeout(revisionTimer)
       flushEventBatches()
       void flushCursors()
+      unbindComposer()
       socket.disconnect()
       socketRef.current = null
       subscribedResponseIds.clear()

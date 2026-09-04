@@ -1,3 +1,5 @@
+import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
+export * from './composer.js'
 import { z } from 'zod'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
@@ -1301,6 +1303,7 @@ export const animationSpeedSchema = z.number()
 export const managementAccountSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   language: z.string().min(1).max(32).default('en-US'),
+  composerSyncEnabled: z.boolean().default(true),
   sendWithEnter: z.boolean().default(true),
   streamResponses: z.boolean().default(true),
   showReasoning: z.boolean().default(true),
@@ -1668,6 +1671,9 @@ export const syncResultSchema = z.object({
 export type SyncResult = z.infer<typeof syncResultSchema>
 
 export interface ClientToServerEvents {
+  'composer.configure': (input: { enabled: boolean }) => void
+  'composer.read': (input: { draftId: string }, ack: (result: ComposerAck) => void) => void
+  'composer.write': (input: ComposerWrite, ack: (result: ComposerAck) => void) => void
   'client.sync': (input: SyncRequest, ack: (result: SyncResult) => void) => void
   'chat.subscribe': (input: { chatId: string }) => void
   'chat.unsubscribe': (input: { chatId: string }) => void
@@ -1678,6 +1684,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
+  'composer.changed': (snapshot: ComposerSnapshot) => void
   'response.event': (event: ResponseEvent) => void
   'response.snapshot': (snapshot: ResponseSnapshot) => void
   'response.completed': (input: { responseId: string; chatId: string; preview: string }) => void

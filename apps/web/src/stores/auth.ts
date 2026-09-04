@@ -1,3 +1,4 @@
+import { clearWebComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
 import { apiRequest, ApiError } from '@/lib/api'
 import { clearLocalUserData } from '@/lib/local-first/database'
@@ -359,6 +360,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     queryClient.clear()
     if (userId) {
       clearRuntimeComposerDrafts(userId)
+      clearWebComposerSync()
       await clearLocalUserData(userId)
     }
   },
@@ -413,6 +415,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
     configureDesktopRuntime({ instanceUrl: get().instanceUrl, token: null, onUnauthorized: () => { void get().handleDesktopUnauthorized() } })
     queryClient.clear()
     clearRuntimeComposerDrafts(userId)
+      clearWebComposerSync()
     await clearLocalUserData(userId)
     set({ user: null, checkingSession: false })
   },

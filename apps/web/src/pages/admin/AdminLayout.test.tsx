@@ -2,7 +2,7 @@
 
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 import { AdminLayout } from './AdminLayout'
@@ -48,3 +48,6 @@ describe('AdminLayout localization', () => {
     expect(within(container).getByRole('link', { name: 'Users' }).className).toContain('shrink-0')
   })
 })
+
+// These page tests do not exercise the authenticated composer lifecycle.
+vi.mock('@/lib/local-first/composer-sync', () => ({ clearWebComposerSync: vi.fn() }))

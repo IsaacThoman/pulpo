@@ -64,6 +64,9 @@ export async function registerSettingsRoutes(app: FastifyInstance): Promise<void
     if ('newChatAutoExpire' in patch && !newChatAutoExpireSchema.safeParse(patch.newChatAutoExpire).success) {
       throw new AppError(400, 'invalid_new_chat_expiration', 'Choose whether new chats should expire automatically')
     }
+    if ('composerSyncEnabled' in patch && typeof patch.composerSyncEnabled !== 'boolean') {
+      throw new AppError(400, 'invalid_composer_sync_setting', 'Choose whether composer drafts should sync')
+    }
     if ('memoryEnabled' in patch && typeof patch.memoryEnabled !== 'boolean') {
       throw new AppError(400, 'invalid_memory_setting', 'Choose whether Memories should be enabled')
     }

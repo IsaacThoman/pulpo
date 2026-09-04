@@ -26,7 +26,7 @@ interface PendingRequest {
   path: string
   method?: string
   body?: unknown
-  resolve: (body: unknown) => void
+  resolve: (body: unknown, status?: number) => void
   reject: (error: unknown) => void
 }
 
@@ -38,8 +38,8 @@ vi.stubGlobal('fetch', vi.fn((input: string | URL | Request, init?: RequestInit)
     path: String(input),
     method: init?.method,
     body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
-    resolve: (body) => resolve(new Response(JSON.stringify(body), {
-      status: 200,
+    resolve: (body, status = 200) => resolve(new Response(JSON.stringify(body), {
+      status,
       headers: { 'content-type': 'application/json' },
     })),
     reject,
@@ -384,8 +384,77 @@ describe('chat store branching integration', () => {
     expect(useChat.getState().chats.find((chat) => chat.id === temporaryId)?.temporary).toBe(false)
   })
 
-  it('creates and submits a distinct user branch for unchanged text', async () => {
-    const responseA = response(responseAId, 'completed')
+  // Issue #226: reservation rejection deletes the server response (and new chat).
+  it.each(['new', 'existing', 'temporary'] as const)(
+    'resubmits an insufficient-balance message in a %s chat',
+    async (kind) => {
+      useCatalog.setState({ models: [{ ...testModel, outputPrice: 10 }, { ...testModel, id: 'cheaper-model', outputPrice: 0.01 }] })
+      const existingChatId = crypto.randomUUID()
+      if (kind === 'existing') {
+        const initial = { ...detail(responseAId, [response(responseAId, 'completed')]), id: existingChatId }
+        queryClient.setQueryData(['chat', userId, existingChatId], initial)
+        useChat.getState().setDetailedChat(initial)
+      }
+      const targetChatId = useChat.getState().sendMessage(
+        kind === 'existing' ? existingChatId : null, 'one prompt', 'test-model', [], kind === 'temporary', true,
+      )
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      const failedMessageId = useChat.getState().chats.find((chat) => chat.id === targetChatId)!.messages.at(-2)!.id
+      const balanceError = 'Insufficient balance for the maximum request cost'
+      requests[0]!.resolve({ error: { code: 'insufficient_balance', message: balanceError } }, 402)
+      await vi.waitFor(() => expect(
+        useChat.getState().chats.find((chat) => chat.id === targetChatId)?.messages.at(-1),
+      ).toMatchObject({ done: true, error: balanceError }))
+
+      const attachmentId = crypto.randomUUID()
+      const retry = () => useChat.getState().editUserMessage({
+        chatId: targetChatId,
+        messageId: failedMessageId,
+        content: 'one prompt',
+        modelId: 'cheaper-model',
+        attachments: [{ id: attachmentId, name: 'image.png', mimeType: 'image/png', size: 42, type: 'image' }],
+        agentMode: true,
+      })
+      const firstRetry = retry()
+      const rejection = expect(firstRetry).rejects.toMatchObject({ status: 402, message: balanceError })
+      await vi.waitFor(() => expect(requests).toHaveLength(2))
+      requests[1]!.resolve({ error: { code: 'insufficient_balance', message: balanceError } }, 402)
+      await rejection
+      expect(queryClient.getQueryData<ServerChat>(['chat', userId, targetChatId])?.responses).toHaveLength(kind === 'existing' ? 2 : 1)
+      if (kind !== 'existing') {
+        useChat.getState().replaceSummaries([])
+        expect(useChat.getState().chats.some((chat) => chat.id === targetChatId)).toBe(true)
+      }
+      const edit = retry()
+      await vi.waitFor(() => expect(requests).toHaveLength(3))
+      expect(requests[2]).toMatchObject({
+        path: kind === 'existing' ? `/api/chats/${targetChatId}/responses` : '/api/chats/start',
+        method: 'POST',
+      })
+      const body = requests[2]!.body as { response?: Record<string, unknown> } & Record<string, unknown>
+      const submitted = kind === 'existing' ? body : body.response!
+      expect(submitted).toMatchObject({
+        modelId: 'cheaper-model', input: 'one prompt', attachmentIds: [attachmentId], agentMode: true,
+        parentResponseId: kind === 'existing' ? responseAId : null,
+      })
+      if (kind !== 'existing') expect(body.chat).toMatchObject({
+        clientId: targetChatId, temporary: kind === 'temporary', autoExpire: true,
+      })
+      const retriedId = submitted.clientId as string
+      requests[2]!.resolve({ response: response(retriedId, 'queued').snapshot }, 202)
+      await edit
+      const retriedDetail = queryClient.getQueryData<ServerChat>(['chat', userId, targetChatId])!
+      expect(retriedDetail.responses?.some((item) => `${item.id}:input` === failedMessageId)).toBe(false)
+      expect(retriedDetail.responses?.find((item) => item.id === retriedId)?.rejectedSend).toBeUndefined()
+      expect(useChat.getState().chats.find((chat) => chat.id === targetChatId)?.provisional).toBe(false)
+      useChat.getState().applyResponseSnapshot(response(retriedId, 'completed').snapshot)
+      expect(useChat.getState().chats.find((chat) => chat.id === targetChatId)?.messages.at(-1)).toMatchObject({ id: retriedId, done: true })
+
+    },
+  )
+
+  it.each(['completed', 'failed'] as const)('creates a user branch for a persisted %s response', async (status) => {
+    const responseA = response(responseAId, status)
     const initial = detail(responseAId, [responseA])
     queryClient.setQueryData(['chat', userId, chatId], initial)
     useChat.getState().setDetailedChat(initial)

@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "Sync composer drafts": "Sincronizar borradores de mensajes",
+  "Share unsent drafts across your devices. This account setting applies to web, desktop, and mobile. Turning it off keeps drafts local on each device; existing server drafts remain.": "Comparte borradores sin enviar entre tus dispositivos. Esta preferencia de la cuenta se aplica a la web, el escritorio y el móvil. Al desactivarla, los borradores se conservan en cada dispositivo; los borradores existentes en el servidor se mantienen.",
   "Could not start Codex sign-in.": "No se pudo iniciar la sesión de Codex.",
   "Disconnect Codex and cancel active Codex generations?": "¿Desconectar Codex y cancelar las generaciones activas de Codex?",
   "Could not disconnect Codex.": "No se pudo desconectar Codex.",
@@ -71,10 +73,9 @@ const esUi: Record<string, string> = {
   "Access is limited to one chat and requires two-factor authentication.": "El acceso está limitado a un chat y requiere autenticación de dos factores.",
   "Admin granted": "Concedido por un administrador",
   "Admin override": "Anulación administrativa",
-  "Admin-granted access": "Acceso concedido por un administrador",
   "Admin chat access": "Acceso administrativo al chat",
   "Administrator chat access expired. Complete the warning and verification again to continue.": "El acceso administrativo al chat ha caducado. Vuelve a aceptar el aviso y completa la verificación para continuar.",
-  "Billed plan": "Plan facturado",
+  "Benefits have been manually altered by an instance Admin": "Un administrador de la instancia ha modificado manualmente los beneficios",
   "Authorized administrators may access and modify an individual conversation when reasonably necessary for support, safety, security, or service operations. This access is limited to the selected conversation, requires administrator two-factor authentication, and expires automatically. Model usage initiated by the administrator is charged to the administrator rather than the conversation owner.": "Los administradores autorizados pueden acceder a una conversación y modificarla cuando sea razonablemente necesario para prestar asistencia o por motivos de seguridad u operaciones del servicio. El acceso se limita a la conversación seleccionada, requiere la autenticación de dos factores del administrador y caduca automáticamente. El uso de modelos iniciado por el administrador se cobra al administrador y no al propietario de la conversación.",
   "Baby": "Baby",
   "Chat duplicated as {{chatId}}. Opening the copy requires a new access session.": "El chat se ha duplicado como {{chatId}}. Para abrir la copia se necesita una nueva sesión de acceso.",

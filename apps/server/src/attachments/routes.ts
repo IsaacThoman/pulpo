@@ -1,3 +1,4 @@
+import { composerAttachmentIsLive } from '../composer/service.js'
 import { and, eq, isNull, or } from 'drizzle-orm'
 import type { FastifyInstance } from 'fastify'
 import { Readable } from 'node:stream'
@@ -201,7 +202,7 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       responseRows.map((row) => row.input),
       queueRows.map((row) => row.attachmentIds),
     )
-    if (referenced) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
+    if (referenced || await composerAttachmentIsLive(user.id, id)) throw new AppError(409, 'attachment_in_use', 'Attachment is still used by a message')
     await getBlobStore().delete(attachment.objectKey)
     await db.update(attachments).set({ status: 'deleted', updatedAt: new Date() }).where(eq(attachments.id, id))
     reply.code(204).send()

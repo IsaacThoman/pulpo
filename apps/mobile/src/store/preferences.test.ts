@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { preferencePatchForServer, preferencesFromServer } from './preferenceMapping'
 
 describe('production preference mapping', () => {
+  it('shares composer sync as an account preference with enabled defaults', () => {
+    expect(preferencesFromServer({ composerSyncEnabled: false }).composerSyncEnabled).toBe(false)
+    expect(preferencesFromServer({}).composerSyncEnabled).toBe(true)
+    expect(preferencePatchForServer('composerSyncEnabled', false)).toEqual({ composerSyncEnabled: false })
+  })
   it('hydrates the mobile names used by the web settings bridge', () => {
     expect(preferencesFromServer({
       theme: 'dark', localAttachmentCacheMb: 96, localChatLimit: 200,
@@ -10,6 +15,7 @@ describe('production preference mapping', () => {
       generation: { 'model-a': { reasoning: 'high', style: 'concise' } },
       agentModes: { 'model-a': false, 'model-b': true },
     })).toEqual({
+      composerSyncEnabled: true,
       theme: 'dark', attachmentCacheMb: 96, localChatLimit: 50,
       trashRetention: '7d', automaticChatExpiration: '24h', newChatAutoExpire: false, memoryEnabled: true,
       favoriteModelIds: ['model-b', 'model-a'], providerOrder: ['lab-b', 'lab-a'],
@@ -35,7 +41,7 @@ describe('production preference mapping', () => {
   })
 
   it('clears synchronized model preferences when older servers omit them', () => {
-    expect(preferencesFromServer({})).toEqual({ favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
+    expect(preferencesFromServer({})).toEqual({ composerSyncEnabled: true, favoriteModelIds: [], providerOrder: [], generation: {}, agentModes: {} })
   })
 
   it('filters malformed generation preferences from server settings', () => {

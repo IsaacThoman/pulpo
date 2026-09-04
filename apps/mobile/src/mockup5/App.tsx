@@ -1,3 +1,6 @@
+import { mobileComposerSync } from '../features/chat/composerSync';
+import { useComposerSync } from '../features/chat/useComposerSync';
+import type { ComposerState } from '@pulpo/contracts';
 import {
   createContext,
   forwardRef,
@@ -1514,7 +1517,9 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
   const storedChats = usePrototypeStore((state) => state.chats);
   const defaultModelId = usePrototypeStore((state) => state.defaultModelId);
   const automaticChatExpiration = usePrototypeStore((state) => state.preferences.automaticChatExpiration);
-  const newChatAutoExpire = usePrototypeStore((state) => state.preferences.newChatAutoExpire);
+  const defaultNewChatAutoExpire = usePrototypeStore((state) => state.preferences.newChatAutoExpire);
+  const [draftAutoExpire, setDraftAutoExpire] = useState<boolean | null>(null);
+  const newChatAutoExpire = draftAutoExpire ?? defaultNewChatAutoExpire;
   const productionScopeReady = usePrototypeStore((state) => state.productionScopeReady);
   const modelCatalogReady = usePrototypeStore((state) => state.modelCatalogReady);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
@@ -1861,7 +1866,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
       usePrototypeStore.getState().setChatAutoExpiration(activePrototypeChat.id, enabled);
       return;
     }
-    usePrototypeStore.getState().setPreference('newChatAutoExpire', enabled);
+    setDraftAutoExpire(enabled);
   }, [activePrototypeChat]);
   const messages = useMemo(() => activeChat?.messages ?? [], [activeChat?.messages]);
   const remoteAssistantStatus = selectedAssistantStatus(messages);
@@ -3366,8 +3371,8 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
 }
 
 function ChatView({
-  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
-  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onSelectPreset, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
+  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
   chatId: string | null;
@@ -3407,6 +3412,9 @@ function ChatView({
   onTemporaryChange: (value: boolean) => void;
   onAutoExpirationChange: (value: boolean) => void;
 }) {
+  const [draftPresets, setDraftPresets] = useState<Record<string, GenerationSelections>>({});
+  const presetSelections = resolveGenerationSelections(prototypeModel, draftPresets[model.id] ?? defaultPresetSelections);
+  const onSelectPreset = (presetId: string, choiceId: string) => setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const { reduceMotion, reduceTransparency } = useAccessibilityPreferences();
@@ -3466,7 +3474,9 @@ function ChatView({
     agentEnabled: boolean;
   } | null>(null);
   const inputRef = useRef(input);
+  const inputSelectionRef = useRef({ start: input.length, end: input.length });
   const hydratedDraftScopeRef = useRef<string | null>(null);
+  const [hydratedComposerScope, setHydratedComposerScope] = useState<string | null>(null);
   const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
   const [sending, setSending] = useState(false);
@@ -3621,19 +3631,8 @@ function ChatView({
     if (!canUseAgent) return;
     const next = !activeAgentEnabled;
     setAgentEnabled(next);
-    if (!messageEdit) {
-      const store = usePreferencesStore.getState();
-      runProductionAction(productionActions.setPreference('agentModes', {
-        ...store.agentModes,
-        [model.id]: next,
-      }), {
-        onError: (error) => {
-          useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'The Agent mode choice could not be synced.');
-        },
-      });
-    }
     Haptics.selectionAsync();
-  }, [activeAgentEnabled, canUseAgent, messageEdit, model.id]);
+  }, [activeAgentEnabled, canUseAgent]);
 
   const restoreComposer = useCallback(() => {
     const preserved = preservedComposerRef.current;
@@ -3693,7 +3692,7 @@ function ChatView({
       inputRef.current = runtime.body;
       attachmentsRef.current = restored;
       setAttachments(restored);
-      hydratedDraftScopeRef.current = scope;
+      hydratedDraftScopeRef.current = scope; setHydratedComposerScope(scope);
       placeComposerCursorAtEnd(runtime.body);
       return;
     }
@@ -3703,13 +3702,13 @@ function ChatView({
     attachmentsRef.current = [];
     setAttachments([]);
     if (!draftNamespace) {
-      hydratedDraftScopeRef.current = scope;
+      hydratedDraftScopeRef.current = scope; setHydratedComposerScope(scope);
       return;
     }
     void loadDraft<ComposerAttachment>(draftNamespace, draftId).then((draft) => {
       if (draftLoadRevisionRef.current !== revision || activeDraftRef.current?.scope !== scope) return;
       if (inputRef.current || attachmentsRef.current.length > 0) {
-        hydratedDraftScopeRef.current = scope;
+        hydratedDraftScopeRef.current = scope; setHydratedComposerScope(scope);
         return;
       }
       const restored = restoredComposerAttachments(draftId, draft?.attachments ?? [], latestAttachmentsRef.current);
@@ -3719,12 +3718,64 @@ function ChatView({
       inputRef.current = body;
       attachmentsRef.current = restored;
       setAttachments(restored);
-      hydratedDraftScopeRef.current = scope;
+      hydratedDraftScopeRef.current = scope; setHydratedComposerScope(scope);
       placeComposerCursorAtEnd(body);
     }).catch(() => {
-      if (activeDraftRef.current?.scope === scope) hydratedDraftScopeRef.current = scope;
+      if (activeDraftRef.current?.scope === scope) {
+        hydratedDraftScopeRef.current = scope;
+        setHydratedComposerScope(scope);
+      }
     });
   }, [activeDraftSnapshot, chatId, draftNamespace, onChangeInput, placeComposerCursorAtEnd, setAttachments]);
+
+  const sharedComposerState: ComposerState = {
+    content: preservedComposerRef.current?.input ?? input,
+    attachments: (preservedComposerRef.current?.attachments ?? attachments)
+      .filter((a) => a.state === 'ready' && a.serverId)
+      .map((a) => ({ id: a.serverId!, name: a.name, mimeType: a.mimeType, size: a.size ?? 0 })),
+    model: { id: model.id, presets: presetSelections },
+    agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
+  };
+  const { sync: composerSync, skipNextEdit } = useComposerSync(
+    draftNamespace, chatId ?? NEW_CHAT_DRAFT_ID, sharedComposerState,
+    hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${chatId ?? NEW_CHAT_DRAFT_ID}`,
+    Boolean(messageEdit),
+    (remote) => {
+      const current = preservedComposerRef.current?.attachments ?? attachmentsRef.current;
+      const byId = new Map(current.map((a) => [a.serverId, a]));
+      const next: ComposerAttachment[] = [
+        ...current.filter((a) => a.state !== 'ready'),
+        ...remote.attachments.map((a): ComposerAttachment => byId.get(a.id) ?? ({
+          id: a.id, serverId: a.id, localId: `remote:${a.id}`, ownerId: draftOwnerRef.current,
+          name: a.name, mimeType: a.mimeType, size: a.size, uri: '',
+          kind: a.mimeType.startsWith('image/') ? 'image' : 'file', state: 'ready', managed: false, attempt: 0,
+        })),
+      ];
+      if (preservedComposerRef.current) {
+        preservedComposerRef.current = { input: remote.content, attachments: next, agentEnabled: remote.agentMode };
+      } else {
+        const selection = inputSelectionRef.current;
+        inputRef.current = remote.content;
+        onChangeInput(remote.content);
+        requestAnimationFrame(() => {
+          if (composerInputRef.current?.isFocused()) composerInputRef.current.setNativeProps({ selection: {
+            start: Math.min(selection.start, remote.content.length), end: Math.min(selection.end, remote.content.length),
+          } });
+        });
+        setAttachments(next);
+        setAgentEnabled(remote.agentMode);
+        if (remote.model) {
+          setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }));
+          const selected = models.find((candidate) => candidate.id === remote.model!.id);
+          if (selected && selected.id !== model.id) onSelectModel(selected);
+        }
+        if (!chatId) {
+          if (remote.temporary !== temporary) onTemporaryChange(remote.temporary);
+          if (remote.autoExpire !== autoExpire) onAutoExpirationChange(remote.autoExpire);
+        }
+      }
+    }, Boolean(messageEdit),
+  );
 
   useEffect(() => {
     const active = activeDraftRef.current;
@@ -4070,6 +4121,9 @@ function ChatView({
       attachments: draft.attachments.map((item) => item.localId === attachment.localId ? attachment : item),
     };
     cacheComposerDraft(owner.scope, updated);
+    if (owner.namespace && attachment.state === 'ready' && attachment.serverId) {
+      mobileComposerSync(owner.namespace)?.attachToInactiveDraft(owner.draftId, { id: attachment.serverId, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size ?? 0 });
+    }
     if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);
   }, []);
 
@@ -4156,7 +4210,7 @@ function ChatView({
     Haptics.selectionAsync();
   }, [messageEdit, setAttachments]);
 
-  const submitMessage = useCallback(async () => {
+  const submitMessage = async () => {
     if (sending) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
@@ -4173,6 +4227,8 @@ function ChatView({
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
+      if (activeDraftRef.current?.scope !== submittedDraftIdentity?.scope) return;
+      if (composerSync && !composerSync.canRestoreSubmission(submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID, sharedComposerState)) return;
       onChangeInput(submittedDraft.input);
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
       setAgentEnabled(submittedDraft.agentEnabled);
@@ -4200,6 +4256,8 @@ function ChatView({
       }
       // Arm before invoking onSend: it inserts the optimistic rows before its
       // first network await, so arming after the promise resolves is too late.
+      const sharedDraftId = submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID;
+      const submittedRevision = await composerSync?.prepareSubmission(sharedDraftId, sharedComposerState);
       followSnapshot = armSubmittedTurnFollow();
       const pendingSend = onSend(
         submittedDraft.input,
@@ -4213,10 +4271,13 @@ function ChatView({
           return prepared as PreparedAttachment[];
         },
       );
-      onChangeInput('');
-      inputRef.current = '';
-      setAttachments([]);
-      draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
+      if (inputRef.current === submittedDraft.input) {
+        skipNextEdit();
+        onChangeInput('');
+        inputRef.current = '';
+        setAttachments([]);
+        draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
+      }
       const accepted = await pendingSend;
       if (!accepted) {
         restoreSubmittedTurnFollow(followSnapshot);
@@ -4224,6 +4285,7 @@ function ChatView({
         restoreSubmittedDraft();
         return;
       }
+      await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, submittedRevision ?? undefined);
       if (submittedDraftIdentity) {
         deleteCachedComposerDraft(submittedDraftIdentity.scope);
         if (submittedDraftIdentity.namespace) {
@@ -4243,7 +4305,7 @@ function ChatView({
     } finally {
       setSending(false);
     }
-  }, [activeAgentEnabled, armSubmittedTurnFollow, attachments, autoExpire, composerInputRef, input, messageEdit, onChangeInput, onEdit, onSend, presetSelections, restoreComposer, restoreSubmittedTurnFollow, sending, setAttachments, temporary, uploadOne]);
+  };
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();
@@ -4662,6 +4724,7 @@ function ChatView({
                 multiline
                 maxLength={1_000_000}
                 onChangeText={onChangeInput}
+                onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
                 style={styles.input}

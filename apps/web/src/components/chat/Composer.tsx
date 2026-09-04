@@ -1,3 +1,5 @@
+import { useComposerSync } from './use-composer-sync'
+import type { ComposerState } from '@pulpo/contracts'
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -109,6 +111,8 @@ export function Composer({
   chatId,
   modelId,
   centered,
+  onSyncControls,
+  syncEnabled = true,
   temporary = false,
   autoExpire = false,
   messageEdit = null,
@@ -118,6 +122,8 @@ export function Composer({
   chatId: string | null
   modelId: string
   centered?: boolean
+  syncEnabled?: boolean
+  onSyncControls?: (state: ComposerState) => void
   temporary?: boolean
   autoExpire?: boolean
   messageEdit?: ComposerMessageEdit | null
@@ -194,9 +200,12 @@ export function Composer({
   const overrides = useModelConfig((s) => s.overrides)
   const generation = useSettings((s) => s.generation)
   const sendWithEnter = useSettings((s) => s.sendWithEnter)
-  const setPresetChoice = useSettings((s) => s.setPresetChoice)
-  const agentModeEnabled = useSettings((s) => s.agentModes[modelId] ?? true)
-  const setAgentMode = useSettings((s) => s.setAgentMode)
+  const [draftPresets, setDraftPresets] = useState<Record<string, Record<string, string>>>({})
+  const setPresetChoice = (id: string, preset: string, choice: string) => setDraftPresets((current) => ({ ...current, [id]: { ...generation[id], ...current[id], [preset]: choice } }))
+  const defaultAgentMode = useSettings((s) => s.agentModes[modelId] ?? true)
+  const [draftAgentMode, setDraftAgentMode] = useState<boolean | null>(null)
+  const agentModeEnabled = draftAgentMode ?? defaultAgentMode
+  const setAgentMode = (_id: string, enabled: boolean) => setDraftAgentMode(enabled)
   const agentAvailable = useCatalog((s) => s.agentAvailable)
   const agentCapable = Boolean(getCatalogModel(modelId).agentEnabled)
   const canUseAgent = agentAvailable && agentCapable
@@ -206,7 +215,7 @@ export function Composer({
   uploadsRef.current = uploads
 
   const options = chatOptionsFor(getCatalogModel(modelId), overrides)
-  const selections = resolveSelections(options, generation[modelId])
+  const selections = resolveSelections(options, draftPresets[modelId] ?? generation[modelId])
   const activePresets = options.presets.filter((p) => p.choices.length > 0)
 
   const [editAgentMode, setEditAgentMode] = useState(false)
@@ -242,6 +251,41 @@ export function Composer({
     el.style.height = 'auto'
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`
   }, [])
+
+  const sharedComposerState: ComposerState = {
+    content: preservedDraftRef.current?.value ?? value,
+    attachments: (preservedDraftRef.current?.attachmentIds ?? attachmentIds).map((id) => uploads[id])
+      .filter((a): a is UploadRecord & { id: string } => Boolean(a?.id && a.status === 'ready'))
+      .map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, size: a.size })),
+    model: { id: modelId, presets: selections }, agentMode: agentModeEnabled, temporary, autoExpire,
+  }
+  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated, Boolean(editingExisting || recovery || submitting), (remote) => {
+    const currentIds = preservedDraftRef.current?.attachmentIds ?? attachmentIdsRef.current
+    const pending = currentIds.filter((id) => uploadsRef.current[id] && uploadsRef.current[id].status !== 'ready')
+    const currentByServerId = new Map(currentIds.map((id) => [uploadsRef.current[id]?.id, id]))
+    const remoteIds = remote.attachments.map((a) => currentByServerId.get(a.id) ?? addExistingAttachments([{ ...a, type: isSupportedImageMime(a.mimeType) ? 'image' : 'file' }], { chatId, temporary })[0]!)
+    const ids = [...pending, ...remoteIds]
+    if (preservedDraftRef.current) preservedDraftRef.current = { value: remote.content, attachmentIds: ids }
+    else if (!recovery) {
+      const selection = ref.current && document.activeElement === ref.current
+        ? { start: ref.current.selectionStart, end: ref.current.selectionEnd } : null
+      valueRef.current = remote.content
+      attachmentIdsRef.current = ids
+      setValue(remote.content)
+      setAttachmentIds(ids)
+      requestAnimationFrame(() => {
+        autosize()
+        if (selection && ref.current && document.activeElement === ref.current) {
+          ref.current.setSelectionRange(Math.min(selection.start, remote.content.length), Math.min(selection.end, remote.content.length))
+        }
+      })
+    }
+    if (!editingExisting && !recovery) {
+      if (remote.model) setDraftPresets((current) => ({ ...current, [remote.model!.id]: remote.model!.presets }))
+      setDraftAgentMode(remote.agentMode)
+      onSyncControls?.(remote)
+    }
+  }, Boolean(editingExisting || recovery))
 
   const focusAtEnd = useCallback(() => {
     const el = ref.current
@@ -605,7 +649,11 @@ export function Composer({
       clearDraft(false)
       return
     }
+    setSubmitting(true)
+    const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
+    setSubmitting(false)
     const staged = stageSubmission({
+      composerDraft: userId && composerSync ? { userId, draftId, state: sharedComposerState, revision: submittedRevision ?? undefined } : undefined,
       chatId,
       content: text,
       modelId,
@@ -616,7 +664,10 @@ export function Composer({
       attachmentIds,
     })
     if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
-    clearDraft(false)
+    if (valueRef.current === value && attachmentIdsRef.current === attachmentIds) {
+      skipNextEdit()
+      clearDraft(false)
+    }
   }
 
   const beginQueueEdit = async (messageId: string) => {
