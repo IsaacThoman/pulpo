@@ -46,6 +46,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { cn } from '@/lib/utils'
 import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
+import { SubscriptionCoverageCost } from '@/components/usage/SubscriptionCoverageCost'
 
 function ActionButton({
   label,
@@ -853,7 +854,15 @@ export const MessageItem = memo(function MessageItem({
                       message.latencyMs > 0 &&
                       ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
                     {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
-                    {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
+                    {message.cost !== undefined && <>
+                      {' · '}
+                      <SubscriptionCoverageCost
+                        costUsd={message.cost}
+                        subscriptionCoveredUsd={message.subscriptionCoveredCost ?? 0}
+                        personal
+                        formattedCost={formatCost(message.cost)}
+                      />
+                    </>}
                   </span>
                 )}
               </div>

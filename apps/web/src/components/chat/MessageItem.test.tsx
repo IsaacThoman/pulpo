@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { activityDurationMs } from './activity-timing'
 
 const mediaQuery = { matches: false, addEventListener: () => undefined }
@@ -76,7 +77,28 @@ describe('assistant response metadata', () => {
       activeModelId="model-1"
     />)
 
-    expect(markup).toContain('802→12 tok · 13tok/sec · 932ms · $0.0042')
+    expect(markup.replace(/<[^>]+>/g, '')).toContain('802→12 tok · 13tok/sec · 932ms · $0.0042')
+  })
+
+  it('colors subscription-covered cost purple with the usage-page tooltip', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<TooltipProvider><MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Answer',
+        tokensIn: 802,
+        tokensOut: 12,
+        cost: 0.0042,
+        subscriptionCoveredCost: 0.003,
+        latencyMs: 932,
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    /></TooltipProvider>)
+
+    expect(markup).toContain('data-subscription-coverage="partial"')
+    expect(markup).toContain('text-violet-700')
+    expect(markup).toContain('aria-label="$0.0042 · $0.0030 covered by your subscription · $0.0012 charged to balance"')
   })
 })
 

@@ -6,6 +6,7 @@ import { responseDisplayModelId } from './modelIdentity.js'
 
 type ChatRow = typeof chats.$inferSelect
 type ResponseRow = typeof responses.$inferSelect
+type ResponseUsageCost = { costMicros: number; subscriptionCoveredMicros: number }
 
 export interface PublicChatResponse {
   id: string
@@ -20,6 +21,7 @@ export interface PublicChatResponse {
   presetSelections: Record<string, string>
   usage: ResponseSnapshot['usage']
   costMicros: number | null
+  subscriptionCoveredMicros: number | null
   error: unknown
   createdAt: string
   completedAt: string | null
@@ -32,7 +34,7 @@ export interface PublicChatResponse {
 export function toPublicChatResponse(
   response: ResponseRow,
   allTurns: ResponseRow[],
-  options: { compact?: boolean; costMicros?: number | null } = {},
+  options: { compact?: boolean; usageCost?: ResponseUsageCost } = {},
 ): PublicChatResponse {
   const snapshot = toSnapshot(response)
   const { output: _duplicatedOutput, ...snapshotMarker } = snapshot
@@ -48,7 +50,8 @@ export function toPublicChatResponse(
     output: snapshot.output,
     presetSelections: response.presetSelections as Record<string, string>,
     usage: snapshot.usage,
-    costMicros: options.costMicros ?? null,
+    costMicros: options.usageCost?.costMicros ?? null,
+    subscriptionCoveredMicros: options.usageCost?.subscriptionCoveredMicros ?? null,
     error: snapshot.error,
     createdAt: response.createdAt.toISOString(),
     completedAt: response.completedAt?.toISOString() ?? null,
@@ -79,7 +82,7 @@ export function toPublicChatResponseStub(
 export function toPublicChatResponses(
   allTurns: ResponseRow[],
   activeLeafId: string | null,
-  options: { compact?: boolean; activeOnly?: boolean; costMicrosByResponseId?: ReadonlyMap<string, number> } = {},
+  options: { compact?: boolean; activeOnly?: boolean; usageCostsByResponseId?: ReadonlyMap<string, ResponseUsageCost> } = {},
 ): PublicChatResponse[] {
   const activeIds = options.activeOnly
     ? new Set(lineageFromLeaf(allTurns, activeLeafId ?? allTurns.at(-1)?.id ?? null).map((response) => response.id))
@@ -88,7 +91,7 @@ export function toPublicChatResponses(
     ? toPublicChatResponseStub(response, allTurns)
     : toPublicChatResponse(response, allTurns, {
         compact: options.compact,
-        costMicros: options.costMicrosByResponseId?.get(response.id),
+        usageCost: options.usageCostsByResponseId?.get(response.id),
       }))
 }
 
@@ -96,14 +99,14 @@ export function toPublicChatResponses(
 export function toPublicBranchActivation(
   allTurns: ResponseRow[],
   activeBranchLeafId: string,
-  costMicrosByResponseId?: ReadonlyMap<string, number>,
+  usageCostsByResponseId?: ReadonlyMap<string, ResponseUsageCost>,
 ) {
   return {
     activeBranchLeafId,
     responses: toPublicChatResponses(allTurns, activeBranchLeafId, {
       compact: true,
       activeOnly: true,
-      costMicrosByResponseId,
+      usageCostsByResponseId,
     }),
   }
 }

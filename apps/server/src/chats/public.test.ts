@@ -40,9 +40,17 @@ describe('public chat DTOs', () => {
       metadata: {}, publiclyStored: true, incompleteDetails: null, startedAt: date, completedAt: date, deletedAt: null,
       createdAt: date, updatedAt: date,
     }
-    const result = toPublicChatResponse(row, [row], { costMicros: 4_200 })
+    const result = toPublicChatResponse(row, [row], {
+      usageCost: { costMicros: 4_200, subscriptionCoveredMicros: 3_000 },
+    })
 
-    expect(result).toMatchObject({ id: row.id, displayModelId: 'model-actual', agentMode: true, costMicros: 4_200 })
+    expect(result).toMatchObject({
+      id: row.id,
+      displayModelId: 'model-actual',
+      agentMode: true,
+      costMicros: 4_200,
+      subscriptionCoveredMicros: 3_000,
+    })
     for (const field of [
       'chatId', 'userId', 'origin', 'pricingVersionId', 'openaiResponseId', 'branchReason',
       'executionMode', 'agentCapacityAction', 'instructions', 'parameters', 'lastSequence',

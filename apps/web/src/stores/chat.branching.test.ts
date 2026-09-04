@@ -215,6 +215,7 @@ describe('chat store branching integration', () => {
       ...response(responseAId, 'completed'),
       usage: { inputTokens: 802, outputTokens: 12 },
       costMicros: 4_200,
+      subscriptionCoveredMicros: 3_000,
     }
 
     useChat.getState().setDetailedChat(detail(responseAId, [settled]))
@@ -223,6 +224,7 @@ describe('chat store branching integration', () => {
       tokensIn: 802,
       tokensOut: 12,
       cost: 0.0042,
+      subscriptionCoveredCost: 0.003,
     })
   })
 

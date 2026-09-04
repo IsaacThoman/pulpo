@@ -225,9 +225,13 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     const costRows = turns.length ? await db.select({
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
+      subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
     }).from(usageEvents).where(inArray(usageEvents.responseId, turns.map((response) => response.id))) : []
-    const costMicrosByResponseId = new Map(costRows.flatMap((row) => (
-      row.responseId ? [[row.responseId, Number(row.costMicros)] as const] : []
+    const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
+      row.responseId ? [[row.responseId, {
+        costMicros: Number(row.costMicros),
+        subscriptionCoveredMicros: Number(row.subscriptionCoveredMicros),
+      }] as const] : []
     )))
     const leafId = newestDescendantId(turns, selected.id)
     const now = new Date()
@@ -243,7 +247,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     }
     await bumpRevision(user.id, selected.chatId)
     await scheduleChatIndex(selected.chatId, user.id, 'branch-activation')
-    return toPublicBranchActivation(turns, leafId, costMicrosByResponseId)
+    return toPublicBranchActivation(turns, leafId, usageCostsByResponseId)
   })
 
   app.delete('/api/messages/:id', async (request, reply) => {

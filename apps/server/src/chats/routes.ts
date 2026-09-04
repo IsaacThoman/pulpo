@@ -498,9 +498,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const costRows = allTurns.length ? await db.select({
       responseId: usageEvents.responseId,
       costMicros: usageEvents.costMicros,
+      subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
     }).from(usageEvents).where(inArray(usageEvents.responseId, allTurns.map((response) => response.id))) : []
-    const costMicrosByResponseId = new Map(costRows.flatMap((row) => (
-      row.responseId ? [[row.responseId, Number(row.costMicros)] as const] : []
+    const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
+      row.responseId ? [[row.responseId, {
+        costMicros: Number(row.costMicros),
+        subscriptionCoveredMicros: Number(row.subscriptionCoveredMicros),
+      }] as const] : []
     )))
     const referencedAttachmentIds = [...new Set(allTurns.flatMap((response) => responseAttachmentIds(response.input)))]
     const attachmentRows = referencedAttachmentIds.length ? await db.select({
@@ -522,7 +526,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       responses: toPublicChatResponses(
         allTurns,
         chat.activeBranchLeafId ?? chat.activeResponseId,
-        { compact, activeOnly: activeScope, costMicrosByResponseId },
+        { compact, activeOnly: activeScope, usageCostsByResponseId },
       ),
     }
   })
