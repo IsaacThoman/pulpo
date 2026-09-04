@@ -130,6 +130,10 @@ body {
   );
 }
 
+html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
+  display: none;
+}
+
 @media (width < 750px) {
   .mobile-sidebar-opener {
     display: flex;
