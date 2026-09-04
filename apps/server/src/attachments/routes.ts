@@ -6,7 +6,7 @@ import { MAX_CONFIGURABLE_ATTACHMENT_BYTES } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
-import { attachments, chats, queuedMessages, responses } from '../database/schema.js'
+import { attachments, chats, noteMemberships, notes, queuedMessages, responses } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { getBlobStore } from '../storage/index.js'
@@ -16,11 +16,13 @@ import { canonicalUploadedMimeType, isConfirmedRasterImage } from './policy.js'
 import { createAttachmentThumbnail } from './thumbnail.js'
 import { attachmentReferenceIsLive } from './references.js'
 import { AttachmentSizeMismatchError, exactSizeStream, inspectAttachmentStream } from './streams.js'
+import { accessibleNote } from '../notes/service.js'
 
 function accessibleAttachmentCondition() {
   return or(
-    isNull(attachments.chatId),
+    and(isNull(attachments.chatId), isNull(attachments.noteId)),
     and(isNull(chats.deletedAt), accessibleChatCondition()),
+    and(isNull(notes.deletedAt), isNull(notes.purgeStartedAt)),
   )
 }
 
@@ -41,9 +43,14 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   const readyAttachment = async (userId: string, id: string) => {
     const [result] = await db.select({ attachment: attachments }).from(attachments)
       .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(notes, eq(notes.id, attachments.noteId))
+      .leftJoin(noteMemberships, and(
+        eq(noteMemberships.noteId, attachments.noteId),
+        eq(noteMemberships.userId, userId),
+      ))
       .where(and(
         eq(attachments.id, id),
-        eq(attachments.userId, userId),
+        or(eq(attachments.userId, userId), eq(noteMemberships.userId, userId)),
         eq(attachments.status, 'ready'),
         accessibleAttachmentCondition(),
       )).limit(1)
@@ -59,8 +66,10 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const user = requireUser(request)
     const input = z.object({
       chatId: z.uuid().nullable().default(null), originalName: z.string().trim().min(1).max(255),
+      noteId: z.uuid().nullable().default(null),
       mimeType: z.string().min(1).max(255), sizeBytes: z.number().int().positive().max(MAX_CONFIGURABLE_ATTACHMENT_BYTES),
-    }).parse(request.body)
+    }).refine((value) => !(value.chatId && value.noteId), 'Choose either a chat or note').parse(request.body)
+    let storageOwnerId = user.id
     if (input.chatId) {
       const [chat] = await db.select({ id: chats.id }).from(chats).where(and(
         eq(chats.id, input.chatId),
@@ -70,9 +79,20 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       )).limit(1)
       if (!chat) throw notFound('Chat')
     }
+    if (input.noteId) {
+      const access = await accessibleNote(user.id, input.noteId)
+      if (access.role === 'viewer') throw new AppError(403, 'note_read_only', 'This note is read-only')
+      storageOwnerId = access.note.ownerUserId
+    }
     const id = newId()
-    const objectKey = `users/${user.id}/attachments/${id}`
-    const created = await reserveAttachment({ id, userId: user.id, objectKey, ...input })
+    const objectKey = `users/${storageOwnerId}/attachments/${id}`
+    const created = await reserveAttachment({
+      id,
+      userId: storageOwnerId,
+      uploadedByUserId: user.id,
+      objectKey,
+      ...input,
+    })
     const storageDriver = getConfig().STORAGE_DRIVER
     const uploadUrl = await getBlobStore().createUploadUrl(objectKey, { contentType: input.mimeType, contentLength: input.sizeBytes }, 900)
     reply.code(201)
@@ -85,10 +105,13 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const { key } = request.params as { key: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
       .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(notes, eq(notes.id, attachments.noteId))
+      .leftJoin(noteMemberships, and(eq(noteMemberships.noteId, attachments.noteId), eq(noteMemberships.userId, user.id)))
       .where(and(
         eq(attachments.objectKey, key),
-        eq(attachments.userId, user.id),
+        or(eq(attachments.userId, user.id), eq(attachments.uploadedByUserId, user.id)),
         eq(attachments.status, 'pending'),
+        or(isNull(attachments.noteId), eq(noteMemberships.userId, user.id)),
         accessibleAttachmentCondition(),
       )).limit(1)
     const attachment = result?.attachment
@@ -119,9 +142,12 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const { id } = request.params as { id: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
       .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(notes, eq(notes.id, attachments.noteId))
+      .leftJoin(noteMemberships, and(eq(noteMemberships.noteId, attachments.noteId), eq(noteMemberships.userId, user.id)))
       .where(and(
         eq(attachments.id, id),
-        eq(attachments.userId, user.id),
+        or(eq(attachments.userId, user.id), eq(attachments.uploadedByUserId, user.id)),
+        or(isNull(attachments.noteId), eq(noteMemberships.userId, user.id)),
         accessibleAttachmentCondition(),
       )).limit(1)
     const attachment = result?.attachment
@@ -169,9 +195,14 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     const { key } = request.params as { key: string }
     const [result] = await db.select({ attachment: attachments }).from(attachments)
       .leftJoin(chats, eq(chats.id, attachments.chatId))
+      .leftJoin(notes, eq(notes.id, attachments.noteId))
+      .leftJoin(noteMemberships, and(
+        eq(noteMemberships.noteId, attachments.noteId),
+        eq(noteMemberships.userId, user.id),
+      ))
       .where(and(
         eq(attachments.objectKey, key),
-        eq(attachments.userId, user.id),
+        or(eq(attachments.userId, user.id), eq(noteMemberships.userId, user.id)),
         eq(attachments.status, 'ready'),
         accessibleAttachmentCondition(),
       )).limit(1)
@@ -184,10 +215,16 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
   app.delete('/api/attachments/:id', async (request, reply) => {
     const user = requireUser(request)
     const { id } = request.params as { id: string }
-    const [attachment] = await db.select().from(attachments).where(and(eq(attachments.id, id), eq(attachments.userId, user.id))).limit(1)
+    const [attachment] = await db.select().from(attachments).where(and(
+      eq(attachments.id, id),
+      or(eq(attachments.userId, user.id), eq(attachments.uploadedByUserId, user.id)),
+    )).limit(1)
     if (!attachment) throw notFound('Attachment')
     if (attachment.origin !== 'user') {
       throw new AppError(409, 'attachment_in_use', 'Generated attachments cannot be removed this way')
+    }
+    if (attachment.noteId && attachment.status === 'ready') {
+      throw new AppError(409, 'attachment_in_use', 'Note attachments are retained until the note is permanently deleted')
     }
     const responseRows = await db.select({ input: responses.input }).from(responses).where(and(
       eq(responses.userId, user.id),

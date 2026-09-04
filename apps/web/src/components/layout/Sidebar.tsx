@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart3,
@@ -8,11 +8,13 @@ import {
   ChevronRight,
   Folder as FolderIcon,
   FolderInput,
+  FileText,
   Hourglass,
   KeyRound,
   LogOut,
   Loader2,
   MoreHorizontal,
+  MessageSquare,
   Pencil,
   Pin,
   PinOff,
@@ -63,7 +65,8 @@ import { toggleSidebarPin, type SidebarPinKey } from '@/lib/sidebar-pins'
 import { newChatLocationState } from '@/lib/new-chat-navigation'
 import { fetchBillingSummary } from '@/lib/billing'
 import { isDesktopRuntime } from '@/lib/runtime'
-import { uit } from '@/i18n/ui'
+import { ui, uit } from '@/i18n/ui'
+import { NotesSidebarContent } from '@/features/notes/NotesSidebarContent'
 
 const GROUP_ORDER = ['Today', 'Yesterday', 'Previous 7 Days', 'Previous 30 Days', 'Older'] as const
 
@@ -648,6 +651,8 @@ export function Sidebar({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const location = useLocation()
+  const notesMode = location.pathname.startsWith('/notes')
   const { chatId } = useParams()
   const chatListRevision = useChat((state) => state.chats.map((chat) => (
     `${chat.id}:${chat.title}:${chat.updatedAt}:${chat.pinned}:${chat.folderId ?? ''}:${chat.modelId}:${chat.sortOrder}:${chat.temporary}`
@@ -1024,8 +1029,15 @@ export function Sidebar({
       <div className="min-h-0 flex-1 overflow-y-auto">
         {/* primary nav */}
         <div className="space-y-0.5 px-2">
-          {iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
-          {iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
+          {collapsed ? <>
+            {iconBtn(ui('Chats'), () => go('/'), <MessageSquare className="size-4" />)}
+            {iconBtn(ui('Notes'), () => go('/notes'), <FileText className="size-4" />)}
+          </> : <div className="mb-2 grid grid-cols-2 rounded-lg bg-sidebar-accent/55 p-0.5" role="tablist" aria-label={ui('Workspace')}>
+            <button className={cn('h-7 cursor-pointer rounded-md text-xs transition-colors', !notesMode ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')} onClick={() => go('/')} role="tab" aria-selected={!notesMode}>{ui('Chats')}</button>
+            <button className={cn('h-7 cursor-pointer rounded-md text-xs transition-colors', notesMode ? 'bg-background font-medium text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')} onClick={() => go('/notes')} role="tab" aria-selected={notesMode}>{ui('Notes')}</button>
+          </div>}
+          {!notesMode && iconBtn(t('chat.newChat'), startNewChat, <SquarePen className="size-4" />)}
+          {!notesMode && iconBtn(t('sidebar.searchChats'), onOpenSearch, <Search className="size-4" />)}
           {sidebarPins.usage && iconBtn(t('sidebar.usage'), () => go('/usage'), <BarChart3 className="size-4" />)}
           {billingEnabled && sidebarPins.billing && iconBtn(t('sidebar.billing'), () => go('/billing'), <CreditCard className="size-4" />)}
           {sidebarPins.friends && iconBtn(t('sidebar.friends'), () => go('/friends'), <UsersRound className="size-4" />, pendingSocialCount)}
@@ -1041,8 +1053,9 @@ export function Sidebar({
             sidebarContentTransition
           )}
         >
+          {notesMode && <NotesSidebarContent onNavigate={onNavigate} />}
           {/* chat list */}
-          <div className="px-2 pb-4 pt-2">
+          <div className={cn('px-2 pb-4 pt-2', notesMode && 'hidden')}>
             {pinned.length > 0 && (
               <div className="mb-2">
                 <div className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">

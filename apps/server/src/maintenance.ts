@@ -15,6 +15,7 @@ import { purgeExpiredMemoryDocumentRevisions } from './memory-document/service.j
 import { deleteExpiredBackupObjects } from './admin/backup-retention.js'
 import { deleteUnlockedOffsiteBackups } from './admin/backup-scheduler.js'
 import { backupSettingsForExport } from './admin/backup-settings.js'
+import { markExpiredNotesForPurge, purgePendingNotes } from './notes/service.js'
 
 const RESPONSE_CONTEXT_SCRUB_BATCH_SIZE = 100
 
@@ -118,6 +119,7 @@ export async function runCleanup(): Promise<void> {
   if (abandoned.length) await db.update(attachments).set({ status: 'deleted', updatedAt: now }).where(inArray(attachments.id, abandoned.map((row) => row.id)))
   await expireNormalChats(now)
   await markExpiredChatsForPurge(now)
+  await markExpiredNotesForPurge(now)
   await db.delete(sessions).where(lt(sessions.expiresAt, now))
   await db.delete(passwordResetTokens).where(lt(passwordResetTokens.expiresAt, now))
   await db.delete(idempotencyRecords).where(lt(idempotencyRecords.expiresAt, now))
@@ -137,6 +139,7 @@ export async function runCleanup(): Promise<void> {
   await deleteUnlockedOffsiteBackups(now)
   await reconcileWorkspaceLeases()
   await purgePendingChats()
+  await purgePendingNotes()
 }
 
 export async function rebuildDailyRollups(): Promise<void> {

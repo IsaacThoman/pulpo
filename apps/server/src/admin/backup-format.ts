@@ -1,7 +1,7 @@
 export const FULL_BACKUP_TABLES = [
   'users', 'friendships', 'user_blocks', 'password_credentials', 'user_totp_credentials', 'two_factor_recovery_codes', 'user_preferences', 'audit_events',
   'catalog_icons', 'labs', 'provider_connections',
-  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses',
+  'models', 'model_pricing_versions', 'model_presets', 'model_preset_choices', 'folders', 'chats', 'responses', 'notes', 'note_memberships',
   'response_items', 'response_content_parts', 'chat_shares', 'attachments', 'user_memory_documents', 'user_memory_document_revisions',
   'episodic_memory_generations', 'chat_turn_embeddings', 'episodic_memory_metric_buckets',
   'api_keys', 'management_tokens', 'api_key_model_permissions', 'credit_ledger', 'usage_events', 'daily_usage_rollups', 'application_settings',
@@ -17,6 +17,9 @@ export type FullBackupTable = typeof FULL_BACKUP_TABLES[number]
  * PostgreSQL regenerates it from the restored source text.
  */
 export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, readonly string[]>> = {
+  notes: [
+    'id', 'owner_user_id', 'document_state', 'title', 'body_text', 'deleted_at', 'purge_started_at', 'created_at', 'updated_at',
+  ],
   chat_turn_embeddings: [
     'id', 'generation_id', 'user_id', 'chat_id', 'response_id', 'content_hash', 'chunk_text',
     'embedding', 'status', 'error', 'indexed_at', 'created_at', 'updated_at',
@@ -24,6 +27,8 @@ export const FULL_BACKUP_EXPLICIT_COLUMNS: Partial<Record<FullBackupTable, reado
 }
 
 export const OPTIONAL_TABLES_IN_LEGACY_BACKUPS: readonly FullBackupTable[] = [
+  'notes',
+  'note_memberships',
   'user_memory_documents',
   'user_memory_document_revisions',
   'episodic_memory_generations',

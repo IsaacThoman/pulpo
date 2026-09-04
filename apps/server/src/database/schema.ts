@@ -24,6 +24,7 @@ const halfvec = customType<{ data: number[]; driverData: string }>({
 })
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' })
 
 const timestamps = {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -42,6 +43,7 @@ export const workspaceLeaseStatusEnum = pgEnum('workspace_lease_status', ['provi
 export const agentRunStatusEnum = pgEnum('agent_run_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
 export const toolExecutionStatusEnum = pgEnum('tool_execution_status', ['queued', 'running', 'completed', 'failed', 'cancelled'])
 export const friendshipStatusEnum = pgEnum('friendship_status', ['pending', 'accepted'])
+export const noteRoleEnum = pgEnum('note_role', ['owner', 'editor', 'viewer'])
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey(),
@@ -449,6 +451,35 @@ export const chats = pgTable('chats', {
     .where(sql`${table.expiresAt} is not null and ${table.deletedAt} is null and ${table.purgeStartedAt} is null`),
 ])
 
+export const notes = pgTable('notes', {
+  id: uuid('id').primaryKey(),
+  ownerUserId: uuid('owner_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  documentState: bytea('document_state').notNull(),
+  title: text('title').notNull().default('Untitled note'),
+  bodyText: text('body_text').notNull().default(''),
+  searchVector: tsvector('search_vector').notNull().generatedAlwaysAs(sql`to_tsvector('simple', coalesce("title", '') || ' ' || coalesce("body_text", ''))`),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  purgeStartedAt: timestamp('purge_started_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  index('notes_owner_updated_idx').on(table.ownerUserId, table.updatedAt),
+  index('notes_search_idx').using('gin', table.searchVector),
+  index('notes_purge_idx').on(table.deletedAt, table.purgeStartedAt),
+])
+
+export const noteMemberships = pgTable('note_memberships', {
+  noteId: uuid('note_id').notNull().references(() => notes.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  role: noteRoleEnum('role').notNull(),
+  pinned: boolean('pinned').notNull().default(false),
+  ...timestamps,
+}, (table) => [
+  primaryKey({ columns: [table.noteId, table.userId] }),
+  uniqueIndex('note_memberships_single_owner_idx').on(table.noteId).where(sql`${table.role} = 'owner'`),
+  index('note_memberships_user_idx').on(table.userId, table.updatedAt),
+  index('note_memberships_note_idx').on(table.noteId),
+])
+
 export const responses = pgTable('responses', {
   id: uuid('id').primaryKey(),
   chatId: uuid('chat_id').notNull().references(() => chats.id, { onDelete: 'cascade' }),
@@ -544,6 +575,8 @@ export const attachments = pgTable('attachments', {
   id: uuid('id').primaryKey(),
   userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  noteId: uuid('note_id').references(() => notes.id, { onDelete: 'cascade' }),
+  uploadedByUserId: uuid('uploaded_by_user_id').references(() => users.id, { onDelete: 'set null' }),
   status: attachmentStatusEnum('status').notNull().default('pending'),
   objectKey: text('object_key').notNull(),
   originalName: text('original_name').notNull(),
@@ -558,6 +591,7 @@ export const attachments = pgTable('attachments', {
   error: text('error'),
   ...timestamps,
 }, (table) => [
+  check('attachments_single_parent_check', sql`num_nonnulls(${table.chatId}, ${table.noteId}) <= 1`),
   index('attachments_user_status_idx').on(table.userId, table.status),
   uniqueIndex('attachments_response_tool_unique').on(table.sourceResponseId, table.sourceToolCallId),
 ])

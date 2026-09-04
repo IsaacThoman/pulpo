@@ -10,6 +10,7 @@ import { newId } from '../lib/ids.js'
 import { publicFriendProfile } from '../profile/service.js'
 import { bumpAccountRevisions, publishScopedStateChanges } from './sync.js'
 import { publishPoolChanges, separatePoolOnBlock } from '../pools/service.js'
+import { disconnectNoteSessions, revokeNoteMembershipsBetween } from '../notes/service.js'
 
 export function orderedPair(left: string, right: string): [string, string] {
   return left < right ? [left, right] : [right, left]
@@ -289,13 +290,15 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
     const user = requireUser(request)
     const { userId } = z.object({ userId: z.uuid() }).parse(request.params)
     const [userAId, userBId] = orderedPair(user.id, userId)
-    const changes = await db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`${userAId}:${userBId}`}))`)
       const deleted = await tx.delete(friendships).where(and(pairWhere(user.id, userId), eq(friendships.status, 'accepted'))).returning({ id: friendships.id })
       if (!deleted.length) throw notFound('Friendship')
-      return bumpAccountRevisions(tx, [userAId, userBId])
+      const revokedNoteIds = await revokeNoteMembershipsBetween(tx, userAId, userBId)
+      return { changes: await bumpAccountRevisions(tx, [userAId, userBId]), revokedNoteIds }
     })
-    await publishScopedStateChanges(changes, ['friends'])
+    await publishScopedStateChanges(result.changes, result.revokedNoteIds.length ? ['friends', 'notes'] : ['friends'])
+    await disconnectNoteSessions(result.revokedNoteIds)
     reply.code(204).send()
   })
 
@@ -311,9 +314,11 @@ export async function registerFriendRoutes(app: FastifyInstance): Promise<void> 
       await tx.delete(friendships).where(pairWhere(user.id, userId))
       await tx.insert(userBlocks).values({ blockerUserId: user.id, blockedUserId: userId }).onConflictDoNothing()
       const poolUsers = await separatePoolOnBlock(tx, user.id, userId)
-      return { changes: await bumpAccountRevisions(tx, [userAId, userBId]), poolUsers }
+      const revokedNoteIds = await revokeNoteMembershipsBetween(tx, userAId, userBId)
+      return { changes: await bumpAccountRevisions(tx, [userAId, userBId]), poolUsers, revokedNoteIds }
     })
-    await publishScopedStateChanges(result.changes, ['friends'])
+    await publishScopedStateChanges(result.changes, result.revokedNoteIds.length ? ['friends', 'notes'] : ['friends'])
+    await disconnectNoteSessions(result.revokedNoteIds)
     if (result.poolUsers.length) await publishPoolChanges(result.poolUsers)
     reply.code(204).send()
   })

@@ -25,6 +25,8 @@ describe('full backup format', () => {
 
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
+      'notes',
+      'note_memberships',
       'user_memory_documents',
       'user_memory_document_revisions',
       'episodic_memory_generations',

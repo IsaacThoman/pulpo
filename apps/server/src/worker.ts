@@ -18,6 +18,7 @@ import { scheduleChatIndex } from './episodic-memory/queue.js'
 import { readEpisodicMemorySettings, enqueueEpisodicReconciliation } from './episodic-memory/settings.js'
 import { processCodexLogin } from './codex/login.js'
 import { reconcileOffsiteBackupJobs, runOffsiteBackupSchedule } from './admin/backup-scheduler.js'
+import { markExpiredNotesForPurge, purgePendingNotes } from './notes/service.js'
 
 const config = getConfig()
 const readGenerationConcurrency = async (): Promise<number> => {
@@ -77,6 +78,11 @@ const maintenanceWorker = new Worker<MaintenanceJob>('maintenance', async (job) 
     const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
     await markExpiredChatsForPurge(new Date(), userId)
     await purgePendingChats(userId)
+  }
+  if (job.data.type === 'purge-notes') {
+    const userId = typeof job.data.payload?.userId === 'string' ? job.data.payload.userId : undefined
+    await markExpiredNotesForPurge(new Date(), userId)
+    await purgePendingNotes(userId)
   }
   if (job.data.type === 'expire-temporary-chat') {
     const chatId = typeof job.data.payload?.chatId === 'string' ? job.data.payload.chatId : ''

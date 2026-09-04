@@ -266,6 +266,66 @@ export const friendProfileSchema = z.object({
 })
 export type FriendProfile = z.infer<typeof friendProfileSchema>
 
+export const noteRoleSchema = z.enum(['owner', 'editor', 'viewer'])
+export type NoteRole = z.infer<typeof noteRoleSchema>
+
+export const noteMemberSchema = z.object({
+  profile: friendProfileSchema,
+  role: noteRoleSchema,
+  joinedAt: isoDateSchema,
+})
+export type NoteMember = z.infer<typeof noteMemberSchema>
+
+export const noteSummarySchema = z.object({
+  id: idSchema,
+  title: z.string(),
+  excerpt: z.string(),
+  role: noteRoleSchema,
+  pinned: z.boolean(),
+  owner: friendProfileSchema,
+  collaboratorCount: z.number().int().nonnegative(),
+  createdAt: isoDateSchema,
+  updatedAt: isoDateSchema,
+  deletedAt: isoDateSchema.nullable(),
+})
+export type NoteSummary = z.infer<typeof noteSummarySchema>
+
+export const noteDetailSchema = noteSummarySchema.extend({
+  members: z.array(noteMemberSchema),
+  sourceLock: z.object({
+    userId: idSchema,
+    sessionId: z.string(),
+    expiresAt: isoDateSchema,
+  }).nullable().optional(),
+})
+export type NoteDetail = z.infer<typeof noteDetailSchema>
+
+export const createNoteSchema = z.object({
+  id: idSchema.optional(),
+})
+
+export const updateNotePinSchema = z.object({ pinned: z.boolean() })
+export const updateNoteMemberSchema = z.object({ role: z.enum(['editor', 'viewer']) })
+
+export const noteSourceLockSchema = z.object({
+  sessionId: z.string().min(1).max(128),
+  token: z.string().min(16).max(256).optional(),
+})
+
+export const noteSourceLockResultSchema = z.object({
+  token: z.string().min(16),
+  expiresAt: isoDateSchema,
+})
+export type NoteSourceLockResult = z.infer<typeof noteSourceLockResultSchema>
+
+export const noteLinkPreviewSchema = z.object({
+  url: z.url(),
+  title: z.string().max(300),
+  description: z.string().max(600),
+  siteName: z.string().max(160),
+})
+export type NoteLinkPreview = z.infer<typeof noteLinkPreviewSchema>
+
 export const friendRelationshipSchema = z.enum(['self', 'none', 'incoming', 'outgoing', 'friends'])
 export type FriendRelationship = z.infer<typeof friendRelationshipSchema>
 
@@ -1655,7 +1715,7 @@ export const syncRequestSchema = z.object({
 })
 export type SyncRequest = z.infer<typeof syncRequestSchema>
 
-export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing'])
+export const stateInvalidationScopeSchema = z.enum(['chats', 'folders', 'models', 'usage', 'settings', 'friends', 'pool', 'billing', 'notes'])
 export type StateInvalidationScope = z.infer<typeof stateInvalidationScopeSchema>
 
 export const syncResultSchema = z.object({

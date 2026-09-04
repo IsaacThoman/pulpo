@@ -13,6 +13,7 @@ import { ui } from '@/i18n/ui'
 import { LocaleBoundary } from '@/i18n/LocaleBoundary'
 
 const ChatPage = lazy(() => import('@/pages/ChatPage').then((module) => ({ default: module.ChatPage })))
+const NotesPage = lazy(() => import('@/pages/NotesPage').then((module) => ({ default: module.NotesPage })))
 const UsageLayout = lazy(() => import('@/pages/usage/UsageLayout').then((module) => ({ default: module.UsageLayout })))
 const PersonalPage = lazy(() => import('@/pages/usage/PersonalPage').then((module) => ({ default: module.PersonalPage })))
 const LeaderboardPage = lazy(() => import('@/pages/usage/LeaderboardPage').then((module) => ({ default: module.LeaderboardPage })))
@@ -104,6 +105,9 @@ export default function App() {
           <Route element={<LocalizedRoute><AppLayout /></LocalizedRoute>}>
             <Route index element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
             <Route path="c/:chatId" element={<LocalizedRoute><ChatPage /></LocalizedRoute>} />
+            <Route path="notes" element={<LocalizedRoute><NotesPage /></LocalizedRoute>} />
+            <Route path="notes/trash" element={<LocalizedRoute><NotesPage /></LocalizedRoute>} />
+            <Route path="notes/:noteId" element={<LocalizedRoute><NotesPage /></LocalizedRoute>} />
             <Route path="usage" element={<LocalizedRoute><UsageLayout /></LocalizedRoute>}>
               <Route index element={<LocalizedRoute><PersonalPage /></LocalizedRoute>} />
               <Route path="friends" element={<LocalizedRoute><LeaderboardPage /></LocalizedRoute>} />

@@ -46,6 +46,8 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   folders: 'preserve',
   chats: 'chat',
   responses: 'response',
+  notes: 'preserve',
+  note_memberships: 'preserve',
   response_items: 'response-item',
   response_content_parts: 'response-content-part',
   chat_shares: 'chat-reference',

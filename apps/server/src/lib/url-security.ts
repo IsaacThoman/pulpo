@@ -1,13 +1,28 @@
 import { lookup } from 'node:dns/promises'
-import { isIP } from 'node:net'
+import * as ipaddr from 'ipaddr.js'
 import { getConfig } from '../config.js'
 import { AppError } from './errors.js'
 
-function privateIp(address: string): boolean {
-  if (address === '::1' || address === '0:0:0:0:0:0:0:1' || address.startsWith('fc') || address.startsWith('fd') || address.startsWith('fe80:')) return true
-  if (isIP(address) !== 4) return false
-  const [a, b] = address.split('.').map(Number)
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b! >= 16 && b! <= 31) || (a === 192 && b === 168)
+export function privateIp(address: string): boolean {
+  try {
+    let parsed: ipaddr.IPv4 | ipaddr.IPv6 = ipaddr.parse(address)
+    if (parsed instanceof ipaddr.IPv6 && parsed.isIPv4MappedAddress()) parsed = parsed.toIPv4Address()
+    return parsed.range() !== 'unicast'
+  } catch {
+    return true
+  }
+}
+
+export async function assertSafePublicHttpUrl(value: string): Promise<URL> {
+  let url: URL
+  try { url = new URL(value) } catch { throw new AppError(400, 'url_invalid', 'Enter a valid HTTP or HTTPS URL') }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new AppError(400, 'url_protocol', 'URL must use HTTP or HTTPS')
+  if (url.username || url.password) throw new AppError(400, 'url_credentials', 'URLs containing credentials are not allowed')
+  if (url.hostname === 'localhost' || url.hostname.endsWith('.localhost') || url.hostname.endsWith('.local')) throw new AppError(400, 'url_private', 'Private URLs are not allowed')
+  let addresses: Array<{ address: string; family: number }>
+  try { addresses = await lookup(url.hostname, { all: true }) } catch { throw new AppError(400, 'url_unreachable', 'URL host could not be resolved') }
+  if (!addresses.length || addresses.some(({ address }) => privateIp(address))) throw new AppError(400, 'url_private', 'Private URLs are not allowed')
+  return url
 }
 
 export async function assertSafeProviderUrl(value: string): Promise<void> {

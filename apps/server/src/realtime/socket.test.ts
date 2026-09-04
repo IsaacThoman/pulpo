@@ -26,5 +26,6 @@ describe('realtimeResourceId', () => {
 describe('reconnect invalidation', () => {
   it('refreshes folder metadata after a missed account revision', () => {
     expect(FULL_STATE_INVALIDATION_SCOPES).toContain('folders')
+    expect(FULL_STATE_INVALIDATION_SCOPES).toContain('notes')
   })
 })

@@ -10,7 +10,7 @@ export interface CodexLoginJob {
 }
 
 export interface MaintenanceJob {
-  type: 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile'
+  type: 'cleanup' | 'backup-schedule' | 'scrub-response-binary-context' | 'purge-chats' | 'purge-notes' | 'expire-temporary-chat' | 'expire-normal-chat' | 'rollup' | 'export' | 'backup' | 'restore' | 'billing-reconcile'
   payload?: Record<string, unknown>
 }
 

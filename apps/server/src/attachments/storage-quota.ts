@@ -36,6 +36,8 @@ export async function reserveAttachment(input: {
   id: string
   userId: string
   chatId: string | null
+  noteId?: string | null
+  uploadedByUserId?: string | null
   objectKey: string
   originalName: string
   mimeType: string

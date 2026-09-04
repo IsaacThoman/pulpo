@@ -36,6 +36,7 @@ import { registerAdminBillingRoutes } from './billing/admin-routes.js'
 import { registerInviteCodeRoutes } from './invite-codes/routes.js'
 import { registerDictationRoutes } from './dictation/routes.js'
 import { registerCodexRoutes } from './codex/routes.js'
+import { registerNoteRoutes } from './notes/routes.js'
 
 export async function buildApp() {
   const config = getConfig()
@@ -138,6 +139,7 @@ export async function buildApp() {
   await registerCatalogIconRoutes(app)
   await registerAdminChatAccess(app)
   await registerChatRoutes(app)
+  await registerNoteRoutes(app)
   await registerApiKeyRoutes(app)
   await registerSettingsRoutes(app)
   await registerShareRoutes(app)
