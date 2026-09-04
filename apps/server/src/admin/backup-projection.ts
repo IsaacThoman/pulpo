@@ -11,7 +11,6 @@ type TemporaryDataPolicy =
   | 'response-content-part'
   | 'chat-reference'
   | 'attachment'
-  | 'draft-attachment'
   | 'redact-source-response'
   | 'redact-response'
   | 'chat-turn-embedding'
@@ -51,8 +50,6 @@ export const FULL_BACKUP_TEMPORARY_DATA_POLICY = {
   response_content_parts: 'response-content-part',
   chat_shares: 'chat-reference',
   attachments: 'attachment',
-  composer_drafts: 'chat-reference',
-  composer_draft_attachments: 'draft-attachment',
   user_memory_documents: 'redact-source-response',
   user_memory_document_revisions: 'redact-source-response',
   episodic_memory_generations: 'preserve',
@@ -120,10 +117,6 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
     )
   })
   const temporaryAttachmentIds = ids(temporaryAttachments)
-  const temporaryDraftIds = ids(database.composer_drafts.filter((row) => {
-    const chatId = stringValue(row.chat_id)
-    return Boolean(chatId && temporaryChatIds.has(chatId))
-  }))
   const temporaryAttachmentChecksums = new Set(temporaryAttachments.map((row) => stringValue(row.checksum)).filter((value): value is string => Boolean(value)))
   const temporaryRequestLogs = database.request_logs.filter((row) => temporaryResponseIds.has(String(row.response_id)))
   const temporaryRequestLogIds = ids(temporaryRequestLogs)
@@ -147,11 +140,6 @@ export function projectFullBackup(database: FullBackupDatabase, options: FullBac
       case 'response-content-part': projected[table] = references(rows, 'response_item_id', temporaryResponseItemIds); break
       case 'chat-reference': projected[table] = references(rows, 'chat_id', temporaryChatIds); break
       case 'attachment': projected[table] = rows.filter((row) => !temporaryAttachmentIds.has(String(row.id))); break
-      case 'draft-attachment': projected[table] = rows.filter((row) => {
-        const draftId = stringValue(row.draft_id)
-        const attachmentId = stringValue(row.attachment_id)
-        return !((draftId && temporaryDraftIds.has(draftId)) || (attachmentId && temporaryAttachmentIds.has(attachmentId)))
-      }); break
       case 'redact-source-response': projected[table] = redactReference(rows, 'source_response_id', temporaryResponseIds); break
       case 'redact-response': projected[table] = redactReference(rows, 'response_id', temporaryResponseIds); break
       case 'chat-turn-embedding': projected[table] = rows.filter((row) => {

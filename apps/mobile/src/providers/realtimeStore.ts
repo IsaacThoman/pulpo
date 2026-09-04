@@ -11,14 +11,11 @@ import { create } from 'zustand'
 import type { RealtimeConnectionPhase } from './realtimeConnection'
 
 interface RealtimeState {
-  clientId: string | null
-  clientNamespace: string | null
   connected: boolean
   connectionPhase: RealtimeConnectionPhase
   syncError: string | null
   snapshots: Record<string, ResponseSnapshot>
   setConnectionPhase: (connectionPhase: RealtimeConnectionPhase) => void
-  setClientIdentity: (namespace: string | null, clientId: string | null) => void
   setSyncError: (message: string | null) => void
   receiveEvent: (event: ResponseEvent) => void
   receiveEvents: (events: ResponseEvent[]) => void
@@ -51,13 +48,10 @@ export const useRealtimeStore = create<RealtimeState>((set) => {
     return { snapshots }
   }
   return {
-    clientId: null,
-    clientNamespace: null,
     connected: false,
     connectionPhase: 'idle',
     syncError: null,
     snapshots: {},
-    setClientIdentity: (clientNamespace, clientId) => set({ clientNamespace, clientId }),
     setConnectionPhase: (connectionPhase) => set({
       connectionPhase,
       connected: connectionPhase === 'connected',

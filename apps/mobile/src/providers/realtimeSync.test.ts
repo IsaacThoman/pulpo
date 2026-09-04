@@ -62,10 +62,4 @@ describe('mobile realtime sync helpers', () => {
       ['folders', 'instance|user'],
     ])
   })
-
-  it('maps draft invalidations without refreshing chat history', () => {
-    expect(stateInvalidationQueryKeys('drafts', 'instance|user')).toEqual([
-      ['drafts', 'instance|user'],
-    ])
-  })
 })
