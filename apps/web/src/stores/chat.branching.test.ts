@@ -210,6 +210,22 @@ afterAll(() => {
 })
 
 describe('chat store branching integration', () => {
+  it('projects the settled response cost from micros to USD', () => {
+    const settled = {
+      ...response(responseAId, 'completed'),
+      usage: { inputTokens: 802, outputTokens: 12 },
+      costMicros: 4_200,
+    }
+
+    useChat.getState().setDetailedChat(detail(responseAId, [settled]))
+
+    expect(useChat.getState().chats[0]?.messages.find((message) => message.id === responseAId)).toMatchObject({
+      tokensIn: 802,
+      tokensOut: 12,
+      cost: 0.0042,
+    })
+  })
+
   it('preserves local folder expansion when server metadata refreshes', () => {
     useChat.setState({
       folders: [{ id: 'folder-1', name: 'Old name', pinned: false, expanded: false, sortOrder: 0 }],

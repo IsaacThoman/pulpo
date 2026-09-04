@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { createChatResponseSchema, createChatSchema, createQueuedMessageSchema, reorderQueuedMessageSchema, startChatSchema, updateChatSchema, updateQueuedMessageSchema, type StateInvalidationScope } from '@pulpo/contracts'
 import { db } from '../database/client.js'
-import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, users, workspaceLeases } from '../database/schema.js'
+import { attachments, chatImportSources, chats, folders, models, queuedMessages, requestLogs, responses, usageEvents, users, workspaceLeases } from '../database/schema.js'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
@@ -495,6 +495,13 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       .from(responses)
       .where(and(eq(responses.chatId, id), isNull(responses.deletedAt)))
       .orderBy(asc(responses.createdAt), asc(responses.id))
+    const costRows = allTurns.length ? await db.select({
+      responseId: usageEvents.responseId,
+      costMicros: usageEvents.costMicros,
+    }).from(usageEvents).where(inArray(usageEvents.responseId, allTurns.map((response) => response.id))) : []
+    const costMicrosByResponseId = new Map(costRows.flatMap((row) => (
+      row.responseId ? [[row.responseId, Number(row.costMicros)] as const] : []
+    )))
     const referencedAttachmentIds = [...new Set(allTurns.flatMap((response) => responseAttachmentIds(response.input)))]
     const attachmentRows = referencedAttachmentIds.length ? await db.select({
       id: attachments.id,
@@ -515,7 +522,7 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       responses: toPublicChatResponses(
         allTurns,
         chat.activeBranchLeafId ?? chat.activeResponseId,
-        { compact, activeOnly: activeScope },
+        { compact, activeOnly: activeScope, costMicrosByResponseId },
       ),
     }
   })

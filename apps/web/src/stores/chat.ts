@@ -70,6 +70,7 @@ export interface ServerResponse {
   output: unknown[]
   presetSelections: Record<string, string>
   usage: { inputTokens: number; outputTokens: number } | null
+  costMicros?: number | null
   error: { message?: string } | null
   createdAt: string
   completedAt: string | null
@@ -341,6 +342,7 @@ function messagesFromResponses(responses: ServerResponse[], attachmentRows: Serv
         modelId: response.displayModelId ?? response.modelId, timestamp: timestamp + 1, done,
         reasoning: reasoningText(response.output), presetSelections: response.presetSelections,
         tokensIn: response.usage?.inputTokens, tokensOut: response.usage?.outputTokens,
+        cost: response.costMicros == null ? undefined : response.costMicros / 1_000_000,
         latencyMs: response.completedAt
           ? Math.max(0, Date.parse(response.completedAt) - timestamp)
           : undefined,

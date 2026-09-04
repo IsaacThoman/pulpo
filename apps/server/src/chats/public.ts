@@ -19,6 +19,7 @@ export interface PublicChatResponse {
   output: unknown[]
   presetSelections: Record<string, string>
   usage: ResponseSnapshot['usage']
+  costMicros: number | null
   error: unknown
   createdAt: string
   completedAt: string | null
@@ -31,7 +32,7 @@ export interface PublicChatResponse {
 export function toPublicChatResponse(
   response: ResponseRow,
   allTurns: ResponseRow[],
-  options: { compact?: boolean } = {},
+  options: { compact?: boolean; costMicros?: number | null } = {},
 ): PublicChatResponse {
   const snapshot = toSnapshot(response)
   const { output: _duplicatedOutput, ...snapshotMarker } = snapshot
@@ -47,6 +48,7 @@ export function toPublicChatResponse(
     output: snapshot.output,
     presetSelections: response.presetSelections as Record<string, string>,
     usage: snapshot.usage,
+    costMicros: options.costMicros ?? null,
     error: snapshot.error,
     createdAt: response.createdAt.toISOString(),
     completedAt: response.completedAt?.toISOString() ?? null,
@@ -77,21 +79,32 @@ export function toPublicChatResponseStub(
 export function toPublicChatResponses(
   allTurns: ResponseRow[],
   activeLeafId: string | null,
-  options: { compact?: boolean; activeOnly?: boolean } = {},
+  options: { compact?: boolean; activeOnly?: boolean; costMicrosByResponseId?: ReadonlyMap<string, number> } = {},
 ): PublicChatResponse[] {
   const activeIds = options.activeOnly
     ? new Set(lineageFromLeaf(allTurns, activeLeafId ?? allTurns.at(-1)?.id ?? null).map((response) => response.id))
     : undefined
   return allTurns.map((response) => activeIds && !activeIds.has(response.id)
     ? toPublicChatResponseStub(response, allTurns)
-    : toPublicChatResponse(response, allTurns, { compact: options.compact }))
+    : toPublicChatResponse(response, allTurns, {
+        compact: options.compact,
+        costMicros: options.costMicrosByResponseId?.get(response.id),
+      }))
 }
 
 /** Return the newly active lineage so clients can render it without a follow-up chat fetch. */
-export function toPublicBranchActivation(allTurns: ResponseRow[], activeBranchLeafId: string) {
+export function toPublicBranchActivation(
+  allTurns: ResponseRow[],
+  activeBranchLeafId: string,
+  costMicrosByResponseId?: ReadonlyMap<string, number>,
+) {
   return {
     activeBranchLeafId,
-    responses: toPublicChatResponses(allTurns, activeBranchLeafId, { compact: true, activeOnly: true }),
+    responses: toPublicChatResponses(allTurns, activeBranchLeafId, {
+      compact: true,
+      activeOnly: true,
+      costMicrosByResponseId,
+    }),
   }
 }
 
