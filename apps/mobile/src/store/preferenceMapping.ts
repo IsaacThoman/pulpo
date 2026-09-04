@@ -10,6 +10,7 @@ export interface Preferences {
   showReasoning: boolean
   memoryEnabled: boolean
   haptics: boolean
+  composerSyncEnabled: boolean
   sendWithEnter: boolean
   attachmentCacheMb: number
   localChatLimit: number
@@ -27,7 +28,7 @@ export interface Preferences {
 
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true, memoryEnabled: false,
-  haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
+  haptics: true, composerSyncEnabled: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
   trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
 }
@@ -43,6 +44,7 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     agentModes: validAgentModes(values.agentModes),
   }
   if (values.theme === 'system' || values.theme === 'light' || values.theme === 'dark') result.theme = values.theme
+  result.composerSyncEnabled = values.composerSyncEnabled !== false
   if (typeof values.sendWithEnter === 'boolean') result.sendWithEnter = values.sendWithEnter
   if (typeof values.streamResponses === 'boolean') result.streamResponses = values.streamResponses
   if (typeof values.showReasoning === 'boolean') result.showReasoning = values.showReasoning
@@ -89,7 +91,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['composerSyncEnabled', 'theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

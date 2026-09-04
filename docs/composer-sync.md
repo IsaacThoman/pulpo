@@ -6,6 +6,12 @@ The server stores independent field patches under a monotonically increasing rev
 
 Successful submissions clear only the matching draft. Cleared revisions remain as tombstones. Pending edits and outstanding conditional clears use the existing account-scoped local databases. Draft writes do not change chat ordering or account revision.
 
+## Account opt-out
+
+Interface settings include **Sync composer drafts**, enabled by default. This is an account preference, propagated through the same settings synchronization as other preferences. Web, desktop, and mobile honor it. Turning it off stops draft reads, writes, and realtime delivery; normal messages and local draft saving continue. Existing server drafts remain.
+
+Turning sync back on resumes the shared server draft. Pending updates from before opting out are retired. Offline clients receive the account setting when they reconnect. The server also checks the account preference before accepting draft operations or broadcasting drafts, including requests from older clients.
+
 ## Rollout
 
 1. Run `npm run db:migrate` before starting the updated server. Migration 0059 preserves the earlier composer tables and migrates their content and attachment references.

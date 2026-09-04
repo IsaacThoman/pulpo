@@ -27,6 +27,16 @@ beforeEach(() => {
 })
 
 describe('realtime preference reconciliation', () => {
+  it('persists remote composer opt-out and retires pending checkpoints', async () => {
+    const before = usePreferencesStore.getState().composerSyncGeneration
+    await usePreferencesStore.getState().applyServerPreferences({ composerSyncEnabled: false })
+    expect(usePreferencesStore.getState().composerSyncEnabled).toBe(false)
+    expect(usePreferencesStore.getState().composerSyncGeneration).not.toBe(before)
+    await usePreferencesStore.getState().hydrate()
+    expect(usePreferencesStore.getState().composerSyncEnabled).toBe(false)
+    await usePreferencesStore.getState().resetSynchronizedPreferences('other-account')
+    expect(usePreferencesStore.getState().composerSyncEnabled).toBe(true)
+  })
   it('keeps the latest local menu choice while an older server value is in flight', async () => {
     await usePreferencesStore.getState().setPreference('theme', 'dark')
 

@@ -1034,6 +1034,9 @@ export function SettingsModal({
                   <Row label={ui("Send with Enter")} hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
                   </Row>
+                  <Row label={ui("Sync composer drafts")} hint={ui("Share unsent drafts across your devices. This account setting applies to web, desktop, and mobile. Turning it off keeps drafts local on each device; existing server drafts remain.")}>
+                    <Switch aria-label={ui("Sync composer drafts")} checked={s.composerSyncEnabled} onCheckedChange={(enabled) => s.set('composerSyncEnabled', enabled)} />
+                  </Row>
                   <Row label={ui("Open search with double Shift")} hint={ui("Press Shift twice quickly to open search.")}>
                     <Switch checked={s.doubleShiftSearch} onCheckedChange={(v) => s.set('doubleShiftSearch', v)} />
                   </Row>
