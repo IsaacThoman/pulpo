@@ -115,6 +115,15 @@ body {
   display: none;
 }
 
+/* Only the background fades; the model picker and actions stay fully visible. */
+.chat-header {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--background) 60%, transparent),
+    color-mix(in oklab, var(--background) 0%, transparent)
+  );
+}
+
 @media (width < 750px) {
   .mobile-sidebar-opener {
     display: flex;
