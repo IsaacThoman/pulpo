@@ -23,6 +23,7 @@ import { toSnapshot } from '../responses/service.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 
 interface SocketData {
+  composerSyncEnabled: boolean
   user: AuthenticatedUser
   actorUser: AuthenticatedUser
   adminChatAccess: AdminChatAccessContext | null
@@ -123,17 +124,26 @@ export async function createSocketServer(httpServer: HttpServer) {
   io.on('connection', (socket) => {
     const user = socket.data.user
     const adminChatAccess = socket.data.adminChatAccess
+    socket.data.composerSyncEnabled = !adminChatAccess && socket.handshake.auth.composerSyncEnabled !== false
+    if (socket.data.composerSyncEnabled) void socket.join(`composer:${user.id}`)
+    else void socket.leave(`composer:${user.id}`)
+    socket.on('composer.configure', (input) => {
+      if (adminChatAccess || typeof input?.enabled !== 'boolean') return
+      socket.data.composerSyncEnabled = input.enabled
+      if (input.enabled) void socket.join(`composer:${user.id}`)
+      else void socket.leave(`composer:${user.id}`)
+    })
     if (!adminChatAccess) void socket.join(`user:${user.id}`)
 
     const composerTask = async (raw: unknown, ack: (result: ComposerAck) => void, writing: boolean) => {
       if (typeof ack !== 'function') return
-      if (adminChatAccess) { ack({ ok: false, error: 'unauthorized' }); return }
+      if (adminChatAccess || !socket.data.composerSyncEnabled) { ack({ ok: false, error: 'unauthorized' }); return }
       try {
         const write = writing ? composerWriteSchema.parse(raw) : undefined
         const draftId = write?.draftId ?? composerDraftIdSchema.parse((raw as { draftId?: unknown })?.draftId)
         const result = await accessComposer(user.id, draftId, write)
         ack(result)
-        if (result.ok) io.to(`user:${user.id}`).emit('composer.changed', result.snapshot)
+        if (result.ok) io.to(`composer:${user.id}`).emit('composer.changed', result.snapshot)
       } catch {
         ack({ ok: false, error: 'composer_sync_failed' })
       }
@@ -257,7 +267,7 @@ export async function createSocketServer(httpServer: HttpServer) {
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:composer-changes') {
       const change = JSON.parse(message)
-      io.to(`user:${change.userId}`).emit('composer.changed', change.snapshot)
+      io.to(`composer:${change.userId}`).emit('composer.changed', change.snapshot)
     } else if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
@@ -298,7 +308,7 @@ export async function createSocketServer(httpServer: HttpServer) {
         revision: change.revision,
         ...(change.scopes?.length ? { scopes: change.scopes } : {}),
       })
-      if (change.chatId) void accessComposer(change.userId, change.chatId).then((result) => { if (result.ok) io.to(`user:${change.userId}`).emit('composer.changed', result.snapshot) }).catch(() => undefined)
+      if (change.chatId) void accessComposer(change.userId, change.chatId).then((result) => { if (result.ok) io.to(`composer:${change.userId}`).emit('composer.changed', result.snapshot) }).catch(() => undefined)
       if (change.chatId) io.to(`user:${change.userId}`).to(`chat:${change.chatId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
     }
   })

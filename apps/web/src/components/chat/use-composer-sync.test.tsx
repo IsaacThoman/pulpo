@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +12,7 @@ import { useComposerSync } from './use-composer-sync'
 let snapshot: ComposerSnapshot
 let writes: number
 beforeEach(() => {
+  useComposerSyncPreference.setState({ enabled: true, generation: 0 })
   registry.sync?.dispose()
   writes = 0
   snapshot = { draftId: 'new', state: emptyComposerState(), revision: 0, clearedRevision: 0, mutationId: null }
@@ -30,6 +32,15 @@ function useDraft() {
   return { state, setState, ...sync }
 }
 describe('composer view binding', () => {
+  it('keeps local editing functional while sync is disabled', async () => {
+    useComposerSyncPreference.getState().setEnabled(false)
+    const view = renderHook(useDraft)
+    await act(async () => { view.result.current.setState((state) => ({ ...state, content: 'local draft' })) })
+    expect(view.result.current.sync).toBeNull()
+    expect(view.result.current.state.content).toBe('local draft')
+    expect(writes).toBe(0)
+    view.unmount()
+  })
   it('updates two mounted clients without echoes', async () => {
     const a = renderHook(useDraft), b = renderHook(useDraft)
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })

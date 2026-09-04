@@ -1,3 +1,4 @@
+import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useNavigate } from 'react-router-dom'
@@ -332,6 +333,8 @@ export function SettingsModal({
   const [section, setSection] = useState<SettingsSectionId>(initialSection)
   const s = useSettings()
   const user = useAuth((a) => a.user)
+  const composerSyncEnabled = useComposerSyncPreference((state) => state.enabled)
+  const setComposerSyncEnabled = useComposerSyncPreference((state) => state.setEnabled)
   const logout = useAuth((a) => a.logout)
   const billingEnabled = useAuth((a) => a.billingEnabled)
   const replaceUser = useAuth((a) => a.replaceUser)
@@ -1033,6 +1036,9 @@ export function SettingsModal({
                   </Row>
                   <Row label={ui("Send with Enter")} hint="Press Shift+Enter to add a new line. Cmd/Ctrl+Enter still sends when this is off.">
                     <Switch checked={s.sendWithEnter} onCheckedChange={(v) => s.set('sendWithEnter', v)} />
+                  </Row>
+                  <Row label={ui("Sync composer drafts")} hint={ui("Share unsent drafts with your other devices. Turn off to keep drafts local to this browser. Existing server drafts remain; turning it back on resumes the shared draft.")}>
+                    <Switch aria-label={ui("Sync composer drafts")} checked={composerSyncEnabled} onCheckedChange={setComposerSyncEnabled} />
                   </Row>
                   <Row label={ui("Open search with double Shift")} hint={ui("Press Shift twice quickly to open search.")}>
                     <Switch checked={s.doubleShiftSearch} onCheckedChange={(v) => s.set('doubleShiftSearch', v)} />

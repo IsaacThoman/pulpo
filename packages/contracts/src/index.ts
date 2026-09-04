@@ -1670,6 +1670,7 @@ export const syncResultSchema = z.object({
 export type SyncResult = z.infer<typeof syncResultSchema>
 
 export interface ClientToServerEvents {
+  'composer.configure': (input: { enabled: boolean }) => void
   'composer.read': (input: { draftId: string }, ack: (result: ComposerAck) => void) => void
   'composer.write': (input: ComposerWrite, ack: (result: ComposerAck) => void) => void
   'client.sync': (input: SyncRequest, ack: (result: SyncResult) => void) => void

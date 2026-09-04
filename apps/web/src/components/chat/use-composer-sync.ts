@@ -1,9 +1,12 @@
+import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { composerPatch } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 
 export function useComposerSync(userId: string | undefined, draftId: string, state: ComposerState, hydrated: boolean, paused: boolean, apply: (state: ComposerState) => void, editing = false) {
+  const enabled = useComposerSyncPreference((state) => state.enabled)
+  const generation = useComposerSyncPreference((state) => state.generation)
   const identity = `${userId ?? "local"}\u0000${draftId}`
   const latest = useRef({ state, apply, paused, editing, identity })
   latest.current = { state, apply, paused, editing, identity }
@@ -12,7 +15,7 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
   const baseline = useRef(state)
   const applying = useRef(false)
   const opened = useRef<string | null>(null)
-  const sync = userId ? webComposerSync(userId) : null
+  const sync = enabled && userId ? webComposerSync(userId) : null
   useEffect(() => {
     if (!sync || !hydrated) return
     let disposed = false
@@ -22,7 +25,7 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     wasEditing.current = false
     applying.current = false
     void sync.open(draftId, latest.current.state, (checkpoint) => {
-      if (disposed || latest.current.identity !== identity) return
+      if (disposed || !useComposerSyncPreference.getState().enabled || useComposerSyncPreference.getState().generation !== generation || latest.current.identity !== identity) return
       opened.current = identity
       const remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
       if (!remote.model) remote.model = latest.current.state.model
@@ -34,7 +37,7 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
       }
     }).then((cleanup) => { if (disposed) cleanup(); else close = cleanup })
     return () => { disposed = true; opened.current = null; close?.() }
-  }, [sync, draftId, hydrated, identity])
+  }, [sync, draftId, hydrated, identity, generation])
   useLayoutEffect(() => {
     if (!hydrated || opened.current !== identity || !sync) return
     if (editing && !wasEditing.current) deferred.current ??= baseline.current
