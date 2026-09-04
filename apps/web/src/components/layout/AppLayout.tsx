@@ -145,6 +145,7 @@ export function AppLayout() {
           className={cn(
             'app-layout-frame relative flex h-full overflow-hidden',
             mainUsesDesktopTitleBar && 'desktop-main-titlebar-active',
+            !mobile && sidebarCollapsed && 'desktop-sidebar-collapsed',
           )}
         >
           <BannerBar />

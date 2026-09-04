@@ -276,7 +276,19 @@ html[data-desktop-os="win32"] .desktop-shell {
 
 html[data-desktop="true"] .desktop-titlebar {
   -webkit-app-region: drag;
-  background: var(--background);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--background) 60%, transparent),
+    transparent
+  );
+}
+
+.chat-header {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--background) 60%, transparent),
+    transparent
+  );
 }
 
 html[data-desktop-os="win32"] .desktop-titlebar,
@@ -314,6 +326,14 @@ html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
   margin-top: -38px;
 }
 
+html[data-desktop="true"] .chat-header {
+  transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header {
+  height: 0;
+}
+
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main {
   margin-top: 0;
 }
@@ -327,6 +347,10 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > he
     transition: none;
   }
 
+  html[data-desktop="true"] .chat-header {
+    transition: none;
+  }
+
   html[data-desktop="true"] .desktop-model-titlebar-slot .model-selector-set-default {
     animation: none;
     transition: none;
@@ -334,11 +358,23 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > he
 }
 
 html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
-  background: var(--desktop-temporary-chat-background);
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--desktop-temporary-chat-background) 60%, transparent),
+    transparent
+  );
 }
 
 html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
   background: var(--desktop-temporary-chat-background);
+}
+
+html[data-desktop="true"] [data-desktop-temporary-chat="true"] .chat-header {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--desktop-temporary-chat-background) 60%, transparent),
+    transparent
+  );
 }
 
 html[data-desktop="true"] .desktop-sidebar-titlebar {
@@ -464,33 +500,6 @@ html[data-desktop-os="win32"] .desktop-window-controls,
 html[data-desktop-os="win32"] .desktop-window-controls button {
   -webkit-app-region: no-drag;
   pointer-events: auto;
-}
-
-html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::before {
-  position: absolute;
-  top: 100%;
-  left: 51px;
-  width: 16px;
-  height: 16px;
-  background: radial-gradient(
-    circle at 100% 100%,
-    transparent calc(1rem - 1px),
-    var(--sidebar-border) calc(1rem - 1px),
-    var(--sidebar-border) 1rem,
-    var(--sidebar) 1rem
-  );
-  content: '';
-  pointer-events: none;
-}
-
-html[data-desktop="true"] .desktop-sidebar-titlebar-collapsed::after {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  left: 67px;
-  border-top: 1px solid var(--sidebar-border);
-  content: '';
-  pointer-events: none;
 }
 
 html[data-desktop="true"] .desktop-sidebar {

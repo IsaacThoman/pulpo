@@ -91,13 +91,6 @@ export function DesktopSidebarTitleBar({
                 )}
               />
             </div>
-            <div
-              className={cn(
-                'desktop-sidebar-titlebar-collapsed absolute inset-0 z-0 w-full bg-sidebar motion-reduce:transition-none',
-                transitions && 'transition-transform duration-300 ease-[cubic-bezier(0.4,0,0.2,1)]',
-                collapsed ? 'translate-y-0' : '-translate-y-[54px]',
-              )}
-            />
           </>
         )}
       </div>

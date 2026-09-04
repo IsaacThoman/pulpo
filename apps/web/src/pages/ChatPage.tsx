@@ -351,7 +351,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
     )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
       {/* header */}
-      <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
+      <header className="chat-header flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         {desktopSidebarVisible ? (
           <DesktopModelTitleBarSlot>
             <ModelSelector value={modelId} onChange={selectModel} />

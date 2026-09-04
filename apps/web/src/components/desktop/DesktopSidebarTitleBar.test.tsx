@@ -31,27 +31,22 @@ describe('desktop sidebar title bar', () => {
     expect(markup).toContain('left-[52px]')
     expect(markup).toContain('w-[212px]')
     expect(markup).toContain('z-[42]')
-    expect(markup).toContain('-translate-y-[54px]')
-    expect(markup).toContain('transition-transform')
     expect(markup).toContain('transition-[width]')
     expect(markup).toContain('transition-opacity')
     expect(markup).toContain('opacity-100')
     expect(markup).not.toContain('data-animation-active')
   })
 
-  it('makes the collapsed title bar a full-width sidebar surface with a curved boundary', () => {
+  it('removes the full-width sidebar surface when collapsed', () => {
     installDesktopWindow()
     const markup = renderToStaticMarkup(
       <DesktopSidebarTitleBar collapsed transitions visible />,
     )
 
     expect(markup).toContain('data-collapsed="true"')
-    expect(markup).toContain('desktop-sidebar-titlebar-collapsed')
-    expect(markup).toContain('z-0')
-    expect(markup).toContain('w-full')
-    expect(markup).toContain('bg-sidebar')
-    expect(markup).toContain('translate-y-0')
+    expect(markup).not.toContain('desktop-sidebar-titlebar-collapsed')
     expect(markup).toContain('desktop-sidebar-titlebar-base')
+    expect(markup).toContain('bg-sidebar')
     expect(markup).toContain('w-0')
     expect(markup).toContain('opacity-0')
     expect(markup).toContain('z-[42]')
