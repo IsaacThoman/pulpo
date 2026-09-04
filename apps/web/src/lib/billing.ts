@@ -5,6 +5,7 @@ export type BillingPlan = 'baby' | 'eight' | 'fat'
 
 export interface BillingSummary {
   plan: BillingPlan
+  planOverridden: boolean
   balanceMicros: number
   balancePendingMicros: number
   availableBalanceMicros: number
@@ -46,6 +47,10 @@ export interface BillingSummary {
 
 export function fetchBillingSummary(): Promise<BillingSummary> {
   return apiRequest<BillingSummary>('/api/billing/summary')
+}
+
+export function managedBillingPlan(summary: Pick<BillingSummary, 'subscription'>): BillingPlan {
+  return summary.subscription?.plan ?? 'baby'
 }
 
 export function billingPlanName(plan: BillingPlan): string {

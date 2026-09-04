@@ -1,0 +1,2 @@
+ALTER TABLE "billing_accounts" ADD COLUMN "plan_override" text;--> statement-breakpoint
+ALTER TABLE "billing_accounts" ADD CONSTRAINT "billing_accounts_plan_override_check" CHECK ("billing_accounts"."plan_override" is null or "billing_accounts"."plan_override" in ('baby', 'eight', 'fat'));

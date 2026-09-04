@@ -18,7 +18,7 @@ import { AppError } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { publishStateChange } from '../responses/events.js'
 import { parseAuthSettings, parseBillingSettings } from '../settings/application-settings.js'
-import { getBillingEntitlements } from './entitlements.js'
+import { getBillingEntitlements, loadBillingEntitlements } from './entitlements.js'
 import { planForPriceId, stripeMode } from './stripe.js'
 import { refreshStorageLimit } from './storage-entitlements.js'
 
@@ -231,7 +231,9 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       }).from(billingAccounts).where(eq(billingAccounts.userId, id)).limit(1)
       return {
         userId: id,
+        subscriptionPlan: entitlements.subscriptionPlan,
         plan: entitlements.plan,
+        planOverridden: entitlements.planOverridden,
         weeklyLimitMicros: entitlements.weeklyLimitMicros,
         weeklySpentMicros: entitlements.weeklySpentMicros,
         weeklyRemainingMicros: Math.max(0, entitlements.weeklyLimitMicros - entitlements.weeklySpentMicros),
@@ -247,6 +249,45 @@ export async function registerAdminBillingRoutes(app: FastifyInstance): Promise<
       }
     }))
     return { data }
+  })
+
+  app.patch('/api/admin/billing/users/:id/plan', async (request) => {
+    const admin = requireAdmin(request)
+    const { id } = z.object({ id: z.string().uuid() }).parse(request.params)
+    const { plan } = z.object({ plan: z.enum(['baby', 'eight', 'fat']).nullable() }).parse(request.body)
+    const [user] = await db.select({ id: users.id }).from(users).where(eq(users.id, id)).limit(1)
+    if (!user) throw new AppError(404, 'user_not_found', 'User not found')
+    const result = await db.transaction(async (tx) => {
+      const [account] = await tx.select({ planOverride: billingAccounts.planOverride })
+        .from(billingAccounts).where(eq(billingAccounts.userId, id)).limit(1)
+      await tx.insert(billingAccounts).values({ userId: id, planOverride: plan })
+        .onConflictDoUpdate({
+          target: billingAccounts.userId,
+          set: { planOverride: plan, updatedAt: new Date() },
+        })
+      await refreshStorageLimit(tx, id)
+      const entitlements = await loadBillingEntitlements(tx, id)
+      await tx.insert(auditEvents).values({
+        id: newId(), actorUserId: admin.id,
+        action: plan === null ? 'billing.plan.reset' : 'billing.plan.update',
+        targetType: 'user', targetId: id,
+        metadata: {
+          previousPlanOverride: account?.planOverride ?? null,
+          planOverride: plan,
+          subscriptionPlan: entitlements.subscriptionPlan,
+          effectivePlan: entitlements.plan,
+        },
+      })
+      const [revision] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
+        .where(eq(users.id, id)).returning({ userId: users.id, revision: users.stateRevision })
+      return { revision, entitlements }
+    })
+    if (result.revision) await publishStateChange({ ...result.revision, scopes: ['billing', 'usage'] })
+    return {
+      subscriptionPlan: result.entitlements.subscriptionPlan,
+      plan: result.entitlements.plan,
+      planOverridden: result.entitlements.planOverridden,
+    }
   })
 
   app.patch('/api/admin/billing/users/:id/weekly-limit', async (request) => {
