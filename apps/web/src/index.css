@@ -115,12 +115,17 @@ body {
   display: none;
 }
 
-/* Only the background fades; the model picker and actions stay fully visible. */
-.chat-header {
+/* Extend only the background fade below the header without changing layout. */
+.chat-header::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 125%;
+  z-index: -1;
+  pointer-events: none;
   background: linear-gradient(
     to bottom,
-    color-mix(in oklab, var(--background) 95%, transparent) 0%,
-    color-mix(in oklab, var(--background) 90%, transparent) 60%,
+    color-mix(in oklab, var(--background) 80%, transparent) 0%,
     color-mix(in oklab, var(--background) 0%, transparent) 100%
   );
 }
