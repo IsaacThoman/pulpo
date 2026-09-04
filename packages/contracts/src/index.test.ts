@@ -14,6 +14,7 @@ import {
   createChatResponseSchema,
   composerDraftInputSchema,
   composerDraftChangeSchema,
+  composerDraftConflictSchema,
   composerDraftDeleteInputSchema,
   composerDraftsClearedSchema,
   composerDraftSchema,
@@ -313,8 +314,10 @@ describe('shared contracts', () => {
       autoExpire: true,
       attachmentIds: [attachmentId],
       editorId: 'tab-1',
+      baseRevision: 6,
     })
     expect(input.content).toBe('  unfinished\n')
+    expect(input.baseRevision).toBe(6)
     expect(composerDraftInputSchema.safeParse({ ...input, attachmentIds: [attachmentId, attachmentId] }).success).toBe(false)
     expect(composerDraftInputSchema.safeParse({ ...input, content: '', attachmentIds: [] }).success).toBe(false)
     expect(composerDraftInputSchema.safeParse({ ...input, content: 'x'.repeat(1_000_001) }).success).toBe(false)
@@ -340,7 +343,11 @@ describe('shared contracts', () => {
     expect(composerDraftChangeSchema.parse({
       scope: 'new', revision: 8, editorId: 'ios-1', draft: null, reason: 'deleted',
     }).draft).toBeNull()
-    expect(composerDraftDeleteInputSchema.parse({ editorId: 'ios-1' })).toEqual({ editorId: 'ios-1' })
+    expect(composerDraftDeleteInputSchema.parse({ editorId: 'ios-1', baseRevision: 7 }))
+      .toEqual({ editorId: 'ios-1', baseRevision: 7 })
+    expect(composerDraftConflictSchema.parse({
+      scope: 'new', revision: 7, editorId: 'web-1', draft,
+    })).toEqual({ scope: 'new', revision: 7, editorId: 'web-1', draft })
     expect(composerDraftsClearedSchema.parse({
       revision: 9, editorId: 'server:settings', reason: 'sync_disabled',
     }).revision).toBe(9)
@@ -840,9 +847,11 @@ describe('response snapshot accumulation', () => {
       parentResponseId,
       input: 'Follow this branch',
       modelId: 'model',
+      composerDraftRevision: 12,
     })
 
     expect(parsed.parentResponseId).toBe(parentResponseId)
+    expect(parsed.composerDraftRevision).toBe(12)
   })
 
   it('requires stable chat and response IDs for atomic chat startup', () => {
@@ -863,7 +872,8 @@ describe('response snapshot accumulation', () => {
     const attachmentId = '00000000-0000-4000-8000-000000000004'
     expect(createQueuedMessageSchema.parse({
       input: '', modelId: 'model-1', attachmentIds: [attachmentId], agentMode: true,
-    })).toMatchObject({ attachmentIds: [attachmentId], agentMode: true })
+      composerDraftRevision: 15,
+    })).toMatchObject({ attachmentIds: [attachmentId], agentMode: true, composerDraftRevision: 15 })
     expect(updateQueuedMessageSchema.parse({
       action: 'save_edit', input: 'updated', modelId: 'model-2',
     })).toMatchObject({ action: 'save_edit', input: 'updated', attachmentIds: [] })

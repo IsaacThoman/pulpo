@@ -93,6 +93,8 @@ describe('user-owned operational records', () => {
     expect(migration).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "composer_drafts_user_scope_unique"')
     expect(migration.match(/SELECT 1 FROM pg_constraint/g)).toHaveLength(4)
     expect(migration).toContain('ON DELETE cascade')
+    const conflictMigration = readFileSync(new URL('../../drizzle/0058_great_metal_master.sql', import.meta.url), 'utf8')
+    expect(conflictMigration).toContain('ADD COLUMN "deleted_at" timestamp with time zone')
   })
 
   it('enforces normalized friendship pairs and non-self blocks', () => {

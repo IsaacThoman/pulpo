@@ -1563,6 +1563,9 @@ export const createChatResponseSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  // Optional while older clients remain deployed. Updated clients use this
+  // precondition so sending an older composer cannot clear a newer draft.
+  composerDraftRevision: z.number().int().nonnegative().optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],
@@ -1612,6 +1615,7 @@ export const createQueuedMessageSchema = z.object({
   presetSelections: z.record(z.string(), z.string()).default({}),
   attachmentIds: attachmentIdListSchema.default([]),
   agentMode: z.boolean().default(false),
+  composerDraftRevision: z.number().int().nonnegative().optional(),
 }).refine((value) => value.input.length > 0 || value.attachmentIds.length > 0, {
   message: 'Message must include text or attachments',
   path: ['input'],
@@ -1670,6 +1674,9 @@ const composerDraftBaseFields = {
 export const composerDraftInputSchema = z.object({
   ...composerDraftBaseFields,
   attachmentIds: attachmentIdListSchema.default([]),
+  // Omitted by legacy clients. Zero means the client has not observed a
+  // server-side draft for this scope.
+  baseRevision: z.number().int().nonnegative().optional(),
 }).refine((value) => value.content.length > 0 || value.attachmentIds.length > 0, {
   message: 'Draft must include text or attachments',
   path: ['content'],
@@ -1678,6 +1685,7 @@ export type ComposerDraftInput = z.infer<typeof composerDraftInputSchema>
 
 export const composerDraftDeleteInputSchema = z.object({
   editorId: z.string().min(1).max(128),
+  baseRevision: z.number().int().nonnegative().optional(),
 })
 export type ComposerDraftDeleteInput = z.infer<typeof composerDraftDeleteInputSchema>
 
@@ -1689,6 +1697,14 @@ export const composerDraftSchema = z.object({
   updatedAt: isoDateSchema,
 })
 export type ComposerDraft = z.infer<typeof composerDraftSchema>
+
+export const composerDraftConflictSchema = z.object({
+  scope: composerDraftScopeSchema,
+  revision: z.number().int().nonnegative(),
+  editorId: z.string().min(1).max(128),
+  draft: composerDraftSchema.nullable(),
+})
+export type ComposerDraftConflict = z.infer<typeof composerDraftConflictSchema>
 
 export const composerDraftChangeSchema = z.object({
   scope: composerDraftScopeSchema,

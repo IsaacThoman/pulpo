@@ -407,6 +407,13 @@
       "when": 1788454680414,
       "tag": "0057_stormy_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1788481140848,
+      "tag": "0058_great_metal_master",
+      "breakpoints": true
     }
   ]
 }

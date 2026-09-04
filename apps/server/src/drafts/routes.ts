@@ -1,10 +1,11 @@
 import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import {
   composerDraftDeleteInputSchema,
   composerDraftInputSchema,
   composerDraftScopeSchema,
   type ComposerDraft,
+  type ComposerDraftConflict,
 } from '@pulpo/contracts'
 import { requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
@@ -24,8 +25,9 @@ import {
   cleanupUnreferencedDraftAttachments,
   deleteComposerDraft,
   publishComposerDraftChange,
-  readComposerDraft,
+  readComposerDraftState,
 } from './service.js'
+import { composerDraftRevisionMatches } from './conflicts.js'
 import { resolveResponseGeneration } from '../responses/service.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
 
@@ -57,6 +59,18 @@ async function assertDraftChat(userId: string, chatId: string | null, reader: Dr
   if (!chat) throw notFound('Chat')
 }
 
+function replyWithDraftConflict(reply: FastifyReply, conflict: ComposerDraftConflict) {
+  return reply.code(409).send({
+    error: {
+      message: 'This draft changed on another device',
+      type: 'conflict_error',
+      code: 'composer_draft_conflict',
+      param: 'baseRevision',
+    },
+    conflict,
+  })
+}
+
 export async function registerComposerDraftRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/composer-drafts/:scope', async (request) => {
     const user = requireUser(request)
@@ -71,12 +85,15 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
       if (!draftSyncEnabled(preferences?.values)) {
         return { draft: null, revision: account?.revision ?? user.stateRevision }
       }
-      const draft = await readComposerDraft(user.id, scope, tx)
-      return { draft, revision: Math.max(account?.revision ?? user.stateRevision, draft?.revision ?? 0) }
+      const state = await readComposerDraftState(user.id, scope, tx)
+      return {
+        draft: state?.draft ?? null,
+        revision: Math.max(account?.revision ?? user.stateRevision, state?.revision ?? 0),
+      }
     }, { isolationLevel: 'repeatable read' })
   })
 
-  app.put('/api/composer-drafts/:scope', async (request) => {
+  app.put('/api/composer-drafts/:scope', async (request, reply) => {
     const user = requireUser(request)
     const { scope, chatId } = parseComposerDraftScope((request.params as { scope: string }).scope)
     const input = composerDraftInputSchema.parse(request.body)
@@ -99,6 +116,7 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
     let owned: Array<typeof attachments.$inferSelect> = []
     let removedAttachmentIds: string[] = []
     let canonical: ComposerDraft | null = null
+    let conflict: ComposerDraftConflict | null = null
     await db.transaction(async (tx) => {
       // Serialize cloud draft writes with this account's sync-setting changes.
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${user.id}))`)
@@ -107,6 +125,24 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
         .where(eq(userPreferences.userId, user.id)).limit(1)
       if (!draftSyncEnabled(lockedPreferences?.values)) {
         throw new AppError(409, 'draft_sync_disabled', 'Draft sync is disabled')
+      }
+      const [existing] = await tx.select().from(composerDrafts).where(and(
+        eq(composerDrafts.userId, user.id),
+        eq(composerDrafts.scope, scope),
+      )).limit(1)
+      if (!composerDraftRevisionMatches(
+        existing?.revision ?? 0,
+        input.baseRevision,
+        !existing || Boolean(existing.deletedAt),
+      )) {
+        const current = await readComposerDraftState(user.id, scope, tx)
+        conflict = {
+          scope: scope === 'new' ? 'new' : scope,
+          revision: current?.revision ?? 0,
+          editorId: current?.editorId ?? input.editorId,
+          draft: current?.draft ?? null,
+        }
+        return
       }
       owned = input.attachmentIds.length ? await tx.select().from(attachments).where(and(
         eq(attachments.userId, user.id),
@@ -117,10 +153,6 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
       if (owned.length !== input.attachmentIds.length) {
         throw new AppError(400, 'attachment_not_ready', 'One or more draft attachments are unavailable')
       }
-      const [existing] = await tx.select().from(composerDrafts).where(and(
-        eq(composerDrafts.userId, user.id),
-        eq(composerDrafts.scope, scope),
-      )).limit(1)
       if (existing) {
         removedAttachmentIds = (await tx.select({ attachmentId: composerDraftAttachments.attachmentId })
           .from(composerDraftAttachments).where(eq(composerDraftAttachments.draftId, existing.id)))
@@ -155,6 +187,7 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
           autoExpire: chatId ? null : input.autoExpire ?? false,
           editorId: input.editorId,
           revision,
+          deletedAt: null,
           updatedAt: now,
         },
       }).returning({ id: composerDrafts.id })
@@ -189,6 +222,8 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
         updatedAt: now.toISOString(),
       }
     })
+    const draftConflict = conflict as ComposerDraftConflict | null
+    if (draftConflict) return replyWithDraftConflict(reply, draftConflict)
     const persistedDraft = canonical as ComposerDraft | null
     if (!persistedDraft) throw new AppError(500, 'draft_save_failed', 'Unable to save the draft')
     await Promise.all([
@@ -205,13 +240,19 @@ export async function registerComposerDraftRoutes(app: FastifyInstance): Promise
     return { draft: persistedDraft }
   })
 
-  app.delete('/api/composer-drafts/:scope', async (request) => {
+  app.delete('/api/composer-drafts/:scope', async (request, reply) => {
     const user = requireUser(request)
     const { scope, chatId } = parseComposerDraftScope((request.params as { scope: string }).scope)
     const input = composerDraftDeleteInputSchema.parse(request.body)
     await assertDraftChat(user.id, chatId)
-    const deletedRevision = await deleteComposerDraft({ userId: user.id, scope, editorId: input.editorId })
-    if (deletedRevision !== null) return { revision: deletedRevision }
+    const result = await deleteComposerDraft({
+      userId: user.id,
+      scope,
+      editorId: input.editorId,
+      baseRevision: input.baseRevision,
+    })
+    if (result.outcome === 'conflict') return replyWithDraftConflict(reply, result.conflict)
+    if (result.revision !== null) return { revision: result.revision }
     const [account] = await db.select({ revision: users.stateRevision }).from(users).where(eq(users.id, user.id)).limit(1)
     return { revision: account?.revision ?? user.stateRevision }
   })

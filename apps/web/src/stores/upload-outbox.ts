@@ -13,7 +13,6 @@ import { optimisticSubmissionPlacement, uploadOutboxHeadAction } from '@/compone
 import { ui } from '@/i18n/ui'
 import {
   deleteLocalComposerDraft,
-  deleteRemoteComposerDraft,
   loadLocalComposerDraft,
   saveLocalComposerTombstone,
 } from '@/lib/local-first/composer-drafts'
@@ -53,6 +52,7 @@ export interface PendingSubmission {
   recoveryError?: string
   draftScope: string
   clearDraftOnSuccess: boolean
+  draftRevision?: number
 }
 
 interface AddFilesOptions {
@@ -69,6 +69,7 @@ interface SubmissionDraft {
   temporary: boolean
   autoExpire: boolean
   attachmentIds: string[]
+  draftRevision?: number
 }
 
 export interface PreservedComposerDraft {
@@ -84,7 +85,7 @@ interface UploadOutboxState {
   addExistingAttachments: (attachments: Attachment[], options: AddFilesOptions) => string[]
   stageSubmission: (draft: SubmissionDraft) => { chatId: string; submissionId: string }
   retainDraftAfterSubmission: (scope: string) => void
-  resumeSubmission: (submissionId: string, draft: Omit<SubmissionDraft, 'chatId' | 'temporary' | 'autoExpire'>) => void
+  resumeSubmission: (submissionId: string, draft: Omit<SubmissionDraft, 'chatId' | 'temporary' | 'autoExpire' | 'draftRevision'>) => void
   returnSubmissionToComposer: (submissionId: string) => void
   discardSubmission: (submissionId: string) => void
   preserveComposerDraft: (chatId: string, draft: PreservedComposerDraft) => void
@@ -174,28 +175,18 @@ function clearSubmissionDraft(submission: PendingSubmission): void {
   if (userId && syncDrafts) {
     void (async () => {
       const existing = await loadLocalComposerDraft(userId, submission.draftScope)
-      await saveLocalComposerTombstone({
-        userId,
-        scope: submission.draftScope,
-        editorId,
-        dirty: true,
-        serverRevision: existing?.serverRevision,
-      })
-      const revision = await deleteRemoteComposerDraft(submission.draftScope, editorId)
-      const current = await loadLocalComposerDraft(userId, submission.draftScope)
-      if (!current?.deleted || current.editorId !== editorId) return
+      if (existing && !existing.deleted && (existing.serverRevision ?? 0) > (submission.draftRevision ?? 0)) return
       await saveLocalComposerTombstone({
         userId,
         scope: submission.draftScope,
         editorId,
         dirty: false,
-        serverRevision: revision,
+        serverRevision: existing?.serverRevision,
       })
     })().catch(() => undefined)
   } else if (userId) {
     void deleteLocalComposerDraft(userId, submission.draftScope).catch(() => undefined)
   }
-  if (syncDrafts && !userId) void deleteRemoteComposerDraft(submission.draftScope, editorId).catch(() => undefined)
 }
 
 async function uploadRecord(localId: string, attempt: number): Promise<void> {
@@ -368,6 +359,7 @@ async function processChat(chatId: string): Promise<void> {
             responseId: submission.responseId,
             presetSelections: submission.presetSelections,
             agentMode: submission.agentMode,
+            composerDraftRevision: submission.draftRevision ?? 0,
           },
         )
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
@@ -394,6 +386,7 @@ async function processChat(chatId: string): Promise<void> {
           presetSelections: submission.presetSelections,
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
+          composerDraftRevision: submission.draftRevision ?? 0,
         }, attachments, submission.responseId)
         const completed = useUploadOutbox.getState().submissions.find((item) => item.id === submission.id) ?? submission
         useUploadOutbox.setState((current) => ({
@@ -524,6 +517,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
       status: 'waiting',
       draftScope: draft.chatId ?? 'new',
       clearDraftOnSuccess: true,
+      draftRevision: draft.draftRevision ?? 0,
     }
     if (placement === 'queue') renderSubmissionSurface(submission, records)
     set((state) => ({ submissions: [...state.submissions, submission] }))

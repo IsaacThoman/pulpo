@@ -1,4 +1,11 @@
-import type { ComposerDraft, ComposerDraftChange, ComposerDraftInput, ComposerDraftsCleared } from '@pulpo/contracts'
+import {
+  composerDraftConflictSchema,
+  type ComposerDraft,
+  type ComposerDraftChange,
+  type ComposerDraftConflict,
+  type ComposerDraftInput,
+  type ComposerDraftsCleared,
+} from '@pulpo/contracts'
 import { LatestTaskQueue } from '@pulpo/client-core'
 import { Directory, File, Paths } from 'expo-file-system'
 import * as Crypto from 'expo-crypto'
@@ -16,7 +23,7 @@ import { downloadAttachment } from './api'
 
 type RemoteDraftMutation =
   | { type: 'save'; input: ComposerDraftInput }
-  | { type: 'delete'; editorId: string }
+  | { type: 'delete'; editorId: string; baseRevision?: number }
 type RemoteDraftMutationResult =
   | { type: 'save'; draft: ComposerDraft }
   | { type: 'delete'; revision: number }
@@ -37,13 +44,34 @@ function serializeLocalReconciliation<T>(key: string, reconcile: () => Promise<T
 
 function mutateRemoteDraft(scope: string, mutation: RemoteDraftMutation): Promise<RemoteDraftMutationResult> {
   return remoteMutationQueue.enqueue(scope, mutation, async (latest) => {
-    if (latest.type === 'save') {
-      const result = await mobileApi.saveComposerDraft(scope, latest.input)
-      return { type: 'save', draft: result.draft }
+    try {
+      if (latest.type === 'save') {
+        const result = await mobileApi.saveComposerDraft(scope, latest.input)
+        return { type: 'save', draft: result.draft }
+      }
+      const result = await mobileApi.deleteComposerDraft(scope, latest.editorId, latest.baseRevision)
+      return { type: 'delete', revision: result.revision }
+    } catch (error) {
+      const parsed = error instanceof ApiError && error.code === 'composer_draft_conflict'
+        ? composerDraftConflictSchema.safeParse((error.body as { conflict?: unknown } | undefined)?.conflict)
+        : null
+      if (parsed?.success) {
+        emitMobileDraftEvent({ type: 'conflict', conflict: parsed.data })
+        throw new MobileComposerDraftConflictError(parsed.data)
+      }
+      throw error
     }
-    const result = await mobileApi.deleteComposerDraft(scope, latest.editorId)
-    return { type: 'delete', revision: result.revision }
   })
+}
+
+export class MobileComposerDraftConflictError extends Error {
+  readonly conflict: ComposerDraftConflict
+
+  constructor(conflict: ComposerDraftConflict) {
+    super('This draft changed on another device')
+    this.name = 'MobileComposerDraftConflictError'
+    this.conflict = conflict
+  }
 }
 
 export interface MobileDraftAttachment {
@@ -229,8 +257,8 @@ export async function saveMobileRemoteDraft(scope: string, input: ComposerDraftI
   return result.draft
 }
 
-export async function deleteMobileRemoteDraft(scope: string, editorId: string): Promise<number> {
-  const result = await mutateRemoteDraft(scope, { type: 'delete', editorId })
+export async function deleteMobileRemoteDraft(scope: string, editorId: string, baseRevision?: number): Promise<number> {
+  const result = await mutateRemoteDraft(scope, { type: 'delete', editorId, baseRevision })
   if (result.type !== 'delete') throw new Error('Composer draft deletion was superseded by a save')
   return result.revision
 }
@@ -238,6 +266,7 @@ export async function deleteMobileRemoteDraft(scope: string, editorId: string): 
 type MobileDraftEvent =
   | { type: 'changed'; event: ComposerDraftChange }
   | { type: 'cleared'; event: ComposerDraftsCleared }
+  | { type: 'conflict'; conflict: ComposerDraftConflict }
 
 const mobileDraftListeners = new Set<(event: MobileDraftEvent) => void>()
 
@@ -382,7 +411,7 @@ export async function flushDirtyMobileComposerDrafts(namespace: string): Promise
     if (!local?.dirty) continue
     try {
       if (local.deleted) {
-        const revision = await deleteMobileRemoteDraft(scope, local.editorId)
+        const revision = await deleteMobileRemoteDraft(scope, local.editorId, local.serverRevision ?? 0)
         const current = await loadMobileComposerDraft(namespace, scope)
         if (current?.dirty && current.updatedAt === local.updatedAt) {
           await saveMobileComposerTombstone({ namespace, scope, editorId: local.editorId, dirty: false, serverRevision: revision })
@@ -399,6 +428,7 @@ export async function flushDirtyMobileComposerDrafts(namespace: string): Promise
         ...(scope === 'new' ? { autoExpire: local.autoExpire } : {}),
         attachmentIds: readyIds,
         editorId: local.editorId,
+        baseRevision: local.serverRevision ?? 0,
       })
       const current = await loadMobileComposerDraft(namespace, scope)
       if (!current?.dirty || current.updatedAt !== local.updatedAt) continue

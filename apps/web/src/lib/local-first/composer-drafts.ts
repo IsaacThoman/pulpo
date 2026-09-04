@@ -1,4 +1,11 @@
-import type { ComposerDraft, ComposerDraftChange, ComposerDraftInput, ComposerDraftsCleared } from '@pulpo/contracts'
+import {
+  composerDraftConflictSchema,
+  type ComposerDraft,
+  type ComposerDraftChange,
+  type ComposerDraftConflict,
+  type ComposerDraftInput,
+  type ComposerDraftsCleared,
+} from '@pulpo/contracts'
 import { LatestTaskQueue } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { fetchApiBlob } from '@/lib/api'
@@ -19,10 +26,21 @@ export interface RemoteComposerDraftSnapshot {
 
 export const WEB_COMPOSER_DRAFT_CHANGED_EVENT = 'pulpo:composer-draft-changed'
 export const WEB_COMPOSER_DRAFTS_CLEARED_EVENT = 'pulpo:composer-drafts-cleared'
+export const WEB_COMPOSER_DRAFT_CONFLICT_EVENT = 'pulpo:composer-draft-conflict'
+
+export class ComposerDraftConflictError extends Error {
+  readonly conflict: ComposerDraftConflict
+
+  constructor(conflict: ComposerDraftConflict) {
+    super('This draft changed on another device')
+    this.name = 'ComposerDraftConflictError'
+    this.conflict = conflict
+  }
+}
 
 type RemoteDraftMutation =
   | { type: 'save'; input: ComposerDraftInput }
-  | { type: 'delete'; editorId: string }
+  | { type: 'delete'; editorId: string; baseRevision?: number }
 type RemoteDraftMutationResult =
   | { type: 'save'; draft: ComposerDraft }
   | { type: 'delete'; revision: number }
@@ -43,18 +61,29 @@ function serializeLocalReconciliation<T>(key: string, reconcile: () => Promise<T
 
 function mutateRemoteDraft(scope: string, mutation: RemoteDraftMutation): Promise<RemoteDraftMutationResult> {
   return remoteMutationQueue.enqueue(scope, mutation, async (latest) => {
-    if (latest.type === 'save') {
-      const result = await apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, {
-        method: 'PUT',
-        body: latest.input,
+    try {
+      if (latest.type === 'save') {
+        const result = await apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, {
+          method: 'PUT',
+          body: latest.input,
+        })
+        return { type: 'save', draft: result.draft }
+      }
+      const result = await apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
+        method: 'DELETE',
+        body: { editorId: latest.editorId, baseRevision: latest.baseRevision },
       })
-      return { type: 'save', draft: result.draft }
+      return { type: 'delete', revision: result.revision }
+    } catch (error) {
+      const parsed = error instanceof ApiError && error.code === 'composer_draft_conflict'
+        ? composerDraftConflictSchema.safeParse((error.body as { conflict?: unknown } | undefined)?.conflict)
+        : null
+      if (parsed?.success) {
+        dispatchDraftEvent(WEB_COMPOSER_DRAFT_CONFLICT_EVENT, parsed.data)
+        throw new ComposerDraftConflictError(parsed.data)
+      }
+      throw error
     }
-    const result = await apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
-      method: 'DELETE',
-      body: { editorId: latest.editorId },
-    })
-    return { type: 'delete', revision: result.revision }
   })
 }
 
@@ -311,8 +340,8 @@ export async function saveRemoteComposerDraft(scope: string, input: ComposerDraf
   return result.draft
 }
 
-export async function deleteRemoteComposerDraft(scope: string, editorId: string): Promise<number> {
-  const result = await mutateRemoteDraft(scope, { type: 'delete', editorId })
+export async function deleteRemoteComposerDraft(scope: string, editorId: string, baseRevision?: number): Promise<number> {
+  const result = await mutateRemoteDraft(scope, { type: 'delete', editorId, baseRevision })
   if (result.type !== 'delete') throw new Error('Composer draft deletion was superseded by a save')
   return result.revision
 }
@@ -438,7 +467,7 @@ export async function flushDirtyWebComposerDrafts(userId: string): Promise<void>
   for (const draft of dirty.sort((left, right) => left.updatedAt - right.updatedAt)) {
     try {
       if (draft.deleted) {
-        const revision = await deleteRemoteComposerDraft(draft.chatId, draft.editorId)
+        const revision = await deleteRemoteComposerDraft(draft.chatId, draft.editorId, draft.serverRevision ?? 0)
         const current = await localDb.drafts.get(draft.id)
         if (current?.dirty && current.updatedAt === draft.updatedAt) {
           await localDb.drafts.update(draft.id, { dirty: false, serverRevision: revision })
@@ -455,6 +484,7 @@ export async function flushDirtyWebComposerDrafts(userId: string): Promise<void>
         ...(draft.chatId === 'new' ? { autoExpire: draft.autoExpire } : {}),
         attachmentIds: readyIds,
         editorId: draft.editorId,
+        baseRevision: draft.serverRevision ?? 0,
       })
       const current = await localDb.drafts.get(draft.id)
       if (!current?.dirty || current.updatedAt !== draft.updatedAt) continue

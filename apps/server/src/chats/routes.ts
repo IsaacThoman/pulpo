@@ -306,6 +306,15 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
           scope: 'new',
           editorId: 'server:send',
           reason: 'sent',
+          baseRevision: input.response.composerDraftRevision,
+          sentSnapshot: {
+            content: input.response.input,
+            modelId: input.response.modelId,
+            presetSelections: input.response.presetSelections,
+            agentMode: input.response.agentMode,
+            attachmentIds: input.response.attachmentIds,
+            autoExpire: input.chat.autoExpire,
+          },
         })
       }
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
@@ -641,6 +650,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       scope: id,
       editorId: 'server:send',
       reason: 'sent',
+      baseRevision: input.composerDraftRevision,
+      sentSnapshot: {
+        content: input.input,
+        modelId: input.modelId,
+        presetSelections: input.presetSelections,
+        agentMode: input.agentMode,
+        attachmentIds: input.attachmentIds,
+      },
     })
     await bumpRevision(user.id, id)
     reply.code(202)
@@ -660,6 +677,14 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       scope: id,
       editorId: 'server:send',
       reason: 'sent',
+      baseRevision: input.composerDraftRevision,
+      sentSnapshot: {
+        content: input.input,
+        modelId: input.modelId,
+        presetSelections: input.presetSelections,
+        agentMode: input.agentMode,
+        attachmentIds: input.attachmentIds,
+      },
     })
     reply.code(202)
     return result

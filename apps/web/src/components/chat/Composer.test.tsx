@@ -13,6 +13,7 @@ const testState = vi.hoisted(() => {
     loadLocalComposerDraft: vi.fn(),
     saveLocalComposerDraft: vi.fn(),
     saveRemoteComposerDraft: vi.fn(),
+    applyWebComposerDraftChange: vi.fn(),
     chat: {
       chats: [],
       streamingIds: [],
@@ -115,7 +116,9 @@ vi.mock('@/lib/api', () => ({ apiRequest: testState.noop }))
 
 vi.mock('@/lib/local-first/composer-drafts', () => ({
   WEB_COMPOSER_DRAFT_CHANGED_EVENT: 'pulpo:composer-draft-changed',
+  WEB_COMPOSER_DRAFT_CONFLICT_EVENT: 'pulpo:composer-draft-conflict',
   WEB_COMPOSER_DRAFTS_CLEARED_EVENT: 'pulpo:composer-drafts-cleared',
+  applyWebComposerDraftChange: testState.applyWebComposerDraftChange,
   peekRuntimeComposerDraft: (_userId: string, scope: string) => testState.drafts.get(scope) ?? null,
   loadLocalComposerDraft: testState.loadLocalComposerDraft,
   saveLocalComposerDraft: testState.saveLocalComposerDraft,
@@ -167,6 +170,7 @@ describe('Composer draft lifecycle', () => {
       revision: 7,
       updatedAt: new Date(7_000).toISOString(),
     }))
+    testState.applyWebComposerDraftChange.mockReset().mockResolvedValue(true)
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => window.setTimeout(callback, 0))
   })
 
@@ -204,5 +208,48 @@ describe('Composer draft lifecycle', () => {
     view.rerender(composerSurface('chat-a', 'chat-a'))
     await settleEffects()
     expect((view.getByRole('textbox') as HTMLTextAreaElement).value).toBe('keep this per-chat draft')
+  })
+
+  it('lets the user choose the canonical remote snapshot after a conflict', async () => {
+    const view = render(composerSurface('new', null))
+    await settleEffects()
+    const draft = {
+      scope: 'new', content: 'other device', modelId: 'model-1', presetSelections: {},
+      agentMode: false, autoExpire: false, editorId: 'remote-editor', attachments: [],
+      revision: 8, updatedAt: new Date(8_000).toISOString(),
+    }
+
+    act(() => window.dispatchEvent(new CustomEvent('pulpo:composer-draft-conflict', {
+      detail: { scope: 'new', revision: 8, editorId: 'remote-editor', draft },
+    })))
+    fireEvent.click(view.getByRole('button', { name: 'Use other device' }))
+
+    expect(testState.applyWebComposerDraftChange).toHaveBeenCalledWith('composer-test-user', {
+      scope: 'new', revision: 8, editorId: 'remote-editor', draft, reason: 'saved',
+    })
+  })
+
+  it('retries the local snapshot against the canonical revision when the user keeps it', async () => {
+    const view = render(composerSurface('new', null))
+    await settleEffects()
+    fireEvent.change(view.getByRole('textbox'), { target: { value: 'local version' } })
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+
+    act(() => window.dispatchEvent(new CustomEvent('pulpo:composer-draft-conflict', {
+      detail: {
+        scope: 'new', revision: 8, editorId: 'remote-editor',
+        draft: {
+          scope: 'new', content: 'other device', modelId: 'model-1', presetSelections: {},
+          agentMode: false, autoExpire: false, editorId: 'remote-editor', attachments: [],
+          revision: 8, updatedAt: new Date(8_000).toISOString(),
+        },
+      },
+    })))
+    fireEvent.click(view.getByRole('button', { name: 'Keep this device' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(250) })
+
+    expect(testState.saveRemoteComposerDraft).toHaveBeenLastCalledWith('new', expect.objectContaining({
+      content: 'local version', baseRevision: 8,
+    }))
   })
 })

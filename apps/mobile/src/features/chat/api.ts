@@ -88,6 +88,7 @@ export async function sendMessage(input: {
   attachmentIds?: string[]
   agentMode?: boolean
   temporary?: boolean
+  composerDraftRevision?: number
 }): Promise<ResponseSnapshot> {
   const responseId = input.clientId ?? Crypto.randomUUID()
   const path = `/api/chats/${input.chatId}/responses`
@@ -107,6 +108,7 @@ export async function sendMessage(input: {
     presetSelections: input.presetSelections ?? {},
     attachmentIds: input.attachmentIds ?? [],
     agentMode: input.agentMode ?? false,
+    composerDraftRevision: input.composerDraftRevision,
   }
   try {
     const result = await apiRequest<{ response: ResponseSnapshot }>(path, {
@@ -143,6 +145,7 @@ export async function startChat(input: {
   presetSelections?: Record<string, string>
   attachmentIds?: string[]
   agentMode?: boolean
+  composerDraftRevision?: number
 }): Promise<{ chat: ServerChat; response: ResponseSnapshot }> {
   const now = new Date().toISOString()
   const queued: ResponseSnapshot = {
@@ -171,6 +174,7 @@ export async function startChat(input: {
       presetSelections: input.presetSelections ?? {},
       attachmentIds: input.attachmentIds ?? [],
       agentMode: input.agentMode ?? false,
+      composerDraftRevision: input.composerDraftRevision,
     },
   }
   try {

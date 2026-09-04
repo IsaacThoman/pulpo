@@ -1,5 +1,10 @@
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm'
-import type { ComposerDraft, ComposerDraftChange, ComposerDraftsCleared } from '@pulpo/contracts'
+import type {
+  ComposerDraft,
+  ComposerDraftChange,
+  ComposerDraftConflict,
+  ComposerDraftsCleared,
+} from '@pulpo/contracts'
 import { db } from '../database/client.js'
 import {
   attachments,
@@ -13,6 +18,11 @@ import { getBlobStore } from '../storage/index.js'
 import { attachmentReferenceIsLive } from '../attachments/references.js'
 import { redis } from '../redis.js'
 import { publishStateChange } from '../responses/events.js'
+import {
+  composerDraftMatchesSentSnapshot,
+  composerDraftRevisionMatches,
+  type SentComposerDraftSnapshot,
+} from './conflicts.js'
 
 export async function publishComposerDraftChange(userId: string, change: ComposerDraftChange): Promise<void> {
   await redis.publish('pulpo:composer-drafts', JSON.stringify({ userId, type: 'change', payload: change }))
@@ -24,38 +34,57 @@ export async function publishComposerDraftsCleared(userId: string, event: Compos
 
 type DraftReader = Pick<typeof db, 'select'>
 
+export interface ComposerDraftState {
+  draft: ComposerDraft | null
+  revision: number
+  editorId: string
+}
+
+export async function readComposerDraftState(
+  userId: string,
+  scope: string,
+  reader: DraftReader = db,
+): Promise<ComposerDraftState | null> {
+  const [row] = await reader.select().from(composerDrafts).where(and(
+    eq(composerDrafts.userId, userId),
+    eq(composerDrafts.scope, scope),
+  )).limit(1)
+  if (!row) return null
+  if (row.deletedAt) return { draft: null, revision: row.revision, editorId: row.editorId }
+  const rows = await reader.select({ attachment: attachments })
+    .from(composerDraftAttachments)
+    .innerJoin(attachments, eq(attachments.id, composerDraftAttachments.attachmentId))
+    .where(eq(composerDraftAttachments.draftId, row.id))
+    .orderBy(asc(composerDraftAttachments.position))
+  return {
+    draft: {
+      scope: scope === 'new' ? 'new' : scope,
+      content: row.content,
+      modelId: row.modelId,
+      presetSelections: row.presetSelections,
+      agentMode: row.agentMode,
+      ...(row.autoExpire === null ? {} : { autoExpire: row.autoExpire }),
+      editorId: row.editorId,
+      attachments: rows.map(({ attachment }) => ({
+        id: attachment.id,
+        name: attachment.originalName,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      })),
+      revision: row.revision,
+      updatedAt: row.updatedAt.toISOString(),
+    },
+    revision: row.revision,
+    editorId: row.editorId,
+  }
+}
+
 export async function readComposerDraft(
   userId: string,
   scope: string,
   reader: DraftReader = db,
 ): Promise<ComposerDraft | null> {
-  const [draft] = await reader.select().from(composerDrafts).where(and(
-    eq(composerDrafts.userId, userId),
-    eq(composerDrafts.scope, scope),
-  )).limit(1)
-  if (!draft) return null
-  const rows = await reader.select({ attachment: attachments })
-    .from(composerDraftAttachments)
-    .innerJoin(attachments, eq(attachments.id, composerDraftAttachments.attachmentId))
-    .where(eq(composerDraftAttachments.draftId, draft.id))
-    .orderBy(asc(composerDraftAttachments.position))
-  return {
-    scope: scope === 'new' ? 'new' : scope,
-    content: draft.content,
-    modelId: draft.modelId,
-    presetSelections: draft.presetSelections,
-    agentMode: draft.agentMode,
-    ...(draft.autoExpire === null ? {} : { autoExpire: draft.autoExpire }),
-    editorId: draft.editorId,
-    attachments: rows.map(({ attachment }) => ({
-      id: attachment.id,
-      name: attachment.originalName,
-      mimeType: attachment.mimeType,
-      sizeBytes: attachment.sizeBytes,
-    })),
-    revision: draft.revision,
-    updatedAt: draft.updatedAt.toISOString(),
-  }
+  return (await readComposerDraftState(userId, scope, reader))?.draft ?? null
 }
 
 export async function cleanupUnreferencedDraftAttachments(userId: string, attachmentIds: string[]): Promise<void> {
@@ -108,36 +137,83 @@ export async function deleteComposerDraft(input: {
   scope: string
   editorId: string
   reason?: ComposerDraftChange['reason']
-}): Promise<number | null> {
-  let attachmentIds: string[] = []
-  const revision = await db.transaction(async (tx) => {
+  baseRevision?: number
+  sentSnapshot?: SentComposerDraftSnapshot
+}): Promise<
+  | { outcome: 'deleted'; revision: number }
+  | { outcome: 'unchanged'; revision: number | null }
+  | { outcome: 'conflict'; conflict: ComposerDraftConflict }
+> {
+  const result = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.userId}))`)
-    const [draft] = await tx.select({ id: composerDrafts.id }).from(composerDrafts).where(and(
+    const [draft] = await tx.select().from(composerDrafts).where(and(
       eq(composerDrafts.userId, input.userId),
       eq(composerDrafts.scope, input.scope),
     )).limit(1)
-    if (!draft) return null
-    attachmentIds = (await tx.select({ attachmentId: composerDraftAttachments.attachmentId })
+    if (!draft) return { outcome: 'unchanged' as const, revision: null, attachmentIds: [] }
+    if (draft.deletedAt) {
+      if (!composerDraftRevisionMatches(draft.revision, input.baseRevision, true)) {
+        return {
+          outcome: 'conflict' as const,
+          conflict: {
+            scope: input.scope === 'new' ? 'new' as const : input.scope,
+            revision: draft.revision,
+            editorId: draft.editorId,
+            draft: null,
+          },
+          attachmentIds: [],
+        }
+      }
+      return { outcome: 'unchanged' as const, revision: draft.revision, attachmentIds: [] }
+    }
+    const current = await readComposerDraftState(input.userId, input.scope, tx)
+    if (!current?.draft) return { outcome: 'unchanged' as const, revision: draft.revision, attachmentIds: [] }
+    const revisionMatches = composerDraftRevisionMatches(draft.revision, input.baseRevision)
+    const sentSnapshotMatches = input.sentSnapshot
+      ? composerDraftMatchesSentSnapshot(current.draft, input.sentSnapshot)
+      : false
+    if (!revisionMatches && !sentSnapshotMatches) {
+      return {
+        outcome: 'conflict' as const,
+        conflict: {
+          scope: current.draft.scope,
+          revision: current.revision,
+          editorId: current.editorId,
+          draft: current.draft,
+        },
+        attachmentIds: [],
+      }
+    }
+    const attachmentIds = (await tx.select({ attachmentId: composerDraftAttachments.attachmentId })
       .from(composerDraftAttachments).where(eq(composerDraftAttachments.draftId, draft.id)))
       .map((row) => row.attachmentId)
     const [updated] = await tx.update(users).set({ stateRevision: sql`${users.stateRevision} + 1` })
       .where(eq(users.id, input.userId)).returning({ revision: users.stateRevision })
-    await tx.delete(composerDrafts).where(eq(composerDrafts.id, draft.id))
-    return updated?.revision ?? null
+    const revision = updated?.revision
+    if (!revision) return { outcome: 'unchanged' as const, revision: null, attachmentIds: [] }
+    const now = new Date()
+    await tx.delete(composerDraftAttachments).where(eq(composerDraftAttachments.draftId, draft.id))
+    await tx.update(composerDrafts).set({
+      editorId: input.editorId,
+      revision,
+      deletedAt: now,
+      updatedAt: now,
+    }).where(eq(composerDrafts.id, draft.id))
+    return { outcome: 'deleted' as const, revision, attachmentIds }
   })
-  if (revision === null) return null
+  if (result.outcome !== 'deleted') return result
   await Promise.all([
     publishComposerDraftChange(input.userId, {
       scope: input.scope === 'new' ? 'new' : input.scope,
-      revision,
+      revision: result.revision,
       editorId: input.editorId,
       draft: null,
       reason: input.reason ?? 'deleted',
     }),
-    publishStateChange({ userId: input.userId, revision, scopes: ['drafts'] }),
+    publishStateChange({ userId: input.userId, revision: result.revision, scopes: ['drafts'] }),
   ])
-  await cleanupUnreferencedDraftAttachments(input.userId, attachmentIds)
-  return revision
+  await cleanupUnreferencedDraftAttachments(input.userId, result.attachmentIds)
+  return { outcome: 'deleted', revision: result.revision }
 }
 
 export async function deleteComposerDraftsForChats(

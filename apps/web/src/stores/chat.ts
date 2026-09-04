@@ -136,6 +136,7 @@ interface StagedSendOptions {
   responseId: string
   presetSelections: Record<string, string>
   agentMode: boolean
+  composerDraftRevision: number
 }
 
 export function mergeServerChatDetails(cached: ServerChat | undefined, incoming: ServerChat): ServerChat {
@@ -1472,6 +1473,7 @@ export const useChat = create<ChatState>()((set, get) => ({
         presetSelections: generation.selections,
         attachmentIds: attachments.map((attachment) => attachment.id),
         agentMode,
+        composerDraftRevision: staged?.composerDraftRevision,
       }
       const path = chatId ? `/api/chats/${id}/responses` : '/api/chats/start'
       const body = chatId ? responseBody : {

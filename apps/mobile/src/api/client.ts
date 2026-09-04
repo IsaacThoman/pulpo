@@ -162,7 +162,9 @@ export const mobileApi = {
   updateSettings: (patch: Record<string, unknown>) => apiRequest<{ values: Record<string, unknown>; updatedAt: string }>('/api/settings', { method: 'PATCH', body: patch }),
   composerDraft: (scope: string) => apiRequest<{ draft: ComposerDraft | null; revision: number }>(`/api/composer-drafts/${scope}`),
   saveComposerDraft: (scope: string, input: ComposerDraftInput) => apiRequest<{ draft: ComposerDraft }>(`/api/composer-drafts/${scope}`, { method: 'PUT', body: input }),
-  deleteComposerDraft: (scope: string, editorId: string) => apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, { method: 'DELETE', body: { editorId } }),
+  deleteComposerDraft: (scope: string, editorId: string, baseRevision?: number) => apiRequest<{ revision: number }>(`/api/composer-drafts/${scope}`, {
+    method: 'DELETE', body: { editorId, baseRevision },
+  }),
 }
 
 export function isNetworkError(error: unknown): boolean {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ComposerDraft, ComposerDraftChange } from '@pulpo/contracts'
+import type { ComposerDraft, ComposerDraftChange, ComposerDraftConflict } from '@pulpo/contracts'
 
 const mocks = vi.hoisted(() => {
   const rows = new Map<string, unknown>()
@@ -31,6 +31,16 @@ vi.mock('expo-file-system', () => ({
 vi.mock('expo-crypto', () => ({ randomUUID: vi.fn(() => 'generated-local-id') }))
 vi.mock('./api', () => ({ downloadAttachment: vi.fn() }))
 vi.mock('../../api/client', () => ({
+  ApiError: class ApiError extends Error {
+    constructor(
+      readonly status: number,
+      readonly code: string,
+      message: string,
+      readonly body?: unknown,
+    ) {
+      super(message)
+    }
+  },
   mobileApi: {
     composerDraft: vi.fn(),
     saveComposerDraft: vi.fn(),
@@ -63,10 +73,11 @@ import {
   loadMobileComposerDraft,
   saveMobileComposerDraft,
   saveMobileRemoteDraft,
+  subscribeMobileComposerDrafts,
   type MobileDraftAttachment,
   type MobileComposerDraft,
 } from './composerDrafts'
-import { mobileApi } from '../../api/client'
+import { ApiError, mobileApi } from '../../api/client'
 
 const namespace = 'https://example.test|user'
 
@@ -208,5 +219,26 @@ describe('mobile composer draft realtime reconciliation', () => {
     await expect(saving).resolves.toMatchObject({ content: 'new text', revision: 10 })
     expect(vi.mocked(mobileApi.deleteComposerDraft).mock.invocationCallOrder[0])
       .toBeLessThan(vi.mocked(mobileApi.saveComposerDraft).mock.invocationCallOrder[0]!)
+  })
+
+  it('surfaces the canonical snapshot when a stale deletion conflicts', async () => {
+    const conflict: ComposerDraftConflict = {
+      scope: 'new', revision: 8, editorId: 'remote', draft: remote(8),
+    }
+    vi.mocked(mobileApi.deleteComposerDraft).mockRejectedValue(new ApiError(
+      409,
+      'composer_draft_conflict',
+      'This draft changed on another device',
+      { conflict },
+    ))
+    const listener = vi.fn()
+    const unsubscribe = subscribeMobileComposerDrafts(listener)
+
+    const request = deleteMobileRemoteDraft('new', 'ios-local', 7)
+
+    await expect(request).rejects.toMatchObject({ name: 'MobileComposerDraftConflictError', conflict })
+    expect(listener).toHaveBeenCalledWith({ type: 'conflict', conflict })
+    expect(mobileApi.deleteComposerDraft).toHaveBeenCalledWith('new', 'ios-local', 7)
+    unsubscribe()
   })
 })

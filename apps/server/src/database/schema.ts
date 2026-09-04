@@ -574,6 +574,7 @@ export const composerDrafts = pgTable('composer_drafts', {
   autoExpire: boolean('auto_expire'),
   editorId: text('editor_id').notNull(),
   revision: bigint('revision', { mode: 'number' }).notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
   ...timestamps,
 }, (table) => [
   uniqueIndex('composer_drafts_user_scope_unique').on(table.userId, table.scope),

@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Dexie from 'dexie'
-import type { ComposerDraft, ComposerDraftChange, ComposerDraftsCleared } from '@pulpo/contracts'
+import type { ComposerDraft, ComposerDraftChange, ComposerDraftConflict, ComposerDraftsCleared } from '@pulpo/contracts'
 import { localDb } from './database'
 
 const apiMocks = vi.hoisted(() => ({ apiRequest: vi.fn(), fetchApiBlob: vi.fn() }))
@@ -12,9 +12,13 @@ vi.mock('@/lib/api', () => ({
   fetchApiBlob: apiMocks.fetchApiBlob,
   ApiError: class ApiError extends Error {
     status: number
-    constructor(status: number) {
-      super('API error')
+    code: string
+    body?: unknown
+    constructor(status: number, code = 'request_failed', message = 'API error', body?: unknown) {
+      super(message)
       this.status = status
+      this.code = code
+      this.body = body
     }
   },
 }))
@@ -29,7 +33,9 @@ import {
   saveLocalComposerDraft,
   saveLocalComposerTombstone,
   saveRemoteComposerDraft,
+  WEB_COMPOSER_DRAFT_CONFLICT_EVENT,
 } from './composer-drafts'
+import { ApiError } from '@/lib/api'
 
 const userId = 'draft-test-user'
 
@@ -283,5 +289,31 @@ describe('web composer draft realtime reconciliation', () => {
     await expect(deletion).resolves.toBe(9)
     await expect(saving).resolves.toMatchObject({ content: 'new text', revision: 10 })
     expect(apiMocks.apiRequest.mock.calls.map(([, options]) => options?.method)).toEqual(['DELETE', 'PUT'])
+  })
+
+  it('surfaces the canonical snapshot when a stale save conflicts', async () => {
+    const conflict: ComposerDraftConflict = {
+      scope: 'new', revision: 5, editorId: 'remote-editor', draft: remote(5),
+    }
+    apiMocks.apiRequest.mockRejectedValue(new ApiError(
+      409,
+      'composer_draft_conflict',
+      'This draft changed on another device',
+      { conflict },
+    ))
+    const listener = vi.fn()
+    window.addEventListener(WEB_COMPOSER_DRAFT_CONFLICT_EVENT, listener)
+
+    const request = saveRemoteComposerDraft('new', {
+      content: 'local edit', modelId: 'model-1', presetSelections: {}, agentMode: false,
+      autoExpire: false, attachmentIds: [], editorId: 'web-local', baseRevision: 4,
+    })
+
+    await expect(request).rejects.toMatchObject({ name: 'ComposerDraftConflictError', conflict })
+    expect(listener).toHaveBeenCalledOnce()
+    expect(apiMocks.apiRequest).toHaveBeenCalledWith('/api/composer-drafts/new', expect.objectContaining({
+      method: 'PUT', body: expect.objectContaining({ baseRevision: 4 }),
+    }))
+    window.removeEventListener(WEB_COMPOSER_DRAFT_CONFLICT_EVENT, listener)
   })
 })

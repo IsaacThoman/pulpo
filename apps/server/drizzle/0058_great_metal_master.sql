@@ -1,0 +1,1 @@
+ALTER TABLE "composer_drafts" ADD COLUMN "deleted_at" timestamp with time zone;

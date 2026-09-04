@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent } from 'react'
-import type { ComposerDraftChange } from '@pulpo/contracts'
+import type { ComposerDraftChange, ComposerDraftConflict } from '@pulpo/contracts'
 import {
   composerDraftAttachmentKey,
   composerDraftSemanticFingerprint,
@@ -71,10 +71,12 @@ import {
   loadLocalComposerDraft,
   peekRuntimeComposerDraft,
   reconcileWebComposerDraftSnapshot,
+  applyWebComposerDraftChange,
   saveLocalComposerTombstone,
   saveLocalComposerDraft,
   saveRemoteComposerDraft,
   WEB_COMPOSER_DRAFT_CHANGED_EVENT,
+  WEB_COMPOSER_DRAFT_CONFLICT_EVENT,
   WEB_COMPOSER_DRAFTS_CLEARED_EVENT,
   type LocalComposerDraft,
 } from '@/lib/local-first/composer-drafts'
@@ -150,6 +152,7 @@ export function Composer({
   const [draftRetryRevision, setDraftRetryRevision] = useState(0)
   const [draftDeferredRevision, setDraftDeferredRevision] = useState(0)
   const [draftApplicationRevision, setDraftApplicationRevision] = useState(0)
+  const [draftConflict, setDraftConflict] = useState<ComposerDraftConflict | null>(null)
   const ref = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachmentIdsRef = useRef(attachmentIds)
@@ -523,10 +526,38 @@ export function Composer({
     })
   }, [applyDraft, chatId, draftScope, editingExisting, onRestoreAutoExpire, recovery, releaseDraftUploads, userId])
 
+  const keepLocalConflictVersion = useCallback(() => {
+    if (!draftConflict) return
+    appliedRemoteRevisionRef.current = draftConflict.revision
+    deferredRemoteRevisionRef.current = 0
+    setDraftConflict(null)
+    markLocalDraftEdit()
+    setDraftRetryRevision((revision) => revision + 1)
+  }, [draftConflict, markLocalDraftEdit])
+
+  const useRemoteConflictVersion = useCallback(() => {
+    if (!draftConflict || !userId || draftConflict.revision < 1) return
+    localDraftDirtyRef.current = false
+    deferredRemoteRevisionRef.current = 0
+    appliedRemoteRevisionRef.current = Math.min(
+      appliedRemoteRevisionRef.current,
+      draftConflict.revision - 1,
+    )
+    setDraftConflict(null)
+    void applyWebComposerDraftChange(userId, {
+      scope: draftConflict.scope,
+      revision: draftConflict.revision,
+      editorId: draftConflict.editorId,
+      draft: draftConflict.draft,
+      reason: draftConflict.draft ? 'saved' : 'deleted',
+    }).catch(() => undefined)
+  }, [draftConflict, userId])
+
   useEffect(() => {
     const changed = (raw: Event) => {
       const event = (raw as CustomEvent<ComposerDraftChange>).detail
       if (!userId || !event || event.scope !== draftScope || event.revision <= appliedRemoteRevisionRef.current) return
+      setDraftConflict((current) => current && event.revision >= current.revision ? null : current)
       if (!event.draft && event.reason === 'sent' && submissionPendingRef.current) {
         submissionPendingRef.current = false
         localDraftDirtyRef.current = false
@@ -551,11 +582,17 @@ export function Composer({
         if (draft && !draft.deleted) void applyDraft(draft)
       })
     }
+    const conflicted = (raw: Event) => {
+      const conflict = (raw as CustomEvent<ComposerDraftConflict>).detail
+      if (conflict?.scope === draftScope) setDraftConflict(conflict)
+    }
     window.addEventListener(WEB_COMPOSER_DRAFT_CHANGED_EVENT, changed)
     window.addEventListener(WEB_COMPOSER_DRAFTS_CLEARED_EVENT, cleared)
+    window.addEventListener(WEB_COMPOSER_DRAFT_CONFLICT_EVENT, conflicted)
     return () => {
       window.removeEventListener(WEB_COMPOSER_DRAFT_CHANGED_EVENT, changed)
       window.removeEventListener(WEB_COMPOSER_DRAFTS_CLEARED_EVENT, cleared)
+      window.removeEventListener(WEB_COMPOSER_DRAFT_CONFLICT_EVENT, conflicted)
     }
   }, [applyDraft, applyStoredRemoteDraft, draftScope, userId])
 
@@ -574,6 +611,7 @@ export function Composer({
     hadDraftRef.current = false
     appliedRemoteRevisionRef.current = 0
     deferredRemoteRevisionRef.current = 0
+    setDraftConflict(null)
     setDraftPresetOverride(null)
     setDraftAgentOverride(null)
     if (!userId || !draftPersistence || temporary) {
@@ -674,7 +712,13 @@ export function Composer({
       // Recreate attachment uploads as temporary before removing their durable draft assets.
       if (draft && !draft.deleted) await applyDraft(draft)
       await deleteLocalComposerDraft(userId, draftScope)
-      if (syncDrafts) await deleteRemoteComposerDraft(draftScope, draftEditorIdRef.current).catch(() => undefined)
+      if (syncDrafts) {
+        await deleteRemoteComposerDraft(
+          draftScope,
+          draftEditorIdRef.current,
+          appliedRemoteRevisionRef.current || 0,
+        ).catch(() => undefined)
+      }
     })
   }, [applyDraft, draftPersistence, draftScope, syncDrafts, temporary, userId])
 
@@ -872,7 +916,11 @@ export function Composer({
             serverRevision: appliedRemoteRevisionRef.current || undefined,
           })
           if (draftSaveGenerationRef.current !== generation) return
-          void deleteRemoteComposerDraft(draftScope, draftEditorIdRef.current).then((revision) => {
+          void deleteRemoteComposerDraft(
+            draftScope,
+            draftEditorIdRef.current,
+            appliedRemoteRevisionRef.current || 0,
+          ).then((revision) => {
             if (draftSaveGenerationRef.current !== generation) return
             hadDraftRef.current = false
             appliedRemoteRevisionRef.current = Math.max(appliedRemoteRevisionRef.current, revision)
@@ -917,6 +965,7 @@ export function Composer({
         ...(snapshot.autoExpire === undefined ? {} : { autoExpire: snapshot.autoExpire }),
         attachmentIds: readyIds,
         editorId: draftEditorIdRef.current,
+        baseRevision: appliedRemoteRevisionRef.current || 0,
       }).then((remote) => {
         if (draftSaveGenerationRef.current !== generation) return
         appliedRemoteRevisionRef.current = remote.revision
@@ -1093,6 +1142,7 @@ export function Composer({
       temporary,
       autoExpire,
       attachmentIds,
+      draftRevision: appliedRemoteRevisionRef.current || 0,
     })
     submissionPendingRef.current = true
     if (!chatId && staged.chatId && !temporary) navigate(`/c/${staged.chatId}`)
@@ -1222,6 +1272,18 @@ export function Composer({
             <ImagePlus className="size-8" aria-hidden="true" />
             <p className="text-base font-medium">{t('chat.attachFiles')}</p>
           </div>
+        </div>
+      )}
+      {draftConflict && (
+        <div role="alert" className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-foreground">
+          <AlertCircle className="size-4 shrink-0 text-amber-600 dark:text-amber-300" aria-hidden="true" />
+          <span className="min-w-48 flex-1">{ui("This draft also changed on another device. Choose which complete version to keep.")}</span>
+          <button type="button" className="cursor-pointer font-medium underline underline-offset-2" onClick={useRemoteConflictVersion}>
+            {ui("Use other device")}
+          </button>
+          <Button type="button" size="sm" className="h-7" onClick={keepLocalConflictVersion}>
+            {ui("Keep this device")}
+          </Button>
         </div>
       )}
       {attachmentRestriction && (

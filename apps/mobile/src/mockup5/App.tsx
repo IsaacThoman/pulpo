@@ -107,7 +107,7 @@ import {
   scheduleComposerDraftSave,
   shouldTrackComposerDraftMutation,
 } from '@pulpo/client-core';
-import { workspaceContinueWithoutAgentAvailableAtMs } from '@pulpo/contracts';
+import { workspaceContinueWithoutAgentAvailableAtMs, type ComposerDraftConflict } from '@pulpo/contracts';
 import {
   Bot,
   Brain,
@@ -215,6 +215,7 @@ import { composerGenerationAction, selectedAssistantStatus, selectedInFlightResp
 import {
   deleteMobileComposerDraft,
   deleteMobileRemoteDraft,
+  applyMobileComposerDraftChange,
   fetchMobileRemoteDraft,
   loadMobileComposerDraft,
   reconcileMobileComposerDraftSnapshot,
@@ -520,7 +521,13 @@ type Message = {
   agentMode?: boolean;
 };
 type Chat = { id: string; title: string; modelId: string; time: string; section: string; messages: Message[] };
-type SendOptions = { presetSelections: GenerationSelections; agentEnabled: boolean; temporary: boolean; autoExpire: boolean };
+type SendOptions = {
+  presetSelections: GenerationSelections;
+  agentEnabled: boolean;
+  temporary: boolean;
+  autoExpire: boolean;
+  composerDraftRevision: number;
+};
 type PrepareAttachments = () => Promise<PreparedAttachment[]>;
 
 function automaticExpirationDeadline(preference: 'disabled' | '24h' | '7d', now = Date.now()): number | null {
@@ -2120,6 +2127,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           presetSelections: selections,
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
+          composerDraftRevision: options?.composerDraftRevision,
         });
         if (options?.temporary) pendingTemporaryStart.current = { chatId: key, promise: startPromise };
         let started: Awaited<typeof startPromise>;
@@ -2143,6 +2151,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
           attachmentIds: prepared.map((attachment) => attachment.serverId),
           agentMode,
           temporary: activePrototypeChat?.temporary ?? false,
+          composerDraftRevision: options?.composerDraftRevision,
         });
       }
       updateStoredMessage(serverChatId, response.responseId, {
@@ -3519,9 +3528,11 @@ function ChatView({
   const draftMutationTrackerRef = useRef(new ComposerDraftMutationTracker());
   const draftEditEpochRef = useRef(0);
   const deferredRemoteDraftRevisionRef = useRef(0);
+  const displayedDraftConflictRevisionRef = useRef(0);
   const pendingLocalDraftsRef = useRef(new Map<string, { namespace: string; scope: string; draft: MobileComposerDraft }>());
   const [draftLifecycleRevision, setDraftHydrationTick] = useState(0);
   const [draftApplicationRevision, setDraftApplicationRevision] = useState(0);
+  const [draftConflictRetryRevision, setDraftConflictRetryRevision] = useState(0);
   const markLocalDraftEdit = useCallback(() => {
     // User input takes ownership from an in-flight restore so slow storage
     // cannot overwrite the text or leave this scope unable to persist.
@@ -3723,7 +3734,55 @@ function ChatView({
     }
   }, [applyMobileDraft, canUseAgent, draftNamespace, draftScope, messageEdit, onChangeInput, preferredAgentMode, sending, setAttachments]);
 
+  const presentMobileDraftConflict = useCallback((conflict: ComposerDraftConflict) => {
+    if (!draftNamespace || conflict.scope !== draftScope
+      || conflict.revision <= displayedDraftConflictRevisionRef.current) return;
+    displayedDraftConflictRevisionRef.current = conflict.revision;
+    Alert.alert(
+      'Draft changed on another device',
+      'Both complete versions are safe. Choose which one should become the synced draft.',
+      [
+        {
+          text: 'Use Other Device',
+          onPress: () => {
+            displayedDraftConflictRevisionRef.current = 0;
+            localDraftDirtyRef.current = false;
+            deferredRemoteDraftRevisionRef.current = 0;
+            appliedRemoteDraftRevisionRef.current = Math.min(
+              appliedRemoteDraftRevisionRef.current,
+              Math.max(0, conflict.revision - 1),
+            );
+            if (conflict.revision < 1) return;
+            void applyMobileComposerDraftChange(draftNamespace, {
+              scope: conflict.scope,
+              revision: conflict.revision,
+              editorId: conflict.editorId,
+              draft: conflict.draft,
+              reason: conflict.draft ? 'saved' : 'deleted',
+            });
+          },
+        },
+        {
+          text: 'Keep This Device',
+          style: 'default',
+          onPress: () => {
+            displayedDraftConflictRevisionRef.current = 0;
+            appliedRemoteDraftRevisionRef.current = conflict.revision;
+            deferredRemoteDraftRevisionRef.current = 0;
+            markLocalDraftEdit();
+            setDraftConflictRetryRevision((revision) => revision + 1);
+          },
+        },
+      ],
+      { cancelable: false },
+    );
+  }, [draftNamespace, draftScope, markLocalDraftEdit]);
+
   useEffect(() => subscribeMobileComposerDrafts((change) => {
+    if (change.type === 'conflict') {
+      presentMobileDraftConflict(change.conflict);
+      return;
+    }
     if (change.type === 'cleared') {
       appliedRemoteDraftRevisionRef.current = 0;
       localDraftDirtyRef.current = false;
@@ -3751,12 +3810,13 @@ function ChatView({
       return;
     }
     void applyStoredMobileRemoteDraft(event.revision);
-  }), [applyMobileDraft, applyStoredMobileRemoteDraft, draftNamespace, draftScope]);
+  }), [applyMobileDraft, applyStoredMobileRemoteDraft, draftNamespace, draftScope, presentMobileDraftConflict]);
 
   useEffect(() => {
     if (messageEdit || sending || deferredRemoteDraftRevisionRef.current === 0) return;
     const revision = deferredRemoteDraftRevisionRef.current;
     deferredRemoteDraftRevisionRef.current = 0;
+    displayedDraftConflictRevisionRef.current = 0;
     void applyStoredMobileRemoteDraft(revision);
   }, [applyStoredMobileRemoteDraft, draftLifecycleRevision, messageEdit, sending]);
 
@@ -3768,6 +3828,7 @@ function ChatView({
     hadDraftRef.current = false;
     appliedRemoteDraftRevisionRef.current = 0;
     deferredRemoteDraftRevisionRef.current = 0;
+    displayedDraftConflictRevisionRef.current = 0;
     setDraftPresetOverride(null);
     setDraftAutoExpireOverride(null);
     if (!draftNamespace || !draftEditorId || temporary || !chatLoaded) {
@@ -3872,7 +3933,13 @@ function ChatView({
     void prepareMobileTemporaryAttachments(attachmentsRef.current).then(async (next) => {
       setAttachments(next);
       await deleteMobileComposerDraft(draftNamespace, draftScope);
-      if (syncDrafts) await deleteMobileRemoteDraft(draftScope, draftEditorIdRef.current).catch(() => undefined);
+      if (syncDrafts) {
+        await deleteMobileRemoteDraft(
+          draftScope,
+          draftEditorIdRef.current,
+          appliedRemoteDraftRevisionRef.current || 0,
+        ).catch(() => undefined);
+      }
     });
   }, [draftNamespace, draftScope, setAttachments, syncDrafts, temporary]);
 
@@ -3906,7 +3973,11 @@ function ChatView({
             serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
           });
           if (draftSaveGenerationRef.current !== generation) return;
-          void deleteMobileRemoteDraft(draftScope, draftEditorIdRef.current).then((revision) => {
+          void deleteMobileRemoteDraft(
+            draftScope,
+            draftEditorIdRef.current,
+            appliedRemoteDraftRevisionRef.current || 0,
+          ).then((revision) => {
             if (draftSaveGenerationRef.current !== generation) return;
             hadDraftRef.current = false;
             appliedRemoteDraftRevisionRef.current = Math.max(appliedRemoteDraftRevisionRef.current, revision);
@@ -3953,6 +4024,7 @@ function ChatView({
         ...(!chatId ? { autoExpire } : {}),
         attachmentIds: readyAttachmentIds,
         editorId: draftEditorIdRef.current,
+        baseRevision: appliedRemoteDraftRevisionRef.current || 0,
       }).then((remote) => {
         if (draftSaveGenerationRef.current !== generation) return;
         appliedRemoteDraftRevisionRef.current = remote.revision;
@@ -3967,7 +4039,7 @@ function ChatView({
       }).catch(() => undefined);
       })().catch(() => undefined);
     });
-  }, [activeAgentEnabled, attachments, autoExpire, chatId, draftEditorId, draftFingerprint, draftHydrationKey, draftNamespace, draftScope, input, messageEdit, model.id, networkOffline, presetSelections, sending, syncDrafts, temporary]);
+  }, [activeAgentEnabled, attachments, autoExpire, chatId, draftConflictRetryRevision, draftEditorId, draftFingerprint, draftHydrationKey, draftNamespace, draftScope, input, messageEdit, model.id, networkOffline, presetSelections, sending, syncDrafts, temporary]);
 
   useEffect(() => {
     draftMutationTrackerRef.current.consumeSettledApplication();
@@ -4532,7 +4604,12 @@ function ChatView({
     }
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
-    const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
+    const submittedDraft = {
+      input,
+      attachments: [...attachments],
+      agentEnabled: activeAgentEnabled,
+      revision: appliedRemoteDraftRevisionRef.current || 0,
+    };
     const submittedDraftEditEpoch = draftEditEpochRef.current;
     const restoreSubmittedDraft = () => {
       onChangeInput(submittedDraft.input);
@@ -4566,7 +4643,13 @@ function ChatView({
       const pendingSend = onSend(
         submittedDraft.input,
         submittedDraft.attachments,
-        { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+        {
+          presetSelections,
+          agentEnabled: activeAgentEnabled,
+          temporary,
+          autoExpire,
+          composerDraftRevision: submittedDraft.revision,
+        },
         async () => {
           const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
           if (prepared.some((attachment) => attachment === null)) {
@@ -4592,25 +4675,13 @@ function ChatView({
       }
       if (draftUnchangedSinceSubmission && draftNamespace && syncDrafts) {
         const editorId = draftEditorIdRef.current;
-        void (async () => {
-          await saveMobileComposerTombstone({
-            namespace: draftNamespace,
-            scope: draftScope,
-            editorId,
-            dirty: true,
-            serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
-          });
-          const revision = await deleteMobileRemoteDraft(draftScope, editorId);
-          const current = await loadMobileComposerDraft(draftNamespace, draftScope);
-          if (!current?.deleted || current.editorId !== editorId) return;
-          await saveMobileComposerTombstone({
-            namespace: draftNamespace,
-            scope: draftScope,
-            editorId,
-            dirty: false,
-            serverRevision: revision,
-          });
-        })().catch(() => undefined);
+        void saveMobileComposerTombstone({
+          namespace: draftNamespace,
+          scope: draftScope,
+          editorId,
+          dirty: false,
+          serverRevision: appliedRemoteDraftRevisionRef.current || undefined,
+        }).catch(() => undefined);
       } else if (draftUnchangedSinceSubmission && draftNamespace) {
         void deleteMobileComposerDraft(draftNamespace, draftScope);
       }
@@ -4630,7 +4701,13 @@ function ChatView({
 
   const submitSuggestion = useCallback((message: string) => {
     const followSnapshot = armSubmittedTurnFollow();
-    void onSend(message, [], { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire }).then((accepted) => {
+    void onSend(message, [], {
+      presetSelections,
+      agentEnabled: activeAgentEnabled,
+      temporary,
+      autoExpire,
+      composerDraftRevision: appliedRemoteDraftRevisionRef.current || 0,
+    }).then((accepted) => {
       if (!accepted) restoreSubmittedTurnFollow(followSnapshot);
     }).catch((error) => {
       restoreSubmittedTurnFollow(followSnapshot);
