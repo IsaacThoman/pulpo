@@ -414,6 +414,13 @@
       "when": 1788545524794,
       "tag": "0058_living_tempest",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1788552467870,
+      "tag": "0059_powerful_riptide",
+      "breakpoints": true
     }
   ]
 }

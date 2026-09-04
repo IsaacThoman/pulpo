@@ -926,6 +926,7 @@ const esUi: Record<string, string> = {
   "Recent user workspace requests, including queued, released, expired, and failed leases.": "Solicitudes recientes de espacios de trabajo, incluidas las asignaciones en cola, liberadas, caducadas y fallidas.",
   "Reconciliation queued.": "Conciliación en cola.",
   "Recover": "Recuperar",
+  "Recover local draft": "Recuperar borrador local",
   "Recover chats or permanently delete them.": "Recupera los chats o elimínalos de forma permanente.",
   "Recover full application": "Recuperar aplicación completa",
   "Redeemed by": "Canjeado por",

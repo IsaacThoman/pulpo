@@ -559,3 +559,5 @@ export class PulpoManagementClient {
     return this.request('/api/management/v1/settings/apply', { method: 'POST', body: { document, revision, secrets } })
   }
 }
+
+export * from "./composer-sync.js"

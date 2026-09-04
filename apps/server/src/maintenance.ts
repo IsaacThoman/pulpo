@@ -1,3 +1,4 @@
+import { expireComposerDrafts } from './composer/service.js'
 import { and, asc, eq, gt, inArray, lt, lte, sql } from 'drizzle-orm'
 import { reconcileWorkspaceLeases } from './agent/controller.js'
 import { db } from './database/client.js'
@@ -111,6 +112,7 @@ export async function createExport(exportId: string): Promise<void> {
 }
 
 export async function runCleanup(): Promise<void> {
+  await expireComposerDrafts()
   const now = new Date()
   const abandonedBefore = new Date(now.getTime() - 24 * 86_400_000)
   const abandoned = await db.select().from(attachments).where(and(eq(attachments.status, 'pending'), lt(attachments.createdAt, abandonedBefore)))
