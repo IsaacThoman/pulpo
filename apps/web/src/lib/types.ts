@@ -66,6 +66,7 @@ export interface Message {
   tokensIn?: number
   tokensOut?: number
   cost?: number
+  subscriptionCoveredCost?: number
   latencyMs?: number
   reasoning?: string
   /** Selected preset choice ids keyed by preset id. */

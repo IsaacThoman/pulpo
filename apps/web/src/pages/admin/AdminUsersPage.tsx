@@ -10,7 +10,6 @@ import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import {
   Select,
@@ -31,7 +30,9 @@ import { ui, activeLocale } from '@/i18n/ui'
 
 interface AdminBillingUser {
   userId: string
+  subscriptionPlan: 'baby' | 'eight' | 'fat'
   plan: 'baby' | 'eight' | 'fat'
+  planOverridden: boolean
   weeklyLimitMicros: number
   weeklySpentMicros: number
   weeklyRemainingMicros: number
@@ -160,7 +161,7 @@ export function AdminUsersPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
-                  {billingEnabled && <td className="px-3 py-2"><BillingPlanCell row={billingByUser.get(u.id)} /></td>}
+                  {billingEnabled && <td className="px-3 py-2"><BillingPlanCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><FiveHourLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><InviteQuotaCell user={u} onChanged={() => void loadAdmin()} /></td>}
@@ -400,10 +401,33 @@ function InviteQuotaCell({ user, onChanged }: { user: MonitorUser; onChanged: ()
   </button>
 }
 
-function BillingPlanCell({ row }: { row: AdminBillingUser | undefined }) {
+function planLabel(plan: AdminBillingUser['plan']): string {
+  return plan === 'fat' ? 'Le Pulpo Fat' : plan === 'eight' ? 'Pulpo Eight' : 'Pulpo Baby'
+}
+
+function BillingPlanCell({ row, onChanged }: { row: AdminBillingUser | undefined; onChanged: () => void }) {
   if (!row) return <span className="text-muted-foreground">—</span>
-  const label = row.plan === 'fat' ? 'Fat' : row.plan === 'eight' ? 'Eight' : 'Baby'
-  return <span className="flex items-center gap-1.5"><Badge variant={row.plan === 'baby' ? 'outline' : 'secondary'}>{label}</Badge>{row.hold && <AlertTriangle className="size-3.5 text-destructive" />}</span>
+  const overrideTitle = row.planOverridden
+    ? `${ui("Admin override")}. ${ui("Subscribed plan")}: ${planLabel(row.subscriptionPlan)}`
+    : `${ui("Subscribed plan")}: ${planLabel(row.subscriptionPlan)}`
+  return <span className="flex items-center gap-1" title={overrideTitle}>
+    <Select value={row.plan} onValueChange={(plan: AdminBillingUser['plan']) => {
+      void apiRequest(`/api/admin/billing/users/${row.userId}/plan`, { method: 'PATCH', body: { plan } }).then(onChanged)
+    }}>
+      <SelectTrigger className="h-7 w-28 text-xs"><SelectValue /></SelectTrigger>
+      <SelectContent>
+        <SelectItem value="baby">{ui("Baby")}</SelectItem>
+        <SelectItem value="eight">{ui("Eight")}</SelectItem>
+        <SelectItem value="fat">{ui("Fat")}</SelectItem>
+      </SelectContent>
+    </Select>
+    {row.planOverridden && <>
+      <Button size="icon-sm" variant="ghost" title={ui("Reset to subscribed plan")} onClick={() => {
+        void apiRequest(`/api/admin/billing/users/${row.userId}/plan`, { method: 'PATCH', body: { plan: null } }).then(onChanged)
+      }}><RefreshCw className="size-3.5" /></Button>
+    </>}
+    {row.hold && <AlertTriangle className="size-3.5 text-destructive" />}
+  </span>
 }
 
 function WeeklyLimitCell({ row, onChanged }: { row: AdminBillingUser | undefined; onChanged: () => void }) {

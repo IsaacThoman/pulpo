@@ -115,6 +115,35 @@ body {
   display: none;
 }
 
+/* Extend only the background fade below the header without changing layout. */
+.chat-header::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 125%;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--background) 80%, transparent) 0%,
+    color-mix(in oklab, var(--background) 0%, transparent) 100%
+  );
+}
+
+html[data-desktop="true"] .chat-header::before {
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header::before {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-desktop="true"] .chat-header::before {
+    transition: none;
+  }
+}
+
 @media (width < 750px) {
   .mobile-sidebar-opener {
     display: flex;

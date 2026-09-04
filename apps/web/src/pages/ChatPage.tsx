@@ -351,7 +351,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       temporaryMode && 'bg-violet-100/50 dark:bg-violet-950/15',
     )} data-desktop-temporary-chat={temporaryMode ? 'true' : undefined}>
       {/* header */}
-      <header className="flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
+      <header className="chat-header relative z-20 flex h-12 min-w-0 shrink-0 items-center gap-1 px-3">
         {desktopSidebarVisible ? (
           <DesktopModelTitleBarSlot>
             <ModelSelector value={modelId} onChange={selectModel} />
@@ -475,11 +475,11 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
         </>
       ) : (
         <>
-          <ScrollArea className="min-h-0 flex-1" viewportRef={viewportRef}>
+          <ScrollArea className="-mt-12 min-h-0 flex-1" viewportRef={viewportRef}>
             <div
               ref={contentRef}
               className={cn(
-                'mx-auto flex w-full min-w-0 flex-col gap-7 px-4 py-6',
+                'mx-auto flex w-full min-w-0 flex-col gap-7 px-4 pt-18 pb-6',
                 chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
               )}
             >

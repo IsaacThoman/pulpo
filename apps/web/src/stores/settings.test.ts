@@ -31,6 +31,10 @@ describe('interface settings', () => {
   it('uses normal animation speed by default', () => {
     expect(DEFAULT_SETTINGS.animationSpeed).toBe(1)
   })
+
+  it('hides response costs by default', () => {
+    expect(DEFAULT_SETTINGS.showResponseCost).toBe(false)
+  })
 })
 
 describe('language settings', () => {

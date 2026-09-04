@@ -3,7 +3,7 @@ import { getConfig } from '../config.js'
 import { db } from '../database/client.js'
 import { applicationSettings, billingAccounts, billingSubscriptions, users } from '../database/schema.js'
 import { parseAuthSettings, parseBillingSettings, type BillingSettings } from '../settings/application-settings.js'
-import { effectivePlan, type BillingPlan } from './plans.js'
+import { resolvePlanEntitlement, type BillingPlan } from './plans.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -45,7 +45,10 @@ export async function loadStorageEntitlement(
   }
 
   const [[account], subscriptions, [setting]] = await Promise.all([
-    tx.select({ storageLimitOverrideBytes: billingAccounts.storageLimitOverrideBytes }).from(billingAccounts)
+    tx.select({
+      storageLimitOverrideBytes: billingAccounts.storageLimitOverrideBytes,
+      planOverride: billingAccounts.planOverride,
+    }).from(billingAccounts)
       .where(eq(billingAccounts.userId, userId)).limit(1),
     tx.select({ plan: billingSubscriptions.plan, status: billingSubscriptions.status, paidThrough: billingSubscriptions.paidThrough })
       .from(billingSubscriptions).where(eq(billingSubscriptions.userId, userId)),
@@ -54,7 +57,7 @@ export async function loadStorageEntitlement(
   ])
   return effectiveStorageLimit(
     parseBillingSettings(setting?.value),
-    effectivePlan(subscriptions, now),
+    resolvePlanEntitlement(subscriptions, account?.planOverride, now).plan,
     account?.storageLimitOverrideBytes,
   )
 }

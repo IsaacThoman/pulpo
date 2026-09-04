@@ -30,6 +30,7 @@ RUN apt-get update \
         jq \
         openssh-client \
         pkg-config \
+        poppler-utils \
         python3 \
         python3-pip \
         python3-venv \
@@ -63,6 +64,22 @@ RUN apt-get update \
     && visudo --check \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Keep the runtime environment in an image layer; each sandbox gets its own
+# writable copy. Never share session-modified environments between users.
+COPY infra/workspace-image/requirements.txt /opt/pulpo/requirements.txt
+RUN python3 -m venv /opt/pulpo/python \
+    && /opt/pulpo/python/bin/pip install --no-cache-dir --only-binary=:all: -r /opt/pulpo/requirements.txt \
+    && /opt/pulpo/python/bin/pip check \
+    && chown -R agent:agent /opt/pulpo/python \
+    && for executable in python python3 pip pip3; do \
+        printf '#!/bin/sh\nexec /opt/pulpo/python/bin/%s "$@"\n' "$executable" > /usr/local/bin/$executable; \
+        chmod 0755 /usr/local/bin/$executable; \
+    done
+
+COPY infra/workspace-image/scripts/package-inventory.py /opt/pulpo/package-inventory.py
+RUN /opt/pulpo/python/bin/python /opt/pulpo/package-inventory.py > /opt/pulpo/PACKAGES.md
+COPY infra/workspace-image/scripts/package-smoke-test.py /opt/pulpo/package-smoke-test.py
 
 COPY --chmod=0755 infra/workspace-image/scripts/smoke-test.sh /usr/local/bin/pulpo-workspace-smoke-test
 COPY --from=daemon-build /src/dist /opt/pulpo-workspace-daemon

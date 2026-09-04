@@ -112,12 +112,13 @@ export async function registerBillingRoutes(app: FastifyInstance): Promise<void>
         }
       }),
     ])
-    const subscription = selectSummarySubscription(subscriptions, entitlements.plan)
+    const subscription = selectSummarySubscription(subscriptions, entitlements.subscriptionPlan)
     const fiveHour = entitlements.fiveHourRemainingPercentage === null
       ? null
       : fiveHourSummaryPercentages(entitlements)
     return {
       plan: entitlements.plan,
+      planOverridden: entitlements.planOverridden,
       balanceMicros: user.balanceMicros,
       balancePendingMicros: entitlements.balancePendingMicros,
       availableBalanceMicros: availableBillingBalanceMicros(user.balanceMicros, entitlements.balancePendingMicros),

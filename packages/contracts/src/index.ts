@@ -1304,6 +1304,7 @@ export const managementAccountSettingsSchema = z.object({
   sendWithEnter: z.boolean().default(true),
   streamResponses: z.boolean().default(true),
   showReasoning: z.boolean().default(true),
+  showResponseCost: z.boolean().default(false),
   chatWidth: z.enum(['full', 'narrow']).default('narrow'),
   animationSpeed: animationSpeedSchema,
   customInstructions: z.string().max(100_000).default(''),
