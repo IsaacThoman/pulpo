@@ -71,7 +71,6 @@ const esUi: Record<string, string> = {
   "Access is limited to one chat and requires two-factor authentication.": "El acceso está limitado a un chat y requiere autenticación de dos factores.",
   "Admin granted": "Concedido por un administrador",
   "Admin override": "Anulación administrativa",
-  "Admin-granted access": "Acceso concedido por un administrador",
   "Admin chat access": "Acceso administrativo al chat",
   "Administrator chat access expired. Complete the warning and verification again to continue.": "El acceso administrativo al chat ha caducado. Vuelve a aceptar el aviso y completa la verificación para continuar.",
   "Billed plan": "Plan facturado",

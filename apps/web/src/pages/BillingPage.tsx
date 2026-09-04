@@ -196,7 +196,7 @@ export function BillingPage() {
         ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
         : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
   const planSubtitle = summary?.planOverridden
-    ? `${ui("Admin-granted access")} · ${ui("Billed plan")}: ${billingPlanName(managedPlan)} · ${subscriptionSubtitle}`
+    ? `${ui("Billed plan")}: ${billingPlanName(managedPlan)} · ${subscriptionSubtitle}`
     : subscriptionSubtitle
 
   return (
