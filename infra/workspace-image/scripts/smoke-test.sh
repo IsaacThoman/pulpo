@@ -26,6 +26,12 @@ rm -f "${workspace_probe}"
 node --version
 npm --version
 python3 --version
+# Match the daemon's login-shell execution, not just the Docker environment.
+bash -lc 'python /opt/pulpo/package-smoke-test.py'
+bash -lc 'python3 -m pip check'
+python /opt/pulpo/package-inventory.py > "${temporary_directory}/PACKAGES.md"
+cmp /opt/pulpo/PACKAGES.md "${temporary_directory}/PACKAGES.md"
+
 git --version
 rg --version | head -n 1
 curl --version | head -n 1
