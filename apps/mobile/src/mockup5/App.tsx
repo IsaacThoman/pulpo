@@ -1,3 +1,5 @@
+import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../features/chat/messageQueue';
+import type { MobileQueuedMessage } from '../types';
 import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
 import type { ComposerState } from '@pulpo/contracts';
@@ -2021,7 +2023,18 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
     prepareAttachments?: PrepareAttachments,
   ): Promise<boolean> => {
     const trimmed = value.trim();
-    if ((!trimmed && attachments.length === 0) || effectiveAssistantStatus !== 'idle' || !selectedModel.id) return false;
+    if ((!trimmed && attachments.length === 0) || !selectedModel.id) return false;
+    if (activeChat && shouldQueueMessage(effectiveAssistantStatus !== 'idle', activePrototypeChat?.queuedMessages?.length ?? 0)) {
+      if (!productionUserId) return false;
+      const prepared = prepareAttachments ? await prepareAttachments() : attachments.filter((item): item is PreparedAttachment => item.state === 'ready' && Boolean(item.serverId));
+      if (prepared.length !== attachments.length) throw new Error('Some attachments are not ready to send.');
+      await enqueueMessage(queryClient, cacheNamespace(productionInstanceUrl, productionUserId), activeChat.id, {
+        input: trimmed, modelId: selectedModel.id, presetSelections: options?.presetSelections ?? presetSelections,
+        attachmentIds: prepared.map((item) => item.serverId),
+        agentMode: Boolean(options?.agentEnabled && agentAvailable && selectedPrototypeModel?.agentEnabled),
+      }, prepared.map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })), activePrototypeChat?.temporary ?? false);
+      return true;
+    }
     composerFollowsDefaultModel.current = false;
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Soft);
@@ -2384,6 +2397,7 @@ function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParam
         >
           <ChatView
             messages={messages}
+            queuedMessages={activePrototypeChat?.queuedMessages ?? EMPTY_MOBILE_QUEUE}
             chatId={activeChat?.id ?? null}
             chatLoaded={activePrototypeChat?.detailLoaded !== false}
             draftNamespace={productionUserId ? cacheNamespace(productionInstanceUrl, productionUserId) : null}
@@ -3370,11 +3384,14 @@ function SuggestedPromptButton({ label, accessible, onPress, temporary = false }
   );
 }
 
+const EMPTY_MOBILE_QUEUE: MobileQueuedMessage[] = [];
+
 function ChatView({
-  messages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
+  messages, queuedMessages, chatId, chatLoaded, draftNamespace, keyboardLayoutEnabled, model, models, prototypeModel, presetSelections: defaultPresetSelections, input, composerInputRef, composerFocusSuppressed, composerFocusRequest, onChangeInput, onSend, assistantStatus,
   onEdit, onRegenerate, onActivateBranch, onOpenChat, onStop, onTogglePanel, onOpenModelPicker, onSelectModel, onNewChat, onSaveTemporary, persistentSidebar, sidebarVisible, temporary, autoExpire, expirationPeriod, showAutoExpirationControl, expired, savingTemporary, onTemporaryChange, onAutoExpirationChange,
 }: {
   messages: Message[];
+  queuedMessages: MobileQueuedMessage[];
   chatId: string | null;
   chatLoaded: boolean;
   draftNamespace: string | null;
@@ -3412,6 +3429,9 @@ function ChatView({
   onTemporaryChange: (value: boolean) => void;
   onAutoExpirationChange: (value: boolean) => void;
 }) {
+  const queueClient = useQueryClient();
+  const [queueBusy, setQueueBusy] = useState(false);
+  const queueEditRef = useRef<{ id: string; chatId: string; namespace: string; model: Model; presets: Record<string, GenerationSelections> } | null>(null);
   const [draftPresets, setDraftPresets] = useState<Record<string, GenerationSelections>>({});
   const presetSelections = resolveGenerationSelections(prototypeModel, draftPresets[model.id] ?? defaultPresetSelections);
   const onSelectPreset = (presetId: string, choiceId: string) => setDraftPresets((current) => ({ ...current, [model.id]: { ...presetSelections, [presetId]: choiceId } }));
@@ -3638,13 +3658,16 @@ function ChatView({
     const preserved = preservedComposerRef.current;
     preservedComposerRef.current = null;
     setMessageEdit(null);
+    const queueEdit = queueEditRef.current;
+    queueEditRef.current = null;
+    if (queueEdit) { onSelectModel(queueEdit.model); setDraftPresets(queueEdit.presets); }
     if (!preserved) return;
     draftOwnerRef.current = preserved.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
     onChangeInput(preserved.input);
     setAttachments(restoreLatestDraft(preserved.attachments, latestAttachmentsRef.current));
     setAgentEnabled(preserved.agentEnabled);
     requestAnimationFrame(() => composerInputRef.current?.focus());
-  }, [composerInputRef, onChangeInput, setAttachments]);
+  }, [composerInputRef, onChangeInput, onSelectModel, setAttachments]);
 
   const cleanupEditUploads = useCallback((session: MessageEditSession, values: ComposerAttachment[]) => {
     for (const attachment of values) {
@@ -3654,12 +3677,19 @@ function ChatView({
     }
   }, []);
 
-  const cancelMessageEdit = useCallback(() => {
-    if (!messageEdit || sending) return;
+  const cancelMessageEdit = useCallback(async () => {
+    if (!messageEdit || sending || queueBusy) return;
+    const queueEdit = queueEditRef.current;
+    if (queueEdit) {
+      setQueueBusy(true);
+      try { await mutateQueuedMessage(queueClient, queueEdit.namespace, queueEdit.chatId, queueEdit.id, { action: 'cancel_edit' }); }
+      catch (error) { Alert.alert('Couldn’t cancel queue edit', error instanceof Error ? error.message : 'Please try again.'); return; }
+      finally { setQueueBusy(false); }
+    }
     cleanupEditUploads(messageEdit, attachments);
     restoreComposer();
     Haptics.selectionAsync();
-  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending]);
+  }, [attachments, cleanupEditUploads, messageEdit, restoreComposer, sending, queueBusy, queueClient]);
 
   const activeDraftSnapshot = useCallback(() => ({
     body: preservedComposerRef.current?.input ?? inputRef.current,
@@ -3795,8 +3825,11 @@ function ChatView({
     if (!messageEdit) return;
     cleanupEditUploads(messageEdit, attachments);
     preservedComposerRef.current = null;
+    const queueEdit = queueEditRef.current;
+    queueEditRef.current = null;
+    if (queueEdit) void mutateQueuedMessage(queueClient, queueEdit.namespace, queueEdit.chatId, queueEdit.id, { action: 'cancel_edit' }).catch(() => undefined);
     setMessageEdit(null);
-  }, [attachments, chatId, cleanupEditUploads, messageEdit]);
+  }, [attachments, chatId, cleanupEditUploads, messageEdit, queueClient]);
 
   const beginMessageEdit = useCallback((message: Message) => {
     if (messageEdit || sending) return;
@@ -3818,6 +3851,48 @@ function ChatView({
     requestAnimationFrame(() => composerInputRef.current?.focus());
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [agentEnabled, attachments, composerInputRef, input, messageEdit, onChangeInput, sending, setAttachments]);
+
+  const runQueueAction = async (operation: () => Promise<void>) => {
+    if (queueBusy || sending) return;
+    setQueueBusy(true);
+    try { await operation(); }
+    catch (error) { Alert.alert('Couldn’t update queue', error instanceof Error ? error.message : 'Please try again.'); }
+    finally { setQueueBusy(false); }
+  };
+
+  const beginQueueEdit = async (item: MobileQueuedMessage) => {
+    if (!chatId || !draftNamespace || messageEdit) return;
+    const selected = models.find((candidate) => candidate.id === item.modelId) ?? model;
+    if (!selected.id) { Alert.alert('Model unavailable', 'Choose an available model before editing this queued message.'); return; }
+    const editingChatId = chatId;
+    await runQueueAction(async () => {
+      await mutateQueuedMessage(queueClient, draftNamespace, editingChatId, item.id, { action: 'begin_edit' });
+      if (messageEditChatIdRef.current !== editingChatId) {
+        await mutateQueuedMessage(queueClient, draftNamespace, editingChatId, item.id, { action: 'cancel_edit' });
+        return;
+      }
+      beginMessageEdit({ id: item.id, role: 'user', text: item.content, attachments: item.attachments.map((attachment) => ({
+        id: attachment.id, name: attachment.name, mimeType: attachment.mimeType, size: attachment.sizeBytes,
+        kind: attachmentKind(attachment.name, attachment.mimeType), uri: '',
+      })) });
+      queueEditRef.current = { id: item.id, chatId: editingChatId, namespace: draftNamespace, model, presets: draftPresets };
+      onSelectModel(selected);
+      setDraftPresets((current) => ({ ...current, [selected.id]: selected.id === item.modelId ? item.presetSelections : {} }));
+      setAgentEnabled(item.agentMode);
+    });
+  };
+
+  useEffect(() => {
+    const edit = queueEditRef.current;
+    if (!edit || edit.chatId !== chatId || queueBusy || sending) return;
+    const item = queuedMessages.find((candidate) => candidate.id === edit.id);
+    if (!item || item.status !== 'editing') restoreComposer();
+  }, [chatId, queuedMessages, queueBusy, sending, restoreComposer]);
+
+  useEffect(() => () => {
+    const edit = queueEditRef.current;
+    if (edit) void mutateQueuedMessage(queueClient, edit.namespace, edit.chatId, edit.id, { action: 'cancel_edit' }).catch(() => undefined);
+  }, [queueClient]);
 
   const handleMessageEditAction = useCallback((message: Message, content: string) => {
     if (message.role === 'user') {
@@ -4242,6 +4317,15 @@ function ChatView({
           Alert.alert('Some files couldn’t upload', 'Retry or remove the failed files, then save again.');
           return;
         }
+        const queueEdit = queueEditRef.current;
+        if (queueEdit) {
+          await mutateQueuedMessage(queueClient, queueEdit.namespace, queueEdit.chatId, queueEdit.id, {
+            action: 'save_edit', input: submittedDraft.input.trim(), modelId: model.id, presetSelections,
+            agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
+          }, (prepared as PreparedAttachment[]).map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })));
+          restoreComposer();
+          return;
+        }
         const accepted = await onEdit(
           messageEdit.message,
           submittedDraft.input.trim(),
@@ -4258,7 +4342,7 @@ function ChatView({
       // first network await, so arming after the promise resolves is too late.
       const sharedDraftId = submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID;
       const submittedRevision = await composerSync?.prepareSubmission(sharedDraftId, sharedComposerState);
-      followSnapshot = armSubmittedTurnFollow();
+      if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
       const pendingSend = onSend(
         submittedDraft.input,
         submittedDraft.attachments,
@@ -4280,7 +4364,7 @@ function ChatView({
       }
       const accepted = await pendingSend;
       if (!accepted) {
-        restoreSubmittedTurnFollow(followSnapshot);
+        if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
         restoreSubmittedDraft();
         return;
@@ -4460,12 +4544,12 @@ function ChatView({
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
   const canSend = Boolean(model.id)
     && (input.trim().length > 0 || attachments.length > 0)
-    && (assistantStatus === 'idle' || Boolean(messageEdit))
     && !sending
+    && !queueBusy
     && !expired
     && !(attachments.some((attachment) => attachment.kind === 'file') && (!activeAgentEnabled || !canUseAgent))
     && attachmentPolicy.allowed;
-  const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit));
+  const composerAction = composerGenerationAction(assistantStatus, Boolean(messageEdit), Boolean(input.trim() || attachments.length));
 
   useEffect(() => {
     const target = headerControl.expanded ? 1 : 0;
@@ -4682,6 +4766,28 @@ function ChatView({
 
       <KeyboardStickyView enabled={keyboardLayoutEnabled} offset={keyboardOffset} style={styles.composerSticky}>
         <View style={[styles.composerWrap, styles.chatContent, { paddingHorizontal: Math.max(12, horizontalPadding - 6), paddingBottom: Math.max(insets.bottom, 10) }]}>
+            {queuedMessages.length > 0 && (
+              <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: Math.min(200, windowHeight * 0.25), marginBottom: 8 }} accessibilityLabel="Queued messages">
+                {queuedMessages.map((item, index) => {
+                  const locked = queueBusy || sending || item.status === 'dispatching' || Boolean(item.pendingSubmissionId && !item.localFailure) || expired;
+                  const queueAction = (action: Parameters<typeof mutateQueuedMessage>[4]) => {
+                    if (chatId && draftNamespace) void runQueueAction(() => mutateQueuedMessage(queueClient, draftNamespace, chatId, item.id, action));
+                  };
+                  return <View key={item.id} style={{ padding: 10, marginBottom: 4, borderRadius: 12, backgroundColor: COLORS.panel }}>
+                    <Text style={{ color: COLORS.muted, fontSize: 11 }}>{index + 1} · {models.find((candidate) => candidate.id === item.modelId)?.name ?? item.modelId} · {item.pendingSubmissionId && !item.localFailure ? 'Waiting to sync' : item.status}</Text>
+                    <Text numberOfLines={2} style={{ color: COLORS.text, fontSize: 14 }}>{item.content || 'Attachments'}</Text>
+                    {item.attachments.length > 0 && <Text numberOfLines={1} style={{ color: COLORS.muted, fontSize: 12 }}>{item.attachments.map((attachment) => attachment.name).join(', ')}</Text>}
+                    {item.error && <Text accessibilityRole="alert" style={{ color: COLORS.text, fontSize: 12 }}>{item.error}</Text>}
+                    <View style={{ flexDirection: 'row', gap: 18, marginTop: 6 }}>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Edit queued message ${index + 1}`} disabled={locked || Boolean(messageEdit) || queuedMessages.some((candidate) => candidate.status === 'editing' && candidate.id !== item.id)} onPress={() => void beginQueueEdit(item)}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>Edit</Text></Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Delete queued message ${index + 1}`} disabled={locked || Boolean(messageEdit)} onPress={() => queueAction({ action: 'delete' })}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>Delete</Text></Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Move queued message ${index + 1} up`} disabled={locked || index === 0 || queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId)) || queuedMessages[index - 1]?.status === 'dispatching'} onPress={() => queueAction({ action: 'reorder', targetMessageId: queuedMessages[index - 1]!.id, edge: 'before' })}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>↑</Text></Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Move queued message ${index + 1} down`} disabled={locked || index === queuedMessages.length - 1 || queuedMessages.some((candidate) => Boolean(candidate.pendingSubmissionId)) || queuedMessages[index + 1]?.status === 'dispatching'} onPress={() => queueAction({ action: 'reorder', targetMessageId: queuedMessages[index + 1]!.id, edge: 'after' })}><Text style={{ color: COLORS.muted, paddingVertical: 6 }}>↓</Text></Pressable>
+                    </View>
+                  </View>;
+                })}
+              </ScrollView>
+            )}
             <Glass
               interactive
               style={styles.composer}
@@ -4690,7 +4796,7 @@ function ChatView({
               {messageEdit ? (
                 <View style={styles.messageEditBanner}>
                   <Icon name="pencil" size={12} color={COLORS.muted} />
-                  <Text style={styles.messageEditBannerText}>Editing message</Text>
+                  <Text style={styles.messageEditBannerText}>{queueEditRef.current ? 'Editing queued message' : 'Editing message'}</Text>
                   <Pressable accessibilityLabel="Cancel message edit" accessibilityRole="button" disabled={sending} onPress={cancelMessageEdit}>
                     <Text style={styles.messageEditCancel}>Cancel</Text>
                   </Pressable>
@@ -4719,7 +4825,7 @@ function ChatView({
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
-                editable={!composerFocusSuppressed}
+                editable={!composerFocusSuppressed && !(messageEdit && sending)}
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
@@ -4807,7 +4913,7 @@ function ChatView({
                     </SwiftUIHost>
                     <NativeComposerIconButton
                       disabled={composerAction === 'submit' && !canSend}
-                      label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
+                      label={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
                       onPress={() => composerAction === 'stop' ? onStop() : submitMessage()}
                       prominent
                       systemImage={composerAction === 'stop' ? 'stop.fill' : 'arrow.up'}
@@ -4826,7 +4932,7 @@ function ChatView({
                       <Bot color={activeAgentEnabled ? COLORS.foregroundOnAccent : COLORS.muted} size={13} strokeWidth={2} />
                     </Pressable>
                     <Pressable
-                      accessibilityLabel={composerAction === 'stop' ? 'Stop generating' : messageEdit ? 'Save and resend message' : 'Send message'}
+                      accessibilityLabel={composerAction === 'stop' ? 'Stop generating' : messageEdit ? queueEditRef.current ? 'Save queued message' : 'Save and resend message' : 'Send message'}
                       accessibilityRole="button"
                       accessibilityState={{ disabled: composerAction === 'submit' && !canSend }}
                       disabled={composerAction === 'submit' && !canSend}

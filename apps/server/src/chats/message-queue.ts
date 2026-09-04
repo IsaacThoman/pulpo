@@ -108,13 +108,26 @@ export async function createQueuedMessage(
   attribution: { billingUserId?: string; actorUserId?: string | null } = {},
 ): Promise<{ queuedMessage: QueuedMessage | null }> {
   await validateQueueInput(userId, chatId, input)
-  const id = newId()
+  const id = input.clientId ?? newId()
   await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`pulpo-message-queue:${chatId}`}))`)
     const [chat] = await tx.select({ id: chats.id }).from(chats).where(and(
       eq(chats.id, chatId), eq(chats.userId, userId), isNull(chats.deletedAt), accessibleChatCondition(),
     )).limit(1)
     if (!chat) throw notFound('Chat')
+    // The queue and its dispatched response share a stable client identity so a
+    // retry is safe even after the queue row has been consumed.
+    if (input.clientId) {
+      const [queued] = await tx.select({ chatId: queuedMessages.chatId, userId: queuedMessages.userId })
+        .from(queuedMessages).where(eq(queuedMessages.id, id)).limit(1)
+      const [dispatched] = await tx.select({ chatId: responses.chatId, userId: responses.userId })
+        .from(responses).where(eq(responses.id, id)).limit(1)
+      const existing = queued ?? dispatched
+      if (existing) {
+        if (existing.chatId !== chatId || existing.userId !== userId) throw new AppError(409, 'submission_conflict', 'Submission ID is already in use')
+        return
+      }
+    }
     const [positionRow] = await tx.select({ value: max(queuedMessages.position) })
       .from(queuedMessages).where(eq(queuedMessages.chatId, chatId))
     await tx.insert(queuedMessages).values({
@@ -129,7 +142,7 @@ export async function createQueuedMessage(
       agentMode: input.agentMode,
       attachmentIds: [...new Set(input.attachmentIds)],
       position: nextQueuePosition(positionRow?.value),
-      dispatchResponseId: newId(),
+      dispatchResponseId: input.clientId ?? newId(),
     })
   })
   await bumpQueueRevision(userId, chatId)

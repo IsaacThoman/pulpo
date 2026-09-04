@@ -1611,6 +1611,7 @@ export const queuedMessageSchema = z.object({
 export type QueuedMessage = z.infer<typeof queuedMessageSchema>
 
 export const createQueuedMessageSchema = z.object({
+  clientId: idSchema.optional(),
   input: z.string().trim().max(1_000_000).default(''),
   modelId: z.string().min(1),
   presetSelections: z.record(z.string(), z.string()).default({}),
