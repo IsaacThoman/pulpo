@@ -653,7 +653,7 @@ export function Composer({
     const submittedRevision = await composerSync?.prepareSubmission(draftId, sharedComposerState)
     setSubmitting(false)
     const staged = stageSubmission({
-      composerDraft: userId ? { userId, draftId, state: sharedComposerState, revision: submittedRevision ?? undefined } : undefined,
+      composerDraft: userId && composerSync ? { userId, draftId, state: sharedComposerState, revision: submittedRevision ?? undefined } : undefined,
       chatId,
       content: text,
       modelId,

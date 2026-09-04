@@ -4122,7 +4122,7 @@ function ChatView({
     };
     cacheComposerDraft(owner.scope, updated);
     if (owner.namespace && attachment.state === 'ready' && attachment.serverId) {
-      mobileComposerSync(owner.namespace).attachToInactiveDraft(owner.draftId, { id: attachment.serverId, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size ?? 0 });
+      mobileComposerSync(owner.namespace)?.attachToInactiveDraft(owner.draftId, { id: attachment.serverId, name: attachment.name, mimeType: attachment.mimeType, size: attachment.size ?? 0 });
     }
     if (owner.namespace) void saveDraft(owner.namespace, owner.draftId, updated.body, updated.attachments);
   }, []);

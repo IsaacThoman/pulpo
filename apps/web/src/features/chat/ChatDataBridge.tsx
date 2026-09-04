@@ -1,3 +1,4 @@
+import { useComposerSyncPreference } from '@/stores/composer-sync-preference'
 import { bindWebComposerSocket } from '@/lib/local-first/composer-sync'
 import { useEffect, useMemo, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -103,7 +104,7 @@ export function ChatDataBridge() {
     const socket: PulpoSocket = io(isDesktopRuntime() ? runtimeInstanceUrl() : undefined, {
       path: '/socket.io',
       withCredentials: !isDesktopRuntime(),
-      auth: isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : undefined,
+      auth: { composerSyncEnabled: useComposerSyncPreference.getState().enabled, ...(isDesktopRuntime() ? { sessionToken: runtimeSessionToken() } : {}) },
     })
     const unbindComposer = bindWebComposerSocket(userId, socket)
     socketRef.current = socket

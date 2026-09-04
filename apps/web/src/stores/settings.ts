@@ -24,6 +24,7 @@ export interface SettingsState {
   ownerUserId: string | null
   theme: Theme
   language: Language
+  composerSyncEnabled: boolean
   sendWithEnter: boolean
   doubleShiftSearch: boolean
   streamResponses: boolean
@@ -58,6 +59,7 @@ export interface SettingsState {
 export const DEFAULT_SETTINGS = {
   theme: 'system' as Theme,
   language: 'en-US' as Language,
+  composerSyncEnabled: true,
   sendWithEnter: true,
   doubleShiftSearch: true,
   streamResponses: true,

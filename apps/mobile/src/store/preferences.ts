@@ -8,6 +8,7 @@ export type { AutomaticChatExpirationPreference, Preferences, TextSizePreference
 export { preferencePatchForServer, preferencesFromServer } from './preferenceMapping'
 
 interface PreferenceState extends Preferences {
+  composerSyncGeneration: string
   hydrated: boolean
   synchronizedOwnerNamespace: string | null
   modelPreferencesDirty: boolean
@@ -22,6 +23,7 @@ interface PreferenceState extends Preferences {
 }
 
 type StoredPreferences = Partial<Preferences> & {
+  composerSyncGeneration?: string
   synchronizedOwnerNamespace?: string | null
   modelPreferencesDirty?: boolean
   generationPreferenceDirty?: boolean
@@ -39,6 +41,7 @@ function persistedSnapshot(state: PreferenceState): StoredPreferences {
   const persistedKeys = Object.keys(defaults)
   return {
     ...Object.fromEntries(persistedKeys.map((name) => [name, state[name as keyof Preferences]])),
+    composerSyncGeneration: state.composerSyncGeneration,
     synchronizedOwnerNamespace: state.synchronizedOwnerNamespace,
     modelPreferencesDirty: state.modelPreferencesDirty,
     generationPreferenceDirty: state.generationPreferenceDirty,
@@ -78,6 +81,7 @@ function samePreference<K extends keyof Preferences>(key: K, left: Preferences[K
 
 export const usePreferencesStore = create<PreferenceState>((set, get) => ({
   ...defaults,
+  composerSyncGeneration: '',
   hydrated: false,
   synchronizedOwnerNamespace: null,
   modelPreferencesDirty: false,
@@ -112,17 +116,6 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
     const synchronizedGenerationPreference = key === 'generation'
     const synchronizedAgentModesPreference = key === 'agentModes'
     const synchronizedWithServer = serverPreferenceKey(key) !== null
-    const pendingServerPreferenceKeys = synchronizedWithServer
-      ? [...new Set([...get().pendingServerPreferenceKeys, key])]
-      : get().pendingServerPreferenceKeys
-    const next = {
-      ...get(),
-      [key]: value,
-      modelPreferencesDirty: synchronizedModelPreference || get().modelPreferencesDirty,
-      generationPreferenceDirty: synchronizedGenerationPreference || get().generationPreferenceDirty,
-      agentModesPreferenceDirty: synchronizedAgentModesPreference || get().agentModesPreferenceDirty,
-      pendingServerPreferenceKeys,
-    }
     if (key === 'theme') Appearance.setColorScheme(value === 'system' ? 'unspecified' : value as 'light' | 'dark')
     set((state) => ({
       ...state,
@@ -134,7 +127,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
         ? [...new Set([...state.pendingServerPreferenceKeys, key])]
         : state.pendingServerPreferenceKeys,
     }))
-    await persistPreferences(persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(get()))
   },
   applyServerPreferences: async (patch) => {
     const current = get()
@@ -171,7 +164,7 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       pendingServerPreferenceKeys,
     }
     set(next)
-    await persistPreferences(persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(get()))
   },
   markSynchronizedPreferenceSynced: async (key, value) => {
     const current = get()
@@ -186,13 +179,13 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
         ? { modelPreferencesDirty: pendingServerPreferenceKeys.some((candidate) => candidate === 'favoriteModelIds' || candidate === 'providerOrder') }
         : {}),
     }
-    const next = { ...current, ...synced }
     set(synced)
-    await persistPreferences(persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(get()))
   },
   resetSynchronizedPreferences: async (namespace) => {
     const reset = {
       synchronizedOwnerNamespace: namespace,
+      composerSyncEnabled: defaults.composerSyncEnabled,
       favoriteModelIds: [],
       providerOrder: [],
       generation: {},
@@ -202,8 +195,15 @@ export const usePreferencesStore = create<PreferenceState>((set, get) => ({
       agentModesPreferenceDirty: false,
       pendingServerPreferenceKeys: [],
     }
-    const next = { ...get(), ...reset }
     set(reset)
-    await persistPreferences(persistedSnapshot(next))
+    await persistPreferences(persistedSnapshot(get()))
   },
 }))
+
+// Retire pending sync checkpoints after either a local or remote account opt-out.
+usePreferencesStore.subscribe((state, previous) => {
+  if (previous.composerSyncEnabled && !state.composerSyncEnabled) {
+    usePreferencesStore.setState({ composerSyncGeneration: `${Date.now()}-${Math.random()}` })
+    void persistPreferences(persistedSnapshot(usePreferencesStore.getState()))
+  }
+})

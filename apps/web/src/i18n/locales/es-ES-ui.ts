@@ -1,4 +1,6 @@
 const esUi: Record<string, string> = {
+  "Sync composer drafts": "Sincronizar borradores de mensajes",
+  "Share unsent drafts across your devices. This account setting applies to web, desktop, and mobile. Turning it off keeps drafts local on each device; existing server drafts remain.": "Comparte borradores sin enviar entre tus dispositivos. Esta preferencia de la cuenta se aplica a la web, el escritorio y el móvil. Al desactivarla, los borradores se conservan en cada dispositivo; los borradores existentes en el servidor se mantienen.",
   "Could not start Codex sign-in.": "No se pudo iniciar la sesión de Codex.",
   "Disconnect Codex and cancel active Codex generations?": "¿Desconectar Codex y cancelar las generaciones activas de Codex?",
   "Could not disconnect Codex.": "No se pudo desconectar Codex.",

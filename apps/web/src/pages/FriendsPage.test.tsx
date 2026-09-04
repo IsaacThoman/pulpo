@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { FriendsHandle } from './FriendsPage'
 
 describe('FriendsHandle', () => {
@@ -12,3 +12,6 @@ describe('FriendsHandle', () => {
     expect(html).not.toContain('Edit profile')
   })
 })
+
+// These page tests do not exercise the authenticated composer lifecycle.
+vi.mock('@/lib/local-first/composer-sync', () => ({ clearWebComposerSync: vi.fn() }))
