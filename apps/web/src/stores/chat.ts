@@ -82,6 +82,8 @@ export interface ServerResponse {
     assistant: { ids: string[]; index: number }
   }
   detailAvailable?: boolean
+  // Local-only: a rejected reservation leaves no server response to edit.
+  rejectedSend?: { startChat?: { temporary: boolean; autoExpire: boolean } }
 }
 
 export interface ServerAttachment {
@@ -412,6 +414,7 @@ function toChat(
       ? current?.expiresAt ?? null
       : row.expiresAt === null ? null : Date.parse(row.expiresAt),
     expired: current?.expired ?? false,
+    provisional: current?.provisional,
   }
 }
 
@@ -1571,6 +1574,9 @@ export const useChat = create<ChatState>()((set, get) => ({
           responses: chat.responses.map((response) => response.id !== responseId ? response : {
             ...response,
             status: 'failed',
+            rejectedSend: error instanceof ApiError && error.code === 'insufficient_balance'
+              ? { startChat: !chatId ? { temporary, autoExpire } : undefined }
+              : undefined,
             error: { message: errorMessage },
             completedAt: failedAt,
             snapshot: {
@@ -1582,6 +1588,9 @@ export const useChat = create<ChatState>()((set, get) => ({
           }),
         }
       })
+      const failedResponse = queryClient.getQueryData<ServerChat>(chatKey(id))?.responses?.find((response) => response.id === responseId)
+      const pending = pendingOptimisticResponses.get(responseId)
+      if (failedResponse && pending) pendingOptimisticResponses.set(responseId, { ...pending, response: failedResponse })
       if (expired) get().markTemporaryExpired(id)
     })
     return id
@@ -1800,6 +1809,8 @@ export const useChat = create<ChatState>()((set, get) => ({
     )
     const sourceResponseId = messageId.endsWith(':input') ? messageId.slice(0, -6) : messageId
     const cached = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+    const source = cached?.responses?.find((response) => response.id === sourceResponseId)
+    const rejectedSend = source?.rejectedSend
     const previousActiveLeafId = cached?.activeBranchLeafId ?? cached?.activeResponseId ?? sourceResponseId
     const responseId = crypto.randomUUID()
     const optimistic = cacheOptimisticBranch({
@@ -1817,15 +1828,42 @@ export const useChat = create<ChatState>()((set, get) => ({
       ?? branchSelectionIntents.select(chatId, responseId).version
     if (optimistic) get().setDetailedChat(optimistic.chat)
     try {
-      const result = await enqueueChatMutation(chatId, () => optimisticRequest('PATCH', `/api/messages/${messageId}`, {
-      clientId: responseId,
-      content,
-      modelId,
-      presetSelections: generation.selections,
-      attachmentIds: editedAttachments.map((attachment) => attachment.id),
-      agentMode,
-    }, { queueOffline: !get().chats.some((chat) => chat.id === chatId && chat.temporary) }))
+      const selection = {
+        clientId: responseId,
+        modelId,
+        presetSelections: generation.selections,
+        attachmentIds: editedAttachments.map((attachment) => attachment.id),
+        agentMode,
+      }
+      const responseBody = { ...selection, input: content, parentResponseId: source?.parentResponseId ?? null }
+      const startChat = rejectedSend?.startChat
+      const path = rejectedSend
+        ? startChat ? '/api/chats/start' : `/api/chats/${chatId}/responses`
+        : `/api/messages/${messageId}`
+      const body = rejectedSend
+        ? startChat ? {
+          chat: { ...startChat, clientId: chatId, modelId, title: (content || editedAttachments[0]?.name || 'Image').slice(0, 200) },
+          response: responseBody,
+        } : responseBody
+        : { ...selection, content }
+      const result = await enqueueChatMutation(chatId, () => optimisticRequest(rejectedSend ? 'POST' : 'PATCH', path, body, {
+        queueOffline: !rejectedSend && !get().chats.some((chat) => chat.id === chatId && chat.temporary),
+      }))
       if (result === undefined) return
+      if (rejectedSend) {
+        pendingOptimisticResponses.delete(sourceResponseId)
+        const pending = pendingOptimisticResponses.get(responseId)
+        if (pending) pendingOptimisticResponses.set(responseId, { ...pending, response: { ...pending.response, rejectedSend: undefined } })
+        queryClient.setQueryData<ServerChat>(chatKey(chatId), (chat) => chat && ({
+          ...chat,
+          responses: withBranchMetadata((chat.responses ?? []).filter((response) => response.id !== sourceResponseId)
+            .map((response) => response.id === responseId ? { ...response, rejectedSend: undefined } : response)),
+        }))
+        const detail = queryClient.getQueryData<ServerChat>(chatKey(chatId))
+        if (detail) get().setDetailedChat(detail)
+        set((state) => ({ chats: state.chats.map((chat) => chat.id === chatId ? { ...chat, provisional: false } : chat) }))
+        void queryClient.invalidateQueries({ queryKey: chatsKey() })
+      }
       branchSelectionIntents.clear(chatId, selectionVersion)
       void queryClient.invalidateQueries({ queryKey: chatKey(chatId) })
     } catch (error: unknown) {
@@ -1834,7 +1872,12 @@ export const useChat = create<ChatState>()((set, get) => ({
       const message = expired
         ? 'This temporary chat has expired and cannot be recovered.'
         : error instanceof Error ? error.message : 'Unable to save and resend the message'
-      const failed = failOptimisticResponse(chatId, responseId, previousActiveLeafId, selectionVersion, message)
+      let failed = failOptimisticResponse(chatId, responseId, previousActiveLeafId, selectionVersion, message)
+      if (failed && rejectedSend) {
+        pendingOptimisticResponses.delete(responseId)
+        failed = { ...failed, responses: withBranchMetadata((failed.responses ?? []).filter((response) => response.id !== responseId)) }
+        queryClient.setQueryData(chatKey(chatId), failed)
+      }
       if (failed) get().setDetailedChat(failed)
       if (expired) get().markTemporaryExpired(chatId)
       throw error
