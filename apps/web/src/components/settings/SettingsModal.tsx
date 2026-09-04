@@ -1040,6 +1040,9 @@ export function SettingsModal({
                   <Row label={ui("Show reasoning")} hint="Show expandable thought/work activity above assistant replies.">
                     <Switch checked={s.showReasoning} onCheckedChange={(v) => s.set('showReasoning', v)} />
                   </Row>
+                  <Row label={ui("Show response costs")} hint={ui("Show the cost of each assistant response with its tokens, speed, and time.")}>
+                    <Switch checked={s.showResponseCost} onCheckedChange={(v) => s.set('showResponseCost', v)} />
+                  </Row>
                   <Row label={ui("Chats kept on this device")} hint="Recent chats remain available instantly and while offline (0–500).">
                     <Input className="w-28" type="number" min={0} max={500} value={s.localChatLimit} onChange={(event) => s.set('localChatLimit', Math.min(500, Math.max(0, Number(event.target.value))))} />
                   </Row>

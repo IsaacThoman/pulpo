@@ -577,6 +577,7 @@ export const MessageItem = memo(function MessageItem({
   const chats = useChat((state) => state.chats)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
+  const showResponseCost = useSettings((s) => s.showResponseCost)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
@@ -848,7 +849,7 @@ export const MessageItem = memo(function MessageItem({
                     </ActionButton>
                   </>
                 )}
-                {(message.tokensIn !== undefined || message.cost !== undefined) && (
+                {(message.tokensIn !== undefined || (showResponseCost && message.cost !== undefined)) && (
                   <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&
                       `${message.tokensIn.toLocaleString(activeLocale())}→${(message.tokensOut ?? 0).toLocaleString(activeLocale())} tok`}
@@ -857,7 +858,7 @@ export const MessageItem = memo(function MessageItem({
                       message.latencyMs > 0 &&
                       ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
                     {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
-                    {message.cost !== undefined && <>
+                    {showResponseCost && message.cost !== undefined && <>
                       {' · '}
                       <SubscriptionCoverageCost
                         costUsd={message.cost}
