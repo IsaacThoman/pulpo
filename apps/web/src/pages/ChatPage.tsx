@@ -1,3 +1,4 @@
+import type { ComposerState } from '@pulpo/contracts'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/useAppTranslation'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -142,7 +143,9 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
   const chatWidth = useSettings((s) => s.chatWidth)
   const defaultModelId = useSettings((s) => s.defaultModelId)
   const automaticChatExpiration = useSettings((s) => s.automaticChatExpiration)
-  const newChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
+  const defaultNewChatAutoExpire = useSettings((s) => s.newChatAutoExpire)
+  const [syncedAutoExpire, setSyncedAutoExpire] = useState<boolean | null>(null)
+  const newChatAutoExpire = syncedAutoExpire ?? defaultNewChatAutoExpire
   const instanceReady = useAuth((s) => s.instanceReady)
   const userRole = useAuth((s) => s.user?.role)
   const networkReady = !isDesktopRuntime() || instanceReady
@@ -215,6 +218,11 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
     shouldApplyDefaultRef.current = false
     useChat.getState().setComposerModel(id)
     setModelId(id)
+  }
+
+  const applyComposerControls = (state: ComposerState) => {
+    if (state.model && models.some((model) => model.id === state.model!.id)) selectModel(state.model.id)
+    if (!chatId) { setTemporary(state.temporary); setSyncedAutoExpire(state.autoExpire) }
   }
 
   useEffect(() => {
@@ -333,7 +341,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
       useChat.getState().setChatAutoExpiration(chat.id, !expirationEnabled)
       return
     }
-    useSettings.getState().set('newChatAutoExpire', !expirationEnabled)
+    setSyncedAutoExpire(!expirationEnabled)
   }
   const legacyTemporaryRoute = Boolean(!adminMode && routeChatId && chat?.temporary)
 
@@ -470,7 +478,7 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               chatWidth === 'narrow' ? 'max-w-5xl' : 'max-w-[min(100%,90rem)]'
             )}
           >
-            <Composer key="new" chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
+            <Composer syncEnabled={!adminMode} onSyncControls={applyComposerControls} key="new" chatId={null} modelId={modelId} temporary={temporaryMode} autoExpire={effectiveNewChatAutoExpire} />
           </div>
         </>
       ) : (
@@ -508,10 +516,13 @@ export function ChatPage({ adminMode = false }: { adminMode?: boolean }) {
               <div role="status" className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"> {ui("This temporary chat has expired and cannot be recovered. Its existing transcript is available only until you leave this page.")} </div>
             ) : (
               <Composer
+                syncEnabled={!adminMode}
+                onSyncControls={applyComposerControls}
                 key={chat.id}
                 chatId={chat.id}
                 modelId={modelId}
                 temporary={chat.temporary}
+                autoExpire={Boolean(chat.expiresAt)}
                 messageEdit={messageEdit}
                 onMessageEditComplete={() => setMessageEdit(null)}
                 onEditStateChange={setComposerEditActive}

@@ -1,3 +1,4 @@
+import { clearMobileComposerSync } from '../features/chat/composerSync'
 import { Appearance } from 'react-native'
 import * as Device from 'expo-device'
 import { File } from 'expo-file-system'
@@ -239,6 +240,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (user) {
       const namespace = cacheNamespace(instanceUrl, user.id)
       clearComposerDraftCacheNamespace(namespace)
+      clearMobileComposerSync(namespace)
       removeCachedFiles(await clearNamespace(namespace))
     }
     configureApi({ instanceUrl, token: null, onUnauthorized: () => { void get().handleUnauthorized() } })
@@ -267,6 +269,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     if (previous.user) {
       const namespace = cacheNamespace(previous.instanceUrl, previous.user.id)
       clearComposerDraftCacheNamespace(namespace)
+      clearMobileComposerSync(namespace)
       removeCachedFiles(await clearNamespace(namespace))
     }
     await setValue(GLOBAL_NAMESPACE, 'instanceUrl', instanceUrl)

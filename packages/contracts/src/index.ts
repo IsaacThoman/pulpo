@@ -1,3 +1,5 @@
+import type { ComposerAck, ComposerSnapshot, ComposerWrite } from './composer.js'
+export * from './composer.js'
 import { z } from 'zod'
 import { CHAT_PRESET_ICON_NAMES } from './chat-preset-icons.generated.js'
 
@@ -1668,6 +1670,8 @@ export const syncResultSchema = z.object({
 export type SyncResult = z.infer<typeof syncResultSchema>
 
 export interface ClientToServerEvents {
+  'composer.read': (input: { draftId: string }, ack: (result: ComposerAck) => void) => void
+  'composer.write': (input: ComposerWrite, ack: (result: ComposerAck) => void) => void
   'client.sync': (input: SyncRequest, ack: (result: SyncResult) => void) => void
   'chat.subscribe': (input: { chatId: string }) => void
   'chat.unsubscribe': (input: { chatId: string }) => void
@@ -1678,6 +1682,7 @@ export interface ClientToServerEvents {
 }
 
 export interface ServerToClientEvents {
+  'composer.changed': (snapshot: ComposerSnapshot) => void
   'response.event': (event: ResponseEvent) => void
   'response.snapshot': (snapshot: ResponseSnapshot) => void
   'response.completed': (input: { responseId: string; chatId: string; preview: string }) => void

@@ -1,3 +1,4 @@
+import { bindMobileComposerSocket } from '../features/chat/composerSync'
 import { useEffect, useRef } from 'react'
 import { AppState } from 'react-native'
 import * as Crypto from 'expo-crypto'
@@ -85,6 +86,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       reconnectionDelayMax: 5_000,
       timeout: 10_000,
     }) as PulpoSocket
+    const unbindComposer = bindMobileComposerSocket(namespace, socket)
     const unregisterSocket = registerRealtimeSocket(socket)
 
     let disposed = false
@@ -329,6 +331,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       flushEventBatches()
       void flushCursors().catch(() => undefined)
       socket.disconnect()
+      unbindComposer()
       unregisterSocket()
       useRealtimeStore.getState().setConnectionPhase('idle')
     }

@@ -1138,3 +1138,34 @@ export const idempotencyRecords = pgTable('idempotency_records', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [primaryKey({ columns: [table.userId, table.key, table.operation] })])
+
+// Retain the original columns for databases that received the earlier draft schema.
+export const composerDrafts = pgTable('composer_drafts', {
+  id: uuid('id').primaryKey(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'cascade' }),
+  draftId: text('scope').notNull(),
+  content: text('content').notNull().default(''),
+  modelId: text('model_id').notNull(),
+  presetSelections: jsonb('preset_selections').notNull().default({}),
+  agentMode: boolean('agent_mode').notNull().default(false),
+  autoExpire: boolean('auto_expire'),
+  editorId: text('editor_id').notNull(),
+  revision: bigint('revision', { mode: 'number' }).notNull(),
+  clearedRevision: bigint('cleared_revision', { mode: 'number' }).notNull().default(0),
+  state: jsonb('state').$type<import('@pulpo/contracts').ComposerState>().notNull(),
+  mutationId: text('mutation_id'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex('composer_drafts_user_scope_unique').on(table.userId, table.draftId),
+  check('composer_drafts_scope_check', sql`(${table.draftId} = 'new' and ${table.chatId} is null) or (${table.chatId} is not null and ${table.draftId} = ${table.chatId}::text)`),
+  check('composer_drafts_content_length_check', sql`char_length(${table.content}) <= 1000000`),
+  check('composer_drafts_revision_check', sql`${table.revision} >= 0`),
+])
+
+export const composerDraftAttachments = pgTable('composer_draft_attachments', {
+  draftId: uuid('draft_id').notNull().references(() => composerDrafts.id, { onDelete: 'cascade' }),
+  attachmentId: uuid('attachment_id').notNull().references(() => attachments.id, { onDelete: 'cascade' }),
+  position: integer('position').notNull(),
+}, (table) => [primaryKey({ columns: [table.draftId, table.attachmentId] }), uniqueIndex('composer_draft_attachments_position_unique').on(table.draftId, table.position)])

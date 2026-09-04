@@ -1,3 +1,5 @@
+import type { ComposerState } from '@pulpo/contracts'
+import { webComposerSync } from '@/lib/local-first/composer-sync'
 import { create } from 'zustand'
 import { attachmentValidationError } from '@pulpo/client-core'
 import type { Attachment } from '@/lib/types'
@@ -14,6 +16,7 @@ import { ui } from '@/i18n/ui'
 import {
   NEW_CHAT_DRAFT_ID,
   updateComposerDraftAttachment,
+  runtimeComposerDraft,
   type PersistedDraftAttachment,
 } from '@/lib/local-first/composer-drafts'
 
@@ -36,6 +39,7 @@ export interface UploadRecord {
 }
 
 export interface PendingSubmission {
+  composerDraft?: { userId: string; draftId: string; revision?: number; state: ComposerState }
   id: string
   chatId: string
   responseId: string
@@ -58,6 +62,7 @@ interface AddFilesOptions {
 }
 
 interface SubmissionDraft {
+  composerDraft?: { userId: string; draftId: string; revision?: number; state: ComposerState }
   chatId: string | null
   content: string
   modelId: string
@@ -156,6 +161,10 @@ function deleteRemoteAttachment(id: string): void {
 function persistDraftUpload(record: UploadRecord): void {
   const userId = useAuth.getState().user?.id
   if (!userId) return
+  const draftId = record.chatId ?? NEW_CHAT_DRAFT_ID
+  if (record.status === 'ready' && record.id && runtimeComposerDraft(userId, draftId)?.attachments.some((item) => item.localId === record.localId)) {
+    webComposerSync(userId).attachToInactiveDraft(draftId, { id: record.id, name: record.name, mimeType: record.mimeType, size: record.size })
+  }
   void updateComposerDraftAttachment(userId, record.chatId ?? NEW_CHAT_DRAFT_ID, {
     localId: record.localId,
     serverId: record.id,
@@ -358,7 +367,10 @@ async function processChat(chatId: string): Promise<void> {
           submissions: current.submissions.filter((item) => item.id !== submission.id),
         }))
         useUploadOutbox.getState().consumeUploads(submission.attachmentIds)
-        await waitForResponseDispatch(submission.responseId).catch(() => undefined)
+        await waitForResponseDispatch(submission.responseId).then(async () => {
+          const draft = submission.composerDraft
+          if (draft) await webComposerSync(draft.userId).completeSubmission(draft.draftId, draft.state, draft.revision)
+        }).catch(() => undefined)
         continue
       }
 
@@ -370,6 +382,8 @@ async function processChat(chatId: string): Promise<void> {
           attachmentIds: attachments.map((attachment) => attachment.id),
           agentMode: submission.agentMode,
         }, attachments, submission.responseId)
+        const draft = submission.composerDraft
+        if (draft) await webComposerSync(draft.userId).completeSubmission(draft.draftId, draft.state, draft.revision)
         useUploadOutbox.setState((current) => ({
           submissions: current.submissions.filter((item) => item.id !== submission.id),
         }))
@@ -517,6 +531,7 @@ export const useUploadOutbox = create<UploadOutboxState>()((set, get) => ({
         })
       : { chatId: draft.chatId!, responseId }
     const submission: PendingSubmission = {
+      composerDraft: draft.composerDraft,
       id: responseId,
       chatId: staged.chatId,
       responseId,
