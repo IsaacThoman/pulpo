@@ -61,7 +61,7 @@ describe('user message actions', () => {
 })
 
 describe('assistant response metadata', () => {
-  it('renders tokens, cost, speed, and time in that order', async () => {
+  it('renders tokens, speed, time, and cost in that order', async () => {
     const { MessageItem } = await import('./MessageItem')
     const markup = renderToStaticMarkup(<MessageItem
       chat={chat}
@@ -76,7 +76,7 @@ describe('assistant response metadata', () => {
       activeModelId="model-1"
     />)
 
-    expect(markup).toContain('802→12 tok · $0.0042 · 13tok/sec · 932ms')
+    expect(markup).toContain('802→12 tok · 13tok/sec · 932ms · $0.0042')
   })
 })
 
