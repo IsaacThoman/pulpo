@@ -5,8 +5,9 @@ import { emptyComposerState } from '@pulpo/contracts'
 const mocks = vi.hoisted(() => ({
   connection: null as null | ((socket: unknown) => void),
   message: null as null | ((channel: string, message: string) => void),
-  access: vi.fn(), to: vi.fn(), emit: vi.fn(),
+  enabled: true, access: vi.fn(), to: vi.fn(), emit: vi.fn(),
 }))
+vi.mock('../database/client.js', () => ({ db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ values: { composerSyncEnabled: mocks.enabled } }] }) }) }) } }))
 vi.mock('socket.io', () => ({ Server: class {
   use() {}
   on(event: string, callback: (socket: unknown) => void) { if (event === 'connection') mocks.connection = callback }
@@ -36,18 +37,30 @@ function connect(auth = {}, adminChatAccess: unknown = null) {
 }
 beforeEach(async () => {
   vi.clearAllMocks()
+  mocks.enabled = true
   await createSocketServer({} as HttpServer)
   mocks.access.mockResolvedValue({ ok: true, snapshot: { draftId: 'new', revision: 1, clearedRevision: 0, mutationId: null, state: emptyComposerState() } })
 })
 describe('composer socket opt-out', () => {
+  it('enforces account opt-out even for older clients and suppresses broadcasts', async () => {
+    mocks.enabled = false
+    const client = connect(), ack = vi.fn()
+    await client.call('composer.read', { draftId: 'new' }, ack)
+    await client.call('composer.write', { draftId: 'new' }, ack)
+    expect(mocks.access).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(ack).toHaveBeenLastCalledWith({ ok: false, error: 'composer_sync_disabled' }))
+    mocks.message!('pulpo:composer-changes', JSON.stringify({ userId: 'user', snapshot: {} }))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mocks.emit).not.toHaveBeenCalled()
+  })
   it('defaults older clients to enabled and broadcasts only to composer subscribers', async () => {
     const client = connect(), ack = vi.fn()
     expect(client.rooms.has('composer:user')).toBe(true)
     await client.call('composer.read', { draftId: 'new' }, ack)
-    expect(mocks.access).toHaveBeenCalledWith('user', 'new', undefined)
-    expect(mocks.to).toHaveBeenLastCalledWith('composer:user')
+    await vi.waitFor(() => expect(mocks.access).toHaveBeenCalledWith('user', 'new', undefined))
+    await vi.waitFor(() => expect(mocks.to).toHaveBeenLastCalledWith('composer:user'))
     mocks.message!('pulpo:composer-changes', JSON.stringify({ userId: 'user', snapshot: {} }))
-    expect(mocks.to).toHaveBeenLastCalledWith('composer:user')
+    await vi.waitFor(() => expect(mocks.to).toHaveBeenLastCalledWith('composer:user'))
   })
   it('removes restored subscriptions and rejects reads and writes while opted out', async () => {
     const client = connect({ composerSyncEnabled: false }), ack = vi.fn()
@@ -59,7 +72,7 @@ describe('composer socket opt-out', () => {
     expect(ack).toHaveBeenLastCalledWith({ ok: false, error: 'unauthorized' })
     client.call('composer.configure', { enabled: true })
     await client.call('composer.read', { draftId: 'new' }, ack)
-    expect(mocks.access).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(mocks.access).toHaveBeenCalledOnce())
     expect(client.rooms.has('composer:user')).toBe(true)
     client.call('composer.configure', { enabled: false })
     expect(client.rooms.has('composer:user')).toBe(false)

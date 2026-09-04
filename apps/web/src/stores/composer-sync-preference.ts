@@ -1,32 +1,22 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
+import { useSettings } from './settings'
 
-const STORAGE_KEY = 'pulpo-composer-sync-preference'
-interface ComposerSyncPreference {
+// Only the checkpoint epoch is local; enabled always comes from account settings.
+export const useComposerSyncPreference = create<{
   enabled: boolean
-  /** Retire queued sync checkpoints when opting out; local composer drafts are separate. */
-  generation: number
-  setEnabled: (enabled: boolean) => void
-}
+  generation: string
+}>()(persist(() => ({ enabled: useSettings.getState().composerSyncEnabled, generation: '' }), {
+  name: 'pulpo-composer-sync-epoch',
+  storage: createJSONStorage(() => window.localStorage),
+  partialize: ({ generation }) => ({ generation }),
+}))
 
-// Browser-local by design: account preference hydration must never override this opt-out.
-export const useComposerSyncPreference = create<ComposerSyncPreference>()(persist(
-  (set) => ({
-    enabled: true,
-    generation: 0,
-    setEnabled: (enabled) => set((state) => ({
-      enabled,
-      generation: state.generation + (state.enabled && !enabled ? 1 : 0),
-    })),
-  }),
-  {
-    name: STORAGE_KEY,
-    storage: createJSONStorage(() => window.localStorage),
-    partialize: ({ enabled, generation }) => ({ enabled, generation }),
-  },
-))
-
-// Apply the browser preference to already-open tabs too.
-if (typeof window !== 'undefined') window.addEventListener?.('storage', (event) => {
-  if (event.key === STORAGE_KEY) void useComposerSyncPreference.persist.rehydrate()
+useSettings.subscribe((state, previous) => {
+  if (state.composerSyncEnabled !== previous.composerSyncEnabled) {
+    useComposerSyncPreference.setState({
+      enabled: state.composerSyncEnabled,
+      ...(!state.composerSyncEnabled ? { generation: crypto.randomUUID() } : {}),
+    })
+  }
 })

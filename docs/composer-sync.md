@@ -6,11 +6,11 @@ The server stores independent field patches under a monotonically increasing rev
 
 Successful submissions clear only the matching draft. Cleared revisions remain as tombstones. Pending edits and outstanding conditional clears use the existing account-scoped local databases. Draft writes do not change chat ordering or account revision.
 
-## Browser opt-out
+## Account opt-out
 
-Web Interface settings include **Sync composer drafts**, enabled by default. Turning it off stops this browser's draft reads, writes, and realtime subscriptions immediately. Normal chat messages and local draft saving continue. The preference stays on this browser, applies to its open tabs, and does not change mobile settings or delete existing server drafts.
+Interface settings include **Sync composer drafts**, enabled by default. This is an account preference, propagated through the same settings synchronization as other preferences. Web, desktop, and mobile honor it. Turning it off stops draft reads, writes, and realtime delivery; normal messages and local draft saving continue. Existing server drafts remain.
 
-Turning sync back on resumes the shared server draft. Queued updates from before opting out are retired so they cannot be uploaded later. Deploy the matching server update to stop delivery of composer events to opted-out sockets; clients also ignore those events defensively.
+Turning sync back on resumes the shared server draft. Pending updates from before opting out are retired. Offline clients receive the account setting when they reconnect. The server also checks the account preference before accepting draft operations or broadcasting drafts, including requests from older clients.
 
 ## Rollout
 

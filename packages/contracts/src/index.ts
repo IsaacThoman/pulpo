@@ -1303,6 +1303,7 @@ export const animationSpeedSchema = z.number()
 export const managementAccountSettingsSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']).default('system'),
   language: z.string().min(1).max(32).default('en-US'),
+  composerSyncEnabled: z.boolean().default(true),
   sendWithEnter: z.boolean().default(true),
   streamResponses: z.boolean().default(true),
   showReasoning: z.boolean().default(true),

@@ -1,5 +1,5 @@
 import { accessComposer } from '../composer/service.js'
-import { composerDraftIdSchema, composerWriteSchema, type ComposerAck } from '@pulpo/contracts'
+import { composerDraftIdSchema, composerWriteSchema, type ComposerAck, type ComposerSnapshot } from '@pulpo/contracts'
 import type { Server as HttpServer } from 'node:http'
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { Server } from 'socket.io'
@@ -17,7 +17,7 @@ import { getConfig, isAllowedOrigin } from '../config.js'
 import { authenticateSessionToken, type AdminChatAccessContext, type AuthenticatedUser } from '../auth/service.js'
 import { resolveAdminChatSocketAccess } from '../admin/chat-access.js'
 import { db } from '../database/client.js'
-import { chats, responses, users } from '../database/schema.js'
+import { chats, responses, users, userPreferences } from '../database/schema.js'
 import { readResponseEvents } from '../responses/events.js'
 import { toSnapshot } from '../responses/service.js'
 import { accessibleChatCondition } from '../chats/temporary.js'
@@ -80,6 +80,11 @@ function snapshotPreview(snapshot: ResponseSnapshot): string {
   return 'Open the chat to view the response.'
 }
 
+async function composerAccountEnabled(userId: string): Promise<boolean> {
+  const [preferences] = await db.select({ values: userPreferences.values }).from(userPreferences).where(eq(userPreferences.userId, userId)).limit(1)
+  return (preferences?.values as { composerSyncEnabled?: unknown } | undefined)?.composerSyncEnabled !== false
+}
+
 export async function createSocketServer(httpServer: HttpServer) {
   const config = getConfig()
   const adapterRedis = createRedis()
@@ -97,6 +102,10 @@ export async function createSocketServer(httpServer: HttpServer) {
     },
     adapter: createAdapter(adapterRedis),
   })
+
+  const broadcastComposer = async (userId: string, snapshot: ComposerSnapshot) => {
+    if (await composerAccountEnabled(userId)) io.to(`composer:${userId}`).emit('composer.changed', snapshot)
+  }
 
   io.use(async (socket, next) => {
     try {
@@ -139,11 +148,12 @@ export async function createSocketServer(httpServer: HttpServer) {
       if (typeof ack !== 'function') return
       if (adminChatAccess || !socket.data.composerSyncEnabled) { ack({ ok: false, error: 'unauthorized' }); return }
       try {
+        if (!await composerAccountEnabled(user.id)) { ack({ ok: false, error: 'composer_sync_disabled' }); return }
         const write = writing ? composerWriteSchema.parse(raw) : undefined
         const draftId = write?.draftId ?? composerDraftIdSchema.parse((raw as { draftId?: unknown })?.draftId)
         const result = await accessComposer(user.id, draftId, write)
         ack(result)
-        if (result.ok) io.to(`composer:${user.id}`).emit('composer.changed', result.snapshot)
+        if (result.ok) runSocketTask('composer.changed', () => broadcastComposer(user.id, result.snapshot))
       } catch {
         ack({ ok: false, error: 'composer_sync_failed' })
       }
@@ -267,7 +277,7 @@ export async function createSocketServer(httpServer: HttpServer) {
   subscriber.on('message', (channel: string, message: string) => {
     if (channel === 'pulpo:composer-changes') {
       const change = JSON.parse(message)
-      io.to(`composer:${change.userId}`).emit('composer.changed', change.snapshot)
+      runSocketTask('composer.changed', () => broadcastComposer(change.userId, change.snapshot))
     } else if (channel === 'pulpo:admin-usage') {
       io.to('admin:usage').emit('admin.usage.upsert', JSON.parse(message))
     } else if (channel === 'pulpo:response-events') {
@@ -308,7 +318,7 @@ export async function createSocketServer(httpServer: HttpServer) {
         revision: change.revision,
         ...(change.scopes?.length ? { scopes: change.scopes } : {}),
       })
-      if (change.chatId) void accessComposer(change.userId, change.chatId).then((result) => { if (result.ok) io.to(`composer:${change.userId}`).emit('composer.changed', result.snapshot) }).catch(() => undefined)
+      if (change.chatId) void accessComposer(change.userId, change.chatId).then((result) => { if (result.ok) return broadcastComposer(change.userId, result.snapshot) }).catch(() => undefined)
       if (change.chatId) io.to(`user:${change.userId}`).to(`chat:${change.chatId}`).emit('chat.changed', { chatId: change.chatId, revision: change.revision })
     }
   })
