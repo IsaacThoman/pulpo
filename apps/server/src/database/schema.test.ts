@@ -93,9 +93,12 @@ describe('user-owned operational records', () => {
     expect(userConfig.checks.map((constraint) => constraint.name)).toContain('users_invite_code_quota_check')
   })
 
-  it('allows only nonnegative per-user storage overrides', () => {
+  it('constrains per-user billing overrides', () => {
     const config = getTableConfig(billingAccounts)
-    expect(config.checks.map((constraint) => constraint.name)).toContain('billing_accounts_storage_override_check')
+    expect(config.checks.map((constraint) => constraint.name)).toEqual(expect.arrayContaining([
+      'billing_accounts_plan_override_check',
+      'billing_accounts_storage_override_check',
+    ]))
   })
 
   it('persists administrator billing and actor attribution for delayed chat work', () => {

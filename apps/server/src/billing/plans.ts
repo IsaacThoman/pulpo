@@ -61,6 +61,10 @@ export function isPaidPlan(value: unknown): value is PaidBillingPlan {
   return value === 'eight' || value === 'fat'
 }
 
+export function isBillingPlan(value: unknown): value is BillingPlan {
+  return value === 'baby' || isPaidPlan(value)
+}
+
 export type SubscriptionChange =
   | 'missing'
   | 'noop'
@@ -96,4 +100,18 @@ export function effectivePlan(subscriptions: Array<{
   if (eligible.some((subscription) => subscription.plan === 'fat')) return 'fat'
   if (eligible.some((subscription) => subscription.plan === 'eight')) return 'eight'
   return 'baby'
+}
+
+export function resolvePlanEntitlement(
+  subscriptions: Array<{ plan: string; status: string; paidThrough: Date | null }>,
+  planOverride: unknown,
+  now = new Date(),
+): { subscriptionPlan: BillingPlan; plan: BillingPlan; planOverridden: boolean } {
+  const subscriptionPlan = effectivePlan(subscriptions, now)
+  const override = isBillingPlan(planOverride) ? planOverride : null
+  return {
+    subscriptionPlan,
+    plan: override ?? subscriptionPlan,
+    planOverridden: override !== null,
+  }
 }
