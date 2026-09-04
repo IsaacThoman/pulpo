@@ -1,5 +1,4 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import 'fake-indexeddb/auto'
 import type { Model } from '@/lib/types'
 
 const storage = new Map<string, string>()
@@ -48,7 +47,6 @@ const [
   { useSettings },
   { useCatalog },
   { queryClient },
-  { saveLocalComposerDraft },
 ] = await Promise.all([
   import('./upload-outbox'),
   import('./chat'),
@@ -56,7 +54,6 @@ const [
   import('./settings'),
   import('./catalog'),
   import('@/lib/query-client'),
-  import('@/lib/local-first/composer-drafts'),
 ])
 
 const userId = '00000000-0000-4000-8000-000000000001'
@@ -108,7 +105,7 @@ beforeEach(() => {
     profileColor: null, role: 'user', initials: 'T', balanceMicros: 1_000,
     storageLimitBytes: 1_000, blocked: false, stateRevision: 0, createdAt,
   } })
-  useSettings.setState({ agentModes: { [model.id]: false }, generation: {}, syncDrafts: false })
+  useSettings.setState({ agentModes: { [model.id]: false }, generation: {} })
   useCatalog.setState({ models: [model], loaded: true, agentAvailable: true })
   useChat.setState({
     chats: [{
@@ -126,33 +123,25 @@ beforeEach(() => {
 afterAll(() => vi.unstubAllGlobals())
 
 describe('upload outbox', () => {
-  it('does not let an older accepted submission clear a draft typed during dispatch', async () => {
-    useSettings.setState({ syncDrafts: true })
-    await saveLocalComposerDraft({
-      userId,
-      scope: chatId,
-      content: 'newer draft',
-      modelId: model.id,
-      presetSelections: {},
-      agentMode: false,
-      uploads: [],
-      editorId: 'test-editor',
-      dirty: true,
-    })
-    const staged = useUploadOutbox.getState().stageSubmission(draft([], 'submitted draft'))
-    await vi.waitFor(() => expect(requests).toHaveLength(1))
+  it('restores ready and unavailable draft attachments without sharing composer state', () => {
+    const ids = useUploadOutbox.getState().restoreDraftAttachments([
+      {
+        localId: 'ready', serverId: 'server-ready', name: 'ready.pdf', size: 20,
+        mimeType: 'application/pdf', status: 'ready',
+      },
+      {
+        localId: 'missing', name: 'missing.txt', size: 10,
+        mimeType: 'text/plain', status: 'error', error: 'Original file missing',
+      },
+    ], { chatId, temporary: false })
 
-    useUploadOutbox.getState().retainDraftAfterSubmission(chatId)
-    expect(useUploadOutbox.getState().submissions[0]).toMatchObject({
-      id: staged.submissionId,
-      status: 'dispatching',
-      clearDraftOnSuccess: false,
+    expect(ids).toEqual(['ready', 'missing'])
+    expect(useUploadOutbox.getState().uploads.ready).toMatchObject({
+      id: 'server-ready', status: 'ready', managed: true, chatId,
     })
-
-    requests[0]!.resolve({})
-    await vi.waitFor(() => expect(useUploadOutbox.getState().submissions).toHaveLength(0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(requests).toHaveLength(1)
+    expect(useUploadOutbox.getState().uploads.missing).toMatchObject({
+      status: 'error', managed: true, error: 'Original file missing', chatId,
+    })
   })
 
   it('keeps one optimistic bubble and stages later uploads directly in the queue', async () => {

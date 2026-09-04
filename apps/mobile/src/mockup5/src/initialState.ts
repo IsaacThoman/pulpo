@@ -27,7 +27,6 @@ export function createInitialState(): PersistedPrototypeState {
       trashRetention: '30d',
       automaticChatExpiration: '24h',
       newChatAutoExpire: false,
-      syncDrafts: true,
     },
   };
 }

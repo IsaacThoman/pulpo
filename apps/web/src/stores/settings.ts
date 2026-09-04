@@ -43,7 +43,6 @@ export interface SettingsState {
   trashRetention: TrashRetention
   automaticChatExpiration: AutomaticChatExpiration
   newChatAutoExpire: boolean
-  syncDrafts: boolean
   defaultModelId: string
   sidebarPins: SidebarPins
   /** Per-model composer preset selections. */
@@ -76,7 +75,6 @@ export const DEFAULT_SETTINGS = {
   trashRetention: '30d' as TrashRetention,
   automaticChatExpiration: '24h' as AutomaticChatExpiration,
   newChatAutoExpire: false,
-  syncDrafts: true,
   defaultModelId: '',
   sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
   generation: {},

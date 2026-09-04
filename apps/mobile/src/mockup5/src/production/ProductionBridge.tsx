@@ -3,17 +3,13 @@ import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { idSchema } from '@pulpo/contracts'
 import { hydrateEmbeddedResponseSnapshot, LatestValueQueue } from '@pulpo/client-core'
 import { useShallow } from 'zustand/react/shallow'
-import { cacheNamespace, cachedChats, completeOutboxEntity, detachAllComposerDraftServerReferences, getValue, pruneCachedChatScope } from '../../../data/database'
+import { cacheNamespace, cachedChats, completeOutboxEntity, getValue, pruneCachedChatScope } from '../../../data/database'
 import { enqueueCacheWrite } from '../../../data/writeBehind'
 import { chatQuery, chatsQuery, deletedChatsQuery, foldersQuery, modelsQuery, queryKeys, type ModelCatalog } from '../../../data/queries'
 import { ApiError, isNetworkError, mobileApi } from '../../../api/client'
 import { queueOfflineMutation } from '../../../data/mutations'
 import { projectChat, type DisplayMessage } from '../../../features/chat/projection'
 import { createFolder, deleteFolder, permanentlyDeleteChat, restoreChat, trashChat, updateChat, updateFolder } from '../../../features/chat/api'
-import {
-  enableMobileComposerDraftSync,
-  markMobileComposerDraftSyncEnablePending,
-} from '../../../features/chat/composerDrafts'
 import { useRealtimeStore, subscribeToChat, subscribeToResponse } from '../../../providers/realtimeStore'
 import { preferencePatchForServer, preferencesFromServer, usePreferencesStore } from '../../../store/preferences'
 import { useSessionStore } from '../../../store/session'
@@ -173,7 +169,6 @@ export async function hydrateProductionScope(namespace: string): Promise<void> {
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
-          syncDrafts: preferences.syncDrafts,
         },
       }
     })
@@ -286,7 +281,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
     trashRetention: state.trashRetention,
     automaticChatExpiration: state.automaticChatExpiration,
     newChatAutoExpire: state.newChatAutoExpire,
-    syncDrafts: state.syncDrafts,
     favoriteModelIds: state.favoriteModelIds,
     providerOrder: state.providerOrder,
     defaultModelId: state.defaultModelId,
@@ -303,20 +297,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
   const pickerEnabled = scopeOwned && modelPickerScopeReady
   const activeChatIsServerAddressable = Boolean(activeChatId && idSchema.safeParse(activeChatId).success)
   const serverHydrated = useRef(false)
-  const detachedDraftNamespaceRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    if (preferences.syncDrafts) {
-      if (detachedDraftNamespaceRef.current === namespace) {
-        void markMobileComposerDraftSyncEnablePending(namespace)
-      }
-      detachedDraftNamespaceRef.current = null
-      return
-    }
-    if (!scopeOwned || detachedDraftNamespaceRef.current === namespace) return
-    detachedDraftNamespaceRef.current = namespace
-    void detachAllComposerDraftServerReferences(namespace)
-  }, [namespace, preferences.syncDrafts, scopeOwned])
   const chats = useQuery({ ...chatsQuery(namespace, preferences.localChatLimit), enabled })
   const deleted = useQuery({ ...deletedChatsQuery(namespace, preferences.localChatLimit), enabled })
   const folders = useQuery({ ...foldersQuery(namespace), enabled })
@@ -383,7 +363,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
         await persisted
         if (saved) {
           await usePreferencesStore.getState().markSynchronizedPreferenceSynced(key, value)
-          if (key === 'syncDrafts' && value === true) await enableMobileComposerDraftSync(namespace)
           const latest = await mobileApi.settings()
           await usePreferencesStore.getState().applyServerPreferences(preferencesFromServer(latest.values))
         }
@@ -446,7 +425,6 @@ export function ProductionBridge({ activeChatId }: { activeChatId: string | null
           trashRetention: preferences.trashRetention,
           automaticChatExpiration: preferences.automaticChatExpiration,
           newChatAutoExpire: preferences.newChatAutoExpire,
-          syncDrafts: preferences.syncDrafts,
         },
         defaultModelId: preferences.defaultModelId ?? models.data?.data[0]?.id ?? state.defaultModelId,
         models: models.data ? models.data.data.map((model) => mapModel(model, preferences.favoriteModelIds)) : state.models,

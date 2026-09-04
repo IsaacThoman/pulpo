@@ -4,7 +4,6 @@ import {
   MOBILE_SCHEMA,
   attachmentEvictionPlan,
   cacheNamespace,
-  missingMobileDraftColumnMigrations,
   orderOutbox,
   outboxRetryDelay,
   readyOutboxPrefix,
@@ -75,31 +74,21 @@ describe('mobile SQLite schema', () => {
       .get('global', 'preferences')).toEqual({ value: '{"theme":"light"}' })
     expect(database.prepare('SELECT count(*) AS count FROM drafts WHERE namespace = ?')
       .get('two|user')).toEqual({ count: 1 })
-    const columns = database.prepare('PRAGMA table_info(drafts)').all() as Array<{ name: string }>
-    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
-      'model_id', 'preset_selections', 'agent_mode', 'auto_expire', 'editor_id',
-      'server_revision', 'server_updated_at', 'dirty', 'deleted',
-    ]))
   })
 
-  it('migrates legacy text drafts in place and preserves their content', () => {
+  it('round-trips attachment state independently for chat and new-chat drafts', () => {
     const database = new DatabaseSync(':memory:')
-    database.exec(`CREATE TABLE drafts (
-      namespace TEXT NOT NULL,
-      chat_id TEXT NOT NULL,
-      body TEXT NOT NULL,
-      attachments TEXT NOT NULL DEFAULT '[]',
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (namespace, chat_id)
-    )`)
-    database.prepare('INSERT INTO drafts(namespace, chat_id, body, updated_at) VALUES (?, ?, ?, ?)')
-      .run('one|user', 'new', 'legacy mobile draft', 1)
-    const existing = (database.prepare('PRAGMA table_info(drafts)').all() as Array<{ name: string }>)
-      .map((column) => column.name)
-    for (const statement of missingMobileDraftColumnMigrations(existing)) database.exec(statement)
+    database.exec(MOBILE_SCHEMA)
+    const attachments = JSON.stringify([{ localId: 'local-1', serverId: 'server-1', state: 'ready' }])
+    database.prepare('INSERT INTO drafts(namespace, chat_id, body, attachments, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run('one|user', 'chat-1', 'chat body', attachments, 1)
+    database.prepare('INSERT INTO drafts(namespace, chat_id, body, attachments, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .run('one|user', 'new', 'new body', '[]', 2)
 
-    expect(database.prepare('SELECT body, dirty, deleted FROM drafts WHERE namespace = ? AND chat_id = ?')
-      .get('one|user', 'new')).toEqual({ body: 'legacy mobile draft', dirty: 1, deleted: 0 })
+    expect(database.prepare('SELECT body, attachments FROM drafts WHERE namespace = ? AND chat_id = ?')
+      .get('one|user', 'chat-1')).toEqual({ body: 'chat body', attachments })
+    expect(database.prepare('SELECT body FROM drafts WHERE namespace = ? AND chat_id = ?')
+      .get('one|user', 'new')).toEqual({ body: 'new body' })
   })
 
   it('evicts the least-recently used attachment files to the configured quota', () => {

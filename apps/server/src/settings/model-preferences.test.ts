@@ -5,7 +5,6 @@ describe('account model preferences', () => {
   it('adds clean defaults to older preference records', () => {
     expect(preferencesWithModelDefaults({ theme: 'dark' })).toEqual({
       theme: 'dark', animationSpeed: 1, automaticChatExpiration: '24h', newChatAutoExpire: false,
-      syncDrafts: true,
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
       agentModes: {}, instructionPresetSelections: {}, favoriteModelIds: [], providerOrder: [],
     })
@@ -27,12 +26,6 @@ describe('account model preferences', () => {
     expect(preferencesWithModelDefaults({ newChatAutoExpire: true }).newChatAutoExpire).toBe(true)
     expect(preferencesWithModelDefaults({ newChatAutoExpire: false }).newChatAutoExpire).toBe(false)
     expect(preferencesWithModelDefaults({ newChatAutoExpire: 'false' }).newChatAutoExpire).toBe(false)
-  })
-
-  it('defaults draft synchronization on and preserves an explicit opt-out', () => {
-    expect(preferencesWithModelDefaults({}).syncDrafts).toBe(true)
-    expect(preferencesWithModelDefaults({ syncDrafts: false }).syncDrafts).toBe(false)
-    expect(preferencesWithModelDefaults({ syncDrafts: 'false' }).syncDrafts).toBe(true)
   })
 
   it('normalizes only supplied model preference fields in a patch', () => {
