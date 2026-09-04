@@ -4,14 +4,12 @@ import { useQuery } from '@tanstack/react-query'
 import { io, type Socket } from 'socket.io-client'
 import type {
   ClientToServerEvents,
-  ComposerDraftChange,
-  ComposerDraftsCleared,
   ResponseEvent,
   ServerToClientEvents,
   StateInvalidationScope,
   SyncResult,
 } from '@pulpo/contracts'
-import { liveStateInvalidationScopes, mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
+import { mergeRevisionInvalidation, type RevisionInvalidationBatch } from '@pulpo/client-core'
 import { apiRequest, ApiError } from '@/lib/api'
 import { localDb } from '@/lib/local-first/database'
 import { flushOutbox } from '@/lib/local-first/outbox'
@@ -22,15 +20,6 @@ import { useCatalog } from '@/stores/catalog'
 import { coalesceResponseEvents, groupResponseEvents, isTerminalSnapshot, stateInvalidationQueryKeys, syncInvalidationScopes, takeContiguousResponseEvents } from './response-sync'
 import { isDesktopRuntime, runtimeInstanceUrl, runtimeSessionToken } from '@/lib/runtime'
 import { adminAccessRequiredChatId } from '@/features/admin-chat/route-access'
-import {
-  applyWebComposerDraftChange,
-  applyWebComposerDraftsCleared,
-  flushDirtyWebComposerDrafts,
-  resumeWebComposerDraftSyncEnable,
-} from '@/lib/local-first/composer-drafts'
-import { useSettings } from '@/stores/settings'
-import { useUploadOutbox } from '@/stores/upload-outbox'
-import { webRealtimeClientId } from '@/lib/realtime-client-id'
 
 type PulpoSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 
@@ -38,6 +27,14 @@ function invalidateStateScope(scope: StateInvalidationScope, userId: string): vo
   for (const queryKey of stateInvalidationQueryKeys(scope, userId)) {
     void queryClient.invalidateQueries({ queryKey })
   }
+}
+
+function tabId(): string {
+  const existing = sessionStorage.getItem('pulpo-tab-id')
+  if (existing) return existing
+  const created = crypto.randomUUID()
+  sessionStorage.setItem('pulpo-tab-id', created)
+  return created
 }
 
 export function ChatDataBridge() {
@@ -61,7 +58,7 @@ export function ChatDataBridge() {
   const subscribedResponseIdsRef = useRef(new Set<string>())
   const loadCatalog = useCatalog((state) => state.load)
   const revisionRef = useRef(user?.stateRevision ?? 0)
-  const currentTabId = useMemo(webRealtimeClientId, [])
+  const currentTabId = useMemo(tabId, [])
   const networkReady = !isDesktopRuntime() || instanceReady
   const activeChatIdRef = useRef(chatId)
   activeChatIdRef.current = chatId
@@ -147,10 +144,8 @@ export function ChatDataBridge() {
       const batch = pendingRevision
       pendingRevision = undefined
       if (!batch) return
-      if (batch.chatIds.length || batch.accountOnlyRevisions.length) {
-        void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
-        void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
-      }
+      void queryClient.invalidateQueries({ queryKey: ['chats', userId] })
+      void queryClient.invalidateQueries({ queryKey: ['deleted-chats', userId] })
       for (const changedChatId of batch.chatIds) {
         void queryClient.invalidateQueries({ queryKey: ['chat', userId, changedChatId] })
       }
@@ -197,7 +192,7 @@ export function ChatDataBridge() {
       }
     }
     const applySync = (result: SyncResult) => {
-      revisionRef.current = Math.max(revisionRef.current, result.accountRevision)
+      revisionRef.current = result.accountRevision
       for (const events of groupResponseEvents(result.events)) {
         for (const event of events) queueEvent(event)
         flushEventBatches(events[0]?.responseId)
@@ -233,7 +228,6 @@ export function ChatDataBridge() {
       }
     }
     const sync = async () => {
-      if (useSettings.getState().syncDrafts) await flushDirtyWebComposerDrafts(userId)
       const cursors = await localDb.responseCursors.where('tabId').equals(currentTabId).toArray()
       socket.emit('client.sync', {
         tabId: currentTabId,
@@ -248,14 +242,11 @@ export function ChatDataBridge() {
         socket.emit('response.subscribe', { responseId, afterSequence: cursor?.sequence ?? 0 })
         subscribedResponseIds.add(responseId)
       }
-      void flushOutbox(userId).then(async () => {
-        if (useSettings.getState().syncDrafts) await resumeWebComposerDraftSyncEnable(userId)
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
-          queryClient.invalidateQueries({ queryKey: ['folders', userId] }),
-          queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
-        ])
-      })
+      void flushOutbox(userId).then(() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['chats', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['folders', userId] }),
+        queryClient.invalidateQueries({ queryKey: ['settings', userId] }),
+      ]))
     }
 
     socket.on('connect', sync)
@@ -265,32 +256,7 @@ export function ChatDataBridge() {
       queueRevisionInvalidation({ revision, chatId: changedChatId })
     })
     socket.on('account.revision', ({ revision, scopes }) => {
-      revisionRef.current = Math.max(revisionRef.current, revision)
-      if (!scopes) {
-        queueRevisionInvalidation({ revision })
-        return
-      }
-      const liveScopes = liveStateInvalidationScopes(scopes)
-      if (liveScopes.length) queueRevisionInvalidation({ revision, scopes: liveScopes })
-    })
-    socket.on('composer.draft.changed', (event: ComposerDraftChange) => {
-      revisionRef.current = Math.max(revisionRef.current, event.revision)
-      if (event.editorId !== currentTabId) {
-        useUploadOutbox.getState().retainDraftAfterSubmission(event.scope)
-      }
-      void applyWebComposerDraftChange(userId, event).then((applied) => {
-        if (!applied) return
-        queryClient.setQueryData<{ draft: ComposerDraftChange['draft']; revision: number }>(
-          ['drafts', userId, event.scope],
-          (current) => current && current.revision >= event.revision
-            ? current
-            : { draft: event.draft, revision: event.revision },
-        )
-      })
-    })
-    socket.on('composer.drafts.cleared', (event: ComposerDraftsCleared) => {
-      revisionRef.current = Math.max(revisionRef.current, event.revision)
-      void applyWebComposerDraftsCleared(userId, event)
+      queueRevisionInvalidation({ revision, scopes })
     })
     const wake = () => { if (document.visibilityState === 'visible') void sync() }
     const online = () => void sync()

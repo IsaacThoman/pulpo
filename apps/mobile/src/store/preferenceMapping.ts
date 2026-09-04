@@ -16,7 +16,6 @@ export interface Preferences {
   trashRetention: TrashRetentionPreference
   automaticChatExpiration: AutomaticChatExpirationPreference
   newChatAutoExpire: boolean
-  syncDrafts: boolean
   favoriteModelIds: string[]
   providerOrder: string[]
   defaultModelId: string | null
@@ -29,7 +28,7 @@ export interface Preferences {
 export const defaultPreferences: Preferences = {
   theme: 'system', textSize: 'default', streamResponses: true, showReasoning: true, memoryEnabled: false,
   haptics: true, sendWithEnter: true, attachmentCacheMb: 256, localChatLimit: 50,
-  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, syncDrafts: true, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
+  trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false, favoriteModelIds: [], providerOrder: [], defaultModelId: null, agentModes: {},
   generation: {},
 }
 
@@ -62,7 +61,6 @@ export function preferencesFromServer(values: Record<string, unknown>): Partial<
     result.automaticChatExpiration = values.automaticChatExpiration as AutomaticChatExpirationPreference
   }
   if (typeof values.newChatAutoExpire === 'boolean') result.newChatAutoExpire = values.newChatAutoExpire
-  if (typeof values.syncDrafts === 'boolean') result.syncDrafts = values.syncDrafts
   return result
 }
 
@@ -91,7 +89,7 @@ function validAgentModes(value: unknown): Preferences['agentModes'] {
 
 export function serverPreferenceKey(key: keyof Preferences): string | null {
   return key === 'attachmentCacheMb' ? 'localAttachmentCacheMb'
-    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'syncDrafts', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
+    : ['theme', 'sendWithEnter', 'streamResponses', 'showReasoning', 'memoryEnabled', 'localChatLimit', 'trashRetention', 'automaticChatExpiration', 'newChatAutoExpire', 'defaultModelId', 'favoriteModelIds', 'providerOrder', 'generation', 'agentModes'].includes(key)
       ? key
       : null
 }

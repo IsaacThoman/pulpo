@@ -1,6 +1,6 @@
 import { queryClient } from '@/lib/query-client'
-import { localDb } from './database'
-import { deleteLocalComposerDraft } from './composer-drafts'
+import { localAccountKey, localDb } from './database'
+import { clearRuntimeComposerDrafts } from './composer-drafts'
 
 interface LocallyCachedChat {
   attachments?: Array<{ id: string }>
@@ -13,7 +13,7 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
   if (!ids.length) return
 
   const idSet = new Set(ids)
-  await Promise.all(ids.map((chatId) => deleteLocalComposerDraft(userId, chatId)))
+  clearRuntimeComposerDrafts(userId, ids)
   const attachmentIds = new Set<string>()
   const responseIds = new Set<string>()
   for (const chatId of ids) {
@@ -26,7 +26,8 @@ export async function clearLocalChats(userId: string, chatIds: string[]): Promis
     rows?.filter((row) => !idSet.has(row.id)),
   )
 
-  await localDb.transaction('rw', localDb.attachmentBlobs, localDb.responseCursors, async () => {
+  await localDb.transaction('rw', localDb.drafts, localDb.attachmentBlobs, localDb.responseCursors, async () => {
+    await localDb.drafts.where('userId').equals(localAccountKey(userId)).filter((draft) => idSet.has(draft.chatId)).delete()
     if (attachmentIds.size) await localDb.attachmentBlobs.bulkDelete([...attachmentIds])
     if (responseIds.size) {
       await localDb.responseCursors.filter((cursor) => responseIds.has(cursor.responseId)).delete()

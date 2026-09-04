@@ -27,7 +27,6 @@ import { workspaceContinueWithoutAgentIsAvailable } from '../agent/capacity.js'
 import { scheduleChatIndex, scheduleUserIndex } from '../episodic-memory/queue.js'
 import { createChatExportPayload } from './export-format.js'
 import { importedModelIdentity } from './modelIdentity.js'
-import { deleteComposerDraft, deleteComposerDraftsForChats } from '../drafts/service.js'
 
 export const CHAT_IMPORT_ROUTE_OPTIONS = { bodyLimit: 100 * 1024 * 1024 } as const
 
@@ -196,7 +195,6 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       purgeStartedAt: retention === 'instant' ? now : null,
       updatedAt: now,
     }).where(and(eq(chats.userId, user.id), isNull(chats.deletedAt)))
-    await deleteComposerDraftsForChats(user.id, ids, 'chat_deleted')
     await cancelChatWork(ids)
     if (retention === 'instant' && ids.length) {
       await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
@@ -300,14 +298,6 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
         parentResponseId: null,
         idempotencyKey: request.headers['idempotency-key'] as string | undefined,
       })
-      if (!chat.temporary) {
-        await deleteComposerDraft({
-          userId: user.id,
-          scope: 'new',
-          editorId: 'server:send',
-          reason: 'sent',
-        })
-      }
       if (!chat.temporary) await bumpRevision(user.id, chat.id)
       if (inserted && !chat.temporary && chat.expiresAt) {
         await scheduleNormalChatExpiry({ chatId: chat.id, userId: user.id, expiresAt: chat.expiresAt })
@@ -571,7 +561,6 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       updatedAt: now,
     }).where(and(eq(chats.id, id), eq(chats.userId, user.id), isNull(chats.deletedAt))).returning({ id: chats.id })
     if (!result.length) throw notFound('Chat')
-    await deleteComposerDraftsForChats(user.id, [id], 'chat_deleted')
     await db.delete(queuedMessages).where(and(eq(queuedMessages.chatId, id), eq(queuedMessages.userId, user.id)))
     await cancelChatWork([id])
     if (retention === 'instant') {
@@ -605,7 +594,6 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const { id } = request.params as { id: string }
     const deleting = await markChatsForPurge([id], user.id)
     if (!deleting) throw notFound('Deleted chat')
-    await deleteComposerDraftsForChats(user.id, [id], 'chat_deleted')
     await maintenanceQueue.add('purge-chats', { type: 'purge-chats', payload: { userId: user.id } }, {
       jobId: `purge-chat-${id}-${Date.now()}`,
     })
@@ -636,12 +624,6 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
       parentResponseId: input.parentResponseId,
       idempotencyKey: request.headers['idempotency-key'] as string | undefined,
     })
-    await deleteComposerDraft({
-      userId: user.id,
-      scope: id,
-      editorId: 'server:send',
-      reason: 'sent',
-    })
     await bumpRevision(user.id, id)
     reply.code(202)
     return { response: toSnapshot(response) }
@@ -654,12 +636,6 @@ export async function registerChatRoutes(app: FastifyInstance): Promise<void> {
     const result = await createQueuedMessage(user.id, id, input, {
       billingUserId: billingUserForRequest(request).id,
       actorUserId: request.adminChatAccess?.actorUser.id,
-    })
-    await deleteComposerDraft({
-      userId: user.id,
-      scope: id,
-      editorId: 'server:send',
-      reason: 'sent',
     })
     reply.code(202)
     return result

@@ -8,17 +8,12 @@ import {
 
 describe('full backup format', () => {
   it('includes memory documents and episodic chat vectors in dependency order', () => {
-    const attachments = FULL_BACKUP_TABLES.indexOf('attachments')
-    const drafts = FULL_BACKUP_TABLES.indexOf('composer_drafts')
-    const draftAttachments = FULL_BACKUP_TABLES.indexOf('composer_draft_attachments')
     const documents = FULL_BACKUP_TABLES.indexOf('user_memory_documents')
     const revisions = FULL_BACKUP_TABLES.indexOf('user_memory_document_revisions')
     const generation = FULL_BACKUP_TABLES.indexOf('episodic_memory_generations')
     const chatVectors = FULL_BACKUP_TABLES.indexOf('chat_turn_embeddings')
     const metrics = FULL_BACKUP_TABLES.indexOf('episodic_memory_metric_buckets')
     expect(revisions).toBeGreaterThan(documents)
-    expect(drafts).toBeGreaterThan(attachments)
-    expect(draftAttachments).toBeGreaterThan(drafts)
     expect(chatVectors).toBeGreaterThan(generation)
     expect(metrics).toBeGreaterThan(chatVectors)
     expect(FULL_BACKUP_TABLES).not.toEqual(expect.arrayContaining(['memories', 'saved_memory_embeddings']))
@@ -30,8 +25,6 @@ describe('full backup format', () => {
 
   it('accepts full backups created before episodic memory was introduced', () => {
     expect(OPTIONAL_TABLES_IN_LEGACY_BACKUPS).toEqual([
-      'composer_drafts',
-      'composer_draft_attachments',
       'user_memory_documents',
       'user_memory_document_revisions',
       'episodic_memory_generations',

@@ -144,7 +144,6 @@ export interface AppPreferences {
   trashRetention: TrashRetention;
   automaticChatExpiration: AutomaticChatExpiration;
   newChatAutoExpire: boolean;
-  syncDrafts: boolean;
 }
 
 export interface PersistedPrototypeState {
