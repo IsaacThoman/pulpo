@@ -115,6 +115,21 @@ body {
   display: none;
 }
 
+/* Extend only the background fade below the header without changing layout. */
+.chat-header::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 125%;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in oklab, var(--background) 80%, transparent) 0%,
+    color-mix(in oklab, var(--background) 0%, transparent) 100%
+  );
+}
+
 @media (width < 750px) {
   .mobile-sidebar-opener {
     display: flex;
