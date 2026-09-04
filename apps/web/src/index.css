@@ -276,11 +276,6 @@ html[data-desktop-os="win32"] .desktop-shell {
 
 html[data-desktop="true"] .desktop-titlebar {
   -webkit-app-region: drag;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in oklab, var(--background) 60%, transparent),
-    transparent
-  );
 }
 
 .chat-header {
@@ -327,14 +322,6 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .app-main {
   margin-top: -38px;
 }
 
-html[data-desktop="true"] .chat-header {
-  transition: height 300ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header {
-  height: 0;
-}
-
 html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main,
 html[data-desktop-os="win32"] .desktop-sidebar-collapsed .app-main {
   margin-top: 0;
@@ -349,22 +336,10 @@ html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main > div > he
     transition: none;
   }
 
-  html[data-desktop="true"] .chat-header {
-    transition: none;
-  }
-
   html[data-desktop="true"] .desktop-model-titlebar-slot .model-selector-set-default {
     animation: none;
     transition: none;
   }
-}
-
-html[data-desktop="true"] .desktop-titlebar[data-temporary-chat="true"] {
-  background: linear-gradient(
-    to bottom,
-    color-mix(in oklab, var(--desktop-temporary-chat-background) 60%, transparent),
-    transparent
-  );
 }
 
 html[data-desktop="true"] [data-desktop-temporary-chat="true"] {
