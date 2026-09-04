@@ -3,6 +3,7 @@ import {
   DESKTOP_ORIGIN,
   desktopDevelopmentRequestHeaders,
   desktopDevelopmentResponseHeaders,
+  desktopPermissionAllowed,
   isTrustedRendererUrl,
   rendererAssetPath,
   validatedExternalUrl,
@@ -14,6 +15,19 @@ describe('desktop security helpers', () => {
     expect(isTrustedRendererUrl(`${DESKTOP_ORIGIN}/c/one`)).toBe(true)
     expect(isTrustedRendererUrl('http://localhost:5174/', 'http://localhost:5174')).toBe(true)
     expect(isTrustedRendererUrl('https://pulpo.example/')).toBe(false)
+  })
+
+  it('allows clipboard writes only from trusted renderers', () => {
+    expect(desktopPermissionAllowed(`${DESKTOP_ORIGIN}/c/one`, 'clipboard-sanitized-write')).toBe(true)
+    expect(desktopPermissionAllowed('http://localhost:5174/c/one', 'clipboard-sanitized-write', undefined, 'http://localhost:5174')).toBe(true)
+    expect(desktopPermissionAllowed('https://pulpo.example/c/one', 'clipboard-sanitized-write')).toBe(false)
+    expect(desktopPermissionAllowed(`${DESKTOP_ORIGIN}/c/one`, 'clipboard-read')).toBe(false)
+  })
+
+  it('keeps desktop media access limited to audio', () => {
+    expect(desktopPermissionAllowed(DESKTOP_ORIGIN, 'media', ['audio'])).toBe(true)
+    expect(desktopPermissionAllowed(DESKTOP_ORIGIN, 'media', ['video'])).toBe(false)
+    expect(desktopPermissionAllowed(DESKTOP_ORIGIN, 'media', ['audio', 'video'])).toBe(false)
   })
 
   it('bridges the local renderer through the trusted desktop CORS origin', () => {

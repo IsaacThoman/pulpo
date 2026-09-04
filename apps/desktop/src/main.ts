@@ -21,6 +21,7 @@ import {
   DESKTOP_ORIGIN,
   desktopDevelopmentRequestHeaders,
   desktopDevelopmentResponseHeaders,
+  desktopPermissionAllowed,
   isTrustedRendererUrl,
   rendererAssetPath,
   validatedExternalUrl,
@@ -282,11 +283,16 @@ function configureSession(): void {
     })
   })
   contentsSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
-    const trusted = isTrustedRendererUrl(webContents.getURL(), developmentUrl)
-    const audioOnly = permission === 'media'
-      && 'mediaTypes' in details
-      && (!details.mediaTypes || details.mediaTypes.every((type: string) => type === 'audio'))
-    callback(trusted && audioOnly)
+    const requestingUrl = 'requestingUrl' in details && typeof details.requestingUrl === 'string'
+      ? details.requestingUrl
+      : webContents.getURL()
+    const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined
+    callback(desktopPermissionAllowed(requestingUrl, permission, mediaTypes, developmentUrl))
+  })
+  contentsSession.setPermissionCheckHandler((_webContents, permission, requestingOrigin, details) => {
+    const requestingUrl = details.requestingUrl ?? requestingOrigin
+    const mediaTypes = permission === 'media' ? [details.mediaType ?? 'unknown'] : undefined
+    return desktopPermissionAllowed(requestingUrl, permission, mediaTypes, developmentUrl)
   })
   contentsSession.on('will-download', (_event, item, webContents) => {
     prepareDesktopDownload(item, isTrustedRendererUrl(webContents.getURL(), developmentUrl))

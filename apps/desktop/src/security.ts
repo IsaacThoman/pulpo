@@ -32,6 +32,17 @@ export function isTrustedRendererUrl(value: string, developmentOrigin?: string):
   }
 }
 
+export function desktopPermissionAllowed(
+  rendererUrl: string,
+  permission: string,
+  mediaTypes?: readonly string[],
+  developmentOrigin?: string,
+): boolean {
+  if (!isTrustedRendererUrl(rendererUrl, developmentOrigin)) return false
+  if (permission === 'clipboard-sanitized-write') return true
+  return permission === 'media' && (!mediaTypes || mediaTypes.every((type) => type === 'audio'))
+}
+
 export function validatedExternalUrl(value: string, allowLocalhost: boolean): string {
   const url = new URL(value)
   const localhost = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
