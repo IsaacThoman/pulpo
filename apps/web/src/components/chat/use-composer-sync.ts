@@ -1,10 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { composerPatch } from '@pulpo/client-core'
 import type { ComposerState } from '@pulpo/contracts'
 import { webComposerSync } from '@/lib/local-first/composer-sync'
 
 export function useComposerSync(userId: string | undefined, draftId: string, state: ComposerState, hydrated: boolean, paused: boolean, apply: (state: ComposerState) => void, editing = false) {
-  const [recoverable, setRecoverable] = useState(false)
   const identity = `${userId ?? "local"}\u0000${draftId}`
   const latest = useRef({ state, apply, paused, editing, identity })
   latest.current = { state, apply, paused, editing, identity }
@@ -25,7 +24,6 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     void sync.open(draftId, latest.current.state, (checkpoint) => {
       if (disposed || latest.current.identity !== identity) return
       opened.current = identity
-      setRecoverable(Boolean(checkpoint.recovery))
       const remote = { ...checkpoint.snapshot.state, ...checkpoint.pending }
       if (!remote.model) remote.model = latest.current.state.model
       if (latest.current.editing) deferred.current = remote
@@ -54,5 +52,5 @@ export function useComposerSync(userId: string | undefined, draftId: string, sta
     baseline.current = state
     sync.edit(draftId, patch)
   })
-  return { sync, skipNextEdit: () => { applying.current = true }, recoverable, recover: () => sync?.recover(draftId) }
+  return { sync, skipNextEdit: () => { applying.current = true } }
 }

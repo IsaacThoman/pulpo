@@ -259,7 +259,7 @@ export function Composer({
       .map((a) => ({ id: a.id, name: a.name, mimeType: a.mimeType, size: a.size })),
     model: { id: modelId, presets: selections }, agentMode: agentModeEnabled, temporary, autoExpire,
   }
-  const { sync: composerSync, skipNextEdit, recoverable, recover } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated, Boolean(editingExisting || recovery || submitting), (remote) => {
+  const { sync: composerSync, skipNextEdit } = useComposerSync(syncEnabled ? userId : undefined, draftId, sharedComposerState, draftHydrated, Boolean(editingExisting || recovery || submitting), (remote) => {
     const currentIds = preservedDraftRef.current?.attachmentIds ?? attachmentIdsRef.current
     const pending = currentIds.filter((id) => uploadsRef.current[id] && uploadsRef.current[id].status !== 'ready')
     const currentByServerId = new Map(currentIds.map((id) => [uploadsRef.current[id]?.id, id]))
@@ -995,7 +995,6 @@ export function Composer({
           </div>
         )}
 
-        {recoverable && <button type="button" onClick={recover} className="text-xs text-muted-foreground hover:underline">{ui("Recover local draft")}</button>}
         <textarea
           ref={ref}
           value={value}

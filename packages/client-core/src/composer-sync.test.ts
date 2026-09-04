@@ -48,16 +48,17 @@ describe('composer realtime synchronization', () => {
     expect(f.snapshot().state.content).toBe('last edit')
     a.sync.dispose(); b.sync.dispose()
   })
-  it('keeps the server version and a recoverable local copy after offline conflict', async () => {
+  it('adopts the server version and discards pending edits after offline conflict', async () => {
     const f = fixture(), a = f.client('a'), b = f.client('b')
     await a.open(); await b.open()
     a.sync.disconnect(); a.sync.edit('new', { content: 'offline text' })
     b.sync.edit('new', { content: 'online text' }); await b.sync.flush('new')
     a.sync.connect(f.transport)
-    await vi.waitFor(() => expect(a.listener.mock.lastCall?.[0].recovery?.content).toBe('offline text'))
+    await vi.waitFor(() => expect(a.listener.mock.lastCall?.[0].snapshot.state.content).toBe('online text'))
+    expect(a.listener.mock.lastCall?.[0].pending).toEqual({})
     expect(f.snapshot().state.content).toBe('online text')
-    a.sync.recover('new'); await a.sync.flush('new')
-    expect(f.snapshot().state.content).toBe('offline text')
+    await a.sync.flush('new')
+    expect(f.snapshot().state.content).toBe('online text')
     a.sync.dispose(); b.sync.dispose()
   })
   it('preserves newer edits on conditional send clear', async () => {
@@ -76,10 +77,20 @@ describe('composer realtime synchronization', () => {
     await a.sync.clear('new', (await a.sync.flush('new'))!)
     b.sync.edit('new', { content: 'stale delayed typing' }); await b.sync.flush('new')
     expect(f.snapshot().state.content).toBe('')
-    expect(b.listener.mock.lastCall?.[0].recovery?.content).toBe('stale delayed typing')
+    expect(b.listener.mock.lastCall?.[0].pending).toEqual({})
     const c = f.client('c', saved); await c.open(state('submitted'))
     expect(f.snapshot().state.content).toBe('')
     a.sync.dispose(); b.sync.dispose(); c.sync.dispose()
+  })
+  it('drops retired recovery copies when loading and rewriting a checkpoint', async () => {
+    const f = fixture()
+    const legacy = { snapshot: f.snapshot(), pending: {}, recovery: state('old recovery') }
+    const a = f.client('a', legacy)
+    await a.open()
+    await vi.waitFor(() => expect(a.saved()).not.toHaveProperty('recovery'))
+    expect(a.listener.mock.lastCall?.[0]).not.toHaveProperty('recovery')
+    expect(f.snapshot().state.content).toBe('')
+    a.sync.dispose()
   })
   it('persists pending edits while offline and replays when the base still matches', async () => {
     const f = fixture(), a = f.client('a')
@@ -114,6 +125,16 @@ describe('composer realtime synchronization', () => {
 })
 
 describe('submission acknowledgments', () => {
+  it('restores failed sends only when the draft has not changed', async () => {
+    const f = fixture(), a = f.client('a')
+    await a.open(state('submitted'))
+    expect(a.sync.canRestoreSubmission('new', state('submitted'))).toBe(true)
+    a.sync.edit('new', { content: 'new draft' })
+    expect(a.sync.canRestoreSubmission('new', state('submitted'))).toBe(false)
+    await a.sync.flush('new')
+    expect(f.snapshot().state.content).toBe('new draft')
+    a.sync.dispose()
+  })
   it('clears the matching accepted draft after reconnect', async () => {
     const f = fixture(), a = f.client('a')
     await a.open(state('submitted'))
