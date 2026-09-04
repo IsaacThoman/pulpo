@@ -3,6 +3,7 @@ import {
   chargeCentsForCredits,
   effectivePlan,
   remainingPercentage,
+  resolvePlanEntitlement,
   resolveSubscriptionChange,
   splitReservationMicros,
   utcWeekEnd,
@@ -55,6 +56,28 @@ describe('billing plan calculations', () => {
     ], now)).toBe('fat')
     expect(effectivePlan([{ plan: 'fat', status: 'revoked', paidThrough: future }], now)).toBe('baby')
     expect(effectivePlan([{ plan: 'fat', status: 'past_due', paidThrough: now }], now)).toBe('baby')
+  })
+
+  it.each(['baby', 'eight', 'fat'] as const)('uses an explicit %s plan override without changing the subscribed plan', (planOverride) => {
+    const future = new Date('2026-09-01T00:00:00Z')
+    const result = resolvePlanEntitlement(
+      [{ plan: 'eight', status: 'active', paidThrough: future }],
+      planOverride,
+      new Date('2026-08-17T00:00:00Z'),
+    )
+    expect(result).toEqual({ subscriptionPlan: 'eight', plan: planOverride, planOverridden: true })
+  })
+
+  it('returns to the subscribed plan when the override is reset or invalid', () => {
+    const future = new Date('2026-09-01T00:00:00Z')
+    const subscriptions = [{ plan: 'fat', status: 'active', paidThrough: future }]
+    const now = new Date('2026-08-17T00:00:00Z')
+    expect(resolvePlanEntitlement(subscriptions, null, now)).toEqual({
+      subscriptionPlan: 'fat', plan: 'fat', planOverridden: false,
+    })
+    expect(resolvePlanEntitlement(subscriptions, 'enterprise', now)).toEqual({
+      subscriptionPlan: 'fat', plan: 'fat', planOverridden: false,
+    })
   })
 
   it('resolves mid-cycle plan changes', () => {

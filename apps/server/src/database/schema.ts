@@ -971,6 +971,7 @@ export const usageEvents = pgTable('usage_events', {
 export const billingAccounts = pgTable('billing_accounts', {
   userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
   stripeCustomerId: text('stripe_customer_id'),
+  planOverride: text('plan_override'),
   weeklyLimitOverrideMicros: bigint('weekly_limit_override_micros', { mode: 'number' }),
   fiveHourLimitOverrideMicros: bigint('five_hour_limit_override_micros', { mode: 'number' }),
   storageLimitOverrideBytes: bigint('storage_limit_override_bytes', { mode: 'number' }),
@@ -982,6 +983,7 @@ export const billingAccounts = pgTable('billing_accounts', {
   ...timestamps,
 }, (table) => [
   uniqueIndex('billing_accounts_stripe_customer_unique').on(table.stripeCustomerId),
+  check('billing_accounts_plan_override_check', sql`${table.planOverride} is null or ${table.planOverride} in ('baby', 'eight', 'fat')`),
   check('billing_accounts_weekly_override_check', sql`${table.weeklyLimitOverrideMicros} is null or ${table.weeklyLimitOverrideMicros} >= 0`),
   check('billing_accounts_five_hour_override_check', sql`${table.fiveHourLimitOverrideMicros} is null or ${table.fiveHourLimitOverrideMicros} >= 0`),
   check('billing_accounts_storage_override_check', sql`${table.storageLimitOverrideBytes} is null or ${table.storageLimitOverrideBytes} >= 0`),

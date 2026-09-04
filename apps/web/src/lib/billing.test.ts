@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { planChoiceDisabled, planChoiceLabel } from './billing'
+import { managedBillingPlan, planChoiceDisabled, planChoiceLabel } from './billing'
 
 describe('plan comparison choices', () => {
+  it('uses only the Stripe subscription for plan-management state', () => {
+    expect(managedBillingPlan({ subscription: null })).toBe('baby')
+    expect(managedBillingPlan({ subscription: {
+      plan: 'eight', status: 'active', cancelAtPeriodEnd: false, currentPeriodEnd: null,
+    } })).toBe('eight')
+  })
+
   it('lets paid users upgrade, downgrade, or switch to Baby', () => {
     expect(planChoiceLabel('fat', 'eight', false)).toBe('Upgrade for $24/month')
     expect(planChoiceLabel('eight', 'fat', false)).toBe('Downgrade to $8/month')

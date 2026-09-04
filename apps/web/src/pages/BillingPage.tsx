@@ -18,7 +18,7 @@ import { formatBalance, formatDate } from '@/lib/format'
 import { creditCentsFromInput } from '@/lib/billing-pricing'
 import { apiRequest } from '@/lib/api'
 import { openExternalUrl } from '@/lib/runtime'
-import { billingPlanName, fetchBillingSummary, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
+import { billingPlanName, fetchBillingSummary, managedBillingPlan, planChoiceDisabled, planChoiceLabel, type BillingPlan } from '@/lib/billing'
 import { queryClient } from '@/lib/query-client'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -164,9 +164,9 @@ export function BillingPage() {
 
   const changePlan = async (plan: BillingPlan) => {
     if (!summary) return
-    const managedPlan = summary.subscription?.plan ?? summary.plan
+    const managedPlan = managedBillingPlan(summary)
     if (plan === managedPlan && !summary.subscription?.cancelAtPeriodEnd) return
-    if (!summary.subscription && summary.plan === 'baby') {
+    if (!summary.subscription) {
       if (plan === 'baby') return
       return startSubscription(plan)
     }
@@ -185,16 +185,19 @@ export function BillingPage() {
     }
   }
 
-  const managedPlan = summary?.subscription?.plan ?? summary?.plan ?? 'baby'
-  const planSubtitle = !summary
+  const managedPlan = summary ? managedBillingPlan(summary) : 'baby'
+  const subscriptionSubtitle = !summary
     ? 'Free · Pay as you go'
     : summary.subscription?.status === 'past_due'
-      ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · access through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-      : summary.plan === 'baby'
+      ? `Payment past due${summary.subscription.currentPeriodEnd ? ` · ${summary.planOverridden ? 'billing period' : 'access'} through ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+      : !summary.subscription
         ? 'Free · Pay as you go'
       : summary.subscription?.cancelAtPeriodEnd
         ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
         : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
+  const planSubtitle = summary?.planOverridden
+    ? `${ui("Admin-granted access")} · ${ui("Billed plan")}: ${billingPlanName(managedPlan)} · ${subscriptionSubtitle}`
+    : subscriptionSubtitle
 
   return (
     <div className="flex h-full flex-col">
@@ -244,7 +247,7 @@ export function BillingPage() {
             <div className="py-1 lg:col-span-2 lg:pl-6">
               <div className="flex items-start justify-between gap-3">
                 <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{planSubtitle}</div></div>
-                <PlanBadge plan={summary?.plan ?? 'baby'} />
+                <PlanBadge plan={summary?.plan ?? 'baby'} overridden={summary?.planOverridden ?? false} />
               </div>
               <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
               <Button className="mt-4" variant={summary?.subscription ? 'outline' : 'default'} size="sm" disabled={!summary || submitting} onClick={() => setPlanOpen(true)}>
@@ -313,8 +316,8 @@ function Quote({ credits, fee, charge }: { credits: number; fee: number; charge:
   return <div className="space-y-2 rounded-lg bg-muted/50 p-4 text-sm"><div className="flex justify-between gap-4"><span className="text-muted-foreground">{ui("Credits added")}</span><span className="tabular-nums">{formatBalance(credits)}</span></div><div className="flex justify-between gap-4"><span className="text-muted-foreground">{ui("Platform fee")}</span><span className="tabular-nums">{formatBalance(fee)}</span></div><Separator className="my-2" /><div className="flex justify-between gap-4 font-medium"><span>{ui("Total before tax")}</span><span className="tabular-nums">{formatBalance(charge)}</span></div></div>
 }
 
-function PlanBadge({ plan }: { plan: BillingPlan }) {
-  return <Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{plan === 'baby' ? ui("Current plan") : ui("Active")}</Badge>
+function PlanBadge({ plan, overridden }: { plan: BillingPlan; overridden: boolean }) {
+  return <Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Current plan") : ui("Active")}</Badge>
 }
 
 function PlanColumn({ plan, current, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {

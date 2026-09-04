@@ -11,13 +11,15 @@ import {
   weeklyUsagePeriods,
 } from '../database/schema.js'
 import { parseBillingSettings } from '../settings/application-settings.js'
-import { effectivePlan, FIVE_HOURS_MS, fiveHourEnd, remainingPercentage, utcWeekEnd, utcWeekStart, type BillingPlan } from './plans.js'
+import { FIVE_HOURS_MS, fiveHourEnd, remainingPercentage, resolvePlanEntitlement, utcWeekEnd, utcWeekStart, type BillingPlan } from './plans.js'
 import { storageDefaultForPlan } from './storage-entitlements.js'
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export interface BillingEntitlements {
+  subscriptionPlan: BillingPlan
   plan: BillingPlan
+  planOverridden: boolean
   weeklyLimitMicros: number
   weeklySpentMicros: number
   weeklyPendingMicros: number
@@ -52,7 +54,9 @@ export async function loadBillingEntitlements(
     }).from(budgetReservationFunders).innerJoin(budgetReservations, eq(budgetReservations.id, budgetReservationFunders.reservationId))
       .where(and(eq(budgetReservationFunders.userId, userId), eq(budgetReservations.status, 'pending')))
     return {
+      subscriptionPlan: 'baby',
       plan: 'baby',
+      planOverridden: false,
       weeklyLimitMicros: 0,
       weeklySpentMicros: 0,
       weeklyPendingMicros: 0,
@@ -123,7 +127,7 @@ export async function loadBillingEntitlements(
       : Promise.resolve([{ fiveHour: 0 }]),
   ])
 
-  const plan = effectivePlan(subscriptions, now)
+  const { subscriptionPlan, plan, planOverridden } = resolvePlanEntitlement(subscriptions, account?.planOverride, now)
   const settings = parseBillingSettings(setting?.value)
   const defaultLimit = plan === 'eight'
     ? settings.eightWeeklyLimitMicros
@@ -148,7 +152,9 @@ export async function loadBillingEntitlements(
   const fiveHourRemainingMicros = Math.max(0, fiveHourLimitMicros - fiveHourSpentMicros - fiveHourPendingMicros)
 
   return {
+    subscriptionPlan,
     plan,
+    planOverridden,
     weeklyLimitMicros,
     weeklySpentMicros,
     weeklyPendingMicros,
