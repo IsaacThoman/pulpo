@@ -124,6 +124,7 @@ export function AdminUsersPage() {
               <tr className="border-b">
                 <th className="px-3 py-2">{ui("Role")}</th>
                 <th className="px-3 py-2">{ui("Display name")}</th>
+                <th className="px-3 py-2">{ui("Last active")}</th>
                 <th className="px-3 py-2">{ui("Email")}</th>
                 {billingEnabled && <th className="px-3 py-2">{ui("Plan")}</th>}
                 {billingEnabled && <th className="px-3 py-2 text-right">{ui("Weekly limit")}</th>}
@@ -131,7 +132,6 @@ export function AdminUsersPage() {
                 {billingEnabled && <th className="px-3 py-2 text-right">{ui("Invites")}</th>}
                 <th className="px-3 py-2 text-right">{ui("Balance")}</th>
                 <th className="px-3 py-2 text-right">{ui("File storage")}</th>
-                <th className="px-3 py-2">{ui("Last active")}</th>
                 <th className="px-3 py-2">{ui("Created")}</th>
                 <th className="px-3 py-2 text-right">{ui("Actions")}</th>
               </tr>
@@ -160,6 +160,9 @@ export function AdminUsersPage() {
                       <span>{u.name}<span className="ml-1.5 text-xs text-muted-foreground">@{u.username}</span></span>
                     </span>
                   </td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {u.lastActiveAt ? timeAgo(u.lastActiveAt) : ui("Never")}
+                  </td>
                   <td className="px-3 py-2 text-muted-foreground">{u.email}</td>
                   {billingEnabled && <td className="px-3 py-2"><BillingPlanCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
                   {billingEnabled && <td className="px-3 py-2 text-right tabular-nums"><WeeklyLimitCell row={billingByUser.get(u.id)} onChanged={() => void billingUsersQuery.refetch()} /></td>}
@@ -170,9 +173,6 @@ export function AdminUsersPage() {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     <StorageCell user={u} row={billingByUser.get(u.id)} onChanged={() => void Promise.all([loadAdmin(), billingUsersQuery.refetch()])} />
-                  </td>
-                  <td className="px-3 py-2 text-muted-foreground">
-                    {u.lastActiveAt ? timeAgo(u.lastActiveAt) : ui("Never")}
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{formatDate(u.joinedAt)}</td>
                   <td className="px-3 py-2">
