@@ -71,7 +71,7 @@ export function DesktopTitleBarSurface({
       <div
         aria-hidden="true"
         data-temporary-chat={temporaryChat ? 'true' : undefined}
-        className="desktop-titlebar fixed inset-x-0 top-0 z-40 h-[38px] transition-colors duration-200"
+        className="desktop-titlebar fixed inset-x-0 top-0 z-[42] h-[38px] transition-colors duration-200"
       />
       <DesktopWindowControls />
     </>

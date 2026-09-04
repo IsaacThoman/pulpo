@@ -322,7 +322,8 @@ html[data-desktop="true"] .app-main {
   transition: margin-top 300ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-html[data-desktop="true"] .desktop-main-titlebar-active .app-main {
+html[data-desktop="true"] .desktop-main-titlebar-active .app-main,
+html[data-desktop="true"] .desktop-sidebar-collapsed .app-main {
   margin-top: -38px;
 }
 
@@ -334,7 +335,8 @@ html[data-desktop="true"] .desktop-sidebar-collapsed .chat-header {
   height: 0;
 }
 
-html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main {
+html[data-desktop-os="win32"] .desktop-main-titlebar-active .app-main,
+html[data-desktop-os="win32"] .desktop-sidebar-collapsed .app-main {
   margin-top: 0;
 }
 

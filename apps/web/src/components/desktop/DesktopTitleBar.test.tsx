@@ -62,6 +62,7 @@ describe('desktop title bar', () => {
     const markup = renderToStaticMarkup(<DesktopTitleBarSurface temporaryChat={false} />)
 
     expect(markup).not.toContain('data-temporary-chat')
+    expect(markup).toContain('z-[42]')
   })
 
   it('shows working custom window controls on Windows', async () => {
