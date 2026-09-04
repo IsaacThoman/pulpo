@@ -34,6 +34,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SubscriptionUsageBars } from '@/components/SubscriptionUsageBars'
 import { ui, uit } from '@/i18n/ui'
 
@@ -195,9 +196,6 @@ export function BillingPage() {
       : summary.subscription?.cancelAtPeriodEnd
         ? `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription.currentPeriodEnd ? ` · ends ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
         : `$${managedPlan === 'fat' ? 24 : 8}/month${summary.subscription?.currentPeriodEnd ? ` · renews ${formatDate(Date.parse(summary.subscription.currentPeriodEnd))}` : ''}`
-  const planSubtitle = summary?.planOverridden
-    ? `${ui("Admin-granted access")} · ${ui("Billed plan")}: ${billingPlanName(managedPlan)} · ${subscriptionSubtitle}`
-    : subscriptionSubtitle
 
   return (
     <div className="flex h-full flex-col">
@@ -246,7 +244,7 @@ export function BillingPage() {
             </div>
             <div className="py-1 lg:col-span-2 lg:pl-6">
               <div className="flex items-start justify-between gap-3">
-                <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{planSubtitle}</div></div>
+                <div><div className="text-sm font-semibold">{billingPlanName(summary?.plan ?? 'baby')}</div><div className="mt-1 text-sm text-muted-foreground">{subscriptionSubtitle}</div></div>
                 <PlanBadge plan={summary?.plan ?? 'baby'} overridden={summary?.planOverridden ?? false} />
               </div>
               <SubscriptionUsageBars className="mt-4" weekly={summary?.weekly ?? null} fiveHour={summary?.fiveHour ?? null} />
@@ -317,7 +315,14 @@ function Quote({ credits, fee, charge }: { credits: number; fee: number; charge:
 }
 
 function PlanBadge({ plan, overridden }: { plan: BillingPlan; overridden: boolean }) {
-  return <Badge variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Current plan") : ui("Active")}</Badge>
+  const badge = <Badge tabIndex={overridden ? 0 : undefined} variant={plan === 'baby' ? 'outline' : 'secondary'} className={plan === 'fat' ? 'border-pink-500/25 bg-pink-500/15 text-pink-700 dark:text-pink-300' : plan === 'eight' ? 'border-yellow-500/25 bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : undefined}>{overridden ? ui("Admin granted") : plan === 'baby' ? ui("Current plan") : ui("Active")}</Badge>
+  if (!overridden) return badge
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent className="max-w-xs">{ui("Benefits have been manually altered by an instance Admin")}</TooltipContent>
+    </Tooltip>
+  )
 }
 
 function PlanColumn({ plan, current, cancelAtPeriodEnd, benefits, onChoose, disabled }: { plan: BillingPlan; current: BillingPlan; cancelAtPeriodEnd: boolean; benefits: string[]; onChoose: () => void; disabled: boolean }) {
