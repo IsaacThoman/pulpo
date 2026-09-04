@@ -10,7 +10,6 @@ import { useAuth } from '@/stores/auth'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ProfileAvatar } from '@/components/ProfileAvatar'
 import {
   Select,
@@ -423,7 +422,6 @@ function BillingPlanCell({ row, onChanged }: { row: AdminBillingUser | undefined
       </SelectContent>
     </Select>
     {row.planOverridden && <>
-      <Badge variant="outline" className="px-1.5 text-[10px]">{ui("Override")}</Badge>
       <Button size="icon-sm" variant="ghost" title={ui("Reset to subscribed plan")} onClick={() => {
         void apiRequest(`/api/admin/billing/users/${row.userId}/plan`, { method: 'PATCH', body: { plan: null } }).then(onChanged)
       }}><RefreshCw className="size-3.5" /></Button>

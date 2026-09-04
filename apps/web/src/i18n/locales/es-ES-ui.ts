@@ -93,7 +93,6 @@ const esUi: Record<string, string> = {
   "Move chat to trash": "Mover el chat a la papelera",
   "Move this user chat to trash?": "¿Mover este chat de usuario a la papelera?",
   "Move to folder": "Mover a una carpeta",
-  "Override": "Anulación",
   "Reset to subscribed plan": "Restablecer al plan suscrito",
   "Subscribed plan": "Plan suscrito",
   "No folder": "Sin carpeta",
