@@ -864,6 +864,7 @@ export const MessageItem = memo(function MessageItem({
                         subscriptionCoveredUsd={message.subscriptionCoveredCost ?? 0}
                         personal
                         formattedCost={formatCost(message.cost)}
+                        highlightCoverage={false}
                       />
                     </>}
                   </span>

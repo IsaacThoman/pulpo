@@ -80,7 +80,7 @@ describe('assistant response metadata', () => {
     expect(markup.replace(/<[^>]+>/g, '')).toContain('802→12 tok · 13tok/sec · 932ms · $0.0042')
   })
 
-  it('colors subscription-covered cost purple with the usage-page tooltip', async () => {
+  it('keeps subscription-covered cost neutral with the usage-page tooltip', async () => {
     const { MessageItem } = await import('./MessageItem')
     const markup = renderToStaticMarkup(<TooltipProvider><MessageItem
       chat={chat}
@@ -97,7 +97,8 @@ describe('assistant response metadata', () => {
     /></TooltipProvider>)
 
     expect(markup).toContain('data-subscription-coverage="partial"')
-    expect(markup).toContain('text-violet-700')
+    expect(markup).not.toContain('text-violet-700')
+    expect(markup).toContain('cursor-help')
     expect(markup).toContain('aria-label="$0.0042 · $0.0030 covered by your subscription · $0.0012 charged to balance"')
   })
 })
