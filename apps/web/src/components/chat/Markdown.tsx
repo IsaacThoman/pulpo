@@ -7,6 +7,7 @@ import { Check, Copy } from 'lucide-react'
 import { normalizeMathDelimiters } from '@pulpo/client-core'
 import 'katex/dist/katex.min.css'
 import { ui } from '@/i18n/ui'
+import { writeClipboardText } from '@/lib/clipboard'
 
 function CodeBlock({ language, code }: { language: string; code: string }) {
   const [copied, setCopied] = useState(false)
@@ -17,9 +18,11 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
         <button
           className="flex shrink-0 cursor-pointer items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-100"
           onClick={() => {
-            navigator.clipboard?.writeText(code).catch(() => {})
-            setCopied(true)
-            setTimeout(() => setCopied(false), 1200)
+            void writeClipboardText(code).then((success) => {
+              if (!success) return
+              setCopied(true)
+              setTimeout(() => setCopied(false), 1200)
+            })
           }}
         >
           {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
