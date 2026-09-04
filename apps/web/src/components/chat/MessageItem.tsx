@@ -44,6 +44,7 @@ import { ModelIcon } from '@/components/ModelIcon'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { cn } from '@/lib/utils'
+import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
 
@@ -83,9 +84,11 @@ function CopyButton({ text }: { text: string }) {
     <ActionButton
       label={t('common.copy')}
       onClick={() => {
-        navigator.clipboard?.writeText(text).catch(() => {})
-        setCopied(true)
-        setTimeout(() => setCopied(false), 1200)
+        void writeClipboardText(text).then((success) => {
+          if (!success) return
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        })
       }}
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
