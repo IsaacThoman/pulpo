@@ -28,6 +28,7 @@ export interface SettingsState {
   doubleShiftSearch: boolean
   streamResponses: boolean
   showReasoning: boolean
+  showResponseCost: boolean
   chatWidth: 'full' | 'narrow'
   animationSpeed: number
   customInstructions: string
@@ -61,6 +62,7 @@ export const DEFAULT_SETTINGS = {
   doubleShiftSearch: true,
   streamResponses: true,
   showReasoning: true,
+  showResponseCost: false,
   chatWidth: 'narrow' as const,
   animationSpeed: DEFAULT_ANIMATION_SPEED,
   customInstructions: '',

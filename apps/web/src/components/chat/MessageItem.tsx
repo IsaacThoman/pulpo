@@ -47,6 +47,7 @@ import { cn } from '@/lib/utils'
 import { writeClipboardText } from '@/lib/clipboard'
 import { ui, activeLocale } from '@/i18n/ui'
 import { toolActivityPresentation } from './tool-activity-presentation'
+import { SubscriptionCoverageCost } from '@/components/usage/SubscriptionCoverageCost'
 
 function ActionButton({
   label,
@@ -576,6 +577,7 @@ export const MessageItem = memo(function MessageItem({
   const chats = useChat((state) => state.chats)
   const returnSubmissionToComposer = useUploadOutbox((state) => state.returnSubmissionToComposer)
   const showReasoning = useSettings((s) => s.showReasoning)
+  const showResponseCost = useSettings((s) => s.showResponseCost)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(message.content)
   const [capacityActionPending, setCapacityActionPending] = useState(false)
@@ -847,7 +849,7 @@ export const MessageItem = memo(function MessageItem({
                     </ActionButton>
                   </>
                 )}
-                {(message.tokensIn !== undefined || message.cost !== undefined) && (
+                {(message.tokensIn !== undefined || (showResponseCost && message.cost !== undefined)) && (
                   <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&
                       `${message.tokensIn.toLocaleString(activeLocale())}→${(message.tokensOut ?? 0).toLocaleString(activeLocale())} tok`}
@@ -855,8 +857,17 @@ export const MessageItem = memo(function MessageItem({
                       message.latencyMs !== undefined &&
                       message.latencyMs > 0 &&
                       ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
-                    {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
                     {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
+                    {showResponseCost && message.cost !== undefined && <>
+                      {' · '}
+                      <SubscriptionCoverageCost
+                        costUsd={message.cost}
+                        subscriptionCoveredUsd={message.subscriptionCoveredCost ?? 0}
+                        personal
+                        formattedCost={formatCost(message.cost)}
+                        highlightCoverage={false}
+                      />
+                    </>}
                   </span>
                 )}
               </div>

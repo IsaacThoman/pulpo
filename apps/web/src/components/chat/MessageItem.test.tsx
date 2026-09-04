@@ -1,14 +1,35 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { cleanup, render } from '@testing-library/react'
 import type { Chat, Message } from '@/lib/types'
 import i18n from '@/i18n'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { activityDurationMs } from './activity-timing'
 
 const mediaQuery = { matches: false, addEventListener: () => undefined }
-Object.assign(globalThis, {
-  document: { documentElement: { classList: { toggle: () => undefined } } },
-  window: { matchMedia: () => mediaQuery },
+const storage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+}
+Object.defineProperty(window, 'matchMedia', {
+  configurable: true,
+  value: () => mediaQuery,
 })
+Object.defineProperty(globalThis, 'localStorage', {
+  configurable: true,
+  value: storage,
+})
+Object.defineProperty(window, 'localStorage', {
+  configurable: true,
+  value: storage,
+})
+
+const { useSettings } = await import('@/stores/settings')
+
+afterEach(cleanup)
 
 const chat: Chat = {
   id: 'chat-1', title: 'Chat', modelId: 'model-1', messages: [],
@@ -57,6 +78,75 @@ describe('user message actions', () => {
     const editButton = markup.match(/<button[^>]*aria-label="Edit"[^>]*>/)?.[0]
     expect(editButton).toBeDefined()
     expect(editButton).not.toContain(' disabled=""')
+  })
+})
+
+describe('assistant response metadata', () => {
+  beforeEach(() => {
+    useSettings.setState({ showResponseCost: false })
+  })
+
+  it('hides cost by default while retaining the other response metadata', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Answer',
+        tokensIn: 802,
+        tokensOut: 12,
+        cost: 0.0042,
+        latencyMs: 932,
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    const text = container.textContent ?? ''
+    expect(text).toContain('802→12 tok · 13tok/sec · 932ms')
+    expect(text).not.toContain('$0.0042')
+  })
+
+  it('renders tokens, speed, time, and cost in that order', async () => {
+    useSettings.setState({ showResponseCost: true })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Answer',
+        tokensIn: 802,
+        tokensOut: 12,
+        cost: 0.0042,
+        latencyMs: 932,
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(container.textContent).toContain('802→12 tok · 13tok/sec · 932ms · $0.0042')
+  })
+
+  it('keeps subscription-covered cost neutral with the usage-page tooltip', async () => {
+    useSettings.setState({ showResponseCost: true })
+    const { MessageItem } = await import('./MessageItem')
+    const { container } = render(<TooltipProvider><MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Answer',
+        tokensIn: 802,
+        tokensOut: 12,
+        cost: 0.0042,
+        subscriptionCoveredCost: 0.003,
+        latencyMs: 932,
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    /></TooltipProvider>)
+
+    const markup = container.innerHTML
+    expect(markup).toContain('data-subscription-coverage="partial"')
+    expect(markup).not.toContain('text-violet-700')
+    expect(markup).toContain('cursor-help')
+    expect(markup).toContain('aria-label="$0.0042 · $0.0030 covered by your subscription · $0.0012 charged to balance"')
   })
 })
 

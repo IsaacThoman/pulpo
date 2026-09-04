@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { editMessageSchema, idSchema } from '@pulpo/contracts'
 import { billingUserForRequest, requireUser } from '../auth/service.js'
 import { db } from '../database/client.js'
-import { chats, requestLogs, responses, users } from '../database/schema.js'
+import { chats, requestLogs, responses, usageEvents, users } from '../database/schema.js'
 import { AppError, notFound } from '../lib/errors.js'
 import { newId } from '../lib/ids.js'
 import { cascadeDeletionIds, newestDescendantId } from './branching.js'
@@ -222,6 +222,17 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
       eq(responses.userId, user.id),
       isNull(responses.deletedAt),
     )).orderBy(asc(responses.createdAt), asc(responses.id))
+    const costRows = turns.length ? await db.select({
+      responseId: usageEvents.responseId,
+      costMicros: usageEvents.costMicros,
+      subscriptionCoveredMicros: usageEvents.weeklyCostMicros,
+    }).from(usageEvents).where(inArray(usageEvents.responseId, turns.map((response) => response.id))) : []
+    const usageCostsByResponseId = new Map(costRows.flatMap((row) => (
+      row.responseId ? [[row.responseId, {
+        costMicros: Number(row.costMicros),
+        subscriptionCoveredMicros: Number(row.subscriptionCoveredMicros),
+      }] as const] : []
+    )))
     const leafId = newestDescendantId(turns, selected.id)
     const now = new Date()
     const [updatedChat] = await db.update(chats).set({ activeResponseId: leafId, activeBranchLeafId: leafId, updatedAt: now })
@@ -236,7 +247,7 @@ export async function registerMessageRoutes(app: FastifyInstance): Promise<void>
     }
     await bumpRevision(user.id, selected.chatId)
     await scheduleChatIndex(selected.chatId, user.id, 'branch-activation')
-    return toPublicBranchActivation(turns, leafId)
+    return toPublicBranchActivation(turns, leafId, usageCostsByResponseId)
   })
 
   app.delete('/api/messages/:id', async (request, reply) => {

@@ -435,7 +435,7 @@ describe('shared contracts', () => {
     })
     expect(document.account).toMatchObject({
       theme: 'system', trashRetention: '30d', automaticChatExpiration: '24h', newChatAutoExpire: false,
-      nickname: '', animationSpeed: 1, favoriteModelIds: [], agentModes: {},
+      nickname: '', animationSpeed: 1, showResponseCost: false, favoriteModelIds: [], agentModes: {},
       instructionPresetSelections: {},
       sidebarPins: { usage: false, billing: false, friends: false, apiKeys: false },
     })
