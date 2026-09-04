@@ -60,6 +60,26 @@ describe('user message actions', () => {
   })
 })
 
+describe('assistant response metadata', () => {
+  it('renders tokens, cost, speed, and time in that order', async () => {
+    const { MessageItem } = await import('./MessageItem')
+    const markup = renderToStaticMarkup(<MessageItem
+      chat={chat}
+      message={assistant({
+        content: 'Answer',
+        tokensIn: 802,
+        tokensOut: 12,
+        cost: 0.0042,
+        latencyMs: 932,
+      })}
+      streaming={false}
+      activeModelId="model-1"
+    />)
+
+    expect(markup).toContain('802→12 tok · $0.0042 · 13tok/sec · 932ms')
+  })
+})
+
 describe('activityDurationMs', () => {
   it('attributes only the durations belonging to an activity segment', () => {
     expect(activityDurationMs([

@@ -848,11 +848,11 @@ export const MessageItem = memo(function MessageItem({
                   <span className="min-w-0 break-words text-[11px] text-muted-foreground sm:ml-1">
                     {message.tokensIn !== undefined &&
                       `${message.tokensIn.toLocaleString(activeLocale())}→${(message.tokensOut ?? 0).toLocaleString(activeLocale())} tok`}
+                    {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
                     {message.tokensOut !== undefined &&
                       message.latencyMs !== undefined &&
                       message.latencyMs > 0 &&
                       ` · ${Math.round((message.tokensOut * 1000) / message.latencyMs)}tok/sec`}
-                    {message.cost !== undefined && ` · ${formatCost(message.cost)}`}
                     {message.latencyMs !== undefined && ` · ${formatDuration(message.latencyMs)}`}
                   </span>
                 )}
