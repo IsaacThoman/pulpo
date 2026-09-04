@@ -119,8 +119,9 @@ body {
 .chat-header {
   background: linear-gradient(
     to bottom,
-    color-mix(in oklab, var(--background) 80%, transparent),
-    color-mix(in oklab, var(--background) 0%, transparent)
+    color-mix(in oklab, var(--background) 95%, transparent) 0%,
+    color-mix(in oklab, var(--background) 90%, transparent) 60%,
+    color-mix(in oklab, var(--background) 0%, transparent) 100%
   );
 }
 
