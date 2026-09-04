@@ -3,7 +3,6 @@ import { emptyComposerState, type ComposerAck, type ComposerSnapshot, type Compo
 export interface ComposerCheckpoint {
   snapshot: ComposerSnapshot
   pending: Partial<ComposerState>
-  recovery?: ComposerState
   clearRevision?: number
   submission?: { state: ComposerState; revision?: number }
 }
@@ -43,7 +42,13 @@ export class ComposerSync {
       entry = { snapshot: { draftId, revision: 0, clearedRevision: 0, mutationId: null, state: emptyComposerState() }, pending: {}, listeners: new Set(), ready: false, saved: Promise.resolve() }
       this.entries.set(draftId, entry)
       entry.loaded = this.persistence.load(draftId).catch(() => null).then((saved) => {
-        if (saved) Object.assign(entry!, saved)
+        if (saved) {
+          // Read supported fields only; old checkpoints may still contain retired recovery copies.
+          entry!.snapshot = saved.snapshot
+          entry!.pending = saved.pending
+          entry!.clearRevision = saved.clearRevision
+          entry!.submission = saved.submission
+        }
         else if (initial.content || initial.attachments.length || initial.model) entry!.pending = { ...initial }
       })
     }
@@ -72,7 +77,7 @@ export class ComposerSync {
     this.entries.clear()
   }
   private checkpoint(entry: Entry): ComposerCheckpoint {
-    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, clearRevision: entry.clearRevision, submission: entry.submission, ...(entry.recovery ? { recovery: entry.recovery } : {}) }
+    return { snapshot: entry.snapshot, pending: { ...entry.inflight, ...entry.pending }, clearRevision: entry.clearRevision, submission: entry.submission }
   }
   private notify(entry: Entry, publish = true): void {
     if (this.disposed) return
@@ -96,7 +101,6 @@ export class ComposerSync {
       const result = await this.transport?.read(entry.snapshot.draftId)
       if (generation !== this.generation || !result?.ok) return
       if (result.snapshot.revision !== entry.snapshot.revision && Object.keys(entry.pending).length) {
-        entry.recovery = { ...entry.snapshot.state, ...entry.pending }
         entry.pending = {}
       }
       if (result.snapshot.revision >= entry.snapshot.revision) entry.snapshot = result.snapshot
@@ -113,7 +117,6 @@ export class ComposerSync {
     if (!entry.ready) { if (this.transport) void this.reconcile(entry); return }
     if (snapshot.revision <= entry.snapshot.revision) return
     if (!preservePending && snapshot.clearedRevision > entry.snapshot.clearedRevision && Object.keys(entry.pending).length) {
-      entry.recovery = { ...entry.snapshot.state, ...entry.pending }
       entry.pending = {}
     }
     entry.snapshot = snapshot
@@ -154,7 +157,6 @@ export class ComposerSync {
         if (!result.ok) throw new Error(result.error)
         if (result.conflict) {
           if (result.snapshot.clearedRevision > previous.clearedRevision) {
-            entry.recovery = { ...previous.state, ...patch, ...entry.pending }
             entry.pending = {}
           }
           else entry.pending = { ...patch, ...entry.pending }
@@ -169,13 +171,9 @@ export class ComposerSync {
     entry.writing = undefined
     return entry.ready ? this.flush(draftId) : null
   }
-  restoreSubmission(draftId: string, submitted: ComposerState): boolean {
+  canRestoreSubmission(draftId: string, submitted: ComposerState): boolean {
     const entry = this.entries.get(draftId)
-    if (!entry) return true
-    if (equal({ ...entry.snapshot.state, ...entry.inflight, ...entry.pending }, submitted)) return true
-    entry.recovery = submitted
-    this.notify(entry)
-    return false
+    return !entry || equal({ ...entry.snapshot.state, ...entry.inflight, ...entry.pending }, submitted)
   }
   async prepareSubmission(draftId: string, submitted: ComposerState): Promise<number | null> {
     const revision = await this.flush(draftId)
@@ -215,13 +213,6 @@ export class ComposerSync {
         this.notify(entry)
       }
     } catch { /* A successful submission's conditional clear is durable and retried on reconnect. */ }
-  }
-  recover(draftId: string): void {
-    const entry = this.entries.get(draftId)
-    if (!entry?.recovery) return
-    const recovery = entry.recovery
-    entry.recovery = undefined
-    this.edit(draftId, recovery)
   }
 }
 interface Entry extends ComposerCheckpoint {

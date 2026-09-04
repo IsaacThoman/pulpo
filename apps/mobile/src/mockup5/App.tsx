@@ -3736,7 +3736,7 @@ function ChatView({
     model: { id: model.id, presets: presetSelections },
     agentMode: preservedComposerRef.current?.agentEnabled ?? agentEnabled, temporary, autoExpire,
   };
-  const { sync: composerSync, skipNextEdit, recoverable, recover } = useComposerSync(
+  const { sync: composerSync, skipNextEdit } = useComposerSync(
     draftNamespace, chatId ?? NEW_CHAT_DRAFT_ID, sharedComposerState,
     hydratedComposerScope === `${draftNamespace ?? 'local'}\u0000${chatId ?? NEW_CHAT_DRAFT_ID}`,
     Boolean(messageEdit),
@@ -4228,7 +4228,7 @@ function ChatView({
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
       if (activeDraftRef.current?.scope !== submittedDraftIdentity?.scope) return;
-      if (composerSync && !composerSync.restoreSubmission(submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID, sharedComposerState)) return;
+      if (composerSync && !composerSync.canRestoreSubmission(submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID, sharedComposerState)) return;
       onChangeInput(submittedDraft.input);
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
       setAgentEnabled(submittedDraft.agentEnabled);
@@ -4716,7 +4716,6 @@ function ChatView({
                   {!canUseAgent ? 'Choose an Agent-capable model or remove non-image files.' : 'Turn on Agent mode to use non-image files.'}
                 </Text>
               ) : null}
-              {recoverable && <Pressable accessibilityRole="button" onPress={recover}><Text>Recover local draft</Text></Pressable>}
               <TextInput
                 ref={composerInputRef}
                 accessibilityLabel="Message"
