@@ -227,7 +227,6 @@ export function AuthExperience() {
         <Text style={[styles.pendingEmail, { color: colors.textMuted }]}>{session.user.email}</Text>
       </View>
     </View>
-    <Text style={[styles.pendingHelp, { color: colors.textMuted }]}>Refresh after your administrator approves the account. Pulpo will open your chats automatically.</Text>
     {productionConfig?.auth.inviteCodesEnabled ? <>
       <AuthField colors={colors} icon="key" label="Invite code" value={inviteCode} onChangeText={(value) => setInviteCode(value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6))} autoCapitalize="characters" autoCorrect={false} maxLength={6} />
       <PrimaryAuthButton label="Redeem invite code" colors={colors} loading={loading} disabled={inviteCode.length !== 6} onPress={() => { void redeemInvite(); }} />
