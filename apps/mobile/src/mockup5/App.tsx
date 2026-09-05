@@ -154,9 +154,7 @@ import {
 } from './src/screens/MemberScreens';
 import type { RootStackParamList } from './src/navigation';
 import { usePrototypeStore } from './src/store/prototypeStore';
-import { FolderSheet, type FolderSheetMode } from './src/components/FolderSheet';
-import { sortFolders } from './src/components/folderSort';
-import { useFolderSort } from './src/components/useFolderSort';
+import { MoveToFolderSheet } from './src/components/MoveToFolderSheet';
 import type { ActivityStep, PrototypeChat, PrototypeMessage, PrototypeModel, ResponseBranch } from './src/domain';
 import { chatRemovalBehavior } from './src/chatRemoval';
 import { modelSubtitle, reconcileComposerModelId, resolveDisplayModel } from './src/modelIdentity';
@@ -4945,11 +4943,9 @@ function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef 
   </SwiftUIHost>;
 }
 
-function NativeFoldersDisclosure({ folders, onCreate, onManage, onSort, onSelectChat }: {
+function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   folders: Array<{ id: string; name: string; chats: HistoryChatSummary[] }>;
   onCreate: () => void;
-  onManage: () => void;
-  onSort: () => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -4971,7 +4967,7 @@ function NativeFoldersDisclosure({ folders, onCreate, onManage, onSort, onSelect
             </SwiftUIHStack>
           </SwiftUIButton>
         </SwiftUIContextMenu.Trigger>
-        <SwiftUIContextMenu.Items><SwiftUIButton label="New folder" systemImage="folder.badge.plus" onPress={onCreate} /><SwiftUIButton label="Manage folders" systemImage="folder" onPress={onManage} /><SwiftUIDivider /><SwiftUIButton label="Sort folders" systemImage="arrow.up.arrow.down" onPress={onSort} /></SwiftUIContextMenu.Items>
+        <SwiftUIContextMenu.Items><SwiftUIButton label="New folder" systemImage="folder.badge.plus" onPress={onCreate} /></SwiftUIContextMenu.Items>
       </SwiftUIContextMenu>
     </SwiftUIHost>
     {expanded ? <Reanimated.View entering={entering} exiting={exiting} layout={layout} style={styles.nativeFoldersContent}>
@@ -5097,18 +5093,16 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const renameChat = usePrototypeStore((state) => state.renameChat);
   const upsertChat = usePrototypeStore((state) => state.upsertChat);
   const addFolder = usePrototypeStore((state) => state.addFolder);
-  const [folderSheet, setFolderSheet] = useState<FolderSheetMode | null>(null);
-  const [folderSort, setFolderSort] = useFolderSort();
-  const sortedFolders = useMemo(() => sortFolders(folders, folderSort), [folders, folderSort]);
+  const [folderSheet, setFolderSheet] = useState<{ chatId: string; folderId: string | null } | null>(null);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const folderItems = useMemo(() => {
-    return sortedFolders.map((folder) => ({
+    return folders.map((folder) => ({
       id: folder.id,
       name: folder.name,
       chats: chats.filter((chat) => chat.folderId === folder.id),
     }));
-  }, [chats, sortedFolders]);
+  }, [chats, folders]);
   const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
   const searchQueryProgress = useSharedValue(search.length > 0 ? 1 : 0);
   const nativeSearchRef = useRef<SwiftUITextFieldRef>(null);
@@ -5186,7 +5180,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
       return;
     }
     if (action === 'move') {
-      setFolderSheet({ type: 'move', chatId: chat.id, folderId: chat.folderId });
+      setFolderSheet({ chatId: chat.id, folderId: chat.folderId });
       return;
     }
     if (action === 'duplicate') {
@@ -5275,13 +5269,8 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
         </View>}
 
         <Reanimated.View pointerEvents={searchFocused || search.length > 0 ? 'none' : 'auto'} style={searchActionsAnimatedStyle}>
-          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} onManage={() => { dismissSearch(); setFolderSheet({ type: 'manage' }); }} onSort={() => { dismissSearch(); setFolderSheet({ type: 'sort' }); }} /> : <View>
-            <Pressable accessibilityLabel={`Manage folders, ${folders.length}`} accessibilityRole="button" onPress={() => { dismissSearch(); setFolderSheet({ type: 'manage' }); }} style={({ pressed }) => [styles.navRow, styles.folderNavRow, pressed && styles.navRowPressed]}>
-              <Icon name="folder" size={17} color={COLORS.textSoft} /><Text style={styles.navText}>Manage folders</Text><Text style={styles.navMeta}>{folders.length}</Text>
-            </Pressable>
-            <Pressable accessibilityLabel="Sort folders" accessibilityRole="button" onPress={() => { dismissSearch(); setFolderSheet({ type: 'sort' }); }} style={({ pressed }) => [styles.navRow, pressed && styles.navRowPressed]}>
-              <Icon name="arrow.up.arrow.down" size={17} color={COLORS.textSoft} /><Text style={styles.navText}>Sort folders</Text>
-            </Pressable>
+          {Platform.OS === 'ios' ? <NativeFoldersDisclosure folders={folderItems} onSelectChat={selectHistoryChat} onCreate={() => { dismissSearch(); Alert.prompt('New folder', 'Create a folder for related chats.', (name) => name.trim() && addFolder(name)); }} /> : <View style={[styles.navRow, styles.folderNavRow]}>
+            <Icon name="folder" size={17} color={COLORS.textSoft} /><Text style={styles.navText}>Folders</Text><Text style={styles.navMeta}>{folders.length}</Text>
           </View>}
         </Reanimated.View>
 
@@ -5311,7 +5300,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
         </Reanimated.View>
       </SafeAreaView>
-      {folderSheet ? <FolderSheet mode={folderSheet} folders={sortedFolders} sort={folderSort} onSort={setFolderSort} onClose={() => setFolderSheet(null)} /> : null}
+      {folderSheet ? <MoveToFolderSheet chatId={folderSheet.chatId} folderId={folderSheet.folderId} folders={folders} onClose={() => setFolderSheet(null)} /> : null}
     </View>
   );
 });

@@ -17,14 +17,12 @@ vi.mock('react-native', () => {
   };
 });
 vi.mock('react-native-safe-area-context', () => ({ SafeAreaView: ({ children }: { children: ReactNode }) => createElement('div', null, children) }));
-import { FolderSheet, type FolderSheetMode } from './FolderSheet';
-import { sortFolders } from './folderSort';
+import { MoveToFolderSheet } from './MoveToFolderSheet';
 
 let root: Root;
 let host: HTMLDivElement;
 const folders = Array.from({ length: 12 }, (_, i) => ({ id: `f${i + 1}`, name: `Folder ${i + 1}` }));
 const onClose = vi.fn();
-const onSort = vi.fn();
 beforeEach(() => {
   vi.clearAllMocks();
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
@@ -33,8 +31,8 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => { act(() => root.unmount()); host.remove(); });
-function render(mode: FolderSheetMode) {
-  act(() => root.render(<FolderSheet mode={mode} folders={folders} sort="default" onSort={onSort} onClose={onClose} />));
+function render(selection: { chatId: string; folderId: string | null }) {
+  act(() => root.render(<MoveToFolderSheet {...selection} folders={folders} onClose={onClose} />));
 }
 function click(label: string) {
   const button = host.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`);
@@ -49,7 +47,7 @@ function input(label: string, value: string) {
   });
 }
 it('searches and moves a chat to a folder beyond the first three', () => {
-  render({ type: 'move', chatId: 'chat', folderId: null });
+  render({ chatId: 'chat', folderId: null });
   input('Search folders', 'folder 12');
   expect(host.querySelector('button[aria-label="Folder 1"]')).toBeNull();
   click('Folder 12');
@@ -57,41 +55,14 @@ it('searches and moves a chat to a folder beyond the first three', () => {
   expect(onClose).toHaveBeenCalledOnce();
 });
 it('keeps No folder available even with a search and moves outside folders', () => {
-  render({ type: 'move', chatId: 'chat', folderId: 'f12' });
+  render({ chatId: 'chat', folderId: 'f12' });
   input('Search folders', 'missing');
   click('No folder');
   expect(actions.moveChat).toHaveBeenCalledWith('chat', null);
 });
-it('creates and renames folders with trimmed nonempty names', () => {
-  render({ type: 'manage' });
-  click('New folder');
-  click('Save');
-  expect(actions.addFolder).not.toHaveBeenCalled();
-  input('Folder name', '  New project  ');
-  click('Save');
-  expect(actions.addFolder).toHaveBeenCalledWith('New project');
-  click('Rename Folder 12');
-  input('Folder name', 'Renamed');
-  click('Save');
-  expect(actions.renameFolder).toHaveBeenCalledWith('f12', 'Renamed');
-});
-it('requires confirmation before deleting a folder', () => {
-  render({ type: 'manage' });
-  click('Delete Folder 12');
-  expect(actions.deleteFolder).not.toHaveBeenCalled();
-  const buttons = actions.alert.mock.calls[0]![2] as { text: string; onPress?: () => void }[];
-  act(() => buttons.find((button) => button.text === 'Delete')!.onPress!());
-  expect(actions.deleteFolder).toHaveBeenCalledWith('f12');
-});
-it('selects sorting and preserves every folder without mutating server order', () => {
-  render({ type: 'sort' });
-  click('Name: Z–A');
-  expect(onSort).toHaveBeenCalledWith('descending');
-  const reversed = sortFolders(folders, 'descending');
-  expect(reversed[0]!.id).toBe('f12');
-  expect(reversed.at(-1)!.id).toBe('f1');
-  expect(reversed).toHaveLength(12);
-  expect(folders[0]!.id).toBe('f1');
-  expect(sortFolders(reversed, 'ascending')).toEqual(folders);
-  expect(sortFolders(folders, 'default')).toEqual(folders);
+it('cancels without moving the chat', () => {
+  render({ chatId: 'chat', folderId: 'f12' });
+  click('Cancel');
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(actions.moveChat).not.toHaveBeenCalled();
 });
