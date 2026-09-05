@@ -12,4 +12,4 @@ export type PromptOptions = { title: string; message?: string; value?: string; m
 export type MenuAnchor = { x: number; y: number };
 
 export type MenuSection = { id: string; title?: string; actions: Action[] };
-export type MenuProps = { label: string; icon: string; actions?: Action[]; sections?: MenuSection[]; text?: string; compact?: boolean; image?: ImageSourcePropType };
+export type MenuProps = { label: string; icon: string; actions?: Action[]; sections?: MenuSection[]; text?: string; compact?: boolean; image?: ImageSourcePropType; centered?: boolean };

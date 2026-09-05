@@ -1287,9 +1287,9 @@ function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProp
     opacity: progress.value,
     transform: [{ scale: interpolate(progress.value, [0, 1], [0.85, 1]) }],
   }));
-  // Reserve both 48 dp targets. Toggling a mode must not move the model or
-  // trailing action, and fading-out controls must immediately stop accepting taps.
-  return <View style={{ flexDirection: 'row', width: 96, height: 48 }}>
+  // Keep the trailing action fixed while the leading action fades away.
+  // Its hidden slot must pass touches to the model selector as it recenters.
+  return <View pointerEvents="box-none" style={{ flexDirection: 'row', width: 96, height: 48 }}>
     <Reanimated.View style={leadingStyle} pointerEvents={visible ? 'auto' : 'none'} importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}>
       <MaterialIconButton
         icon={props.leadingAction === 'save' ? 'bookmark' : 'hourglass'}
@@ -3323,7 +3323,7 @@ function useModelMenu(models: Model[]) {
 
 function AndroidModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
   const { sections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
-  return <MaterialMenu label={`Model, ${model.name}`} text={model.name} image={model.icon} icon="chevron.down" sections={[{
+  return <MaterialMenu centered label={`Model, ${model.name}`} text={model.name} image={model.icon} icon="chevron.down" sections={[{
     id: 'models', title: sectionLabel,
     actions: visibleModels.length ? visibleModels.map((option) => ({ id: option.id, label: option.name, image: option.menuIcon ?? option.icon, selected: option.id === model.id, onPress: () => onSelectModel(option) }))
       : [{ id: 'empty', label: 'No favorite models', detail: 'Choose a lab to browse models.', disabled: true, onPress: () => {} }],
@@ -4642,9 +4642,13 @@ function ChatView({
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
   const headerControl = resolveChatHeaderControl(headerAction, showAutoExpirationControl);
   const headerExpansionProgress = useSharedValue(headerControl.expanded ? 1 : 0);
-  const modelTriggerAnimatedStyle = useAnimatedStyle(() => ({
+  const modelTriggerAnimatedStyle = useAnimatedStyle(() => Platform.OS === 'android' ? {
+    // Match the available space between the 48 dp history/trailing targets.
+    // Removing the hourglass frees 48 dp and moves the midpoint right by 24 dp.
+    right: interpolate(headerExpansionProgress.value, [0, 1], [66, 114]),
+  } : {
     transform: [{ translateX: interpolate(headerExpansionProgress.value, [0, 1], [22, 0]) }],
-  }));
+  });
   const loadingExistingChat = Boolean(chatId && isEmptyConversation && !chatLoaded);
   const hasPendingAssistant = messages.some((message) => message.role === 'assistant' && (message.status === 'queued' || message.status === 'streaming'));
   const attachmentPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
@@ -4661,6 +4665,7 @@ function ChatView({
     const target = headerControl.expanded ? 1 : 0;
     headerExpansionProgress.value = reduceMotion
       ? target
+      : Platform.OS === 'android' ? withTiming(target, { duration: 220 })
       : withSpring(target, { damping: 18, stiffness: 220, mass: 0.8 });
   }, [headerControl.expanded, headerExpansionProgress, reduceMotion]);
 
@@ -4741,7 +4746,7 @@ function ChatView({
             onPress={onTogglePanel}
             tinted={temporary}
           />
-          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, Platform.OS !== 'android' && modelTriggerAnimatedStyle]}>
+          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
             ) : Platform.OS === 'android' && !accessibilityLayout ? (
@@ -4765,6 +4770,7 @@ function ChatView({
             )}
           </Reanimated.View>
           <Reanimated.View
+            pointerEvents="box-none"
             style={styles.headerActionExpanded}
           >
             <TemporaryChatHeaderControl
@@ -5636,7 +5642,7 @@ function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   // but base its center in the gap between the 44-point leading button and
   // 88-point trailing control. The 22-point transition above then reaches the
   // screen center when temporary mode collapses the trailing control.
-  modelTriggerWrap: { position: 'absolute', top: Platform.OS === 'android' ? 8 : 10, left: Platform.OS === 'android' ? 66 : -22, right: Platform.OS === 'android' ? 112 : 22, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'center', justifyContent: 'center' },
+  modelTriggerWrap: { position: 'absolute', top: Platform.OS === 'android' ? 8 : 10, left: Platform.OS === 'android' ? 66 : -22, right: Platform.OS === 'android' ? 114 : 22, height: Platform.OS === 'android' ? 48 : 44, alignItems: 'center', justifyContent: 'center' },
   modelMenuHost: { width: 230, height: 44, justifyContent: 'center' },
   modelTrigger: { minHeight: Platform.OS === 'android' ? 48 : 44, maxWidth: 218, borderRadius: 22, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, paddingVertical: 8 },
   modelTriggerText: { color: COLORS.text, fontSize: 15, fontWeight: '600', letterSpacing: -0.2, flexShrink: 1 },

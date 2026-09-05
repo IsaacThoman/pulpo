@@ -98,7 +98,7 @@ export function MaterialRow({ title, detail, detailLines, value, image, icon, de
 
 const EMPTY_ACTIONS: Action[] = [];
 const EMPTY_SECTIONS: MenuSection[] = [];
-export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = EMPTY_SECTIONS, text, compact, image }: MenuProps) {
+export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = EMPTY_SECTIONS, text, compact, image, centered }: MenuProps) {
   const [expanded, setExpanded] = useState(false);
   const [submenu, setSubmenu] = useState<Action['submenu']>();
   const { width: windowWidth } = useWindowDimensions();
@@ -119,7 +119,7 @@ export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = 
   // Compact composer menus leave 144 dp for the three icon buttons and
   // 40 dp for the composer's outer spacing, inner padding, and row gaps.
   const triggerWidth = text ? compact ? Math.min(200, Math.max(48, windowWidth - 184)) : 230 : 48;
-  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth('start')] : undefined}>
+  return <Host style={{ width: triggerWidth, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss} modifiers={text ? [wrapContentWidth(centered ? 'centerHorizontally' : 'start')] : undefined}>
     <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[height(48)]}>
       {image ? <><Icon source={image} tint={null} size={24} /><Spacer modifiers={[width(8)]} /></> : null}
       <Box contentAlignment="centerEnd">

@@ -1,4 +1,4 @@
-"""Verify badge toggles preserve Android layout on an already-open empty chat.
+"""Verify stable landing content and centered Android header across badge states.
 
 Requires adb, an authenticated app with a model selected, and automatic expiration
 configured in settings. Start with the keyboard closed and both chat toggles off.
@@ -51,11 +51,24 @@ for mode, action in [
     ('none-restored', None),
 ]:
     tree = state()
-    model_bounds = [node.get('bounds') for node in matches(tree, args.model)]
+    model_nodes = matches(tree, args.model)
+    model_bounds = [node.get('bounds') for node in model_nodes[1:]]
     composer_bounds = [node.get('bounds') for label in ['Message…', 'Temporary message…'] for node in matches(tree, label)]
     if not model_bounds or len(composer_bounds) != 1:
         raise RuntimeError('Expected the selected model and an empty composer; no messages are sent by this check.')
-    records.append({'mode': mode, 'model': model_bounds, 'composer': composer_bounds})
+    header = [node for node in tree.iter('node') if node.get('clickable') == 'true'
+              and matches(node, f'Model, {args.model}')][-1]
+    navigation = matches(tree, 'Open chats')[0]
+    right_action = matches(tree, 'Disable temporary chat' if mode == 'temporary'
+                           else 'Disable automatic expiration' if mode in ['expiry', 'expiry-restored']
+                           else 'Enable automatic expiration')[0]
+    bounds = lambda node: list(map(int, re.findall(r'\d+', node.get('bounds'))))
+    header_bounds, navigation_bounds, action_bounds = map(bounds, [header, navigation, right_action])
+    header_center = (header_bounds[0] + header_bounds[2]) / 2
+    available_center = (navigation_bounds[2] + action_bounds[0]) / 2
+    assert abs(header_center - available_center) <= 2, (mode, header_center, available_center)
+    records.append({'mode': mode, 'model': model_bounds, 'composer': composer_bounds,
+                    'header': header_bounds, 'headerCenter': header_center, 'availableCenter': available_center})
     if action:
         tap(tree, action)
 
@@ -63,4 +76,6 @@ if args.output:
     args.output.write_text(json.dumps(records, indent=2) + '\n')
 assert all(row['model'] == records[0]['model'] for row in records), records
 assert all(row['composer'] == records[0]['composer'] for row in records), records
-print('PASS: model and composer bounds remain stable across all badge states.')
+assert records[2]['headerCenter'] > records[0]['headerCenter'], records
+assert all(row['header'] == records[0]['header'] for row in records if row['mode'] != 'temporary'), records
+print('PASS: header stays centered between visible actions; landing model and composer stay stable.')
