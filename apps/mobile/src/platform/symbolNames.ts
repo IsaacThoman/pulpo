@@ -1,3 +1,9 @@
+import type { SymbolViewProps } from 'expo-symbols';
+
+// Bundled custom vectors are valid app symbols even when absent from the
+// upstream SF Symbols / Material Symbols font name lists.
+export type AppSymbolViewProps = Omit<SymbolViewProps, 'name'> & { name: SymbolViewProps['name'] | 'ghost' };
+
 // SF Symbols used by iOS map to Material Symbols on Android.
 export const materialSymbolNames: Record<string, string> = {
   "line.3.horizontal": "menu",

@@ -4695,7 +4695,7 @@ function ChatView({
             pointerEvents="none"
             style={[styles.temporaryLabel, Platform.OS === 'android' && styles.androidLandingBadge, temporaryLabelAnimatedStyle]}
           >
-            {Platform.OS === 'android' ? <Icon name="theatermasks" size={18} color={COLORS.accent} /> : <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />}
+            {Platform.OS === 'android' ? <Icon name="ghost" size={18} color={COLORS.accent} /> : <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />}
             <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark, Platform.OS === 'android' && { color: COLORS.accent }]}>Temporary</Text>
           </Reanimated.View>
           <Reanimated.View
