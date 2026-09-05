@@ -52,3 +52,21 @@ Build/run the iOS app with `EXPO_PUBLIC_DEFAULT_INSTANCE_URL=http://localhost:80
 6. Release the held response. Verify all remaining turns finish in order with no duplicates and the queue disappears. Check the fixture's `GET /requests` and chat responses for exact execution order.
 
 See [validation.md](validation.md) for the recorded run and screenshots. Stop the fixture/API/worker and remove only the dedicated test Redis container/database when finished.
+
+## Fault-injection and cross-client QA
+
+See [qa-sync-report.md](qa-sync-report.md) for the detailed run and reproduced failures.
+
+To use the local gateway, build web and run the API on `PORT=8094` while retaining `PUBLIC_URL=http://localhost:8091`. Run `node apps/mobile/e2e/queue-proxy.mjs` from the repository root. The gateway serves `apps/web/dist` and forwards HTTP/WebSockets. Both web and simulator use port 8091.
+
+The loopback-only control server at port 8095 accepts JSON POSTs with `online`/`realtime` booleans and `nextQueueFailure` (`"500"`, `"400"`, `"drop"`, or null). `drop` forwards the submission, then discards its acknowledgment. Restore `{ "online": true, "realtime": true, "nextQueueFailure": null }` after testing.
+
+With the fixture and disposable account ready:
+
+```sh
+node apps/mobile/e2e/queue-api.mjs
+node apps/mobile/e2e/queue-faults.mjs
+node apps/mobile/e2e/queue-composer-recovery.mjs
+```
+
+Run serially: these tests deliberately release held fixture responses. The composer test uses real Socket.IO connections and persisted checkpoints to verify multiple offline accepted drafts and preservation of newer unsent text.

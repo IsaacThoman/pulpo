@@ -46,3 +46,5 @@ Compact layout follow-up: reduced standard queue rows from 80 to 56 points, halv
 Dynamic sizing follow-up: removed text/detail line limits and connected the native table's measured content height to the queue container. Short cards stay compact; multiline cards expand and the container grows up to its existing scroll limit. In the iOS 26.5 simulator, verified a one-line and five-line card together with no truncation, then removed the long card and confirmed the container shrank without leftover space. Mobile typecheck, repository lint, and native simulator build passed.
 
 ![Queue cards sized to their text](evidence/native-queue-dynamic.png)
+
+The subsequent [detailed mobile/web QA report](qa-sync-report.md) records reproduced recovery failures, their fixes, current test counts, actual cross-client results, and remaining native UI limitations.

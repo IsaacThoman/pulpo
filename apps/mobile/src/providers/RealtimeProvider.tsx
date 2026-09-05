@@ -1,3 +1,4 @@
+import { createOutboxScheduler } from '../data/outboxScheduler'
 import { subscribeToOutboxChanges } from '../data/outboxNotifications'
 import { bindMobileComposerSocket } from '../features/chat/composerSync'
 import { useEffect, useRef } from 'react'
@@ -98,7 +99,6 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     let connectionFailureTimer: ReturnType<typeof setTimeout> | undefined
     let eventTimer: ReturnType<typeof setTimeout> | undefined
     let cursorTimer: ReturnType<typeof setTimeout> | undefined
-    let outboxTimer: ReturnType<typeof setTimeout> | undefined
     let revisionTimer: ReturnType<typeof setTimeout> | undefined
     let pendingRevision: RevisionInvalidationBatch | undefined
     let cursorWriteTail: Promise<void> = Promise.resolve()
@@ -223,16 +223,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       }
       for (const scope of syncInvalidationScopes(result)) invalidateScope(scope, activeChatId)
     }
-    const scheduleOutboxReplay = (delay = 1_000) => {
-      if (disposed || !socket.connected || appStateValue !== 'active') return
-      if (outboxTimer) clearTimeout(outboxTimer)
-      outboxTimer = setTimeout(() => { outboxTimer = undefined; void flushOutbox() }, delay)
-    }
-    const flushOutbox = async () => {
-      if (disposed || !socket.connected || appStateValue !== 'active') return
-      try {
+    const outboxScheduler = createOutboxScheduler({
+      isActive: () => !disposed && appStateValue === 'active',
+      flush: async () => {
         const { replayed, rejected } = await replayOutbox(namespace, queryClient)
-        if (disposed) return
+        if (disposed) return null
         if (replayed || rejected) {
           useRealtimeStore.getState().setSyncError(rejected
             ? `${rejected} offline change${rejected === 1 ? '' : 's'} could not be synced. Queued messages can be edited and retried.` : null)
@@ -241,14 +236,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           void queryClient.invalidateQueries({ queryKey: queryKeys.settings(namespace) })
         }
         const remaining = await pendingOutbox(namespace)
-        if (remaining.length) scheduleOutboxReplay(Math.max(1_000, remaining[0]!.nextAttemptAt - Date.now()))
-      } catch (error) {
-        if (!disposed) {
-          useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Offline changes could not be synced.')
-          scheduleOutboxReplay(5_000)
-        }
-      }
-    }
+        return remaining.length ? Math.max(1_000, remaining[0]!.nextAttemptAt - Date.now()) : null
+      },
+      onError: (error) => useRealtimeStore.getState().setSyncError(error instanceof Error ? error.message : 'Offline changes could not be synced.'),
+    })
+    const { schedule: scheduleOutboxReplay, flush: flushOutbox } = outboxScheduler
     const unsubscribeOutbox = subscribeToOutboxChanges((changedNamespace) => {
       if (changedNamespace === namespace) scheduleOutboxReplay()
     })
@@ -327,6 +319,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         useRealtimeStore.getState().setConnectionPhase('idle')
         return
       }
+      scheduleOutboxReplay()
       silentConnectionAttempt = true
       foregroundGraceUntil = Date.now() + FOREGROUND_CONNECTION_GRACE_MS
       if (socket.connected) {
@@ -341,6 +334,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         socket.connect()
       }
     })
+    scheduleOutboxReplay()
     // Attach every listener before opening the transport so a fast cold-start connection cannot be missed.
     useRealtimeStore.getState().setConnectionPhase('connecting')
     scheduleConnectionFailure()
@@ -349,7 +343,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       disposed = true
       appState.remove()
       unsubscribeOutbox()
-      if (outboxTimer) clearTimeout(outboxTimer)
+      outboxScheduler.dispose()
       clearConnectionFailureTimer()
       if (eventTimer) clearTimeout(eventTimer)
       if (revisionTimer) clearTimeout(revisionTimer)
