@@ -22,7 +22,7 @@ import { refreshStorageLimit } from '../billing/storage-entitlements.js'
 import { publishStateChange } from '../responses/events.js'
 import { cancelEpisodicMemoryBuild, readEpisodicMemoryAdminStatus, requestEpisodicMemoryRebuild, updateEpisodicMemorySettings } from '../episodic-memory/settings.js'
 import { ageRecipientDetails, backupSettingsAuditMetadata, normalizeBackupPrefix, parseB2Endpoint, readStoredBackupSettings, resolveBackupSettings } from './backup-settings.js'
-import { B2BackupStore } from './b2-backup-store.js'
+import { B2BackupStore, backupConnectionError } from './b2-backup-store.js'
 import { createOffsiteBackup } from './backup-scheduler.js'
 import { isAgeEncryptedBackup } from './backup-encryption.js'
 import { reconcileDetailedPayloadRetention, type DetailedPayloadLoggingSettings } from '../logging/detailed-payload-retention.js'
@@ -459,7 +459,8 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
         id: newId(), actorUserId: admin.id, action: 'backup.connection_test', targetType: 'backup',
         metadata: { endpoint: candidate.endpoint, bucket: candidate.bucket, prefix: candidate.prefix, succeeded: false },
       })
-      throw error
+      request.log.warn({ err: error }, 'Backblaze connection test failed')
+      throw backupConnectionError(error)
     }
     return { ok: true }
   })
@@ -494,7 +495,12 @@ export async function registerAdminSettingsRoutes(app: FastifyInstance): Promise
       if (active) throw new AppError(409, 'backup_configuration_in_use', 'Wait for the active offsite backup before changing its destination, credentials, or recipient')
     }
     if ((!current.enabled && input.enabled) || connectionChanged) {
-      await new B2BackupStore(resolveBackupSettings(next)).testConnection()
+      try {
+        await new B2BackupStore(resolveBackupSettings(next)).testConnection()
+      } catch (error) {
+        request.log.warn({ err: error }, 'Backblaze connection test failed while saving settings')
+        throw backupConnectionError(error)
+      }
     }
     await db.transaction(async (tx) => {
       await tx.insert(applicationSettings).values({ key: 'backups', value: next, updatedBy: admin.id })
