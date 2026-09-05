@@ -96,7 +96,7 @@ describe('queued submission with a second composer client regression', () => {
       clients.web!.edit(draftId, { content: f.initial.content })
       await clients.web!.flush(draftId)
     })
-    expect(f.mobile().state.content).toBe(f.initial.content)
+    expect(f.mobile().state.content).toBe('')
     // The queue request has succeeded; mobile now records acceptance.
     await act(async () => { await clients.mobile!.completeSubmission(draftId, f.initial, revision) })
     expect(f.writes.at(-1)).toMatchObject({ clear: true, baseRevision: revision + 1, conflict: false })

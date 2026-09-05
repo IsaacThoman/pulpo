@@ -14,8 +14,9 @@ export function cachedComposerDraft<T>(scope: string): CachedComposerDraft<T> | 
 }
 
 export function cacheComposerDraft<T>(scope: string, draft: CachedComposerDraft<T>): void {
-  if (!draft.body && draft.attachments.length === 0) runtimeDrafts.delete(scope)
-  else runtimeDrafts.set(scope, draft as CachedComposerDraft<unknown>)
+  // Empty is a hydrated value too. Removing it would let a quick return to
+  // this chat read the previous disk draft before its pending save completes.
+  runtimeDrafts.set(scope, draft as CachedComposerDraft<unknown>)
 }
 
 export function deleteCachedComposerDraft(scope: string): void {

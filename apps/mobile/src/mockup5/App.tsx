@@ -3,6 +3,7 @@ import { enqueueMessage, mutateQueuedMessage, shouldQueueMessage } from '../feat
 import type { MobileQueuedMessage } from '../types';
 import { mobileComposerSync } from '../features/chat/composerSync';
 import { useComposerSync } from '../features/chat/useComposerSync';
+import { submitComposerDraft } from '../features/chat/composerSubmission';
 import type { ComposerState } from '@pulpo/contracts';
 import {
   createContext,
@@ -3474,18 +3475,16 @@ function ChatView({
   const nativeImagePreviewPendingRef = useRef(false);
   const draftOwnerRef = useRef(`draft:${Crypto.randomUUID()}`);
   const setAttachments = useCallback((update: SetStateAction<ComposerAttachment[]>) => {
-    setAttachmentState((current) => {
-      const next = typeof update === 'function' ? update(current) : update;
-      attachmentsRef.current = next;
-      for (const attachment of next) {
-        latestAttachmentsRef.current.set(attachment.localId, attachment);
-        const activeDraft = activeDraftRef.current;
-        if (activeDraft && attachment.ownerId.startsWith('draft:')) {
-          attachmentDraftOwnersRef.current.set(attachment.localId, activeDraft);
-        }
+    const next = typeof update === 'function' ? update(attachmentsRef.current) : update;
+    attachmentsRef.current = next;
+    for (const attachment of next) {
+      latestAttachmentsRef.current.set(attachment.localId, attachment);
+      const activeDraft = activeDraftRef.current;
+      if (activeDraft && attachment.ownerId.startsWith('draft:')) {
+        attachmentDraftOwnersRef.current.set(attachment.localId, activeDraft);
       }
-      return next;
-    });
+    }
+    setAttachmentState(next);
   }, []);
   const [imageViewer, setImageViewer] = useState<{
     attachments: Attachment[];
@@ -3505,6 +3504,7 @@ function ChatView({
   const draftLoadRevisionRef = useRef(0);
   const messageEditChatIdRef = useRef(chatId);
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [presetPickerOpen, setPresetPickerOpen] = useState(false);
   const [headerOverlayHeight, setHeaderOverlayHeight] = useState(insets.top + 64);
   const [promptConfig, setPromptConfig] = useState({
@@ -4291,7 +4291,7 @@ function ChatView({
   }, [messageEdit, setAttachments]);
 
   const submitMessage = async () => {
-    if (sending) return;
+    if (sendingRef.current) return;
     const sendPolicy = attachmentSendPolicy(attachments, { editing: Boolean(messageEdit) });
     if (!sendPolicy.allowed) {
       Alert.alert(
@@ -4302,22 +4302,22 @@ function ChatView({
       );
       return;
     }
+    sendingRef.current = true;
     setSending(true);
     let followSnapshot: ChatFollowSnapshot | null = null;
     const submittedDraft = { input, attachments: [...attachments], agentEnabled: activeAgentEnabled };
     const submittedDraftIdentity = activeDraftRef.current;
     const restoreSubmittedDraft = () => {
-      if (activeDraftRef.current?.scope !== submittedDraftIdentity?.scope) return;
-      if (composerSync && !composerSync.canRestoreSubmission(submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID, sharedComposerState)) return;
       onChangeInput(submittedDraft.input);
+      inputRef.current = submittedDraft.input;
       setAttachments(restoreLatestDraft(submittedDraft.attachments, latestAttachmentsRef.current));
-      setAgentEnabled(submittedDraft.agentEnabled);
       draftOwnerRef.current = submittedDraft.attachments[0]?.ownerId ?? `draft:${Crypto.randomUUID()}`;
       requestAnimationFrame(() => composerInputRef.current?.focus());
     };
     try {
       if (messageEdit) {
         const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
+        if (messageEditChatIdRef.current !== chatId) return;
         if (prepared.some((attachment) => attachment === null)) {
           Alert.alert('Some files couldn’t upload', 'Retry or remove the failed files, then save again.');
           return;
@@ -4328,7 +4328,7 @@ function ChatView({
             action: 'save_edit', input: submittedDraft.input.trim(), modelId: model.id, presetSelections,
             agentMode: activeAgentEnabled, attachmentIds: (prepared as PreparedAttachment[]).map((item) => item.serverId),
           }, (prepared as PreparedAttachment[]).map((item) => ({ id: item.serverId, name: item.name, mimeType: item.mimeType, sizeBytes: item.size ?? 0 })));
-          restoreComposer();
+          if (queueEditRef.current === queueEdit && messageEditChatIdRef.current === queueEdit.chatId) restoreComposer();
           return;
         }
         const accepted = await onEdit(
@@ -4339,59 +4339,66 @@ function ChatView({
         );
         if (accepted) {
           for (const attachment of submittedDraft.attachments) latestAttachmentsRef.current.delete(attachment.localId);
-          restoreComposer();
+          if (messageEditChatIdRef.current === chatId) restoreComposer();
         }
         return;
       }
-      // Arm before invoking onSend: it inserts the optimistic rows before its
-      // first network await, so arming after the promise resolves is too late.
       const sharedDraftId = submittedDraftIdentity?.draftId ?? NEW_CHAT_DRAFT_ID;
-      const submittedRevision = await composerSync?.prepareSubmission(sharedDraftId, sharedComposerState);
-      if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
-      const pendingSend = onSend(
-        submittedDraft.input,
-        submittedDraft.attachments,
-        { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
-        async () => {
-          const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
-          if (prepared.some((attachment) => attachment === null)) {
-            throw new Error('Some files couldn’t upload. Retry or remove the failed files, then send again.');
-          }
-          return prepared as PreparedAttachment[];
+      const accepted = await submitComposerDraft({
+        submitted: { scope: submittedDraftIdentity?.scope ?? null, body: submittedDraft.input, attachments: submittedDraft.attachments },
+        current: () => ({ scope: activeDraftRef.current?.scope ?? null, body: inputRef.current, attachments: attachmentsRef.current }),
+        prepare: async () => composerSync?.prepareSubmission(sharedDraftId, sharedComposerState),
+        send: () => {
+          // Arm before onSend inserts its optimistic rows.
+          if (!shouldQueueMessage(assistantStatus !== 'idle', queuedMessages.length)) followSnapshot = armSubmittedTurnFollow();
+          return onSend(
+            submittedDraft.input,
+            submittedDraft.attachments,
+            { presetSelections, agentEnabled: activeAgentEnabled, temporary, autoExpire },
+            async () => {
+              const prepared = await Promise.all(submittedDraft.attachments.map(uploadOne));
+              if (prepared.some((attachment) => attachment === null)) {
+                throw new Error('Some files couldn’t upload. Retry or remove the failed files, then send again.');
+              }
+              return prepared as PreparedAttachment[];
+            },
+          );
         },
-      );
-      if (inputRef.current === submittedDraft.input) {
-        skipNextEdit();
-        onChangeInput('');
-        inputRef.current = '';
-        setAttachments([]);
-        draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
-      }
-      const accepted = await pendingSend;
+        clear: () => {
+          skipNextEdit();
+          onChangeInput('');
+          inputRef.current = '';
+          attachmentsRef.current = [];
+          setAttachments([]);
+          draftOwnerRef.current = `draft:${Crypto.randomUUID()}`;
+          if (submittedDraftIdentity) {
+            cacheComposerDraft(submittedDraftIdentity.scope, { body: '', attachments: [] });
+            if (submittedDraftIdentity.namespace) void saveDraft(submittedDraftIdentity.namespace, sharedDraftId, '', []);
+          }
+        },
+        canRestore: () => !composerSync || composerSync.canRestoreSubmission(sharedDraftId, sharedComposerState),
+        restore: restoreSubmittedDraft,
+        complete: async (revision) => { await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, revision ?? undefined); },
+      });
       if (!accepted) {
         if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
         followSnapshot = null;
-        restoreSubmittedDraft();
         return;
       }
-      await composerSync?.completeSubmission(sharedDraftId, sharedComposerState, submittedRevision ?? undefined);
-      if (submittedDraftIdentity) {
-        deleteCachedComposerDraft(submittedDraftIdentity.scope);
-        if (submittedDraftIdentity.namespace) {
-          void saveDraft(submittedDraftIdentity.namespace, submittedDraftIdentity.draftId, '', []);
-        }
-      }
       followSnapshot = null;
+      const retainedAttachments = submittedDraftIdentity
+        ? cachedComposerDraft<ComposerAttachment>(submittedDraftIdentity.scope)?.attachments ?? [] : [];
       for (const attachment of submittedDraft.attachments) {
+        if ([...attachmentsRef.current, ...retainedAttachments].some((item) => item.localId === attachment.localId)) continue;
         latestAttachmentsRef.current.delete(attachment.localId);
         activeUploadsRef.current.delete(attachment.localId);
         attachmentDraftOwnersRef.current.delete(attachment.localId);
       }
     } catch (error) {
       if (followSnapshot) restoreSubmittedTurnFollow(followSnapshot);
-      if (!messageEdit) restoreSubmittedDraft();
       Alert.alert('Couldn’t send message', error instanceof Error ? error.message : 'Your complete draft was restored. Please try again.');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   };
@@ -4845,7 +4852,7 @@ function ChatView({
                 maxFontSizeMultiplier={1.6}
                 multiline
                 maxLength={1_000_000}
-                onChangeText={onChangeInput}
+                onChangeText={(value) => { inputRef.current = value; onChangeInput(value); }}
                 onSelectionChange={(event) => { inputSelectionRef.current = event.nativeEvent.selection; }}
                 placeholder={attachments.length > 0 ? 'Add a caption…' : messageEdit ? 'Edit message…' : temporary ? 'Temporary message…' : 'Message…'}
                 placeholderTextColor={COLORS.muted}
