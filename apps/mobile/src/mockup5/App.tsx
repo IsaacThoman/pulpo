@@ -121,9 +121,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import {
   KeyboardChatScrollView,
   KeyboardController,
+  KeyboardEvents,
   KeyboardStickyView,
   type KeyboardChatScrollViewRef,
-  useKeyboardState,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
 import Reanimated, {
@@ -5214,9 +5214,21 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const addFolder = usePrototypeStore((state) => state.addFolder);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
-  const hideNewChatButton = useKeyboardState(
-    (state) => !(Platform.OS === 'ios' && Platform.isPad) && state.isVisible,
+  const [hideNewChatButton, setHideNewChatButton] = useState(
+    () => !(Platform.OS === 'ios' && Platform.isPad) && KeyboardController.isVisible(),
   );
+  useEffect(() => {
+    if (Platform.OS === 'ios' && Platform.isPad) return;
+    // Restore at dismissal start, rather than waiting for keyboardDidHide.
+    const subscriptions = [
+      KeyboardEvents.addListener('keyboardWillShow', () => setHideNewChatButton(true)),
+      KeyboardEvents.addListener('keyboardDidShow', () => setHideNewChatButton(true)),
+      KeyboardEvents.addListener('keyboardWillHide', () => setHideNewChatButton(false)),
+      KeyboardEvents.addListener('keyboardDidHide', () => setHideNewChatButton(false)),
+    ];
+    setHideNewChatButton(KeyboardController.isVisible());
+    return () => subscriptions.forEach((subscription) => subscription.remove());
+  }, []);
   const folderItems = useMemo(() => {
     return folders.map((folder) => ({
       id: folder.id,
@@ -5434,9 +5446,14 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           style={styles.flex}
           onTouchStart={dismissSearch}
         />
-        {!hideNewChatButton && <View style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }]}>
+        <View
+          accessibilityElementsHidden={hideNewChatButton}
+          importantForAccessibility={hideNewChatButton ? 'no-hide-descendants' : 'auto'}
+          pointerEvents={hideNewChatButton ? 'none' : 'auto'}
+          style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14, opacity: hideNewChatButton ? 0 : 1 }]}
+        >
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
-        </View>}
+        </View>
       </SafeAreaView>
     </View>
   );
