@@ -123,6 +123,7 @@ import {
   KeyboardController,
   KeyboardStickyView,
   type KeyboardChatScrollViewRef,
+  useKeyboardState,
   useReanimatedKeyboardAnimation,
 } from 'react-native-keyboard-controller';
 import Reanimated, {
@@ -5213,6 +5214,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   const addFolder = usePrototypeStore((state) => state.addFolder);
   const [search, setSearch] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const hideNewChatButton = useKeyboardState(
+    (state) => !(Platform.OS === 'ios' && Platform.isPad) && state.isVisible,
+  );
   const folderItems = useMemo(() => {
     return folders.map((folder) => ({
       id: folder.id,
@@ -5430,9 +5434,9 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
           style={styles.flex}
           onTouchStart={dismissSearch}
         />
-        <View style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }]}>
+        {!hideNewChatButton && <View style={[styles.drawerNewChatButton, { bottom: insets.bottom + 14 }]}>
           <DrawerNewChatButton isDark={isDark} onPress={() => { dismissSearch(); onNewChat(); }} />
-        </View>
+        </View>}
       </SafeAreaView>
     </View>
   );
