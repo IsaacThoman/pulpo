@@ -49,7 +49,10 @@ export function MaterialField({ label, error, icon, trailingAction, ...props }: 
   }, [value, props.value]);
   const onValueChange = (next: string) => { lastNativeText.current = next; props.onChangeText?.(next); };
   const keyboardType = props.secureTextEntry ? 'password' : props.keyboardType === 'email-address' ? 'email' : props.keyboardType === 'url' ? 'uri' : props.keyboardType === 'number-pad' || props.keyboardType === 'numeric' ? 'number' : props.keyboardType === 'phone-pad' ? 'phone' : 'text';
-  const submit = () => props.onSubmitEditing?.({ nativeEvent: { text: value.get() } } as never);
+  const submit = () => {
+    if (props.onSubmitEditing) props.onSubmitEditing({ nativeEvent: { text: value.get() } } as never);
+    else Keyboard.dismiss();
+  };
   return <Host matchContents={{ vertical: true }} style={{ width: '100%' }} ignoreSafeAreaKeyboardInsets>
     <OutlinedTextField value={value} onValueChange={onValueChange} enabled={props.editable !== false} autoFocus={props.autoFocus}
       singleLine={!props.multiline} minLines={props.multiline ? 4 : 1} maxLines={props.multiline ? 8 : 1} maxLength={props.maxLength}

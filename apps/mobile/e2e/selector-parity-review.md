@@ -30,7 +30,7 @@ Production verification changed draft model/preset controls only; no messages we
 - Mobile TypeScript, repository lint, Android/iOS exports, and whitespace checks passed.
 - Added regression coverage for complete Favorites, saved order, deleted labs, distinct provider IDs with identical display names, grouped preset dispatch, and submenu dismissal behavior. Removed the test that codified the incorrect five-model cap.
 - This is a focused correction of selector/preset/control parity, not a claim that every app state is equivalent. The earlier audit’s physical-device, assistive-technology, passkey, and Agent-service limitations still apply.
-- Changing Android system appearance while the chat is already mounted can leave some React Native surface colors stale until reopening the app. Native menu colors and logos update; seamless live appearance changes across all chat surfaces remain an identified limitation.
+- The live Android appearance issue identified in this pass was subsequently fixed and device-verified in the [screen quality and motion review](android-quality-review.md).
 
 ## Evidence
 

@@ -186,7 +186,7 @@ export function EditProfileScreen({ navigation }: NativeStackScreenProps<RootSta
   }, [name, navigation, save]);
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Profile" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>This is the name shown on your Pulpo account.</SwiftUIText>}><NativeFormTextField title="Name" value={name} onChange={setName} /><SwiftUILabeledContent label="Email"><SwiftUIText modifiers={[foregroundStyle('secondary')]}>{session.user?.email ?? ''}</SwiftUIText></SwiftUILabeledContent></SwiftUISection></SwiftUIForm></SwiftUIHost>;
-  return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><Field label="Display name" value={name} onChangeText={setName} /><PrimaryButton label="Save" disabled={!name.trim()} onPress={save} /></Screen>;
+  return <Screen><PageHeader title="Edit Profile" onBack={() => navigation.goBack()} /><Field label="Display name" autoComplete="name" value={name} onChangeText={setName} /><Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>This is the name shown on your Pulpo account.</Text><Card style={{ marginBottom: 24 }}><ListRow title="Email" value={session.user?.email ?? ''} last /></Card><PrimaryButton label="Save" disabled={!name.trim()} onPress={save} /></Screen>;
 }
 
 function NativePasswordField({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }) {
@@ -212,7 +212,7 @@ export function ChangePasswordScreen({ navigation }: NativeStackScreenProps<Root
   };
 
   if (Platform.OS === 'ios') return <SwiftUIHost modifiers={[tint(theme.blue)]} style={styles.flex}><SwiftUIForm><SwiftUISection title="Password" footer={<SwiftUIText modifiers={[foregroundStyle('secondary')]}>Use at least 8 characters. Other signed-in devices will remain active.</SwiftUIText>}><NativePasswordField placeholder="Current password" value={current} onChange={setCurrent} /><NativePasswordField placeholder="New password" value={next} onChange={setNext} /><NativePasswordField placeholder="Confirm new password" value={confirmation} onChange={setConfirmation} /></SwiftUISection><SwiftUISection><SwiftUIButton onPress={valid ? submit : undefined} modifiers={[buttonStyle('plain'), frame({ maxWidth: Infinity, minHeight: 44 }), background(buttonBackground, shapes.capsule()), contentShape(shapes.capsule()), accessibilityValue(valid ? 'Enabled' : 'Disabled'), accessibilityHint(valid ? 'Updates your password' : 'Enter your current password and matching new passwords to enable')]}><SwiftUIText modifiers={[foregroundStyle(buttonForeground), font({ textStyle: 'body', weight: 'semibold' })]}>Update Password</SwiftUIText></SwiftUIButton></SwiftUISection></SwiftUIForm></SwiftUIHost>;
-  return <Screen><PageHeader title="Change Password" onBack={() => navigation.goBack()} /><Field label="Current password" secureTextEntry value={current} onChangeText={setCurrent} /><Field label="New password" secureTextEntry value={next} onChangeText={setNext} /><Field label="Confirm new password" secureTextEntry value={confirmation} onChangeText={setConfirmation} /><PrimaryButton label="Update password" disabled={!valid} onPress={submit} /></Screen>;
+  return <Screen><PageHeader title="Change Password" onBack={() => navigation.goBack()} /><Field label="Current password" secureTextEntry autoComplete="current-password" autoCapitalize="none" value={current} onChangeText={setCurrent} /><Field label="New password" secureTextEntry autoComplete="new-password" autoCapitalize="none" value={next} onChangeText={setNext} /><Field label="Confirm new password" secureTextEntry autoComplete="new-password" autoCapitalize="none" value={confirmation} onChangeText={setConfirmation} /><Text style={[styles.helper, { color: theme.secondary, marginBottom: 16 }]}>Use at least 8 characters. Other signed-in devices will remain active.</Text><PrimaryButton label="Update password" disabled={!valid} onPress={submit} /></Screen>;
 }
 
 type TwoFactorAction = 'idle' | 'setup' | 'enroll' | 'recovery' | 'regenerate' | 'disable';
@@ -278,8 +278,8 @@ export function InstanceDetailsScreen({ navigation }: NativeStackScreenProps<Roo
 type SettingsDestination = SettingsSection | 'trash';
 
 const settingsSections: { id: SettingsDestination; title: string; detail: string; icon: string }[] = [
-  { id: 'general', title: 'General', detail: 'Appearance and keyboard behavior', icon: 'slider.horizontal.3' },
-  { id: 'interface', title: 'Interface', detail: 'Streaming, reasoning, accessibility', icon: 'rectangle.3.group' },
+  { id: 'general', title: 'General', detail: 'Theme and appearance', icon: 'slider.horizontal.3' },
+  { id: 'interface', title: 'Interface', detail: 'Reasoning, haptics, and offline storage', icon: 'rectangle.3.group' },
   { id: 'data', title: 'Data Controls', detail: 'Storage and deletion', icon: 'externaldrive' },
   { id: 'trash', title: 'Trash', detail: 'Retention, restore, permanent deletion', icon: 'trash' },
 ];
@@ -384,7 +384,14 @@ export function SettingsDetailScreen({ navigation, route }: NativeStackScreenPro
   </Screen>;
 }
 
-function Toggle({ title, detail, value, onChange, last = false }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void; last?: boolean }) { return <ListRow title={title} detail={detail} last={last}><NativeSwitch label={title} value={value} onChange={onChange} /></ListRow>; }
+function Toggle({ title, detail, value, onChange, last = false }: { title: string; detail?: string; value: boolean; onChange: (value: boolean) => void; last?: boolean }) {
+  const row = <ListRow title={title} detail={detail} last={last}><NativeSwitch label={title} value={value} onChange={onChange} /></ListRow>;
+  if (Platform.OS !== 'android') return row;
+  return <Pressable accessibilityRole="switch" accessibilityLabel={title} accessibilityHint={detail} accessibilityState={{ checked: value }} onPress={() => onChange(!value)}>
+    <View pointerEvents="none" importantForAccessibility="no-hide-descendants">{row}</View>
+  </Pressable>;
+}
+
 const retentionLabels: Record<string, string> = { instant: 'No retention', '24h': '24 hours', '7d': '7 days', '30d': '30 days', '90d': '90 days', indefinite: 'Indefinitely' };
 export function TrashScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Trash'>) {
   const theme = useAppTheme();

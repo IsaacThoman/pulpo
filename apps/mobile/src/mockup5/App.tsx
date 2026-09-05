@@ -1,3 +1,4 @@
+import { useAppTheme } from './src/theme';
 import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
@@ -685,6 +686,7 @@ function NativeComposerIconButton({
   disabled?: boolean;
   prominent?: boolean;
 }) {
+  const { styles } = useChatStyles();
   const colorScheme = useColorScheme();
   const prominentTint = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const prominentForeground = colorScheme === 'dark' || disabled ? '#1c1c1e' : '#ffffff';
@@ -714,6 +716,7 @@ function NativeAttachmentMenu({ onTakePhoto, onPickPhotos, onPickFiles }: {
   onPickPhotos: () => void;
   onPickFiles: () => void;
 }) {
+  const { styles } = useChatStyles();
   return (
     <SwiftUIHost ignoreSafeArea="keyboard" style={styles.nativeComposerCircleHost}>
       <SwiftUIMenu
@@ -767,6 +770,7 @@ function AttachmentStrip({ attachments, onPreviewFile, onPreviewImage, onRemove,
   onRemove: (localId: string) => void;
   onRetry: (localId: string) => void;
 }) {
+  const { styles } = useChatStyles();
   const imageRefs = useRef(new Map<string, View>());
   const imageSources = useRef(new Map<string, { height: number; uri: string; width: number }>());
   const previewImage = useCallback((index: number, attachment: ComposerAttachment) => {
@@ -899,6 +903,7 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
   onPreviewFile: (attachment: Attachment) => void;
   onPreviewImages: (attachments: Attachment[], selected: Attachment, origin?: AttachmentImageTransitionOrigin) => void;
 }) {
+  const { styles, COLORS } = useChatStyles();
   const imageRef = useRef<View>(null);
   const imageSourceRef = useRef<{ height: number; uri: string; width: number } | undefined>(undefined);
   const uploading = attachment.state === 'local' || attachment.state === 'uploading';
@@ -998,6 +1003,7 @@ function SentAttachmentPreview({ attachment, group, onPreviewFile, onPreviewImag
 const PULPO_MARK_SOURCE = require('./assets/pulpo-smiley.png') as ImageSourcePropType;
 
 function PulpoMark({ size = 40 }: { size?: number }) {
+  const { styles } = useChatStyles();
   return (
     <Image
       accessibilityIgnoresInvertColors
@@ -1013,6 +1019,7 @@ type GlassProps = Omit<ComponentProps<typeof GlassView>, 'isInteractive'> & {
 };
 
 function Glass({ children, style, interactive = false, tintColor, ...props }: GlassProps) {
+  const { styles, COLORS } = useChatStyles();
   const colorScheme = useColorScheme();
   const { reduceTransparency } = useAccessibilityPreferences();
   const available = Platform.OS === 'ios' && isGlassEffectAPIAvailable() && !reduceTransparency;
@@ -1025,6 +1032,7 @@ function Glass({ children, style, interactive = false, tintColor, ...props }: Gl
 }
 
 function RoundButton({ icon, onPress, accessibilityLabel, selected = false, selectedColor = 'purple', size = 44, tinted = false }: { icon: SymbolName | 'ghost'; onPress: () => void; accessibilityLabel: string; selected?: boolean; selectedColor?: 'purple' | 'teal'; size?: number; tinted?: boolean }) {
+  const { styles, COLORS } = useChatStyles();
   const colorScheme = useColorScheme();
   if (Platform.OS === 'android') return <MaterialIconButton label={accessibilityLabel} icon={typeof icon === 'string' ? icon : 'menu'} onPress={onPress} selected={selected} size={size} />;
   const selectedForeground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
@@ -1073,6 +1081,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
 }
 
 function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: () => void }) {
+  const { styles } = useChatStyles();
   if (Platform.OS === 'android') return <MaterialButton label="New Chat" icon="square.and.pencil" onPress={onPress} compact />;
   const foregroundColor = isDark ? '#1C1C1E' : '#FFFFFF';
   const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
@@ -1104,6 +1113,7 @@ function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: ()
 }
 
 function HeaderActionGlyph({ name, color = COLORS.text }: { name: 'bookmark' | 'hourglass' | 'square.and.pencil'; color?: ColorValue }) {
+  const { styles } = useChatStyles();
   if (Platform.OS === 'ios') {
     return (
       <View pointerEvents="none" style={styles.headerActionGlyphHost}>
@@ -1143,6 +1153,7 @@ function FallbackTemporaryChatHeaderControl({
   onSave,
   onNewChat,
 }: TemporaryChatHeaderControlProps) {
+  const { styles } = useChatStyles();
   const colorScheme = useColorScheme();
   const { reduceMotion } = useAccessibilityPreferences();
   const iconColor = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
@@ -1265,19 +1276,37 @@ function FallbackTemporaryChatHeaderControl({
   );
 }
 
-function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
+function AndroidTemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
   const { reduceMotion } = useAccessibilityPreferences();
-  if (Platform.OS === 'android') return <View style={{ flexDirection: 'row' }}>
-    {props.expanded && props.leadingAction !== 'none' ? <MaterialIconButton
-      icon={props.leadingAction === 'save' ? 'bookmark' : 'hourglass'}
-      label={props.leadingAction === 'save' ? 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
-      disabled={props.leadingAction === 'save' && (props.saving || props.saveDisabled)}
-      selected={props.leadingAction === 'expiration' && props.expirationEnabled}
-      onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} /> : null}
+  const visible = props.expanded && props.leadingAction !== 'none';
+  const progress = useSharedValue(visible ? 1 : 0);
+  useEffect(() => {
+    progress.value = reduceMotion ? Number(visible) : withTiming(Number(visible), { duration: 220 });
+  }, [progress, reduceMotion, visible]);
+  const leadingStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: interpolate(progress.value, [0, 1], [0.85, 1]) }],
+  }));
+  // Reserve both 48 dp targets. Toggling a mode must not move the model or
+  // trailing action, and fading-out controls must immediately stop accepting taps.
+  return <View style={{ flexDirection: 'row', width: 96, height: 48 }}>
+    <Reanimated.View style={leadingStyle} pointerEvents={visible ? 'auto' : 'none'} importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}>
+      <MaterialIconButton
+        icon={props.leadingAction === 'save' ? 'bookmark' : 'hourglass'}
+        label={props.leadingAction === 'save' ? props.saving ? 'Saving chat' : 'Save chat' : props.expirationEnabled ? 'Disable automatic expiration' : 'Enable automatic expiration'}
+        disabled={!visible || (props.leadingAction === 'save' && (props.saving || props.saveDisabled))}
+        selected={props.leadingAction === 'expiration' && props.expirationEnabled}
+        onPress={props.leadingAction === 'save' ? props.onSave : props.onToggleExpiration} />
+    </Reanimated.View>
     <MaterialIconButton icon={props.trailingAction === 'ghost' ? 'ghost' : 'square.and.pencil'}
-      label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : 'New chat'}
+      label={props.trailingAction === 'ghost' ? props.active ? 'Disable temporary chat' : 'Enable temporary chat' : props.active ? 'New temporary chat' : 'New chat'}
       selected={props.active} onPress={props.trailingAction === 'ghost' ? props.onToggleTemporary : props.onNewChat} />
   </View>;
+}
+
+function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
+  const { reduceMotion } = useAccessibilityPreferences();
+  if (Platform.OS === 'android') return <AndroidTemporaryChatHeaderControl {...props} />;
   return Platform.OS === 'ios'
     ? (
       <PersistentNativeTemporaryChatHeaderView
@@ -1290,6 +1319,7 @@ function TemporaryChatHeaderControl(props: TemporaryChatHeaderControlProps) {
 }
 
 function AppHeader({ children, edgeAligned = false }: { children: ReactNode; edgeAligned?: boolean }) {
+  const { styles } = useChatStyles();
   return <View pointerEvents="box-none" style={[styles.appHeader, edgeAligned && styles.appHeaderEdgeAligned]}>{children}</View>;
 }
 
@@ -1338,6 +1368,7 @@ async function copyText(text: string, announcement = 'Copied') {
 }
 
 function IconAction({ disabled = false, icon, label, onPress }: { disabled?: boolean; icon: SymbolName; label: string; onPress: () => void }) {
+  const { styles, COLORS } = useChatStyles();
   return (
     <Pressable
       accessibilityLabel={label}
@@ -1365,6 +1396,7 @@ function ModelMark({ model, size = 28, logo = 'model' }: { model: Model; size?: 
 
 /** Neutral pending state; reasoning is rendered only from reasoning output. */
 function ResponsePendingDot({ delay, reduceMotion }: { delay: number; reduceMotion: boolean }) {
+  const { styles } = useChatStyles();
   const translateY = useSharedValue(0);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ translateY: translateY.value }] }));
 
@@ -1390,6 +1422,7 @@ function ResponsePendingDot({ delay, reduceMotion }: { delay: number; reduceMoti
 }
 
 function ResponsePendingIndicator() {
+  const { styles } = useChatStyles();
   const { reduceMotion } = useAccessibilityPreferences();
   if (Platform.OS === 'android' && !reduceMotion) return <View accessibilityLabel="Assistant is responding" accessibilityRole="progressbar"><MaterialLoading /></View>;
 
@@ -1411,11 +1444,11 @@ const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <AppPreferencesProvider>
+    <AppPreferencesProvider><ChatStylesProvider>
       <AccessibilityPreferencesProvider>
         <PrototypeRoot />
       </AccessibilityPreferencesProvider>
-    </AppPreferencesProvider>
+    </ChatStylesProvider></AppPreferencesProvider>
   );
 }
 
@@ -1529,6 +1562,7 @@ function PrototypeRoot() {
 }
 
 function AppContent({ navigation, route }: NativeStackScreenProps<RootStackParamList, 'Chat'>) {
+  const { styles } = useChatStyles();
   const queryClient = useQueryClient();
   const productionInstanceUrl = useSessionStore((state) => state.instanceUrl);
   const productionUserId = useSessionStore((state) => state.user?.id);
@@ -2605,6 +2639,7 @@ function MessageContextMenu({
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
+  const { styles } = useChatStyles();
   const runAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const previewText = message.text.length > 2_000
     ? `${message.text.slice(0, 1_999)}…`
@@ -2664,6 +2699,7 @@ function SentAttachmentContextMenu({ attachment, message, onEdit, onRegenerate, 
   onRegenerate: (message: Message) => void;
   children: ReactNode;
 }) {
+  const { styles, COLORS } = useChatStyles();
   const runMessageAction = useMessageActionRunner({ message, onEdit, onRegenerate });
   const shareAttachment = () => {
     if (attachment.uri) void (Platform.OS === 'android' ? shareLocalFile(attachment.uri, attachment.name, attachment.mimeType) : Share.share({ message: attachment.name, url: attachment.uri })).catch((error) => Alert.alert('Couldn’t share attachment', error instanceof Error ? error.message : undefined));
@@ -2721,6 +2757,7 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
   sourceNativeId?: string;
   variant: 'message' | 'preview' | 'composer';
 }) {
+  const { styles, COLORS } = useChatStyles();
   const [uri, setUri] = useState(attachment.uri);
   const [failed, setFailed] = useState(false);
   const [previewSize, setPreviewSize] = useState(() => fitAttachmentPreviewSize(0, 0));
@@ -2778,6 +2815,7 @@ function ResolvedAttachmentImage({ attachment, onResolved, sourceNativeId, varia
 }
 
 function WorkTriggerIcon({ steps, active }: { steps: TimelineStep[]; active: boolean }) {
+  const { COLORS } = useChatStyles();
   const compaction = steps.find((step) => step.kind === 'compaction');
   if (compaction?.kind === 'compaction') {
     if (compaction.compaction.status === 'in_progress') return <Loader2 color={COLORS.muted} size={14} />;
@@ -2872,6 +2910,7 @@ function toolStepSummary(step: Extract<TimelineStep, { kind: 'tool' }>['tool']):
 }
 
 const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<TimelineStep, { kind: 'tool' }> }) {
+  const { styles, COLORS } = useChatStyles();
   const [open, setOpen] = useState(false);
   const failed = step.tool.status === 'failed' || step.tool.isError;
   const running = step.tool.status === 'running';
@@ -2912,6 +2951,7 @@ const ToolStepRow = memo(function ToolStepRow({ step }: { step: Extract<Timeline
 });
 
 function CompactionStepContent({ step }: { step: Extract<TimelineStep, { kind: 'compaction' }> }) {
+  const { styles } = useChatStyles();
   const item = step.compaction;
   return (
     <View style={styles.compactionDetail}>
@@ -2941,6 +2981,7 @@ function RecallStepContent({ step, onOpenChat }: {
   step: Extract<TimelineStep, { kind: 'recall' }>;
   onOpenChat: (chatId: string) => void;
 }) {
+  const { styles } = useChatStyles();
   const chats = usePrototypeStore((state) => state.chats);
   const availableChatIds = useMemo(() => new Set(chats.filter((chat) => chat.deletedAt === null && !chat.expired && !chat.temporary).map((chat) => chat.id)), [chats]);
   return <View style={styles.recallSources}>{step.recall.sources.map((source) => {
@@ -2966,6 +3007,7 @@ function WorkBlock({ steps, active, durationMs, onOpenChat }: {
   durationMs?: number;
   onOpenChat: (chatId: string) => void;
 }) {
+  const { styles, COLORS } = useChatStyles();
   const [open, setOpen] = useState(false);
   if (steps.length === 0) return null;
   const label = workLabel(steps, active, durationMs);
@@ -3039,6 +3081,7 @@ function BranchControls({ branches, activeIndex, onActivate, disabled = false }:
   onActivate: (branchId: string) => Promise<void>;
   disabled?: boolean;
 }) {
+  const { styles } = useChatStyles();
   const activate = useCallback((index: number) => {
     const branch = branches[index];
     if (!branch) return;
@@ -3061,6 +3104,7 @@ function AssistantFrame({ children, model, sideRail, time }: {
   sideRail: boolean;
   time: string;
 }) {
+  const { styles } = useChatStyles();
   return (
     <View style={styles.assistantFrame}>
       <View style={[styles.assistantMark, !sideRail && styles.assistantMarkCompact]}>
@@ -3100,6 +3144,7 @@ const MessageRow = memo(function MessageRow({
   sideRail?: boolean;
   editingLocked?: boolean;
 }) {
+  const { styles, COLORS } = useChatStyles();
   const { showReasoning } = useAppPreferences();
   const branches = message.branches ?? [];
   const branchIndex = message.activeBranch ?? 0;
@@ -3291,6 +3336,7 @@ function AndroidModelMenu({ model, models, onSelectModel }: { model: Model; mode
 }
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, tinted = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; tinted?: boolean }) {
+  const { styles } = useChatStyles();
   const colorScheme = useColorScheme();
   const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
   const [labsMenuRevision, setLabsMenuRevision] = useState(0);
@@ -3409,6 +3455,7 @@ function NativeModelSectionRow({ label, section, models, selected = false }: { l
 }
 
 function SuggestedPromptButton({ label, accessible, onPress, temporary = false }: { label: string; accessible: boolean; onPress: () => void; temporary?: boolean }) {
+  const { styles } = useChatStyles();
   const colorScheme = useColorScheme();
   const temporaryStyle = temporary
     ? colorScheme === 'dark' ? styles.temporarySuggestionCardDark : styles.temporarySuggestionCardLight
@@ -3490,6 +3537,7 @@ function ChatView({
   onTemporaryChange: (value: boolean) => void;
   onAutoExpirationChange: (value: boolean) => void;
 }) {
+  const { styles, COLORS } = useChatStyles();
   const queueClient = useQueryClient();
   const [queueBusy, setQueueBusy] = useState(false);
   const queueEditRef = useRef<{ id: string; chatId: string; namespace: string; model: Model; presets: Record<string, GenerationSelections> } | null>(null);
@@ -3650,7 +3698,7 @@ function ChatView({
     backgroundColor: interpolateColor(
       temporaryProgress.value,
       [0, 1],
-      colorScheme === 'dark' ? ['#000000', '#080312'] : ['#ffffff', '#f4f0ff'],
+      Platform.OS === 'android' ? [COLORS.background as string, COLORS.fillStrong as string] : colorScheme === 'dark' ? ['#000000', '#080312'] : ['#ffffff', '#f4f0ff'],
     ),
   }));
   const temporaryLabelAnimatedStyle = useAnimatedStyle(() => ({
@@ -4588,7 +4636,7 @@ function ChatView({
         editingLocked={Boolean(messageEdit)}
       />
     </View>
-  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer]);
+  ), [assistantSideRail, expired, handleMessageEditAction, messageEdit, model, models, onActivateBranch, onOpenChat, onRegenerate, openFilePreview, openImageViewer, styles.transcriptColumn]);
 
   const empty = isEmptyConversation && assistantStatus === 'idle';
   const headerAction = resolveChatHeaderAction(chatId, messages.length, temporary);
@@ -4619,34 +4667,32 @@ function ChatView({
   const emptyLandingContent = (
     <View style={styles.emptyState}>
       <Reanimated.View style={[styles.emptyIdentity, !scrollLanding && emptyStateAnimatedStyle]}>
-        <View style={styles.emptyModelLineWrap}>
-          {Platform.OS === 'android' ? landingBadge ? <View accessibilityLabel={landingBadge.kind === 'temporary' ? 'Temporary chat' : `Chat expires in ${landingBadge.period}`} style={styles.androidLandingBadge}>
-            <Icon name={landingBadge.kind === 'temporary' ? 'theatermasks' : 'hourglass'} size={18} color={landingBadge.kind === 'temporary' ? COLORS.accent : '#14B8A6'} />
-            <Text style={[styles.expirationLabelText, landingBadge.kind === 'temporary' && { color: COLORS.accent }]}>{landingBadge.kind === 'temporary' ? 'Temporary' : `Expires in ${landingBadge.period}`}</Text>
-          </View> : null : <>
+        <View style={[styles.emptyModelLineWrap, Platform.OS === 'android' && { paddingTop: Math.max(40, 24 * fontScale + 16) }]}>
           <Reanimated.View
             accessible={temporary}
             accessibilityElementsHidden={!temporary}
+            importantForAccessibility={temporary ? 'auto' : 'no-hide-descendants'}
             accessibilityLabel="Temporary chat"
             pointerEvents="none"
-            style={[styles.temporaryLabel, temporaryLabelAnimatedStyle]}
+            style={[styles.temporaryLabel, Platform.OS === 'android' && styles.androidLandingBadge, temporaryLabelAnimatedStyle]}
           >
-            <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />
-            <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark]}>Temporary</Text>
+            {Platform.OS === 'android' ? <Icon name="theatermasks" size={18} color={COLORS.accent} /> : <Ghost color={colorScheme === 'dark' ? '#c4b5fd' : '#6d28d9'} size={14} strokeWidth={2} />}
+            <Text style={[styles.temporaryLabelText, colorScheme === 'dark' && styles.temporaryLabelTextDark, Platform.OS === 'android' && { color: COLORS.accent }]}>Temporary</Text>
           </Reanimated.View>
           <Reanimated.View
             accessible={landingBadge?.kind === 'expiration'}
             accessibilityElementsHidden={landingBadge?.kind !== 'expiration'}
+            importantForAccessibility={landingBadge?.kind === 'expiration' ? 'auto' : 'no-hide-descendants'}
             accessibilityLabel={landingBadge?.kind === 'expiration' ? `Chat expires in ${landingBadge.period}` : undefined}
             pointerEvents="none"
-            style={[styles.temporaryLabel, expirationLabelAnimatedStyle]}
+            style={[styles.temporaryLabel, Platform.OS === 'android' && styles.androidLandingBadge, expirationLabelAnimatedStyle]}
           >
-            <Hourglass color="#14B8A6" size={14} strokeWidth={2} />
-            <Text style={styles.expirationLabelText}>
+            {Platform.OS === 'android' ? <Icon name="hourglass" size={18} color={COLORS.positive} /> : <Hourglass color="#14B8A6" size={14} strokeWidth={2} />}
+            <Text style={[styles.expirationLabelText, Platform.OS === 'android' && { color: COLORS.positive }]}>
               {`Expires in ${expirationPeriod === 'disabled' ? '' : expirationPeriod}`}
             </Text>
           </Reanimated.View>
-          </>}
+
           <View style={[styles.emptyModelLine, accessibilityLayout && styles.emptyModelLineAccessible]}>
             <ModelMark model={model} size={48} />
             <Text maxFontSizeMultiplier={1.6} style={styles.emptyTitle}>{model.name}</Text>
@@ -4695,7 +4741,7 @@ function ChatView({
             onPress={onTogglePanel}
             tinted={temporary}
           />
-          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
+          <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, Platform.OS !== 'android' && modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
             ) : Platform.OS === 'android' && !accessibilityLayout ? (
@@ -5054,6 +5100,7 @@ function ChatView({
 }
 
 function NativeDrawerSearch({ value, focused, onChange, onFocusChange, fieldRef }: { value: string; focused: boolean; onChange: (value: string) => void; onFocusChange: (focused: boolean) => void; fieldRef: RefObject<SwiftUITextFieldRef | null> }) {
+  const { styles } = useChatStyles();
   const nativeValue = useNativeState(value);
   useEffect(() => { if (nativeValue.get() !== value) nativeValue.set(value); }, [nativeValue, value]);
 
@@ -5089,6 +5136,7 @@ function NativeFoldersDisclosure({ folders, onCreate, onSelectChat }: {
   onCreate: () => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
+  const { styles } = useChatStyles();
   const [expanded, setExpanded] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const { reduceMotion } = useAccessibilityPreferences();
@@ -5150,6 +5198,7 @@ function AndroidFoldersDisclosure({ folders, onSelectChat, onCreate }: {
   onSelectChat: (chat: HistoryChatSummary) => void;
   onCreate: () => void;
 }) {
+  const { COLORS, styles } = useChatStyles();
   const [expanded, setExpanded] = useState(false);
   const [openFolders, setOpenFolders] = useState<Set<string>>(() => new Set());
   const toggleFolder = (id: string) => setOpenFolders((current) => {
@@ -5190,6 +5239,7 @@ const HistoryChatRow = memo(function HistoryChatRow({ active, chat, expirationMe
   onPreviewRequest: (chat: HistoryChatSummary) => void;
   onSelectChat: (chat: HistoryChatSummary) => void;
 }) {
+  const { styles } = useChatStyles();
   const { fontScale } = useWindowDimensions();
   const largeAndroidText = Platform.OS === 'android' && fontScale >= 1.5;
   const expirationAction = expirationMenuAction?.kind ?? 'hidden';
@@ -5252,6 +5302,7 @@ const HistoryPanel = memo(function HistoryPanel({ chats, activeChatId, drawerOpe
   onOpenSettings: () => void;
   onPreviewRequest: (chatId: string) => void;
 }) {
+  const { styles, COLORS } = useChatStyles();
   const insets = useSafeAreaInsets();
   const { fontScale } = useWindowDimensions();
   const newChatWidth = Platform.OS === 'android' ? Math.min(240, 160 + Math.max(0, fontScale - 1) * 70) : undefined;
@@ -5494,6 +5545,7 @@ function ModelSheet({ visible, selected, models, onClose, onSelect }: { visible:
 }
 
 function AndroidModelSheet({ visible, selected, models, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
+  const { COLORS } = useChatStyles();
   const [query, setQuery] = useState('');
   const [lab, setLab] = useState<string | null>(null);
   const { width, height, fontScale } = useWindowDimensions();
@@ -5523,6 +5575,7 @@ function AndroidModelSheet({ visible, selected, models, onClose, onSelect }: { v
 }
 
 function NativeModelSheet({ visible, selected, models: availableModels, onClose, onSelect }: { visible: boolean; selected: string; models: Model[]; onClose: () => void; onSelect: (model: Model) => void }) {
+  const { styles } = useChatStyles();
   const [query, setQuery] = useState('');
   const nativeQuery = useNativeState('');
   const models = availableModels.filter((model) => `${model.name} ${model.lab} ${model.detail}`.toLowerCase().includes(query.trim().toLowerCase()));
@@ -5541,7 +5594,7 @@ function NativeModelSheet({ visible, selected, models: availableModels, onClose,
   </SwiftUIBottomSheet></SwiftUIHost>;
 }
 
-const styles = StyleSheet.create({
+function createChatStyles(COLORS: ChatColors) { return StyleSheet.create({
   flex: { flex: 1 },
   root: { flex: 1, flexDirection: 'row', backgroundColor: COLORS.panel },
   drawerPanel: { position: 'absolute', top: 0, bottom: 0, left: 0 },
@@ -5599,7 +5652,7 @@ const styles = StyleSheet.create({
   emptyState: { width: '100%', maxWidth: 720, alignSelf: 'center', alignItems: 'center' },
   emptyIdentity: { alignItems: 'center' },
   emptyModelLineWrap: { position: 'relative', alignItems: 'center' },
-  androidLandingBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'center', gap: 6, marginBottom: 16 },
+  androidLandingBadge: { top: 0, bottom: undefined, marginBottom: 0, minHeight: 24 },
   temporaryLabel: { position: 'absolute', left: 0, right: 0, bottom: '100%', marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   temporaryLabelText: { color: '#6d28d9', fontSize: 12, fontWeight: '600' },
   temporaryLabelTextDark: { color: '#c4b5fd' },
@@ -5821,4 +5874,30 @@ const styles = StyleSheet.create({
   sheetFootnoteText: { color: COLORS.muted, fontSize: 11.5, flex: 1, lineHeight: 16 },
 
   smallIconButton: { width: 44, height: 44, marginRight: -12, alignItems: 'center', justifyContent: 'center' },
-});
+}); }
+
+type ChatColors = typeof COLORS;
+const defaultChatStyles = { COLORS, styles: createChatStyles(COLORS) };
+const ChatStylesContext = createContext(defaultChatStyles);
+function useChatStyles() { return useContext(ChatStylesContext); }
+
+function ChatStylesProvider({ children }: { children: ReactNode }) {
+  const theme = useAppTheme();
+  const value = useMemo(() => {
+    if (Platform.OS !== 'android') return defaultChatStyles;
+    // RN resolves PlatformColor resource maps when a prop is assigned; mounted
+    // surfaces can retain that resolved color after a configuration change.
+    // Concrete Material colors produce new props without remounting chat state.
+    const colors: ChatColors = {
+      background: theme.background, panel: theme.elevated, card: theme.elevated,
+      secondary: theme.fill, elevated: theme.elevated, line: theme.separator,
+      lineSoft: theme.separator, text: theme.text, textSoft: theme.text,
+      muted: theme.secondary, dim: theme.tertiary, fill: theme.fill,
+      fillStrong: theme.fillStrong, accent: theme.accent, positive: theme.green,
+      critical: theme.red, criticalAction: theme.red, warning: theme.orange,
+      foregroundOnAccent: theme.accentText, mono: 'monospace',
+    };
+    return { COLORS: colors, styles: createChatStyles(colors) };
+  }, [theme.background, theme.elevated, theme.fill, theme.separator, theme.text, theme.secondary, theme.tertiary, theme.fillStrong, theme.accent, theme.green, theme.red, theme.orange, theme.accentText]);
+  return <ChatStylesContext.Provider value={value}>{children}</ChatStylesContext.Provider>;
+}
