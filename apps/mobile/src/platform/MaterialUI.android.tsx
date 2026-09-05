@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Keyboard, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text as RNText, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   AlertDialog, Button, Column, DropdownMenu, DropdownMenuItem, FilledIconButton,
-  FilledTonalButton, FilledTonalIconButton, Host, Icon, IconButton, ListItem,
+  FilledTonalButton, FilledTonalIconButton, Host, HorizontalDivider, Icon, IconButton, ListItem, Spacer,
   LoadingIndicator, OutlinedTextField, RNHostView,
   SegmentedButton, SingleChoiceSegmentedButtonRow, Switch, Text, TextButton,
   useMaterialColors, useNativeState,
@@ -13,7 +13,7 @@ import { getMaterialOverlay, showActions, subscribe, update } from './materialAc
 import { androidDialogBodyHeight } from './androidLayout';
 import { materialTint } from './materialTint';
 import { materialIcon } from './materialIcons';
-import type { Action, ButtonProps, ContextMenuProps, FieldProps, IconButtonProps, PromptOptions, RowProps, DialogProps } from './MaterialUI.types';
+import type { Action, ButtonProps, ContextMenuProps, FieldProps, IconButtonProps, PromptOptions, RowProps, DialogProps, MenuProps, MenuSection } from './MaterialUI.types';
 export type { Action } from './MaterialUI.types';
 
 export function MaterialButton({ label, icon, onPress, disabled, loading, variant = 'primary', compact }: ButtonProps) {
@@ -22,8 +22,9 @@ export function MaterialButton({ label, icon, onPress, disabled, loading, varian
   return <Host matchContents={{ vertical: true }} style={compact ? { minWidth: 124 } : { width: '100%' }} ignoreSafeAreaKeyboardInsets>
     <Component enabled={!disabled && !loading} onClick={onPress} modifiers={[fillMaxWidth(), defaultMinSize({ minHeight: 52 })]}
       colors={variant === 'destructive' ? { containerColor: colors.errorContainer, contentColor: colors.onErrorContainer } : undefined}>
-      {loading ? <LoadingIndicator modifiers={[size(24, 24)]} /> : icon ? <Icon source={materialIcon(icon)} size={20} modifiers={[padding(0, 0, 8, 0)]} /> : null}
-      <Text style={{ textAlign: 'center' }} modifiers={[weight(1)]}>{label}</Text>
+      {loading ? <LoadingIndicator modifiers={[size(24, 24)]} /> : icon ? <Icon source={materialIcon(icon)} size={24} /> : null}
+      {loading || icon ? <Spacer modifiers={[width(8)]} /> : null}
+      <Text style={{ fontSize: 16, fontWeight: '600', textAlign: 'center' }} modifiers={compact ? [] : [weight(1)]}>{label}</Text>
     </Component>
   </Host>;
 }
@@ -79,26 +80,47 @@ export function MaterialSegmented<T extends string>({ options, value, onChange }
   </SingleChoiceSegmentedButtonRow></Host>;
 }
 
-export function MaterialRow({ title, detail, detailLines, value, icon, destructive, selected, onPress }: RowProps) {
+export function MaterialRow({ title, detail, detailLines, value, image, icon, destructive, selected, onPress }: RowProps) {
   const colors = useMaterialColors();
   const { fontScale, width: windowWidth } = useWindowDimensions();
   const stackedValue = Boolean(value && (value.length > 20 || fontScale >= 1.5 || windowWidth < 360));
   return <Host matchContents={{ vertical: true }} style={{ width: '100%' }}><ListItem modifiers={onPress ? [clickable(onPress)] : []}
     colors={{ containerColor: selected ? colors.secondaryContainer : colors.surfaceContainerLow, contentColor: destructive ? colors.error : colors.onSurface }}>
-    <ListItem.HeadlineContent><Text>{title}</Text></ListItem.HeadlineContent>
+    <ListItem.HeadlineContent><Text style={{ typography: 'bodyLarge' }}>{title}</Text></ListItem.HeadlineContent>
     {detail || stackedValue ? <ListItem.SupportingContent><Text maxLines={detailLines} overflow="ellipsis">{[detail, stackedValue ? value : undefined].filter(Boolean).join('\n')}</Text></ListItem.SupportingContent> : null}
-    {icon ? <ListItem.LeadingContent><Icon source={materialIcon(icon)} size={24} /></ListItem.LeadingContent> : null}
+    {image || icon ? <ListItem.LeadingContent><Icon source={image ?? materialIcon(icon!)} tint={image ? null : undefined} size={24} /></ListItem.LeadingContent> : null}
     {(value && !stackedValue) || selected ? <ListItem.TrailingContent>{selected ? <Icon source={materialIcon('checkmark')} size={24} /> : <Text>{value}</Text>}</ListItem.TrailingContent> : null}
   </ListItem></Host>;
 }
 
-export function MaterialMenu({ label, icon, actions, text, compact }: {label: string; icon: string; actions: Action[]; text?: string; compact?: boolean}) {
+const EMPTY_ACTIONS: Action[] = [];
+const EMPTY_SECTIONS: MenuSection[] = [];
+export function MaterialMenu({ label, icon, actions = EMPTY_ACTIONS, sections = EMPTY_SECTIONS, text, compact, image }: MenuProps) {
   const [expanded, setExpanded] = useState(false);
+  const [submenu, setSubmenu] = useState<Action['submenu']>();
   const { width: windowWidth } = useWindowDimensions();
   const colors = useMaterialColors();
-  return <Host style={{ width: text ? compact ? Math.min(200, Math.max(112, windowWidth - 216)) : 210 : 48, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={() => setExpanded(false)}>
-    <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[fillMaxWidth(), height(48)]}><Text maxLines={1} overflow="ellipsis" modifiers={[weight(1)]}>{text}</Text><Icon source={materialIcon(icon)} size={16} contentDescription={label} modifiers={[padding(8, 0, 0, 0)]} /></TextButton> : <IconButton colors={{ contentColor: colors.onSurface }} onClick={() => setExpanded(true)}><Icon source={materialIcon(icon)} size={24} contentDescription={label} /></IconButton>}</DropdownMenu.Trigger>
-    <DropdownMenu.Items><MenuItems actions={actions} onDismiss={() => setExpanded(false)} /></DropdownMenu.Items>
+  const dismiss = () => { setExpanded(false); setSubmenu(undefined); };
+  const select = (action: Action) => {
+    if (action.submenu) { setSubmenu(action.submenu); return; }
+    if (action.keepOpen) setSubmenu(undefined);
+    else dismiss();
+    action.onPress();
+  };
+  const groups: MenuSection[] = submenu
+    ? [{ id: 'back', actions: [{ label: 'Back', icon: 'arrow.left', onPress: () => setSubmenu(undefined), keepOpen: true }] }, { id: 'submenu', title: submenu.title, actions: submenu.actions }]
+    : [...sections, ...(actions.length ? [{ id: 'actions', actions }] : [])];
+  return <Host style={{ width: text ? compact ? Math.min(200, Math.max(112, windowWidth - 216)) : 230 : 48, maxWidth: '100%', height: 48 }} ignoreSafeAreaKeyboardInsets><DropdownMenu expanded={expanded} onDismissRequest={dismiss}>
+    <DropdownMenu.Trigger>{text ? <TextButton onClick={() => setExpanded(true)} modifiers={[fillMaxWidth(), height(48)]}>
+      {image ? <><Icon source={image} tint={null} size={24} /><Spacer modifiers={[width(8)]} /></> : null}
+      <Text style={{ typography: 'titleMedium' }} maxLines={1} overflow="ellipsis" modifiers={[weight(1)]}>{text}</Text>
+      <Spacer modifiers={[width(8)]} /><Icon source={materialIcon(icon)} size={18} contentDescription={label} />
+    </TextButton> : <IconButton colors={{ contentColor: colors.onSurface }} onClick={() => setExpanded(true)}><Icon source={materialIcon(icon)} size={24} contentDescription={label} /></IconButton>}</DropdownMenu.Trigger>
+    <DropdownMenu.Items>{groups.map((group, index) => <Fragment key={group.id}>
+      {index > 0 ? <HorizontalDivider modifiers={[padding(0, 8, 0, 8)]} /> : null}
+      {group.title ? <Text color={colors.onSurfaceVariant} style={{ typography: 'labelLarge' }} modifiers={[padding(16, 8, 16, 8)]}>{group.title}</Text> : null}
+      <MenuItems actions={group.actions} onSelect={select} />
+    </Fragment>)}</DropdownMenu.Items>
   </DropdownMenu></Host>;
 }
 
@@ -137,12 +159,12 @@ export function MaterialContextMenu({ title, actions, children, style }: Context
   const openForAccessibility = () => trigger.current?.measureInWindow((x, y, width, height) => showActions(title, actions, { x: x + width / 2, y: y + height / 2 }));
   return <Pressable ref={trigger} style={style} onLongPress={(event) => showActions(title, actions, { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY })} accessibilityActions={[{name: 'longpress', label: 'Show actions'}]} onAccessibilityAction={openForAccessibility}>{children}</Pressable>;
 }
-function MenuItems({ actions, onDismiss }: { actions: Action[]; onDismiss: () => void }) {
+function MenuItems({ actions, onDismiss, onSelect }: { actions: Action[]; onDismiss?: () => void; onSelect?: (action: Action) => void }) {
   const colors = useMaterialColors();
-  return <>{actions.map((action) => <DropdownMenuItem key={action.label} enabled={!action.disabled} onClick={() => { onDismiss(); action.onPress(); }}>
-    <DropdownMenuItem.Text><Text color={action.destructive ? colors.error : undefined}>{action.label}</Text></DropdownMenuItem.Text>
-    {action.icon ? <DropdownMenuItem.LeadingIcon><Icon source={materialIcon(action.icon)} size={24} /></DropdownMenuItem.LeadingIcon> : null}
-    {action.selected ? <DropdownMenuItem.TrailingIcon><Icon source={materialIcon('checkmark')} size={20} /></DropdownMenuItem.TrailingIcon> : null}
+  return <>{actions.map((action) => <DropdownMenuItem key={action.id ?? action.label} modifiers={[defaultMinSize({ minWidth: 200 })]} enabled={!action.disabled} onClick={() => { if (onSelect) onSelect(action); else { onDismiss?.(); action.onPress(); } }}>
+    <DropdownMenuItem.Text><Column><Text style={{ typography: 'bodyLarge' }} color={action.destructive ? colors.error : undefined}>{action.label}</Text>{action.detail ? <Text color={colors.onSurfaceVariant} style={{ typography: 'bodySmall' }}>{action.detail}</Text> : null}</Column></DropdownMenuItem.Text>
+    {action.image || action.icon ? <DropdownMenuItem.LeadingIcon><Icon source={action.image ?? materialIcon(action.icon!)} tint={action.image ? null : undefined} size={24} /></DropdownMenuItem.LeadingIcon> : null}
+    {action.selected || action.submenu ? <DropdownMenuItem.TrailingIcon><Icon source={materialIcon(action.submenu ? 'chevron.right' : 'checkmark')} size={20} /></DropdownMenuItem.TrailingIcon> : null}
   </DropdownMenuItem>)}</>;
 }
 
@@ -175,8 +197,9 @@ export function MaterialOverlays() {
     <AlertDialog.Title><Text>{state.title}</Text></AlertDialog.Title>
     <AlertDialog.Text><Column modifiers={[fillMaxWidth(), verticalScroll()]}>
       {state.actions.map((action) => <ListItem key={action.label} modifiers={action.disabled ? [] : [clickable(() => { dismiss(); action.onPress(); })]} colors={{ containerColor: colors.surfaceContainerHigh, contentColor: action.disabled ? colors.outline : action.destructive ? colors.error : colors.onSurface }}>
-        <ListItem.HeadlineContent><Text>{action.label}</Text></ListItem.HeadlineContent>
-        {action.icon ? <ListItem.LeadingContent><Icon source={materialIcon(action.icon)} size={24} /></ListItem.LeadingContent> : null}
+        <ListItem.HeadlineContent><Text style={{ typography: 'bodyLarge' }}>{action.label}</Text></ListItem.HeadlineContent>
+        {action.detail ? <ListItem.SupportingContent><Text>{action.detail}</Text></ListItem.SupportingContent> : null}
+        {action.image || action.icon ? <ListItem.LeadingContent><Icon source={action.image ?? materialIcon(action.icon!)} tint={action.image ? null : undefined} size={24} /></ListItem.LeadingContent> : null}
         {action.selected ? <ListItem.TrailingContent><Icon source={materialIcon('checkmark')} size={24} /></ListItem.TrailingContent> : null}
       </ListItem>)}
     </Column></AlertDialog.Text>

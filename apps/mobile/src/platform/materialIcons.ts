@@ -1,6 +1,7 @@
 import type { ImageSourcePropType } from 'react-native';
 import { materialSymbolNames } from './symbolNames';
 const icons: Record<string, ImageSourcePropType> = {
+  'science': require('../../assets/material/science.xml'),
   'account_circle': require('../../assets/material/account_circle.xml'),
   'add': require('../../assets/material/add.xml'),
   'alternate_email': require('../../assets/material/alternate_email.xml'),

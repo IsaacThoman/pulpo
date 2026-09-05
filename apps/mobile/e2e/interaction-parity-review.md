@@ -1,5 +1,7 @@
 # Android / iOS interaction audit
 
+**Correction:** The model-selector shortcut and preset presentation described in this earlier pass were not functionally equivalent to iOS. The [selector follow-up review](selector-parity-review.md) documents the shared implementation, corrected controls, and paired-device verification that supersede those portions of this report.
+
 Audited September 5, 2026 on the Android 17 / API 37 emulator (1080 × 2400, density 420) and iPhone 17 Pro / iOS 26.5 simulator. This extends the [layout review](android-layout-review.md) and [initial functional validation](android-parity-validation.md). Android uses Material controls and the same sliding history interaction as iOS.
 
 Most mutations used an isolated API, database, queue provider, and disposable account. Both devices also signed into the authorized production test account. One new, automatically expiring production conversation tested Agent behavior; existing production conversations were not edited or deleted. Credentials and recovery secrets are omitted from this report.

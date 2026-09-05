@@ -1,5 +1,7 @@
 # Android layout and interaction review
 
+**Correction:** The model-selector shortcut and preset presentation described in this earlier pass were not functionally equivalent to iOS. The [selector follow-up review](selector-parity-review.md) documents the shared implementation, corrected controls, and paired-device verification that supersede those portions of this report.
+
 Reviewed September 5, 2026, using the authorized production test account on
 `https://pulpo.baby`. This supplements the earlier isolated-fixture functional
 checks in [Android parity validation](android-parity-validation.md).

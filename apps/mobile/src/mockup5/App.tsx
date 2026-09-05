@@ -1,4 +1,3 @@
-import { quickModelChoices } from '../platform/androidLayout';
 import { MaterialButton, MaterialContextMenu, MaterialField, MaterialIconButton, MaterialLoading, MaterialMenu, MaterialRow, MaterialDialog, type Action as MaterialAction } from '../platform/MaterialUI';
 import type { MenuAnchor } from '../platform/MaterialUI.types';
 import { promptText, selectText, showActions } from '../platform/materialActions';
@@ -186,7 +185,7 @@ import { subscribeToResponse, useRealtimeStore } from '../providers/realtimeStor
 import { shouldShowConnectionBanner } from '../providers/realtimeConnection';
 import { startComposerFocusTransition } from '../providers/composerAutoFocus';
 import { usePreferencesStore } from '../store/preferences';
-import { orderedModelsById, resolveVisibleOrder } from '../features/chat/modelPreferences';
+import { FAVORITES_SECTION, resolveModelMenu } from '../features/chat/modelMenu';
 import { aiIconSource, useCatalogIconCacheRevision } from './src/production/AiIconAssets';
 import { SafeMarkdown } from '../components/SafeMarkdown';
 import { AttachmentImageViewer, type AttachmentImagePreviewItem, type AttachmentImageTransitionOrigin } from '../components/AttachmentImageViewer';
@@ -1074,7 +1073,7 @@ function RoundButton({ icon, onPress, accessibilityLabel, selected = false, sele
 }
 
 function DrawerNewChatButton({ isDark, onPress }: { isDark: boolean; onPress: () => void }) {
-  if (Platform.OS === 'android') return <MaterialButton label="New chat" icon="square.and.pencil" onPress={onPress} compact />;
+  if (Platform.OS === 'android') return <MaterialButton label="New Chat" icon="square.and.pencil" onPress={onPress} compact />;
   const foregroundColor = isDark ? '#1C1C1E' : '#FFFFFF';
   const glassTintColor = isDark ? 'rgba(255,255,255,0.85)' : 'rgba(0,0,0,0.85)';
   if (Platform.OS === 'ios') {
@@ -3268,45 +3267,34 @@ const MessageRow = memo(function MessageRow({
   );
 });
 
-function AndroidModelMenu({ model, models, onSelectModel, onBrowse }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; onBrowse: () => void }) {
-  const favorites = usePreferencesStore((state) => state.favoriteModelIds);
-  const quickChoices = quickModelChoices(models, model.id, favorites);
-  return <MaterialMenu label={`Model, ${model.name}`} text={model.name} icon="chevron.down" actions={[
-    { label: 'Browse all models', icon: 'magnifyingglass', onPress: onBrowse },
-    ...quickChoices.map((option) => ({ label: option.name, selected: option.id === model.id, onPress: () => onSelectModel(option) })),
-  ]} />;
+function useModelMenu(models: Model[]) {
+  const [requestedSection, setSection] = useState(FAVORITES_SECTION);
+  const favoriteIds = usePreferencesStore((state) => state.favoriteModelIds);
+  const providerOrder = usePreferencesStore((state) => state.providerOrder);
+  const menu = useMemo(() => resolveModelMenu(models, favoriteIds, providerOrder, requestedSection), [models, favoriteIds, providerOrder, requestedSection]);
+  useEffect(() => { if (menu.section !== requestedSection) setSection(menu.section); }, [menu.section, requestedSection]);
+  return { ...menu, setSection };
+}
+
+function AndroidModelMenu({ model, models, onSelectModel }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void }) {
+  const { sections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
+  return <MaterialMenu label={`Model, ${model.name}`} text={model.name} image={model.icon} icon="chevron.down" sections={[{
+    id: 'models', title: sectionLabel,
+    actions: visibleModels.length ? visibleModels.map((option) => ({ id: option.id, label: option.name, image: option.menuIcon ?? option.icon, selected: option.id === model.id, onPress: () => onSelectModel(option) }))
+      : [{ id: 'empty', label: 'No favorite models', detail: 'Choose a lab to browse models.', disabled: true, onPress: () => {} }],
+  }]} actions={[{
+    label: 'Labs', icon: 'science', onPress: () => {}, submenu: { title: 'Labs', actions: sections.map((candidate) => {
+      const labModel = candidate.id === FAVORITES_SECTION ? undefined : models.find((option) => option.providerGroupId === candidate.id);
+      return { id: candidate.id, label: candidate.label, image: labModel ? labModel.labIcon ?? labModel.icon : undefined, icon: labModel ? undefined : 'star', selected: candidate.id === section, keepOpen: true, onPress: () => { setSection(candidate.id); Haptics.selectionAsync(); } };
+    }) },
+  }]} />;
 }
 
 const NativeModelMenu = memo(function NativeModelMenu({ model, models, onSelectModel, tinted = false }: { model: Model; models: Model[]; onSelectModel: (model: Model) => void; tinted?: boolean }) {
   const colorScheme = useColorScheme();
   const foreground = colorScheme === 'dark' ? '#f2f2f7' : '#1c1c1e';
-  const favoritesSection = '__favorites__';
-  const [section, setSection] = useState<ModelSection>(favoritesSection);
   const [labsMenuRevision, setLabsMenuRevision] = useState(0);
-  const favoriteModelIds = usePreferencesStore((state) => state.favoriteModelIds);
-  const providerOrder = usePreferencesStore((state) => state.providerOrder);
-  const modelSections = useMemo(() => {
-    const availableProviderIds = [...new Set(models.map((candidate) => candidate.providerGroupId))];
-    return [
-      { id: favoritesSection, label: 'Favorites' },
-      ...resolveVisibleOrder(providerOrder, availableProviderIds).map((id) => ({
-        id,
-        label: models.find((candidate) => candidate.providerGroupId === id)?.lab ?? 'Internal',
-      })),
-    ];
-  }, [models, providerOrder]);
-  const sectionLabel = useMemo(
-    () => modelSections.find((candidate) => candidate.id === section)?.label ?? 'Favorites',
-    [modelSections, section],
-  );
-  const visibleModels = useMemo(() => section === favoritesSection
-    ? orderedModelsById(models, favoriteModelIds)
-    : models.filter((candidate) => candidate.providerGroupId === section),
-  [favoriteModelIds, models, section]);
-
-  useEffect(() => {
-    if (!modelSections.some((candidate) => candidate.id === section)) setSection(favoritesSection);
-  }, [modelSections, section]);
+  const { sections: modelSections, section, sectionLabel, visibleModels, setSection } = useModelMenu(models);
 
   return (
     <SwiftUIHost key={tinted ? 'tinted' : 'default'} matchContents style={styles.modelMenuHost}>
@@ -4710,8 +4698,8 @@ function ChatView({
           <Reanimated.View pointerEvents="box-none" style={[styles.modelTriggerWrap, modelTriggerAnimatedStyle]}>
             {Platform.OS === 'ios' && !accessibilityLayout ? (
               <NativeModelMenu model={model} models={models} onSelectModel={onSelectModel} tinted={temporary} />
-            ) : Platform.OS === 'android' ? (
-              <AndroidModelMenu model={model} models={models} onSelectModel={onSelectModel} onBrowse={onOpenModelPicker} />
+            ) : Platform.OS === 'android' && !accessibilityLayout ? (
+              <AndroidModelMenu model={model} models={models} onSelectModel={onSelectModel} />
             ) : (
               <Pressable
                 accessibilityHint="Opens the model picker"
@@ -4997,11 +4985,14 @@ function ChatView({
                     </SwiftUIMenu>
                   </SwiftUIHost>
                 ) : (
-                  <MaterialMenu label={`Generation options, ${presetLabel}`} text={presetLabel} compact icon="chevron.down" actions={(prototypeModel?.presets ?? []).flatMap((preset) => preset.choices.map((choice) => ({
-                    label: (prototypeModel?.presets.length ?? 0) > 1 ? `${preset.name}: ${choice.label}` : choice.label,
-                    selected: choice.id === presetSelections[preset.id],
-                    onPress: () => onSelectPreset(preset.id, choice.id),
-                  })))} />
+                  <MaterialMenu label={`Generation options, ${presetLabel}`} text={presetLabel} compact icon="chevron.down" sections={(prototypeModel?.presets ?? []).filter((preset) => preset.choices.length > 0).map((preset) => ({
+                    id: preset.id, title: preset.name,
+                    actions: preset.choices.map((choice) => ({
+                      id: choice.id, label: choice.label,
+                      selected: choice.id === presetSelections[preset.id],
+                      onPress: () => onSelectPreset(preset.id, choice.id),
+                    })),
+                  }))} />
                 ))}
                 <View style={styles.flex} />
                 {Platform.OS === 'ios' ? (
@@ -5509,20 +5500,23 @@ function AndroidModelSheet({ visible, selected, models, onClose, onSelect }: { v
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const favoriteIds = usePreferencesStore((state) => state.favoriteModelIds);
   useEffect(() => { if (!visible) { setQuery(''); setLab(null); setFavoritesOnly(false); } }, [visible]);
-  const labs = [...new Set(models.map((model) => model.lab))];
-  const filtered = models.filter((model) => (!lab || model.lab === lab) && (!favoritesOnly || favoriteIds.includes(model.id)) && `${model.name} ${model.lab} ${model.detail}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const providerOrder = usePreferencesStore((state) => state.providerOrder);
+  const catalog = resolveModelMenu(models, favoriteIds, providerOrder, lab ?? FAVORITES_SECTION);
+  const labs = catalog.sections.filter((section) => section.id !== FAVORITES_SECTION);
+  const candidates = favoritesOnly ? resolveModelMenu(models, favoriteIds, providerOrder, FAVORITES_SECTION).visibleModels : models;
+  const filtered = candidates.filter((model) => (!lab || model.providerGroupId === lab) && `${model.name} ${model.lab} ${model.detail}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <MaterialDialog visible={visible} title="Choose a model" fullScreen={width < 600 || height < 600 || fontScale >= 1.5} onClose={onClose} contentHeight={Math.max(220, 144 + filtered.length * 76)}>
     <View style={{ flex: 1, gap: 8 }}>
       <MaterialField label="Search models" icon="magnifyingglass" value={query} onChangeText={setQuery} autoCapitalize="none" autoCorrect={false} />
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <View style={{ flex: 1, minWidth: 0 }}><MaterialMenu label="Filter models by lab" text={lab ?? 'All labs'} icon="chevron.down" actions={[
+        <View style={{ flex: 1, minWidth: 0 }}><MaterialMenu label="Filter models by lab" text={labs.find((section) => section.id === lab)?.label ?? 'All labs'} icon="chevron.down" actions={[
           { label: 'All labs', selected: lab === null, onPress: () => setLab(null) },
-          ...labs.map((name) => ({ label: name, selected: name === lab, onPress: () => setLab(name) })),
+          ...labs.map((section) => ({ id: section.id, label: section.label, selected: section.id === lab, onPress: () => setLab(section.id) })),
         ]} /></View>
         <MaterialIconButton label={favoritesOnly ? 'Show all models' : 'Show favorite models'} icon="star" selected={favoritesOnly} onPress={() => setFavoritesOnly(!favoritesOnly)} />
       </View>
       <FlatList removeClippedSubviews={false} data={filtered} keyExtractor={(model) => model.id} keyboardShouldPersistTaps="handled" style={{ flex: 1 }}
-        renderItem={({ item: model }) => <MaterialRow title={model.name} detailLines={2} detail={[model.lab, model.detail].filter(Boolean).join(' · ')} selected={selected === model.id} onPress={() => onSelect(model)} />}
+        renderItem={({ item: model }) => <MaterialRow title={model.name} image={model.menuIcon ?? model.icon} detailLines={2} detail={[model.lab, model.detail].filter(Boolean).join(' · ')} selected={selected === model.id} onPress={() => onSelect(model)} />}
         ListEmptyComponent={<Text style={{ color: COLORS.muted, padding: 16 }}>{query || lab || favoritesOnly ? 'No matching models' : 'No models available'}</Text>} />
     </View>
   </MaterialDialog>;
@@ -5798,7 +5792,7 @@ const styles = StyleSheet.create({
   navText: { color: COLORS.textSoft, fontSize: 15, fontWeight: '500' },
   navMeta: { color: COLORS.muted, fontSize: 12.5, marginLeft: 'auto' },
   chatList: { paddingHorizontal: 10, paddingBottom: 16 },
-  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: Platform.OS === 'android' ? 160 : 123.75, height: Platform.OS === 'android' ? 52 : 48.75 },
+  drawerNewChatButton: { position: 'absolute', zIndex: 2, right: 16, width: Platform.OS === 'android' ? 160 : 123.75, minHeight: Platform.OS === 'android' ? 52 : undefined, height: Platform.OS === 'android' ? undefined : 48.75 },
   drawerNewChatButtonHost: { width: 123.75, height: 48.75 },
   drawerNewChatButtonFallback: { width: 123.75, height: 48.75, borderRadius: 24.375, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7.5 },
   drawerNewChatButtonText: { color: COLORS.text, fontSize: 14.0625, fontWeight: '600' },
