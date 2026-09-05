@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "chatId": "24c9dc16-8a71-4bcc-98c1-851bb66ad29c",
+  "checks": [
+    "native edit/cancel restores draft",
+    "native edit/save restores draft",
+    "accessible native reorder",
+    "native delete",
+    "queue collapse/expand"
+  ],
+  "persistedQueue": [
+    "Quieter streets",
+    "Keep Sunday afternoon free."
+  ]
+}
