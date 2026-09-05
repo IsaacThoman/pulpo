@@ -201,6 +201,29 @@ describe('submission acknowledgments', () => {
 
 
 describe('conditional submission clear races', () => {
+  it('clears accepted content while preserving controls changed during submission', async () => {
+    const f = fixture(), a = f.client('mobile')
+    const submitted = state('queued before the first response token')
+    await a.open(submitted)
+    const revision = await a.sync.prepareSubmission('new', submitted)
+    const controls = { model: { id: 'other', presets: { effort: 'high' } }, agentMode: false, autoExpire: true }
+    a.sync.edit('new', controls)
+    await a.sync.completeSubmission('new', submitted, revision!)
+    expect(f.snapshot().state).toMatchObject({ content: '', ...controls })
+    a.sync.dispose()
+  })
+
+  it('preserves a different attachment added to the same text during submission', async () => {
+    const f = fixture(), a = f.client('mobile')
+    const submitted = state('same caption')
+    await a.open(submitted)
+    const revision = await a.sync.prepareSubmission('new', submitted)
+    const attachments = [{ id: 'image', name: 'photo.png', mimeType: 'image/png', size: 123 }]
+    a.sync.edit('new', { attachments })
+    await a.sync.completeSubmission('new', submitted, revision!)
+    expect(f.snapshot().state).toMatchObject({ content: submitted.content, attachments })
+    a.sync.dispose()
+  })
   it('uses the current revision when an identical remote write advances the draft', async () => {
     const f = fixture(), a = f.client('mobile'), b = f.client('web')
     await a.open(state('submitted')); await b.open()

@@ -25,13 +25,13 @@ describe('mobile composer draft cache', () => {
     expect(cachedComposerDraft(otherAccount)?.body).toBe('other draft')
   })
 
-  it('removes empty, sent, and signed-out draft scopes', () => {
+  it('keeps empty drafts authoritative until explicit eviction or sign-out', () => {
     const first = composerDraftScope(namespaces[0]!, 'chat-1')
     const second = composerDraftScope(namespaces[0]!, 'chat-2')
     cacheComposerDraft(first, { body: 'one', attachments: [] })
     cacheComposerDraft(second, { body: 'two', attachments: [] })
     cacheComposerDraft(first, { body: '', attachments: [] })
-    expect(cachedComposerDraft(first)).toBeNull()
+    expect(cachedComposerDraft(first)).toEqual({ body: '', attachments: [] })
 
     deleteCachedComposerDraft(second)
     expect(cachedComposerDraft(second)).toBeNull()

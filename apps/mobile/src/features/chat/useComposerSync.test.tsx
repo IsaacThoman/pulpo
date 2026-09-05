@@ -71,10 +71,63 @@ async function fixture(remoteModel: ComposerState['model']) {
   await render('new')
   return { sync, writes, render, state: () => state, controls: () => controls, snapshot: () => snapshotFor('new'),
     type: async (content: string) => { await act(async () => setState({ ...state, content })) },
+    change: async (patch: Partial<ComposerState>) => { await act(async () => setState({ ...state, ...patch })) },
+    echo: async (patch: Partial<ComposerState> = {}) => {
+      const previous = snapshotFor('new')
+      const snapshot = { ...previous, revision: previous.revision + 1, state: { ...previous.state, ...patch } }
+      snapshots.set('new', snapshot)
+      await act(async () => sync.receive(snapshot))
+    },
   }
 }
 
 describe('mobile composer submission', () => {
+  it('keeps attachment-only submissions hidden until acceptance', async () => {
+    const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
+    await f.change({ content: '', attachments: [{ id: 'image', name: 'photo.png', mimeType: 'image/png', size: 123 }] })
+    const submitted = f.state()
+    const revision = await f.sync.prepareSubmission('new', submitted)
+    f.controls().skipNextEdit()
+    await f.change({ attachments: [] })
+    await f.echo()
+    expect(f.state().attachments).toEqual([])
+    await act(async () => { await f.sync.completeSubmission('new', submitted, revision!) })
+    expect(f.state().attachments).toEqual([])
+  })
+  it('applies a different remote draft while a queued send is pending', async () => {
+    const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
+    const submitted = f.state()
+    const revision = await f.sync.prepareSubmission('new', submitted)
+    f.controls().skipNextEdit()
+    await f.type('')
+    await f.echo({ content: 'new remote draft' })
+    expect(f.state().content).toBe('new remote draft')
+    await act(async () => { await f.sync.completeSubmission('new', submitted, revision!) })
+    expect(f.state().content).toBe('new remote draft')
+  })
+  it('keeps a queued draft hidden through a delayed sync notification on the same client', async () => {
+    const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
+    const submitted = f.state()
+    const revision = await f.sync.prepareSubmission('new', submitted)
+    f.controls().skipNextEdit()
+    await f.type('')
+    await f.echo()
+    expect(f.state().content).toBe('')
+    await act(async () => { await f.sync.completeSubmission('new', submitted, revision!) })
+    expect(f.state().content).toBe('')
+  })
+  it('does not resurrect a queued draft when local controls change before acceptance', async () => {
+    const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
+    const submitted = f.state()
+    const revision = await f.sync.prepareSubmission('new', submitted)
+    f.controls().skipNextEdit()
+    await f.type('')
+    await f.change({ agentMode: false })
+    expect(f.state().content).toBe('')
+    await act(async () => { await f.sync.completeSubmission('new', submitted, revision!) })
+    expect(f.snapshot().state).toMatchObject({ content: '', agentMode: false })
+    expect(f.state()).toMatchObject({ content: '', agentMode: false })
+  })
   it('does not echo an already resolved remote draft', async () => {
     const f = await fixture({ id: 'model', presets: { effort: 'medium' } })
     expect(f.state().content).toBe('shared draft')
